@@ -1,0 +1,521 @@
+{
+  "meta": {
+    "title": "RCMS — Radiology operations, connected",
+    "description": "RCMS connects scheduling, clinical worklists, reporting, billing, and patient access for modern radiology centers."
+  },
+  "nav": {
+    "overview": "Overview",
+    "capabilities": "Capabilities",
+    "teams": "For teams",
+    "workflow": "Workflow",
+    "security": "Security",
+    "faq": "FAQ",
+    "patientPortal": "Patient portal",
+    "doctorPortal": "Doctor portal",
+    "staffSignIn": "Staff sign in",
+    "skipContent": "Skip to content",
+    "primaryLabel": "Primary navigation",
+    "homeLabel": "RCMS home",
+    "openMenu": "Open navigation",
+    "closeMenu": "Close navigation",
+    "changeLanguage": "Switch to Arabic",
+    "lightMode": "Switch to light mode",
+    "darkMode": "Switch to dark mode"
+  },
+  "hero": {
+    "eyebrow": "Radiology operations, finally in sync",
+    "title": "One calm workspace for every imaging workflow.",
+    "titleLead": "The operating system for",
+    "titleAccent": "connected radiology.",
+    "description": "One live operational record connects scheduling, clinical delivery, reporting, revenue, and patient access—from referral to final result.",
+    "primary": "Enter your workspace",
+    "secondary": "See the workflow",
+    "trust": [
+      "Role-based access",
+      "DICOM-ready workflows",
+      "Arabic & English"
+    ],
+    "signals": [
+      {
+        "title": "Conflict-aware scheduling",
+        "description": "Coordinate rooms, modalities, staff, and preparation."
+      },
+      {
+        "title": "Live clinical flow",
+        "description": "Move safely from arrival through acquisition and reporting."
+      },
+      {
+        "title": "Verified result delivery",
+        "description": "Track review, finalization, documents, and authorized access."
+      },
+      {
+        "title": "Connected revenue cycle",
+        "description": "Keep billing, insurance, cashier, and activity in context."
+      }
+    ]
+  },
+  "preview": {
+    "label": "Operations overview",
+    "live": "Live",
+    "today": "Today",
+    "shift": "Today's operations",
+    "studies": "Scheduled studies",
+    "completed": "Completed",
+    "turnaround": "Avg. turnaround",
+    "minutes": "min",
+    "queue": "Active worklist",
+    "patient": "Patient",
+    "modality": "Modality",
+    "status": "Status",
+    "ready": "Ready",
+    "reporting": "Reporting",
+    "waiting": "Waiting",
+    "footer": "All departments connected in real time"
+  },
+  "proof": {
+    "eyebrow": "Built for the whole center",
+    "title": "Less chasing. More coordinated care.",
+    "description": "A single operational picture for clinical, administrative, and patient-facing teams.",
+    "stats": [
+      {
+        "value": "01",
+        "label": "shared patient record"
+      },
+      {
+        "value": "24/7",
+        "label": "secure patient access"
+      },
+      {
+        "value": "360°",
+        "label": "operational visibility"
+      },
+      {
+        "value": "02",
+        "label": "languages throughout"
+      }
+    ]
+  },
+  "features": {
+    "eyebrow": "Connected capabilities",
+    "title": "Everything important, in the right place.",
+    "description": "Purpose-built tools follow the real rhythm of an imaging center, without adding another layer of friction.",
+    "items": [
+      {
+        "title": "Intelligent scheduling",
+        "description": "Coordinate rooms, modalities, staff, and preparation requirements while preventing conflicts."
+      },
+      {
+        "title": "Clinical worklists",
+        "description": "Keep technicians and radiologists aligned with live priorities, status changes, and handoffs."
+      },
+      {
+        "title": "Structured reporting",
+        "description": "Move from study to verified report with templates, review steps, and clear ownership."
+      },
+      {
+        "title": "Revenue operations",
+        "description": "Connect invoices, insurance, expenses, and collections to the clinical activity that drives them."
+      },
+      {
+        "title": "Patient engagement",
+        "description": "Give patients secure access to appointments, finalized reports, documents, and notifications."
+      },
+      {
+        "title": "Operational intelligence",
+        "description": "See volume, turnaround, utilization, and financial signals without stitching together spreadsheets."
+      }
+    ]
+  },
+  "architecture": {
+    "eyebrow": "Interoperability without silos",
+    "title": "A shared operational layer for the whole center.",
+    "description": "RCMS keeps source information, daily workflows, and authorized destinations connected while each role stays focused on its own work.",
+    "standards": [
+      "DICOM-ready",
+      "HL7 workflows",
+      "Secure APIs",
+      "Audited exports"
+    ],
+    "layers": [
+      {
+        "title": "Connected inputs",
+        "description": "Bring the operational context together before work begins.",
+        "items": [
+          "Patient registration",
+          "Referrals and orders",
+          "Resources and modalities"
+        ]
+      },
+      {
+        "title": "RCMS operations",
+        "description": "Coordinate every handoff against one governed record.",
+        "items": [
+          "Scheduling and queues",
+          "Clinical and reporting",
+          "Revenue and governance"
+        ]
+      },
+      {
+        "title": "Authorized outcomes",
+        "description": "Deliver the right result to the right audience.",
+        "items": [
+          "Patient access",
+          "Referring doctor portal",
+          "Analytics and exports"
+        ]
+      }
+    ]
+  },
+  "outcomes": {
+    "eyebrow": "Operational impact",
+    "title": "Designed to remove preventable friction.",
+    "description": "The platform improves the quality of handoffs by keeping clinical, operational, and financial context together.",
+    "items": [
+      {
+        "title": "Enter information once",
+        "description": "Reuse the governed patient and examination record instead of recreating context across teams."
+      },
+      {
+        "title": "Make handoffs visible",
+        "description": "Statuses, ownership, safety checks, and pending actions remain visible throughout the study lifecycle."
+      },
+      {
+        "title": "Connect care to revenue",
+        "description": "Keep invoices, insurance, collections, and expenses traceable to the activity that generated them."
+      },
+      {
+        "title": "Govern access confidently",
+        "description": "Use permissions, audit history, consent, and emergency-access controls as part of routine work."
+      }
+    ]
+  },
+  "teams": {
+    "eyebrow": "Purpose-built workspaces",
+    "title": "One platform. A clearer day for every team.",
+    "description": "Each role sees the queue, decisions, and controls it needs while the underlying patient journey stays connected.",
+    "items": [
+      {
+        "audience": "Patient access",
+        "title": "Reception and scheduling",
+        "description": "Move from registration to a conflict-free booking with the right room, preparation, and patient context attached.",
+        "highlights": [
+          "Patient registry",
+          "Resource scheduling",
+          "Waiting list",
+          "Check-in flow"
+        ]
+      },
+      {
+        "audience": "Clinical delivery",
+        "title": "Technicians, nurses, and radiologists",
+        "description": "Coordinate safety, preparation, image acquisition, reporting, and delivery through one traceable clinical workflow.",
+        "highlights": [
+          "Priority worklists",
+          "Safety screening",
+          "Structured reports",
+          "Result delivery"
+        ]
+      },
+      {
+        "audience": "Business operations",
+        "title": "Finance, insurance, and inventory",
+        "description": "Connect revenue and supply activity to the examinations that generated it, without parallel spreadsheets.",
+        "highlights": [
+          "Billing and cashier",
+          "Claims workflow",
+          "Expense control",
+          "Stock visibility"
+        ]
+      },
+      {
+        "audience": "Center leadership",
+        "title": "Management and governance",
+        "description": "See throughput, workload, access, and audit signals from the same operational record used by frontline teams.",
+        "highlights": [
+          "Live dashboards",
+          "Role governance",
+          "Audit history",
+          "Operational analytics"
+        ]
+      }
+    ]
+  },
+  "workflow": {
+    "eyebrow": "One continuous workflow",
+    "title": "From referral to result—without losing the thread.",
+    "description": "Each step hands clean context to the next team, while permissions keep sensitive information where it belongs.",
+    "steps": [
+      {
+        "number": "01",
+        "title": "Register & schedule",
+        "description": "Capture the patient once and reserve the right resource."
+      },
+      {
+        "number": "02",
+        "title": "Prepare & acquire",
+        "description": "Guide preparation and track the exam from arrival to completion."
+      },
+      {
+        "number": "03",
+        "title": "Report & verify",
+        "description": "Prioritize studies, structure findings, and finalize securely."
+      },
+      {
+        "number": "04",
+        "title": "Bill & deliver",
+        "description": "Complete the financial workflow and release results to the patient."
+      }
+    ]
+  },
+  "security": {
+    "eyebrow": "Security by design",
+    "title": "Patient trust is part of the architecture.",
+    "description": "Granular access, traceable actions, secure sessions, and privacy controls are built into daily work—not bolted on afterward.",
+    "items": [
+      "Role and permission controls",
+      "Comprehensive audit history",
+      "Encrypted document workflows",
+      "Emergency access governance"
+    ]
+  },
+  "quote": {
+    "text": "A radiology system should make the next safe action obvious. RCMS is designed around that simple idea.",
+    "author": "The RCMS product principle",
+    "role": "Clarity at every handoff"
+  },
+  "faq": {
+    "eyebrow": "Questions, answered",
+    "title": "A clearer path to a connected center.",
+    "items": [
+      {
+        "question": "Can RCMS support multiple staff roles?",
+        "answer": "Yes. Workspaces and actions are permission-aware for administrators, receptionists, radiologists, technicians, nurses, accountants, HR teams, and other configured roles."
+      },
+      {
+        "question": "Does Arabic change the full interface direction?",
+        "answer": "Yes. Switching to Arabic updates the application language, reading direction, navigation placement, spacing, and direction-sensitive controls. Your preference is remembered."
+      },
+      {
+        "question": "Can patients and referring physicians sign in separately?",
+        "answer": "Yes. Dedicated portals keep patient and physician experiences focused while sharing authorized information with the center's workflow."
+      },
+      {
+        "question": "Will the platform fit an existing imaging workflow?",
+        "answer": "RCMS is organized around configurable exam types, resources, roles, and integrations, so teams can adapt it to their operating model."
+      }
+    ]
+  },
+  "cta": {
+    "eyebrow": "Your center, working as one",
+    "title": "Bring every handoff into focus.",
+    "description": "Choose the secure entry designed for staff, patients, or referring doctors.",
+    "primary": "Staff sign in",
+    "secondary": "Patient portal"
+  },
+  "access": {
+    "staff": {
+      "title": "Staff workspace",
+      "description": "Secure access for reception, clinical, finance, operations, and administration teams.",
+      "action": "Staff sign in"
+    },
+    "patient": {
+      "title": "Patient portal",
+      "description": "View authorized appointments, finalized reports, documents, invoices, and requests.",
+      "action": "Patient sign in"
+    },
+    "doctor": {
+      "title": "Referring doctor portal",
+      "description": "Follow authorized cases, reports, referrals, and secure center communication.",
+      "action": "Doctor sign in"
+    }
+  },
+  "public": {
+    "metaTitle": "Radiology Center",
+    "metaDescription": "Professional diagnostic imaging, secure patient access, and referring doctor report delivery.",
+    "brandLine": "Diagnostic imaging center",
+    "bookAppointment": "Book appointment",
+    "nav": {
+      "overview": "Home",
+      "services": "Services",
+      "patient-access": "Patient access",
+      "contact": "Contact"
+    },
+    "servicesEyebrow": "Diagnostic services",
+    "servicesTitle": "Imaging services designed around clarity and comfort.",
+    "servicesDescription": "A professional public front door for patients and referring doctors, connected to the secure RCMS workflow behind the scenes.",
+    "accessEyebrow": "Secure access",
+    "accessTitle": "Separate portals for patients, doctors, and staff.",
+    "accessDescription": "Each audience gets a focused entry point while reports, requests, and communication stay protected by role-based access.",
+    "contactEyebrow": "Contact and visits",
+    "contactDescription": "For appointments, preparation questions, report access, or referring doctor coordination, contact the center using the details below.",
+    "phone": "Phone",
+    "email": "Email",
+    "address": "Address",
+    "hours": "Working hours",
+    "visitTitle": "Before your visit",
+    "visitOne": "Bring your previous imaging and laboratory results if available.",
+    "visitTwo": "Arrive early for registration, payment, and safety screening.",
+    "visitThree": "Use the patient portal for finalized reports and approved documents."
+  },
+  "footer": {
+    "description": "A connected operating system for modern radiology centers.",
+    "product": "Platform",
+    "access": "Secure access",
+    "privacy": "Privacy-led",
+    "copyright": "© {{year}} RCMS Medical Systems. All rights reserved.",
+    "backToTop": "Back to top"
+  },
+  "managementLanding": {
+    "metaTitle": "Radiology management system",
+    "metaDescription": "A professional command center for radiology reception, PACS worklists, reporting, billing, settings, analytics, and governance.",
+    "homeLabel": "RCMS home",
+    "brandLine": "Radiology management system",
+    "signIn": "Staff sign in",
+    "nav": {
+      "overview": "Overview",
+      "modules": "Command center",
+      "command-center": "Command center",
+      "workflow": "Workflows",
+      "workflows": "Workflows",
+      "governance": "Governance"
+    },
+    "eyebrow": "Management system only",
+    "heroTitleLead": "Operate the entire radiology center",
+    "heroTitleAccent": "from one command system.",
+    "heroDescription": "RCMS brings reception, scheduling, PACS worklists, reporting, billing, settings, printing, analytics, and governance into a focused internal workspace for radiology teams.",
+    "openWorkspace": "Open staff workspace",
+    "viewModules": "Explore modules",
+    "trust": {
+      "roleAccess": "Role-based staff access",
+      "bilingual": "Arabic and English UI",
+      "printReady": "Print-ready reports"
+    },
+    "quickAccess": {
+      "dashboard": {
+        "title": "Command dashboard",
+        "description": "Open the live center overview after signing in."
+      },
+      "worklist": {
+        "title": "PACS worklist",
+        "description": "Continue imaging queues, modality status, and pending studies."
+      },
+      "reports": {
+        "title": "Reports queue",
+        "description": "Review reporting, finalization, printing, and exports."
+      },
+      "settings": {
+        "title": "System settings",
+        "description": "Manage users, roles, printing, reports, and center preferences."
+      }
+    },
+    "modulesEyebrow": "Operational command center",
+    "modulesTitle": "Everything the management team needs is visible, connected, and actionable.",
+    "modulesDescription": "The landing page now speaks to administrators and staff only: high-throughput operations, clinical handoffs, financial control, and center-wide configuration.",
+    "modules": {
+      "reception": {
+        "title": "Reception and scheduling",
+        "description": "Register visits, manage slots, track arrivals, and keep front desk queues moving without switching systems.",
+        "signal": "Bookings, check-in, receipts"
+      },
+      "pacs": {
+        "title": "PACS worklists",
+        "description": "Give modality teams a live view of assigned studies, status, priorities, and image availability.",
+        "signal": "Modality queues and study status"
+      },
+      "reporting": {
+        "title": "Reporting workspace",
+        "description": "Centralize dictation, templates, review, reconciliation, printing, and report delivery.",
+        "signal": "Draft, review, final, export"
+      },
+      "billing": {
+        "title": "Billing and revenue",
+        "description": "Connect orders, invoices, receipts, insurance, and payment follow-up to the clinical workflow.",
+        "signal": "Cash, insurance, balances"
+      },
+      "analytics": {
+        "title": "Executive analytics",
+        "description": "Monitor throughput, turnaround time, modality utilization, radiologist workload, and revenue trends.",
+        "signal": "KPIs and operational insight"
+      },
+      "settings": {
+        "title": "Center configuration",
+        "description": "Manage branches, departments, roles, report formats, printing defaults, and system-wide preferences.",
+        "signal": "Full app customization"
+      }
+    },
+    "metrics": {
+      "studiesToday": "Studies today",
+      "reportsPending": "Reports pending",
+      "activeModalities": "Active modalities",
+      "slaCompliance": "SLA compliance"
+    },
+    "preview": {
+      "liveOperations": "Live operations",
+      "commandCenter": "Command center",
+      "today": "Today at a glance",
+      "activeQueue": "Active queue"
+    },
+    "queue": {
+      "mrBrain": {
+        "patient": "MR Brain w/ Contrast",
+        "status": "Reporting"
+      },
+      "ctAbdomen": {
+        "patient": "CT Abdomen",
+        "status": "In room"
+      },
+      "usPelvis": {
+        "patient": "US Pelvis",
+        "status": "Waiting"
+      },
+      "xrChest": {
+        "patient": "XR Chest",
+        "status": "Final review"
+      }
+    },
+    "workflowEyebrow": "Workflow intelligence",
+    "workflowTitle": "From referral intake to final delivery without losing context.",
+    "workflowDescription": "A modern management landing page should show the real operating model: reception, modality teams, radiologists, billing, and leadership working from the same source of truth.",
+    "workflowSteps": {
+      "intake": {
+        "title": "Referral intake",
+        "text": "Capture patient, doctor, branch, modality, payer, and required documents."
+      },
+      "imaging": {
+        "title": "Imaging workflow",
+        "text": "Track scheduled, arrived, in-room, completed, uploaded, and exception states."
+      },
+      "reporting": {
+        "title": "Clinical reporting",
+        "text": "Route cases to radiologists with templates, prior studies, and reconciliation context."
+      },
+      "delivery": {
+        "title": "Delivery and audit",
+        "text": "Finalize, print, export, share, and audit every action from one secure record."
+      }
+    },
+    "governanceEyebrow": "Governance and customization",
+    "governanceTitle": "Professional control for the full app, reports, printing, and users.",
+    "governanceDescription": "Position the management system as the trusted administrative layer for the center, with clean customization and secure operational defaults.",
+    "governanceItems": {
+      "access": {
+        "title": "Role-based access",
+        "text": "Separate permissions for reception, technicians, radiologists, billing, managers, and administrators."
+      },
+      "audit": {
+        "title": "Traceable activity",
+        "text": "Audit operational decisions, report changes, login activity, and sensitive data access."
+      },
+      "data": {
+        "title": "Connected data",
+        "text": "Keep patients, studies, payments, reports, documents, and center settings aligned across departments."
+      },
+      "control": {
+        "title": "Operational control",
+        "text": "Standardize center policies, printing, report branding, queue logic, and clinical handoffs."
+      }
+    },
+    "backToTop": "Back to overview",
+    "footer": "RCMS management system for internal radiology operations."
+  }
+}

@@ -1,0 +1,245 @@
+{
+  "title": "منصة الجدولة",
+  "subtitle": "أدوات التقويم وتوفر الغرف وحِمل الطاقم وقائمة الانتظار وعدم الحضور وإعادة الجدولة.",
+  "overview": {
+    "eyebrow": "عمليات التصوير الطبي",
+    "metricsLabel": "نظرة عامة على أداء الجدول",
+    "booked": "الفحوصات المحجوزة",
+    "bookedDetail": "المواعيد ضمن نطاق الجدول المحدد",
+    "confirmed": "جاهزة للتنفيذ",
+    "confirmedDetail": "مجدولة أو مؤكدة؛ اكتمل منها {{count}}",
+    "utilization": "استخدام الغرف",
+    "utilizationDetail": "وقت التصوير المحجوز عبر الغرف النشطة",
+    "urgent": "فحوصات ذات أولوية",
+    "urgentDetail": "الحالات العاجلة والطارئة التي تتطلب المتابعة",
+    "noShow": "عدم الحضور",
+    "noShowDetail": "المواعيد الفائتة ضمن نطاق الجدول"
+  },
+  "navigation": {
+    "previous": "الفترة السابقة",
+    "today": "اليوم",
+    "next": "الفترة التالية",
+    "date": "تاريخ الجدول"
+  },
+  "filters": {
+    "title": "تصفية جدول العمل",
+    "description": "ابحث عن المرضى أو الغرف أو الفحوصات أو الطاقم وركّز الجدول النشط.",
+    "searchPlaceholder": "ابحث بالرقم الطبي أو المريض أو الغرفة أو الفحص أو الموظف...",
+    "allStatuses": "كل الحالات",
+    "allPriorities": "كل الأولويات",
+    "results": "{{shown}} من {{total}} موعد",
+    "reset": "إعادة ضبط"
+  },
+  "mobile": {
+    "remind": "تذكير",
+    "move": "نقل"
+  },
+  "actions": {
+    "newAppointment": "حجز موعد",
+    "exportSchedule": "تصدير الجدول"
+  },
+  "export": {
+    "dateTime": "التاريخ والوقت",
+    "mrn": "الرقم الطبي",
+    "patient": "المريض",
+    "room": "الغرفة / الجهاز",
+    "exam": "الفحص",
+    "radiologist": "أخصائي الأشعة",
+    "technician": "الفني",
+    "nurse": "التمريض",
+    "status": "الحالة",
+    "priority": "الأولوية",
+    "source": "المصدر",
+    "preparation": "التحضير"
+  },
+  "view": {
+    "day": "يوم",
+    "week": "أسبوع",
+    "month": "شهر"
+  },
+  "layout": {
+    "list": "قائمة",
+    "calendar": "تقويم"
+  },
+  "density": {
+    "comfortable": "مريح",
+    "compact": "مكثف"
+  },
+  "allRooms": "كل الغرف/الأجهزة",
+  "calendar": {
+    "title": "التقويم",
+    "range": "{{start}} إلى {{end}}",
+    "count": "{{count}} موعد",
+    "loading": "جارٍ تحميل الجدول...",
+    "empty": "لا توجد مواعيد في هذا النطاق.",
+    "pagination": {
+      "range": "عرض {{start}}–{{end}} من {{total}} موعد",
+      "rowsPerPage": "صفوف الصفحة",
+      "page": "{{page}} / {{pages}}",
+      "previous": "صفحة المواعيد السابقة",
+      "next": "صفحة المواعيد التالية"
+    }
+  },
+  "table": {
+    "time": "الوقت",
+    "patient": "المريض",
+    "roomExam": "الغرفة / الفحص",
+    "staff": "الطاقم",
+    "status": "الحالة",
+    "actions": "إجراءات",
+    "walkIn": "حضور مباشر",
+    "noExamType": "لا يوجد نوع فحص",
+    "rad": "أخصائي الأشعة",
+    "tech": "الفني",
+    "nurse": "الممرض",
+    "unassigned": "غير معيّن",
+    "prep": "التحضير",
+    "notRequired": "غير مطلوب",
+    "instructions": "التعليمات",
+    "sendReminder": "إرسال تذكير",
+    "reschedule": "إعادة جدولة",
+    "noShow": "عدم حضور",
+    "selectedCount": "تم اختيار {{count}}",
+    "clearSelection": "إلغاء التحديد",
+    "selectAll": "تحديد الكل",
+    "selectRow": "تحديد الصف",
+    "priority": "الأولوية",
+    "followUp": "متابعة",
+    "priorStudy": "الفحص السابق"
+  },
+  "availability": {
+    "title": "التوفر",
+    "workingHours": "ساعات العمل {{start}}:00 إلى {{end}}:00",
+    "room": "غرفة",
+    "na": "غير متاح",
+    "bookedSlots": "{{count}} فترة محجوزة",
+    "staffOverlay": "توزيع الطاقم",
+    "slots": "{{count}} فترة",
+    "noMachines": "لم يتم إعداد توافر الغرف لهذه الفترة.",
+    "resourceLoad": "حِمل الموارد",
+    "low": "منخفض",
+    "med": "متوسط",
+    "high": "مرتفع",
+    "active": "نشط",
+    "offline": "غير متصل",
+    "toggle": "تبديل لوحة التوفر"
+  },
+  "waitlist": {
+    "title": "قائمة الانتظار",
+    "formTitle": "إضافة إلى قائمة الانتظار",
+    "activeRequests": "{{count}} طلبات نشطة",
+    "selectPatient": "اختر مريضًا",
+    "searchPatientPlaceholder": "ابحث عن مريض بالرقم الطبي أو الاسم...",
+    "noPatientsFound": "لم يتم العثور على مرضى مطابقين",
+    "unnamedPatient": "مريض بدون اسم",
+    "preferredDate": "التاريخ المفضل",
+    "preferredStartTime": "وقت البدء المفضل",
+    "preferredEndTime": "وقت الانتهاء المفضل",
+    "anyRoom": "أي غرفة/جهاز",
+    "anyExamType": "أي نوع فحص",
+    "priority": {
+      "Routine": "روتيني",
+      "Urgent": "عاجل",
+      "Emergency": "طارئ"
+    },
+    "source": {
+      "Walk-in": "حضور مباشر",
+      "Phone": "هاتف",
+      "Website": "موقع إلكتروني",
+      "Patient Portal": "بوابة المريض",
+      "Doctor Portal": "بوابة الطبيب",
+      "Call Center": "مركز الاتصال"
+    },
+    "notes": "ملاحظات",
+    "adding": "جارٍ الإضافة...",
+    "add": "إضافة إلى قائمة الانتظار",
+    "empty": "لا توجد إدخالات نشطة في قائمة الانتظار.",
+    "anyRoomShort": "أي غرفة",
+    "anyExam": "أي فحص",
+    "anyDate": "أي تاريخ",
+    "contacted": "تم التواصل",
+    "cancel": "إلغاء",
+    "bookNow": "حجز",
+    "collapseForm": "طي النموذج"
+  },
+  "reschedule": {
+    "title": "إعادة جدولة الموعد",
+    "currentTime": "الوقت الحالي",
+    "newDate": "التاريخ الجديد",
+    "newTime": "الوقت الجديد",
+    "reason": "السبب",
+    "cancel": "إلغاء",
+    "saving": "جارٍ الحفظ...",
+    "confirm": "إعادة جدولة",
+    "quickPickDay": "انتقل إلى",
+    "today": "اليوم",
+    "tomorrow": "الغد",
+    "in2days": "بعد يومين",
+    "nextWeek": "بعد أسبوع"
+  },
+  "status": {
+    "Confirmed": "مؤكد",
+    "Completed": "مكتمل",
+    "Cancelled": "ملغى",
+    "No-Show": "لم يحضر",
+    "Scheduled": "مجدول",
+    "Waiting": "بانتظار التواصل",
+    "Contacted": "تم التواصل"
+  },
+  "priority": {
+    "Routine": "روتيني",
+    "Urgent": "عاجل",
+    "Emergency": "طارئ"
+  },
+  "preparation": {
+    "Confirmed": "مؤكد",
+    "Pending": "قيد الانتظار",
+    "Not Required": "غير مطلوب",
+    "Completed": "مكتمل"
+  },
+  "machineStatus": {
+    "Operational": "يعمل",
+    "Active": "نشط",
+    "Maintenance": "صيانة",
+    "Offline": "غير متصل"
+  },
+  "staffRole": {
+    "Radiologist": "أخصائي أشعة",
+    "Technician": "فني",
+    "Nurse": "تمريض"
+  },
+  "na": "غير متاح",
+  "prompt": {
+    "email": "البريد الإلكتروني للمريض",
+    "noShowReason": "سبب عدم الحضور",
+    "reminderTitle": "إرسال تذكير بالموعد",
+    "reminderDescription": "تحقق من المستلم قبل إرسال تفاصيل الموعد.",
+    "emailPlaceholder": "patient@example.com",
+    "sendReminder": "إرسال التذكير",
+    "emailRequired": "أدخل البريد الإلكتروني للمستلم.",
+    "noShowTitle": "تسجيل عدم حضور الموعد",
+    "noShowDescription": "سجّل سبب عدم حضور المريض للمتابعة التشغيلية.",
+    "reasonPlaceholder": "أدخل السبب أو نتيجة التواصل...",
+    "markNoShow": "تسجيل عدم الحضور",
+    "reasonRequired": "أدخل سبب عدم الحضور.",
+    "cancel": "إلغاء",
+    "reminderTitleBulk": "تذكير {{count}} مريض"
+  },
+  "toast": {
+    "reminderSent": "تم إرسال التذكير.",
+    "reminderFailed": "فشل إرسال التذكير.",
+    "noShowMarked": "تم تعليم الموعد كعدم حضور.",
+    "noShowFailed": "تعذّر تعليم عدم الحضور.",
+    "rescheduled": "تمت إعادة جدولة الموعد.",
+    "rescheduleFailed": "تعذّرت إعادة جدولة الموعد.",
+    "selectPatient": "اختر مريضًا لقائمة الانتظار.",
+    "pastPreferredDate": "لا يمكن أن يكون التاريخ المفضل في الماضي.",
+    "incompletePreferredWindow": "أدخل وقتي البدء والانتهاء المفضلين.",
+    "invalidPreferredWindow": "يجب أن يكون وقت الانتهاء بعد وقت البدء.",
+    "waitlistAdded": "تمت إضافة إدخال قائمة الانتظار.",
+    "waitlistFailed": "تعذّرت إضافة إدخال قائمة الانتظار.",
+    "waitlistMarked": "تم تعليم إدخال قائمة الانتظار كـ {{status}}.",
+    "waitlistUpdateFailed": "تعذّر تحديث إدخال قائمة الانتظار.",
+    "reminderSentBulk": "تم إرسال {{count}} تذكير."
+  }
+}

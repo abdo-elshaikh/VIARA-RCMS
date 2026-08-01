@@ -1,0 +1,50 @@
+{
+  "groups": {
+    "clinical": "Clinical",
+    "management": "Management",
+    "reports": "Reports & Analytics",
+    "system": "System"
+  },
+  "items": {
+    "approvals": "Approval Inbox",
+    "dashboard": "Dashboard",
+    "reception": "Reception",
+    "communications": "Inbox & Chat",
+    "notifications": "Notifications",
+    "appointments": "Appointments",
+    "referringDoctors": "Referring Doctors",
+    "worklist": "Worklist",
+    "modality": "Modality",
+    "nurse": "Nurse Station",
+    "pacsReconciliation": "Study Reconciliation",
+    "caseReports": "Case Reports",
+    "patients": "Patients",
+    "analytics": "Analytics",
+    "financials": "Financials",
+    "payroll": "Payroll",
+    "insurance": "Insurance",
+    "inventory": "Inventory",
+    "equipment": "Equipment",
+    "hr": "HR & Staff",
+    "marketing": "Marketing & CRM",
+    "users": "System Users",
+    "auditLogs": "Audit Logs",
+    "roles": "Role Management",
+    "facilitySettings": "Facility Settings",
+    "integrations": "Integrations",
+    "backups": "Backups",
+    "settings": "Settings",
+    "help": "Help",
+    "referrals": "Referrals"
+  },
+  "badge": {
+    "new": "New"
+  },
+  "aria": {
+    "mainNavigation": "Main navigation"
+  },
+  "actions": {
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar"
+  }
+}

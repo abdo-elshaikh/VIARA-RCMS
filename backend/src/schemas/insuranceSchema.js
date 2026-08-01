@@ -1,0 +1,146 @@
+const { z } = require('zod');
+
+const emptyToUndefined = (value) => value === '' ? undefined : value;
+const optionalDate = z.preprocess(emptyToUndefined, z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional());
+const optionalEmail = z.preprocess(emptyToUndefined, z.string().email().max(150).optional());
+const optionalUrl = z.preprocess(emptyToUndefined, z.string().url().optional());
+
+const providerSchema = z.object({
+    name: z.string().trim().min(1).max(100),
+    payerCode: z.string().trim().max(50).optional(),
+    phone: z.string().trim().max(50).optional(),
+    email: optionalEmail,
+    address: z.string().trim().max(1000).optional(),
+    notes: z.string().trim().max(1000).optional(),
+    isActive: z.boolean().optional()
+});
+
+const contractSchema = z.object({
+    providerId: z.string().uuid().optional(),
+    entityName: z.string().trim().min(1).max(100),
+    entityType: z.enum(['Insurance', 'Corporate', 'Referral', 'Other']).default('Insurance'),
+    contractNumber: z.string().trim().max(100).optional(),
+    commissionPercentage: z.coerce.number().min(0).max(100).optional(),
+    startDate: optionalDate,
+    endDate: optionalDate,
+    coverageNotes: z.string().trim().max(1000).optional(),
+    isActive: z.boolean().optional()
+}).superRefine((data, context) => {
+    if (data.endDate && data.startDate && data.endDate < data.startDate) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['endDate'], message: 'Contract end date must be on or after start date' });
+    }
+    if (data.entityType === 'Insurance' && !data.providerId) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['providerId'], message: 'Insurance contracts require a provider' });
+    }
+});
+
+const policySchema = z.object({
+    patientId: z.string().uuid(),
+    providerId: z.string().uuid(),
+    policyNumber: z.string().trim().min(1).max(100),
+    memberNumber: z.string().trim().max(100).optional(),
+    planName: z.string().trim().max(150).optional(),
+    holderName: z.string().trim().max(150).optional(),
+    relationshipToHolder: z.string().trim().max(50).optional(),
+    validFrom: optionalDate,
+    validTo: optionalDate,
+    isPrimary: z.boolean().optional(),
+    approvalDocumentUrl: optionalUrl,
+    notes: z.string().trim().max(1000).optional()
+}).superRefine((data, context) => {
+    if (data.validTo && data.validFrom && data.validTo < data.validFrom) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['validTo'], message: 'Policy valid-to date must be on or after valid-from date' });
+    }
+});
+
+const coverageRuleSchema = z.object({
+    providerId: z.string().uuid(),
+    contractId: z.string().uuid().optional(),
+    examTypeId: z.string().uuid().optional(),
+    modalityType: z.string().trim().max(30).optional(),
+    coveragePercentage: z.coerce.number().min(0).max(100).optional(),
+    coverageCeiling: z.coerce.number().min(0).optional(),
+    copayAmount: z.coerce.number().min(0).optional(),
+    preauthorizationRequired: z.boolean().optional(),
+    effectiveFrom: optionalDate,
+    effectiveTo: optionalDate,
+    isActive: z.boolean().optional(),
+    notes: z.string().trim().max(1000).optional()
+}).superRefine((data, context) => {
+    if (data.effectiveTo && data.effectiveFrom && data.effectiveTo < data.effectiveFrom) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['effectiveTo'], message: 'Rule effective-to date must be on or after effective-from date' });
+    }
+    if (!data.examTypeId && !data.modalityType) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['examTypeId'], message: 'Coverage rules require an exam type or modality' });
+    }
+});
+
+const approvalSchema = z.object({
+    patientId: z.string().uuid(),
+    policyId: z.string().uuid().optional(),
+    providerId: z.string().uuid().optional(),
+    appointmentId: z.string().uuid().optional(),
+    examId: z.string().uuid().optional(),
+    examTypeId: z.string().uuid().optional(),
+    status: z.enum(['Not Required', 'Pending', 'Approved', 'Rejected', 'Expired']).optional(),
+    approvalNumber: z.string().trim().max(100).optional(),
+    requestedAmount: z.coerce.number().min(0).optional(),
+    approvedAmount: z.coerce.number().min(0).optional(),
+    documentUrl: optionalUrl,
+    rejectionReason: z.string().trim().max(1000).optional(),
+    expiresAt: optionalDate
+}).superRefine((data, context) => {
+    if (data.status === 'Approved') {
+        if (!data.approvalNumber?.trim()) {
+            context.addIssue({ code: z.ZodIssueCode.custom, path: ['approvalNumber'], message: 'Approved authorizations require an approval number' });
+        }
+        if (data.approvedAmount !== undefined && data.approvedAmount > 0 && data.requestedAmount === undefined) {
+            context.addIssue({ code: z.ZodIssueCode.custom, path: ['requestedAmount'], message: 'Requested amount is required when an approved amount is entered' });
+        }
+        if (data.approvedAmount !== undefined && data.requestedAmount !== undefined && data.approvedAmount > data.requestedAmount) {
+            context.addIssue({ code: z.ZodIssueCode.custom, path: ['approvedAmount'], message: 'Approved amount cannot exceed requested amount' });
+        }
+    }
+    if (data.status === 'Rejected' && !data.rejectionReason?.trim()) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['rejectionReason'], message: 'Rejected authorizations require a rejection reason' });
+    }
+});
+
+const updateApprovalStatusSchema = z.object({
+    status: z.enum(['Approved', 'Rejected']),
+    approvalNumber: z.string().trim().min(2).max(100).optional(),
+    approvedAmount: z.coerce.number().min(0).optional(),
+    rejectionReason: z.string().trim().min(3).max(1000).optional()
+}).superRefine((data, context) => {
+    if (data.status === 'Approved' && !data.approvalNumber) {
+        context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['approvalNumber'],
+            message: 'Approved authorizations require an approval number'
+        });
+    }
+    if (data.status === 'Rejected' && !data.rejectionReason) {
+        context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['rejectionReason'],
+            message: 'Rejected authorizations require a rejection reason'
+        });
+    }
+});
+
+const coverageQuerySchema = z.object({
+    providerId: z.string().uuid(),
+    examTypeId: z.string().uuid().optional(),
+    modalityType: z.string().optional(),
+    amount: z.string().regex(/^\d+(\.\d+)?$/).transform(Number)
+});
+
+module.exports = {
+    providerSchema,
+    contractSchema,
+    policySchema,
+    coverageRuleSchema,
+    approvalSchema,
+    updateApprovalStatusSchema,
+    coverageQuerySchema
+};

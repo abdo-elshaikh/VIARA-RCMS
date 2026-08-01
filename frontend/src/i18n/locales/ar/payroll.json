@@ -1,0 +1,146 @@
+{
+  "header": {
+    "eyebrow": "حوكمة المرتبات",
+    "title": "المرتبات والخصومات والجزاءات",
+    "description": "تشغيل حسابات المرتبات من التعويضات المعتمدة والحضور والخصومات والجزاءات مع مراجعة واعتماد ودفع وإغلاق.",
+    "controlled": "مسار عمل مضبوط",
+    "auditable": "عمليات قابلة للتدقيق"
+  },
+  "stats": {
+    "net": "صافي المرتبات",
+    "netDetail": "الفترات المعتمدة والمفتوحة",
+    "gross": "إجمالي المستحقات",
+    "grossDetail": "قبل الخصومات",
+    "controls": "الخصومات والجزاءات",
+    "controlsDetail": "{{count}} جزاءات قيد الانتظار",
+    "openPeriods": "الفترات المفتوحة",
+    "openDetail": "{{count}} إجمالي الفترات"
+  },
+  "periods": {
+    "createTitle": "إنشاء فترة مرتبات",
+    "createHelp": "استخدم فترات غير متداخلة حتى تبقى الحسابات واضحة وقابلة للتراجع قبل الاعتماد.",
+    "title": "فترات المرتبات",
+    "help": "اختر فترة للحساب أو المراجعة أو الاعتماد أو الدفع أو الإغلاق.",
+    "employees": "موظفين",
+    "empty": "لا توجد فترات مرتبات بعد"
+  },
+  "workflow": {
+    "title": "تحكم مسار العمل",
+    "noPeriod": "أنشئ أو اختر فترة"
+  },
+  "run": {
+    "title": "معاينة مرتبات الموظفين",
+    "empty": "احسب الفترة المختارة لعرض بنود مرتبات الموظفين."
+  },
+  "setup": {
+    "compensation": "التعويضات",
+    "deductions": "الخصومات",
+    "penalties": "الجزاءات",
+    "rules": "القواعد",
+    "latestProfiles": "{{count}} ملفات تعويض محملة",
+    "latestDeductions": "{{count}} خصومات محملة",
+    "latestPenalties": "{{count}} جزاءات محملة",
+    "activeRules": "{{count}} قواعد نشطة"
+  },
+  "inputs": {
+    "profilesTitle": "آخر ملفات التعويض المحملة",
+    "profilesSubtitle": "أحدث ملفات التعويض المتاحة لحساب المرتبات.",
+    "deductionsTitle": "آخر الخصومات المحملة",
+    "deductionsSubtitle": "أحدث الخصومات مع حالة الاعتماد والرصيد.",
+    "penaltiesTitle": "آخر الجزاءات المحملة",
+    "penaltiesSubtitle": "أحدث الجزاءات التي يمكن إدراجها في دورات المرتبات المعتمدة.",
+    "rulesTitle": "القواعد النشطة",
+    "rulesSubtitle": "القواعد المفعلة حاليا لحساب المرتبات.",
+    "emptyProfiles": "لا توجد ملفات تعويض محملة.",
+    "emptyDeductions": "لا توجد خصومات محملة.",
+    "emptyPenalties": "لا توجد جزاءات محملة.",
+    "emptyRules": "لا توجد قواعد مرتبات نشطة.",
+    "active": "نشط",
+    "inactive": "غير نشط",
+    "remaining": "المتبقي",
+    "manual": "يدوي",
+    "approvalRequired": "????? ?????????",
+    "auto": "تلقائي"
+  },
+  "summary": {
+    "gross": "الإجمالي",
+    "deductions": "الخصومات",
+    "penalties": "الجزاءات",
+    "net": "الصافي"
+  },
+  "fields": {
+    "periodName": "اسم الفترة",
+    "startDate": "تاريخ البداية",
+    "endDate": "تاريخ النهاية",
+    "currency": "العملة",
+    "notes": "ملاحظات",
+    "employee": "الموظف",
+    "salaryType": "نوع الراتب",
+    "baseSalary": "الراتب الأساسي",
+    "hourlyRate": "أجر الساعة",
+    "effectiveFrom": "ساري من",
+    "name": "الاسم",
+    "amount": "المبلغ",
+    "percentage": "النسبة",
+    "penaltyType": "نوع الجزاء",
+    "reason": "السبب",
+    "ruleType": "نوع القاعدة",
+    "method": "طريقة الحساب",
+    "value": "القيمة",
+    "paymentDate": "تاريخ الدفع"
+  },
+  "placeholders": {
+    "periodName": "مرتبات يوليو 2026",
+    "paymentReference": "مرجع الدفع",
+    "employee": "اختر الموظف"
+  },
+  "actions": {
+    "cancel": "إلغاء",
+    "createPeriod": "إنشاء الفترة",
+    "calculate": "حساب",
+    "review": "مراجعة",
+    "approve": "اعتماد",
+    "markPaid": "تسجيل الدفع",
+    "lock": "إغلاق",
+    "save": "حفظ"
+  },
+  "dialog": {
+    "confirmTitle": "تأكيد إجراء الرواتب",
+    "calculateMessage": "حساب الرواتب لـ {{title}}؟ سيتم استبدال البنود المحسوبة سابقا لهذه الفترة.",
+    "ReviewedMessage": "تسجيل {{title}} كمراجعة؟ سيتم إرسال الدورة إلى اعتماد الرواتب.",
+    "PaidMessage": "تسجيل دفع {{title}} بمبلغ {{amount}} بتاريخ {{date}} مع {{reference}}؟",
+    "LockedMessage": "إغلاق {{title}}؟ لا يمكن تغيير دورات الرواتب المغلقة من هذا المسار.",
+    "approveTitle": "اعتماد دورة الرواتب؟",
+    "approveMessage": "سجل ملاحظات الاعتماد قبل اعتماد {{title}}.",
+    "notesPlaceholder": "لخص الفحوصات المكتملة قبل الاعتماد",
+    "required": "أدخل ملاحظات الاعتماد.",
+    "tooShort": "استخدم 3 أحرف على الأقل.",
+    "noReference": "بدون مرجع"
+  },
+  "fallback": {
+    "period": "هذه الفترة"
+  },
+  "validation": {
+    "permissionDenied": "ليست لديك صلاحية لهذا الإجراء في الرواتب.",
+    "periodDates": "يجب أن يكون تاريخ نهاية فترة الرواتب بعد تاريخ البداية أو مساويا له.",
+    "monthlySalary": "يتطلب التعويض الشهري راتبا أساسيا أكبر من صفر.",
+    "hourlyRate": "يتطلب التعويض بالساعة أجرا بالساعة أكبر من صفر.",
+    "deductionValue": "يتطلب الخصم مبلغا أو نسبة."
+  },
+  "states": {
+    "loading": "جاري التحميل..."
+  },
+  "toast": {
+    "periodCreated": "تم إنشاء فترة المرتبات",
+    "periodCreateFailed": "تعذر إنشاء فترة المرتبات",
+    "calculated": "تم حساب المرتبات",
+    "calculateFailed": "تعذر حساب المرتبات",
+    "statusUpdated": "تم تحديث حالة المرتبات",
+    "statusFailed": "تعذر تحديث حالة المرتبات",
+    "compensationSaved": "تم حفظ ملف التعويض",
+    "deductionSaved": "تم حفظ الخصم",
+    "penaltySaved": "تم حفظ الجزاء",
+    "ruleSaved": "تم حفظ القاعدة",
+    "saveFailed": "تعذر حفظ إعدادات المرتبات"
+  }
+}

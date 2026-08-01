@@ -1,0 +1,247 @@
+{
+  "title": "المرضى",
+  "subtitle": "ابحث عن سجلات المرضى الآمنة وحافظ عليها وراجعها.",
+  "bulkImport": "استيراد جماعي",
+  "addPatient": "إضافة مريض",
+  "searchPlaceholder": "ابحث بالرقم الطبي أو الاسم أو الهاتف أو البريد أو العنوان...",
+  "export": "تصدير",
+  "selectedCount": "{{count}} محدد",
+  "deleteSelected": "حذف المحدد",
+  "mergeIntoOpen": "دمج في المريض المفتوح",
+  "actions": "إجراءات",
+  "loadingRecords": "جارٍ تحميل السجلات الآمنة...",
+  "noRecordsFilters": "لا توجد سجلات تطابق البحث أو عوامل التصفية الحالية.",
+  "noRecordsMobile": "لا توجد سجلات تطابق عوامل التصفية الحالية.",
+  "selectPatientToView": "اختر مريضًا لعرض التفاصيل.",
+  "overview": {
+    "eyebrow": "ذكاء بيانات المرضى",
+    "metricsLabel": "نظرة عامة على سجل المرضى",
+    "total": "إجمالي السجلات",
+    "totalDetail": "هويات المرضى الموحّدة في السجل",
+    "active": "المرضى النشطون",
+    "activeDetail": "السجلات المتاحة حاليًا لتقديم الرعاية",
+    "recent": "تسجيلات جديدة",
+    "recentDetail": "المرضى المضافون خلال آخر 14 يومًا",
+    "completeness": "جودة الملفات",
+    "completenessDetail": "متوسط اكتمال حقول الهوية الأساسية",
+    "attention": "تحتاج إلى متابعة",
+    "attentionDetail": "سجلات مقيّدة أو بلا وسيلة تواصل",
+    "results": "{{shown}} من {{total}} سجل"
+  },
+  "records": {
+    "title": "سجل المرضى",
+    "description": "افتح السجل للاطلاع على السياق السريري والتواصل والخصوصية والتدقيق.",
+    "pagination": {
+      "range": "عرض {{start}}–{{end}} من {{total}} سجل",
+      "rowsPerPage": "صفوف الصفحة",
+      "page": "{{page}} / {{pages}}",
+      "previous": "صفحة المرضى السابقة",
+      "next": "صفحة المرضى التالية"
+    }
+  },
+  "filters": {
+    "title": "البحث وتقسيم السجلات",
+    "description": "ابحث في السجل بالكامل أو صفِّه حسب جودة البيانات والحالة.",
+    "reset": "إعادة ضبط",
+    "all": "كل السجلات",
+    "recent": "الأحدث",
+    "missingContact": "بدون وسيلة تواصل",
+    "missingEmail": "بدون بريد إلكتروني"
+  },
+  "genderFilter": {
+    "all": "كل الأجناس"
+  },
+  "statusFilter": {
+    "all": "كل الحالات"
+  },
+  "gender": {
+    "Male": "ذكر",
+    "Female": "أنثى",
+    "Other": "آخر"
+  },
+  "status": {
+    "Active": "نشط",
+    "Inactive": "غير نشط",
+    "Deceased": "متوفى",
+    "Merged": "مدمج",
+    "Restricted": "مقيّد"
+  },
+  "pregnancy": {
+    "Unknown": "غير معروف",
+    "Not Pregnant": "غير حامل",
+    "Pregnant": "حامل",
+    "Possibly Pregnant": "ربما حامل",
+    "Not Applicable": "لا ينطبق"
+  },
+  "commPreference": {
+    "Phone": "هاتف",
+    "Email": "بريد إلكتروني",
+    "SMS": "رسائل نصية",
+    "WhatsApp": "واتساب",
+    "Marketing": "تسويق"
+  },
+  "columns": {
+    "mrn": "الرقم الطبي",
+    "name": "المريض",
+    "phone": "الهاتف",
+    "email": "البريد الإلكتروني",
+    "date_of_birth": "تاريخ الميلاد",
+    "gender": "الجنس",
+    "patient_status": "الحالة",
+    "created_at": "تاريخ التسجيل"
+  },
+  "rowActions": {
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "view": "عرض التفاصيل",
+    "edit": "تعديل",
+    "delete": "حذف"
+  },
+  "card": {
+    "view": "عرض",
+    "edit": "تعديل",
+    "delete": "حذف",
+    "unnamed": "مريض بدون اسم",
+    "noPhone": "لا يوجد هاتف",
+    "noEmail": "لا يوجد بريد",
+    "noDob": "لا يوجد تاريخ ميلاد"
+  },
+  "fallback": {
+    "na": "غير متوفر",
+    "unnamed": "مريض بدون اسم",
+    "noAddress": "لا يوجد عنوان مسجل",
+    "noneRecorded": "لا يوجد مسجل",
+    "unknown": "غير معروف",
+    "noActivity": "لا يوجد نشاط مسجل بعد.",
+    "noConsent": "لا توجد موافقة مسجلة"
+  },
+  "detail": {
+    "edit": "تعديل",
+    "visits": "الزيارات",
+    "spent": "المصروف",
+    "tabs": {
+      "overview": "نظرة عامة",
+      "insurance": "التأمين",
+      "demographics": "البيانات الديموغرافية",
+      "contacts": "جهات الاتصال",
+      "medical": "طبي",
+      "visits": "الزيارات",
+      "billing": "الفوترة",
+      "crm": "إدارة العلاقات",
+      "privacy": "الخصوصية",
+      "communication": "التواصل",
+      "documents": "المستندات",
+      "audit": "التدقيق",
+      "merge": "الدمج"
+    },
+    "dob": "تاريخ الميلاد",
+    "gender": "الجنس",
+    "status": "الحالة",
+    "nationalId": "الرقم القومي",
+    "passport": "جواز السفر",
+    "registered": "تاريخ التسجيل",
+    "phone": "الهاتف",
+    "email": "البريد الإلكتروني",
+    "address": "العنوان",
+    "emergencyContact": "جهة اتصال للطوارئ",
+    "name": "الاسم",
+    "relationship": "صلة القرابة",
+    "allergies": "الحساسية",
+    "chronicDiseases": "الأمراض المزمنة",
+    "priorSurgeries": "العمليات السابقة",
+    "pregnancy": "الحمل",
+    "implants": "الزراعات/الأجهزة",
+    "renalNotes": "ملاحظات الكلى",
+    "visitHistory": "سجل الزيارات",
+    "appointment": "موعد",
+    "totalSpent": "إجمالي المصروف",
+    "visitCount": "عدد الزيارات",
+    "billingPlanned": "الفواتير التفصيلية وسير عمل أمين الصندوق مخطط لها في مرحلة الفوترة.",
+    "preferredLanguage": "اللغة المفضلة",
+    "preference": "التفضيل",
+    "consent": "الموافقة",
+    "assignedManager": "المدير المسؤول",
+    "leadStatus": "حالة العميل المحتمل",
+    "plannedActivity": "النشاط المخطط",
+    "mergeIntro": "ادمج سجلات المصدر المكررة في هذا المريض. يبقى المريض المفتوح كسجل هدف.",
+    "noDuplicates": "لم يتم العثور على سجلات مكررة من الهاتف أو الرقم أو جواز السفر أو الاسم/تاريخ الميلاد.",
+    "mergeIntoThis": "دمج في هذا المريض"
+  },
+  "merge": {
+    "title": "دمج سجلات المرضى",
+    "description": "سيتم حذف السجل المصدر بعد نقل المواعيد والفحوصات والفواتير ورموز البوابة إلى المريض الهدف.",
+    "targetKept": "السجل الهدف المحتفظ به",
+    "sourceMerged": "السجل المصدر المدمج",
+    "reason": "سبب الدمج",
+    "reasonPlaceholder": "تسجيل مكرر، نفس الرقم القومي، طلب المريض الدمج...",
+    "cancel": "إلغاء",
+    "merging": "جارٍ الدمج...",
+    "confirm": "تأكيد الدمج"
+  },
+  "modal": {
+    "addTitle": "إضافة مريض",
+    "duplicatesFound": "تم العثور على سجلات مكررة محتملة",
+    "sections": {
+      "identity": "الهوية",
+      "contact": "التواصل",
+      "emergency": "جهة اتصال للطوارئ",
+      "medical": "أساسيات طبية",
+      "communication": "التواصل"
+    },
+    "fields": {
+      "firstName": "الاسم الأول",
+      "lastName": "اسم العائلة",
+      "dateOfBirth": "تاريخ الميلاد",
+      "gender": "الجنس",
+      "nationalId": "الرقم القومي",
+      "passportNumber": "رقم جواز السفر",
+      "patientStatus": "حالة المريض",
+      "phone": "الهاتف",
+      "email": "البريد الإلكتروني",
+      "address": "العنوان",
+      "name": "الاسم",
+      "relationship": "صلة القرابة",
+      "allergies": "الحساسية",
+      "chronicDiseases": "الأمراض المزمنة",
+      "priorSurgeries": "العمليات السابقة",
+      "pregnancyStatus": "حالة الحمل",
+      "implantsDevices": "الزراعات / الأجهزة",
+      "renalFunctionNotes": "ملاحظات وظائف الكلى",
+      "preferredLanguage": "اللغة المفضلة",
+      "communicationPreference": "تفضيل التواصل"
+    },
+    "consent": {
+      "sms": "موافقة الرسائل النصية",
+      "email": "موافقة البريد الإلكتروني",
+      "whatsapp": "موافقة واتساب",
+      "marketing": "موافقة التسويق"
+    },
+    "cancel": "إلغاء",
+    "save": "حفظ",
+    "saving": "جارٍ الحفظ..."
+  },
+  "confirm": {
+    "deleteOneTitle": "حذف سجل المريض؟",
+    "deleteOne": "حذف {{name}}؟ هذا يزيل أيضًا المواعيد والسجلات المرتبطة.",
+    "deleteOneAction": "حذف المريض",
+    "deleteManyTitle": "حذف سجلات المرضى المحددة؟",
+    "deleteMany": "حذف {{count}} من سجلات المرضى المحددة؟",
+    "deleteManyAction": "حذف {{count}} من السجلات",
+    "patientFallback": "هذا المريض",
+    "cancel": "إلغاء",
+    "selectOneSource": "اختر سجل مصدر مكرر واحد بالضبط مع إبقاء المريض الهدف مفتوحًا."
+  },
+  "toast": {
+    "updated": "تم تحديث المريض.",
+    "updateFailed": "تعذّر تحديث المريض.",
+    "created": "تم إنشاء المريض.",
+    "createFailed": "تعذّر إنشاء المريض.",
+    "deleted": "تم حذف المريض.",
+    "deleteFailed": "تعذّر حذف المريض.",
+    "selectedDeleted": "تم حذف المرضى المحددين.",
+    "selectedDeleteFailed": "تعذّر حذف المرضى المحددين.",
+    "partialDelete": "تم حذف {{deleted}} من السجلات، وتعذّر حذف {{failed}}.",
+    "merged": "تم دمج سجلات المرضى.",
+    "mergeFailed": "تعذّر دمج سجلات المرضى."
+  }
+}

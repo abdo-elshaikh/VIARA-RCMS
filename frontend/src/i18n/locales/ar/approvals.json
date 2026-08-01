@@ -1,0 +1,199 @@
+{
+  "header": {
+    "eyebrow": "مساحة اتخاذ القرار",
+    "title": "صندوق الموافقات",
+    "description": "راجع جميع الطلبات التي تنتظر قرارك في قائمة واحدة مرتبة وجاهزة للتدقيق.",
+    "liveQueue": "قائمة مباشرة",
+    "audited": "قرارات موثقة",
+    "decisionReady": "سياق جاهز للقرار"
+  },
+  "summary": {
+    "label": "ملخص صندوق الموافقات",
+    "pending": "بانتظار قرارك",
+    "priority": "مراجعة ذات أولوية",
+    "oldest": "الأطول انتظاراً",
+    "sources": "المصادر النشطة"
+  },
+  "sources": {
+    "penalty": "الجزاءات",
+    "payroll": "دورات الرواتب",
+    "variance": "فروقات النقدية",
+    "portalAppointment": "مواعيد البوابة",
+    "profileUpdate": "تعديلات الملف الشخصي",
+    "authorization": "الموافقات التأمينية المسبقة",
+    "all": "كل الطلبات",
+    "leave": "الإجازات",
+    "privacy": "الخصوصية",
+    "refund": "الاستردادات",
+    "claim": "المطالبات",
+    "rule": "????? ????????"
+  },
+  "risk": {
+    "critical": "حرج",
+    "high": "أولوية",
+    "routine": "اعتيادي"
+  },
+  "filters": {
+    "search": "البحث في الطلبات",
+    "searchPlaceholder": "ابحث بالاسم أو المرجع أو مقدم الطلب أو السبب",
+    "risk": "الأولوية",
+    "allRisk": "كل الأولويات",
+    "sort": "الترتيب",
+    "source": "مصدر الطلب"
+  },
+  "sort": {
+    "priority": "الأولوية أولاً",
+    "oldest": "الأقدم أولاً",
+    "newest": "الأحدث أولاً"
+  },
+  "queue": {
+    "title": "طلبات تحتاج إلى مراجعة"
+  },
+  "actions": {
+    "markPaid": "تسجيل الدفع",
+    "lock": "إغلاق",
+    "review": "تسجيل كمُراجع",
+    "refresh": "تحديث",
+    "approve": "موافقة",
+    "accept": "قبول الطلب",
+    "resolve": "تسجيل كمنجز",
+    "reject": "رفض",
+    "cancel": "إلغاء",
+    "openSource": "فتح المصدر",
+    "clearFilters": "مسح عوامل التصفية"
+  },
+  "item": {
+    "payrollReviewSubtitle": "دورة رواتب محسوبة بانتظار المراجعة",
+    "payrollPaymentSubtitle": "دورة رواتب معتمدة بانتظار الدفع",
+    "payrollLockSubtitle": "دورة رواتب مدفوعة بانتظار الإغلاق",
+    "penaltySubtitle": "جزاء {{type}}",
+    "payrollSubtitle": "دورة رواتب مُراجعة بانتظار الموافقة",
+    "varianceSubtitle": "فرق إغلاق صندوق النقدية",
+    "portalAppointmentSubtitle": "طلب موعد من بوابة المريض",
+    "profileUpdateSubtitle": "طلب تعديل الملف من بوابة المريض",
+    "authorizationSubtitle": "طلب موافقة تأمينية مسبقة",
+    "leaveSubtitle": "إجازة {{type}} · {{count}} يوم",
+    "leaveSubtitle_other": "إجازة {{type}} · {{count}} أيام",
+    "privacySubtitle": "طلب {{type}}",
+    "refundSubtitle": "استرداد للفاتورة {{invoice}}",
+    "payrollRuleSubtitle": "????? ?????? {{type}}"
+  },
+  "facts": {
+    "penaltyType": "نوع الجزاء",
+    "source": "المصدر",
+    "period": "فترة الرواتب",
+    "employees": "الموظفون",
+    "netPay": "صافي الرواتب",
+    "expectedCash": "النقدية المتوقعة",
+    "countedCash": "النقدية المحصاة",
+    "variance": "الفرق",
+    "preferredDate": "التاريخ المفضل",
+    "timeWindow": "الفترة الزمنية",
+    "exam": "الفحص المطلوب",
+    "contact": "بيانات التواصل",
+    "requestedChanges": "التغييرات المطلوبة",
+    "requestedAmount": "المبلغ المطلوب",
+    "approvalNumber": "رقم الموافقة",
+    "fields": "{{count}} حقل",
+    "fields_other": "{{count}} حقول",
+    "requestedBy": "مقدم الطلب",
+    "submitted": "تاريخ التقديم",
+    "dates": "التواريخ المطلوبة",
+    "duration": "المدة",
+    "days": "{{count}} يوم",
+    "days_other": "{{count}} أيام",
+    "leaveType": "نوع الإجازة",
+    "patient": "المريض",
+    "mrn": "رقم الملف الطبي",
+    "requestType": "نوع الطلب",
+    "amount": "المبلغ",
+    "expectedAmount": "المبلغ المتوقع",
+    "invoice": "الفاتورة",
+    "payment": "الدفعة الأصلية",
+    "provider": "شركة التأمين",
+    "ruleType": "??? ???????",
+    "method": "????? ??????",
+    "value": "??????",
+    "effectiveFrom": "????? ??"
+  },
+  "privacyTypes": {
+    "Export": "تصدير البيانات",
+    "Correction": "تصحيح البيانات",
+    "Anonymize": "إخفاء الهوية"
+  },
+  "profileFields": {
+    "phone": "الهاتف",
+    "email": "البريد الإلكتروني",
+    "address": "العنوان",
+    "emergencyContactName": "اسم جهة اتصال الطوارئ",
+    "emergencyContactPhone": "هاتف جهة اتصال الطوارئ",
+    "preferredLanguage": "اللغة المفضلة",
+    "communicationPreference": "وسيلة التواصل المفضلة",
+    "notes": "ملاحظات"
+  },
+  "detail": {
+    "payrollForwardOnly": "هذه المرحلة في الرواتب تسير للأمام فقط من صندوق الموافقات. افتح صفحة الرواتب لمراجعة الدورة بالكامل.",
+    "rejectPermissionRequired": "يمكنك الموافقة على دورة الرواتب، لكن إلغاءها يتطلب صلاحية إدارة فترات الرواتب.",
+    "reviewOnly": "تستخدم فروقات النقدية مسار إقرار بالمراجعة. ملاحظات المراجعة مطلوبة ولا يتوفر الرفض.",
+    "request": "تفاصيل الطلب",
+    "context": "سياق الطلب",
+    "noContext": "لم تتم إضافة معلومات أخرى إلى هذا الطلب.",
+    "criticalTitle": "إجراء غير قابل للتراجع",
+    "criticalMessage": "قد يؤدي قبول هذا الطلب إلى إزالة بيانات تعريف المريض نهائياً. تحقق من الهوية والمستندات الداعمة قبل المتابعة.",
+    "permissionRequired": "يمكنك رفض هذا الطلب، لكن قبوله يحتاج إلى صلاحية خصوصية إضافية."
+  },
+  "dialog": {
+    "payrollReviewMessage": "تسجيل {{title}} كمراجعة؟ سيتم إرسال دورة الرواتب إلى الاعتماد.",
+    "payrollPaidMessage": "تسجيل دفع {{title}} بمبلغ {{amount}} بتاريخ {{date}}؟ سيتم ترحيل الدفع إلى قيود الرواتب.",
+    "payrollLockMessage": "إغلاق {{title}}؟ لا يمكن تغيير دورات الرواتب المغلقة من صندوق الموافقات.",
+    "approvalNumberMessage": "أدخل رقم موافقة شركة التأمين للطلب {{title}}. سيتم تسجيل المبلغ المطلوب كمبلغ موافق عليه.",
+    "approvalNumberPlaceholder": "أدخل رقم الموافقة التأمينية",
+    "approveTitle": "هل تريد الموافقة على الطلب؟",
+    "rejectTitle": "هل تريد رفض الطلب؟",
+    "approveMessage": "الموافقة على {{title}} من {{source}}؟ سيتم تسجيل القرار في سجل التدقيق.",
+    "rejectWithoutReason": "رفض {{title}} من {{source}}؟ لا يمكن تغيير هذا القرار من صندوق الموافقات.",
+    "approveNotesMessage": "أضف ملاحظات المراجعة قبل الموافقة على {{title}}.",
+    "rejectMessage": "سجل سبب رفض {{title}}.",
+    "notesLabel": "ملاحظات المراجعة",
+    "reasonLabel": "سبب الرفض",
+    "notesPlaceholder": "لخص خطوات التحقق التي تمت قبل الموافقة",
+    "reasonPlaceholder": "اشرح سبب تعذر قبول الطلب",
+    "required": "أدخل سبباً أو ملاحظة مراجعة.",
+    "tooShort": "استخدم 3 أحرف على الأقل."
+  },
+  "messages": {
+    "approved": "تمت الموافقة على طلب {{source}}.",
+    "rejected": "تم رفض طلب {{source}}.",
+    "failed": "تعذر حفظ القرار. ربما تمت مراجعة الطلب بالفعل."
+  },
+  "errors": {
+    "partial": "تعذر تحميل {{count}} من مصادر الطلبات. ما زالت الطلبات المتاحة ظاهرة."
+  },
+  "empty": {
+    "title": "تمت مراجعة كل الطلبات",
+    "description": "لا توجد طلبات معلقة تحتاج إلى قرارك حالياً.",
+    "filteredTitle": "لا توجد طلبات مطابقة",
+    "filteredDescription": "جرّب بحثاً أوسع أو امسح أحد عوامل التصفية."
+  },
+  "age": {
+    "lessThanHour": "أقل من ساعة",
+    "hours": "{{count}} س",
+    "days": "{{count}} ي"
+  },
+  "fallback": {
+    "penalty": "جزاء",
+    "payrollRun": "دورة رواتب",
+    "payrollTeam": "فريق الرواتب",
+    "cashier": "أمين الصندوق",
+    "notSpecified": "غير محدد",
+    "staffMember": "موظف",
+    "patient": "مريض",
+    "patientOrStaff": "مريض أو موظف",
+    "unknown": "مقدم طلب غير معروف",
+    "insuranceClaim": "مطالبة تأمين",
+    "insuranceProvider": "شركة التأمين",
+    "insuranceTeam": "فريق التأمين",
+    "dateUnavailable": "وقت التقديم غير متاح",
+    "payrollRule": "????? ??????"
+  }
+}

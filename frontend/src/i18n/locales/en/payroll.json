@@ -1,0 +1,146 @@
+{
+  "header": {
+    "eyebrow": "Payroll governance",
+    "title": "Payroll, Deductions & Penalties",
+    "description": "Run salary calculations from approved compensation, attendance, deductions, and penalties with review, approval, payment, and lock controls.",
+    "controlled": "Controlled workflow",
+    "auditable": "Auditable runs"
+  },
+  "stats": {
+    "net": "Net payroll",
+    "netDetail": "Approved and open periods",
+    "gross": "Gross earnings",
+    "grossDetail": "Before deductions",
+    "controls": "Deductions & penalties",
+    "controlsDetail": "{{count}} pending penalties",
+    "openPeriods": "Open periods",
+    "openDetail": "{{count}} total periods"
+  },
+  "periods": {
+    "createTitle": "Create payroll period",
+    "createHelp": "Use non-overlapping periods so calculations stay clear and reversible before approval.",
+    "title": "Payroll periods",
+    "help": "Select a period to calculate, review, approve, pay, or lock.",
+    "employees": "employees",
+    "empty": "No payroll periods yet"
+  },
+  "workflow": {
+    "title": "Workflow controls",
+    "noPeriod": "Create or select a period"
+  },
+  "run": {
+    "title": "Employee run preview",
+    "empty": "Calculate a selected period to preview employee payroll items."
+  },
+  "setup": {
+    "compensation": "Compensation",
+    "deductions": "Deductions",
+    "penalties": "Penalties",
+    "rules": "Rules",
+    "latestProfiles": "{{count}} latest profiles loaded",
+    "latestDeductions": "{{count}} latest deductions loaded",
+    "latestPenalties": "{{count}} latest penalties loaded",
+    "activeRules": "{{count}} active rules"
+  },
+  "inputs": {
+    "profilesTitle": "Latest profiles loaded",
+    "profilesSubtitle": "Newest compensation profiles available to payroll.",
+    "deductionsTitle": "Latest deductions loaded",
+    "deductionsSubtitle": "Newest deductions, including approval and balance state.",
+    "penaltiesTitle": "Latest penalties loaded",
+    "penaltiesSubtitle": "Newest penalties that can flow into approved payroll runs.",
+    "rulesTitle": "Active rules",
+    "rulesSubtitle": "Rules currently enabled for payroll calculation.",
+    "emptyProfiles": "No compensation profiles loaded.",
+    "emptyDeductions": "No deductions loaded.",
+    "emptyPenalties": "No penalties loaded.",
+    "emptyRules": "No active payroll rules loaded.",
+    "active": "Active",
+    "inactive": "Inactive",
+    "remaining": "Remaining",
+    "manual": "Manual",
+    "approvalRequired": "Controlled",
+    "auto": "Auto"
+  },
+  "summary": {
+    "gross": "Gross",
+    "deductions": "Deductions",
+    "penalties": "Penalties",
+    "net": "Net"
+  },
+  "fields": {
+    "periodName": "Period name",
+    "startDate": "Start date",
+    "endDate": "End date",
+    "currency": "Currency",
+    "notes": "Notes",
+    "employee": "Employee",
+    "salaryType": "Salary type",
+    "baseSalary": "Base salary",
+    "hourlyRate": "Hourly rate",
+    "effectiveFrom": "Effective from",
+    "name": "Name",
+    "amount": "Amount",
+    "percentage": "Percentage",
+    "penaltyType": "Penalty type",
+    "reason": "Reason",
+    "ruleType": "Rule type",
+    "method": "Method",
+    "value": "Value",
+    "paymentDate": "Payment date"
+  },
+  "placeholders": {
+    "periodName": "July 2026 payroll",
+    "paymentReference": "Payment reference",
+    "employee": "Select employee"
+  },
+  "actions": {
+    "createPeriod": "Create period",
+    "calculate": "Calculate",
+    "review": "Review",
+    "approve": "Approve",
+    "markPaid": "Mark paid",
+    "lock": "Lock",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "dialog": {
+    "confirmTitle": "Confirm payroll action",
+    "calculateMessage": "Calculate payroll for {{title}}? Existing calculated items for this period will be replaced.",
+    "ReviewedMessage": "Mark {{title}} as reviewed? This sends the run to payroll approval.",
+    "PaidMessage": "Mark {{title}} as paid for {{amount}} on {{date}} with {{reference}}?",
+    "LockedMessage": "Lock {{title}}? Locked payroll runs cannot be changed from this workflow.",
+    "approveTitle": "Approve payroll run?",
+    "approveMessage": "Record approval notes before approving {{title}}.",
+    "notesPlaceholder": "Summarize the checks completed before approval",
+    "required": "Enter approval notes.",
+    "tooShort": "Use at least 3 characters.",
+    "noReference": "no reference"
+  },
+  "fallback": {
+    "period": "this period"
+  },
+  "validation": {
+    "permissionDenied": "You do not have permission for this payroll action.",
+    "periodDates": "Payroll period end date must be on or after start date.",
+    "monthlySalary": "Monthly compensation requires a base salary greater than zero.",
+    "hourlyRate": "Hourly compensation requires an hourly rate greater than zero.",
+    "deductionValue": "Deduction requires an amount or percentage."
+  },
+  "states": {
+    "loading": "Loading..."
+  },
+  "toast": {
+    "periodCreated": "Payroll period created",
+    "periodCreateFailed": "Could not create payroll period",
+    "calculated": "Payroll calculated",
+    "calculateFailed": "Could not calculate payroll",
+    "statusUpdated": "Payroll status updated",
+    "statusFailed": "Could not update payroll status",
+    "compensationSaved": "Compensation profile saved",
+    "deductionSaved": "Deduction saved",
+    "penaltySaved": "Penalty saved",
+    "ruleSaved": "Rule saved",
+    "saveFailed": "Could not save payroll setup"
+  }
+}

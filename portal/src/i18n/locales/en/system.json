@@ -1,0 +1,102 @@
+{
+  "states": {
+    "back": "Go back",
+    "home": "Go home",
+    "signIn": "Sign in",
+    "notFound": {
+      "eyebrow": "Error 404",
+      "title": "This page is out of view.",
+      "description": "The route {{path}} does not exist or may have moved."
+    },
+    "offline": {
+      "eyebrow": "Offline mode",
+      "title": "The connection was interrupted.",
+      "description": "RCMS cannot reach the network right now. Keep this page open and retry when the connection returns.",
+      "online": "Your browser reports that the connection is back.",
+      "disconnected": "Your browser reports that you are currently offline.",
+      "checking": "Checking...",
+      "retry": "Try again"
+    },
+    "unauthorized": {
+      "eyebrow": "Access denied",
+      "title": "This area is outside your permissions.",
+      "description": "Your account is signed in, but this page is limited to another role."
+    }
+  },
+  "empty": {
+    "defaultTitle": "No items found",
+    "create": "Create new",
+    "patients": {
+      "title": "No patients found",
+      "description": "Register the first patient or adjust your search filters."
+    },
+    "appointments": {
+      "title": "No appointments scheduled",
+      "description": "Schedule an appointment to begin the examination workflow."
+    },
+    "search": {
+      "title": "No results found",
+      "description": "Adjust the search terms or filters and try again."
+    },
+    "worklist": {
+      "title": "The worklist is clear",
+      "description": "All pending examinations have been completed."
+    }
+  },
+  "shortcuts": {
+    "open": "Show keyboard shortcuts",
+    "buttonTitle": "Keyboard shortcuts (?)",
+    "title": "Keyboard shortcuts",
+    "groups": {
+      "general": "General",
+      "navigation": "Navigation",
+      "actions": "Actions"
+    },
+    "items": {
+      "show": "Show keyboard shortcuts",
+      "close": "Close modal or dialog",
+      "search": "Open global search",
+      "new": "New patient or appointment",
+      "focus": "Focus the search box",
+      "submit": "Submit or confirm",
+      "save": "Save the current form"
+    },
+    "tipLabel": "Tip:",
+    "tip": "Press ? at any time to open this help menu."
+  },
+  "breakGlass": {
+    "title": "Emergency access",
+    "protocol": "Break-glass protocol",
+    "description": "You are about to elevate your permissions for two hours. This action is strictly audited and flagged for administrative review.",
+    "reason": "Clinical justification",
+    "placeholder": "State the medical emergency or operational reason...",
+    "minimum": "Enter at least 10 characters.",
+    "cancel": "Cancel",
+    "processing": "Processing...",
+    "submit": "Acknowledge and escalate",
+    "error": "Emergency access could not be granted",
+    "close": "Close emergency access dialog"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "manual": "Send a notification",
+    "refresh": "Refresh notifications",
+    "markRead": "Mark all as read",
+    "close": "Close notifications",
+    "recipient": "Recipient email",
+    "subject": "Subject (optional)",
+    "message": "Message body...",
+    "send": "Send",
+    "sending": "Sending...",
+    "sent": "Notification sent",
+    "allRead": "All notifications marked as read",
+    "failed": "The action could not be completed",
+    "sendFailed": "The notification could not be sent",
+    "tabs": { "all": "All", "unread": "Unread", "failed": "Failed" },
+    "loading": "Loading notifications...",
+    "emptyTitle": "No notifications",
+    "empty": { "all": "Nothing here yet.", "unread": "You are all caught up.", "failed": "There are no failed sends." },
+    "time": { "now": "Just now", "minutes": "{{count}}m ago", "hours": "{{count}}h ago" },
+    "status": { "Sent": "Sent", "Failed": "Failed", "Pending": "Pending" }
+  }
+}

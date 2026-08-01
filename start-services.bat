@@ -1,0 +1,3 @@
+@echo off
+echo Starting RCMS services (backend, frontend, portal)...
+node "%~dp0start-services.js" %*

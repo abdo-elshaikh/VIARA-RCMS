@@ -1,0 +1,220 @@
+{
+  "common": {
+    "teamMember": "عضو الفريق",
+    "welcome": "مرحباً بعودتك، {{name}}",
+    "liveData": "بيانات تشغيلية مباشرة",
+    "refresh": "تحديث",
+    "refreshing": "جارٍ التحديث...",
+    "awaitingSync": "بانتظار المزامنة",
+    "vsPreviousDay": "مقارنة باليوم السابق",
+    "vsPreviousWeek": "مقارنة بالأسبوع السابق",
+    "today": "اليوم",
+    "currentWeek": "الأسبوع الحالي",
+    "hoursValue": "{{value}} ساعة",
+    "minutesValue": "{{value}} دقيقة",
+    "live": "مباشر",
+    "imagingStudy": "فحص تصوير",
+    "noDistribution": "لا يوجد عبء حسب الأجهزة بعد",
+    "noChartData": "لا توجد بيانات تشغيلية بعد",
+    "noChartDataDescription": "ستظهر البيانات تلقائياً عند تسجيل العمل داخل RCMS."
+  },
+  "roles": {
+    "Developer": "مطوّر النظام",
+    "Admin": "مسؤول النظام",
+    "Accountant": "محاسب",
+    "Cashier": "كاشير",
+    "HR": "الموارد البشرية",
+    "Receptionist": "استقبال",
+    "Radiologist": "طبيب أشعة",
+    "Technician": "فني أشعة",
+    "Nurse": "تمريض",
+    "Insurance_Staff": "موظف تأمين",
+    "Marketing": "تسويق"
+  },
+  "reception": {
+    "eyebrow": "عمليات استقبال المرضى",
+    "title": "مركز قيادة الاستقبال",
+    "subtitle": "تابع وصول المرضى وضغط الانتظار وجاهزية المواعيد ورحلات المرضى المكتملة لحظة بلحظة.",
+    "todayCheckIns": "تسجيلات الحضور اليوم",
+    "appointments": "مواعيد اليوم",
+    "pendingAppointments": "{{count}} مؤكدة وجاهزة",
+    "waitingRoom": "غرفة الانتظار",
+    "averageWait": "متوسط الانتظار {{duration}}",
+    "completedToday": "المكتملة اليوم",
+    "patientFlow": "تدفق المرضى حسب الساعة",
+    "patientFlowDescription": "الحركة الفعلية لقائمة الانتظار خلال ساعات عمل اليوم."
+  },
+  "clinical": {
+    "eyebrow": "التشغيل السريري",
+    "title": "مساحة العمليات التشخيصية",
+    "workloadDistribution": "العمل المفتوح حسب الجهاز",
+    "metrics": {
+      "report": {
+        "subtitle": "رتّب أولوية التقارير وراقب زمن الإنجاز وحافظ على تقدم حالات التصوير العاجلة.",
+        "pending": "تقارير بانتظار الاعتماد",
+        "urgent": "{{count}} تقارير مفتوحة لأكثر من 24 ساعة",
+        "completedToday": "المعتمدة اليوم",
+        "completedWeek": "المعتمدة هذا الأسبوع",
+        "averageCycle": "متوسط زمن التقرير",
+        "oldest": "أقدم تقرير مفتوح {{hours}} ساعة",
+        "attentionTitle": "التقارير المتأخرة تحتاج مراجعة",
+        "attentionDescription": "{{count}} تقارير مسندة ظلت مفتوحة لأكثر من 24 ساعة.",
+        "workloadDescription": "الفحوصات الحالية غير المعتمدة والمسندة لإعداد التقارير."
+      },
+      "scan": {
+        "subtitle": "أدر الفحوصات المسندة وراقب مدة التصوير وحافظ على حركة العمل بأمان.",
+        "pending": "فحوصات تصوير مفتوحة",
+        "urgent": "{{count}} فحوصات مفتوحة لأكثر من 24 ساعة",
+        "completedToday": "فحوصات مكتملة اليوم",
+        "completedWeek": "فحوصات هذا الأسبوع",
+        "averageCycle": "متوسط مدة التصوير",
+        "oldest": "أقدم فحص غير مكتمل {{hours}} ساعة",
+        "attentionTitle": "الفحوصات المتأخرة تحتاج متابعة",
+        "attentionDescription": "{{count}} فحوصات مسندة غير مكتملة لأكثر من 24 ساعة.",
+        "workloadDescription": "الفحوصات المسندة التي لم تصل بعد إلى اكتمال التصوير."
+      },
+      "preparation": {
+        "subtitle": "نسّق تحضير المرضى وراقب زمن الدورة وأظهر مهام الجاهزية المتأخرة.",
+        "pending": "مهام تحضير مفتوحة",
+        "urgent": "{{count}} مهام مفتوحة لأكثر من 24 ساعة",
+        "completedToday": "تحضيرات مكتملة اليوم",
+        "completedWeek": "تحضيرات هذا الأسبوع",
+        "averageCycle": "متوسط زمن التحضير",
+        "oldest": "أقدم تحضير غير مكتمل {{hours}} ساعة",
+        "attentionTitle": "تأخر التحضير يحتاج متابعة",
+        "attentionDescription": "{{count}} مهام تحضير مسندة غير مكتملة لأكثر من 24 ساعة.",
+        "workloadDescription": "الفحوصات المسندة التي ما زالت بانتظار اكتمال التحضير."
+      }
+    }
+  },
+  "executive": {
+    "eyebrow": "أداء المركز",
+    "title": "لوحة العمليات التنفيذية",
+    "subtitle": "رؤية واقعية للإنتاج السريري والإيرادات المحصلة والعمل المفتوح وتوفر القوى العاملة.",
+    "weeklyScans": "فحوصات هذا الأسبوع",
+    "weeklyRevenue": "المحصل هذا الأسبوع",
+    "openWork": "العمل السريري المفتوح",
+    "scansToday": "تم إنشاء {{count}} فحوصات اليوم",
+    "activeStaff": "الموظفون النشطون",
+    "staffOnLeave": "{{count}} في إجازة معتمدة اليوم",
+    "weeklyPerformance": "الإنتاج والتحصيل الأسبوعي",
+    "performanceDescription": "الفحوصات المنشأة وقيمة المدفوعات المكتملة حسب اليوم.",
+    "scans": "الفحوصات",
+    "revenue": "الإيرادات",
+    "modalityMix": "توزيع الأجهزة",
+    "modalityDescription": "التوزيع الفعلي لفحوصات هذا الأسبوع."
+  },
+  "flow": {
+    "waiting": "في الانتظار",
+    "inProgress": "قيد التنفيذ",
+    "completed": "مكتمل"
+  },
+  "actions": {
+    "title": "إجراءات سريعة",
+    "description": "اختصارات مناسبة للدور",
+    "registerPatient": "تسجيل مريض",
+    "registerPatientDescription": "أنشئ سجلاً وابدأ إجراءات الاستقبال.",
+    "manageSchedule": "إدارة الجدول",
+    "manageScheduleDescription": "راجع الحجوزات والغرف وقائمة الانتظار.",
+    "patientRegistry": "سجل المرضى",
+    "patientRegistryDescription": "ابحث عن سجلات المرضى وحدّثها.",
+    "openWorklist": "فتح قائمة العمل",
+    "openWorklistDescription": "راجع الفحوصات المسندة والعاجلة.",
+    "viewSchedule": "عرض الجدول",
+    "viewScheduleDescription": "راجع غرف ومواعيد اليوم.",
+    "reviewNow": "مراجعة الآن",
+    "openAnalytics": "فتح التحليلات",
+    "openAnalyticsDescription": "استكشف الأداء التشغيلي بالتفصيل.",
+    "manageStaff": "إدارة الموظفين",
+    "manageStaffDescription": "راجع المستخدمين والأدوار والصلاحيات.",
+    "financials": "الشؤون المالية",
+    "financialsDescription": "تابع الفوترة والتحصيل.",
+    "inventory": "المخزون",
+    "inventoryDescription": "تابع المخزون ومخاطر النقص."
+  },
+  "activity": {
+    "title": "أحدث الأنشطة السريرية",
+    "description": "آخر الفحوصات المعتمدة من سير العمل المباشر.",
+    "scanFinalized": "تم اعتماد {{modality}} للمريض {{mrn}}",
+    "empty": "لا توجد أنشطة معتمدة بعد",
+    "emptyDescription": "ستظهر أحداث سير العمل الحديثة هنا عند اعتماد التقارير."
+  },
+  "error": {
+    "title": "بيانات لوحة التحكم غير متاحة",
+    "description": "تعذر على RCMS تحميل أحدث الإحصاءات التشغيلية.",
+    "retry": "المحاولة مرة أخرى"
+  },
+  "clinicalWorklist": {
+    "eyebrow": "التقارير السريرية",
+    "title": "قائمة عمل الأشعة",
+    "description": "رتّب الفحوصات المسندة، وأدر مسودات التقارير، واعتمد التقارير التشخيصية من مساحة عمل واحدة متجاوبة.",
+    "metricsLabel": "ملخص قائمة العمل السريرية",
+    "searchLabel": "البحث في قائمة العمل السريرية",
+    "searchPlaceholder": "ابحث برقم المريض أو الاسم أو الفحص أو الجهاز أو الأولوية أو الدلالة السريرية...",
+    "metrics": {
+      "total": "فحوصات مفتوحة",
+      "totalHelp": "قائمة التقارير الحالية",
+      "reporting": "قيد التقرير",
+      "reportingHelp": "مسودات وتقارير نشطة",
+      "overdue": "متأخرة",
+      "overdueHelp": "تحتاج متابعة",
+      "averageWait": "متوسط الانتظار",
+      "averageWaitHelp": "حسب القائمة المحملة"
+    },
+    "queue": {
+      "title": "قائمة التقارير",
+      "description": "راجع الأولوية ومدة الانتظار وسياق المريض وتفاصيل الفحص قبل فتح التقرير.",
+      "results": "{{count}} حالة"
+    },
+    "table": {
+      "status": "الحالة",
+      "time": "الأولوية / الوقت",
+      "patient": "المريض",
+      "exam": "الفحص",
+      "action": "الإجراء"
+    },
+    "actions": {
+      "write": "كتابة التقرير"
+    },
+    "priority": {
+      "Emergency": "طارئ",
+      "Urgent": "عاجل",
+      "Routine": "روتيني"
+    },
+    "values": {
+      "pending": "قيد الانتظار",
+      "wait": "انتظار {{duration}}",
+      "overdue": "متأخر",
+      "unknownPatient": "مريض غير معروف",
+      "noMrn": "لا يوجد رقم ملف",
+      "unknownExam": "فحص غير معروف",
+      "noBodyPart": "المنطقة غير متاحة",
+      "indication": "الدلالة: {{value}}"
+    },
+    "states": {
+      "errorTitle": "قائمة العمل غير متاحة",
+      "errorDescription": "تعذر تحميل القائمة السريرية. حاول مرة أخرى.",
+      "emptyTitle": "لا توجد حالات معلقة",
+      "emptyDescription": "لا توجد فحوصات معلقة مسندة إلى هذه القائمة.",
+      "filteredEmpty": "لا توجد حالات تطابق البحث الحالي."
+    },
+    "modal": {
+      "title": "كتابة التقرير",
+      "patient": "المريض",
+      "exam": "الفحص",
+      "findings": "النتائج والانطباع",
+      "placeholder": "أدخل النتائج والانطباع بالتفصيل...",
+      "finalize": "اعتماد التقرير",
+      "finalizeHelp": "التقارير المعتمدة تُقفل وتتطلب تعديلاً موثقاً لأي تصحيح لاحق.",
+      "cancel": "إلغاء",
+      "saving": "جارٍ الحفظ...",
+      "save": "حفظ المسودة",
+      "sign": "توقيع واعتماد"
+    },
+    "messages": {
+      "saved": "تم حفظ المسودة.",
+      "finalized": "تم اعتماد التقرير.",
+      "failed": "تعذر حفظ التقرير."
+    }
+  }
+}

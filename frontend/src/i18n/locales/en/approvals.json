@@ -1,0 +1,209 @@
+{
+  "header": {
+    "eyebrow": "Decision workspace",
+    "title": "Approval inbox",
+    "description": "Review every request waiting for your decision in one prioritized, audit-ready queue.",
+    "liveQueue": "Live queue",
+    "audited": "Audited decisions",
+    "decisionReady": "Decision-ready context"
+  },
+  "summary": {
+    "label": "Approval inbox summary",
+    "pending": "Waiting for you",
+    "priority": "Priority review",
+    "oldest": "Oldest waiting",
+    "sources": "Active sources"
+  },
+  "sources": {
+    "all": "All requests",
+    "leave": "Leave",
+    "privacy": "Privacy",
+    "refund": "Refunds",
+    "claim": "Claims",
+    "penalty": "Penalties",
+    "rule": "Payroll rules",
+    "payroll": "Payroll runs",
+    "variance": "Cash variances",
+    "partialPayment": "Partial payment exceptions",
+    "portalAppointment": "Portal appointments",
+    "profileUpdate": "Profile changes",
+    "authorization": "Pre-authorizations"
+  },
+  "risk": {
+    "critical": "Critical",
+    "high": "Priority",
+    "routine": "Routine"
+  },
+  "filters": {
+    "search": "Search requests",
+    "searchPlaceholder": "Search person, reference, requester, or reason",
+    "risk": "Risk",
+    "allRisk": "All priorities",
+    "sort": "Sort",
+    "source": "Request source"
+  },
+  "sort": {
+    "priority": "Priority first",
+    "oldest": "Oldest first",
+    "newest": "Newest first"
+  },
+  "queue": {
+    "title": "Requests to review"
+  },
+  "actions": {
+    "refresh": "Refresh",
+    "approve": "Approve",
+    "accept": "Accept request",
+    "resolve": "Mark resolved",
+    "review": "Mark reviewed",
+    "markPaid": "Mark paid",
+    "lock": "Lock",
+    "reject": "Reject",
+    "cancel": "Cancel",
+    "openSource": "Open source",
+    "clearFilters": "Clear filters"
+  },
+  "item": {
+    "leaveSubtitle": "{{type}} leave · {{count}} day",
+    "leaveSubtitle_other": "{{type}} leave · {{count}} days",
+    "privacySubtitle": "{{type}} request",
+    "refundSubtitle": "Refund for invoice {{invoice}}",
+    "penaltySubtitle": "{{type}} penalty",
+    "payrollRuleSubtitle": "{{type}} payroll rule",
+    "payrollReviewSubtitle": "Calculated payroll run awaiting review",
+    "payrollSubtitle": "Reviewed payroll run awaiting approval",
+    "payrollPaymentSubtitle": "Approved payroll run awaiting payment",
+    "payrollLockSubtitle": "Paid payroll run awaiting lock",
+    "varianceSubtitle": "Cashier closure variance",
+    "partialPaymentSubtitle": "{{transaction}} exception for invoice {{invoice}}",
+    "portalAppointmentSubtitle": "Patient portal appointment request",
+    "profileUpdateSubtitle": "Patient portal profile-change request",
+    "authorizationSubtitle": "Insurance pre-authorization request"
+  },
+  "facts": {
+    "requestedBy": "Requested by",
+    "submitted": "Submitted",
+    "dates": "Requested dates",
+    "duration": "Duration",
+    "days": "{{count}} day",
+    "days_other": "{{count}} days",
+    "leaveType": "Leave type",
+    "patient": "Patient",
+    "mrn": "MRN",
+    "requestType": "Request type",
+    "amount": "Amount",
+    "expectedAmount": "Expected amount",
+    "invoice": "Invoice",
+    "payment": "Original payment",
+    "provider": "Provider",
+    "penaltyType": "Penalty type",
+    "ruleType": "Rule type",
+    "method": "Method",
+    "value": "Value",
+    "effectiveFrom": "Effective from",
+    "source": "Source",
+    "period": "Payroll period",
+    "employees": "Employees",
+    "netPay": "Net payroll",
+    "expectedCash": "Expected cash",
+    "countedCash": "Counted cash",
+    "variance": "Variance",
+    "transaction": "Transaction",
+    "netPaid": "Net paid",
+    "balance": "Balance",
+    "preferredDate": "Preferred date",
+    "timeWindow": "Time window",
+    "exam": "Requested exam",
+    "contact": "Contact",
+    "requestedChanges": "Requested changes",
+    "requestedAmount": "Requested amount",
+    "approvalNumber": "Approval number",
+    "fields": "{{count}} field",
+    "fields_other": "{{count}} fields"
+  },
+  "privacyTypes": {
+    "Export": "Data export",
+    "Correction": "Data correction",
+    "Anonymize": "Anonymization"
+  },
+  "partialPaymentTransactions": {
+    "ClinicalQueueTransition": "Clinical queue movement",
+    "ResultDelivery": "Result delivery"
+  },
+  "profileFields": {
+    "phone": "Phone",
+    "email": "Email",
+    "address": "Address",
+    "emergencyContactName": "Emergency contact name",
+    "emergencyContactPhone": "Emergency contact phone",
+    "preferredLanguage": "Preferred language",
+    "communicationPreference": "Communication preference",
+    "notes": "Notes"
+  },
+  "detail": {
+    "request": "Request details",
+    "context": "Request context",
+    "noContext": "No additional context was submitted with this request.",
+    "criticalTitle": "Irreversible action",
+    "criticalMessage": "Accepting this request may permanently remove identifying patient information. Verify identity and supporting documentation before continuing.",
+    "permissionRequired": "You can reject this request, but an additional privacy permission is required to accept it.",
+    "rejectPermissionRequired": "You can approve this payroll run, but cancelling it requires payroll-period management permission.",
+    "reviewOnly": "Cash variances use an acknowledgement workflow. Review notes are required; rejection is not available.",
+    "payrollForwardOnly": "This payroll stage is forward-only from the inbox. Open Payroll to inspect the full run."
+  },
+  "dialog": {
+    "approveTitle": "Approve this request?",
+    "rejectTitle": "Reject this request?",
+    "approveMessage": "Approve {{title}} from {{source}}? The decision is recorded in the audit trail.",
+    "payrollReviewMessage": "Mark {{title}} as reviewed? This sends the payroll run to approval.",
+    "payrollPaidMessage": "Mark {{title}} as paid for {{amount}} on {{date}}? The payment will be posted to payroll journals.",
+    "payrollLockMessage": "Lock {{title}}? Locked payroll runs cannot be changed from the approval inbox.",
+    "rejectWithoutReason": "Reject {{title}} from {{source}}? This decision cannot be changed from the inbox.",
+    "approveNotesMessage": "Add review notes before approving {{title}}.",
+    "approvalNumberMessage": "Enter the insurer's approval number for {{title}}. The requested amount will be recorded as approved.",
+    "rejectMessage": "Record why {{title}} is being rejected.",
+    "notesLabel": "Review notes",
+    "reasonLabel": "Rejection reason",
+    "notesPlaceholder": "Summarize the checks completed before approval",
+    "approvalNumberPlaceholder": "Enter the insurer authorization number",
+    "reasonPlaceholder": "Explain why this request cannot be accepted",
+    "required": "Enter a reason or review note.",
+    "tooShort": "Use at least 3 characters."
+  },
+  "messages": {
+    "approved": "{{source}} request approved.",
+    "rejected": "{{source}} request rejected.",
+    "failed": "The decision could not be saved. The request may have already been reviewed."
+  },
+  "errors": {
+    "partial": "{{count}} request source could not be loaded. Available requests are still shown.",
+    "partial_other": "{{count}} request sources could not be loaded. Available requests are still shown."
+  },
+  "empty": {
+    "title": "You're all caught up",
+    "description": "There are no pending requests that require your decision right now.",
+    "filteredTitle": "No requests match these filters",
+    "filteredDescription": "Try a broader search or clear one of the active filters."
+  },
+  "age": {
+    "lessThanHour": "< 1h",
+    "hours": "{{count}}h",
+    "days": "{{count}}d"
+  },
+  "fallback": {
+    "staffMember": "Staff member",
+    "patient": "Patient",
+    "patientOrStaff": "Patient or staff",
+    "unknown": "Unknown requester",
+    "insuranceClaim": "Insurance claim",
+    "insuranceProvider": "Insurance provider",
+    "insuranceTeam": "Insurance team",
+    "dateUnavailable": "Submission time unavailable",
+    "penalty": "Penalty",
+    "payrollRule": "Payroll rule",
+    "payrollRun": "Payroll run",
+    "payrollTeam": "Payroll team",
+    "cashier": "Cashier",
+    "notSpecified": "Not specified"
+  }
+}

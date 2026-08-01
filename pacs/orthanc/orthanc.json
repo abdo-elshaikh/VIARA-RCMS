@@ -1,0 +1,76 @@
+{
+  "Name": "MiPACS2",
+  "//": "RCMS custom PACS core. Secrets (PostgreSQL password, RegisteredUsers) are injected at runtime via ORTHANC__* environment variables in docker-compose and MUST NOT be committed here.",
+  "DicomAet": "MiPACS2",
+  "DicomPort": 4242,
+  "HttpPort": 8042,
+  "DicomCheckCalledAet": false,
+  "DicomAlwaysAllowEcho": true,
+  "DicomAlwaysAllowStore": true,
+  "DicomAlwaysAllowFind": true,
+  "DicomAlwaysAllowFindWorklist": true,
+  "DicomAlwaysAllowMove": true,
+  "DicomCheckModalityHost": false,
+  "UnknownSopClassAccepted": true,
+  "//storage": "Index lives in PostgreSQL; pixel data on the mounted volume.",
+  "StorageDirectory": "/var/lib/orthanc/db",
+  "IndexDirectory": "/var/lib/orthanc/db",
+  "//auth": "HTTP REST is reached only from inside the compose network via the RCMS proxy. Basic-auth is still required; RegisteredUsers is supplied through ORTHANC__REGISTERED_USERS__* env.",
+  "AuthenticationEnabled": true,
+  "RemoteAccessAllowed": true,
+  "//plugins": "orthancteam/orthanc bundles these .so files.",
+  "Plugins": [
+    "/usr/share/orthanc/plugins",
+    "/usr/local/share/orthanc/plugins"
+  ],
+  "PostgreSQL": {
+    "EnableIndex": false,
+    "EnableStorage": false,
+    "Host": "postgres",
+    "Port": 5432,
+    "Database": "orthanc",
+    "Username": "rcms",
+    "Lock": false
+  },
+  "DicomWeb": {
+    "Enable": true,
+    "Root": "/dicom-web/",
+    "EnableWado": true,
+    "WadoRoot": "/wado",
+    "Ssl": false,
+    "StudiesMetadata": "Full",
+    "SeriesMetadata": "Full"
+  },
+  "Worklists": {
+    "Enable": true,
+    "//": "RCMS pacsMwlService writes .wl files here; this volume is shared with the backend container.",
+    "Database": "/var/lib/orthanc/worklists"
+  },
+  "//modalities": "AET -> host/port map for C-MOVE/C-STORE back to consoles. Extend per site.",
+  "DicomModalities": {
+    "ct_room_1": [
+      "CT_ROOM_1",
+      "127.0.0.1",
+      104
+    ],
+    "mri_room_1": [
+      "MRI_ROOM_1",
+      "127.0.0.1",
+      104
+    ],
+    "xray_room_1": [
+      "XRAY_ROOM_1",
+      "127.0.0.1",
+      104
+    ],
+    "ultrasound_room_1": [
+      "ULTRASOUND_ROOM_1",
+      "127.0.0.1",
+      104
+    ]
+  },
+  "//lua": "OnStoredInstance -> shared-secret (X-Pacs-Signature) webhook to the RCMS reconciler.",
+  "LuaScripts": [
+    "/etc/orthanc/reconcile.lua"
+  ]
+}

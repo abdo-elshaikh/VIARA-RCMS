@@ -1,0 +1,1 @@
+export const isCashierRole = (user) => user?.role === 'Cashier';

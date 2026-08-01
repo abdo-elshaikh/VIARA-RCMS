@@ -1,0 +1,161 @@
+{
+  "header": {
+    "eyebrow": "Facility configuration",
+    "title": "Facility settings",
+    "description": "Maintain the organization identity, operating window, financial identifiers, report documents, public homepage, and printing defaults used across RCMS.",
+    "signals": {
+      "identity": "Facility identity",
+      "operations": "Operating hours",
+      "documents": "Document content",
+      "printing": "Printing"
+    }
+  },
+  "navigation": {
+    "label": "Facility settings sections",
+    "profile": "Profile and contact",
+    "homepage": "Public homepage",
+    "hours": "Operating hours",
+    "documents": "Documents",
+    "printing": "Printing"
+  },
+  "status": {
+    "title": "Configuration status",
+    "saved": "All changes saved",
+    "savedHelp": "The form matches the currently loaded facility configuration.",
+    "unsaved": "Unsaved changes",
+    "unsavedHelp": "Review and save before leaving this page."
+  },
+  "profile": {
+    "title": "Facility profile",
+    "description": "Identity and contact details used across administrative, patient-facing, reporting, billing, and printing documents.",
+    "invoiceExample": "Invoice number example",
+    "invoiceExampleHint": "Illustrative formatting only; this is not the next invoice number."
+  },
+  "fields": {
+    "centerName": "Center name",
+    "centerNameHint": "Required organization name displayed throughout the system.",
+    "branchName": "Branch name",
+    "branchNameHint": "Specific branch or location name.",
+    "logoUrl": "Logo URL",
+    "logoUrlHint": "Direct logo image URL used in printouts and public pages.",
+    "logoPreview": "Logo preview",
+    "contactPerson": "Contact person",
+    "contactPersonHint": "Primary operational contact for this branch.",
+    "otherDetails": "Other details",
+    "otherDetailsHint": "Accreditation, registration, floor, or branch-specific notes.",
+    "taxId": "Tax ID / registration number",
+    "taxIdHint": "Official identifier, up to 50 characters.",
+    "invoicePrefix": "Invoice prefix",
+    "invoicePrefixHint": "Short prefix placed before generated invoice numbers.",
+    "phone": "Phone number",
+    "email": "Email address",
+    "address": "Physical address"
+  },
+  "homepage": {
+    "title": "Public homepage",
+    "description": "Customize the public radiology center website shown before login. These fields are safe to publish.",
+    "publish": "Publish homepage content",
+    "publishHelp": "When disabled, the public page still shows essential contact details and secure portal links.",
+    "announcement": "Announcement badge",
+    "announcementHint": "Short top-line text above the hero title.",
+    "heroTitle": "Hero title",
+    "heroSubtitle": "Hero description",
+    "heroImage": "Hero image URL",
+    "heroImageHint": "Use a direct image path or URL. Leave the default scan montage for a ready-made visual.",
+    "primaryCtaLabel": "Primary CTA label",
+    "primaryCtaUrl": "Primary CTA URL",
+    "secondaryCtaLabel": "Secondary CTA label",
+    "secondaryCtaUrl": "Secondary CTA URL",
+    "services": "Services",
+    "servicesHint": "One service per line. Format: Title | Description",
+    "stats": "Proof stats",
+    "statsHint": "One stat per line. Format: Value | Label",
+    "highlights": "Trust highlights",
+    "highlightsHint": "One short highlight per line. These appear under the hero CTA.",
+    "accentColor": "Accent color",
+    "preview": "Homepage preview",
+    "securityNote": "Public homepage settings are shared with the unauthenticated website only; internal report, receipt, and billing settings stay protected."
+  },
+  "hours": {
+    "title": "Operating hours",
+    "description": "Define the facility-wide scheduling window using whole hours in 24-hour time.",
+    "open": "Opening hour",
+    "close": "Closing hour",
+    "hourHint": "Enter a whole hour from 0 to 23.",
+    "invalid": "Opening and closing hours must be between 0 and 23.",
+    "window": "Configured scheduling window",
+    "duration": "{{count}} operating hours",
+    "operationalNote": "Appointment availability also considers configured resources, existing bookings, holidays retained in the settings record, and equipment downtime."
+  },
+  "documents": {
+    "title": "Document and invoice settings",
+    "description": "Configure report headers, footers, and safe document text used by generated reports and billing documents.",
+    "header": "Report header (HTML / text)",
+    "footer": "Report footer (HTML / text)",
+    "htmlHint": "Maximum 500 characters. Stored exactly as entered.",
+    "headerPlaceholder": "Facility name, logo markup, or report heading...",
+    "footerPlaceholder": "Contact details, accreditation text, or disclaimer...",
+    "preview": "Content preview",
+    "safePreview": "Plain-text safety preview",
+    "emptyHeader": "Report header content will appear here.",
+    "emptyFooter": "Report footer content will appear here."
+  },
+  "printing": {
+    "title": "Printing preferences",
+    "description": "Customize sticker dimensions, receipt content, report branding, invoice terms, and print previews.",
+    "stickerTitle": "Sticker printer",
+    "stickerWidth": "Sticker width",
+    "stickerWidthHint": "Example: 3.8in or 50mm.",
+    "stickerHeight": "Sticker height",
+    "stickerHeightHint": "Example: 1.8in or 30mm.",
+    "receiptTitle": "Receipt printer",
+    "receiptWidth": "Receipt width",
+    "receiptWidthHint": "Example: 80mm, 100%, or 8.5in.",
+    "showQr": "Display QR code for portal login on receipts",
+    "receiptHeader": "Receipt custom header",
+    "receiptFooter": "Receipt custom footer",
+    "layoutTitle": "Report and invoice layout",
+    "themeColor": "Theme accent color",
+    "font": "Typography font",
+    "headerLayout": "Header layout style",
+    "showWatermark": "Display paid stamp on invoices",
+    "invoiceTerms": "Invoice terms and conditions",
+    "invoiceTermsPlaceholder": "Terms of payment, refund policy, etc...",
+    "colors": {
+      "teal": "Teal accent (default)",
+      "navy": "Navy professional",
+      "slate": "Slate charcoal",
+      "burgundy": "Burgundy crimson",
+      "indigo": "Indigo modern",
+      "sky": "Sky azure"
+    },
+    "fonts": {
+      "inter": "Inter (sans-serif)",
+      "outfit": "Outfit (round sans)",
+      "spaceMono": "Space Mono (code)",
+      "arial": "Arial (standard)"
+    },
+    "layouts": {
+      "classic": "Classic side-by-side",
+      "center": "Centered layout"
+    }
+  },
+  "actions": {
+    "save": "Save settings",
+    "saving": "Saving...",
+    "discard": "Discard changes",
+    "retry": "Try again",
+    "saveHint": "Updates apply facility-wide"
+  },
+  "states": {
+    "loading": "Loading facility settings...",
+    "errorTitle": "Facility settings unavailable",
+    "errorDescription": "The current facility configuration could not be loaded. No settings can be edited until the connection is restored.",
+    "refreshError": "The latest settings could not be refreshed",
+    "showingSaved": "The last successfully loaded configuration remains visible."
+  },
+  "messages": {
+    "saved": "Facility settings updated successfully",
+    "saveFailed": "Facility settings could not be updated"
+  }
+}

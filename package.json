@@ -1,0 +1,18 @@
+{
+  "name": "rcms-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RCMS Monorepo Service Orchestrator",
+  "scripts": {
+    "start": "node start-services.js",
+    "dev": "node start-services.js",
+    "dev:docker": "node start-services.js --docker",
+    "dev:docker-all": "node start-services.js --docker-all",
+    "dev:no-docker": "node start-services.js --no-docker",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:portal": "npm run dev --prefix portal"
+  }
+}

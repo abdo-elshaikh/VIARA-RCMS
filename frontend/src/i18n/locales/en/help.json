@@ -1,0 +1,219 @@
+{
+  "eyebrow": "RCMS knowledge center",
+  "title": "How can we help?",
+  "description": "Practical, role-aware guidance for {{role}} workflows, security, and troubleshooting.",
+  "roleGuide": "Guidance for {{role}}",
+  "online": "System connection available",
+  "offline": "Working offline",
+  "searchLabel": "Search help guides",
+  "searchPlaceholder": "Search patients, payments, reports, permissions...",
+  "clearSearch": "Clear help search",
+  "roles": {
+    "Admin": "Administrator",
+    "Radiologist": "Radiologist",
+    "Receptionist": "Reception",
+    "Cashier": "Cashier",
+    "Accountant": "Accountant",
+    "HR": "Human resources",
+    "Technician": "Technician",
+    "Nurse": "Nurse",
+    "Insurance_Staff": "Insurance staff",
+    "Marketing": "Marketing"
+  },
+  "quick": {
+    "title": "Open your common workspaces",
+    "description": "Shortcuts are tailored to your access role.",
+    "openWorkspace": "Open workspace"
+  },
+  "guides": {
+    "title": "Workflow guides",
+    "count": "{{count}} relevant guides",
+    "open": "Open this workspace"
+  },
+  "categories": {
+    "all": "All",
+    "gettingStarted": "Getting started",
+    "operations": "Operations",
+    "clinical": "Clinical",
+    "administration": "Administration",
+    "account": "Account & support"
+  },
+  "empty": {
+    "title": "No matching guides",
+    "description": "Try a different keyword or show all categories.",
+    "reset": "Reset search"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "description": "Move around RCMS faster.",
+    "search": "Global search",
+    "help": "Shortcut reference",
+    "close": "Close dialog",
+    "save": "Save report draft"
+  },
+  "support": {
+    "title": "Need technical support?",
+    "description": "Share useful context without exposing patient data.",
+    "admin": "Contact your facility administrator or authorized IT support. Never include patient names, identifiers, screenshots, or clinical content in an unsecured message.",
+    "copy": "Copy technical diagnostics",
+    "copied": "Technical diagnostics copied.",
+    "copyFailed": "Diagnostics could not be copied."
+  },
+  "safety": {
+    "title": "Clinical safety first",
+    "description": "Do not use emergency access or override workflow controls unless your facility policy authorizes it. Report suspected privacy or patient-safety incidents immediately."
+  },
+  "articles": {
+    "start": {
+      "title": "Getting started with your workspace",
+      "description": "Understand navigation, global search, notifications, and your role dashboard.",
+      "steps": [
+        "Open Dashboard to review the live metrics and actions available to your role.",
+        "Use Ctrl + K to search patients or jump directly to an available module.",
+        "Open Settings to confirm your profile, language, timezone, appearance, and active sessions."
+      ]
+    },
+    "patients": {
+      "title": "Find and manage patient records",
+      "description": "Search safely, verify identity, register patients, and avoid duplicate records.",
+      "steps": [
+        "Open Patients and search by MRN, name, phone, or another approved identifier.",
+        "Verify at least two patient identifiers before opening or changing a clinical record.",
+        "Use Add patient only after checking the duplicate suggestions.",
+        "Open the patient profile for history, documents, privacy requests, and related appointments."
+      ]
+    },
+    "appointments": {
+      "title": "Book and coordinate appointments",
+      "description": "Use availability, machine resources, waiting lists, reminders, and rescheduling.",
+      "steps": [
+        "Open Appointments and select the required day, week, or month view.",
+        "Choose New appointment, then verify the patient, examination, machine, timing, and assigned team.",
+        "Use availability warnings before saving to avoid resource conflicts.",
+        "Record reschedules, no-shows, reminders, and waiting-list changes from the appointment actions."
+      ]
+    },
+    "payments": {
+      "title": "Manage cashier shifts and patient payments",
+      "description": "Open a shift, collect against an invoice, document discounts, and reconcile cash.",
+      "steps": [
+        "Open Reception billing and open your personal cashier shift with the verified opening float.",
+        "Select the patient invoice and confirm the outstanding balance before collecting payment.",
+        "Record the payment method and reference; discounts require an authorized reason.",
+        "At shift end, perform the blind cash count and submit reconciliation for review."
+      ]
+    },
+    "worklist": {
+      "title": "Use the clinical worklist and scheduler",
+      "description": "Prioritize assigned work and move patients through preparation, acquisition, and reporting.",
+      "steps": [
+        "Open Worklist to view your assigned schedule and role-specific queue.",
+        "Use priority, modality, status, and patient filters to focus the operational list.",
+        "Review safety flags and clinical context before advancing any examination.",
+        "Use only the action valid for your role and current workflow stage."
+      ]
+    },
+    "reporting": {
+      "title": "Create and finalize a diagnostic report",
+      "description": "Write structured findings, review clinical context, sign, amend, print, or export Word.",
+      "steps": [
+        "Open a Reporting-stage examination from the radiologist worklist.",
+        "Complete the structured sections; Findings and Impression are required before finalization.",
+        "Save typed work with Ctrl + S and use templates only after verifying their clinical relevance.",
+        "Review and approve the report, then confirm Finalize and sign to lock it.",
+        "Use a documented amendment for corrections; delivery, PDF, and Word exports remain traceable to the report."
+      ]
+    },
+    "insurance": {
+      "title": "Review insurance and claims",
+      "description": "Check policies, approvals, coverage decisions, and claim follow-up.",
+      "steps": [
+        "Open Insurance and verify the patient policy and provider contract.",
+        "Confirm approval requirements and covered services before claim creation.",
+        "Attach the correct invoice and clinical references without duplicating a claim.",
+        "Record payer responses, rejection reasons, and resubmission status accurately."
+      ]
+    },
+    "roles": {
+      "title": "Govern roles and permissions",
+      "description": "Grant least-privilege access and review changes before saving.",
+      "steps": [
+        "Open Roles & permissions and select the staff role you need to review.",
+        "Search by module or capability and compare the current grants with operational duties.",
+        "Grant only the minimum permissions needed; administrator grants remain protected.",
+        "Review the change summary before saving and verify the audit log afterward."
+      ]
+    },
+    "settings": {
+      "title": "Manage account and workspace settings",
+      "description": "Maintain security, appearance, preferences, devices, and personal data controls.",
+      "steps": [
+        "Open Settings and use search to locate the exact control.",
+        "Review Security for password, two-factor authentication, and unfamiliar active sessions.",
+        "Appearance and Preferences synchronize to your account and apply across the workspace."
+      ]
+    },
+    "troubleshooting": {
+      "title": "Troubleshoot common access and runtime issues",
+      "description": "Use safe checks for stale data, denied access, offline state, or browser errors.",
+      "steps": [
+        "Refresh the affected data once and confirm the connection indicator is online.",
+        "For Access denied, ask an administrator to verify your role and explicit permission—do not share credentials.",
+        "Try a supported browser window without third-party extensions if console errors reference chrome-extension URLs.",
+        "Copy technical diagnostics for authorized support, but remove all patient and clinical information."
+      ]
+    },
+    "analytics": {
+      "title": "Analyze performance and export reports",
+      "description": "Read volume, revenue, turnaround, cancellation, and referral trends safely.",
+      "steps": [
+        "Open Analytics and choose a valid date range.",
+        "Use grouping controls to compare by date, modality, doctor, or payer.",
+        "Review KPI cards before interpreting a chart; empty panels mean no matching records were returned.",
+        "Export CSV only for authorized business review and store it according to facility policy."
+      ]
+    },
+    "marketing": {
+      "title": "Manage CRM and marketing follow-up",
+      "description": "Coordinate campaigns, patient segments, feedback, and follow-up activity.",
+      "steps": [
+        "Open Marketing and choose campaigns, tasks, or feedback based on your role.",
+        "Create segments with a clear operational purpose and respect patient communication consent.",
+        "Assign CRM tasks with due dates, ownership, and enough context for safe follow-up.",
+        "Review campaign status and feedback trends before changing outreach priorities."
+      ]
+    },
+    "equipment": {
+      "title": "Monitor equipment readiness and maintenance",
+      "description": "Track modality readiness, downtime, service contracts, and preventive maintenance.",
+      "steps": [
+        "Open Equipment and review the readiness and risk indicators.",
+        "Check upcoming maintenance, overdue service, and downtime before scheduling modality work.",
+        "Record vendor, technician, cost, and outcome details for every maintenance event.",
+        "Escalate assets with repeated downtime or expired contracts to administration."
+      ]
+    },
+    "pacs": {
+      "title": "Reconcile PACS studies and image access",
+      "description": "Match received DICOM studies to scheduled orders and open images through the approved viewer.",
+      "steps": [
+        "Open PACS Reconciliation and search by patient, accession, modality, or study UID.",
+        "Review candidate matches carefully before linking a received study.",
+        "Use the PACS viewer only for authorized diagnostic or operational work.",
+        "If image rendering fails, confirm Orthanc/OHIF configuration and report the study UID to support."
+      ]
+    }
+  },
+  "onlineShort": "Online",
+  "offlineShort": "Offline",
+  "summary": {
+    "label": "Help status summary",
+    "guides": "Relevant guides",
+    "guidesDetail": "Filtered by your current role",
+    "role": "Current role",
+    "roleDetail": "Guidance and shortcuts adapt to this access level",
+    "connection": "Connection",
+    "onlineDetail": "Live system resources are reachable",
+    "offlineDetail": "Some actions may not complete until connection returns"
+  }
+}

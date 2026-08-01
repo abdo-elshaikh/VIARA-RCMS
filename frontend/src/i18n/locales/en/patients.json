@@ -1,0 +1,247 @@
+{
+  "title": "Patients",
+  "subtitle": "Search, maintain, and review secure patient records.",
+  "bulkImport": "Bulk Import",
+  "addPatient": "Add Patient",
+  "searchPlaceholder": "Search by MRN, name, phone, email, address...",
+  "export": "Export",
+  "selectedCount": "{{count}} selected",
+  "deleteSelected": "Delete selected",
+  "mergeIntoOpen": "Merge into open patient",
+  "actions": "Actions",
+  "loadingRecords": "Loading secure records...",
+  "noRecordsFilters": "No records match the current search or filters.",
+  "noRecordsMobile": "No records match the current filters.",
+  "selectPatientToView": "Select a patient to view details.",
+  "overview": {
+    "eyebrow": "Patient intelligence",
+    "metricsLabel": "Patient registry overview",
+    "total": "Total records",
+    "totalDetail": "Unified patient identities in the registry",
+    "active": "Active patients",
+    "activeDetail": "Records currently available for care",
+    "recent": "New registrations",
+    "recentDetail": "Patients added in the last 14 days",
+    "completeness": "Profile quality",
+    "completenessDetail": "Average completion across key identity fields",
+    "attention": "Needs attention",
+    "attentionDetail": "Restricted or missing-contact records",
+    "results": "{{shown}} of {{total}} records"
+  },
+  "records": {
+    "title": "Patient registry",
+    "description": "Open a record for clinical, communication, privacy, and audit context.",
+    "pagination": {
+      "range": "Showing {{start}}–{{end}} of {{total}} records",
+      "rowsPerPage": "Rows per page",
+      "page": "{{page}} / {{pages}}",
+      "previous": "Previous patient page",
+      "next": "Next patient page"
+    }
+  },
+  "filters": {
+    "title": "Find and segment records",
+    "description": "Search the full registry or narrow it by data quality and status.",
+    "reset": "Reset",
+    "all": "All records",
+    "recent": "Recent",
+    "missingContact": "Missing contact",
+    "missingEmail": "Missing email"
+  },
+  "genderFilter": {
+    "all": "All genders"
+  },
+  "statusFilter": {
+    "all": "All statuses"
+  },
+  "gender": {
+    "Male": "Male",
+    "Female": "Female",
+    "Other": "Other"
+  },
+  "status": {
+    "Active": "Active",
+    "Inactive": "Inactive",
+    "Deceased": "Deceased",
+    "Merged": "Merged",
+    "Restricted": "Restricted"
+  },
+  "pregnancy": {
+    "Unknown": "Unknown",
+    "Not Pregnant": "Not Pregnant",
+    "Pregnant": "Pregnant",
+    "Possibly Pregnant": "Possibly Pregnant",
+    "Not Applicable": "Not Applicable"
+  },
+  "commPreference": {
+    "Phone": "Phone",
+    "Email": "Email",
+    "SMS": "SMS",
+    "WhatsApp": "WhatsApp",
+    "Marketing": "Marketing"
+  },
+  "columns": {
+    "mrn": "MRN",
+    "name": "Patient",
+    "phone": "Phone",
+    "email": "Email",
+    "date_of_birth": "DOB",
+    "gender": "Gender",
+    "patient_status": "Status",
+    "created_at": "Registered"
+  },
+  "rowActions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "view": "View details",
+    "edit": "Edit",
+    "delete": "Delete"
+  },
+  "card": {
+    "view": "View",
+    "edit": "Edit",
+    "delete": "Delete",
+    "unnamed": "Unnamed Patient",
+    "noPhone": "No phone",
+    "noEmail": "No email",
+    "noDob": "No DOB"
+  },
+  "fallback": {
+    "na": "N/A",
+    "unnamed": "Unnamed Patient",
+    "noAddress": "No address recorded",
+    "noneRecorded": "None recorded",
+    "unknown": "Unknown",
+    "noActivity": "No activity recorded yet.",
+    "noConsent": "No consent recorded"
+  },
+  "detail": {
+    "edit": "Edit",
+    "visits": "Visits",
+    "spent": "Spent",
+    "tabs": {
+      "overview": "Overview",
+      "insurance": "Insurance",
+      "demographics": "Demographics",
+      "contacts": "Contacts",
+      "medical": "Medical",
+      "visits": "Visits",
+      "billing": "Billing",
+      "crm": "CRM",
+      "privacy": "Privacy",
+      "communication": "Comms",
+      "documents": "Docs",
+      "audit": "Audit",
+      "merge": "Merge"
+    },
+    "dob": "DOB",
+    "gender": "Gender",
+    "status": "Status",
+    "nationalId": "National ID",
+    "passport": "Passport",
+    "registered": "Registered",
+    "phone": "Phone",
+    "email": "Email",
+    "address": "Address",
+    "emergencyContact": "Emergency Contact",
+    "name": "Name",
+    "relationship": "Relationship",
+    "allergies": "Allergies",
+    "chronicDiseases": "Chronic Diseases",
+    "priorSurgeries": "Prior Surgeries",
+    "pregnancy": "Pregnancy",
+    "implants": "Implants/Devices",
+    "renalNotes": "Renal Notes",
+    "visitHistory": "Visit History",
+    "appointment": "Appointment",
+    "totalSpent": "Total Spent",
+    "visitCount": "Visit Count",
+    "billingPlanned": "Detailed invoices and cashier workflow are planned for the billing phase.",
+    "preferredLanguage": "Preferred Language",
+    "preference": "Preference",
+    "consent": "Consent",
+    "assignedManager": "Assigned Manager",
+    "leadStatus": "Lead Status",
+    "plannedActivity": "Planned Activity",
+    "mergeIntro": "Merge duplicate source records into this patient. The open patient remains as the target record.",
+    "noDuplicates": "No duplicate candidates found from phone, ID, passport, or name/date of birth.",
+    "mergeIntoThis": "Merge into this patient"
+  },
+  "merge": {
+    "title": "Merge Patient Records",
+    "description": "The source record will be removed after appointments, exams, invoices, and portal tokens are moved to the target patient.",
+    "targetKept": "Target record kept",
+    "sourceMerged": "Source record merged",
+    "reason": "Merge Reason",
+    "reasonPlaceholder": "Duplicate registration, same national ID, patient requested merge...",
+    "cancel": "Cancel",
+    "merging": "Merging...",
+    "confirm": "Confirm Merge"
+  },
+  "modal": {
+    "addTitle": "Add Patient",
+    "duplicatesFound": "Possible duplicate records found",
+    "sections": {
+      "identity": "Identity",
+      "contact": "Contact",
+      "emergency": "Emergency Contact",
+      "medical": "Medical Basics",
+      "communication": "Communication"
+    },
+    "fields": {
+      "firstName": "First Name",
+      "lastName": "Last Name",
+      "dateOfBirth": "Date of Birth",
+      "gender": "Gender",
+      "nationalId": "National ID",
+      "passportNumber": "Passport Number",
+      "patientStatus": "Patient Status",
+      "phone": "Phone",
+      "email": "Email",
+      "address": "Address",
+      "name": "Name",
+      "relationship": "Relationship",
+      "allergies": "Allergies",
+      "chronicDiseases": "Chronic Diseases",
+      "priorSurgeries": "Prior Surgeries",
+      "pregnancyStatus": "Pregnancy Status",
+      "implantsDevices": "Implants / Devices",
+      "renalFunctionNotes": "Renal Function Notes",
+      "preferredLanguage": "Preferred Language",
+      "communicationPreference": "Communication Preference"
+    },
+    "consent": {
+      "sms": "SMS consent",
+      "email": "Email consent",
+      "whatsapp": "WhatsApp consent",
+      "marketing": "Marketing consent"
+    },
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving..."
+  },
+  "confirm": {
+    "deleteOneTitle": "Delete patient record?",
+    "deleteOne": "Delete {{name}}? This also removes related appointments and history.",
+    "deleteOneAction": "Delete patient",
+    "deleteManyTitle": "Delete selected patient records?",
+    "deleteMany": "Delete {{count}} selected patient records?",
+    "deleteManyAction": "Delete {{count}} records",
+    "patientFallback": "this patient",
+    "cancel": "Cancel",
+    "selectOneSource": "Select exactly one duplicate source record plus keep the target patient open."
+  },
+  "toast": {
+    "updated": "Patient updated.",
+    "updateFailed": "Patient could not be updated.",
+    "created": "Patient created.",
+    "createFailed": "Patient could not be created.",
+    "deleted": "Patient deleted.",
+    "deleteFailed": "Patient could not be deleted.",
+    "selectedDeleted": "Selected patients deleted.",
+    "selectedDeleteFailed": "Selected patients could not be deleted.",
+    "partialDelete": "{{deleted}} records were deleted; {{failed}} could not be deleted.",
+    "merged": "Patient records merged.",
+    "mergeFailed": "Patient records could not be merged."
+  }
+}

@@ -1,0 +1,245 @@
+{
+  "title": "Scheduling Workbench",
+  "subtitle": "Calendar, room availability, staff load, waiting list, no-show, and reschedule tools.",
+  "overview": {
+    "eyebrow": "Imaging operations",
+    "metricsLabel": "Schedule performance overview",
+    "booked": "Booked studies",
+    "bookedDetail": "Appointments in the selected schedule range",
+    "confirmed": "Ready to run",
+    "confirmedDetail": "Scheduled or confirmed; {{count}} already completed",
+    "utilization": "Room utilization",
+    "utilizationDetail": "Booked imaging time across active rooms",
+    "urgent": "Priority studies",
+    "urgentDetail": "Urgent and emergency cases requiring attention",
+    "noShow": "No-shows",
+    "noShowDetail": "Missed appointments in this schedule range"
+  },
+  "navigation": {
+    "previous": "Previous period",
+    "today": "Today",
+    "next": "Next period",
+    "date": "Schedule date"
+  },
+  "filters": {
+    "title": "Refine the agenda",
+    "description": "Search patients, rooms, exams, or staff and focus the active schedule.",
+    "searchPlaceholder": "Search MRN, patient, room, exam, or staff...",
+    "allStatuses": "All statuses",
+    "allPriorities": "All priorities",
+    "results": "{{shown}} of {{total}} appointments",
+    "reset": "Reset"
+  },
+  "mobile": {
+    "remind": "Remind",
+    "move": "Move"
+  },
+  "actions": {
+    "newAppointment": "Book appointment",
+    "exportSchedule": "Export schedule"
+  },
+  "export": {
+    "dateTime": "Date and time",
+    "mrn": "MRN",
+    "patient": "Patient",
+    "room": "Room / equipment",
+    "exam": "Exam",
+    "radiologist": "Radiologist",
+    "technician": "Technician",
+    "nurse": "Nurse",
+    "status": "Status",
+    "priority": "Priority",
+    "source": "Source",
+    "preparation": "Preparation"
+  },
+  "view": {
+    "day": "day",
+    "week": "week",
+    "month": "month"
+  },
+  "layout": {
+    "list": "List",
+    "calendar": "Calendar"
+  },
+  "density": {
+    "comfortable": "Comfortable",
+    "compact": "Compact"
+  },
+  "allRooms": "All rooms/equipment",
+  "calendar": {
+    "title": "Calendar",
+    "range": "{{start}} to {{end}}",
+    "count": "{{count}} appointments",
+    "loading": "Loading schedule...",
+    "empty": "No appointments in this range.",
+    "pagination": {
+      "range": "Showing {{start}}–{{end}} of {{total}} appointments",
+      "rowsPerPage": "Rows per page",
+      "page": "{{page}} / {{pages}}",
+      "previous": "Previous appointment page",
+      "next": "Next appointment page"
+    }
+  },
+  "table": {
+    "time": "Time",
+    "patient": "Patient",
+    "roomExam": "Room / Exam",
+    "staff": "Staff",
+    "status": "Status",
+    "actions": "Actions",
+    "walkIn": "Walk-in",
+    "noExamType": "No exam type",
+    "rad": "Rad",
+    "tech": "Tech",
+    "nurse": "Nurse",
+    "unassigned": "Unassigned",
+    "prep": "Prep",
+    "notRequired": "Not Required",
+    "instructions": "Instructions",
+    "sendReminder": "Send reminder",
+    "reschedule": "Reschedule",
+    "noShow": "No-show",
+    "selectedCount": "{{count}} selected",
+    "clearSelection": "Clear",
+    "selectAll": "Select all",
+    "selectRow": "Select row",
+    "priority": "Priority",
+    "followUp": "Follow-up",
+    "priorStudy": "Prior study"
+  },
+  "availability": {
+    "title": "Availability",
+    "workingHours": "Working hours {{start}}:00 to {{end}}:00",
+    "room": "Room",
+    "na": "N/A",
+    "bookedSlots": "{{count}} booked slots",
+    "staffOverlay": "Staff Overlay",
+    "slots": "{{count}} slots",
+    "noMachines": "No room availability is configured for this period.",
+    "resourceLoad": "Resource Load",
+    "low": "Low",
+    "med": "Med",
+    "high": "High",
+    "active": "Active",
+    "offline": "Offline",
+    "toggle": "Toggle availability panel"
+  },
+  "waitlist": {
+    "title": "Waiting List",
+    "formTitle": "Add to waiting list",
+    "activeRequests": "{{count}} active requests",
+    "selectPatient": "Select patient",
+    "searchPatientPlaceholder": "Search patient by MRN or name...",
+    "noPatientsFound": "No patients match filter",
+    "unnamedPatient": "Unnamed patient",
+    "preferredDate": "Preferred date",
+    "preferredStartTime": "Preferred start time",
+    "preferredEndTime": "Preferred end time",
+    "anyRoom": "Any room/equipment",
+    "anyExamType": "Any exam type",
+    "priority": {
+      "Routine": "Routine",
+      "Urgent": "Urgent",
+      "Emergency": "Emergency"
+    },
+    "source": {
+      "Walk-in": "Walk-in",
+      "Phone": "Phone",
+      "Website": "Website",
+      "Patient Portal": "Patient Portal",
+      "Doctor Portal": "Doctor Portal",
+      "Call Center": "Call Center"
+    },
+    "notes": "Notes",
+    "adding": "Adding...",
+    "add": "Add to Waiting List",
+    "empty": "No active waiting-list entries.",
+    "anyRoomShort": "Any room",
+    "anyExam": "Any exam",
+    "anyDate": "Any date",
+    "contacted": "Contacted",
+    "cancel": "Cancel",
+    "bookNow": "Book",
+    "collapseForm": "Collapse form"
+  },
+  "reschedule": {
+    "title": "Reschedule Appointment",
+    "currentTime": "Current time",
+    "newDate": "New date",
+    "newTime": "New time",
+    "reason": "Reason",
+    "cancel": "Cancel",
+    "saving": "Saving...",
+    "confirm": "Reschedule",
+    "quickPickDay": "Jump to",
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "in2days": "+2 days",
+    "nextWeek": "+1 week"
+  },
+  "status": {
+    "Confirmed": "Confirmed",
+    "Completed": "Completed",
+    "Cancelled": "Cancelled",
+    "No-Show": "No-Show",
+    "Scheduled": "Scheduled",
+    "Waiting": "Waiting",
+    "Contacted": "Contacted"
+  },
+  "priority": {
+    "Routine": "Routine",
+    "Urgent": "Urgent",
+    "Emergency": "Emergency"
+  },
+  "preparation": {
+    "Confirmed": "Confirmed",
+    "Pending": "Pending",
+    "Not Required": "Not required",
+    "Completed": "Completed"
+  },
+  "machineStatus": {
+    "Operational": "Operational",
+    "Active": "Active",
+    "Maintenance": "Maintenance",
+    "Offline": "Offline"
+  },
+  "staffRole": {
+    "Radiologist": "Radiologist",
+    "Technician": "Technician",
+    "Nurse": "Nurse"
+  },
+  "na": "N/A",
+  "prompt": {
+    "email": "Patient email address",
+    "noShowReason": "No-show reason",
+    "reminderTitle": "Send appointment reminder",
+    "reminderDescription": "Confirm the recipient before sending appointment details.",
+    "emailPlaceholder": "patient@example.com",
+    "sendReminder": "Send reminder",
+    "emailRequired": "Enter the recipient email address.",
+    "noShowTitle": "Mark appointment as no-show",
+    "noShowDescription": "Record why the patient did not attend for operational follow-up.",
+    "reasonPlaceholder": "Enter the reason or contact outcome...",
+    "markNoShow": "Mark no-show",
+    "reasonRequired": "Enter a no-show reason.",
+    "cancel": "Cancel",
+    "reminderTitleBulk": "Remind {{count}} patients"
+  },
+  "toast": {
+    "reminderSent": "Reminder sent.",
+    "reminderFailed": "Reminder failed.",
+    "noShowMarked": "Appointment marked as no-show.",
+    "noShowFailed": "Could not mark no-show.",
+    "rescheduled": "Appointment rescheduled.",
+    "rescheduleFailed": "Appointment could not be rescheduled.",
+    "selectPatient": "Select a patient for the waiting list.",
+    "pastPreferredDate": "Preferred date cannot be in the past.",
+    "incompletePreferredWindow": "Enter both a preferred start and end time.",
+    "invalidPreferredWindow": "Preferred end time must be after the start time.",
+    "waitlistAdded": "Waiting-list entry added.",
+    "waitlistFailed": "Could not add waiting-list entry.",
+    "waitlistMarked": "Waiting-list entry marked {{status}}.",
+    "waitlistUpdateFailed": "Waiting-list entry could not be updated.",
+    "reminderSentBulk": "Sent {{count}} reminders"
+  }
+}

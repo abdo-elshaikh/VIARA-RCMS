@@ -1,0 +1,206 @@
+services:
+  # Database Service
+  postgres:
+    image: postgres:15-alpine
+    container_name: rcms_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rcms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}
+      POSTGRES_DB: ${POSTGRES_DB:-rcms}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/00_create_orthanc_db.sql:/docker-entrypoint-initdb.d/00_create_orthanc_db.sql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./database/migrations:/migrations:ro
+      - ./database/seed-rbac.sql:/seeds/seed-rbac.sql:ro
+      - ./database/seed.sql:/seeds/seed.sql:ro
+      - ./database/seed-demo-modules.sql:/seeds/seed-demo-modules.sql:ro
+      - ./database/docker-init-migrations.sh:/docker-entrypoint-initdb.d/02_run_migrations.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build: ./backend
+    container_name: rcms_backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-rcms}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rcms}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the root .env file}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in the root .env file}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
+      BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:-}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      PORTAL_CLIENT_URL: ${PORTAL_CLIENT_URL:-http://localhost:5174}
+      # Production startup validation rejects an empty value; leaving interpolation
+      # permissive still allows infrastructure-only Compose commands in development.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      CLAMSCAN_PATH: ${CLAMSCAN_PATH:-}
+      MALWARE_SCAN_TIMEOUT_MS: ${MALWARE_SCAN_TIMEOUT_MS:-30000}
+      BACKUP_MODE: postgres
+      BACKUP_DIR: /app/backups
+      BACKUP_RETENTION_DAYS: 30
+      BACKUP_MAX_FILES: 30
+      BACKUP_SCHEDULE_ENABLED: "true"
+      BACKUP_SCHEDULE_HOUR_UTC: 2
+      # PACS / Orthanc integration
+      ORTHANC_URL: ${ORTHANC_URL:-http://orthanc:8042}
+      ORTHANC_USERNAME: ${ORTHANC_USERNAME:-rcms}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD in the root .env file}
+      ORTHANC_AET: ${ORTHANC_AET:-MiPACS2}
+      PACS_WEBHOOK_SECRET: ${PACS_WEBHOOK_SECRET:?Set PACS_WEBHOOK_SECRET in the root .env file}
+      PACS_WORKLIST_DIR: /app/pacs-worklists
+      PACS_MWL_ENABLED: ${PACS_MWL_ENABLED:-true}
+      # Optional asynchronous PACS image-analysis worker
+      PACS_AI_ENABLED: ${PACS_AI_ENABLED:-false}
+      PACS_AI_PROVIDER: ${PACS_AI_PROVIDER:-local-torchxrayvision}
+      PACS_AI_MODEL: ${PACS_AI_MODEL:-densenet121-res224-all}
+      PACS_AI_MODEL_VERSION: ${PACS_AI_MODEL_REVISION:-}
+      PACS_AI_WORKER_URL: ${PACS_AI_WORKER_URL:-}
+      PACS_AI_API_KEY: ${PACS_AI_WORKER_API_KEY:-}
+      PACS_AI_WORKER_TIMEOUT_MS: ${PACS_AI_WORKER_TIMEOUT_MS:-600000}
+      PACS_AI_QUEUE_INTERVAL_MS: ${PACS_AI_QUEUE_INTERVAL_MS:-30000}
+      PACS_AI_QUEUE_BATCH_SIZE: ${PACS_AI_QUEUE_BATCH_SIZE:-1}
+    volumes:
+      - backup_data:/app/backups
+      - upload_data:/app/uploads
+      - ./pacs-worklists:/app/pacs-worklists
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+  # Frontend App
+  # VITE_OHIF_URL is baked in at build time by Vite (ARG → ENV in the Dockerfile).
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_OHIF_URL: "${VITE_OHIF_URL:-http://localhost:3005}"
+        VITE_PORTAL_PUBLIC_URL: "${PORTAL_PUBLIC_URL:-http://localhost:5174}"
+    container_name: rcms_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # Public Patient & Referring Doctor Portal
+  portal:
+    build:
+      context: ./portal
+      args:
+        VITE_API_URL: "/api"
+    container_name: rcms_portal
+    restart: unless-stopped
+    ports:
+      - "5174:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # PACS DICOM Core (Orthanc)
+  orthanc:
+    image: orthancteam/orthanc:24.3.5
+    container_name: rcms_orthanc
+    restart: unless-stopped
+    ports:
+      # DICOM must be reachable from modalities on the LAN/VPN for C-ECHO, C-STORE, and MWL.
+      # Keep REST loopback-only; set PACS_DICOM_BIND=127.0.0.1 for workstation-only development.
+      - "${PACS_DICOM_BIND:-0.0.0.0}:${PACS_DICOM_PORT:-4242}:4242"
+      - "127.0.0.1:8042:8042"
+    environment:
+      # Inject secrets into orthanc.json via Orthanc's env-var override mechanism.
+      ORTHANC__POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD}
+      ORTHANC__REGISTERED_USERS: '{"${ORTHANC_USERNAME:-rcms}":"${ORTHANC_PASSWORD}"}'
+      # Consumed by reconcile.lua.
+      RCMS_WEBHOOK_URL: http://backend:3000/api/pacs/webhook
+      PACS_WEBHOOK_SECRET: ${PACS_WEBHOOK_SECRET}
+      GDCM_PLUGIN_ENABLED: "true"
+      ORTHANC__GDCM__ENABLE: "true"
+    volumes:
+      - ./pacs/orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - ./pacs/orthanc/reconcile.lua:/etc/orthanc/reconcile.lua:ro
+      - orthanc_storage:/var/lib/orthanc/db
+      - ./pacs-worklists:/var/lib/orthanc/worklists
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # OHIF Diagnostic Viewer
+  # Serves the OHIF SPA and reverse-proxies /api/ to the backend so the viewer's
+  # DICOMweb requests (QIDO/WADO/frames) are same-origin to :3005. OHIF handles
+  # the short-lived, study-scoped bearer token for every DICOMweb request.
+  ohif:
+    build:
+      context: ./pacs/ohif
+    image: rcms-ohif:v3.12.6
+    container_name: rcms_ohif
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${OHIF_PORT:-3005}:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Optional local GPU inference service. It is excluded from normal startup;
+  # launch it with: docker compose --profile ai up -d --build pacs-ai-worker
+  pacs-ai-worker:
+    profiles: ["ai"]
+    build:
+      context: ./pacs/ai-worker
+      dockerfile: ${PACS_AI_DOCKERFILE:-Dockerfile}
+    image: rcms-pacs-ai-worker:1.0
+    container_name: rcms_pacs_ai_worker
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PACS_AI_WORKER_PORT:-3015}:8000"
+    environment:
+      PACS_AI_WORKER_API_KEY: ${PACS_AI_WORKER_API_KEY:-}
+      ORTHANC_URL: http://orthanc:8042
+      ORTHANC_USERNAME: ${ORTHANC_USERNAME:-rcms}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD}
+      MODEL_BACKEND: ${PACS_AI_MODEL_BACKEND:-torchxrayvision}
+      MODEL_ID: ${PACS_AI_MODEL_ID:-densenet121-res224-all}
+      MODEL_REVISION: ${PACS_AI_MODEL_REVISION:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+      PRELOAD_MODEL: ${PACS_AI_PRELOAD_MODEL:-false}
+      ALLOW_CPU_INFERENCE: ${PACS_AI_ALLOW_CPU_INFERENCE:-true}
+      INFERENCE_CONCURRENCY: ${PACS_AI_INFERENCE_CONCURRENCY:-1}
+      MAX_CXR_VIEWS: ${PACS_AI_MAX_CXR_VIEWS:-2}
+      XRV_WEIGHTS: ${PACS_AI_XRV_WEIGHTS:-densenet121-res224-all}
+      XRV_FINDING_THRESHOLD: ${PACS_AI_XRV_FINDING_THRESHOLD:-0.65}
+    volumes:
+      - ai_model_cache:/models
+    shm_size: "1gb"
+    depends_on:
+      orthanc:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/health',headers={'Authorization':'Bearer '+os.environ['PACS_AI_WORKER_API_KEY']}); urllib.request.urlopen(r,timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  backup_data:
+  upload_data:
+  orthanc_storage:
+  ai_model_cache:
