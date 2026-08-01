@@ -44,12 +44,16 @@ const runOnce = async (pool) => {
 const startPacsAiAnalysisJob = (pool) => {
     if (String(process.env.PACS_AI_QUEUE_ENABLED || 'true').toLowerCase() === 'false') {
         logger.info('PACS AI analysis queue disabled (PACS_AI_QUEUE_ENABLED=false)');
-        return;
+        return () => {};
     }
 
     logger.info(`PACS AI analysis queue started. Polling every ${Math.round(INTERVAL_MS / 1000)}s.`);
-    setTimeout(() => runOnce(pool), 45 * 1000);
-    setInterval(() => runOnce(pool), INTERVAL_MS);
+    const timeout = setTimeout(() => runOnce(pool), 45 * 1000);
+    const interval = setInterval(() => runOnce(pool), INTERVAL_MS);
+    return () => {
+        clearTimeout(timeout);
+        clearInterval(interval);
+    };
 };
 
 const triggerPacsAiAnalysis = (pool) => runOnce(pool);

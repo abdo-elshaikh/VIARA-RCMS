@@ -1,13 +1,26 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-// Initialize state — token may be in localStorage (remember me) or sessionStorage
-const storedUser = localStorage.getItem('user');
-const storedToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+const clearLegacyTokenStorage = () => {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem('token');
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('token');
+};
+
+const readStoredUser = () => {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+        return JSON.parse(localStorage.getItem('user') || 'null');
+    } catch {
+        localStorage.removeItem('user');
+        return null;
+    }
+};
+
+clearLegacyTokenStorage();
 
 const initialState = {
-    user: storedUser ? JSON.parse(storedUser) : null,
-    token: storedToken || null,
-    isAuthenticated: !!(storedUser && storedToken),
+    user: null,
+    token: null,
+    isAuthenticated: false,
 };
 
 const authSlice = createSlice({
@@ -15,7 +28,7 @@ const authSlice = createSlice({
     initialState,
     reducers: {
         setCredentials: (state, action) => {
-            const { user, token, rememberMe = false } = action.payload;
+            const { user, token } = action.payload;
             state.user = {
                 ...user,
                 permissions: user.permissions || []
@@ -23,37 +36,25 @@ const authSlice = createSlice({
             state.token = token;
             state.isAuthenticated = true;
 
-            // Always persist the user profile so UI preferences survive.
             localStorage.setItem('user', JSON.stringify(state.user));
-
-            // Token storage depends on "Remember Me":
-            // - checked  → localStorage  (survives browser close)
-            // - unchecked → sessionStorage (cleared when tab/browser closes)
-            if (rememberMe) {
-                localStorage.setItem('token', token);
-                sessionStorage.removeItem('token');
-            } else {
-                sessionStorage.setItem('token', token);
-                localStorage.removeItem('token');
-            }
+            clearLegacyTokenStorage();
         },
         logOut: (state) => {
             state.user = null;
             state.token = null;
             state.isAuthenticated = false;
 
-            localStorage.removeItem('user');
-            localStorage.removeItem('token');
-            sessionStorage.removeItem('token');
+            if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
+            clearLegacyTokenStorage();
         },
-        // Action to rehydrate user from storage (called on app init)
-        rehydrateUser: (state) => {
-            const storedUser = localStorage.getItem('user');
-            const storedToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+        rehydrateUser: (state, action) => {
+            const storedUser = readStoredUser();
+            const token = action.payload;
+            clearLegacyTokenStorage();
 
-            if (storedUser && storedToken) {
-                state.user = JSON.parse(storedUser);
-                state.token = storedToken;
+            if (storedUser && token) {
+                state.user = storedUser;
+                state.token = token;
                 state.isAuthenticated = true;
             }
         },
@@ -62,16 +63,11 @@ const authSlice = createSlice({
                 ...state.user,
                 ...action.payload
             };
-            localStorage.setItem('user', JSON.stringify(state.user));
+            if (typeof localStorage !== 'undefined') localStorage.setItem('user', JSON.stringify(state.user));
         },
         setAccessToken: (state, action) => {
             state.token = action.payload;
-            // Preserve whichever storage the token was originally written to
-            if (localStorage.getItem('token')) {
-                localStorage.setItem('token', action.payload);
-            } else {
-                sessionStorage.setItem('token', action.payload);
-            }
+            clearLegacyTokenStorage();
         },
     },
 });

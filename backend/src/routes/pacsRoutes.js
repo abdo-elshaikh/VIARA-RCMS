@@ -46,9 +46,13 @@ const {
 const PACS_QUARANTINE_DIR = path.resolve(
     process.env.PACS_UPLOAD_QUARANTINE_DIR || path.join(__dirname, '../../uploads/.quarantine/pacs')
 );
-const PACS_MAX_FILE_BYTES = Number(process.env.PACS_UPLOAD_MAX_FILE_BYTES || 25 * 1024 * 1024);
-const PACS_MAX_FILES = Number(process.env.PACS_UPLOAD_MAX_FILES || 20);
-const PACS_MAX_REQUEST_BYTES = Number(process.env.PACS_UPLOAD_MAX_REQUEST_BYTES || 250 * 1024 * 1024);
+const positiveInteger = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+const PACS_MAX_FILE_BYTES = positiveInteger(process.env.PACS_UPLOAD_MAX_FILE_BYTES, 25 * 1024 * 1024);
+const PACS_MAX_FILES = positiveInteger(process.env.PACS_UPLOAD_MAX_FILES, 20);
+const PACS_MAX_REQUEST_BYTES = positiveInteger(process.env.PACS_UPLOAD_MAX_REQUEST_BYTES, 200 * 1024 * 1024);
 
 const upload = multer({
     storage: multer.diskStorage({
@@ -80,8 +84,19 @@ const uploadPacsFiles = (req, res, next) => {
         return next(new AppError('PACS upload request is too large', 413));
     }
     return upload.array('files', PACS_MAX_FILES)(req, res, (error) => {
-        if (error) cleanupPacsFiles(req.files);
-        next(error);
+        const totalBytes = (req.files || []).reduce((total, file) => total + Number(file.size || 0), 0);
+        if (error || totalBytes > PACS_MAX_REQUEST_BYTES) cleanupPacsFiles(req.files);
+        if (error) {
+            if (error.code === 'LIMIT_FILE_SIZE' || error.code === 'LIMIT_FILE_COUNT'
+                || error.code === 'LIMIT_PART_COUNT' || error.code === 'LIMIT_FIELD_VALUE') {
+                return next(new AppError('PACS upload exceeds the configured limits', 413));
+            }
+            return next(error);
+        }
+        if (totalBytes > PACS_MAX_REQUEST_BYTES) {
+            return next(new AppError('PACS upload request is too large', 413));
+        }
+        return next();
     });
 };
 

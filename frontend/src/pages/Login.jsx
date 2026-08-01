@@ -147,9 +147,10 @@ const Login = () => {
             const result = await login({
                 email: String(data.email || '').trim().toLowerCase(),
                 password: data.password,
+                rememberMe,
             }).unwrap();
 
-            dispatch(setCredentials({ user: result.user, token: result.token, rememberMe }));
+            dispatch(setCredentials({ user: result.user, token: result.token }));
 
             if (result.user?.preferences && typeof result.user.preferences === 'object') {
                 dispatch(updateAllPreferences(result.user.preferences));

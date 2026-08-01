@@ -110,6 +110,7 @@ describe('cloud vision study sampling', () => {
         })).rejects.toThrow('Custom endpoint returned HTML');
 
         expect(global.fetch.mock.calls[0][0]).toBe('https://agentrouter.org/v1/chat/completions');
+        expect(global.fetch.mock.calls[0][1]).toMatchObject({ redirect: 'error' });
     });
 
     it('dispatches OpenAI vision with high-detail de-identified previews', async () => {

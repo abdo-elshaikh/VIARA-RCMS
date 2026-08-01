@@ -137,6 +137,35 @@ describe('AI profile service', () => {
         });
     });
 
+    it('rejects unsafe custom endpoints before persistence', async () => {
+        await profileService.listProfiles();
+
+        await expect(profileService.createProfile({
+            target: 'report',
+            name: 'Unsafe custom provider',
+            provider: 'custom',
+            model: 'custom-model',
+            baseUrl: 'https://127.0.0.1/v1',
+            apiKey: 'secret'
+        })).rejects.toMatchObject({ statusCode: 400 });
+
+        expect(JSON.parse(state['ai.provider_profiles']))
+            .not.toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Unsafe custom provider' })]));
+    });
+
+    it('preserves local PACS worker URLs', async () => {
+        await profileService.listProfiles();
+        const profile = await profileService.createProfile({
+            target: 'pacs',
+            name: 'Local PACS worker',
+            provider: 'local-torchxrayvision',
+            workerUrl: 'http://127.0.0.1:5000',
+            model: 'densenet121-res224-all'
+        });
+
+        expect(profile.workerUrl).toBe('http://127.0.0.1:5000');
+    });
+
     it('does not allow deleting the active profile', async () => {
         const groups = await profileService.listProfiles();
         await expect(profileService.deleteProfile(groups.report.activeProfileId))

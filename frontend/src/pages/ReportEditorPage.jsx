@@ -1014,8 +1014,6 @@ const ReportEditorPage = () => {
             return;
         }
 
-        const token = sessionStorage.getItem('token');
-        if (token) viewerTab.sessionStorage.setItem('token', token);
         viewerTab.opener = null;
         viewerTab.location.href = viewerPath;
     };

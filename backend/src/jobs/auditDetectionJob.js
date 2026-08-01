@@ -50,12 +50,16 @@ const runOnce = async (pool) => {
 const startAuditDetectionJob = (pool) => {
     if (String(process.env.AUDIT_DETECTION_ENABLED || 'true').toLowerCase() === 'false') {
         logger.info('Audit detection job disabled (AUDIT_DETECTION_ENABLED=false)');
-        return;
+        return () => {};
     }
 
     logger.info(`Audit detection job started. Sweeping every ${Math.round(INTERVAL_MS / 60000)} min.`);
-    setTimeout(() => runOnce(pool), 2 * 60 * 1000);
-    setInterval(() => runOnce(pool), INTERVAL_MS);
+    const timeout = setTimeout(() => runOnce(pool), 2 * 60 * 1000);
+    const interval = setInterval(() => runOnce(pool), INTERVAL_MS);
+    return () => {
+        clearTimeout(timeout);
+        clearInterval(interval);
+    };
 };
 
 const triggerAuditDetection = (pool) => runOnce(pool);

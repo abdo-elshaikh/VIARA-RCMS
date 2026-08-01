@@ -30,6 +30,7 @@ const Landing = () => {
     const [activeWorkflowIndex, setActiveWorkflowIndex] = useState(0);
     const [selectedCategory, setSelectedCategory] = useState('live');
     const [inspectService, setInspectService] = useState(null);
+    const closeServiceModal = useCallback(() => setInspectService(null), []);
     const overviewRef = useRef(null);
     const modulesRef = useRef(null);
     const workflowRef = useRef(null);

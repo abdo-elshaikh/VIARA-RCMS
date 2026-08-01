@@ -22,6 +22,7 @@
 
 const logger = require('../config/logger');
 const { GEMINI_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL, normalizeGeminiModel } = require('./aiModelPolicy');
+const { validateCustomAiEndpointUrl } = require('../utils/customAiEndpointUrl');
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -819,14 +820,16 @@ const callCustomCloudVision = async (base64Image, mimeType, prompt, apiKey, base
         max_tokens: 2048
     };
 
-    const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const safeBaseUrl = validateCustomAiEndpointUrl(baseUrl);
+    const url = `${safeBaseUrl.replace(/\/+$/, '')}/chat/completions`;
     const headers = { 'Content-Type': 'application/json' };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
     const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        redirect: 'error'
     }, getProviderTimeoutMs());
 
     if (response.status === 429) {
@@ -1133,12 +1136,13 @@ const analyzeStudy = async (payload, options = {}) => {
 
     } else if (provider === 'cloud-custom') {
         if (!baseUrl) throw new Error('Custom provider selected but no Base URL is configured');
+        const safeBaseUrl = validateCustomAiEndpointUrl(baseUrl);
         const key = apiKey || ''; // custom endpoint may not require key
         const targetModel = modelName || 'custom-vision-model';
 
         // Text-only path: Logfare and many custom endpoints are text-only LLMs
         // that do not support image_url content parts. Use metadata-based analysis.
-        logger.info(`[CloudVision] cloud-custom: using text-only metadata analysis with ${targetModel} at ${baseUrl}`);
+        logger.info(`[CloudVision] cloud-custom: using text-only metadata analysis with ${targetModel} at ${safeBaseUrl}`);
 
         const textPrompt = buildTextOnlyPrompt({
             modality: study.modality,
@@ -1156,7 +1160,7 @@ const analyzeStudy = async (payload, options = {}) => {
             max_tokens: 2048
         };
 
-        const textUrl = normalizeOpenAiCompatibleChatUrl(baseUrl);
+        const textUrl = normalizeOpenAiCompatibleChatUrl(safeBaseUrl);
         const textHeaders = { 'Content-Type': 'application/json' };
         if (key) textHeaders.Authorization = `Bearer ${key}`;
 
@@ -1166,7 +1170,8 @@ const analyzeStudy = async (payload, options = {}) => {
                 const resp = await fetchWithTimeout(textUrl, {
                     method: 'POST',
                     headers: textHeaders,
-                    body: JSON.stringify(textBody)
+                    body: JSON.stringify(textBody),
+                    redirect: 'error'
                 }, getProviderTimeoutMs());
                 if (resp.status === 429) {
                     const err = new Error('Custom provider rate limit (429)');

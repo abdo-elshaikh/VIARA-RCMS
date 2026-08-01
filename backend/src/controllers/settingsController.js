@@ -21,6 +21,7 @@ const {
 } = require('../services/cloudVisionService');
 const aiProfileService = require('../services/aiProfileService');
 const { GEMINI_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL } = require('../services/aiModelPolicy');
+const { validateCustomAiEndpointUrl } = require('../utils/customAiEndpointUrl');
 
 const CLOUD_PACS_PROVIDERS = new Set(['cloud-gemini', 'cloud-openrouter', 'cloud-openai', 'cloud-custom']);
 const REPORT_DEFAULT_MODELS = {
@@ -480,11 +481,12 @@ const testAiSettings = () => async (req, res, next) => {
                 headers = { Authorization: `Bearer ${apiKey}` };
             } else if (config.provider === 'cloud-custom') {
                 const apiKey = config.apiKey;
-                pingUrl = normalizeOpenAiCompatibleChatUrl(config.baseUrl);
+                pingUrl = normalizeOpenAiCompatibleChatUrl(validateCustomAiEndpointUrl(config.baseUrl));
                 headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
                 if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
                 requestInit = {
                     method: 'POST',
+                    redirect: 'error',
                     body: JSON.stringify({
                         model: config.model,
                         messages: [{ role: 'user', content: 'Reply with only: ok' }],

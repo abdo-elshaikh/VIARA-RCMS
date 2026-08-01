@@ -1,4 +1,5 @@
 import { SECTION_CONFIG, BUILT_IN_REPORT_TEMPLATES } from './constants';
+import { getInMemoryAccessToken } from '../../utils/accessToken';
 
 const IMAGE_UPLOAD_BATCH_SIZE = 10;
 const IMAGE_UPLOAD_TIMEOUT_MS = 12 * 60 * 1000;
@@ -103,7 +104,7 @@ const uploadImageBatch = ({ examId, uploadSessionId, formData, onProgress }) =>
         xhr.withCredentials = true;
         xhr.timeout = IMAGE_UPLOAD_TIMEOUT_MS;
 
-        const token = sessionStorage.getItem('token');
+        const token = getInMemoryAccessToken();
         if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
         let pollInterval = null;

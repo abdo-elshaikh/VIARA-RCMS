@@ -9,7 +9,7 @@ const startIntegrationWorker = (pool) => {
 
     console.log('[Worker] Integration Queue Worker started. Polling every 5 minutes.');
 
-    setInterval(async () => {
+    const interval = setInterval(async () => {
         try {
             await pool.query(`
                 UPDATE integration_logs
@@ -53,6 +53,7 @@ const startIntegrationWorker = (pool) => {
             console.error('[Worker] Error querying integration queue:', error.message);
         }
     }, INTERVAL_MS);
+    return () => clearInterval(interval);
 };
 
 module.exports = { startIntegrationWorker };

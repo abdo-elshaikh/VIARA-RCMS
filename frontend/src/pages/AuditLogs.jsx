@@ -55,7 +55,7 @@ const SEVERITIES = [
 
 const AuditLogs = ({ embedded = false }) => {
     const { t, i18n } = useTranslation('admin');
-    const token = useSelector((state) => state.auth?.token) || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('token') : null);
+    const token = useSelector((state) => state.auth?.token);
     const [filters, setFilters] = useState(EMPTY_FILTERS);
     const [page, setPage] = useState(1);
     const [expandedId, setExpandedId] = useState(null);

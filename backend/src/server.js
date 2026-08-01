@@ -65,7 +65,6 @@ const { startPacsTieringJob } = require('./jobs/pacsTieringJob');
 const { startPacsAiAnalysisJob } = require('./jobs/pacsAiAnalysisJob');
 const { startAuditDetectionJob } = require('./jobs/auditDetectionJob');
 const { syncRegisteredModalitiesToOrthanc } = require('./services/pacsModalityRegistryService');
-const { grantDeveloperPermissions, seedDeveloperUser } = require('./services/developerSeedService');
 
 // RBAC Cache Initialization
 const { refreshPermissionCache, hasPermission, hasAnyPermission } = require('./middleware/rbacMiddleware');
@@ -396,7 +395,7 @@ const {
 const { startPolling, stopPolling } = require('./services/notificationJobService');
 const { startInventoryAlertPolling, stopInventoryAlertPolling } = require('./services/inventoryAlertService');
 const { startBackupScheduler, stopBackupScheduler } = require('./services/backupScheduler');
-const { applyTrackedMigration } = require('./services/startupMigrationService');
+const { createServerLifecycle } = require('./services/serverLifecycle');
 
 const { getDashboardStats } = require('./controllers/dashboardController');
 const { getPublicLandingOverview, lookupPublicCaseStatus } = require('./controllers/publicLandingController');
@@ -453,6 +452,12 @@ const pool = new Pool({
 });
 configureAuthDatabase(pool);
 
+const lifecycle = createServerLifecycle({
+    pool,
+    logger,
+    shutdownTimeoutMs: Number(process.env.SHUTDOWN_TIMEOUT_MS || 30000)
+});
+
 const auditService = new AuditService(pool);
 
 // Test database connection
@@ -470,173 +475,6 @@ if (process.env.NODE_ENV !== 'test') {
         settingsService.initDb(pool).catch(err => {
             logger.error('Failed to initialize settingsService:', err);
         });
-
-        // Auto-run schema patch for missing updated_at column in modalities
-        client.query('ALTER TABLE modalities ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP')
-            .then(() => logger.info('✅ Database schema patch verified: modalities.updated_at exists'))
-            .catch(err => logger.error('❌ Database schema patch failed:', err));
-
-        client.query(`
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS aet VARCHAR(50);
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS ip_address VARCHAR(255);
-            ALTER TABLE modalities ALTER COLUMN ip_address TYPE VARCHAR(255);
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS port INTEGER;
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS dicom_synced BOOLEAN DEFAULT FALSE;
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS dicom_role VARCHAR(30) DEFAULT 'mwl_client';
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint
-                    WHERE conrelid = 'modalities'::regclass
-                      AND conname IN ('chk_modality_port', 'modalities_port_check')
-                ) THEN
-                    ALTER TABLE modalities
-                        ADD CONSTRAINT chk_modality_port CHECK (port IS NULL OR (port > 0 AND port <= 65535));
-                END IF;
-            END $$;
-        `)
-            .then(() => logger.info('Database schema patch verified: modalities DICOM columns exist'))
-            .catch(err => logger.error('Modalities DICOM schema patch failed:', err));
-
-        // Auto-run schema patch to ensure appointments and waiting_list modality_id references are ON DELETE SET NULL
-        const patchFK = async () => {
-            // Modify appointments foreign key
-            await client.query(`
-                DO $$
-                BEGIN
-                    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'appointments_modality_id_fkey') THEN
-                        ALTER TABLE appointments DROP CONSTRAINT appointments_modality_id_fkey;
-                    END IF;
-                    ALTER TABLE appointments 
-                        ADD CONSTRAINT appointments_modality_id_fkey 
-                        FOREIGN KEY (modality_id) 
-                        REFERENCES modalities(modality_id) 
-                        ON DELETE SET NULL;
-                END $$;
-            `);
-
-            // Modify waiting_list foreign key
-            await client.query(`
-                DO $$
-                BEGIN
-                    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'waiting_list_modality_id_fkey') THEN
-                        ALTER TABLE waiting_list DROP CONSTRAINT waiting_list_modality_id_fkey;
-                    END IF;
-                    ALTER TABLE waiting_list 
-                        ADD CONSTRAINT waiting_list_modality_id_fkey 
-                        FOREIGN KEY (modality_id) 
-                        REFERENCES modalities(modality_id) 
-                        ON DELETE SET NULL;
-                END $$;
-            `);
-        };
-
-        // Auto-run schema patch to seed new advanced permissions and grant safe defaults
-        const patchPermissions = async () => {
-            const permissionsToInsert = [
-                // System / Security
-                { name: 'VIEW_AUDIT_TRAILS', module: 'System', description: 'View system logs and access audit trails' },
-                { name: 'EXPORT_AUDIT_TRAILS', module: 'System', description: 'Export system audit trails and event logs' },
-                { name: 'VERIFY_AUDIT_CHAIN', module: 'System', description: 'Verify tamper-evident audit hash chains' },
-                { name: 'RUN_AUDIT_DETECTIONS', module: 'System', description: 'Run audit detection rules and create audit alerts' },
-                { name: 'REVIEW_AUDIT_ALERTS', module: 'System', description: 'Resolve or dismiss audit detection alerts' },
-                // Privacy / Compliance
-                { name: 'ANONYMIZE_PATIENT_DATA', module: 'Privacy', description: 'Perform patient record anonymization and purging' },
-                { name: 'DOWNLOAD_PII_LOGS', module: 'Privacy', description: 'Download logs containing personally identifiable information access' },
-                // Clinical / Quality Control
-                { name: 'OVERRIDE_SAFETY_CHECKLIST', module: 'Clinical', description: 'Bypass or manually override clinical safety checklists' },
-                { name: 'AMEND_DIAGNOSTIC_REPORTS', module: 'Clinical', description: 'Amend finalized diagnostic radiologist reports' },
-                { name: 'ARCHIVE_STUDIES', module: 'Clinical', description: 'Archive or deactivate clinical imaging studies' },
-                // System Operations
-                { name: 'MANAGE_SYSTEM_JOBS', module: 'System', description: 'Trigger or configure background scheduler and database jobs' },
-                { name: 'VIEW_SYSTEM_HEALTH', module: 'System', description: 'Monitor system resource metrics and API health statuses' },
-                // Billing / Finance
-                { name: 'OPEN_CASHIER_SHIFT', module: 'Finance', description: 'Open a new cashier shift for collecting payments' },
-                { name: 'CLOSE_CASHIER_SHIFT', module: 'Finance', description: 'Close and reconcile an active cashier shift' },
-                { name: 'PROCESS_PAYMENTS', module: 'Finance', description: 'Process patient payments and generate receipts' },
-                { name: 'RECONCILE_SHIFTS', module: 'Finance', description: 'Reconcile cashier shifts and manage variances' },
-                { name: 'MANAGE_QUEUE', module: 'Clinical Operations', description: 'Change exam queue stages and operational routing' }
-            ];
-
-            for (const p of permissionsToInsert) {
-                await client.query(`
-                    INSERT INTO permissions (name, module, description)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (name) DO UPDATE 
-                    SET module = EXCLUDED.module, description = EXCLUDED.description
-                `, [p.name, p.module, p.description]);
-            }
-
-            // Grant Admin the operational permissions introduced by this patch.
-            await client.query(`
-                INSERT INTO role_permissions (role_name, permission_id)
-                SELECT 'Admin'::user_role, permission_id 
-                FROM permissions
-                WHERE name IN ('VIEW_AUDIT_TRAILS', 'EXPORT_AUDIT_TRAILS', 'VERIFY_AUDIT_CHAIN', 'RUN_AUDIT_DETECTIONS', 'REVIEW_AUDIT_ALERTS', 'ANONYMIZE_PATIENT_DATA', 'DOWNLOAD_PII_LOGS', 'OVERRIDE_SAFETY_CHECKLIST', 'AMEND_DIAGNOSTIC_REPORTS', 'ARCHIVE_STUDIES', 'MANAGE_SYSTEM_JOBS', 'VIEW_SYSTEM_HEALTH', 'OPEN_CASHIER_SHIFT', 'CLOSE_CASHIER_SHIFT', 'PROCESS_PAYMENTS', 'RECONCILE_SHIFTS', 'MANAGE_QUEUE')
-                ON CONFLICT DO NOTHING
-            `);
-
-            // Radiologist gets AMEND_DIAGNOSTIC_REPORTS, ARCHIVE_STUDIES
-            await client.query(`
-                INSERT INTO role_permissions (role_name, permission_id)
-                SELECT 'Radiologist'::user_role, permission_id 
-                FROM permissions
-                WHERE name IN ('AMEND_DIAGNOSTIC_REPORTS', 'ARCHIVE_STUDIES')
-                ON CONFLICT DO NOTHING
-            `);
-
-            // Receptionist gets Cashier Shift permissions
-            await client.query(`
-                INSERT INTO role_permissions (role_name, permission_id)
-                SELECT 'Receptionist'::user_role, permission_id 
-                FROM permissions
-                WHERE name IN ('OPEN_CASHIER_SHIFT', 'CLOSE_CASHIER_SHIFT', 'PROCESS_PAYMENTS', 'MANAGE_QUEUE')
-                ON CONFLICT DO NOTHING
-            `);
-
-            // Cashier gets Cashier Shift permissions
-            await client.query(`
-                INSERT INTO role_permissions (role_name, permission_id)
-                SELECT 'Cashier'::user_role, permission_id 
-                FROM permissions
-                WHERE name IN ('OPEN_CASHIER_SHIFT', 'CLOSE_CASHIER_SHIFT', 'PROCESS_PAYMENTS', 'MANAGE_QUEUE')
-                ON CONFLICT DO NOTHING
-            `);
-
-            // Accountant gets payments and reconcile
-            await client.query(`
-                INSERT INTO role_permissions (role_name, permission_id)
-                SELECT 'Accountant'::user_role, permission_id 
-                FROM permissions
-                WHERE name IN ('PROCESS_PAYMENTS', 'RECONCILE_SHIFTS', 'MANAGE_QUEUE')
-                ON CONFLICT DO NOTHING
-            `);
-
-            // Nurse gets OVERRIDE_SAFETY_CHECKLIST
-            await client.query(`
-                INSERT INTO role_permissions (role_name, permission_id)
-                SELECT 'Nurse'::user_role, permission_id 
-                FROM permissions
-                WHERE name IN ('OVERRIDE_SAFETY_CHECKLIST')
-                ON CONFLICT DO NOTHING
-            `);
-
-            // Accountant gets VIEW_AUDIT_TRAILS
-            await client.query(`
-                INSERT INTO role_permissions (role_name, permission_id)
-                SELECT 'Accountant'::user_role, permission_id 
-                FROM permissions
-                WHERE name IN ('VIEW_AUDIT_TRAILS')
-                ON CONFLICT DO NOTHING
-            `);
-
-            await grantDeveloperPermissions(client);
-        };
-
-        patchFK()
-            .then(() => patchPermissions().then(() => refreshPermissionCache(pool)))
-            .then(() => logger.info('✅ Database schema patch verified: foreign keys updated and advanced permissions seeded'))
-            .catch(err => logger.error('❌ Database schema patch failed:', err));
 
         // Initialize RBAC Cache
         refreshPermissionCache(pool).then(() => {
@@ -794,29 +632,19 @@ app.use(auditLogger(auditService));
 app.use('/api/v1', v1Router(pool, authenticateToken, authorizeRole));
 
 app.get('/health/live', (req, res) => {
-    res.json({ status: 'OK', timestamp: new Date().toISOString(), uptime: process.uptime() });
+    res.json({ status: 'OK' });
 });
 
 const readinessHandler = async (req, res) => {
+    if (!lifecycle.isReady() && process.env.NODE_ENV !== 'test') {
+        return res.status(503).json({ status: 'NOT_READY' });
+    }
+
     try {
         await pool.query('SELECT 1');
-        res.json({
-            status: 'OK',
-            timestamp: new Date().toISOString(),
-            uptime: process.uptime(),
-            database: 'connected',
-            pool_stats: {
-                total: pool.totalCount,
-                idle: pool.idleCount,
-                waiting: pool.waitingCount
-            }
-        });
+        return res.json({ status: 'OK' });
     } catch (error) {
-        res.status(503).json({
-            status: 'ERROR',
-            database: 'disconnected',
-            timestamp: new Date().toISOString()
-        });
+        return res.status(503).json({ status: 'NOT_READY' });
     }
 };
 
@@ -1968,316 +1796,36 @@ app.use(notFoundHandler);
 // Centralized Error Handler - Must be last
 app.use(errorHandler);
 
-// --- Automatic Migration Run ---
-const verifyPrivacyWorkflowMigration = async (client) => {
-    const result = await client.query(`
-        WITH required_columns(table_name, column_name) AS (
-            VALUES
-                ('patient_consents', 'signed_by'),
-                ('patient_consents', 'source'),
-                ('patient_consents', 'revoked_at'),
-                ('patient_consents', 'revoked_by'),
-                ('patient_consents', 'revoked_reason'),
-                ('patient_consents', 'metadata'),
-                ('data_privacy_requests', 'requested_by'),
-                ('data_privacy_requests', 'resolution_notes'),
-                ('data_privacy_requests', 'rejected_at'),
-                ('data_privacy_requests', 'completed_at'),
-                ('data_privacy_requests', 'export_id'),
-                ('data_privacy_requests', 'metadata')
-        ),
-        required_permissions(name) AS (
-            VALUES
-                ('VIEW_PRIVACY_REQUESTS'),
-                ('CREATE_PRIVACY_REQUESTS'),
-                ('RESOLVE_PRIVACY_REQUESTS'),
-                ('EXPORT_PATIENT_DATA'),
-                ('ANONYMIZE_PATIENT_DATA'),
-                ('MANAGE_CONSENTS')
-        )
-        SELECT
-            NOT EXISTS (
-                SELECT 1
-                FROM required_columns rc
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM information_schema.columns c
-                    WHERE c.table_schema = 'public'
-                      AND c.table_name = rc.table_name
-                      AND c.column_name = rc.column_name
-                )
-            ) AS has_columns,
-            to_regclass('public.privacy_export_artifacts') IS NOT NULL AS has_export_table,
-            EXISTS (
-                SELECT 1
-                FROM pg_constraint
-                WHERE conname = 'data_privacy_requests_status_check_v2'
-            ) AS has_status_constraint,
-            NOT EXISTS (
-                SELECT 1
-                FROM required_permissions rp
-                WHERE NOT EXISTS (SELECT 1 FROM permissions p WHERE p.name = rp.name)
-            ) AS has_permissions
-    `);
-    const row = result.rows[0] || {};
-    return Boolean(row.has_columns && row.has_export_table && row.has_status_constraint && row.has_permissions);
-};
-
-const verifyInsuranceContractIntegrityMigration = async (client) => {
-    const result = await client.query(`
-        SELECT
-            (SELECT COUNT(*) >= 3 FROM pg_indexes WHERE indexname IN (
-                'idx_patient_insurance_one_primary',
-                'idx_insurance_providers_payer_code_unique',
-                'idx_insurance_approvals_provider_number_unique'
-            )) AS has_indexes,
-            (SELECT COUNT(*) >= 5 FROM pg_constraint WHERE conname IN (
-                'contracts_date_order_check',
-                'patient_insurance_policy_date_order_check',
-                'insurance_coverage_rules_amounts_check',
-                'insurance_approvals_amounts_check',
-                'insurance_claims_amounts_check'
-            )) AS has_constraints
-    `);
-    const row = result.rows[0] || {};
-    return Boolean(row.has_indexes && row.has_constraints);
-};
-
-const verifyPayrollDeductionsPenaltiesMigration = async (client) => {
-    const result = await client.query(`
-        SELECT
-            (SELECT COUNT(*) >= 5 FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN (
-                'payroll_periods',
-                'employee_compensation_profiles',
-                'payroll_rules',
-                'employee_deductions',
-                'employee_penalties'
-            )) AS has_tables
-    `);
-    const row = result.rows[0] || {};
-    return Boolean(row.has_tables);
-};
-
-const verifyPayrollFinancePostingMigration = async (client) => {
-    const result = await client.query(`
-        SELECT
-            EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'payroll_periods' AND column_name = 'branch_id'
-            ) AS has_branch
-    `);
-    const row = result.rows[0] || {};
-    return Boolean(row.has_branch);
-};
-
-const financialReportingMigration = process.env.NODE_ENV === 'test'
-    ? Promise.resolve([])
-    : [
-        ['066_financial_reporting_v2', '066_financial_reporting_v2.sql'],
-        ['067_financial_integrity_constraints', '067_financial_integrity_constraints.sql'],
-        ['068_financial_journal_backfill', '068_financial_journal_backfill.sql'],
-        ['069_reconcile_invoice_item_totals', '069_reconcile_invoice_item_totals.sql'],
-        ['070_claim_written_off_at', '070_claim_written_off_at.sql'],
-        ['071_realtime_chat_and_messaging', '071_realtime_chat_and_messaging.sql'],
-        ['072_notification_delivery_receipts', '072_notification_delivery_receipts.sql'],
-        ['073_marketing_campaign_delivery_controls', '073_marketing_campaign_delivery_controls.sql'],
-        ['074_marketing_campaign_content', '074_marketing_campaign_content.sql'],
-        ['075_add_developer_role', '075_add_developer_role.sql'],
-        ['076_developer_permissions', '076_developer_permissions.sql'],
-        ['077_audit_classification', '077_audit_classification.sql'],
-        ['078_privacy_workflow_hardening', '078_privacy_workflow_hardening.sql', verifyPrivacyWorkflowMigration],
-        ['079_privacy_export_retention_indexes', '079_privacy_export_retention_indexes.sql'],
-        ['080_radiologist_report_ai_permissions', '080_radiologist_report_ai_permissions.sql'],
-        ['081_chat_rich_messages', '081_chat_rich_messages.sql'],
-        ['082_insurance_contract_integrity', '082_insurance_contract_integrity.sql', verifyInsuranceContractIntegrityMigration],
-        ['083_payroll_deductions_penalties', '083_payroll_deductions_penalties.sql', verifyPayrollDeductionsPenaltiesMigration],
-        ['084_payroll_finance_posting', '084_payroll_finance_posting.sql', verifyPayrollFinancePostingMigration],
-        ['085_add_audit_change_columns', '085_add_audit_change_columns.sql'],
-        ['086_structured_audit_events', '086_structured_audit_events.sql'],
-        ['087_audit_governance_permissions', '087_audit_governance_permissions.sql'],
-        ['088_payroll_control_hardening', '088_payroll_control_hardening.sql'],
-        ['089_payroll_rule_approval_workflow', '089_payroll_rule_approval_workflow.sql'],
-        ['090_notifications_hardening', '090_notifications_hardening.sql'],
-        ['091_partial_payment_exceptions', '091_partial_payment_exceptions.sql'],
-        ['092_final_delivery_full_payment', '092_final_delivery_full_payment.sql']
-    ].reduce((chain, [version, filename, verifyApplied]) => chain.then(async (results) => {
-        const migrationResult = await applyTrackedMigration(pool, {
-            version,
-            filePath: path.resolve(__dirname, `../../database/migrations/${filename}`),
-            verifyApplied
-        });
-        logger.info('Financial schema migration verified', migrationResult);
-        return [...results, migrationResult];
-    }), Promise.resolve([]));
-
-financialReportingMigration
-    .then(() => seedDeveloperUser(pool))
-    .then(() => grantDeveloperPermissions(pool))
-    .then(() => refreshPermissionCache(pool))
-    .catch(error => logger.error('Developer bootstrap failed', error));
-
-pool.query(`
-    DO $$
-    BEGIN
-        INSERT INTO permissions (name, module, description)
-        VALUES 
-            ('PRINT_LABELS', 'Reception', 'Allows printing patient stickers and labels'),
-            ('PRINT_RECEIPTS', 'Reception', 'Allows printing test result receipts'),
-            ('BYPASS_WAITLIST', 'Reception', 'Allows bypassing the waitlist to move patients to exams'),
-            ('OVERRIDE_PRICING', 'Billing', 'Allows overriding pricing and applying custom discounts')
-        ON CONFLICT (name) DO NOTHING;
-        
-        INSERT INTO role_permissions (role_name, permission_id)
-        SELECT 'Receptionist', permission_id FROM permissions WHERE name IN ('PRINT_LABELS', 'PRINT_RECEIPTS', 'BYPASS_WAITLIST', 'OVERRIDE_PRICING')
-        ON CONFLICT DO NOTHING;
-
-        INSERT INTO role_permissions (role_name, permission_id)
-        SELECT 'Admin', permission_id FROM permissions WHERE name IN ('PRINT_LABELS', 'PRINT_RECEIPTS', 'BYPASS_WAITLIST', 'OVERRIDE_PRICING')
-        ON CONFLICT DO NOTHING;
-        
-        ALTER TABLE center_settings ADD COLUMN IF NOT EXISTS print_settings JSONB DEFAULT '{}'::jsonb;
-    END
-    $$;
-`)
-    .then(() => grantDeveloperPermissions(pool))
-    .then(() => refreshPermissionCache(pool))
-    .then(() => console.log('Migration 034 automatically applied.'))
-    .catch(console.error);
-
-pool.query(`
-    CREATE TABLE IF NOT EXISTS report_ai_drafts (
-        draft_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        exam_id UUID NOT NULL REFERENCES examinations(exam_id) ON DELETE CASCADE,
-        template_id UUID REFERENCES report_templates(template_id) ON DELETE SET NULL,
-        generated_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
-        provider VARCHAR(60),
-        model VARCHAR(120),
-        language VARCHAR(5) NOT NULL DEFAULT 'en',
-        draft_sections JSONB NOT NULL DEFAULT '{}'::jsonb,
-        limitations JSONB NOT NULL DEFAULT '[]'::jsonb,
-        disclaimer TEXT,
-        prompt_context JSONB NOT NULL DEFAULT '{}'::jsonb,
-        status VARCHAR(30) NOT NULL DEFAULT 'Generated'
-            CHECK (status IN ('Generated', 'Applied', 'Discarded')),
-        apply_mode VARCHAR(30),
-        applied_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
-        applied_at TIMESTAMP WITH TIME ZONE,
-        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_report_ai_drafts_exam_created
-        ON report_ai_drafts(exam_id, created_at DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_report_ai_drafts_generated_by
-        ON report_ai_drafts(generated_by, created_at DESC);
-`).then(() => console.log('Migration 063 automatically verified: report_ai_drafts exists.')).catch(console.error);
-
-pool.query(`
-    CREATE TABLE IF NOT EXISTS pacs_ai_analysis_jobs (
-        job_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        exam_id UUID NOT NULL REFERENCES examinations(exam_id) ON DELETE CASCADE,
-        study_instance_uid VARCHAR(255) NOT NULL,
-        orthanc_study_id VARCHAR(255),
-        requested_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
-        analysis_type VARCHAR(60) NOT NULL DEFAULT 'preliminary_image_review',
-        priority VARCHAR(20) NOT NULL DEFAULT 'Routine'
-            CHECK (priority IN ('Routine', 'Urgent', 'Emergency')),
-        status VARCHAR(30) NOT NULL DEFAULT 'Queued'
-            CHECK (status IN ('Queued', 'Running', 'Completed', 'Failed', 'Canceled')),
-        provider VARCHAR(80),
-        model VARCHAR(160),
-        model_version VARCHAR(80),
-        result_summary TEXT,
-        result_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-        error_message TEXT,
-        radiologist_status VARCHAR(30) NOT NULL DEFAULT 'Pending'
-            CHECK (radiologist_status IN ('Pending', 'Accepted', 'Rejected', 'Reviewed')),
-        reviewed_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
-        reviewed_at TIMESTAMP WITH TIME ZONE,
-        started_at TIMESTAMP WITH TIME ZONE,
-        completed_at TIMESTAMP WITH TIME ZONE,
-        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_pacs_ai_analysis_jobs_exam_created
-        ON pacs_ai_analysis_jobs(exam_id, created_at DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_pacs_ai_analysis_jobs_status_created
-        ON pacs_ai_analysis_jobs(status, created_at);
-
-    CREATE INDEX IF NOT EXISTS idx_pacs_ai_analysis_jobs_study
-        ON pacs_ai_analysis_jobs(study_instance_uid);
-`).then(() => console.log('Migration 064 automatically verified: pacs_ai_analysis_jobs exists.')).catch(console.error);
-
-pool.query(`
-    ALTER TABLE appointments
-        ADD COLUMN IF NOT EXISTS is_follow_up BOOLEAN NOT NULL DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS prior_exam_id UUID,
-        ADD COLUMN IF NOT EXISTS follow_up_reason TEXT;
-
-    ALTER TABLE examinations
-        ADD COLUMN IF NOT EXISTS is_follow_up BOOLEAN NOT NULL DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS prior_exam_id UUID,
-        ADD COLUMN IF NOT EXISTS follow_up_reason TEXT;
-
-    DO $$
-    BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_appointments_follow_up_link') THEN
-            ALTER TABLE appointments ADD CONSTRAINT chk_appointments_follow_up_link CHECK (
-                (is_follow_up = TRUE AND prior_exam_id IS NOT NULL)
-                OR (is_follow_up = FALSE AND prior_exam_id IS NULL)
-            );
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_examinations_follow_up_link') THEN
-            ALTER TABLE examinations ADD CONSTRAINT chk_examinations_follow_up_link CHECK (
-                ((is_follow_up = TRUE AND prior_exam_id IS NOT NULL)
-                OR (is_follow_up = FALSE AND prior_exam_id IS NULL))
-                AND prior_exam_id IS DISTINCT FROM exam_id
-            );
-        END IF;
-    END $$;
-
-    ALTER TABLE appointments
-        DROP CONSTRAINT IF EXISTS fk_appointments_prior_exam,
-        ADD CONSTRAINT fk_appointments_prior_exam
-            FOREIGN KEY (prior_exam_id) REFERENCES examinations(exam_id) ON DELETE RESTRICT;
-    ALTER TABLE examinations
-        DROP CONSTRAINT IF EXISTS fk_examinations_prior_exam,
-        ADD CONSTRAINT fk_examinations_prior_exam
-            FOREIGN KEY (prior_exam_id) REFERENCES examinations(exam_id) ON DELETE RESTRICT;
-
-    CREATE INDEX IF NOT EXISTS idx_appointments_prior_exam ON appointments(prior_exam_id)
-        WHERE prior_exam_id IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_examinations_prior_exam ON examinations(prior_exam_id)
-        WHERE prior_exam_id IS NOT NULL;
-`).then(() => console.log('Migration 065 automatically verified: follow-up case links exist.')).catch(console.error);
-
 // Start Server conditionally
 if (process.env.NODE_ENV !== 'test') {
-    financialReportingMigration.then(() => app.listen(PORT, () => {
+    const httpServer = app.listen(PORT, () => {
         logger.info(`🚀 RCMS Server running on port ${PORT}`);
         logger.info(`📊 Environment: ${process.env.NODE_ENV}`);
         logger.info(`🌐 Client URL: ${process.env.CLIENT_URL}`);
         // Start workers only after the required schema is ready and the API is listening.
-        startIntegrationWorker(pool);
-        scheduleDataRetentionJobs(pool);
-        setTimeout(() => {
+        lifecycle.addStopCallback(startIntegrationWorker(pool));
+        lifecycle.addStopCallback(scheduleDataRetentionJobs(pool));
+        lifecycle.trackStartupTimer(setTimeout(() => {
             syncRegisteredModalitiesToOrthanc(pool)
                 .then((result) => logger.info('PACS modalities synchronized to Orthanc', result))
                 .catch((error) => logger.error('PACS modality startup synchronization failed', { error: error.message }));
-        }, 5000);
-        startPacsMwlJob(pool);
-        startPacsTieringJob(pool);
-        startPacsAiAnalysisJob(pool);
-        startAuditDetectionJob(pool);
+        }, 5000));
+        lifecycle.addStopCallback(startPacsMwlJob(pool));
+        lifecycle.addStopCallback(startPacsTieringJob(pool));
+        lifecycle.addStopCallback(startPacsAiAnalysisJob(pool));
+        lifecycle.addStopCallback(startAuditDetectionJob(pool));
         // Start notification job polling (every 60 seconds)
         startPolling(pool, 60000);
         startInventoryAlertPolling(pool);
         startBackupScheduler(pool);
+        lifecycle.addStopCallback(stopPolling);
+        lifecycle.addStopCallback(stopInventoryAlertPolling);
+        lifecycle.addStopCallback(stopBackupScheduler);
+        lifecycle.markReady();
         logger.info('🔔 Notification job polling started (60s interval)');
-    })).catch((error) => {
+        });
+        lifecycle.setHttpServer(httpServer);
+    }).catch((error) => {
         logger.error('Financial Reporting V2 migration failed', { error: error.message });
         process.exit(1);
     });
@@ -2286,14 +1834,12 @@ if (process.env.NODE_ENV !== 'test') {
 // Graceful Shutdown
 if (process.env.NODE_ENV !== 'test') {
     const shutdown = (signal) => {
-        logger.info(`${signal} signal received: closing background services`);
-        stopPolling();
-        stopInventoryAlertPolling();
-        stopBackupScheduler();
-        pool.end(() => {
-            logger.info('Database pool closed');
-            process.exit(0);
-        });
+        lifecycle.shutdown(signal)
+            .then(() => process.exit(0))
+            .catch((error) => {
+                logger.error('Graceful shutdown failed', { error: error.message, stack: error.stack });
+                process.exit(1);
+            });
     };
     process.once('SIGTERM', () => shutdown('SIGTERM'));
     process.once('SIGINT', () => shutdown('SIGINT'));

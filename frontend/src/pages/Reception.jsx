@@ -6,7 +6,6 @@ import ReceptionOperations from '../components/reception/ReceptionOperations';
 import ReceptionLoadingState from '../components/reception/ReceptionLoadingState';
 import ReceptionErrorState from '../components/reception/ReceptionErrorState';
 import { isCashierRole } from '../utils/permissions';
-import { rehydrateUser } from '../store/authSlice';
 
 const Reception = () => {
   const dispatch = useDispatch();
@@ -15,13 +14,9 @@ const Reception = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState(null);
 
-  // Rehydrate user from local storage when component mounts
   useEffect(() => {
     const initializeReception = async () => {
       try {
-        if (isAuthenticated && !user) {
-          dispatch(rehydrateUser());
-        }
         setError(null);
       } catch (err) {
         setError(err.message || 'Failed to initialize reception state');
@@ -31,7 +26,6 @@ const Reception = () => {
     };
 
     initializeReception();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, isAuthenticated]);
 
   // Memoize the permission check to prevent unnecessary re-renders

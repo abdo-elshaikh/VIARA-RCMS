@@ -1,4 +1,8 @@
 const dcmjs = require('dcmjs');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { Readable } = require('stream');
 
 // Silence the service logger.
 jest.mock('../../src/config/logger', () => ({
@@ -188,6 +192,59 @@ describe('pacsUploadService', () => {
             expect(res.results[0].status).toBe('stored');
         });
 
+        it('processes a path-backed DICOM upload and removes the quarantine file', async () => {
+            const pool = makeExamPool();
+            const { buffer } = makeDicomBuffer();
+            const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pacs-upload-'));
+            const filePath = path.join(tempDir, 'quarantine.dcm');
+            fs.writeFileSync(filePath, buffer);
+            let storeCount = 0;
+            global.fetch = jest.fn(async (url, options = {}) => {
+                if (String(url).includes('/modify')) return new Response(buffer, { status: 200 });
+                if (options.method === 'DELETE') return new Response(null, { status: 200 });
+                if (String(url).endsWith('/instances')) {
+                    storeCount += 1;
+                    if (options.body && typeof options.body.pipe === 'function') {
+                        for await (const _chunk of options.body) { /* consume upload stream */ }
+                    }
+                    return new Response(JSON.stringify({ ID: `path-${storeCount}`, ParentStudy: 'path-study', Status: 'Success' }), { status: 200 });
+                }
+                return new Response('{}', { status: 200 });
+            });
+
+            try {
+                const res = await uploadFilesToExam(pool, {
+                    files: [{ path: filePath, originalname: 'path.dcm', mimetype: 'application/dicom' }],
+                    examId: 'exam-1'
+                });
+
+                expect(res.reconciled).toBe(1);
+                expect(fs.existsSync(filePath)).toBe(false);
+            } finally {
+                fs.rmSync(tempDir, { recursive: true, force: true });
+            }
+        });
+
+        it('removes a path-backed quarantine file when exam validation fails', async () => {
+            const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pacs-upload-'));
+            const filePath = path.join(tempDir, 'missing.dcm');
+            fs.writeFileSync(filePath, Buffer.from('DICOM'));
+
+            try {
+                await expect(uploadFilesToExam(
+                    { query: jest.fn(async () => ({ rows: [] })) },
+                    {
+                        files: [{ path: filePath, originalname: 'missing.dcm', mimetype: 'application/dicom' }],
+                        examId: 'missing',
+                        actorUserId: 'cleanup-user'
+                    }
+                )).rejects.toMatchObject({ statusCode: 404 });
+                expect(fs.existsSync(filePath)).toBe(false);
+            } finally {
+                fs.rmSync(tempDir, { recursive: true, force: true });
+            }
+        });
+
         it('does not reconcile an un-stamped DICOM when Orthanc modify fails', async () => {
             const pool = makeExamPool();
             const { buffer } = makeDicomBuffer();
@@ -288,6 +345,44 @@ describe('pacsUploadService', () => {
             expect(res.stored).toBe(0);
             expect(res.results[0]).toMatchObject({ status: 'rejected' });
             expect(res.results[0].reason).toContain('UNSUPPORTED_TYPE');
+        });
+
+        it('consumes a stream-backed upload without requiring file.buffer', async () => {
+            const pool = makeExamPool();
+            global.fetch = jest.fn();
+
+            const res = await uploadFilesToExam(pool, {
+                files: [{ stream: Readable.from(Buffer.from('hello')), originalname: 'notes.txt', mimetype: 'text/plain' }],
+                examId: 'exam-1'
+            });
+
+            expect(global.fetch).not.toHaveBeenCalled();
+            expect(res.results[0]).toMatchObject({ status: 'rejected' });
+        });
+
+        it('rejects overlapping uploads from the same user by default', async () => {
+            let releaseLookup;
+            const lookupBlocked = new Promise((resolve) => { releaseLookup = resolve; });
+            const pool = makeExamPool();
+            const originalQuery = pool.query;
+            pool.query = jest.fn(async (...args) => {
+                await lookupBlocked;
+                return originalQuery(...args);
+            });
+            const first = uploadFilesToExam(pool, {
+                files: [{ buffer: Buffer.from('hello'), originalname: 'one.txt', mimetype: 'text/plain' }],
+                examId: 'exam-1',
+                actorUserId: 'busy-user'
+            });
+
+            await expect(uploadFilesToExam(makeExamPool(), {
+                files: [{ buffer: Buffer.from('hello'), originalname: 'two.txt', mimetype: 'text/plain' }],
+                examId: 'exam-1',
+                actorUserId: 'busy-user'
+            })).rejects.toMatchObject({ statusCode: 429 });
+
+            releaseLookup();
+            await first;
         });
 
         it('keeps cumulative progress across request batches in one upload session', async () => {

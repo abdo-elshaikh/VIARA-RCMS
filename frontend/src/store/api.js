@@ -5,7 +5,7 @@ const baseQuery = fetchBaseQuery({
     baseUrl: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
     credentials: 'include',
     prepareHeaders: (headers, { getState }) => {
-        const token = getState().auth.token || sessionStorage.getItem('token');
+        const token = getState().auth.token;
         if (token) {
             headers.set('authorization', `Bearer ${token}`);
         }
@@ -41,7 +41,7 @@ const refreshAccessToken = (api, extraOptions) => {
 
 const baseQueryWithReauth = async (args, api, extraOptions) => {
     let result = await baseQuery(args, api, extraOptions);
-    if (result.error && result.error.status === 401 && args.url !== '/auth/login') {
+    if (result.error && result.error.status === 401 && !['/auth/login', '/auth/refresh'].includes(args.url)) {
         const token = await refreshAccessToken(api, extraOptions);
         if (token) {
             result = await baseQuery(args, api, extraOptions);
@@ -63,6 +63,10 @@ export const api = createApi({
                 method: 'POST',
                 body: credentials,
             }),
+        }),
+
+        refreshSession: builder.mutation({
+            query: () => ({ url: '/auth/refresh', method: 'POST' }),
         }),
 
         logout: builder.mutation({
@@ -1758,6 +1762,23 @@ export const api = createApi({
         }),
     }),
 });
+
+let sessionRehydrationPromise = null;
+
+export const rehydrateSession = () => (dispatch) => {
+    if (!sessionRehydrationPromise) {
+        sessionRehydrationPromise = dispatch(api.endpoints.refreshSession.initiate()).unwrap()
+            .then((result) => {
+                if (!result?.token) throw new Error('Refresh response did not include an access token');
+                return result.token;
+            })
+            .finally(() => {
+                sessionRehydrationPromise = null;
+            });
+    }
+
+    return sessionRehydrationPromise;
+};
 
 
 export const {

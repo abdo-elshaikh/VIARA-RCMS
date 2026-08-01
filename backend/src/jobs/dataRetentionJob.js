@@ -89,8 +89,12 @@ const scheduleDataRetentionJobs = (pool) => {
 
     // Run once on startup (after 1 minute) and then every 24 hours
     // This removes the need for the external 'node-cron' dependency
-    setTimeout(runJob, 60 * 1000);
-    setInterval(runJob, 24 * 60 * 60 * 1000);
+    const timeout = setTimeout(runJob, 60 * 1000);
+    const interval = setInterval(runJob, 24 * 60 * 60 * 1000);
+    return () => {
+        clearTimeout(timeout);
+        clearInterval(interval);
+    };
 };
 
 module.exports = { scheduleDataRetentionJobs, cleanupExpiredPrivacyExports };

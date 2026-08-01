@@ -45,14 +45,18 @@ const runOnce = async (pool) => {
 const startPacsMwlJob = (pool) => {
     if (String(process.env.PACS_MWL_ENABLED || 'true').toLowerCase() === 'false') {
         logger.info('PACS MWL job disabled (PACS_MWL_ENABLED=false)');
-        return;
+        return () => {};
     }
 
     logger.info('PACS MWL worklist generator started. Regenerating every 2 minutes.');
 
     // Prime shortly after boot, then on the interval.
-    setTimeout(() => runOnce(pool), 15 * 1000);
-    setInterval(() => runOnce(pool), INTERVAL_MS);
+    const timeout = setTimeout(() => runOnce(pool), 15 * 1000);
+    const interval = setInterval(() => runOnce(pool), INTERVAL_MS);
+    return () => {
+        clearTimeout(timeout);
+        clearInterval(interval);
+    };
 };
 
 // Allow controllers (e.g. after scheduling an exam) to force an immediate refresh.

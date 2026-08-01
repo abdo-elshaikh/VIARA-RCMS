@@ -24,12 +24,16 @@ const runOnce = async (pool) => {
 const startPacsTieringJob = (pool) => {
     if (String(process.env.PACS_TIERING_ENABLED || 'true').toLowerCase() === 'false') {
         logger.info('PACS tiering job disabled (PACS_TIERING_ENABLED=false)');
-        return;
+        return () => {};
     }
     logger.info(`PACS tiering job started. Sweeping every ${Math.round(INTERVAL_MS / 60000)} min.`);
     // Delay first sweep so boot stays light.
-    setTimeout(() => runOnce(pool), 60 * 1000);
-    setInterval(() => runOnce(pool), INTERVAL_MS);
+    const timeout = setTimeout(() => runOnce(pool), 60 * 1000);
+    const interval = setInterval(() => runOnce(pool), INTERVAL_MS);
+    return () => {
+        clearTimeout(timeout);
+        clearInterval(interval);
+    };
 };
 
 // Exposed so the QA test / an admin action can force a sweep.

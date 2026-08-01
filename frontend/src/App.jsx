@@ -3,9 +3,9 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from
 import toast, { Toaster } from 'react-hot-toast';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { selectCurrentUser, selectIsAuthenticated, rehydrateUser, logOut } from './store/authSlice';
+import { selectCurrentToken, selectCurrentUser, selectIsAuthenticated, rehydrateUser, logOut } from './store/authSlice';
 import ErrorBoundary from './components/ErrorBoundary';
-import { api, useGetPreferencesQuery } from './store/api';
+import { api, rehydrateSession, useGetPreferencesQuery } from './store/api';
 import { DEFAULT_PREFERENCES, updateAllPreferences } from './store/preferencesSlice';
 import {
     getDoctorPortalDashboardUrl,
@@ -261,10 +261,24 @@ const App = () => {
         return () => systemTheme.removeEventListener?.('change', applyTheme);
     }, [preferences]);
 
-    // Initialize state
+    // Rehydrate the in-memory access token from the HttpOnly refresh cookie.
     useEffect(() => {
-        dispatch(rehydrateUser());
-        setIsRehydrated(true);
+        let active = true;
+
+        dispatch(rehydrateSession())
+            .then((token) => {
+                if (active) dispatch(rehydrateUser(token));
+            })
+            .catch(() => {
+                if (active) dispatch(logOut());
+            })
+            .finally(() => {
+                if (active) setIsRehydrated(true);
+            });
+
+        return () => {
+            active = false;
+        };
     }, [dispatch]);
 
     // Fetch preferences from backend if authenticated
@@ -304,6 +318,7 @@ const App = () => {
     }, [isAuthenticated, dispatch, t]);
 
     const currentUser = useSelector(selectCurrentUser);
+    const currentToken = useSelector(selectCurrentToken);
     const currentUserId = currentUser?.user_id || currentUser?.userId;
     const currentUserIdRef = useRef(currentUserId);
     const preferencesRef = useRef(preferences);
@@ -320,7 +335,7 @@ const App = () => {
     useEffect(() => {
         if (!isAuthenticated) return;
 
-        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const token = currentToken;
         if (!token) return;
 
         const eventSource = new EventSource(`/api/realtime/stream?token=${encodeURIComponent(token)}`);
@@ -429,7 +444,7 @@ const App = () => {
         return () => {
             eventSource.close();
         };
-    }, [isAuthenticated, dispatch]);
+    }, [isAuthenticated, currentToken, dispatch]);
 
     if (!isRehydrated) {
         return null;

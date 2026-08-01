@@ -4,6 +4,7 @@ const settingsService = require('./settingsService');
 const { decrypt } = require('../utils/crypto');
 const aiProfileService = require('./aiProfileService');
 const { GEMINI_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL, normalizeAiModel } = require('./aiModelPolicy');
+const { validateCustomAiEndpointUrl } = require('../utils/customAiEndpointUrl');
 
 /**
  * AI-assisted radiology report formatting.
@@ -349,6 +350,7 @@ const callAnthropic = async ({ baseUrl, model, apiKey, systemPrompt, userContent
 };
 
 const callOpenAiCompatible = async ({ provider, baseUrl, model, apiKey, systemPrompt, userContent, maxTokens = 2000, jsonMode = false }) => {
+    if (provider === 'custom') validateCustomAiEndpointUrl(baseUrl);
     return withRetry(async () => {
         const isCurrentOpenAiModel = provider === 'openai' && /^gpt-5\.(?:[4-9]|\d{2,})(?:-|$)/i.test(String(model));
         const nativeJsonMode = jsonMode
@@ -376,6 +378,7 @@ const callOpenAiCompatible = async ({ provider, baseUrl, model, apiKey, systemPr
                 } : {})
             },
             body: JSON.stringify(requestBody),
+            ...(provider === 'custom' ? { redirect: 'error' } : {}),
         });
 
         if (!response.ok) {

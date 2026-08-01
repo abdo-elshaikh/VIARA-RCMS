@@ -1,5 +1,7 @@
+import { getInMemoryAccessToken } from './accessToken';
+
 export const authenticatedFetch = (url, options = {}) => {
-    const token = sessionStorage.getItem('token');
+    const token = getInMemoryAccessToken();
     const headers = new Headers(options.headers || {});
     if (token) headers.set('Authorization', `Bearer ${token}`);
     return fetch(url, { ...options, headers, credentials: 'include' });

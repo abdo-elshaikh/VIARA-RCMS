@@ -3,6 +3,7 @@ import { setupListeners } from '@reduxjs/toolkit/query';
 import { api } from './api';
 import authReducer from './authSlice';
 import preferencesReducer from './preferencesSlice';
+import { configureAccessTokenProvider } from '../utils/accessToken';
 
 export const store = configureStore({
     reducer: {
@@ -13,5 +14,7 @@ export const store = configureStore({
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware().concat(api.middleware),
 });
+
+configureAccessTokenProvider(() => store.getState().auth.token);
 
 setupListeners(store.dispatch);

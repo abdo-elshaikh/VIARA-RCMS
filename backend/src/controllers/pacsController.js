@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const fs = require('fs');
 const net = require('net');
 const jwt = require('jsonwebtoken');
 const { Readable } = require('stream');
@@ -1909,6 +1910,15 @@ const uploadExamImages = (db) => async (req, res, next) => {
         await auditPacsAccessDenied(db, req, error, { exam_id: req.params?.examId, action: 'upload_images' });
         if (error.statusCode) return next(new AppError(error.message, error.statusCode));
         return next(error);
+    } finally {
+        await Promise.all((req.files || []).map(async (file) => {
+            if (!file?.path) return;
+            try { await fs.promises.unlink(file.path); } catch (cleanupError) {
+                if (cleanupError.code !== 'ENOENT') {
+                    logger.warn('PACS upload controller cleanup failed', { path: file.path, error: cleanupError.message });
+                }
+            }
+        }));
     }
 };
 

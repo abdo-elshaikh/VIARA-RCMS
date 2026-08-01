@@ -1,4 +1,14 @@
 const { z } = require('zod');
+const { validateCustomAiEndpointUrl } = require('../utils/customAiEndpointUrl');
+
+const validateCustomBaseUrl = (value, context, provider, path = ['baseUrl']) => {
+    if (!value || !['custom', 'cloud-custom'].includes(provider)) return;
+    try {
+        validateCustomAiEndpointUrl(value);
+    } catch (error) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: error.message, path });
+    }
+};
 
 // ─── Center Settings Schema ─────────────────────────────────────────────────
 
@@ -53,7 +63,7 @@ const aiProviderSchema = z.object({
     clearApiKey: z.boolean().optional(),
     model: z.string().max(160).optional().nullable(),
     baseUrl: z.string().max(1000).optional().nullable()
-});
+}).superRefine((value, context) => validateCustomBaseUrl(value.baseUrl, context, value.provider));
 
 const pacsAiProviderSchema = z.object({
     enabled: z.boolean().optional(),
@@ -72,7 +82,7 @@ const pacsAiProviderSchema = z.object({
     modelVersion: z.string().max(80).optional().nullable(),
     workerUrl: z.string().max(1000).optional().nullable(),
     baseUrl: z.string().max(1000).optional().nullable()
-});
+}).superRefine((value, context) => validateCustomBaseUrl(value.baseUrl, context, value.provider));
 
 const updateAiSettingsSchema = z.object({
     report: aiProviderSchema.optional(),
@@ -83,7 +93,7 @@ const testAiSettingsSchema = z.object({
     target: z.enum(['report', 'pacs']).default('report')
 });
 
-const aiProfileSchema = z.object({
+const aiProfileShape = {
     target: z.enum(['report', 'pacs']),
     name: z.string().trim().min(2).max(80),
     enabled: z.boolean().optional(),
@@ -94,9 +104,13 @@ const aiProfileSchema = z.object({
     workerUrl: z.string().trim().max(1000).optional().nullable(),
     apiKey: z.string().max(1000).optional().nullable(),
     clearApiKey: z.boolean().optional()
-});
+};
+const aiProfileSchema = z.object(aiProfileShape)
+    .superRefine((value, context) => validateCustomBaseUrl(value.baseUrl, context, value.provider));
 
-const updateAiProfileSchema = aiProfileSchema.partial().omit({ target: true });
+const { target: _target, ...updateAiProfileShape } = aiProfileShape;
+const updateAiProfileSchema = z.object(updateAiProfileShape).partial()
+    .superRefine((value, context) => validateCustomBaseUrl(value.baseUrl, context, value.provider));
 
 const sslModes = ['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'];
 

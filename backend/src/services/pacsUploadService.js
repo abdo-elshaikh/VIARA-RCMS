@@ -1,4 +1,6 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const fsp = fs.promises;
 const dcmjs = require('dcmjs');
 const logger = require('../config/logger');
 const { decrypt } = require('../utils/crypto');
@@ -15,6 +17,24 @@ const SC_SOP_CLASS_UID = '1.2.840.10008.5.1.4.1.1.7';
 const IMAGE_MIME = { 'image/jpeg': 'jpeg', 'image/jpg': 'jpeg', 'image/png': 'png' };
 
 const uploadProgress = new Map();
+const activeUserUploads = new Map();
+
+const boundedInteger = (value, fallback, maximum) => {
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < 1) return fallback;
+    return Math.min(maximum, parsed);
+};
+
+const readUploadBuffer = async (file) => {
+    if (file?.buffer) return file.buffer;
+    if (file?.path) return fsp.readFile(file.path);
+    if (file?.stream) {
+        const chunks = [];
+        for await (const chunk of file.stream) chunks.push(Buffer.from(chunk));
+        return Buffer.concat(chunks);
+    }
+    return null;
+};
 
 const initUploadProgress = (uploadSessionId, total = 0, metadata = {}) => {
     if (!uploadSessionId) return null;
@@ -199,12 +219,12 @@ const buildDicomModifyRequest = (identity) => ({
  * endpoint (which transcodes safely, preserving pixel data).
  * Returns { orthancInstanceId, orthancStudyId, seriesInstanceUid, sopInstanceUid, sopClassUid, modality }.
  */
-const storeAndStampDicom = async (buffer, identity) => {
+const storeAndStampDicom = async (source, buffer, identity) => {
     // 1. Read identity from the file (no re-encoding — pixels are untouched).
     const fileId = parseDicomIdentity(buffer);
 
     // 2. Push the original buffer to Orthanc.
-    const uploaded = await storeDicomBuffer(buffer);
+    const uploaded = await storeDicomBuffer(source);
 
     // 3. Re-stamp identity tags using Orthanc's server-side /modify endpoint.
     // This preserves the transfer syntax and pixel data perfectly.
@@ -281,13 +301,15 @@ const orthancPost = async (path, { body, contentType, json }) => {
     const auth = await getOrthancAuthHeader();
     let res;
     try {
+        const streaming = body && typeof body.pipe === 'function';
         res = await fetch(`${url}${path}`, {
             method: 'POST',
             headers: {
                 Authorization: auth,
                 'Content-Type': contentType || (json ? 'application/json' : 'application/octet-stream')
             },
-            body: json ? JSON.stringify(json) : body
+            body: json ? JSON.stringify(json) : body,
+            ...(streaming ? { duplex: 'half' } : {})
         });
     } catch (error) {
         // fetch() throws (not a non-2xx response) only when the connection itself
@@ -317,11 +339,12 @@ const orthancGetSimplifiedTags = async (instanceId) => {
 };
 
 /**
- * Push a Part-10 DICOM buffer into Orthanc's hot storage.
+ * Push a Part-10 DICOM buffer or file path into Orthanc's hot storage.
  * Returns { orthancInstanceId, orthancStudyId }.
  */
-const storeDicomBuffer = async (buffer) => {
-    const result = await orthancPost('/instances', { body: buffer, contentType: 'application/dicom' });
+const storeDicomBuffer = async (source) => {
+    const body = typeof source === 'string' ? fs.createReadStream(source) : source;
+    const result = await orthancPost('/instances', { body, contentType: 'application/dicom' });
     return {
         orthancInstanceId: result.ID,
         orthancStudyId: result.ParentStudy,
@@ -427,46 +450,64 @@ const uploadFilesToExam = async (pool, {
         throw err;
     }
 
-    const identity = await loadExamIdentity(pool, examId, uploadSessionId);
-    if (uploadSessionId) {
-        const progress = initUploadProgress(
-            uploadSessionId,
-            Math.max(files.length, Number(expectedTotal || 0)),
-            { examId, actorUserId }
-        );
-        if (progress.examId && progress.examId !== examId) {
-            const err = new Error('Upload session belongs to a different examination');
-            err.statusCode = 409;
-            throw err;
-        }
-        if (progress.actorUserId && actorUserId && progress.actorUserId !== actorUserId) {
-            const err = new Error('Upload session belongs to a different user');
-            err.statusCode = 403;
-            throw err;
-        }
-        scheduleUploadProgressCleanup(uploadSessionId);
-    }
-    const results = [];
-    let lastReconcile = null;
-    const concurrency = Math.max(1, Math.min(5, Number(process.env.PACS_UPLOAD_CONCURRENCY || 3)));
+    const userKey = actorUserId ? String(actorUserId) : null;
+    const maxUserUploads = boundedInteger(process.env.PACS_USER_UPLOAD_CONCURRENCY, 1, 10);
+    let userSlotAcquired = false;
 
-    await runWithConcurrency(files, concurrency, async (file) => {
-        const buffer = file.buffer;
-        const name = file.originalname || 'upload';
-        let storedInPacs = false;
-        try {
-            markFileActive(uploadSessionId, name);
-            let stored;
-            let tags;
-            let mimetype = file.mimetype;
-            const ext = name.split('.').pop()?.toLowerCase();
-            if (!IMAGE_MIME[mimetype] && !isDicom(buffer, name, mimetype)) {
-                if (ext === 'jpg' || ext === 'jpeg') mimetype = 'image/jpeg';
-                else if (ext === 'png') mimetype = 'image/png';
+    try {
+        if (userKey) {
+            const active = activeUserUploads.get(userKey) || 0;
+            if (active >= maxUserUploads) {
+                const err = new Error('Another PACS upload is already being processed for this user');
+                err.statusCode = 429;
+                throw err;
             }
+            activeUserUploads.set(userKey, active + 1);
+            userSlotAcquired = true;
+        }
+
+        const identity = await loadExamIdentity(pool, examId, uploadSessionId);
+        if (uploadSessionId) {
+            const progress = initUploadProgress(
+                uploadSessionId,
+                Math.max(files.length, Number(expectedTotal || 0)),
+                { examId, actorUserId }
+            );
+            if (progress.examId && progress.examId !== examId) {
+                const err = new Error('Upload session belongs to a different examination');
+                err.statusCode = 409;
+                throw err;
+            }
+            if (progress.actorUserId && actorUserId && progress.actorUserId !== actorUserId) {
+                const err = new Error('Upload session belongs to a different user');
+                err.statusCode = 403;
+                throw err;
+            }
+            scheduleUploadProgressCleanup(uploadSessionId);
+        }
+        const results = [];
+        let lastReconcile = null;
+        const concurrency = boundedInteger(process.env.PACS_UPLOAD_CONCURRENCY, 2, 3);
+
+        await runWithConcurrency(files, concurrency, async (file) => {
+            const filePath = file.path || null;
+            const name = file.originalname || 'upload';
+            let storedInPacs = false;
+            try {
+                const buffer = await readUploadBuffer(file);
+                if (!buffer) throw new Error('Upload file has no path or buffer');
+                markFileActive(uploadSessionId, name);
+                let stored;
+                let tags;
+                let mimetype = file.mimetype;
+                const ext = name.split('.').pop()?.toLowerCase();
+                if (!IMAGE_MIME[mimetype] && !isDicom(buffer, name, mimetype)) {
+                    if (ext === 'jpg' || ext === 'jpeg') mimetype = 'image/jpeg';
+                    else if (ext === 'png') mimetype = 'image/png';
+                }
 
             if (isDicom(buffer, name, mimetype)) {
-                const stamped = await storeAndStampDicom(buffer, identity);
+                const stamped = await storeAndStampDicom(filePath || buffer, buffer, identity);
                 stored = { orthancInstanceId: stamped.orthancInstanceId, orthancStudyId: stamped.orthancStudyId };
                 storedInPacs = true;
                 tags = {
@@ -546,73 +587,86 @@ const uploadFilesToExam = async (pool, {
                 reason
             });
             markFileProcessed(uploadSessionId, { status: 'unreconciled', file: name, error: reason });
-        } catch (error) {
-            logger.error('PACS upload: file failed', { file: name, examId, error: error.message });
-            const status = storedInPacs ? 'unreconciled' : 'error';
-            results.push({ file: name, status, reason: error.message });
-            // Even if a file fails, we count it as processed so the progress totals match
-            markFileProcessed(uploadSessionId, { status, file: name, error: error.message });
-        }
-    });
-
-    const reconciled = results.filter((r) => r.status === 'stored').length;
-    const unreconciled = results.filter((r) => r.status === 'unreconciled').length;
-    const stored = reconciled + unreconciled;
-    const failed = results.filter((r) => r.status === 'error').length;
-    const rejected = results.filter((r) => r.status === 'rejected').length;
-    const sessionProgress = initUploadProgress(
-        uploadSessionId,
-        Math.max(files.length, Number(expectedTotal || 0)),
-        { examId, actorUserId }
-    );
-    let finalProgress = sessionProgress;
-    if (sessionProgress) {
-        const sessionFinished = sessionProgress.processed >= sessionProgress.total;
-        const hasIssues = sessionProgress.unreconciled > 0
-            || sessionProgress.failed > 0
-            || sessionProgress.rejected > 0;
-        finalProgress = patchUploadProgress(uploadSessionId, {
-            status: sessionFinished
-                ? (hasIssues ? (sessionProgress.stored ? 'partial' : 'failed') : 'complete')
-                : 'processing',
-            currentFile: null
+            } catch (error) {
+                logger.error('PACS upload: file failed', { file: name, examId, error: error.message });
+                const status = storedInPacs ? 'unreconciled' : 'error';
+                results.push({ file: name, status, reason: error.message });
+                // Even if a file fails, count it so progress totals match.
+                markFileProcessed(uploadSessionId, { status, file: name, error: error.message });
+            }
         });
-    }
-    logger.info('PACS upload batch complete', {
-        examId,
-        stored,
-        reconciled,
-        unreconciled,
-        failed,
-        rejected,
-        total: files.length
-    });
 
-    return {
-        exam_id: examId,
-        study_instance_uid: identity.studyInstanceUid,
-        stored,
-        reconciled,
-        unreconciled,
-        failed,
-        rejected,
-        total: files.length,
-        image_count: lastReconcile ? lastReconcile.image_count : undefined,
-        upload_progress: finalProgress ? {
-            status: finalProgress.status,
-            total: finalProgress.total,
-            processed: finalProgress.processed,
-            stored: finalProgress.stored,
-            reconciled: finalProgress.reconciled,
-            unreconciled: finalProgress.unreconciled,
-            failed: finalProgress.failed,
-            rejected: finalProgress.rejected,
-            activeFiles: finalProgress.activeFiles,
-            startedAt: finalProgress.startedAt,
-            updatedAt: finalProgress.updatedAt
-        } : null,
-        results
-    };
+        const reconciled = results.filter((r) => r.status === 'stored').length;
+        const unreconciled = results.filter((r) => r.status === 'unreconciled').length;
+        const stored = reconciled + unreconciled;
+        const failed = results.filter((r) => r.status === 'error').length;
+        const rejected = results.filter((r) => r.status === 'rejected').length;
+        const sessionProgress = initUploadProgress(
+            uploadSessionId,
+            Math.max(files.length, Number(expectedTotal || 0)),
+            { examId, actorUserId }
+        );
+        let finalProgress = sessionProgress;
+        if (sessionProgress) {
+            const sessionFinished = sessionProgress.processed >= sessionProgress.total;
+            const hasIssues = sessionProgress.unreconciled > 0
+                || sessionProgress.failed > 0
+                || sessionProgress.rejected > 0;
+            finalProgress = patchUploadProgress(uploadSessionId, {
+                status: sessionFinished
+                    ? (hasIssues ? (sessionProgress.stored ? 'partial' : 'failed') : 'complete')
+                    : 'processing',
+                currentFile: null
+            });
+        }
+        logger.info('PACS upload batch complete', {
+            examId,
+            stored,
+            reconciled,
+            unreconciled,
+            failed,
+            rejected,
+            total: files.length
+        });
+
+        return {
+            exam_id: examId,
+            study_instance_uid: identity.studyInstanceUid,
+            stored,
+            reconciled,
+            unreconciled,
+            failed,
+            rejected,
+            total: files.length,
+            image_count: lastReconcile ? lastReconcile.image_count : undefined,
+            upload_progress: finalProgress ? {
+                status: finalProgress.status,
+                total: finalProgress.total,
+                processed: finalProgress.processed,
+                stored: finalProgress.stored,
+                reconciled: finalProgress.reconciled,
+                unreconciled: finalProgress.unreconciled,
+                failed: finalProgress.failed,
+                rejected: finalProgress.rejected,
+                activeFiles: finalProgress.activeFiles,
+                startedAt: finalProgress.startedAt,
+                updatedAt: finalProgress.updatedAt
+            } : null,
+            results
+        };
+    } finally {
+        await Promise.all(files.map(async (file) => {
+            if (!file?.path) return;
+            try { await fsp.unlink(file.path); } catch (error) {
+                if (error.code !== 'ENOENT') logger.warn('PACS upload temp cleanup failed', { path: file.path, error: error.message });
+            }
+        }));
+        if (userSlotAcquired) {
+            const active = activeUserUploads.get(userKey) || 1;
+            if (active <= 1) activeUserUploads.delete(userKey);
+            else activeUserUploads.set(userKey, active - 1);
+        }
+    }
 };
 
 const getUploadProgress = (uploadSessionId, { examId = null, actorUserId = null } = {}) => {
