@@ -1,7 +1,9 @@
 /**
  * Validate required environment variables on application startup
  * Throws error if any required variables are missing or invalid
+ * In non-production environments, generate safe defaults when placeholders are present
  */
+const crypto = require('crypto');
 
 const requiredEnvVars = [
     'DATABASE_URL',
@@ -23,6 +25,19 @@ const optionalEnvVars = [
 function validateEnv() {
     const missing = [];
     const invalid = [];
+
+    // In development, allow REPLACE_ME placeholders by generating safe defaults
+    if (process.env.NODE_ENV !== 'production') {
+        if (!process.env.JWT_SECRET || String(process.env.JWT_SECRET).startsWith('REPLACE_ME')) {
+            process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
+            console.warn('⚠️  Development: generated temporary JWT_SECRET (do NOT use in production)');
+        }
+        if (!process.env.ENCRYPTION_KEY || String(process.env.ENCRYPTION_KEY).startsWith('REPLACE_ME')) {
+            // AES-256 key: 32 bytes -> 64 hex chars
+            process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
+            console.warn('⚠️  Development: generated temporary ENCRYPTION_KEY (do NOT use in production)');
+        }
+    }
 
     // Check required variables
     requiredEnvVars.forEach((envVar) => {
