@@ -9,6 +9,11 @@ require('dotenv').config();
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://***REMOVED***/rcms'
 });
+const seedPassword = process.env.TEST_USER_PASSWORD;
+if (!seedPassword) {
+    console.error('❌ TEST_USER_PASSWORD is not set. Aborting simple seed to avoid weak defaults.');
+    process.exit(1);
+}
 
 // Encryption
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'your-32-character-encryption-key-here-change-this';
@@ -39,7 +44,7 @@ async function main() {
         console.log('✓ Cleared tables');
 
         // Users
-        const password = await bcrypt.hash('password123', 10);
+            const password = await bcrypt.hash(seedPassword, 10);
         const users = [
             ['Admin', 'admin@rcms.com', 'Admin'],
             ['Receptionist', 'reception@rcms.com', 'Receptionist'],
@@ -109,7 +114,7 @@ async function main() {
         console.log('✓ Created', count, 'appointments');
 
         console.log('\\n✅ Seed complete!');
-        console.log('Login: admin@rcms.com / password123\\n');
+            console.log('Login credentials are provisioned by deployment and not displayed here.');
 
     } catch (err) {
         console.error('❌ Error:', err.message);

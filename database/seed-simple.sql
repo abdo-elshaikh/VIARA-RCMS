@@ -4,8 +4,8 @@
 -- Clear existing data
 TRUNCATE TABLE system_logs, payments, invoices, examinations, appointments, patients, contracts, insurance_providers, modalities, users CASCADE;
 
--- Create Admin user (password: password123)
--- Hash generated with: bcrypt.hash('password123', 10)
+-- Create Admin user
+-- Passwords are provisioned by deployment/CI and must not be committed as plaintext.
 INSERT INTO users (full_name, email, password_hash, role, is_active) VALUES
 ('Admin User', 'admin@rcms.com', '***REMOVED***', 'Admin', TRUE),
 ('Receptionist', 'reception@rcms.com', '***REMOVED***', 'Receptionist', TRUE),

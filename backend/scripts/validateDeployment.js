@@ -7,6 +7,10 @@ if (!process.env.DATABASE_URL || !/validation/i.test(process.env.DATABASE_URL)) 
     throw new Error('Refusing to run: DATABASE_URL must identify a disposable validation database');
 }
 
+if (!process.env.TEST_USER_PASSWORD) {
+    throw new Error('Refusing to run: TEST_USER_PASSWORD must be set for deployment validation');
+}
+
 process.env.NODE_ENV = 'test';
 const app = require('../src/server');
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -45,7 +49,7 @@ const main = async () => {
     const adminLogin = await request(app)
         .post('/api/auth/login')
         .set('User-Agent', 'RCMS-Validation-Primary/1.0')
-        .send({ email: 'admin@rcms.com', password: 'password123' });
+        .send({ email: 'admin@rcms.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(adminLogin.status, 200, JSON.stringify(adminLogin.body));
     const adminToken = adminLogin.body.token;
     const adminCookie = adminLogin.headers['set-cookie'][0].split(';')[0];
@@ -57,7 +61,7 @@ const main = async () => {
     const secondaryAdminLogin = await request(app)
         .post('/api/auth/login')
         .set('User-Agent', 'RCMS-Validation-Secondary/1.0')
-        .send({ email: 'admin@rcms.com', password: 'password123' });
+        .send({ email: 'admin@rcms.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(secondaryAdminLogin.status, 200, JSON.stringify(secondaryAdminLogin.body));
     const sessions = await request(app)
         .get('/api/auth/sessions')
@@ -131,7 +135,7 @@ const main = async () => {
 
     const technicianLogin = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'tech@rcms.com', password: 'password123' });
+        .send({ email: 'tech@rcms.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(technicianLogin.status, 200, JSON.stringify(technicianLogin.body));
     const reportWrite = await request(app)
         .put('/api/exams/report')
@@ -187,12 +191,12 @@ const main = async () => {
 
     const accountantLogin = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'accountant@rcms.com', password: 'password123' });
+        .send({ email: 'accountant@rcms.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(accountantLogin.status, 200, JSON.stringify(accountantLogin.body));
     const accountantToken = accountantLogin.body.token;
     const receptionLogin = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'reception@rcms.com', password: 'password123' });
+        .send({ email: 'reception@rcms.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(receptionLogin.status, 200, JSON.stringify(receptionLogin.body));
 
     const cashierTemporaryPassword = 'CashierTemporary123!';

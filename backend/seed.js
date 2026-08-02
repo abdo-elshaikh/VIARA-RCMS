@@ -6,6 +6,12 @@ const path = require('path');
 // Load environment variables
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
+const seedPassword = process.env.TEST_USER_PASSWORD;
+if (!seedPassword) {
+    console.error('❌ TEST_USER_PASSWORD is not set. Aborting to avoid seeding with a known weak password.');
+    process.exit(1);
+}
+
 // Encryption utilities (matching backend utils)
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'your-32-character-encryption-key-here-change-this';
 const ALGORITHM = 'aes-256-cbc';
@@ -60,7 +66,7 @@ async function clearDatabase() {
 
 async function seedUsers() {
     console.log('\n👥 Seeding Users...');
-    const password = await bcrypt.hash('password123', 10);
+    const password = await bcrypt.hash(seedPassword, 10);
 
     const users = [
         { name: 'Dr. Administrator', email: 'admin@rcms.com', role: 'Admin' },
@@ -425,10 +431,7 @@ async function main() {
         console.log(`   • ${examTypes.length} examination types`);
         console.log(`   • ~600 appointments and examinations`);
         console.log(`   • Invoices and payments for finalized exams`);
-        console.log('\n🔑 Login credentials:');
-        console.log('   Admin: admin@rcms.com / password123');
-        console.log('   Receptionist: reception@rcms.com / password123');
-        console.log('   Radiologist: ahmed.hassan@rcms.com / password123');
+        console.log('\n🔑 Login credentials are set by deployment and are not displayed here.');
 
     } catch (error) {
         console.error('\n❌ Seeding failed:', error);

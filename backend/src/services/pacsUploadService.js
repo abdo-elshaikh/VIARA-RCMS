@@ -57,7 +57,24 @@ const initUploadProgress = (uploadSessionId, total = 0, metadata = {}) => {
         updatedAt: new Date().toISOString()
     };
     uploadProgress.set(uploadSessionId, next);
+    evictOldProgressEntries();
     return next;
+};
+
+const evictOldProgressEntries = () => {
+    if (uploadProgress.size <= MAX_PROGRESS_ENTRIES) return;
+    const now = Date.now();
+    for (const [key, val] of uploadProgress.entries()) {
+        const updated = new Date(val.updatedAt || 0).getTime();
+        if (now - updated > 30 * 60 * 1000) {
+            uploadProgress.delete(key);
+        }
+    }
+};
+
+const clearUploadSession = (uploadSessionId) => {
+    if (!uploadSessionId) return;
+    uploadProgress.delete(uploadSessionId);
 };
 
 const scheduleUploadProgressCleanup = (uploadSessionId) => {

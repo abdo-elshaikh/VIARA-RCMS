@@ -9,7 +9,11 @@ const pool = new Pool({
 async function checkLogin() {
     try {
         const email = 'patient@rcms.com';
-        const password = 'password123';
+        const password = process.env.TEST_USER_PASSWORD;
+        if (!password) {
+            console.error('❌ TEST_USER_PASSWORD not set. Aborting test-login check.');
+            process.exit(1);
+        }
         
         console.log(`Checking login for: ${email}`);
         

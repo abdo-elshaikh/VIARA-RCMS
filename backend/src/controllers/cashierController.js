@@ -25,6 +25,19 @@ const openShift = (db) => async (req, res, next) => {
             return next(new AppError('You already have an open cashier shift', 409));
         }
 
+        const pendingReview = await client.query(`
+            SELECT c.closure_id
+            FROM cashier_shift_closures c
+            JOIN cashier_shifts s ON s.shift_id = c.shift_id
+            WHERE s.cashier_id = $1 AND c.review_status = 'Requires Review'
+            LIMIT 1
+        `, [req.user.user_id]);
+
+        if (pendingReview.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return next(new AppError('You have an unreviewed shift variance closure that requires manager approval before opening a new shift', 403));
+        }
+
         const result = await client.query(`
             INSERT INTO cashier_shifts (
                 cashier_id, opening_balance, notes, business_date, branch_id, currency_code

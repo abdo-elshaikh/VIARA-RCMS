@@ -24,7 +24,12 @@ function encrypt(text) {
 async function setupDemoPatient() {
     try {
         console.log('Setting up demo patient credentials...');
-        const pass = await bcrypt.hash('password123', 10);
+        const seedPassword = process.env.TEST_USER_PASSWORD;
+        if (!seedPassword) {
+            console.error('❌ TEST_USER_PASSWORD is not set. Aborting demo patient setup.');
+            process.exit(1);
+        }
+        const pass = await bcrypt.hash(seedPassword, 10);
         const demoEmail = 'patient@rcms.com';
         let patientId;
         let mrn = 'PAT-DEMO';
@@ -69,7 +74,7 @@ async function setupDemoPatient() {
         console.log('---');
         console.log(`MRN: ${mrn}`);
         console.log(`Email: ${demoEmail}`);
-        console.log(`Password: password123`);
+        console.log('Password: provisioned by deployment');
         console.log('---');
 
     } catch (error) {

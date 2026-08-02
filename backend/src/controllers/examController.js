@@ -83,9 +83,9 @@ const getWorklist = (db) => async (req, res, next) => {
         const { status, modalityType, priority, date, limit = 100, offset = 0 } = req.query;
 
         const assignmentPredicate = role === 'Technician'
-            ? 'a.technician_id = $1'
+            ? '(a.technician_id = $1 OR a.technician_id IS NULL)'
             : role === 'Nurse'
-                ? 'a.nurse_id = $1'
+                ? '(a.nurse_id = $1 OR a.nurse_id IS NULL)'
                 : '(e.performing_radiologist_id = $1 OR e.performing_radiologist_id IS NULL)';
 
         const values = [userId];

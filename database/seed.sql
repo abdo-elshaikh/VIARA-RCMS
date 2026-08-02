@@ -1,17 +1,17 @@
 -- Initial Seed Data for RCMS
 
 -- 1. Insert demo users
--- All demo users use password 'password123'.
+-- Demo user passwords are provisioned by deployment/CI and must not be committed as plaintext.
 INSERT INTO users (full_name, email, password_hash, role, is_active)
 VALUES 
-('System Admin', 'admin@rcms.com', '***REMOVED***', 'Admin', TRUE), -- admin@rcms.com uses password 'password123'
-('Dr. Alice Smith', 'alice@rcms.com', '***REMOVED***', 'Radiologist', TRUE), -- alice@rcms.com uses password 'password123'
-('Front Desk', 'reception@rcms.com', '***REMOVED***', 'Receptionist', TRUE), -- reception@rcms.com uses password 'password123'
-('Cashier Desk', 'cashier@rcms.com', '***REMOVED***', 'Cashier', TRUE), -- cashier@rcms.com uses password 'password123'
-('Finance User', 'accountant@rcms.com', '***REMOVED***', 'Accountant', TRUE), -- accountant@rcms.com uses password 'password123'
-('HR Manager', 'hr@rcms.com', '***REMOVED***', 'HR', TRUE), -- hr@rcms.com uses password 'password123'
-('Lead Technician', 'tech@rcms.com', '***REMOVED***', 'Technician', TRUE), -- tech@rcms.com uses password 'password123'
-('Charge Nurse', 'nurse@rcms.com', '***REMOVED***', 'Nurse', TRUE) -- nurse@rcms.com uses password 'password123'
+('System Admin', 'admin@rcms.com', '***REMOVED***', 'Admin', TRUE),
+('Dr. Alice Smith', 'alice@rcms.com', '***REMOVED***', 'Radiologist', TRUE),
+('Front Desk', 'reception@rcms.com', '***REMOVED***', 'Receptionist', TRUE),
+('Cashier Desk', 'cashier@rcms.com', '***REMOVED***', 'Cashier', TRUE),
+('Finance User', 'accountant@rcms.com', '***REMOVED***', 'Accountant', TRUE),
+('HR Manager', 'hr@rcms.com', '***REMOVED***', 'HR', TRUE),
+('Lead Technician', 'tech@rcms.com', '***REMOVED***', 'Technician', TRUE),
+('Charge Nurse', 'nurse@rcms.com', '***REMOVED***', 'Nurse', TRUE)
 ON CONFLICT (email) DO UPDATE SET
     full_name = EXCLUDED.full_name,
     password_hash = EXCLUDED.password_hash,
