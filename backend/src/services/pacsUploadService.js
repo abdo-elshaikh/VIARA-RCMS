@@ -16,6 +16,7 @@ const SC_SOP_CLASS_UID = '1.2.840.10008.5.1.4.1.1.7';
 
 const IMAGE_MIME = { 'image/jpeg': 'jpeg', 'image/jpg': 'jpeg', 'image/png': 'png' };
 
+const MAX_PROGRESS_ENTRIES = 10000;
 const uploadProgress = new Map();
 const activeUserUploads = new Map();
 
@@ -34,6 +35,22 @@ const readUploadBuffer = async (file) => {
         return Buffer.concat(chunks);
     }
     return null;
+};
+
+const evictOldProgressEntries = () => {
+    if (uploadProgress.size <= MAX_PROGRESS_ENTRIES) return;
+    const now = Date.now();
+    for (const [key, val] of uploadProgress.entries()) {
+        const updated = new Date(val.updatedAt || 0).getTime();
+        if (now - updated > 30 * 60 * 1000) {
+            uploadProgress.delete(key);
+        }
+    }
+};
+
+const clearUploadSession = (uploadSessionId) => {
+    if (!uploadSessionId) return;
+    uploadProgress.delete(uploadSessionId);
 };
 
 const initUploadProgress = (uploadSessionId, total = 0, metadata = {}) => {
@@ -59,22 +76,6 @@ const initUploadProgress = (uploadSessionId, total = 0, metadata = {}) => {
     uploadProgress.set(uploadSessionId, next);
     evictOldProgressEntries();
     return next;
-};
-
-const evictOldProgressEntries = () => {
-    if (uploadProgress.size <= MAX_PROGRESS_ENTRIES) return;
-    const now = Date.now();
-    for (const [key, val] of uploadProgress.entries()) {
-        const updated = new Date(val.updatedAt || 0).getTime();
-        if (now - updated > 30 * 60 * 1000) {
-            uploadProgress.delete(key);
-        }
-    }
-};
-
-const clearUploadSession = (uploadSessionId) => {
-    if (!uploadSessionId) return;
-    uploadProgress.delete(uploadSessionId);
 };
 
 const scheduleUploadProgressCleanup = (uploadSessionId) => {

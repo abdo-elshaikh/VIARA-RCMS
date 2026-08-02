@@ -50,17 +50,17 @@ const clinicalPatientScope = (role, patientAlias, parameter) => {
     if (role === 'Radiologist') {
         return `EXISTS (SELECT 1 FROM examinations scope_exam
                         WHERE scope_exam.patient_id = ${patientAlias}.patient_id
-                          AND scope_exam.performing_radiologist_id = ${parameter})`;
+                          AND (scope_exam.performing_radiologist_id = ${parameter} OR scope_exam.performing_radiologist_id IS NULL))`;
     }
     if (role === 'Technician') {
         return `EXISTS (SELECT 1 FROM appointments scope_appt
                         WHERE scope_appt.patient_id = ${patientAlias}.patient_id
-                          AND scope_appt.technician_id = ${parameter})`;
+                          AND (scope_appt.technician_id = ${parameter} OR scope_appt.technician_id IS NULL))`;
     }
     if (role === 'Nurse') {
         return `EXISTS (SELECT 1 FROM appointments scope_appt
                         WHERE scope_appt.patient_id = ${patientAlias}.patient_id
-                          AND scope_appt.nurse_id = ${parameter})`;
+                          AND (scope_appt.nurse_id = ${parameter} OR scope_appt.nurse_id IS NULL))`;
     }
     return null;
 };
@@ -376,7 +376,7 @@ const getPatientHistory = (db) => async (req, res, next) => {
               AND ($2::uuid IS NULL OR EXISTS (
                     SELECT 1 FROM examinations assigned_exam
                     WHERE assigned_exam.patient_id = p.patient_id
-                      AND assigned_exam.performing_radiologist_id = $2
+                      AND (assigned_exam.performing_radiologist_id = $2 OR assigned_exam.performing_radiologist_id IS NULL)
               ))
         `;
         const patientResult = await db.query(patientQuery, [

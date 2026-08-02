@@ -32,3 +32,4 @@ backend/backups/
 *.dump
 
 *.playwright-mcp
+*.kilo
