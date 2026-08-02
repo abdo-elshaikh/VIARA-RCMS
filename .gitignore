@@ -30,3 +30,5 @@ logs/
 # Database backups may contain PHI
 backend/backups/
 *.dump
+
+*.playwright-mcp

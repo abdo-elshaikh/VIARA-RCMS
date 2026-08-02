@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { PortalHeader } from './PortalHeader';
 import { PortalFooter } from './PortalFooter';
-import { useTranslation } from '../../../../node_modules/react-i18next';
+import { useTranslation } from 'react-i18next';
 import { Phone, MessageCircle, ArrowUp, ShieldCheck } from 'lucide-react';
 import { useGetPublicCenterSettingsQuery } from '../../../store/api';
 import { normalizeCenterSettings } from '../../../utils/centerSettings';

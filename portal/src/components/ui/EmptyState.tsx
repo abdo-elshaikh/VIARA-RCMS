@@ -1,5 +1,5 @@
 import { AlertCircle, FileSearch, Inbox, Plus, Search } from 'lucide-react';
-import { useTranslation } from '../../../node_modules/react-i18next';
+import { useTranslation } from 'react-i18next';
 import Button from './Button';
 
 const variantIcons = { default: Inbox, search: FileSearch, error: AlertCircle };

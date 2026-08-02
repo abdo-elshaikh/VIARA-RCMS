@@ -1,7 +1,7 @@
 import { Moon, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useTranslation } from '../../../node_modules/react-i18next';
+import { useTranslation } from 'react-i18next';
 import { selectTheme, setTheme } from '../../store/preferencesSlice';
 import { resolveTheme } from '../../utils/theme';
 

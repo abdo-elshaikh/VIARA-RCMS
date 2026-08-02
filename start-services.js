@@ -1,5 +1,6 @@
 const { spawn, execSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const isWindows = process.platform === 'win32';
 
@@ -113,11 +114,92 @@ function detectDockerCompose() {
 
 function isDockerDaemonRunning() {
   try {
-    execSync('docker info', { stdio: 'ignore' });
+    execSync('docker info', { stdio: 'ignore', shell: true });
     return true;
+  } catch (e) {
+    try {
+      execSync('docker ps', { stdio: 'ignore', shell: true });
+      return true;
+    } catch (e2) {
+      return false;
+    }
+  }
+}
+
+function isDockerDesktopProcessRunning() {
+  if (!isWindows) return false;
+  try {
+    const out = execSync('tasklist /FI "IMAGENAME eq Docker Desktop.exe" /NH', { encoding: 'utf8', shell: true });
+    return out.includes('Docker Desktop.exe');
   } catch (e) {
     return false;
   }
+}
+
+function attemptToStartDockerDaemon(maxWaitSec = 25) {
+  if (isDockerDaemonRunning()) return true;
+
+  console.log(`${colors.yellow}[docker] ⚠️ Docker daemon is not running.${colors.reset}`);
+
+  let launchAttempted = false;
+
+  if (isWindows) {
+    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+    const dockerDesktopPath = path.join(programFiles, 'Docker', 'Docker', 'Docker Desktop.exe');
+    
+    if (fs.existsSync(dockerDesktopPath)) {
+      if (!isDockerDesktopProcessRunning()) {
+        console.log(`${colors.cyan}[docker] 🚀 Launching Docker Desktop...${colors.reset}`);
+        try {
+          execSync(`powershell -Command "Start-Process '${dockerDesktopPath}'"`, { stdio: 'ignore' });
+          launchAttempted = true;
+        } catch (err) {
+          try {
+            execSync(`start "" "${dockerDesktopPath}"`, { shell: true, stdio: 'ignore' });
+            launchAttempted = true;
+          } catch (err2) {}
+        }
+      } else {
+        console.log(`${colors.cyan}[docker] ⏳ Docker Desktop process is running, waiting for engine...${colors.reset}`);
+        launchAttempted = true;
+      }
+    }
+  } else if (process.platform === 'darwin') {
+    if (fs.existsSync('/Applications/Docker.app')) {
+      console.log(`${colors.cyan}[docker] 🚀 Launching Docker Desktop...${colors.reset}`);
+      try {
+        execSync('open -a Docker', { stdio: 'ignore' });
+        launchAttempted = true;
+      } catch (err) {}
+    }
+  } else if (process.platform === 'linux') {
+    console.log(`${colors.cyan}[docker] 🚀 Starting Docker service...${colors.reset}`);
+    try {
+      execSync('sudo systemctl start docker', { stdio: 'ignore' });
+      launchAttempted = true;
+    } catch (err) {}
+  }
+
+  if (!launchAttempted) {
+    console.log(`${colors.yellow}[docker] ⚠️ Docker Desktop executable not found. Starting Node services directly (use --no-docker to skip check).${colors.reset}\n`);
+    return false;
+  }
+
+  process.stdout.write(`${colors.blue}[docker] Waiting for Docker engine to respond${colors.reset}`);
+  const startTime = Date.now();
+  while (Date.now() - startTime < maxWaitSec * 1000) {
+    if (isDockerDaemonRunning()) {
+      process.stdout.write('\n');
+      console.log(`${colors.green}[docker] ✅ Docker engine ready!${colors.reset}\n`);
+      return true;
+    }
+    process.stdout.write('.');
+    sleepSync(1500);
+  }
+  process.stdout.write('\n');
+
+  console.log(`${colors.yellow}[docker] ⚠️ Docker engine did not respond in time. Proceeding with local Node services...${colors.reset}\n`);
+  return false;
 }
 
 function handleDockerStartup() {
@@ -126,14 +208,18 @@ function handleDockerStartup() {
     return false;
   }
 
-  const dockerCmd = detectDockerCompose();
-  if (!dockerCmd) {
-    console.log(`${colors.yellow}[docker] ⚠️ Docker / Docker Compose is not installed. Skipping Docker startup...${colors.reset}\n`);
-    return false;
-  }
+  let dockerCmd = detectDockerCompose();
 
   if (!isDockerDaemonRunning()) {
-    console.log(`${colors.yellow}[docker] ⚠️ Docker daemon is not running. Skipping Docker startup...${colors.reset}\n`);
+    const daemonReady = attemptToStartDockerDaemon();
+    if (!daemonReady) {
+      return false;
+    }
+    dockerCmd = dockerCmd || detectDockerCompose();
+  }
+
+  if (!dockerCmd) {
+    console.log(`${colors.yellow}[docker] ⚠️ Docker / Docker Compose is not installed. Skipping Docker startup...${colors.reset}\n`);
     return false;
   }
 

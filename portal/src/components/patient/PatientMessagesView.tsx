@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useTranslation } from '../../../node_modules/react-i18next';
+import { useTranslation } from 'react-i18next';
 import { Calendar, CheckCircle2, Clock, MessageSquare, RefreshCw, Search, Send, X, ShieldCheck, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useGetMyMessagesQuery, useSendPortalMessageMutation } from '../../store/api';
