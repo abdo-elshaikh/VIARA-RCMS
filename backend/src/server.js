@@ -460,6 +460,31 @@ const lifecycle = createServerLifecycle({
 
 const auditService = new AuditService(pool);
 
+const checkClamAv = () => {
+    if (!process.env.CLAMAV_HOST) return Promise.resolve();
+
+    const net = require('net');
+    return new Promise((resolve, reject) => {
+        const socket = net.createConnection({
+            host: process.env.CLAMAV_HOST,
+            port: Number(process.env.CLAMAV_PORT || 3310),
+        });
+        const timeout = setTimeout(() => socket.destroy(new Error('ClamAV readiness timed out')), 2000);
+        socket.setEncoding('utf8');
+        socket.once('connect', () => socket.write('zPING\0'));
+        socket.once('data', (data) => {
+            clearTimeout(timeout);
+            socket.end();
+            if (data.includes('PONG')) resolve();
+            else reject(new Error('ClamAV readiness returned an unexpected response'));
+        });
+        socket.once('error', (error) => {
+            clearTimeout(timeout);
+            reject(error);
+        });
+    });
+};
+
 // Test database connection
 if (process.env.NODE_ENV !== 'test') {
     pool.connect((err, client, release) => {
@@ -641,7 +666,7 @@ const readinessHandler = async (req, res) => {
     }
 
     try {
-        await pool.query('SELECT 1');
+        await Promise.all([pool.query('SELECT 1'), checkClamAv()]);
         return res.json({ status: 'OK' });
     } catch (error) {
         return res.status(503).json({ status: 'NOT_READY' });
@@ -1692,7 +1717,7 @@ app.get('/api/chat/users', authenticateToken, getChatUsers(pool));
 app.get('/api/chat/messages', authenticateToken, getChatMessages(pool));
 app.post('/api/chat/messages', authenticateToken, chatAttachmentUpload.array('attachments'), validateChatAttachments, sendChatMessage(pool));
 app.get('/api/chat/unread-summary', authenticateToken, getUnreadSummary(pool));
-app.get('/api/chat/attachments/:fileName', authenticateToken, serveChatAttachment);
+app.get('/api/chat/attachments/:fileName', authenticateToken, serveChatAttachment(pool));
 
 // ─── Patient Portal Messages (Staff Inbox) ───────────────────────────────────
 app.get('/api/messages/patients',
@@ -1823,12 +1848,8 @@ if (process.env.NODE_ENV !== 'test') {
         lifecycle.addStopCallback(stopBackupScheduler);
         lifecycle.markReady();
         logger.info('🔔 Notification job polling started (60s interval)');
-        });
-        lifecycle.setHttpServer(httpServer);
-    }).catch((error) => {
-        logger.error('Financial Reporting V2 migration failed', { error: error.message });
-        process.exit(1);
     });
+    lifecycle.setHttpServer(httpServer);
 }
 
 // Graceful Shutdown

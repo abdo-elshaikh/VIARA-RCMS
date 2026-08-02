@@ -41,7 +41,7 @@ const scanForMalware = async (filePath) => {
         return;
     }
     try {
-        await execFileAsync(scanner, ['--no-summary', filePath], {
+        await execFileAsync(scanner, ['--config-file=/etc/clamav/clamd.conf', '--stream', '--no-summary', filePath], {
             timeout: Number(process.env.MALWARE_SCAN_TIMEOUT_MS || 30000),
             windowsHide: true,
             maxBuffer: 1024 * 1024

@@ -8,9 +8,12 @@
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { createRequire } = require('module');
 
-const backendRequire = createRequire(path.join(__dirname, '../backend/package.json'));
+const localBackendPackage = path.join(__dirname, '../backend/package.json');
+const runtimePackage = path.join(process.cwd(), 'package.json');
+const backendRequire = createRequire(fs.existsSync(localBackendPackage) ? localBackendPackage : runtimePackage);
 const { Pool } = backendRequire('pg');
 
 backendRequire('dotenv').config({ path: path.join(__dirname, '../backend/.env') });
@@ -113,7 +116,8 @@ const MIGRATION_FILES = [
     '090_notifications_hardening.sql',
     '091_partial_payment_exceptions.sql',
     '092_final_delivery_full_payment.sql',
-    '093_portal_login_lockout.sql'
+    '093_portal_login_lockout.sql',
+    '094_move_startup_schema_changes.sql'
 ];
 
 const SEED_FILES = [
@@ -122,55 +126,95 @@ const SEED_FILES = [
     'seed-demo-modules.sql'
 ];
 
-const applySqlFile = async (client, filePath, label) => {
-    const sql = fs.readFileSync(filePath, 'utf8');
+const checksum = (sql) => crypto.createHash('sha256').update(sql).digest('hex');
+
+const requireFiles = (files, directory, kind) => files.map((filename) => {
+    const filePath = path.join(directory, filename);
+    if (!fs.existsSync(filePath)) {
+        throw new Error(`Missing ${kind} file: ${filePath}`);
+    }
+    return { filename, filePath, sql: fs.readFileSync(filePath, 'utf8') };
+});
+
+const applySqlFile = async (client, migration, label) => {
     console.log(`  → ${label}`);
-    await client.query(sql);
+    await client.query(migration.sql);
 };
 
-const ensureMigrationTable = async (client) => {
-    await client.query(`
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-            filename VARCHAR(255) PRIMARY KEY,
-            applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
+const ensureMigrationTable = async (client, migrations) => {
+    await client.query('BEGIN');
+    try {
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                filename VARCHAR(255) PRIMARY KEY,
+                checksum VARCHAR(64),
+                applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        await client.query('ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum VARCHAR(64)');
+
+        const applied = await client.query('SELECT filename, checksum FROM schema_migrations ORDER BY filename');
+        const migrationsByName = new Map(migrations.map((migration) => [migration.filename, migration]));
+        for (const row of applied.rows) {
+            if (row.checksum) continue;
+            const migration = migrationsByName.get(row.filename);
+            if (!migration) {
+                throw new Error(`Cannot checksum legacy migration not present in the manifest: ${row.filename}`);
+            }
+            await client.query(
+                'UPDATE schema_migrations SET checksum = $2 WHERE filename = $1 AND checksum IS NULL',
+                [row.filename, checksum(migration.sql)]
+            );
+        }
+
+        await client.query('ALTER TABLE schema_migrations ALTER COLUMN checksum SET NOT NULL');
+        await client.query('COMMIT');
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
 };
 
 const runMigrations = async (pool, { fresh = false } = {}) => {
+    const migrations = requireFiles(MIGRATION_FILES, path.join(__dirname, 'migrations'), 'migration');
+    const schema = fresh
+        ? requireFiles(['schema.sql'], __dirname, 'schema')[0]
+        : null;
     const client = await pool.connect();
+    let lockAcquired = false;
     try {
+        await client.query("SELECT pg_advisory_lock(hashtext('rcms_schema_migrations'))");
+        lockAcquired = true;
+
         if (fresh) {
             console.log('🧹 Dropping public schema...');
             await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
             console.log('🏗️  Applying schema.sql...');
-            await applySqlFile(client, path.join(__dirname, 'schema.sql'), 'schema.sql');
+            await applySqlFile(client, schema, 'schema.sql');
         }
 
-        await ensureMigrationTable(client);
+        await ensureMigrationTable(client, migrations);
 
-        for (const file of MIGRATION_FILES) {
-            const filePath = path.join(__dirname, 'migrations', file);
-            if (!fs.existsSync(filePath)) {
-                console.warn(`  ⚠ Skipping missing migration: ${file}`);
-                continue;
-            }
-
+        for (const migration of migrations) {
+            const migrationChecksum = checksum(migration.sql);
             const applied = await client.query(
-                'SELECT 1 FROM schema_migrations WHERE filename = $1',
-                [file]
+                'SELECT checksum FROM schema_migrations WHERE filename = $1',
+                [migration.filename]
             );
-            if (!fresh && applied.rows.length > 0) {
+            if (applied.rows.length > 0) {
+                if (applied.rows[0].checksum !== migrationChecksum) {
+                    throw new Error(`Checksum mismatch for applied migration: ${migration.filename}`);
+                }
                 continue;
             }
 
-            console.log(`📦 Applying migration: ${file}`);
+            console.log(`📦 Applying migration: ${migration.filename}`);
             await client.query('BEGIN');
             try {
-                await applySqlFile(client, filePath, file);
+                await applySqlFile(client, migration, migration.filename);
                 await client.query(
-                    'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING',
-                    [file]
+                    'INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)',
+                    [migration.filename, migrationChecksum]
                 );
                 await client.query('COMMIT');
             } catch (error) {
@@ -181,21 +225,20 @@ const runMigrations = async (pool, { fresh = false } = {}) => {
 
         console.log('✅ Migrations complete.');
     } finally {
+        if (lockAcquired) {
+            await client.query("SELECT pg_advisory_unlock(hashtext('rcms_schema_migrations'))");
+        }
         client.release();
     }
 };
 
 const runSeeds = async (pool) => {
+    const seeds = requireFiles(SEED_FILES, __dirname, 'seed');
     const client = await pool.connect();
     try {
-        for (const file of SEED_FILES) {
-            const filePath = path.join(__dirname, file);
-            if (!fs.existsSync(filePath)) {
-                console.warn(`  ⚠ Skipping missing seed: ${file}`);
-                continue;
-            }
-            console.log(`🌱 Applying seed: ${file}`);
-            await applySqlFile(client, filePath, file);
+        for (const seed of seeds) {
+            console.log(`🌱 Applying seed: ${seed.filename}`);
+            await applySqlFile(client, seed, seed.filename);
         }
         console.log('✅ Seeds complete.');
     } finally {

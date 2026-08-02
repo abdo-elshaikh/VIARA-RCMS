@@ -71,7 +71,7 @@ const scanChatAttachment = async (filePath) => {
         return;
     }
     try {
-        await execFileAsync(scanner, ['--no-summary', filePath], {
+        await execFileAsync(scanner, ['--config-file=/etc/clamav/clamd.conf', '--stream', '--no-summary', filePath], {
             timeout: Number(process.env.MALWARE_SCAN_TIMEOUT_MS || 30000),
             windowsHide: true,
             maxBuffer: 1024 * 1024
@@ -158,9 +158,31 @@ const resolveAttachmentPath = (storedName) => {
     return resolved;
 };
 
-const serveChatAttachment = (req, res, next) => {
+const serveChatAttachment = (db) => async (req, res, next) => {
     try {
-        const filePath = resolveAttachmentPath(req.params.fileName);
+        const storedName = String(req.params.fileName || '');
+        const userId = req.user?.user_id || req.user?.userId || null;
+        const doctorId = req.user?.doctorId || null;
+        const isStaffInboxRole = ['Admin', 'Receptionist', 'Marketing'].includes(req.user?.role);
+        const access = await db.query(`
+            SELECT EXISTS (
+                SELECT 1 FROM staff_messages sm
+                WHERE sm.attachments @> jsonb_build_array(jsonb_build_object('storedName', $1::text))
+                  AND (sm.sender_id = $2::uuid OR sm.recipient_id = $2::uuid OR sm.channel_name IS NOT NULL)
+                UNION ALL
+                SELECT 1 FROM patient_portal_messages ppm
+                WHERE ppm.attachments @> jsonb_build_array(jsonb_build_object('storedName', $1::text))
+                  AND (ppm.patient_id = $2::uuid OR $4::boolean)
+                UNION ALL
+                SELECT 1 FROM doctor_portal_messages dpm
+                WHERE dpm.attachments @> jsonb_build_array(jsonb_build_object('storedName', $1::text))
+                  AND (dpm.doctor_id = $3::uuid OR $4::boolean)
+            ) AS allowed
+        `, [storedName, userId, doctorId, isStaffInboxRole]);
+        if (!access.rows[0]?.allowed) {
+            return next(new AppError('Attachment not found', 404));
+        }
+        const filePath = resolveAttachmentPath(storedName);
         if (!fs.existsSync(filePath)) {
             return next(new AppError('Attachment not found', 404));
         }

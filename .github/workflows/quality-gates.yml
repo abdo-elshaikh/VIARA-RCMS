@@ -42,6 +42,8 @@ jobs:
       BLIND_INDEX_KEY: 123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0
       CLIENT_URL: http://localhost:5173
       PORTAL_CLIENT_URL: http://localhost:5174
+      PORTAL_PUBLIC_URL: http://localhost:5174
+      VITE_OHIF_URL: http://localhost:3005
       ALLOWED_ORIGINS: http://localhost:5173,http://localhost:5174
       ORTHANC_PASSWORD: ci_only_orthanc_password
       PACS_WEBHOOK_SECRET: ci_only_webhook_secret_0123456789
@@ -63,6 +65,49 @@ jobs:
 
       - name: Validate Compose configuration
         run: docker compose config --quiet
+
+      - name: Build application containers
+        run: docker compose build --pull backend frontend portal ohif
+
+      - name: Install Python and AI worker dependencies
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pacs/ai-worker/requirements*.txt
+
+      - name: Test AI worker and compile Python sources
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+          python -m pip install -r pacs/ai-worker/requirements-dev.txt
+          python -m pip_audit -r pacs/ai-worker/requirements.txt
+          python -m pytest pacs/ai-worker/tests -q
+          python -m compileall -q pacs/ai-worker/app pacs/ai-worker/tests
+
+      - name: Scan backend image for high or critical vulnerabilities
+        uses: aquasecurity/trivy-action@v0.31.0
+        with:
+          image-ref: rcms-backend:local
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Scan frontend image for high or critical vulnerabilities
+        uses: aquasecurity/trivy-action@v0.31.0
+        with:
+          image-ref: rcms-frontend:local
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Scan portal image for high or critical vulnerabilities
+        uses: aquasecurity/trivy-action@v0.31.0
+        with:
+          image-ref: rcms-portal:local
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
 
       - name: Install backend dependencies
         run: npm ci

@@ -36,6 +36,33 @@ function validateEnv() {
         if (!process.env.BACKUP_ENCRYPTION_KEY) missing.push('BACKUP_ENCRYPTION_KEY');
         if (!process.env.ALLOWED_ORIGINS) missing.push('ALLOWED_ORIGINS');
         if (!process.env.CLAMSCAN_PATH) missing.push('CLAMSCAN_PATH');
+
+        for (const variable of ['CLIENT_URL', 'PORTAL_CLIENT_URL']) {
+            if (!process.env[variable]) {
+                missing.push(variable);
+                continue;
+            }
+            try {
+                if (new URL(process.env[variable]).protocol !== 'https:') {
+                    invalid.push(`${variable} must use HTTPS in production`);
+                }
+            } catch {
+                invalid.push(`${variable} must be a valid absolute URL`);
+            }
+        }
+
+        for (const origin of String(process.env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)) {
+            try {
+                const url = new URL(origin);
+                if (url.protocol !== 'https:' || url.origin !== origin.replace(/\/$/, '')) {
+                    invalid.push('ALLOWED_ORIGINS must contain only exact HTTPS origins');
+                    break;
+                }
+            } catch {
+                invalid.push('ALLOWED_ORIGINS must contain only valid absolute origins');
+                break;
+            }
+        }
     }
 
     // Validate specific variable formats

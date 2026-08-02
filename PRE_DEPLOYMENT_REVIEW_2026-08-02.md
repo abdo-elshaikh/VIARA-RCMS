@@ -114,8 +114,8 @@ Resolved during this review:
 **Impact:** Image build failures, permission errors, health ordering, missing ClamAV, PACS authentication, storage persistence, DICOM exposure, and runtime-only incompatibilities may surface at deployment.  
 **Reproduction:** `docker compose build` or `docker compose up` with the unavailable daemon.  
 **Recommended fix:** Run the exact release artifact in an isolated staging network; restrict DICOM to the modality VLAN/VPN/firewall; verify C-ECHO/C-STORE/MWL, OHIF study-scoped access, health checks, persistent volumes, restart behavior, and AI profile behavior.  
-**Fixed during review:** Partially. Backend runs as non-root, restart policies and backend health checks were added, and dependent web services wait for backend readiness.  
-**Remaining risk:** Runtime behavior remains unproved until a real container run passes.
+**Fixed during review:** Partially. Compose now separates application and internal data networks, binds non-DICOM host ports to loopback by default, binds DICOM to loopback unless an explicit modality interface is supplied, applies CPU/memory limits and compatible stop grace periods, and adds health checks for backend dependencies and web services. ClamAV is a private, persistent-signature service; backend readiness and upload scanning fail closed when it is unavailable. CI now builds core images and scans them.
+**Remaining risk:** The core build was attempted locally; OHIF built, but the first backend build exposed an invalid Alpine package name which was corrected. A complete post-correction image build/runtime topology, PACS interoperability, volume, restart, and AI-profile test still requires a working registry/network and staging environment.
 
 ### H-02 — Production operations, recovery, and compliance evidence are absent
 
@@ -125,7 +125,7 @@ Resolved during this review:
 **Impact:** Security incidents, outages, data loss, and clinical workflow failures may be detected late or be unrecoverable.  
 **Reproduction:** Request the most recent restore report, alert test, incident drill, and clinical/privacy sign-off; none is present in the reviewed tree.  
 **Recommended fix:** Complete a staging deployment; perform encrypted backup and point-in-time restore tests; define RPO/RTO; connect logs/metrics/traces and alerts; test paging; document rollback and incident playbooks; obtain privacy, legal, clinical, and security sign-off.  
-**Fixed during review:** No.  
+**Fixed during review:** Partially. Repository-side readiness now includes database and ClamAV dependencies, services have termination grace periods compatible with backend drain timing, and CI includes container/Python security gates.
 **Remaining risk:** High operational and governance uncertainty.
 
 ### H-03 — The API process performs broad schema changes and permission seeding at startup
@@ -231,11 +231,11 @@ Resolved during this review:
 
 **Severity:** Medium  
 **Component:** `.github/workflows/quality-gates.yml`  
-**Evidence:** The restored workflow validates backend/frontend/portal and a real PostgreSQL migration, but omits AI-worker tests, Python audit, E2E, container builds, secret scanning, SAST, SBOM/license checks, and deployment smoke. GitHub actions use mutable major tags and container images are not digest-pinned. Branch protection could not be verified.  
+**Evidence:** The workflow validates backend/frontend/portal, AI-worker tests and compilation, Python dependency audit, core container builds and Trivy image scans, and a real PostgreSQL migration. It still omits E2E, secret scanning, SAST, SBOM/license checks, and deployment smoke. GitHub actions use mutable tags and several container images are not digest-pinned. Branch protection could not be verified.
 **Impact:** Untested changes or upstream supply-chain movement may enter releases.  
 **Reproduction:** Inspect workflow jobs and image/action references.  
 **Recommended fix:** Pin actions and release images by digest; add Python, container, secret, SAST, SBOM/license, E2E, and staging-deploy gates; enforce protected required checks.  
-**Fixed during review:** Partially. Portal checks, dependency audits, Compose validation, fresh migration, and live database validation were added/restored.  
+**Fixed during review:** Partially. Portal checks, Node/Python dependency audits, AI-worker tests, container builds/scans, Compose validation, fresh migration, and live database validation were added/restored.
 **Remaining risk:** CI is stronger but not a complete release gate.
 
 ### M-04 — Frontend payloads exceed recommended performance budgets
