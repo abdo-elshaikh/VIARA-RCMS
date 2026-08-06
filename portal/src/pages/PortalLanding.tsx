@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -6,28 +6,36 @@ import {
     ArrowUpRight,
     Bone,
     CalendarCheck,
+    Check,
     CheckCircle2,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
     ClipboardCheck,
     Clock3,
+    ExternalLink,
     FileText,
+    Filter,
     HeartPulse,
+    HelpCircle,
     LockKeyhole,
     Loader2,
     MapPin,
+    MessageSquare,
     Phone,
     Pause,
     Play,
-    Printer,
     Radio,
     ScanLine,
+    Search,
     ShieldCheck,
+    Sparkles,
     Stethoscope,
+    ThumbsUp,
     UserRound,
     Waves,
     X,
+    Zap,
 } from 'lucide-react';
 import { PortalHeader } from '../components/portal/layout/PortalHeader';
 import { PortalFooter } from '../components/portal/layout/PortalFooter';
@@ -56,16 +64,15 @@ const COPY = {
             eyebrow: 'Trusted diagnostic excellence since 2005',
             book: 'Book an appointment', results: 'View my results',
             availability: 'Same-day appointments available', hotline: 'Call our hotline',
-            modalities: ['MRI', 'CT', 'Ultrasound', 'X-Ray', 'PET-CT'],
+            modalities: ['MRI 3.0T', 'CT 128-Slice', 'Ultrasound', 'Digital X-Ray', 'PET-CT'],
         },
         lookup: {
-            title: 'Already have a scan?', desc: 'Enter your medical record number or order number to view a completed report or see when an unfinished report is expected.',
+            title: 'Already have a scan?', desc: 'Enter your medical record number or order number to check whether your latest report is ready.',
             placeholder: 'MRN or Order number', action: 'Check last case', checking: 'Checking status…',
-            secure: 'Private, rate-limited access to your most recent case',
+            secure: 'Rate-limited status check. Sign in to view clinical results.',
             completed: 'Report completed', pending: 'Report in progress', estimated: 'Estimated completion', delayed: 'Taking longer than the usual estimate',
-            viewReport: 'View completed report', checkAnother: 'Check another MRN or Order number', notFound: 'No recent case was found for this MRN or order number.',
+            viewReport: 'Sign in to view report', checkAnother: 'Check another MRN or Order number', notFound: 'No recent case was found for this MRN or order number.',
             lookupError: 'Case status is temporarily unavailable. Please try again or call the center.', studyDate: 'Study date', lastUpdated: 'Last updated',
-            reportTitle: 'Final diagnostic report', print: 'Print report', close: 'Close report', noNarrative: 'The report is finalized, but no narrative content is available in this view.',
         },
         tasks: [
             { icon: CalendarCheck, title: 'Book a scan', desc: 'Request a convenient appointment.', href: '#book', tone: 'emerald' },
@@ -118,30 +125,66 @@ const COPY = {
         },
         locations: {
             eyebrow: 'Locations', title: 'Multiple branches near you',
-            desc: 'Choose the most convenient RCMS location for your visit.', directions: 'Get directions', all: 'View all locations',
+            desc: 'Choose the most convenient RCMS diagnostic center for your visit.',
+            directions: 'Get directions', selectBranch: 'Select for booking', selected: 'Selected branch',
+            all: 'View all locations on Google Maps', hoursLabel: 'Working Hours', modalitiesLabel: 'Available modalities',
+            searchPlaceholder: 'Filter branches by area or name…',
+            regions: {
+                all: 'All Cairo Hubs',
+                east: 'East Cairo & Maadi',
+                west: 'West Cairo & October',
+            },
+            noResults: 'No branches match your location search.',
+            clearSearch: 'Clear search',
         },
         form: {
             eyebrow: 'Appointment request', title: 'Request your appointment',
             desc: 'Share your preferred visit details and our scheduling team will help complete your booking.',
+            badge: 'Instant Concierge Scheduling',
+            liveSummaryTitle: 'Selected Visit Details:',
+            urgentHotline: 'Need urgent booking?',
+            statusActive: 'Scheduling Coordinators Active',
             call: 'Need help? Call', aria: 'Appointment request form', name: 'Full name',
             namePlaceholder: 'Your full name', phone: 'Phone number', phonePlaceholder: '010 0000 0000',
-            service: 'Service', date: 'Preferred date', submit: 'Continue booking', submitting: 'Please wait…',
+            service: 'Service', date: 'Preferred date', branch: 'Preferred center', timeWindow: 'Preferred time',
+            submit: 'Continue booking', submitting: 'Please wait…',
             errors: { name: 'Please enter your full name.', phone: 'Please enter a valid phone number.', date: 'Please select a date from today onward.' },
+            conciergeTitle: 'Concierge Booking Guarantees',
+            features: [
+                { title: '15-Min Callback', desc: 'Fast scheduling confirmation by phone' },
+                { title: 'Prep Instructions', desc: 'Clear fasting & preparation checklist sent instantly' },
+                { title: 'Secure & Private', desc: 'Your medical data is protected & confidential' },
+            ],
+            timeWindows: [
+                { id: 'morning', label: 'Morning (9 AM - 1 PM)' },
+                { id: 'afternoon', label: 'Afternoon (1 PM - 5 PM)' },
+                { id: 'evening', label: 'Evening (5 PM - 9 PM)' },
+            ],
         },
         faq: {
             eyebrow: 'Frequently asked questions', title: 'Helpful information before your visit',
             desc: 'Clear answers about preparation, appointments, reports, and accessing your results.',
             supportTitle: 'Still need help?', supportCopy: 'Our patient support team can confirm preparation instructions and guide your next step.',
             call: 'Call patient support', book: 'Request an appointment',
+            searchPlaceholder: 'Search FAQs by keyword (e.g., MRI, fasting, report, contrast)…',
+            noResults: 'No matching questions found for your search term.',
+            clearSearch: 'Clear search',
+            categoryLabels: {
+                all: 'All Questions',
+                prep: 'Scan Preparation',
+                results: 'Results & Reports',
+                booking: 'Booking & Visit',
+                safety: 'Safety & Contrast',
+            },
             items: [
-                { q: 'How do I access my report?', a: 'Use the medical record number check above to view your latest completed report without signing in. Sign in to the patient portal for available images and your broader record history.' },
-                { q: 'Do I need preparation before my scan?', a: 'Preparation depends on the examination. Our team provides the correct fasting, hydration, medication, or clothing instructions when your appointment is confirmed.' },
-                { q: 'Can my doctor view my images?', a: 'Authorized referring doctors can securely access assigned studies and signed reports through the doctor portal.' },
-                { q: 'How soon will I receive my results?', a: 'Most routine reports are available within 24 hours. Urgent studies follow the priority agreed with your referring doctor.' },
-                { q: 'Can someone accompany me?', a: 'A companion may usually attend the visit, subject to examination-area safety and privacy requirements. Ask the center when confirming your appointment.' },
-                { q: 'How do I change my appointment?', a: 'Call the scheduling team as early as possible. They can review the available times and any preparation instructions that may need to change.' },
-                { q: 'What should I do before a contrast examination?', a: 'Tell the team about previous contrast reactions, kidney conditions, pregnancy, and current medication. Follow only the preparation instructions confirmed for your examination.' },
-                { q: 'Can I bring previous scans and reports?', a: 'Yes. Relevant prior images and reports help the radiologist compare changes over time. Bring digital media or printed reports when they are available.' },
+                { category: 'results', q: 'How do I access my report?', a: 'Use the medical record number check above to confirm whether your latest report is ready. Sign in to the patient portal to view the report, available images, and your broader record history.' },
+                { category: 'prep', q: 'Do I need preparation before my scan?', a: 'Preparation depends on the examination. Our team provides the correct fasting, hydration, medication, or clothing instructions when your appointment is confirmed.' },
+                { category: 'results', q: 'Can my doctor view my images?', a: 'Authorized referring doctors can securely access assigned studies and signed reports through the doctor portal.' },
+                { category: 'results', q: 'How soon will I receive my results?', a: 'Most routine reports are available within 24 hours. Urgent studies follow the priority agreed with your referring doctor.' },
+                { category: 'booking', q: 'Can someone accompany me?', a: 'A companion may usually attend the visit, subject to examination-area safety and privacy requirements. Ask the center when confirming your appointment.' },
+                { category: 'booking', q: 'How do I change my appointment?', a: 'Call the scheduling team as early as possible. They can review the available times and any preparation instructions that may need to change.' },
+                { category: 'safety', q: 'What should I do before a contrast examination?', a: 'Tell the team about previous contrast reactions, kidney conditions, pregnancy, and current medication. Follow only the preparation instructions confirmed for your examination.' },
+                { category: 'prep', q: 'Can I bring previous scans and reports?', a: 'Yes. Relevant prior images and reports help the radiologist compare changes over time. Bring digital media or printed reports when they are available.' },
             ],
         },
         footer: {
@@ -159,15 +202,14 @@ const COPY = {
             { label: 'للمرضى', href: '#patient-guide' }, { label: 'تواصل معنا', href: '#book' },
         ],
         menu: { open: 'فتح القائمة', close: 'إغلاق القائمة' },
-        hero: { eyebrow: 'تميز تشخيصي موثوق منذ عام 2005', book: 'احجز موعداً', results: 'عرض نتائجي', availability: 'مواعيد متاحة في نفس اليوم', hotline: 'اتصل بالخط الساخن', modalities: ['الرنين', 'المقطعية', 'السونار', 'الأشعة الرقمية', 'PET-CT'] },
+        hero: { eyebrow: 'تميز تشخيصي موثوق منذ عام ٢٠٠٥', book: 'احجز موعداً', results: 'عرض نتائجي', availability: 'مواعيد متاحة في نفس اليوم', hotline: 'اتصل بالخط الساخن', modalities: ['الرنين 3T', 'المقطعية 128', 'السونار', 'الأشعة الرقمية', 'PET-CT'] },
         lookup: {
-            title: 'أجريت فحصاً بالفعل؟', desc: 'أدخل رقم الملف الطبي أو رقم الطلب لعرض التقرير المكتمل أو معرفة الموعد المتوقع للتقرير غير المكتمل.',
+            title: 'أجريت فحصاً بالفعل؟', desc: 'أدخل رقم الملف الطبي أو رقم الطلب للتحقق مما إذا كان أحدث تقرير جاهزاً.',
             placeholder: 'رقم الملف الطبي أو الطلب', action: 'تحقق من آخر فحص', checking: 'جارٍ التحقق…',
-            secure: 'وصول خاص ومحدود المحاولات إلى أحدث فحص',
+            secure: 'تحقق محدود المحاولات من الحالة. سجل الدخول لعرض النتائج الطبية.',
             completed: 'اكتمل التقرير', pending: 'التقرير قيد الإعداد', estimated: 'الموعد المتوقع للاكتمال', delayed: 'يستغرق وقتاً أطول من التقدير المعتاد',
-            viewReport: 'عرض التقرير المكتمل', checkAnother: 'التحقق من رقم آخر', notFound: 'لم يتم العثور على فحص حديث لرقم الملف الطبي أو الطلب هذا.',
+            viewReport: 'سجل الدخول لعرض التقرير', checkAnother: 'التحقق من رقم آخر', notFound: 'لم يتم العثور على فحص حديث لرقم الملف الطبي أو الطلب هذا.',
             lookupError: 'حالة الفحص غير متاحة مؤقتاً. حاول مرة أخرى أو اتصل بالمركز.', studyDate: 'تاريخ الفحص', lastUpdated: 'آخر تحديث',
-            reportTitle: 'التقرير التشخيصي النهائي', print: 'طباعة التقرير', close: 'إغلاق التقرير', noNarrative: 'تم اعتماد التقرير، لكن محتواه النصي غير متاح في هذا العرض.',
         },
         tasks: [
             { icon: CalendarCheck, title: 'حجز فحص', desc: 'اطلب موعداً مناسباً لك.', href: '#book', tone: 'emerald' },
@@ -209,28 +251,66 @@ const COPY = {
             safetyTitle: 'لديك جهاز مزروع أو احتمال حمل أو تفاعل سابق مع الصبغة؟',
             safetyCopy: 'أخبر فريق الحجز قبل الزيارة حتى يتمكن من مراجعة التحضير ومسار الأمان المناسبين.',
         },
-        locations: { eyebrow: 'الفروع', title: 'فروع متعددة بالقرب منك', desc: 'اختر فرع RCMS الأنسب لزيارتك.', directions: 'اتجاهات الفرع', all: 'عرض كل الفروع' },
+        locations: {
+            eyebrow: 'الفروع', title: 'فروع متعددة بالقرب منك',
+            desc: 'اختر فرع RCMS التشخيصي الأنسب لزيارتك.',
+            directions: 'اتجاهات الفرع', selectBranch: 'اختر للحجز', selected: 'الفرع المختار',
+            all: 'عرض كل الفروع على خرائط جوجل', hoursLabel: 'مواعيد العمل', modalitiesLabel: 'الأجهزة المتاحة',
+            searchPlaceholder: 'ابحث عن الفرع بالاسم أو المنطقة…',
+            regions: {
+                all: 'جميع الفروع',
+                east: 'شرق القاهرة والمعادي',
+                west: 'غرب القاهرة وأكتوبر',
+            },
+            noResults: 'لا توجد فروع تطابق بحثك المكانى.',
+            clearSearch: 'إلغاء التصفية',
+        },
         form: {
             eyebrow: 'طلب موعد', title: 'اطلب موعدك الآن', desc: 'شارك تفاصيل الزيارة المفضلة وسيساعدك فريق الحجز في إكمال الحجز.',
+            badge: 'حجز تشخيصي مباشر',
+            liveSummaryTitle: 'تفاصيل الزيارة المحددة:',
+            urgentHotline: 'بحاجة إلى حجز عاجل؟',
+            statusActive: 'منسقو الحجز متاحون الآن',
             call: 'للمساعدة اتصل', aria: 'نموذج طلب موعد', name: 'الاسم بالكامل', namePlaceholder: 'الاسم بالكامل',
-            phone: 'رقم الهاتف', phonePlaceholder: '010 0000 0000', service: 'الخدمة', date: 'التاريخ المفضل',
+            phone: 'رقم الهاتف', phonePlaceholder: '010 0000 0000', service: 'الخدمة', date: 'التاريخ المفضل', branch: 'المركز المفضل', timeWindow: 'الوقت المفضل',
             submit: 'متابعة الحجز', submitting: 'يرجى الانتظار…',
             errors: { name: 'يرجى إدخال الاسم بالكامل.', phone: 'يرجى إدخال رقم هاتف صحيح.', date: 'يرجى اختيار تاريخ من اليوم فصاعداً.' },
+            conciergeTitle: 'ضمانات الحجز المميز',
+            features: [
+                { title: 'تأكيد خلال ١٥ دقيقة', desc: 'اتصال الهاتفي لتأكيد الموعد المناسب' },
+                { title: 'تعليمات التحضير', desc: 'قائمة الصيام والتحضير فور طلب الحجز' },
+                { title: 'سرية وأمان', desc: 'حجز طبي محمي وآمن تماماً' },
+            ],
+            timeWindows: [
+                { id: 'morning', label: 'صباحاً (٩ ص - ١ م)' },
+                { id: 'afternoon', label: 'ظهراً (١ م - ٥ م)' },
+                { id: 'evening', label: 'مساءً (٥ م - ٩ م)' },
+            ],
         },
         faq: {
             eyebrow: 'الأسئلة الشائعة', title: 'معلومات مفيدة قبل زيارتك',
             desc: 'إجابات واضحة حول التحضير والمواعيد والتقارير والوصول إلى النتائج.',
             supportTitle: 'ما زلت بحاجة إلى مساعدة؟', supportCopy: 'يساعدك فريق دعم المرضى في تأكيد تعليمات التحضير وتحديد خطوتك التالية.',
             call: 'اتصل بدعم المرضى', book: 'اطلب موعداً',
+            searchPlaceholder: 'ابحث في الأسئلة (مثال: صيام، رنين، تقرير، صبغة)…',
+            noResults: 'لم يتم العثور على أسئلة تطابق بحثك.',
+            clearSearch: 'إلغاء البحث',
+            categoryLabels: {
+                all: 'كل الأسئلة',
+                prep: 'تحضير الفحص',
+                results: 'النتائج والتقارير',
+                booking: 'الحجز والزيارة',
+                safety: 'الأمان والصبغة',
+            },
             items: [
-                { q: 'كيف أصل إلى التقرير؟', a: 'استخدم رقم الملف الطبي في أداة التحقق أعلاه لعرض أحدث تقرير مكتمل دون تسجيل الدخول. سجل الدخول إلى بوابة المريض لعرض الصور المتاحة وسجل الفحوصات الأوسع.' },
-                { q: 'هل يحتاج الفحص إلى تحضير؟', a: 'تختلف التحضيرات حسب نوع الفحص. يرسل فريقنا تعليمات الصيام أو شرب المياه أو الأدوية عند تأكيد الموعد.' },
-                { q: 'هل يستطيع طبيبي عرض الصور؟', a: 'يمكن للطبيب المحول والمصرح له الوصول إلى الفحوصات والتقارير المعتمدة من خلال بوابة الأطباء.' },
-                { q: 'متى أحصل على النتيجة؟', a: 'تتوفر معظم التقارير العادية خلال 24 ساعة، بينما تتبع الحالات العاجلة الأولوية المتفق عليها مع الطبيب.' },
-                { q: 'هل يمكن أن يرافقني شخص؟', a: 'يمكن عادةً حضور مرافق مع مراعاة متطلبات الأمان والخصوصية داخل منطقة الفحص. اسأل المركز عند تأكيد الموعد.' },
-                { q: 'كيف أغير موعدي؟', a: 'اتصل بفريق الحجز في أقرب وقت ممكن لمراجعة المواعيد المتاحة وأي تعليمات تحضير تحتاج إلى تعديل.' },
-                { q: 'ماذا أفعل قبل فحص يستخدم الصبغة؟', a: 'أخبر الفريق عن أي حساسية سابقة من الصبغة أو أمراض بالكلى أو حمل أو أدوية حالية، واتبع فقط تعليمات التحضير المؤكدة لفحصك.' },
-                { q: 'هل يمكنني إحضار الأشعات والتقارير السابقة؟', a: 'نعم. تساعد الصور والتقارير السابقة طبيب الأشعة على مقارنة التغيرات بمرور الوقت. أحضر الوسائط الرقمية أو التقارير المطبوعة عند توفرها.' },
+                { category: 'results', q: 'كيف أصل إلى التقرير؟', a: 'استخدم رقم الملف الطبي في أداة التحقق أعلاه لعرض أحدث تقرير مكتمل دون تسجيل الدخول. سجل الدخول إلى بوابة المريض لعرض الصور المتاحة وسجل الفحوصات الأوسع.' },
+                { category: 'prep', q: 'هل يحتاج الفحص إلى تحضير؟', a: 'تختلف التحضيرات حسب نوع الفحص. يرسل فريقنا تعليمات الصيام أو شرب المياه أو الأدوية عند تأكيد الموعد.' },
+                { category: 'results', q: 'هل يستطيع طبيبي عرض الصور؟', a: 'يمكن للطبيب المحول والمصرح له الوصول إلى الفحوصات والتقارير المعتمدة من خلال بوابة الأطباء.' },
+                { category: 'results', q: 'متى أحصل على النتيجة؟', a: 'تتوفر معظم التقارير العادية خلال 24 ساعة، بينما تتبع الحالات العاجلة الأولوية المتفق عليها مع الطبيب.' },
+                { category: 'booking', q: 'هل يمكن أن يرافقني شخص؟', a: 'يمكن عادةً حضور مرافق مع مراعاة متطلبات الأمان والخصوصية داخل منطقة الفحص. اسأل المركز عند تأكيد الموعد.' },
+                { category: 'booking', q: 'كيف أغير موعدي؟', a: 'اتصل بفريق الحجز في أقرب وقت ممكن لمراجعة المواعيد المتاحة وأي تعليمات تحضير تحتاج إلى تعديل.' },
+                { category: 'safety', q: 'ماذا أفعل قبل فحص يستخدم الصبغة؟', a: 'أخبر الفريق عن أي حساسية سابقة من الصبغة أو أمراض بالكلى أو حمل أو أدوية حالية، واتبع فقط تعليمات التحضير المؤكدة لفحصك.' },
+                { category: 'prep', q: 'هل يمكنني إحضار الأشعات والتقارير السابقة؟', a: 'نعم. تساعد الصور والتقارير السابقة طبيب الأشعة على مقارنة التغيرات بمرور الوقت. أحضر الوسائط الرقمية أو التقارير المطبوعة عند توفرها.' },
             ],
         },
         footer: { desc: 'أشعة تشخيصية حديثة مع وصول رقمي آمن للمرضى والأطباء المحولين.', services: 'خدماتنا', rights: 'جميع الحقوق محفوظة.', secure: 'وصول آمن للبيانات الطبية' },
@@ -239,41 +319,135 @@ const COPY = {
 
 const SERVICES = {
     en: [
-        { icon: ScanLine, name: 'MRI 3.0T', note: 'High-field', category: 'Advanced imaging', desc: 'High-resolution, radiation-free imaging for detailed evaluation of soft tissue and anatomy.', scope: 'Brain · Spine · Joints · Abdomen', image: '/images/scans/mri_device_3d.png' },
-        { icon: Radio, name: 'CT 128-Slice', note: 'Fast acquisition', category: 'Cross-sectional imaging', desc: 'Rapid multi-slice imaging with detailed reconstruction for routine and urgent assessment.', scope: 'Chest · Abdomen · Trauma · Angiography', image: '/images/scans/ct_device_3d.png' },
-        { icon: Waves, name: 'Ultrasound & Doppler', note: 'Real-time', category: 'Radiation-free imaging', desc: 'Comfortable real-time imaging for organs, soft tissue, pregnancy, and blood flow.', scope: 'Abdomen · Pelvis · Vascular · Pregnancy', image: '/images/scans/ultrasound_device_3d.png' },
-        { icon: HeartPulse, name: '3D Mammography', note: 'Tomosynthesis', category: "Women's imaging", desc: 'Detailed breast imaging for screening, diagnostic evaluation, and follow-up.', scope: 'Screening · Diagnostic · Follow-up', image: '/images/scans/mammography_device_3d.png' },
-        { icon: Bone, name: 'Digital X-Ray', note: 'Low dose', category: 'General radiography', desc: 'Fast digital radiography with high-quality images and optimized radiation exposure.', scope: 'Chest · Bones · Joints · Spine', image: '/images/scans/xray_device_3d.png' },
-        { icon: ScanLine, name: 'PET-CT', note: 'Hybrid imaging', category: 'Molecular imaging', desc: 'Combined metabolic and anatomical imaging to support diagnosis, staging, and follow-up.', scope: 'Oncology · Neurology · Cardiology', image: '/images/scans/petct_device_3d.png' },
-        { icon: Bone, name: 'Bone Density (DEXA)', note: 'Quick scan', category: 'Bone health', desc: 'Low-dose measurement of bone mineral density to assess osteoporosis and fracture risk.', scope: 'Spine · Hip · Whole body', image: '/images/scans/xray_device_3d.png' },
-        { icon: Radio, name: 'Fluoroscopy & Contrast', note: 'Dynamic imaging', category: 'Special examinations', desc: 'Live X-ray guidance for functional and contrast-enhanced diagnostic studies.', scope: 'Gastrointestinal · Urinary · Swallowing', image: '/images/scans/ct_device_3d.png' },
-        { icon: Stethoscope, name: 'Image-Guided Procedures', note: 'Minimally invasive', category: 'Interventional support', desc: 'Imaging guidance for selected diagnostic and therapeutic procedures.', scope: 'Biopsy · Aspiration · Drainage', image: '/images/scans/ultrasound_device_3d.png' },
-        { icon: Radio, name: 'Dental & Panoramic', note: 'Digital dental', category: 'Dental imaging', desc: 'Wide-view dental and jaw imaging to support orthodontic, surgical, and routine dental assessment.', scope: 'Teeth · Jaw · TMJ · Orthodontics', image: '/images/scans/dental-panoramic-device-v1.png' },
+        { icon: ScanLine, name: 'MRI 3.0T', note: 'High-field', category: 'Advanced imaging', desc: 'High-resolution, radiation-free imaging for detailed evaluation of soft tissue and anatomy.', scope: 'Brain · Spine · Joints · Abdomen', image: '/images/scans/mri_machine.png' },
+        { icon: Radio, name: 'CT 128-Slice', note: 'Fast acquisition', category: 'Cross-sectional imaging', desc: 'Rapid multi-slice imaging with detailed reconstruction for routine and urgent assessment.', scope: 'Chest · Abdomen · Trauma · Angiography', image: '/images/scans/ct_machine.png' },
+        { icon: Waves, name: 'Ultrasound & Doppler', note: 'Real-time', category: 'Radiation-free imaging', desc: 'Comfortable real-time imaging for organs, soft tissue, pregnancy, and blood flow.', scope: 'Abdomen · Pelvis · Vascular · Pregnancy', image: '/images/scans/ultrasound_machine.png' },
+        { icon: HeartPulse, name: '3D Mammography', note: 'Tomosynthesis', category: "Women's imaging", desc: 'Detailed breast imaging for screening, diagnostic evaluation, and follow-up.', scope: 'Screening · Diagnostic · Follow-up', image: '/images/scans/mammography_machine.png' },
+        { icon: Bone, name: 'Digital X-Ray', note: 'Low dose', category: 'General radiography', desc: 'Fast digital radiography with high-quality images and optimized radiation exposure.', scope: 'Chest · Bones · Joints · Spine', image: '/images/scans/xray_machine.png' },
+        { icon: ScanLine, name: 'PET-CT', note: 'Hybrid imaging', category: 'Molecular imaging', desc: 'Combined metabolic and anatomical imaging to support diagnosis, staging, and follow-up.', scope: 'Oncology · Neurology · Cardiology', image: '/images/scans/petct_machine.png' },
+        { icon: Bone, name: 'Bone Density (DEXA)', note: 'Quick scan', category: 'Bone health', desc: 'Low-dose measurement of bone mineral density to assess osteoporosis and fracture risk.', scope: 'Spine · Hip · Whole body', image: '/images/scans/dexa_machine.png' },
+        { icon: Radio, name: 'Fluoroscopy & Contrast', note: 'Dynamic imaging', category: 'Special examinations', desc: 'Live X-ray guidance for functional and contrast-enhanced diagnostic studies.', scope: 'Gastrointestinal · Urinary · Swallowing', image: '/images/scans/fluoroscopy_machine.png' },
+        { icon: Stethoscope, name: 'Image-Guided Procedures', note: 'Minimally invasive', category: 'Interventional support', desc: 'Imaging guidance for selected diagnostic and therapeutic procedures.', scope: 'Biopsy · Aspiration · Drainage', image: '/images/scans/interventional_machine.png' },
+        { icon: Radio, name: 'Dental & Panoramic', note: 'Digital dental', category: 'Dental imaging', desc: 'Wide-view dental and jaw imaging to support orthodontic, surgical, and routine dental assessment.', scope: 'Teeth · Jaw · TMJ · Orthodontics', image: '/images/scans/dental_machine.png' },
     ],
     ar: [
-        { icon: ScanLine, name: 'الرنين المغناطيسي 3 تسلا', note: 'مجال عالٍ', category: 'تصوير متقدم', desc: 'تصوير عالي الدقة دون إشعاع لتقييم الأنسجة الرخوة والتفاصيل التشريحية.', scope: 'المخ · العمود الفقري · المفاصل · البطن', image: '/images/scans/mri_device_3d.png' },
-        { icon: Radio, name: 'المقطعية 128 شريحة', note: 'تصوير سريع', category: 'تصوير مقطعي', desc: 'تصوير سريع متعدد الشرائح مع إعادة بناء تفصيلية للفحوصات الروتينية والعاجلة.', scope: 'الصدر · البطن · الإصابات · الأوعية', image: '/images/scans/ct_device_3d.png' },
-        { icon: Waves, name: 'السونار والدوبلر', note: 'تصوير لحظي', category: 'تصوير دون إشعاع', desc: 'تصوير لحظي ومريح للأعضاء والأنسجة والحمل وتدفق الدم.', scope: 'البطن · الحوض · الأوعية · الحمل', image: '/images/scans/ultrasound_device_3d.png' },
-        { icon: HeartPulse, name: 'الماموجرام ثلاثي الأبعاد', note: 'توموسينثيسس', category: 'تصوير المرأة', desc: 'تصوير تفصيلي للثدي للفحص الدوري والتشخيص والمتابعة.', scope: 'الفحص الدوري · التشخيص · المتابعة', image: '/images/scans/mammography_device_3d.png' },
-        { icon: Bone, name: 'الأشعة الرقمية', note: 'جرعة منخفضة', category: 'الأشعة العامة', desc: 'تصوير رقمي سريع وعالي الجودة مع تحسين جرعة الإشعاع.', scope: 'الصدر · العظام · المفاصل · العمود الفقري', image: '/images/scans/xray_device_3d.png' },
-        { icon: ScanLine, name: 'PET-CT', note: 'تصوير هجين', category: 'التصوير الجزيئي', desc: 'دمج التصوير الأيضي والتشريحي لدعم التشخيص وتحديد المراحل والمتابعة.', scope: 'الأورام · الأعصاب · القلب', image: '/images/scans/petct_device_3d.png' },
-        { icon: Bone, name: 'قياس كثافة العظام DEXA', note: 'فحص سريع', category: 'صحة العظام', desc: 'قياس منخفض الجرعة لكثافة المعادن بالعظام وتقييم هشاشة العظام وخطر الكسور.', scope: 'العمود الفقري · الفخذ · الجسم بالكامل', image: '/images/scans/xray_device_3d.png' },
-        { icon: Radio, name: 'الفلوروسكوبي وفحوصات الصبغة', note: 'تصوير ديناميكي', category: 'فحوصات خاصة', desc: 'أشعة حية لتوجيه الفحوصات الوظيفية والدراسات التشخيصية بالصبغة.', scope: 'الجهاز الهضمي · البولي · البلع', image: '/images/scans/ct_device_3d.png' },
-        { icon: Stethoscope, name: 'إجراءات موجهة بالصور', note: 'تدخل محدود', category: 'دعم تداخلي', desc: 'استخدام التصوير لتوجيه إجراءات تشخيصية وعلاجية مختارة.', scope: 'الخزعات · سحب العينات · التصريف', image: '/images/scans/ultrasound_device_3d.png' },
-        { icon: Radio, name: 'أشعة الأسنان والبانوراما', note: 'أسنان رقمية', category: 'تصوير الأسنان', desc: 'تصوير واسع للأسنان والفكين لدعم التقويم والجراحة والتقييم الدوري للأسنان.', scope: 'الأسنان · الفك · مفصل الفك · التقويم', image: '/images/scans/dental-panoramic-device-v1.png' },
+        { icon: ScanLine, name: 'الرنين المغناطيسي 3 تسلا', note: 'مجال عالٍ', category: 'تصوير متقدم', desc: 'تصوير عالي الدقة دون إشعاع لتقييم الأنسجة الرخوة والتفاصيل التشريحية.', scope: 'المخ · العمود الفقري · المفاصل · البطن', image: '/images/scans/mri_machine.png' },
+        { icon: Radio, name: 'المقطعية 128 شريحة', note: 'تصوير سريع', category: 'تصوير مقطعي', desc: 'تصوير سريع متعدد الشرائح مع إعادة بناء تفصيلية للفحوصات الروتينية والعاجلة.', scope: 'الصدر · البطن · الإصابات · الأوعية', image: '/images/scans/ct_machine.png' },
+        { icon: Waves, name: 'السونار والدوبلر', note: 'تصوير لحظي', category: 'تصوير دون إشعاع', desc: 'تصوير لحظي ومريح للأعضاء والأنسجة والحمل وتدفق الدم.', scope: 'البطن · الحوض · الأوعية · الحمل', image: '/images/scans/ultrasound_machine.png' },
+        { icon: HeartPulse, name: 'الماموجرام ثلاثي الأبعاد', note: 'توموسينثيسس', category: 'تصوير المرأة', desc: 'تصوير تفصيلي للثدي للفحص الدوري والتشخيص والمتابعة.', scope: 'الفحص الدوري · التشخيص · المتابعة', image: '/images/scans/mammography_machine.png' },
+        { icon: Bone, name: 'الأشعة الرقمية', note: 'جرعة منخفضة', category: 'الأشعة العامة', desc: 'تصوير رقمي سريع وعالي الجودة مع تحسين جرعة الإشعاع.', scope: 'الصدر · العظام · المفاصل · العمود الفقري', image: '/images/scans/xray_machine.png' },
+        { icon: ScanLine, name: 'PET-CT', note: 'تصوير هجين', category: 'التصوير الجزيئي', desc: 'دمج التصوير الأيضي والتشريحي لدعم التشخيص وتحديد المراحل والمتابعة.', scope: 'الأورام · الأعصاب · القلب', image: '/images/scans/petct_machine.png' },
+        { icon: Bone, name: 'قياس كثافة العظام DEXA', note: 'فحص سريع', category: 'صحة العظام', desc: 'قياس منخفض الجرعة لكثافة المعادن بالعظام وتقييم هشاشة العظام وخطر الكسور.', scope: 'العمود الفقري · الفخذ · الجسم بالكامل', image: '/images/scans/dexa_machine.png' },
+        { icon: Radio, name: 'الفلوروسكوبي وفحوصات الصبغة', note: 'تصوير ديناميكي', category: 'فحوصات خاصة', desc: 'أشعة حية لتوجيه الفحوصات الوظيفية والدراسات التشخيصية بالصبغة.', scope: 'الجهاز الهضمي · البولي · البلع', image: '/images/scans/fluoroscopy_machine.png' },
+        { icon: Stethoscope, name: 'إجراءات موجهة بالصور', note: 'تدخل محدود', category: 'دعم تداخلي', desc: 'استخدام التصوير لتوجيه إجراءات تشخيصية وعلاجية مختارة.', scope: 'الخزعات · سحب العينات · التصريف', image: '/images/scans/interventional_machine.png' },
+        { icon: Radio, name: 'أشعة الأسنان والبانوراما', note: 'أسنان رقمية', category: 'تصوير الأسنان', desc: 'تصوير واسع للأسنان والفكين لدعم التقويم والجراحة والتقييم الدوري للأسنان.', scope: 'الأسنان · الفك · مفصل الفك · التقويم', image: '/images/scans/dental_machine.png' },
     ],
 };
 
 const BRANCHES = {
     en: [
-        { name: 'RCMS Maadi Center', address: '49 Street 199, Maadi, Cairo', phone: '02 2515 0200', position: '8%' },
-        { name: 'RCMS Heliopolis Center', address: '8 El Nozha St., Heliopolis, Cairo', phone: '02 2080 2444', position: '38%' },
-        { name: 'RCMS 6th of October', address: 'El Mehwar El Markazi, 6th of October', phone: '02 3838 6060', position: '70%' },
+        {
+            id: 'maadi',
+            name: 'RCMS Maadi Center',
+            tag: 'Flagship Diagnostic Center',
+            address: '49 Street 199, Maadi, Cairo',
+            phone: '02 2515 0200',
+            hours: 'Sat – Thu: 8:00 AM – 10:00 PM | Fri: 10:00 AM – 6:00 PM',
+            modalities: ['MRI 3.0T', 'CT 128', 'Ultrasound', '3D Mammo'],
+            position: '8%',
+        },
+        {
+            id: 'heliopolis',
+            name: 'RCMS Heliopolis Center',
+            tag: 'East Cairo Hub',
+            address: '8 El Nozha St., Heliopolis, Cairo',
+            phone: '02 2080 2444',
+            hours: 'Sat – Thu: 8:00 AM – 10:00 PM | Fri: Emergency scans',
+            modalities: ['MRI 3.0T', 'CT 128', 'Digital X-Ray', 'DEXA'],
+            position: '38%',
+        },
+        {
+            id: 'october',
+            name: 'RCMS 6th of October',
+            tag: 'West Cairo Hub',
+            address: 'El Mehwar El Markazi, 6th of October',
+            phone: '02 3838 6060',
+            hours: 'Sat – Thu: 8:00 AM – 10:00 PM | Fri: 10:00 AM – 6:00 PM',
+            modalities: ['CT 128-Slice', 'Ultrasound', 'PET-CT', 'X-Ray'],
+            position: '70%',
+        },
+        {
+            id: 'sheikh-zayed',
+            name: 'RCMS Sheikh Zayed',
+            tag: 'West Cairo Hub',
+            address: 'Sheikh Zayed, Cairo',
+            phone: '02 3838 6060',
+            hours: 'Sat – Thu: 8:00 AM – 10:00 PM | Fri: 10:00 AM – 6:00 PM',
+            modalities: ['CT 128-Slice', 'Ultrasound', 'PET-CT', 'X-Ray'],
+            position: '70%',
+        },
+        {
+            id: 'new-cairo',
+            name: 'RCMS New Cairo',
+            tag: 'New Cairo Hub',
+            address: 'New Cairo, Cairo',
+            phone: '02 3838 6060',
+            hours: 'Sat – Thu: 8:00 AM – 10:00 PM | Fri: 10:00 AM – 6:00 PM',
+            modalities: ['CT 128-Slice', 'Ultrasound', 'PET-CT', 'X-Ray'],
+            position: '70%',
+        }
     ],
     ar: [
-        { name: 'مركز RCMS المعادي', address: '٤٩ شارع ١٩٩، المعادي، القاهرة', phone: '02 2515 0200', position: '8%' },
-        { name: 'مركز RCMS مصر الجديدة', address: '٨ شارع النزهة، مصر الجديدة، القاهرة', phone: '02 2080 2444', position: '38%' },
-        { name: 'مركز RCMS السادس من أكتوبر', address: 'المحور المركزي، السادس من أكتوبر', phone: '02 3838 6060', position: '70%' },
+        {
+            id: 'maadi',
+            name: 'مركز RCMS المعادي',
+            tag: 'الفرع الرئيسي',
+            address: '٤٩ شارع ١٩٩، المعادي، القاهرة',
+            phone: '02 2515 0200',
+            hours: 'السبت – الخميس: ٨ ص – ١٠ م | الجمعة: ١٠ ص – ٦ م',
+            modalities: ['الرنين 3T', 'المقطعية 128', 'السونار', 'الماموجرام'],
+            position: '8%',
+        },
+        {
+            id: 'heliopolis',
+            name: 'مركز RCMS مصر الجديدة',
+            tag: 'مركز شرق القاهرة',
+            address: '٨ شارع النزهة، مصر الجديدة، القاهرة',
+            phone: '02 2080 2444',
+            hours: 'السبت – الخميس: ٨ ص – ١٠ م | الجمعة: الطوارئ فقط',
+            modalities: ['الرنين 3T', 'المقطعية 128', 'الأشعة الرقمية', 'DEXA'],
+            position: '38%',
+        },
+        {
+            id: 'october',
+            name: 'مركز RCMS السادس من أكتوبر',
+            tag: 'مركز غرب القاهرة',
+            address: 'المحور المركزي، السادس من أكتوبر',
+            phone: '02 3838 6060',
+            hours: 'السبت – الخميس: ٨ ص – ١٠ م | الجمعة: ١٠ ص – ٦ م',
+            modalities: ['المقطعية 128', 'السونار', 'PET-CT', 'الأشعة الرقمية'],
+            position: '70%',
+        },
+        {
+            id: 'sheikh-zayed',
+            name: 'مركز RCMS الشيخ زايد',
+            tag: 'مركز غرب القاهرة',
+            address: 'الشيخ زايد، القاهرة',
+            phone: '02 3838 6060',
+            hours: 'السبت – الخميس: ٨ ص – ١٠ م | الجمعة: ١٠ ص – ٦ م',
+            modalities: ['المقطعية 128', 'السونار', 'PET-CT', 'الأشعة الرقمية'],
+            position: '70%',
+        },
+        {
+            id: 'new-cairo',
+            name: 'مركز RCMS القاهرة الجديدة',
+            tag: 'مركز القاهرة الجديدة',
+            address: 'القاهرة الجديدة، القاهرة',
+            phone: '02 3838 6060',
+            hours: 'السبت – الخميس: ٨ ص – ١٠ م | الجمعة: ١٠ ص – ٦ م',
+            modalities: ['المقطعية 128', 'السونار', 'PET-CT', 'الأشعة الرقمية'],
+            position: '70%',
+        }
     ],
 };
 
@@ -288,24 +462,86 @@ interface PublicCaseLookup {
         status?: { code: string; label: string; progress: number };
     };
     estimate?: { estimatedCompletionAt?: string | null; delayed?: boolean; basedOn?: string };
-    report?: {
-        status?: string;
-        finalizedAt?: string | null;
-        signedBy?: string | null;
-        signerRole?: string | null;
-        sections?: Array<{ key: string; label: string; content: string }>;
-        plainText?: string;
-    };
 }
-
-const REPORT_SECTION_LABELS = {
-    en: { clinicalHistory: 'Clinical history', technique: 'Technique', findings: 'Findings', impression: 'Impression', recommendations: 'Recommendations' },
-    ar: { clinicalHistory: 'التاريخ المرضي', technique: 'طريقة الفحص', findings: 'النتائج', impression: 'الانطباع التشخيصي', recommendations: 'التوصيات' },
-};
 
 const CASE_STATUS_LABELS = {
     en: { completed: 'Report completed', reporting: 'Report in progress', imaging: 'Imaging in progress', preparation: 'Preparing for imaging', arrived: 'Visit checked in', scheduled: 'Appointment scheduled' },
     ar: { completed: 'اكتمل التقرير', reporting: 'التقرير قيد الإعداد', imaging: 'الفحص جارٍ', preparation: 'جارٍ التحضير للفحص', arrived: 'تم تسجيل الوصول', scheduled: 'تم تحديد الموعد' },
+};
+
+const Reveal = ({
+    children,
+    className = '',
+    delay = 0,
+    as: Tag = 'div',
+}: {
+    children: ReactNode;
+    className?: string;
+    delay?: number;
+    as?: 'div' | 'span' | 'article' | 'li';
+}) => {
+    const ref = useRef<HTMLDivElement | null>(null);
+    const [visible, setVisible] = useState(false);
+
+    useEffect(() => {
+        const node = ref.current;
+        if (!node) return undefined;
+        if (typeof IntersectionObserver === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            setVisible(true);
+            return undefined;
+        }
+        const observer = new IntersectionObserver(([entry]) => {
+            if (entry.isIntersecting) { setVisible(true); observer.disconnect(); }
+        }, { threshold: 0.15, rootMargin: '0px 0px -8% 0px' });
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, []);
+
+    return (
+        <Tag
+            ref={ref as never}
+            className={`reveal-up ${visible ? 'is-visible' : ''} ${className}`}
+            style={{ transitionDelay: visible ? `${delay}ms` : '0ms' }}
+        >
+            {children}
+        </Tag>
+    );
+};
+
+const AnimatedStat = ({ value, className = '' }: { value: string; className?: string }) => {
+    const ref = useRef<HTMLSpanElement | null>(null);
+    const [display, setDisplay] = useState(value);
+    const match = value.match(/\d+/);
+
+    useEffect(() => {
+        const node = ref.current;
+        if (!node || !match) { setDisplay(value); return undefined; }
+        if (typeof IntersectionObserver === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            setDisplay(value);
+            return undefined;
+        }
+        const target = parseInt(match[0], 10);
+        const prefix = value.slice(0, match.index);
+        const suffix = value.slice((match.index || 0) + match[0].length);
+        let frame: number;
+        const observer = new IntersectionObserver(([entry]) => {
+            if (!entry.isIntersecting) return;
+            observer.disconnect();
+            const duration = 900;
+            const start = performance.now();
+            const tick = (now: number) => {
+                const progress = Math.min(1, (now - start) / duration);
+                const eased = 1 - (1 - progress) ** 3;
+                setDisplay(`${prefix}${Math.round(eased * target)}${suffix}`);
+                if (progress < 1) frame = window.requestAnimationFrame(tick);
+            };
+            frame = window.requestAnimationFrame(tick);
+        }, { threshold: 0.4 });
+        observer.observe(node);
+        return () => { observer.disconnect(); if (frame) window.cancelAnimationFrame(frame); };
+    }, [value]);
+
+    return <span ref={ref} className={className}>{display}</span>;
 };
 
 const PortalLanding = () => {
@@ -323,17 +559,55 @@ const PortalLanding = () => {
     const phone = center.phone || '19144';
     const [medicalRecordNumber, setMedicalRecordNumber] = useState('');
     const [bookingOpen, setBookingOpen] = useState(false);
-    const [reportOpen, setReportOpen] = useState(false);
     const [selectedService, setSelectedService] = useState(services[0]?.name || '');
+    const [selectedBranch, setSelectedBranch] = useState(branches[0]?.name || '');
+    const [selectedTimeWindow, setSelectedTimeWindow] = useState('morning');
+    const [faqCategory, setFaqCategory] = useState('all');
+    const [faqSearchQuery, setFaqSearchQuery] = useState('');
+    const [branchSearchQuery, setBranchSearchQuery] = useState('');
+    const [branchRegionFilter, setBranchRegionFilter] = useState('all');
+    const [faqHelpful, setFaqHelpful] = useState<Record<number, boolean>>({});
     const [bookingDraft, setBookingDraft] = useState<AppointmentFields | null>(null);
     const [openFaq, setOpenFaq] = useState<number | null>(0);
+
+    const filteredBranches = useMemo(() => {
+        const query = branchSearchQuery.trim().toLowerCase();
+        return branches.filter((branch) => {
+            let matchesRegion = true;
+            if (branchRegionFilter === 'east') {
+                matchesRegion = ['maadi', 'heliopolis', 'new-cairo'].includes(branch.id) || Boolean(branch.tag?.toLowerCase().includes('east')) || Boolean(branch.tag?.includes('شرق')) || Boolean(branch.tag?.includes('المعادي'));
+            } else if (branchRegionFilter === 'west') {
+                matchesRegion = ['october', 'sheikh-zayed'].includes(branch.id) || Boolean(branch.tag?.toLowerCase().includes('west')) || Boolean(branch.tag?.includes('غرب'));
+            }
+            const matchesQuery =
+                !query ||
+                branch.name.toLowerCase().includes(query) ||
+                branch.address.toLowerCase().includes(query) ||
+                Boolean(branch.tag?.toLowerCase().includes(query));
+            return matchesRegion && matchesQuery;
+        });
+    }, [branches, branchRegionFilter, branchSearchQuery]);
+
+    useEffect(() => {
+        if (branches.length && (!selectedBranch || !branches.some((b) => b.name === selectedBranch))) {
+            setSelectedBranch(branches[0].name);
+        }
+    }, [branches, selectedBranch]);
+
+    const filteredFaqs = useMemo(() => {
+        const query = faqSearchQuery.trim().toLowerCase();
+        return text.faq.items.filter((item) => {
+            const matchesCategory = faqCategory === 'all' || item.category === faqCategory;
+            const matchesQuery = !query || item.q.toLowerCase().includes(query) || item.a.toLowerCase().includes(query);
+            return matchesCategory && matchesQuery;
+        });
+    }, [text.faq.items, faqCategory, faqSearchQuery]);
     const [serviceSlide, setServiceSlide] = useState(0);
     const [servicesPaused, setServicesPaused] = useState(false);
     const [servicesInteracting, setServicesInteracting] = useState(false);
     const [servicesInView, setServicesInView] = useState(false);
     const [servicesPerView, setServicesPerView] = useState(1);
     const bookingDialogRef = useRef<HTMLDivElement | null>(null);
-    const reportDialogRef = useRef<HTMLDivElement | null>(null);
     const mrnInputRef = useRef<HTMLInputElement | null>(null);
     const servicesTrackRef = useRef<HTMLDivElement | null>(null);
     const servicesCarouselRef = useRef<HTMLDivElement | null>(null);
@@ -451,37 +725,10 @@ const PortalLanding = () => {
         return () => { window.clearTimeout(timer); document.body.style.overflow = overflow; window.removeEventListener('keydown', handleKey); returnFocus?.focus(); };
     }, [bookingOpen]);
 
-    useEffect(() => {
-        if (!reportOpen) return undefined;
-        const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        const getFocusable = () => Array.from(reportDialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href]') || []);
-        const timer = window.setTimeout(() => getFocusable()[0]?.focus(), 0);
-        const handleKey = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') { event.preventDefault(); setReportOpen(false); return; }
-            if (event.key !== 'Tab') return;
-            const focusable = getFocusable();
-            if (!focusable.length) return;
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-        };
-        const overflow = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
-        window.addEventListener('keydown', handleKey);
-        return () => {
-            window.clearTimeout(timer);
-            document.body.style.overflow = overflow;
-            window.removeEventListener('keydown', handleKey);
-            returnFocus?.focus();
-        };
-    }, [reportOpen]);
-
     const openResults = async (event: FormEvent) => {
         event.preventDefault();
         const mrn = medicalRecordNumber.trim();
         if (!mrn) return;
-        setReportOpen(false);
         try {
             await lookupCaseStatus({ mrn }).unwrap();
         } catch (_) {
@@ -492,7 +739,6 @@ const PortalLanding = () => {
     const clearCaseLookup = () => {
         resetCaseLookup();
         setMedicalRecordNumber('');
-        setReportOpen(false);
         window.requestAnimationFrame(() => mrnInputRef.current?.focus());
     };
 
@@ -503,13 +749,6 @@ const PortalLanding = () => {
         return new Intl.DateTimeFormat(isRtl ? 'ar-EG' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
     };
 
-    const formatReportDate = (value?: string | null) => {
-        if (!value) return 'Not available';
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return 'Not available';
-        return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-    };
-
     const localizedCaseStatus = (code?: string) => CASE_STATUS_LABELS[language][code as keyof typeof CASE_STATUS_LABELS.en]
         || (isRtl ? 'جارٍ تحديث الحالة' : 'Status updating');
 
@@ -518,8 +757,21 @@ const PortalLanding = () => {
         setBookingDraft(null);
     };
 
+    const handleSelectBranch = (branchName: string) => {
+        setSelectedBranch(branchName);
+        const bookElem = document.getElementById('book');
+        if (bookElem) {
+            bookElem.scrollIntoView({ behavior: 'smooth' });
+        }
+    };
+
     const continueBooking = (values: AppointmentFields) => {
-        setBookingDraft(values);
+        const timeLabel = text.form.timeWindows?.find((t) => t.id === selectedTimeWindow)?.label || selectedTimeWindow;
+        const branchContext = selectedBranch ? ` [${selectedBranch} - ${timeLabel}]` : '';
+        setBookingDraft({
+            ...values,
+            service: `${values.service || selectedService}${branchContext}`,
+        });
         setBookingOpen(true);
     };
 
@@ -530,53 +782,123 @@ const PortalLanding = () => {
 
     return (
         <div dir={isRtl ? 'rtl' : 'ltr'} className="portal-theme portal-bilingual reference-portal min-h-screen overflow-x-clip bg-white text-[#0b2245] antialiased dark:bg-[#07111f] dark:text-white">
+            <style>{`
+                .reveal-up { opacity: 0; transform: translateY(22px); transition: opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1); will-change: opacity, transform; }
+                .reveal-up.is-visible { opacity: 1; transform: translateY(0); }
+                .tilt-card { transition: transform .35s cubic-bezier(.16,1,.3,1), box-shadow .35s ease, border-color .35s ease; }
+                .tilt-card:hover { transform: translateY(-6px) scale(1.015); }
+                .shine-sweep { position: relative; overflow: hidden; }
+                .shine-sweep::after { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.55) 48%, transparent 66%); transform: translateX(-120%); pointer-events: none; }
+                .shine-sweep:hover::after { animation: shineSweep 1.1s ease; }
+                @keyframes shineSweep { to { transform: translateX(120%); } }
+                .faq-answer-panel { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .38s cubic-bezier(.16,1,.3,1), opacity .3s ease; }
+                .faq-answer-panel.is-open { grid-template-rows: 1fr; opacity: 1; }
+                .faq-answer-inner { overflow: hidden; min-height: 0; }
+                .modal-pop { animation: modalPop .32s cubic-bezier(.16,1,.3,1); }
+                .modal-backdrop-in { animation: backdropIn .28s ease; }
+                @keyframes modalPop { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+                @keyframes backdropIn { from { opacity: 0; } to { opacity: 1; } }
+                .stat-count-pulse { display: inline-block; }
+                .mobile-dock-in { animation: dockIn .5s cubic-bezier(.16,1,.3,1) .15s both; }
+                @keyframes dockIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+                .branch-row { transition: transform .3s ease, background-color .3s ease; }
+                .branch-row:hover { transform: translateX(2px); }
+                [dir='rtl'] .branch-row:hover { transform: translateX(-2px); }
+                @media (prefers-reduced-motion: reduce) {
+                    .reveal-up, .tilt-card, .shine-sweep::after, .faq-answer-panel, .modal-pop, .modal-backdrop-in, .mobile-dock-in, .branch-row { animation: none !important; transition: none !important; transform: none !important; opacity: 1 !important; }
+                    .faq-answer-panel { grid-template-rows: 1fr !important; }
+                }
+            `}</style>
             <a href="#main-content" className="prototype-skip-link">{text.skip}</a>
             <PortalHeader navLinks={text.navLinks} center={center} text={text} isRtl={isRtl} onBook={openBookingOptions} />
 
             <main id="main-content" tabIndex={-1} className="pt-[97px]">
                 <section aria-labelledby="portal-hero-title" className="reference-hero relative isolate overflow-hidden border-b border-[#dce9f5] bg-[#edf6ff] dark:border-slate-800 dark:bg-[#07111f]">
+                    {/* Background image + overlays */}
                     <div className="absolute inset-0 -z-10" aria-hidden="true">
                         <img src="/images/rcms-radiology-hero-v2.png" alt="" decoding="async" className={`h-full w-full object-cover ${isRtl ? '-scale-x-100 object-[37%_center]' : 'object-[63%_center]'} dark:opacity-40`} />
                         <div className={`absolute inset-0 ${isRtl ? 'bg-gradient-to-l' : 'bg-gradient-to-r'} from-white via-white/90 to-white/10 dark:from-[#07111f] dark:via-[#07111f]/90 dark:to-transparent lg:via-white/74 lg:dark:via-[#07111f]/72`} />
                     </div>
 
+                    {/* Animated floating particles */}
+                    <div className="pointer-events-none absolute inset-0 -z-[5] overflow-hidden" aria-hidden="true">
+                        <div className="hero-particle hero-particle-1 absolute h-2 w-2 rounded-full bg-[#075cb7]/20 dark:bg-sky-400/15" />
+                        <div className="hero-particle hero-particle-2 absolute h-3 w-3 rounded-full bg-[#35a66f]/15 dark:bg-emerald-400/15" />
+                        <div className="hero-particle hero-particle-3 absolute h-1.5 w-1.5 rounded-full bg-[#287ed5]/20 dark:bg-blue-300/15" />
+                        <div className="hero-particle hero-particle-4 absolute h-2.5 w-2.5 rounded-full bg-[#9564eb]/12 dark:bg-violet-400/10" />
+                        <div className="hero-particle hero-particle-5 absolute h-1.5 w-1.5 rounded-full bg-[#ee862f]/15 dark:bg-amber-400/12" />
+                    </div>
+
                     <div className="mx-auto max-w-7xl px-4 pb-7 pt-9 sm:px-6 sm:pt-11 lg:px-8 lg:pb-5 lg:pt-7">
                         <div className="grid min-h-[340px] gap-8 lg:grid-cols-[minmax(0,.95fr)_minmax(0,1.05fr)] lg:items-start">
                             <div className="reference-hero-copy max-w-[620px] space-y-4">
-                                <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e7f4] bg-white/90 px-3 py-1.5 text-[10px] font-extrabold text-[#075cb7] shadow-sm backdrop-blur">
-                                    <ShieldCheck className="h-4 w-4" /><span>{text.hero.eyebrow}</span>
+                                {/* Animated eyebrow badge */}
+                                <div className="hero-anim hero-anim-1 inline-flex items-center gap-2 rounded-full border border-[#d8e7f4] bg-white/90 px-3.5 py-1.5 text-[11px] font-extrabold text-[#075cb7] shadow-sm backdrop-blur transition-colors dark:border-slate-700/80 dark:bg-slate-900/85 dark:text-sky-300">
+                                    <ShieldCheck className="h-4 w-4 hero-icon-pulse text-[#075cb7] dark:text-sky-400" />
+                                    <span>{text.hero.eyebrow}</span>
                                 </div>
-                                <h1 id="portal-hero-title" className="text-[2.45rem] font-black leading-[1.05] tracking-[-.045em] text-[#071d43] sm:text-[3.15rem] lg:text-[2.45rem] xl:text-[3.15rem] dark:text-white">
-                                    {isRtl ? <>تصوير دقيق.<br />تشخيص واثق.<br />رعاية أفضل.</> : <>Precision imaging.<br />Confident diagnosis.<br />Better care.</>}
+
+                                {/* Main headline with line-by-line stagger & language-specific font styling */}
+                                <h1 id="portal-hero-title" className="text-[2.5rem] font-black leading-[1.08] tracking-[-.045em] text-[#071d43] sm:text-[3.25rem] lg:text-[2.65rem] xl:text-[3.35rem] dark:text-white">
+                                    {isRtl ? (
+                                        <div className="space-y-1 font-black leading-[1.24] text-[#071d43] dark:text-slate-50">
+                                            <span className="hero-anim hero-anim-2 inline-block">تصوير تشخيصي <span className="hero-text-highlight font-black">عالي الدقة</span>.</span><br />
+                                            <span className="hero-anim hero-anim-3 inline-block">تقارير <span className="hero-text-highlight font-black">بإشراف استشاريين</span>.</span><br />
+                                            <span className="hero-anim hero-anim-4 inline-block">نتائجك <span className="hero-text-highlight font-black">في متناول يدك</span>.</span>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1 font-black leading-[1.05] tracking-[-.045em]">
+                                            <span className="hero-anim hero-anim-2 inline-block">Advanced <span className="hero-text-highlight">precision</span> imaging.</span><br />
+                                            <span className="hero-anim hero-anim-3 inline-block">Consultant-led <span className="hero-text-highlight">diagnosis</span>.</span><br />
+                                            <span className="hero-anim hero-anim-4 inline-block">Your results, <span className="hero-text-highlight">your way</span>.</span>
+                                        </div>
+                                    )}
                                 </h1>
-                                <p className="max-w-xl text-sm font-medium leading-6 text-[#334a67] sm:text-[15px] dark:text-slate-200">
-                                    {isRtl ? <>خدمات تصوير تشخيصي متخصصة في <bdi className="font-extrabold">{centerName}</bdi>، مع إرشادات تحضير واضحة وتقارير يراجعها الأطباء ووصول آمن إلى نتائجك.</> : <>Specialist diagnostic imaging at <bdi className="font-extrabold">{centerName}</bdi>, with clear preparation guidance, consultant-led reporting, and secure access to your results.</>}
+
+                                {/* Subtitle with enhanced legibility and contrast */}
+                                <p className="hero-anim hero-anim-5 max-w-xl text-sm font-medium leading-6 text-[#334a67] sm:text-[15.5px] sm:leading-7 dark:text-slate-200">
+                                    {isRtl ? (
+                                        <>خدمات تصوير تشخيصي متخصصة في <bdi className="font-black text-[#071d43] dark:text-white">{centerName}</bdi>، مع إرشادات تحضير واضحة وتقارير يراجعها الأطباء ووصول آمن إلى نتائجك.</>
+                                    ) : (
+                                        <>Specialist diagnostic imaging at <bdi className="font-black text-[#071d43] dark:text-white">{centerName}</bdi>, with clear preparation guidance, consultant-led reporting, and secure access to your results.</>
+                                    )}
                                 </p>
-                                <ul className="reference-modality-pills flex flex-wrap gap-1.5" aria-label={isRtl ? 'خدمات التصوير المتاحة' : 'Available imaging services'}>
-                                    {text.hero.modalities.map((modality) => <li key={modality}><ScanLine className="h-3 w-3" />{modality}</li>)}
+
+                                {/* Modality pills with stagger */}
+                                <ul className="reference-modality-pills hero-anim hero-anim-6 flex flex-wrap gap-1.5" aria-label={isRtl ? 'خدمات التصوير المتاحة' : 'Available imaging services'}>
+                                    {text.hero.modalities.map((modality, i) => (
+                                        <li key={modality} className="hero-pill-stagger" style={{ animationDelay: `${0.5 + i * 0.08}s` }}>
+                                            <ScanLine className="h-3 w-3" />{modality}
+                                        </li>
+                                    ))}
                                 </ul>
-                                <div className="flex flex-col gap-3 pt-1 sm:flex-row">
-                                    <button type="button" onClick={openBookingOptions} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#082761] px-5 text-xs font-extrabold text-white shadow-lg shadow-blue-950/15 transition hover:-translate-y-0.5 hover:bg-[#0c347b]">
-                                        <CalendarCheck className="h-4 w-4" />{text.hero.book}<ArrowRight className="h-4 w-4 rtl:-scale-x-100" />
+
+                                {/* CTA buttons */}
+                                <div className="hero-anim hero-anim-7 flex flex-col gap-3 pt-1 sm:flex-row">
+                                    <button type="button" onClick={openBookingOptions} className="hero-cta-primary group inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#082761] px-5 text-xs font-extrabold text-white shadow-lg shadow-blue-950/15 transition-all hover:-translate-y-0.5 hover:bg-[#0c347b] hover:shadow-xl hover:shadow-blue-950/20">
+                                        <CalendarCheck className="h-4 w-4" />{text.hero.book}<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 rtl:-scale-x-100 rtl:group-hover:-translate-x-0.5" />
                                     </button>
-                                    <Link to="/patient/login" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#173c73] bg-white/80 px-5 text-xs font-extrabold text-[#0b2b5b] transition hover:-translate-y-0.5 hover:bg-white dark:bg-slate-900/70 dark:text-white">
-                                        {text.hero.results}<ArrowRight className="h-4 w-4 rtl:-scale-x-100" />
+                                    <Link to="/patient/login" className="group inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#173c73] bg-white/80 px-5 text-xs font-extrabold text-[#0b2b5b] transition-all hover:-translate-y-0.5 hover:border-[#287ed5] hover:bg-white hover:shadow-md dark:bg-slate-900/70 dark:text-white">
+                                        {text.hero.results}<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 rtl:-scale-x-100 rtl:group-hover:-translate-x-0.5" />
                                     </Link>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-x-7 gap-y-2 pt-2 text-[11px] font-semibold text-[#344b68] dark:text-slate-300">
-                                    <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-[#35a66f]" />{text.hero.availability}</span>
-                                    <a href={`tel:${phone}`} className="flex items-center gap-2 hover:text-[#075cb7]"><Phone className="h-4 w-4 text-[#082761] dark:text-sky-300" />{text.hero.hotline} <b dir="ltr">{phone}</b></a>
+
+                                {/* Trust signals */}
+                                <div className="hero-anim hero-anim-8 flex flex-wrap items-center gap-x-7 gap-y-2 pt-2 text-[11px] font-semibold text-[#344b68] dark:text-slate-300">
+                                    <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-[#35a66f] hero-icon-pulse" />{text.hero.availability}</span>
+                                    <a href={`tel:${phone}`} className="flex items-center gap-2 transition-colors hover:text-[#075cb7]"><Phone className="h-4 w-4 text-[#082761] dark:text-sky-300" />{text.hero.hotline} <b dir="ltr">{phone}</b></a>
                                 </div>
                             </div>
 
-                            <form onSubmit={openResults} className="reference-results-card self-end rounded-2xl border border-white/80 bg-white/95 p-5 shadow-[0_18px_55px_-24px_rgba(7,29,67,.5)] backdrop-blur lg:mb-5 lg:ms-auto lg:w-[330px] dark:border-white/10 dark:bg-slate-900/90">
+                            {/* Lookup card */}
+                            <form onSubmit={openResults} className="reference-results-card hero-anim hero-anim-card self-end rounded-2xl border border-white/80 bg-white/95 p-5 shadow-[0_18px_55px_-24px_rgba(7,29,67,.5)] backdrop-blur lg:mb-5 lg:ms-auto lg:w-[330px] dark:border-white/10 dark:bg-slate-900/90">
                                 <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#075cb7] dark:bg-blue-500/10 dark:text-sky-300"><FileText className="h-4.5 w-4.5" /></span><div><h2 className="text-base font-black text-[#0b2245] dark:text-white">{text.lookup.title}</h2><p id="landing-mrn-help" className="mt-1 text-[11px] leading-5 text-slate-600 dark:text-slate-300">{text.lookup.desc}</p></div></div>
                                 <div className="mt-3" aria-live="polite">
                                     {!caseLookup && <>
                                         {caseLookupError && <p role="alert" className="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] font-bold leading-4 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200">{text.lookup.lookupError}</p>}
                                         <label className="sr-only" htmlFor="landing-mrn">{text.lookup.placeholder}</label>
-                                        <input ref={mrnInputRef} id="landing-mrn" required aria-describedby="landing-mrn-help" value={medicalRecordNumber} onChange={(e) => { if (caseLookupError) resetCaseLookup(); setMedicalRecordNumber(e.target.value); }} autoComplete="username" className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold uppercase text-slate-900 outline-none focus:border-[#075cb7] focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white" placeholder={text.lookup.placeholder} />
-                                        <button type="submit" disabled={caseLookupLoading} className="mt-2 flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#082761] px-4 text-xs font-extrabold text-white transition hover:bg-[#0c347b] disabled:cursor-wait disabled:opacity-70">{caseLookupLoading ? <><Loader2 className="h-4 w-4 animate-spin" />{text.lookup.checking}</> : <>{text.lookup.action}<ArrowRight className="h-4 w-4 rtl:-scale-x-100" /></>}</button>
+                                        <input ref={mrnInputRef} id="landing-mrn" required aria-describedby="landing-mrn-help" value={medicalRecordNumber} onChange={(e) => { if (caseLookupError) resetCaseLookup(); setMedicalRecordNumber(e.target.value); }} autoComplete="username" className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold uppercase text-slate-900 outline-none transition-all focus:border-[#075cb7] focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white" placeholder={text.lookup.placeholder} />
+                                        <button type="submit" disabled={caseLookupLoading} className="mt-2 flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#082761] px-4 text-xs font-extrabold text-white transition-all hover:bg-[#0c347b] hover:shadow-md disabled:cursor-wait disabled:opacity-70">{caseLookupLoading ? <><Loader2 className="h-4 w-4 animate-spin" />{text.lookup.checking}</> : <>{text.lookup.action}<ArrowRight className="h-4 w-4 rtl:-scale-x-100" /></>}</button>
                                         <p className="mt-2.5 flex items-center justify-center gap-1.5 text-center text-[9px] font-bold text-slate-500 dark:text-slate-400"><LockKeyhole className="h-3.5 w-3.5 shrink-0 text-[#075cb7]" />{text.lookup.secure}</p>
                                     </>}
 
@@ -589,17 +911,24 @@ const PortalLanding = () => {
                                         </div>
                                         <div><h3 className="text-sm font-black text-[#0b2245] dark:text-white">{caseLookup.case?.examType}</h3><p className="mt-1 text-[9.5px] font-semibold leading-4 text-slate-500 dark:text-slate-400">{text.lookup.studyDate}: <time dateTime={caseLookup.case?.studyDate || undefined}>{formatCaseDate(caseLookup.case?.studyDate)}</time><span aria-hidden="true"> · </span>{text.lookup.lastUpdated}: <time dateTime={caseLookup.case?.lastUpdatedAt || undefined}>{formatCaseDate(caseLookup.case?.lastUpdatedAt)}</time></p></div>
                                         {!caseLookup.completed && <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/70"><span className="block text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{text.lookup.estimated}</span><time dateTime={caseLookup.estimate?.estimatedCompletionAt || undefined} className="mt-1 block text-xs font-black text-[#0b2245] dark:text-white">{formatCaseDate(caseLookup.estimate?.estimatedCompletionAt)}</time>{caseLookup.estimate?.delayed && <span className="mt-1 block text-[9px] font-bold text-amber-700 dark:text-amber-300">{text.lookup.delayed}</span>}</div>}
-                                        {caseLookup.completed && <button type="button" onClick={() => setReportOpen(true)} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-extrabold text-white transition hover:bg-emerald-700"><FileText className="h-4 w-4" />{text.lookup.viewReport}</button>}
+                                        {caseLookup.completed && <Link to="/patient/login" className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-extrabold text-white transition hover:bg-emerald-700"><LockKeyhole className="h-4 w-4" />{text.lookup.viewReport}</Link>}
                                         <button type="button" onClick={clearCaseLookup} className="flex min-h-8 w-full items-center justify-center text-[9.5px] font-extrabold text-[#075cb7] hover:underline dark:text-sky-300">{text.lookup.checkAnother}</button>
                                     </div>}
                                 </div>
                             </form>
                         </div>
 
+                        {/* Task cards grid */}
                         <div className="relative z-10 grid gap-3 min-[400px]:grid-cols-2 lg:grid-cols-4 mt-4 sm:mt-6">
-                            {text.tasks.map(({ icon: Icon, title, desc, href, to, tone }) => {
-                                const content = <><span className={`reference-task-icon is-${tone}`}><Icon className="h-6 w-6" /></span><span className="min-w-0 flex-1"><strong className="block text-sm font-black text-[#0b2245] dark:text-white">{title}</strong><small className="mt-1 block text-[11px] leading-4 text-slate-600 dark:text-slate-300">{desc}</small></span><ArrowRight className="h-4 w-4 shrink-0 text-[#082761] rtl:-scale-x-100 dark:text-sky-300" /></>;
-                                return to ? <Link key={title} to={to} className="reference-task-card">{content}</Link> : <a key={title} href={href} className="reference-task-card">{content}</a>;
+                            {text.tasks.map(({ icon: Icon, title, desc, href, to, tone }, index) => {
+                                const content = <><span className={`reference-task-icon is-${tone}`}><Icon className="h-6 w-6" /></span><span className="min-w-0 flex-1"><strong className="block text-sm font-black text-[#0b2245] dark:text-white">{title}</strong><small className="mt-1 block text-[11px] leading-4 text-slate-600 dark:text-slate-300">{desc}</small></span><ArrowRight className="h-4 w-4 shrink-0 text-[#082761] transition-transform group-hover:translate-x-1 rtl:-scale-x-100 rtl:group-hover:-translate-x-1 dark:text-sky-300" /></>;
+                                return (
+                                    <Reveal key={title} delay={index * 90}>
+                                        {to
+                                            ? <Link to={to} className="reference-task-card tilt-card group">{content}</Link>
+                                            : <a href={href} className="reference-task-card tilt-card group">{content}</a>}
+                                    </Reveal>
+                                );
                             })}
                         </div>
                     </div>
@@ -608,13 +937,13 @@ const PortalLanding = () => {
                 <section id="services" className="scroll-mt-28 border-y border-[#dfebf5] bg-gradient-to-b from-[#f6faff] via-white to-[#f8fbff] py-10 dark:border-slate-800 dark:from-[#091522] dark:via-[#07111f] dark:to-[#091522] sm:py-14">
                     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                         <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
-                            <div className="max-w-3xl">
+                            <Reveal className="max-w-3xl">
                                 <p className="reference-eyebrow">{text.services.eyebrow}</p>
                                 <h2 className="reference-title mt-1">{text.services.title}</h2>
                                 <p className="reference-copy max-w-2xl">{text.services.desc}</p>
-                            </div>
+                            </Reveal>
                             <div className="grid gap-2 sm:grid-cols-3 lg:w-[31rem]">
-                                {text.services.stats.map((stat, index) => <div key={stat} className="flex min-h-14 items-center gap-2 rounded-xl border border-[#d9e7f3] bg-white px-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/75"><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${index === 0 ? 'bg-blue-50 text-[#075cb7]' : index === 1 ? 'bg-violet-50 text-violet-600' : 'bg-emerald-50 text-emerald-600'} dark:bg-white/10`}><CheckCircle2 className="h-4 w-4" /></span><strong className="text-[9.5px] leading-4 text-[#0b2245] dark:text-white">{stat}</strong></div>)}
+                                {text.services.stats.map((stat, index) => <Reveal key={stat} delay={index * 100} className="flex min-h-14 items-center gap-2 rounded-xl border border-[#d9e7f3] bg-white px-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-900/75"><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${index === 0 ? 'bg-blue-50 text-[#075cb7]' : index === 1 ? 'bg-violet-50 text-violet-600' : 'bg-emerald-50 text-emerald-600'} dark:bg-white/10`}><CheckCircle2 className="h-4 w-4" /></span><strong className="text-[9.5px] leading-4 text-[#0b2245] dark:text-white">{stat}</strong></Reveal>)}
                             </div>
                         </div>
 
@@ -640,19 +969,48 @@ const PortalLanding = () => {
                                 <div className={`pointer-events-none absolute inset-y-0 end-0 z-10 w-8 ${isRtl ? 'bg-gradient-to-r' : 'bg-gradient-to-l'} from-[#f8fbff] to-transparent opacity-90 dark:from-[#091522] sm:w-12`} aria-hidden="true" />
                                 <div ref={servicesTrackRef} tabIndex={0} onScroll={syncServiceSlide} onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const forward = isRtl ? event.key === 'ArrowLeft' : event.key === 'ArrowRight'; goToServiceSlide(servicePageStarts[(activeServicePage + (forward ? 1 : -1) + servicePageStarts.length) % servicePageStarts.length]); } }} className="flex cursor-grab snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain scroll-smooth pb-4 active:cursor-grabbing [overflow-anchor:none] [scrollbar-width:none] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#075cb7]/30 [&::-webkit-scrollbar]:hidden">
                                     {services.map(({ icon: Icon, name, note, category, desc, scope, image }, index) => (
-                                        <article key={name} role="group" aria-roledescription="slide" aria-label={`${index + 1} / ${services.length}: ${name}`} className="group flex min-h-full w-[84%] shrink-0 snap-start flex-col overflow-hidden rounded-xl border border-[#dce8f3] bg-white shadow-[0_10px_26px_-22px_rgba(8,39,97,.65)] transition duration-300 hover:-translate-y-1 hover:border-[#9fc4e8] hover:shadow-[0_20px_38px_-26px_rgba(8,39,97,.55)] sm:w-[calc((100%_-_0.75rem)/2)] lg:w-[calc((100%_-_2.25rem)/4)] dark:border-slate-700 dark:bg-slate-900/90">
-                                            <div className="relative h-32 overflow-hidden border-b border-[#e4edf5] bg-[radial-gradient(circle_at_65%_35%,#ffffff_0%,#e8f3ff_55%,#d7e8f8_100%)] dark:border-slate-700 dark:bg-[radial-gradient(circle_at_65%_35%,#17324e_0%,#10273d_55%,#0c1d2e_100%)]">
-                                                <div className="absolute -end-12 -top-14 h-36 w-36 rounded-full bg-sky-300/25 blur-2xl" />
-                                                <img src={image} alt="" loading="lazy" decoding="async" className="relative h-full w-full object-contain p-2.5 transition duration-500 group-hover:scale-[1.07]" />
-                                                <span className="absolute start-2.5 top-2.5 flex h-8 w-8 items-center justify-center rounded-lg border border-white/80 bg-white/90 text-[#075cb7] shadow-md backdrop-blur dark:border-white/10 dark:bg-slate-900/85 dark:text-sky-300"><Icon className="h-4 w-4" /></span>
-                                                <span className="absolute end-2.5 top-2.5 rounded-full border border-white/80 bg-white/90 px-2 py-1 text-[7.5px] font-black text-[#0b3b78] shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/85 dark:text-sky-200">{note}</span>
+                                        <article key={name} role="group" aria-roledescription="slide" aria-label={`${index + 1} / ${services.length}: ${name}`} className="group relative flex min-h-full w-[84%] shrink-0 snap-start flex-col overflow-hidden rounded-[24px] border border-[#dce8f3] bg-white shadow-[0_8px_30px_-12px_rgba(8,39,97,.1)] transition-all duration-500 hover:-translate-y-2 hover:border-[#9fc4e8] hover:shadow-[0_24px_50px_-16px_rgba(8,39,97,.2)] sm:w-[calc((100%_-_0.75rem)/2)] lg:w-[calc((100%_-_2.25rem)/4)] dark:border-slate-700/60 dark:bg-slate-900/80">
+                                            <div className="relative flex h-44 w-full items-center justify-center overflow-hidden border-b border-[#e4edf5]/60 bg-gradient-to-br from-[#f4f9ff] via-[#ffffff] to-[#eaf2f9] dark:border-slate-700/50 dark:from-[#0d1d30] dark:via-[#07111f] dark:to-[#091522]">
+                                                {/* Abstract glowing background orbs */}
+                                                <div className="absolute -start-10 -top-10 h-32 w-32 rounded-full bg-blue-400/20 blur-[32px] transition-transform duration-700 group-hover:scale-150 group-hover:bg-blue-400/30 dark:bg-sky-500/10 dark:group-hover:bg-sky-500/20" />
+                                                <div className="absolute -bottom-10 -end-10 h-32 w-32 rounded-full bg-indigo-400/15 blur-[32px] transition-transform duration-700 group-hover:scale-150 group-hover:bg-indigo-400/25 dark:bg-indigo-500/10 dark:group-hover:bg-indigo-500/20" />
+
+                                                {/* 3D Machine Image */}
+                                                <img src={image} alt="" loading="lazy" decoding="async" className="relative h-full w-full object-contain p-4 drop-shadow-xl transition-all duration-700 group-hover:scale-[1.12] group-hover:drop-shadow-2xl" />
+
+                                                {/* Floating Badges */}
+                                                <div className="absolute inset-x-3 top-3 flex items-start justify-between">
+                                                    <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/80 bg-white/70 text-[#075cb7] shadow-sm backdrop-blur-md transition-transform duration-500 group-hover:rotate-12 dark:border-white/10 dark:bg-slate-900/60 dark:text-sky-300">
+                                                        <Icon className="h-4.5 w-4.5" />
+                                                    </span>
+                                                    <span className="rounded-full border border-blue-100/80 bg-blue-50/80 px-2.5 py-1 text-[8.5px] font-black tracking-wide text-[#075cb7] shadow-sm backdrop-blur-md dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200">
+                                                        {note}
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <div className="flex flex-1 flex-col p-3.5">
-                                                <p className="text-[7.5px] font-black uppercase tracking-[.12em] text-[#287ed5] dark:text-sky-300">{category}</p>
-                                                <h3 className="mt-1 text-sm font-black leading-5 text-[#0b2245] dark:text-white">{name}</h3>
-                                                <p className="mt-1.5 text-[9.5px] leading-[1.05rem] text-slate-600 dark:text-slate-300">{desc}</p>
-                                                <p className="mt-2.5 flex items-start gap-1.5 rounded-lg bg-[#f5f9fd] px-2.5 py-2 text-[8.5px] font-bold leading-3.5 text-slate-600 dark:bg-slate-800/75 dark:text-slate-300"><CheckCircle2 className="mt-px h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-300" /><span>{scope}</span></p>
-                                                <a href="#book" onClick={() => selectService(name)} className="mt-3 inline-flex min-h-8 items-center justify-between gap-2 border-t border-[#e7eef5] pt-2.5 text-[9.5px] font-extrabold text-[#075cb7] transition hover:text-[#082761] dark:border-slate-700 dark:text-sky-300"><span>{text.services.action}</span><span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-50 transition group-hover:bg-[#082761] group-hover:text-white dark:bg-white/10"><ArrowRight className="h-3 w-3 rtl:-scale-x-100" /></span></a>
+
+                                            <div className="flex flex-1 flex-col p-5">
+                                                <p className="text-[8px] font-black uppercase tracking-[.15em] text-slate-400 dark:text-slate-500">
+                                                    {category}
+                                                </p>
+                                                <h3 className="mt-1.5 text-[15px] font-black leading-snug text-[#0b2245] dark:text-white">
+                                                    {name}
+                                                </h3>
+                                                <p className="mt-2 line-clamp-2 min-h-[2.5rem] text-[10px] leading-5 text-slate-600 dark:text-slate-300">
+                                                    {desc}
+                                                </p>
+
+                                                <div className="mt-4 flex items-start gap-2 rounded-xl bg-slate-50/80 px-3 py-2.5 dark:bg-slate-800/50">
+                                                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#2ca36d] dark:text-emerald-400" />
+                                                    <span className="text-[9px] font-bold leading-relaxed text-slate-600 dark:text-slate-300">{scope}</span>
+                                                </div>
+
+                                                <div className="mt-auto pt-4">
+                                                    <a href="#book" onClick={() => selectService(name)} className="flex min-h-[38px] w-full items-center justify-center gap-2 rounded-xl bg-[#f0f6fc] px-4 text-[10.5px] font-black text-[#075cb7] transition-all duration-300 hover:bg-[#075cb7] hover:text-white hover:shadow-lg hover:shadow-blue-900/20 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-sky-600 dark:hover:text-white">
+                                                        <span>{text.services.action}</span>
+                                                        <ArrowRight className="h-3.5 w-3.5 rtl:-scale-x-100" />
+                                                    </a>
+                                                </div>
                                             </div>
                                         </article>
                                     ))}
@@ -684,23 +1042,25 @@ const PortalLanding = () => {
                             </div>
 
                             <div className="p-5 sm:p-7 lg:p-10">
-                                <p className="reference-eyebrow">{text.why.eyebrow}</p>
-                                <h2 className="reference-title mt-1 max-w-2xl">{text.why.title}</h2>
-                                <p className="reference-copy max-w-2xl">{text.why.desc}</p>
+                                <Reveal>
+                                    <p className="reference-eyebrow">{text.why.eyebrow}</p>
+                                    <h2 className="reference-title mt-1 max-w-2xl">{text.why.title}</h2>
+                                    <p className="reference-copy max-w-2xl">{text.why.desc}</p>
+                                </Reveal>
 
                                 <div className="mt-6 grid gap-3 sm:grid-cols-2">
                                     {text.why.items.map(({ icon: Icon, title, desc }, index) => (
-                                        <article key={title} className="group relative overflow-hidden rounded-2xl border border-[#dfeaf3] bg-[#f8fbfe] p-4 transition hover:-translate-y-0.5 hover:border-[#aacbe8] hover:bg-white hover:shadow-lg dark:border-slate-700 dark:bg-slate-800/60 dark:hover:bg-slate-800">
+                                        <Reveal key={title} delay={index * 90} as="article" className="tilt-card group relative overflow-hidden rounded-2xl border border-[#dfeaf3] bg-[#f8fbfe] p-4 hover:border-[#aacbe8] hover:bg-white hover:shadow-lg dark:border-slate-700 dark:bg-slate-800/60 dark:hover:bg-slate-800">
                                             <span className="absolute end-3 top-2 text-3xl font-black text-[#dfeefa] dark:text-slate-700" aria-hidden="true">0{index + 1}</span>
                                             <span className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#e8f3ff] text-[#075cb7] transition group-hover:bg-[#082761] group-hover:text-white dark:bg-blue-500/10 dark:text-sky-300"><Icon className="h-5 w-5" /></span>
                                             <h3 className="relative mt-3 text-xs font-black text-[#0b2245] dark:text-white">{title}</h3>
                                             <p className="relative mt-1.5 text-[10px] leading-5 text-slate-600 dark:text-slate-300">{desc}</p>
-                                        </article>
+                                        </Reveal>
                                     ))}
                                 </div>
 
                                 <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-2xl border border-[#dbe8f2] bg-[#082761] text-white shadow-lg dark:border-slate-700">
-                                    {text.why.stats.map((stat, index) => <div key={stat.label} className={`px-2 py-4 text-center sm:px-4 ${index ? 'border-s border-white/15' : ''}`}><strong className="block text-base font-black text-white sm:text-lg">{stat.value}</strong><span className="mt-1 block text-[8px] font-semibold leading-3 text-blue-100 sm:text-[9px]">{stat.label}</span></div>)}
+                                    {text.why.stats.map((stat, index) => <div key={stat.label} className={`px-2 py-4 text-center transition hover:bg-white/5 sm:px-4 ${index ? 'border-s border-white/15' : ''}`}><strong className="block text-base font-black text-white sm:text-lg"><AnimatedStat value={stat.value} /></strong><span className="mt-1 block text-[8px] font-semibold leading-3 text-blue-100 sm:text-[9px]">{stat.label}</span></div>)}
                                 </div>
 
                                 <div className="mt-5 flex flex-col gap-2 min-[440px]:flex-row">
@@ -718,11 +1078,11 @@ const PortalLanding = () => {
                             <div className="text-center"><p className="reference-eyebrow">{text.journey.eyebrow}</p><h2 className="reference-title">{text.journey.title}</h2></div>
                             <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                                 {text.journey.steps.map(({ n, icon: Icon, title, desc }, index) => (
-                                    <article key={n} className="reference-journey-step relative flex items-center gap-3 rounded-xl p-2">
+                                    <Reveal key={n} delay={index * 110} as="article" className="reference-journey-step group relative flex items-center gap-3 rounded-xl p-2 transition hover:bg-[#f7fbff] dark:hover:bg-slate-800/60">
                                         <span className={`reference-step-number is-${index + 1}`}>{n}</span>
-                                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#dbe7f3] bg-[#f7fbff] text-[#2976cc] dark:border-slate-700 dark:bg-slate-800"><Icon className="h-5 w-5" /></span>
+                                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#dbe7f3] bg-[#f7fbff] text-[#2976cc] transition-transform duration-300 group-hover:scale-110 dark:border-slate-700 dark:bg-slate-800"><Icon className="h-5 w-5" /></span>
                                         <span><strong className="block text-xs font-black text-[#0b2245] dark:text-white">{title}</strong><small className="mt-1 block text-[10.5px] leading-4 text-slate-600 dark:text-slate-300">{desc}</small></span>
-                                    </article>
+                                    </Reveal>
                                 ))}
                             </div>
                         </div>
@@ -731,19 +1091,19 @@ const PortalLanding = () => {
 
                 <section id="patient-guide" className="scroll-mt-28 border-y border-[#e2edf6] bg-[#f7fbff] py-8 dark:border-slate-800 dark:bg-[#091522] sm:py-10">
                     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                        <div className="mx-auto max-w-3xl text-center">
+                        <Reveal className="mx-auto max-w-3xl text-center">
                             <p className="reference-eyebrow">{text.guide.eyebrow}</p>
                             <h2 className="reference-title">{text.guide.title}</h2>
                             <p className="reference-copy">{text.guide.desc}</p>
-                        </div>
+                        </Reveal>
                         <div className="mt-5 grid gap-4 md:grid-cols-3">
-                            {text.guide.cards.map(({ icon: Icon, label, items }) => (
-                                <article key={label} className="reference-guide-card rounded-2xl border border-[#dce9f5] bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+                            {text.guide.cards.map(({ icon: Icon, label, items }, index) => (
+                                <Reveal key={label} delay={index * 110} as="article" className="reference-guide-card tilt-card rounded-2xl border border-[#dce9f5] bg-white p-5 shadow-sm hover:shadow-md dark:border-slate-700 dark:bg-slate-900/70">
                                     <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#edf5ff] text-[#075cb7] dark:bg-blue-500/10 dark:text-sky-300"><Icon className="h-5 w-5" /></span><h3 className="text-sm font-black text-[#0b2245] dark:text-white">{label}</h3></div>
                                     <ul className="mt-4 space-y-2.5">
                                         {items.map((item) => <li key={item} className="flex items-start gap-2 text-[11px] leading-5 text-slate-600 dark:text-slate-300"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#2ca36d]" /><span>{item}</span></li>)}
                                     </ul>
-                                </article>
+                                </Reveal>
                             ))}
                         </div>
                         <div className="mt-4 flex flex-col gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-400/20 dark:bg-amber-400/10 sm:flex-row sm:items-center sm:justify-between">
@@ -754,33 +1114,331 @@ const PortalLanding = () => {
                 </section>
 
                 <section className="bg-[#f8fbfe] py-8 dark:bg-[#091522] sm:py-10">
-                    <div className="mx-auto grid max-w-7xl gap-4 px-4 sm:px-6 lg:grid-cols-[.72fr_1.28fr] lg:px-8">
-                        <section id="locations" className="scroll-mt-28 rounded-2xl border border-[#dce9f5] bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                            <p className="reference-eyebrow">{text.locations.eyebrow}</p><h2 className="reference-title max-w-xs">{text.locations.title}</h2><p className="reference-copy">{text.locations.desc}</p>
-                            <div className="mt-4 space-y-3">
-                                {branches.map((branch) => (
-                                    <article key={branch.name} className="flex items-center gap-3 border-b border-slate-100 pb-3 last:border-0 last:pb-0 dark:border-slate-800">
-                                        <span className="h-12 w-14 shrink-0 rounded-lg border border-slate-200 bg-cover bg-no-repeat shadow-sm dark:border-slate-700" style={{ backgroundImage: "url('/images/rcms-branch-strip-v1.png')", backgroundPosition: `${branch.position} center`, backgroundSize: '390px auto' }} />
-                                        <span className="min-w-0 flex-1"><strong className="block truncate text-[11px] font-black text-[#0b2245] dark:text-white">{branch.name}</strong><small className="mt-0.5 block text-[9.5px] leading-4 text-slate-600 dark:text-slate-300">{branch.address}<br /><a href={`tel:${branch.phone.replace(/\s/g, '')}`} dir="ltr" className="font-semibold text-[#075cb7] hover:underline dark:text-sky-300">{branch.phone}</a></small></span>
-                                        <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(branch.address)}`} target="_blank" rel="noreferrer" className="shrink-0 rounded-md border border-[#9cb6d5] px-2 py-1.5 text-[9px] font-extrabold text-[#0b3b78] hover:bg-blue-50 dark:text-sky-300">{text.locations.directions}</a>
-                                    </article>
-                                ))}
+                    <div className="mx-auto grid max-w-7xl gap-5 px-4 sm:px-6 lg:grid-cols-[.78fr_1.22fr] lg:px-8">
+                        <section id="locations" className="scroll-mt-28 flex flex-col justify-between rounded-3xl border border-[#dce9f5] bg-gradient-to-b from-white via-[#f8fbfe] to-white p-5 shadow-lg dark:border-slate-800 dark:from-slate-900/90 dark:via-slate-900/70 dark:to-slate-900/90 sm:p-6">
+                            <div>
+                                <Reveal>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200/80 bg-blue-50/90 px-3 py-1 text-[10px] font-black text-[#075cb7] shadow-sm backdrop-blur dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                                            <MapPin className="h-3.5 w-3.5" />
+                                            {text.locations.eyebrow}
+                                        </span>
+                                        <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400">
+                                            {isRtl ? `🟢 ${branches.length} فروع تشخيصية مفتوحة` : `🟢 ${branches.length} Diagnostic Hubs Open`}
+                                        </span>
+                                    </div>
+                                    <h2 className="reference-title max-w-xs mt-2 text-xl font-black text-[#0b2245] dark:text-white sm:text-2xl">{text.locations.title}</h2>
+                                    <p className="reference-copy mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">{text.locations.desc}</p>
+                                </Reveal>
+
+                                {/* Live Branch Search & Region Filter Bar */}
+                                <div className="mt-4 space-y-2.5">
+                                    <div className="relative">
+                                        <Search className="absolute start-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            value={branchSearchQuery}
+                                            onChange={(e) => setBranchSearchQuery(e.target.value)}
+                                            placeholder={text.locations.searchPlaceholder}
+                                            className="min-h-9 w-full rounded-xl border border-slate-200 bg-white pe-8 ps-9 text-[11px] font-semibold text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-[#075cb7] focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:ring-sky-500/20"
+                                        />
+                                        {branchSearchQuery && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setBranchSearchQuery('')}
+                                                className="absolute end-2.5 top-2.5 flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300"
+                                            >
+                                                <X className="h-2.5 w-2.5" />
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Region Filter Chips */}
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        {Object.entries(text.locations.regions || {}).map(([regKey, regLabel]) => {
+                                            const active = branchRegionFilter === regKey;
+                                            return (
+                                                <button
+                                                    key={regKey}
+                                                    type="button"
+                                                    onClick={() => setBranchRegionFilter(regKey)}
+                                                    className={`rounded-full px-3 py-1 text-[9.5px] font-extrabold transition-all ${active ? 'bg-[#082761] text-white shadow-sm dark:bg-sky-500' : 'border border-slate-200/80 bg-white text-slate-600 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
+                                                >
+                                                    {regLabel}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Scrollable Container to prevent excessive vertical height */}
+                                <div className="mt-4 max-h-[480px] space-y-3 overflow-y-auto pe-1.5 custom-scrollbar">
+                                    {filteredBranches.length === 0 ? (
+                                        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center dark:border-slate-800 dark:bg-slate-900/50">
+                                            <MapPin className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600" />
+                                            <p className="mt-2 text-xs font-bold text-slate-600 dark:text-slate-300">{text.locations.noResults}</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setBranchRegionFilter('all'); setBranchSearchQuery(''); }}
+                                                className="mt-3 inline-flex items-center gap-1 text-[10px] font-extrabold text-[#075cb7] hover:underline dark:text-sky-300"
+                                            >
+                                                {text.locations.clearSearch}
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        filteredBranches.map((branch) => {
+                                            const isSelected = selectedBranch === branch.name;
+                                            return (
+                                                <article
+                                                    key={branch.name}
+                                                    className={`branch-row group relative overflow-hidden rounded-2xl border p-3.5 transition-all duration-300 ${isSelected ? 'border-[#075cb7] bg-[#f0f7ff] shadow-md ring-2 ring-[#075cb7]/20 dark:border-sky-500 dark:bg-slate-800/90 dark:ring-sky-500/20' : 'border-slate-200/80 bg-white hover:border-[#a3c9ed] hover:shadow-md dark:border-slate-700/80 dark:bg-slate-800/50 dark:hover:bg-slate-800'}`}
+                                                >
+                                                    <div className="flex items-start gap-3">
+                                                        {/* Branch Strip Image Thumbnail with Hover Zoom */}
+                                                        <div className="relative h-12 w-14 shrink-0 overflow-hidden rounded-xl border border-slate-200 shadow-sm dark:border-slate-700">
+                                                            <span
+                                                                className="block h-full w-full bg-cover bg-no-repeat transition-transform duration-500 group-hover:scale-110"
+                                                                style={{ backgroundImage: "url('/images/rcms-branch-strip-v1.png')", backgroundPosition: `${branch.position} center`, backgroundSize: '390px auto' }}
+                                                            />
+                                                            {isSelected && (
+                                                                <span className="absolute end-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#082761] text-white shadow-sm dark:bg-sky-500">
+                                                                    <Check className="h-2.5 w-2.5" />
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <strong className="truncate text-xs font-black text-[#0b2245] dark:text-white sm:text-sm">{branch.name}</strong>
+                                                                {branch.tag && (
+                                                                    <span className="inline-flex shrink-0 items-center rounded-full bg-blue-100/90 px-2 py-0.5 text-[8.5px] font-black text-[#075cb7] dark:bg-sky-500/20 dark:text-sky-300">
+                                                                        {branch.tag}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+
+                                                            <p className="mt-1 flex items-center gap-1.5 text-[10px] leading-4 font-semibold text-slate-600 dark:text-slate-300">
+                                                                <MapPin className="h-3 w-3 shrink-0 text-[#075cb7] dark:text-sky-300" />
+                                                                <span>{branch.address}</span>
+                                                            </p>
+
+                                                            <p className="mt-0.5 flex items-center gap-1.5 text-[9.5px] font-semibold text-slate-500 dark:text-slate-400">
+                                                                <Clock3 className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                                                <span>{branch.hours}</span>
+                                                            </p>
+
+                                                            {branch.modalities && branch.modalities.length > 0 && (
+                                                                <div className="mt-2 flex flex-wrap gap-1">
+                                                                    {branch.modalities.map((mod) => (
+                                                                        <span
+                                                                            key={mod}
+                                                                            className="rounded-lg border border-blue-100 bg-blue-50/80 px-1.5 py-0.5 text-[8px] font-extrabold text-[#075cb7] dark:border-slate-700 dark:bg-slate-900/80 dark:text-sky-300"
+                                                                        >
+                                                                            {mod}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-200/70 pt-2.5 dark:border-slate-700/70">
+                                                        <a
+                                                            href={`tel:${branch.phone.replace(/\s/g, '')}`}
+                                                            dir="ltr"
+                                                            className="inline-flex items-center gap-1 text-[10px] font-extrabold text-[#075cb7] transition hover:underline dark:text-sky-300"
+                                                        >
+                                                            <Phone className="h-3 w-3" />
+                                                            {branch.phone}
+                                                        </a>
+
+                                                        <div className="flex items-center gap-1.5">
+                                                            <a
+                                                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(branch.address)}`}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="inline-flex items-center gap-1 rounded-lg border border-slate-300/80 bg-white px-2 py-1 text-[9px] font-extrabold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-[#075cb7] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-750"
+                                                            >
+                                                                <ExternalLink className="h-3 w-3" />
+                                                                {text.locations.directions}
+                                                            </a>
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSelectBranch(branch.name)}
+                                                                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[9px] font-black transition ${isSelected ? 'bg-[#082761] text-white shadow-sm dark:bg-sky-500' : 'bg-blue-50 text-[#075cb7] hover:bg-blue-100 dark:bg-slate-800 dark:text-sky-300'}`}
+                                                            >
+                                                                {isSelected ? <Check className="h-3 w-3" /> : <CalendarCheck className="h-3 w-3" />}
+                                                                {isSelected ? text.locations.selected : text.locations.selectBranch}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </article>
+                                            );
+                                        })
+                                    )}
+                                </div>
                             </div>
-                            <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(centerName)}`} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-[10.5px] font-extrabold text-[#075cb7]">{text.locations.all}<ArrowRight className="h-3.5 w-3.5 rtl:-scale-x-100" /></a>
+
+                            <div className="mt-4 border-t border-slate-200/80 pt-3 dark:border-slate-800">
+                                <a
+                                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(centerName)}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-2 text-xs font-black text-[#075cb7] transition hover:underline dark:text-sky-300"
+                                >
+                                    {text.locations.all}
+                                    <ArrowRight className="h-3.5 w-3.5 rtl:-scale-x-100" />
+                                </a>
+                            </div>
                         </section>
 
-                        <section id="book" className="relative scroll-mt-28 overflow-hidden rounded-2xl border border-[#dce9f5] bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 sm:p-6">
-                            <div className="pointer-events-none absolute inset-y-0 end-0 hidden w-[36%] lg:block" aria-hidden="true">
-                                <img src="/images/rcms-booking-coordinator-v1.png" alt="" loading="lazy" decoding="async" className="h-full w-full object-cover object-[77%_center] opacity-30 dark:opacity-15" />
-                                <div className={`absolute inset-0 ${isRtl ? 'bg-gradient-to-l' : 'bg-gradient-to-r'} from-white via-white/65 to-transparent dark:from-slate-900 dark:via-slate-900/70`} />
+                        <section id="book" className="relative scroll-mt-28 overflow-hidden rounded-3xl border border-[#dce9f5] bg-gradient-to-br from-white via-[#f7fbff] to-[#edf5fd] p-6 shadow-xl dark:border-slate-800 dark:from-slate-900 dark:via-slate-900/95 dark:to-[#0b1728] sm:p-8">
+                            {/* Rich Background Atmosphere & Radial Glow Effects */}
+                            <div className="pointer-events-none absolute inset-0 -z-0 overflow-hidden" aria-hidden="true">
+                                <div className="absolute -end-16 -top-16 h-72 w-72 rounded-full bg-[#075cb7]/10 blur-3xl dark:bg-sky-500/10" />
+                                <div className="absolute -bottom-20 start-1/3 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl dark:bg-emerald-400/10" />
                             </div>
-                            <div className="relative max-w-3xl">
-                                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                    <div><p className="reference-eyebrow">{text.form.eyebrow}</p><h2 className="reference-title">{text.form.title}</h2><p className="reference-copy max-w-lg">{text.form.desc}</p></div>
-                                    <a href={`tel:${phone}`} className="inline-flex shrink-0 items-center gap-2 text-[10.5px] font-extrabold text-[#075cb7]"><Phone className="h-4 w-4" />{text.form.call} <b dir="ltr">{phone}</b></a>
+
+                            {/* Coordinator Side Image Container with Floating Live Status Overlay */}
+                            <div className="pointer-events-none absolute inset-y-0 end-0 hidden w-[42%] overflow-hidden lg:block" aria-hidden="true">
+                                <img
+                                    src="/images/rcms-booking-coordinator-v1.png"
+                                    alt=""
+                                    loading="lazy"
+                                    decoding="async"
+                                    className={`h-full w-full object-cover object-[77%_center] opacity-45 transition-all duration-700 dark:opacity-25 ${isRtl ? '-scale-x-100' : ''}`}
+                                />
+                                <div className={`absolute inset-0 ${isRtl ? 'bg-gradient-to-l' : 'bg-gradient-to-r'} from-white via-white/70 to-transparent dark:from-slate-900 dark:via-slate-900/80`} />
+
+                                {/* Floating Live Coordinator Glass Badge */}
+                                <div className="pointer-events-auto absolute bottom-8 end-8 max-w-[220px] rounded-2xl border border-white/40 bg-white/85 p-3.5 shadow-xl backdrop-blur-md dark:border-white/10 dark:bg-slate-900/85">
+                                    <div className="flex items-center gap-2">
+                                        <span className="relative flex h-2.5 w-2.5">
+                                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                                        </span>
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                                            {text.form.statusActive || (isRtl ? 'منسقو الحجز متاحون' : 'Coordinators Active')}
+                                        </span>
+                                    </div>
+                                    <p className="mt-1.5 text-[10px] font-bold leading-4 text-slate-700 dark:text-slate-200">
+                                        {isRtl ? 'مساعدة في اختيار الوقت المناسب وتحضير الفحص' : 'Personal assistance for timing and scan prep guidance'}
+                                    </p>
                                 </div>
+                            </div>
+
+                            <div className="relative z-10 max-w-3xl">
+                                <Reveal className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                        <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200/80 bg-blue-50/90 px-3 py-1 text-[10px] font-black text-[#075cb7] shadow-sm backdrop-blur dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
+                                            <Sparkles className="h-3.5 w-3.5" />
+                                            {text.form.badge}
+                                        </span>
+                                        <h2 className="reference-title mt-2 text-2xl font-black sm:text-3xl">{text.form.title}</h2>
+                                        <p className="reference-copy max-w-lg mt-1 text-xs leading-6 text-slate-600 dark:text-slate-300">{text.form.desc}</p>
+                                    </div>
+
+                                    {/* Direct Phone Call Button */}
+                                    <a
+                                        href={`tel:${phone}`}
+                                        className="group inline-flex shrink-0 items-center gap-2.5 rounded-2xl border border-blue-200 bg-white px-4 py-2.5 text-xs font-black text-[#075cb7] shadow-sm transition hover:border-[#075cb7] hover:bg-blue-50 hover:shadow-md dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-slate-750"
+                                    >
+                                        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-[#075cb7] group-hover:bg-[#082761] group-hover:text-white dark:bg-slate-700 dark:text-sky-300">
+                                            <Phone className="h-4 w-4" />
+                                        </span>
+                                        <div className="text-start">
+                                            <span className="block text-[9px] font-bold text-slate-500 dark:text-slate-400">{text.form.urgentHotline}</span>
+                                            <b dir="ltr" className="text-xs font-black text-[#0b2245] dark:text-white">{phone}</b>
+                                        </div>
+                                    </a>
+                                </Reveal>
+
+                                {/* Active Booking Selection Summary Bar */}
+                                <div className="mb-5 rounded-2xl border border-blue-100 bg-white/90 p-3.5 shadow-sm backdrop-blur dark:border-slate-700/80 dark:bg-slate-800/80">
+                                    <span className="block text-[9.5px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                        {text.form.liveSummaryTitle}
+                                    </span>
+                                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-extrabold text-[#0b2245] dark:text-white">
+                                        <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-[#075cb7] dark:bg-sky-500/20 dark:text-sky-300">
+                                            <MapPin className="h-3.5 w-3.5" />
+                                            {selectedBranch}
+                                        </span>
+                                        <span className="text-slate-300 dark:text-slate-600">·</span>
+                                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700 dark:bg-emerald-400/20 dark:text-emerald-300">
+                                            <Clock3 className="h-3.5 w-3.5" />
+                                            {text.form.timeWindows?.find((t) => t.id === selectedTimeWindow)?.label || selectedTimeWindow}
+                                        </span>
+                                        {selectedService && (
+                                            <>
+                                                <span className="text-slate-300 dark:text-slate-600">·</span>
+                                                <span className="inline-flex items-center gap-1 rounded-md bg-violet-50 px-2.5 py-1 text-violet-700 dark:bg-violet-400/20 dark:text-violet-300">
+                                                    <ScanLine className="h-3.5 w-3.5" />
+                                                    {selectedService}
+                                                </span>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Branch Selection Pills */}
+                                <div className="mb-4">
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                        {text.form.branch}
+                                    </label>
+                                    <div className="mt-1.5 flex flex-wrap gap-2">
+                                        {branches.map((b) => (
+                                            <button
+                                                key={b.name}
+                                                type="button"
+                                                onClick={() => setSelectedBranch(b.name)}
+                                                className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold transition-all ${selectedBranch === b.name ? 'border-[#075cb7] bg-[#082761] text-white shadow-md dark:border-sky-400 dark:bg-sky-600' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}
+                                            >
+                                                <MapPin className="h-3.5 w-3.5" />
+                                                {b.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Preferred Time Window Selector */}
+                                <div className="mb-5">
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                        {text.form.timeWindow}
+                                    </label>
+                                    <div className="mt-1.5 flex flex-wrap gap-2">
+                                        {text.form.timeWindows?.map((tw) => (
+                                            <button
+                                                key={tw.id}
+                                                type="button"
+                                                onClick={() => setSelectedTimeWindow(tw.id)}
+                                                className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold transition-all ${selectedTimeWindow === tw.id ? 'border-emerald-600 bg-emerald-700 text-white shadow-md dark:bg-emerald-600' : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-200 hover:bg-emerald-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}
+                                            >
+                                                <Clock3 className="h-3.5 w-3.5" />
+                                                {tw.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
                                 <AppointmentForm services={services} initialService={selectedService} onSubmit={continueBooking} text={text.form} showIntro={false} compact />
-                                <p className="mt-3 flex items-center gap-2 text-[9.5px] font-semibold text-slate-500 dark:text-slate-400"><ShieldCheck className="h-3.5 w-3.5 text-[#075cb7]" />{isRtl ? 'تظل معلوماتك داخل نموذج الحجز ولا تُرسل قبل اختيار قناة الحجز.' : 'Your details stay in this form until you choose a booking channel.'}</p>
+
+                                {/* Concierge Features Bar */}
+                                {text.form.features && (
+                                    <div className="mt-6 grid gap-3.5 border-t border-slate-200/80 pt-5 sm:grid-cols-3 dark:border-slate-700/80">
+                                        {text.form.features.map((feat, idx) => (
+                                            <div key={feat.title} className="flex items-start gap-3 rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm backdrop-blur transition hover:shadow-md dark:border-slate-800 dark:bg-slate-800/70">
+                                                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${idx === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-400/20 dark:text-amber-300' : idx === 1 ? 'bg-blue-100 text-blue-700 dark:bg-blue-400/20 dark:text-sky-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-400/20 dark:text-emerald-300'}`}>
+                                                    {idx === 0 ? <Zap className="h-4 w-4" /> : idx === 1 ? <ClipboardCheck className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+                                                </span>
+                                                <div>
+                                                    <strong className="block text-xs font-black text-[#0b2245] dark:text-white">{feat.title}</strong>
+                                                    <small className="mt-0.5 block text-[10px] leading-4 text-slate-500 dark:text-slate-400">{feat.desc}</small>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </section>
                     </div>
@@ -788,13 +1446,56 @@ const PortalLanding = () => {
 
                 <section id="faq" className="scroll-mt-28 border-t border-[#dfebf5] bg-[#f4f8fc] py-10 dark:border-slate-800 dark:bg-[#091522] sm:py-14">
                     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                        <div className="mx-auto max-w-3xl text-center">
+                        <Reveal className="mx-auto max-w-3xl text-center">
                             <p className="reference-eyebrow">{text.faq.eyebrow}</p>
                             <h2 className="reference-title mt-1">{text.faq.title}</h2>
                             <p className="reference-copy mx-auto max-w-2xl">{text.faq.desc}</p>
+                        </Reveal>
+
+                        {/* Search and Category Filter Bar */}
+                        <div className="mx-auto mt-7 max-w-4xl space-y-4">
+                            <div className="relative">
+                                <Search className="absolute start-4 top-3.5 h-4 w-4 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={faqSearchQuery}
+                                    onChange={(e) => setFaqSearchQuery(e.target.value)}
+                                    placeholder={text.faq.searchPlaceholder}
+                                    className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pe-10 ps-11 text-xs font-semibold text-slate-900 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-[#075cb7] focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:ring-sky-500/20"
+                                />
+                                {faqSearchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setFaqSearchQuery('')}
+                                        aria-label={text.faq.clearSearch}
+                                        className="absolute end-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300"
+                                    >
+                                        <X className="h-3 w-3" />
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Filter Category Pills */}
+                            <div className="flex flex-wrap items-center justify-center gap-2" role="tablist">
+                                {Object.entries(text.faq.categoryLabels || {}).map(([key, label]) => {
+                                    const active = faqCategory === key;
+                                    return (
+                                        <button
+                                            key={key}
+                                            type="button"
+                                            role="tab"
+                                            aria-selected={active}
+                                            onClick={() => setFaqCategory(key)}
+                                            className={`rounded-full px-4 py-1.5 text-xs font-extrabold transition-all duration-200 ${active ? 'bg-[#082761] text-white shadow-md dark:bg-sky-500' : 'border border-slate-200/80 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'}`}
+                                        >
+                                            {label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
 
-                        <div className="mt-7 grid items-start gap-5 lg:grid-cols-[.72fr_1.28fr]">
+                        <div className="mt-8 grid items-start gap-5 lg:grid-cols-[.72fr_1.28fr]">
                             <aside className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#082761] via-[#0a326f] to-[#075b9f] p-6 text-white shadow-xl shadow-blue-950/10 lg:sticky lg:top-28 sm:p-7">
                                 <div className="absolute -end-20 -top-24 h-64 w-64 rounded-full border-[42px] border-white/[.055]" aria-hidden="true" />
                                 <div className="absolute -bottom-20 -start-16 h-52 w-52 rounded-full bg-sky-400/10 blur-2xl" aria-hidden="true" />
@@ -816,67 +1517,78 @@ const PortalLanding = () => {
                             </aside>
 
                             <div className="space-y-3">
-                                {text.faq.items.map((item, index) => {
-                                    const expanded = openFaq === index;
-                                    const number = String(index + 1).padStart(2, '0');
-                                    return <article key={item.q} className={`overflow-hidden rounded-2xl border bg-white transition duration-200 dark:bg-slate-900/85 ${expanded ? 'border-[#8ab8e4] shadow-[0_16px_36px_-28px_rgba(8,39,97,.8)] dark:border-sky-600/60' : 'border-[#dce7f1] hover:border-[#b8d2e9] dark:border-slate-700'}`}>
-                                        <h3><button id={`faq-question-${index}`} type="button" aria-expanded={expanded} aria-controls={`faq-answer-${index}`} onClick={() => setOpenFaq(expanded ? null : index)} className="group flex min-h-16 w-full items-center gap-3 px-4 py-3 text-start sm:gap-4 sm:px-5">
-                                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[10px] font-black transition ${expanded ? 'bg-[#082761] text-white dark:bg-sky-500' : 'bg-[#edf5fc] text-[#287ed5] group-hover:bg-blue-100 dark:bg-slate-800 dark:text-sky-300'}`}>{number}</span>
-                                            <span className="flex-1 text-[11.5px] font-black leading-5 text-[#0b2245] dark:text-white sm:text-xs">{item.q}</span>
-                                            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition ${expanded ? 'rotate-180 border-[#082761] bg-[#082761] text-white dark:border-sky-500 dark:bg-sky-500' : 'border-[#cfddea] text-[#287ed5] group-hover:border-[#8ab8e4] dark:border-slate-600 dark:text-sky-300'}`}><ChevronDown className="h-4 w-4" /></span>
-                                        </button></h3>
-                                        {expanded && <div id={`faq-answer-${index}`} role="region" aria-labelledby={`faq-question-${index}`} className="border-t border-[#e6eef5] bg-[#fbfdff] px-4 py-4 ps-16 dark:border-slate-700 dark:bg-slate-900 sm:px-5 sm:py-5 sm:ps-[5.25rem]"><p className="max-w-2xl text-[11px] leading-6 text-slate-600 dark:text-slate-300">{item.a}</p></div>}
-                                    </article>;
-                                })}
+                                {filteredFaqs.length === 0 ? (
+                                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900/60">
+                                        <HelpCircle className="mx-auto h-10 w-10 text-slate-400 dark:text-slate-500" />
+                                        <p className="mt-3 text-sm font-bold text-slate-700 dark:text-slate-200">{text.faq.noResults}</p>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setFaqCategory('all'); setFaqSearchQuery(''); }}
+                                            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#082761] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#0c347b] dark:bg-sky-600"
+                                        >
+                                            {text.faq.clearSearch}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    filteredFaqs.map((item, index) => {
+                                        const expanded = openFaq === index;
+                                        const number = String(index + 1).padStart(2, '0');
+                                        const catLabel = text.faq.categoryLabels[item.category as keyof typeof text.faq.categoryLabels] || item.category;
+                                        return (
+                                            <Reveal key={item.q} delay={Math.min(index, 4) * 70} as="article" className={`overflow-hidden rounded-2xl border bg-white transition-[border-color,box-shadow] duration-200 dark:bg-slate-900/85 ${expanded ? 'border-[#8ab8e4] shadow-[0_16px_36px_-28px_rgba(8,39,97,.8)] dark:border-sky-600/60' : 'border-[#dce7f1] hover:border-[#b8d2e9] dark:border-slate-700'}`}>
+                                                <h3>
+                                                    <button
+                                                        id={`faq-question-${index}`}
+                                                        type="button"
+                                                        aria-expanded={expanded}
+                                                        aria-controls={`faq-answer-${index}`}
+                                                        onClick={() => setOpenFaq(expanded ? null : index)}
+                                                        className="group flex min-h-16 w-full items-center gap-3 px-4 py-3.5 text-start sm:gap-4 sm:px-5"
+                                                    >
+                                                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[10px] font-black transition ${expanded ? 'bg-[#082761] text-white dark:bg-sky-500' : 'bg-[#edf5fc] text-[#287ed5] group-hover:bg-blue-100 dark:bg-slate-800 dark:text-sky-300'}`}>{number}</span>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[8.5px] font-extrabold text-[#075cb7] dark:bg-slate-800 dark:text-sky-300">
+                                                                    {catLabel}
+                                                                </span>
+                                                            </div>
+                                                            <span className="mt-0.5 block text-[11.5px] font-black leading-5 text-[#0b2245] dark:text-white sm:text-xs">{item.q}</span>
+                                                        </div>
+                                                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition ${expanded ? 'rotate-180 border-[#082761] bg-[#082761] text-white dark:border-sky-500 dark:bg-sky-500' : 'border-[#cfddea] text-[#287ed5] group-hover:border-[#8ab8e4] dark:border-slate-600 dark:text-sky-300'}`}><ChevronDown className="h-4 w-4" /></span>
+                                                    </button>
+                                                </h3>
+                                                <div id={`faq-answer-${index}`} role="region" aria-labelledby={`faq-question-${index}`} className={`faq-answer-panel ${expanded ? 'is-open' : ''}`}>
+                                                    <div className={`faq-answer-inner bg-[#fbfdff] px-4 py-4 ps-16 dark:bg-slate-900 sm:px-5 sm:py-5 sm:ps-[5.25rem] ${expanded ? 'border-t border-[#e6eef5] dark:border-slate-700' : ''}`}>
+                                                        <p className="max-w-2xl text-[11px] leading-6 text-slate-600 dark:text-slate-300">{item.a}</p>
+                                                        <div className="mt-3 flex items-center gap-3 text-[9.5px] font-bold text-slate-500 dark:text-slate-400">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setFaqHelpful((prev) => ({ ...prev, [index]: !prev[index] }))}
+                                                                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 transition ${faqHelpful[index] ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-400/20 dark:text-emerald-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}
+                                                            >
+                                                                <ThumbsUp className="h-3 w-3" />
+                                                                {faqHelpful[index] ? (isRtl ? 'شكراً لتقييمك' : 'Helpful!') : (isRtl ? 'هل كان هذا مفيداً؟' : 'Was this helpful?')}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </Reveal>
+                                        );
+                                    })
+                                )}
                             </div>
                         </div>
                     </div>
                 </section>
             </main>
 
-            <div className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-2 gap-2 rounded-2xl border border-white/60 bg-white/95 p-2 shadow-2xl backdrop-blur-xl sm:hidden dark:border-white/10 dark:bg-slate-900/95">
+            <div className="mobile-dock-in fixed inset-x-3 bottom-3 z-40 grid grid-cols-2 gap-2 rounded-2xl border border-white/60 bg-white/95 p-2 shadow-2xl backdrop-blur-xl sm:hidden dark:border-white/10 dark:bg-slate-900/95">
                 <button type="button" onClick={openBookingOptions} className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#082761] px-3 text-xs font-extrabold text-white"><CalendarCheck className="h-4 w-4" />{text.hero.book}</button>
                 <Link to="/patient/login" className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#9cb6d5] bg-white px-3 text-xs font-extrabold text-[#0b2b5b] dark:bg-slate-800 dark:text-white"><FileText className="h-4 w-4" />{text.hero.results}</Link>
             </div>
 
-            {reportOpen && caseLookup?.report && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#06152b]/85 p-3 backdrop-blur-sm sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setReportOpen(false); }}>
-                <article ref={reportDialogRef} role="dialog" aria-modal="true" aria-labelledby="public-report-title" dir="ltr" lang="en" className="public-report-print max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-white/20 bg-white text-left shadow-2xl dark:bg-slate-900">
-                    <header className="public-report-header sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:px-7">
-                        <div className="flex items-start justify-between gap-4">
-                            <div className="flex min-w-0 items-start gap-3">
-                                {center.logo_url ? <img src={center.logo_url} alt={`${centerName} logo`} className="h-12 w-12 shrink-0 rounded-xl border border-slate-200 bg-white object-contain p-1 dark:border-slate-700" /> : <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#082761] text-[11px] font-black tracking-wide text-white">RCMS</span>}
-                                <div className="min-w-0">
-                                    <p className="text-sm font-black text-[#0b2245] dark:text-white sm:text-base">{centerName}</p>
-                                    {center.address && <p className="mt-1 text-[10px] leading-4 text-slate-500 dark:text-slate-400">{center.address}</p>}
-                                    <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[9.5px] font-semibold text-slate-600 dark:text-slate-300">
-                                        {center.phone && <span>Phone: <b dir="ltr">{center.phone}</b></span>}
-                                        {center.email && <span>Email: {center.email}</span>}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="public-report-actions flex shrink-0 items-center gap-2"><button type="button" onClick={() => window.print()} className="hidden min-h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-[10px] font-extrabold text-[#0b3b78] hover:bg-slate-50 sm:inline-flex dark:border-slate-700 dark:text-sky-300 dark:hover:bg-slate-800"><Printer className="h-4 w-4" />Print report</button><button type="button" onClick={() => setReportOpen(false)} aria-label="Close report" className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-white dark:hover:bg-slate-800"><X className="h-5 w-5" /></button></div>
-                        </div>
-                        <div className="mt-4 flex items-start gap-3 border-t border-slate-200 pt-4 dark:border-slate-700"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"><FileText className="h-5 w-5" /></span><div><p className="text-[9px] font-black uppercase tracking-[.14em] text-emerald-700 dark:text-emerald-300">Report completed</p><h2 id="public-report-title" className="mt-1 text-lg font-black text-[#0b2245] dark:text-white sm:text-xl">Final diagnostic report</h2><p className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">{caseLookup.case?.examType} · {formatReportDate(caseLookup.report.finalizedAt)}</p></div></div>
-                    </header>
-                    <div className="px-5 py-5 sm:px-7 sm:py-7">
-                        <div className="mb-5 grid gap-3 rounded-xl border border-[#dce9f5] bg-[#f7fbff] p-4 text-[10px] sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-800/60"><div><span className="block font-bold text-slate-500 dark:text-slate-400">Study date</span><strong className="mt-1 block text-[#0b2245] dark:text-white">{formatReportDate(caseLookup.case?.studyDate)}</strong></div><div><span className="block font-bold text-slate-500 dark:text-slate-400">Examination</span><strong className="mt-1 block text-[#0b2245] dark:text-white">{caseLookup.case?.examType}</strong></div><div><span className="block font-bold text-slate-500 dark:text-slate-400">Report status</span><strong className="mt-1 block text-emerald-700 dark:text-emerald-300">{caseLookup.report.status === 'Amended' ? 'Amended' : 'Report completed'}</strong></div></div>
-                        <div className="space-y-5">
-                            {(caseLookup.report.sections || []).map((section) => <section key={section.key} className="border-b border-slate-100 pb-5 last:border-0 dark:border-slate-800"><h3 className="text-xs font-black uppercase tracking-wider text-[#075cb7] dark:text-sky-300">{REPORT_SECTION_LABELS.en[section.key as keyof typeof REPORT_SECTION_LABELS.en] || section.label}</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700 dark:text-slate-200">{section.content}</p></section>)}
-                            {caseLookup.report.plainText && <section><p className="whitespace-pre-wrap text-sm leading-7 text-slate-700 dark:text-slate-200">{caseLookup.report.plainText}</p></section>}
-                            {!caseLookup.report.sections?.length && !caseLookup.report.plainText && <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">The report is finalized, but no narrative content is available in this view.</p>}
-                        </div>
-                        {(caseLookup.report.signedBy || caseLookup.report.signerRole) && <footer className="mt-7 border-t border-slate-200 pt-5 text-right dark:border-slate-700"><p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Finalized by</p><strong className="mt-1 block text-sm text-[#0b2245] dark:text-white">{caseLookup.report.signedBy || 'Radiology team'}</strong>{caseLookup.report.signerRole && <span className="mt-0.5 block text-[10px] text-slate-500 dark:text-slate-400">{caseLookup.report.signerRole}</span>}</footer>}
-                        <footer className="public-report-center-footer mt-8 border-t border-slate-200 pt-4 text-center text-[9px] leading-4 text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                            <strong className="block text-[#0b2245] dark:text-slate-200">{centerName}</strong>
-                            <span>Confidential medical report</span>
-                            {(center.address || center.phone || center.email) && <span className="mt-1 block">{[center.address, center.phone && `Phone: ${center.phone}`, center.email && `Email: ${center.email}`].filter(Boolean).join(' · ')}</span>}
-                        </footer>
-                    </div>
-                </article>
-            </div>}
-
-            {bookingOpen && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#06152b]/80 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBookingOpen(false); }}>
-                <div ref={bookingDialogRef} role="dialog" aria-modal="true" aria-labelledby="booking-dialog-title" className="prototype-booking-dialog relative w-full max-w-xl rounded-3xl border border-white/20 bg-white p-6 shadow-2xl dark:bg-slate-900 sm:p-8">
+            {bookingOpen && <div className="modal-backdrop-in fixed inset-0 z-[80] flex items-center justify-center bg-[#06152b]/80 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBookingOpen(false); }}>
+                <div ref={bookingDialogRef} role="dialog" aria-modal="true" aria-labelledby="booking-dialog-title" className="prototype-booking-dialog modal-pop relative w-full max-w-xl rounded-3xl border border-white/20 bg-white p-6 shadow-2xl dark:bg-slate-900 sm:p-8">
                     <button type="button" onClick={() => setBookingOpen(false)} aria-label={text.menu.close} className="absolute end-4 top-4 flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"><X className="h-5 w-5" /></button>
                     <div className="pe-10"><span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-[#075cb7] dark:bg-blue-500/10 dark:text-sky-300"><CalendarCheck className="h-6 w-6" /></span><h2 id="booking-dialog-title" className="mt-4 text-2xl font-black text-[#0b2245] dark:text-white">{isRtl ? 'اختر طريقة الحجز' : 'Choose how to book'}</h2><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{isRtl ? 'سيساعدك فريق الحجز في تأكيد الخدمة والموعد وأي تعليمات تحضير.' : 'Our scheduling team will help confirm the service, time, and any preparation instructions.'}</p></div>
                     {bookingDraft && <div className="mt-4 flex flex-wrap gap-2 rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-[11px] font-bold text-[#0b3b78] dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-sky-200"><span>{bookingDraft.name}</span><span aria-hidden="true">·</span><span>{bookingDraft.service}</span><span aria-hidden="true">·</span><time dateTime={bookingDraft.date}>{bookingDraft.date}</time></div>}

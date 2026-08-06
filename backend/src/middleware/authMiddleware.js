@@ -12,7 +12,7 @@ const configureAuthDatabase = (db) => {
 
 const enforcePasswordChange = (req, res, next) => {
     const checkPath = String(req.originalUrl || req.path || req.url || '').split('?')[0];
-    const whitelistedPaths = new Set(['/api/profile', '/api/profile/password', '/api/settings/center', '/api/auth/logout', '/api/chat/unread-summary']);
+    const whitelistedPaths = new Set(['/api/profile', '/api/profile/password', '/api/auth/logout', '/api/auth/refresh', '/api/auth/change-password']);
     const whitelistedPrefixes = ['/api/auth/sessions'];
     
     const isWhitelisted = whitelistedPaths.has(checkPath)

@@ -75,9 +75,9 @@ const CenterSettings = ({ embedded = false }) => {
 
     const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(savedForm), [form, savedForm]);
     const hoursValid = Number(form.working_hours.start) >= 0
-        && Number(form.working_hours.start) <= 23
+        && Number(form.working_hours.start) <= 24
         && Number(form.working_hours.end) >= 0
-        && Number(form.working_hours.end) <= 23;
+        && Number(form.working_hours.end) <= 24;
 
     useEffect(() => {
         if (!dirty) return undefined;
@@ -224,10 +224,10 @@ const CenterSettings = ({ embedded = false }) => {
                     <SettingsSection id="operating-hours" icon={CalendarClock} title={t('hours.title')} description={t('hours.description')}>
                         <div className="grid gap-4 sm:grid-cols-2">
                             <Field label={t('hours.open')} hint={t('hours.hourHint')} icon={Clock3}>
-                                <input id="opening-hour" type="number" min={0} max={23} required value={form.working_hours.start} onChange={(event) => setHour('start', event.target.value)} className="input-field w-full font-mono text-lg font-bold" aria-describedby="hours-validation" />
+                                <input id="opening-hour" type="number" min={0} max={24} required value={form.working_hours.start} onChange={(event) => setHour('start', event.target.value)} className="input-field w-full font-mono text-lg font-bold" aria-describedby="hours-validation" />
                             </Field>
                             <Field label={t('hours.close')} hint={t('hours.hourHint')} icon={Clock3}>
-                                <input id="closing-hour" type="number" min={0} max={23} required value={form.working_hours.end} onChange={(event) => setHour('end', event.target.value)} className="input-field w-full font-mono text-lg font-bold" aria-describedby="hours-validation" />
+                                <input id="closing-hour" type="number" min={0} max={24} required value={form.working_hours.end} onChange={(event) => setHour('end', event.target.value)} className="input-field w-full font-mono text-lg font-bold" aria-describedby="hours-validation" />
                             </Field>
                         </div>
                         {!hoursValid ? <p id="hours-validation" role="alert" className="mt-3 flex items-center gap-2 text-sm font-bold text-rose-700"><AlertTriangle size={16} />{t('hours.invalid')}</p> : null}
@@ -261,7 +261,7 @@ const SettingsSection = ({ id, icon: Icon, title, description, children }) => <s
 const Field = ({ label, hint, required, icon: Icon, counter, className = '', children }) => <label className={`block ${className}`}><span className="mb-1.5 flex items-center justify-between gap-3"><span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">{Icon ? <Icon size={14} className="text-slate-400" /> : null}{label}{required ? <span className="text-rose-500" aria-hidden="true">*</span> : null}</span>{counter ? <span className="text-[10px] font-medium text-slate-400">{counter}</span> : null}</span>{children}{hint ? <span className="mt-1.5 block text-xs leading-5 text-slate-500 dark:text-slate-400">{hint}</span> : null}</label>;
 const SettingsLoading = ({ label }) => <div className="mx-auto max-w-[1500px] space-y-5 pb-10" aria-label={label}><div className="h-52 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-800" /><div className="grid gap-5 xl:grid-cols-[250px_1fr]"><div className="h-64 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" /><div className="space-y-5">{[1, 2, 3].map((item) => <div key={item} className="h-64 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-900" />)}</div></div></div>;
 const SettingsError = ({ title, description, retry, onRetry }) => <div className="mx-auto flex min-h-[55vh] max-w-2xl flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900"><span className="rounded-xl bg-rose-50 p-4 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300"><AlertTriangle size={28} /></span><h1 className="mt-4 text-xl font-bold text-slate-900 dark:text-white">{title}</h1><p className="mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">{description}</p><button type="button" onClick={onRetry} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white dark:bg-slate-100 dark:text-slate-950"><RefreshCw size={16} />{retry}</button></div>;
-const calculateDuration = (start, end) => { const from = Number(start); const to = Number(end); if (!Number.isFinite(from) || !Number.isFinite(to)) return 0; return Math.max(0, to - from); };
-const formatHour = (value) => `${String(Math.min(23, Math.max(0, Number(value) || 0))).padStart(2, '0')}:00`;
+const calculateDuration = (start, end) => { const from = Number(start); const to = Number(end); if (!Number.isFinite(from) || !Number.isFinite(to)) return 0; if (to < from) { return Math.max(0, (24 - from) + to); } return Math.max(0, to - from); };
+const formatHour = (value) => `${String(Math.min(24, Math.max(0, Number(value) || 0))).padStart(2, '0')}:00`;
 
 export default CenterSettings;

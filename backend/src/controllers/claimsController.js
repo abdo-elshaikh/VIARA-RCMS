@@ -1,4 +1,5 @@
 const { AppError } = require('../middleware/errorHandler');
+const { logAction } = require('../services/auditService');
 const {
     DEFAULT_BRANCH_ID,
     lockFinancialBusinessDate,
@@ -173,6 +174,22 @@ const createClaim = (db) => async (req, res, next) => {
         ]);
 
         await client.query('COMMIT');
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'CLAIM_CREATED',
+            resourceId: result.rows[0].claim_id,
+            resourceTable: 'insurance_claims',
+            ipAddress: req.ip,
+            details: {
+                invoiceId: data.invoiceId || null,
+                patientId,
+                providerId: data.providerId,
+                policyId: data.policyId || null,
+                approvalId: data.approvalId || null,
+                expectedAmount,
+                branchId: invoice?.branch_id || DEFAULT_BRANCH_ID
+            }
+        });
         res.status(201).json(result.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -289,6 +306,22 @@ const updateClaimStatus = (db) => async (req, res, next) => {
         ]);
 
         await client.query('COMMIT');
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'CLAIM_STATUS_UPDATED',
+            resourceId: existing.rows[0].claim_id,
+            resourceTable: 'insurance_claims',
+            ipAddress: req.ip,
+            details: {
+                previousStatus: claim.status,
+                newStatus: data.status,
+                previousReceivedAmount: previousReceivedAmount,
+                newReceivedAmount: receivedAmount,
+                claimReceiptId: claimReceipt?.claim_receipt_id || null,
+                rejectionReason: data.rejectionReason || null,
+                resubmissionNotes: data.resubmissionNotes || null
+            }
+        });
         res.json({ ...result.rows[0], claim_receipt: claimReceipt });
     } catch (error) {
         if (client) await client.query('ROLLBACK');

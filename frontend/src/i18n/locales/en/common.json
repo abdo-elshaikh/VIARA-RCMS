@@ -289,7 +289,15 @@
   },
   "session": {
     "expired": "Your session expired after a period of inactivity.",
+    "warningTitle": "Your session is about to expire",
+    "warningMessage": "For your security, you will be signed out in two minutes unless you continue your session.",
+    "staySignedIn": "Stay signed in",
+    "extendFailed": "The session could not be extended. Save your work and sign in again.",
     "signOutTitle": "Sign out securely?",
     "signOutMessage": "You will need to enter your credentials to access the workspace again."
+  },
+  "sse": {
+    "disconnected": "Live updates disconnected. Attempting to reconnect...",
+    "reconnected": "Live updates restored"
   }
 }

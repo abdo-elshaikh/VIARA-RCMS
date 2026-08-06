@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -86,6 +86,7 @@ const BookAppointment = () => {
     const requestedPriority = searchParams.get('priority') || 'Routine';
     const requestedNotes = searchParams.get('notes') || '';
     const [date, setDate] = useState(initialDate);
+    const appointmentIdempotencyKey = useRef(crypto.randomUUID());
 
     const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
         mode: 'onTouched',
@@ -256,6 +257,7 @@ const BookAppointment = () => {
             const customDoctorName = data.referringDoctor?.trim();
             const useCustomReferrer = referralMode === 'custom';
             const payload = {
+                idempotencyKey: appointmentIdempotencyKey.current,
                 patientId: data.patientId,
                 modalityId: data.modalityId,
                 examTypeId: data.examTypeId,
@@ -285,16 +287,25 @@ const BookAppointment = () => {
             };
             const created = await createAppointment(payload).unwrap();
             if (data.paymentMethod === 'Insurance' && data.insuranceProviderId) {
-                await createInsuranceApproval({
-                    patientId: data.patientId,
-                    providerId: data.insuranceProviderId,
-                    appointmentId: created.appointment_id,
-                    examTypeId: data.examTypeId,
-                    status: data.insuranceApprovalStatus,
-                    approvalNumber: data.insuranceApprovalNumber?.trim() || undefined,
-                    requestedAmount: data.paymentAmount ? Number(data.paymentAmount) : undefined,
-                    documentUrl: data.insuranceApprovalDocumentUrl?.trim() || undefined
-                }).unwrap();
+                try {
+                    await createInsuranceApproval({
+                        patientId: data.patientId,
+                        providerId: data.insuranceProviderId,
+                        appointmentId: created.appointment_id,
+                        examTypeId: data.examTypeId,
+                        status: data.insuranceApprovalStatus,
+                        approvalNumber: data.insuranceApprovalNumber?.trim() || undefined,
+                        requestedAmount: data.paymentAmount ? Number(data.paymentAmount) : undefined,
+                        documentUrl: data.insuranceApprovalDocumentUrl?.trim() || undefined
+                    }).unwrap();
+                } catch (approvalError) {
+                    toast.error(t('toast.appointmentBookedApprovalFailed', {
+                        reference: created.appointment_id,
+                        error: getErrorMessage(approvalError)
+                    }), { duration: 8000 });
+                    navigate(`/appointments?patientId=${encodeURIComponent(data.patientId)}`, { replace: true });
+                    return;
+                }
             }
             toast.success(t('toast.appointmentBooked'));
             navigate('/reception', { replace: true });

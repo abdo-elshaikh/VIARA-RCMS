@@ -70,7 +70,7 @@ services:
     stop_grace_period: 45s
     environment:
       PORT: 3000
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: ${NODE_ENV:-development}
       DATABASE_URL: postgresql://${POSTGRES_USER:-rcms}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rcms}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the root .env file}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in the root .env file}
@@ -89,6 +89,12 @@ services:
       BACKUP_MAX_FILES: 30
       BACKUP_SCHEDULE_ENABLED: "true"
       BACKUP_SCHEDULE_HOUR_UTC: 2
+      BACKUP_OFFSITE_ENDPOINT: ${BACKUP_OFFSITE_ENDPOINT:-}
+      BACKUP_OFFSITE_BUCKET: ${BACKUP_OFFSITE_BUCKET:-}
+      BACKUP_OFFSITE_REGION: ${BACKUP_OFFSITE_REGION:-us-east-1}
+      BACKUP_OFFSITE_PREFIX: ${BACKUP_OFFSITE_PREFIX:-}
+      BACKUP_OFFSITE_ACCESS_KEY: ${BACKUP_OFFSITE_ACCESS_KEY:-}
+      BACKUP_OFFSITE_SECRET_KEY: ${BACKUP_OFFSITE_SECRET_KEY:-}
       # PACS / Orthanc integration
       ORTHANC_URL: ${ORTHANC_URL:-http://orthanc:8042}
       ORTHANC_USERNAME: ${ORTHANC_USERNAME:-rcms}
@@ -209,7 +215,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail --silent --user \"$$RCMS_ORTHANC_USERNAME:$$RCMS_ORTHANC_PASSWORD\" http://127.0.0.1:8042/system >/dev/null"]
+      test: ["CMD", "python3", "-c", "import base64, os, urllib.request; credentials = f'{os.environ[\"RCMS_ORTHANC_USERNAME\"]}:{os.environ[\"RCMS_ORTHANC_PASSWORD\"]}'; request = urllib.request.Request('http://127.0.0.1:8042/system', headers={'Authorization': 'Basic ' + base64.b64encode(credentials.encode()).decode()}); urllib.request.urlopen(request, timeout=5).read()"]
       interval: 30s
       timeout: 10s
       retries: 5

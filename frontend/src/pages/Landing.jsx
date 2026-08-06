@@ -34,11 +34,11 @@ const Landing = () => {
     const overviewRef = useRef(null);
     const modulesRef = useRef(null);
     const workflowRef = useRef(null);
-    const zoneRefs = {
+    const zoneRefs = useRef({
         overview: overviewRef,
         modules: modulesRef,
         workflow: workflowRef,
-    };
+    }).current;
 
     const { data: settingsData } = useGetPublicCenterSettingsQuery();
     const {
@@ -57,14 +57,16 @@ const Landing = () => {
 
     useEffect(() => {
         const root = document.documentElement;
+        const body = document.body;
+        const landingBodyClasses = ['antialiased', 'font-sans', 'min-h-screen'];
         root.classList.toggle('dark', dark);
         root.dir = isRtl ? 'rtl' : 'ltr';
         root.lang = i18n.language.startsWith('ar') ? 'ar' : 'en';
         localStorage.setItem('theme', dark ? 'dark' : 'light');
-        document.body.dir = isRtl ? 'rtl' : 'ltr';
-        document.body.className = `antialiased selection:bg-emerald-500/20 ${
-            dark ? 'bg-slate-950 text-slate-50' : 'bg-[#f6f8fb] text-slate-900'
-        } font-sans min-h-screen`;
+        body.dir = isRtl ? 'rtl' : 'ltr';
+        body.classList.add(...landingBodyClasses);
+
+        return () => body.classList.remove(...landingBodyClasses);
     }, [dark, i18n.language, isRtl]);
 
     const changeLanguage = () => {
@@ -87,7 +89,12 @@ const Landing = () => {
     ];
 
     return (
-        <div className="command-landing relative flex min-h-screen w-full flex-col justify-between overflow-x-hidden">
+        <div
+            className="command-landing relative flex min-h-screen w-full flex-col justify-between overflow-x-hidden"
+            data-page="landing"
+            data-theme={dark ? 'dark' : 'light'}
+            data-active-zone={activeZone}
+        >
             <a className="command-skip-link" href="#command-main-content">
                 {isRtl ? 'انتقل إلى المحتوى الرئيسي' : 'Skip to main content'}
             </a>
@@ -118,11 +125,16 @@ const Landing = () => {
                     isRtl={isRtl}
                     label={isRtl ? 'التنقل بين أقسام الصفحة' : 'Landing page sections'}
                 />
-                <div className="command-layout command-content-frame" dir={isRtl ? 'rtl' : 'ltr'}>
-                    <div
+                <section
+                    className="command-layout command-content-frame"
+                    dir={isRtl ? 'rtl' : 'ltr'}
+                    aria-label={isRtl ? 'لوحة قيادة مركز الأشعة' : 'Radiology center command dashboard'}
+                >
+                    <section
                         className="command-operations min-w-0"
                         dir={isRtl ? 'rtl' : 'ltr'}
                         data-mobile-zone={activeZone}
+                        aria-label={isRtl ? 'العمليات اليومية' : 'Daily operations'}
                     >
                         <MetricsStrip
                             isRtl={isRtl}
@@ -162,12 +174,13 @@ const Landing = () => {
                             isLoading={isOverviewLoading}
                             isError={isOverviewError}
                         />
-                    </div>
+                    </section>
 
-                    <div
+                    <section
                         className="command-hero-column flex min-w-0"
                         dir={isRtl ? 'rtl' : 'ltr'}
                         data-mobile-active={activeZone === 'overview'}
+                        aria-label={isRtl ? 'نظرة عامة على RCMS' : 'RCMS overview'}
                     >
                         <HeroPane
                             t={t}
@@ -178,8 +191,8 @@ const Landing = () => {
                             isLoading={isOverviewLoading}
                             isError={isOverviewError}
                         />
-                    </div>
-                </div>
+                    </section>
+                </section>
             </main>
 
             {inspectService && (

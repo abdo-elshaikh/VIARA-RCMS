@@ -136,6 +136,10 @@
     "deleted": "تم حذف المستند.",
     "deleteError": "تعذر حذف المستند.",
     "deleteAction": "حذف {{name}}",
+    "preview": "معاينة",
+    "previewAction": "معاينة {{name}}",
+    "download": "تنزيل",
+    "downloadAction": "تنزيل {{name}}",
     "fallbackName": "هذا المستند"
   },
   "privacy": {

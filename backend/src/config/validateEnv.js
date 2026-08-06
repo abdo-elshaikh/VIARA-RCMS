@@ -9,7 +9,10 @@ const requiredEnvVars = [
     'DATABASE_URL',
     'JWT_SECRET',
     'ENCRYPTION_KEY',
-    'PORT'
+    'PORT',
+    'ORTHANC_PASSWORD',
+    'PACS_WEBHOOK_SECRET',
+    'BLIND_INDEX_KEY'
 ];
 
 const optionalEnvVars = [
@@ -47,7 +50,6 @@ function validateEnv() {
     });
 
     if (process.env.NODE_ENV === 'production') {
-        if (!process.env.BLIND_INDEX_KEY) missing.push('BLIND_INDEX_KEY');
         if (!process.env.BACKUP_ENCRYPTION_KEY) missing.push('BACKUP_ENCRYPTION_KEY');
         if (!process.env.ALLOWED_ORIGINS) missing.push('ALLOWED_ORIGINS');
         if (!process.env.CLAMSCAN_PATH) missing.push('CLAMSCAN_PATH');
@@ -116,6 +118,27 @@ function validateEnv() {
         const jwtPattern = /^[A-Za-z0-9\-_]{32,}$/;
         if (!jwtPattern.test(process.env.JWT_SECRET)) {
             invalid.push('JWT_SECRET must be at least 32 characters long and contain only safe characters (A-Z, a-z, 0-9, -, _)');
+        }
+        // Reject known weak/placeholder patterns
+        const WEAK_SECRET_PATTERNS = [
+            /dev_jwt_secret_change_this/i,
+            /replace_with/i,
+            /change_this/i,
+            /test_jwt_secret/i,
+        ];
+        if (WEAK_SECRET_PATTERNS.some(p => p.test(process.env.JWT_SECRET))) {
+            invalid.push('JWT_SECRET appears to be a weak/placeholder value — use a randomly generated secret');
+        }
+    }
+
+    const WEAK_PASSWORD_PATTERNS = [
+        /dev_pacs_webhook_secret_change_this/i,
+        /dev_blind_index_key_change_this/i,
+        /^admin$/i,
+    ];
+    for (const [name, value] of [['ORTHANC_PASSWORD', process.env.ORTHANC_PASSWORD], ['PACS_WEBHOOK_SECRET', process.env.PACS_WEBHOOK_SECRET], ['BLIND_INDEX_KEY', process.env.BLIND_INDEX_KEY]]) {
+        if (value && WEAK_PASSWORD_PATTERNS.some(p => p.test(value))) {
+            invalid.push(`${name} appears to be a weak/placeholder value — use a randomly generated secret`);
         }
     }
 

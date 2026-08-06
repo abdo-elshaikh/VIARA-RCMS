@@ -28,7 +28,7 @@ import {
 import PageHeader from '../components/ui/PageHeader';
 
 const PAGE_SIZE = 25;
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const EMPTY_FILTERS = {
     q: '',
     action: '',

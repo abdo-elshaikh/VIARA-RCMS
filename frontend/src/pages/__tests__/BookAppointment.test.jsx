@@ -5,6 +5,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BookAppointment from '../BookAppointment';
 
 const createAppointmentMock = vi.hoisted(() => vi.fn());
+const createInsuranceApprovalMock = vi.hoisted(() => vi.fn());
+const navigateMock = vi.hoisted(() => vi.fn());
+const toastErrorMock = vi.hoisted(() => vi.fn());
+
+vi.mock('react-router-dom', async (importOriginal) => ({
+    ...(await importOriginal()),
+    useNavigate: () => navigateMock
+}));
+
+vi.mock('react-hot-toast', () => ({
+    default: { success: vi.fn(), error: toastErrorMock }
+}));
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({ t: (key, fallback) => typeof fallback === 'string' ? fallback : key })
@@ -31,9 +43,9 @@ vi.mock('../../store/api', () => ({
     useGetStaffQuery: () => ({ data: [] }),
     useGetExamTypesQuery: () => ({ data: [{ type_id: 'exam-1', name: 'MRI Brain', duration_minutes: 30, price: 750, body_part: 'Brain', contrast_required: false }] }),
     useGetReferringDoctorsQuery: () => ({ data: [] }),
-    useGetInsuranceProvidersQuery: () => ({ data: [] }),
+    useGetInsuranceProvidersQuery: () => ({ data: [{ provider_id: 'provider-1', name: 'Health Plan' }] }),
     useCreateAppointmentMutation: () => [createAppointmentMock, { isLoading: false }],
-    useCreateInsuranceApprovalMutation: () => [vi.fn(), { isLoading: false }]
+    useCreateInsuranceApprovalMutation: () => [createInsuranceApprovalMock, { isLoading: false }]
 }));
 
 describe('BookAppointment page', () => {
@@ -42,6 +54,9 @@ describe('BookAppointment page', () => {
         createAppointmentMock.mockReturnValue({
             unwrap: vi.fn().mockResolvedValue({ appointment_id: 'appointment-1' })
         });
+        createInsuranceApprovalMock.mockReset();
+        navigateMock.mockReset();
+        toastErrorMock.mockReset();
     });
 
     it('renders as a dedicated page and restores the patient from the URL', () => {
@@ -116,6 +131,7 @@ describe('BookAppointment page', () => {
 
         await waitFor(() => expect(createAppointmentMock).toHaveBeenCalled());
         expect(createAppointmentMock.mock.calls[0][0]).toMatchObject({
+            idempotencyKey: expect.any(String),
             patientId: 'patient-1',
             modalityId: 'machine-1',
             examTypeId: 'exam-1',
@@ -123,5 +139,36 @@ describe('BookAppointment page', () => {
             referringDoctorId: null,
             referringDoctor: 'Dr. Custom Referrer'
         });
+    });
+
+    it('reports partial success when insurance approval fails after booking', async () => {
+        createInsuranceApprovalMock.mockReturnValue({
+            unwrap: vi.fn().mockRejectedValue({ data: { error: 'Approval service unavailable' } })
+        });
+        render(
+            <MemoryRouter
+                initialEntries={['/appointments/new']}
+                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+            >
+                <BookAppointment />
+            </MemoryRouter>
+        );
+
+        fireEvent.change(screen.getByLabelText('Selected Patient'), { target: { value: 'patient-1' } });
+        const selects = screen.getAllByRole('combobox');
+        fireEvent.change(selects[1], { target: { value: 'machine-1' } });
+        fireEvent.change(selects[2], { target: { value: 'exam-1' } });
+        fireEvent.change(screen.getByText('Payment Method').nextElementSibling, { target: { value: 'Insurance' } });
+        fireEvent.change(screen.getByText('Insurance Provider').nextElementSibling, { target: { value: 'provider-1' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm Appointment' }));
+
+        await waitFor(() => expect(createInsuranceApprovalMock).toHaveBeenCalledWith(expect.objectContaining({
+            appointmentId: 'appointment-1',
+            providerId: 'provider-1'
+        })));
+        expect(createAppointmentMock).toHaveBeenCalledTimes(1);
+        expect(createAppointmentMock.mock.calls[0][0].idempotencyKey).toMatch(/^[0-9a-f-]{36}$/i);
+        expect(toastErrorMock).toHaveBeenCalledWith(expect.stringContaining('toast.appointmentBookedApprovalFailed'), { duration: 8000 });
+        expect(navigateMock).toHaveBeenCalledWith('/appointments?patientId=patient-1', { replace: true });
     });
 });

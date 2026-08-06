@@ -16,39 +16,6 @@ const optionalQuery = async (db, query) => {
     }
 };
 
-const REPORT_SECTION_LABELS = {
-    clinicalHistory: 'Clinical history',
-    technique: 'Technique',
-    findings: 'Findings',
-    impression: 'Impression',
-    recommendations: 'Recommendations',
-};
-
-const stripReportMarkup = (value) => String(value || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p\s*>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#0?39;/gi, "'")
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n\s*\n+/g, '\n\n')
-    .trim();
-
-const normalizeReportSections = (rawSections) => {
-    let sections = rawSections;
-    if (typeof sections === 'string') {
-        try { sections = JSON.parse(sections); } catch (_) { sections = {}; }
-    }
-    if (!sections || typeof sections !== 'object' || Array.isArray(sections)) return [];
-    return Object.entries(REPORT_SECTION_LABELS)
-        .map(([key, label]) => ({ key, label, content: stripReportMarkup(sections[key]) }))
-        .filter((section) => section.content);
-};
-
 const toIso = (value) => {
     if (!value) return null;
     const date = value instanceof Date ? value : new Date(value);
@@ -71,8 +38,8 @@ const publicStage = (row) => {
 };
 
 /**
- * Public last-case lookup. The response deliberately excludes patient names,
- * contact data, order/accession identifiers, images, and all non-final drafts.
+ * Public last-case lookup. The response is status-only: report narratives,
+ * signer identity, images, and patient identity never leave this endpoint.
  * Confidential/restricted records are never eligible for this workflow.
  */
 const lookupPublicCaseStatus = (db) => async (req, res, next) => {
@@ -89,8 +56,6 @@ const lookupPublicCaseStatus = (db) => async (req, res, next) => {
                     e.modality_id,
                     e.status,
                     e.report_status,
-                    e.report_content,
-                    e.report_sections,
                     e.queue_stage,
                     e.created_at,
                     e.exam_started_at,
@@ -98,8 +63,6 @@ const lookupPublicCaseStatus = (db) => async (req, res, next) => {
                     e.reporting_started_at,
                     e.report_finalized_at,
                     e.amended_at,
-                    e.digital_signature_name,
-                    e.digital_signature_role,
                     a.start_time AS appointment_start,
                     m.name AS modality_name,
                     et.name AS exam_type_name
@@ -148,20 +111,10 @@ const lookupPublicCaseStatus = (db) => async (req, res, next) => {
         };
 
         if (stage.code === 'completed') {
-            const sections = normalizeReportSections(row.report_sections);
-            const plainText = sections.length ? '' : stripReportMarkup(row.report_content);
             return res.json({
                 found: true,
                 completed: true,
                 case: caseSummary,
-                report: {
-                    status: row.report_status === 'Amended' ? 'Amended' : 'Finalized',
-                    finalizedAt: toIso(row.amended_at || row.report_finalized_at),
-                    signedBy: row.digital_signature_name || null,
-                    signerRole: row.digital_signature_role || null,
-                    sections,
-                    plainText,
-                },
             });
         }
 
@@ -227,7 +180,7 @@ const getPublicLandingOverview = (db) => async (req, res, next) => {
                     (
                         SELECT COUNT(*)::int
                         FROM modalities
-                        WHERE status = 'Active' AND deleted_at IS NULL
+                        WHERE status = 'Active'
                     ) AS active_modalities
                 FROM examinations
             `),

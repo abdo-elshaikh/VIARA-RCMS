@@ -7,25 +7,9 @@ import { selectCurrentUser } from '../../store/authSlice';
 import { useGetPatientsQuery } from '../../store/api';
 import useKeyboardShortcut from '../../hooks/useKeyboardShortcut';
 import { hasDeveloperOrAdminRole } from '../../utils/roles';
+import { canAccessRoute, getSearchRoutes } from '../../config/routes';
 
-const destinations = [
-    ['dashboard', '/dashboard', ['All']],
-    ['reception', '/reception', ['Admin', 'Receptionist']],
-    ['appointments', '/appointments', ['Admin', 'Receptionist']],
-    ['patients', '/patients', ['Admin', 'Receptionist', 'Radiologist', 'Nurse']],
-    ['worklist', '/worklist', ['Radiologist', 'Technician', 'Nurse']],
-    ['modality', '/modality', ['Technician']],
-    ['nurse', '/nurse', ['Admin', 'Nurse']],
-    ['financials', '/financials', ['Admin', 'Accountant']],
-    ['insurance', '/insurance', ['Admin', 'Accountant', 'Receptionist']],
-    ['analytics', '/analytics', ['Admin', 'Accountant']],
-    ['inventory', '/inventory', ['Admin', 'Technician']],
-    ['equipment', '/equipment', ['Admin', 'Receptionist', 'Technician']],
-    ['hr', '/hr', ['Admin', 'HR']],
-    ['users', '/users', ['Admin']],
-    ['roles', '/settings?tab=roles', ['Admin']],
-    ['settings', '/settings', ['All']],
-];
+const destinations = getSearchRoutes();
 
 const GlobalSearch = () => {
     const navigate = useNavigate();
@@ -74,8 +58,8 @@ const GlobalSearch = () => {
         const normalized = query.trim().toLocaleLowerCase();
         if (!normalized) return [];
         return destinations
-            .filter(([, , roles]) => roles.includes('All') || roles.includes(user?.role) || (user?.role === 'Developer' && roles.includes('Admin')))
-            .map(([key, to]) => ({
+            .filter(({ to }) => canAccessRoute(to.split('?')[0], user?.role))
+            .map(({ key, to }) => ({
                 id: `module-${key}`,
                 type: 'module',
                 label: t(`items.${key}`, { ns: 'navigation' }),

@@ -1,22 +1,14 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
     Calculator,
     AlertTriangle,
     CheckCircle2,
-    XCircle,
-    TrendingUp,
-    FileText,
     Download,
     RefreshCw,
-    Loader2,
-    ShieldCheck,
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { selectCurrentUser } from '../../store/authSlice';
-import { useReceptionPermissions } from '../../hooks/useReceptionPermissions';
 import { roundFinancialAmount, toFinancialNumber } from '../../utils/financialFormat';
-import StatusPill from '../ui/StatusPill';
 
 const CashDrawerReconciliation = ({
     currentShift,
@@ -25,10 +17,10 @@ const CashDrawerReconciliation = ({
     onExport,
     onRefresh,
     isLoading,
+    isSubmitting = false,
     t,
 }) => {
     const user = useSelector(selectCurrentUser);
-    const permissions = useReceptionPermissions();
     const [countedCash, setCountedCash] = useState('');
     const [varianceNotes, setVarianceNotes] = useState('');
     const [showReview, setShowReview] = useState(false);
@@ -43,17 +35,20 @@ const CashDrawerReconciliation = ({
     const isWithinTolerance = useMemo(() => Math.abs(variance) < 0.01, [variance]);
     const hasVariance = useMemo(() => !isWithinTolerance, [isWithinTolerance]);
 
-    const handleReconcile = useCallback(() => {
-        if (counted <= 0) return;
-        onReconcile({
+    const handleReconcile = useCallback(async () => {
+        if (countedCash === '' || counted < 0 || isSubmitting) return;
+        const persisted = await onReconcile({
             countedCash: counted,
             expectedCash,
             variance,
             notes: varianceNotes.trim() || undefined,
         });
-        setShowReview(false);
-        setVarianceNotes('');
-    }, [onReconcile, counted, expectedCash, variance, varianceNotes]);
+        if (persisted !== false) {
+            setShowReview(false);
+            setCountedCash('');
+            setVarianceNotes('');
+        }
+    }, [counted, countedCash, expectedCash, isSubmitting, onReconcile, variance, varianceNotes]);
 
     const handleExport = useCallback(() => {
         onExport?.({
@@ -84,13 +79,13 @@ const CashDrawerReconciliation = ({
                 </div>
                 <div className="flex gap-2">
                     {onExport && (
-                        <button type="button" onClick={handleExport} className="inline-flex h-8 items-center gap-1.5 rounded-none border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300" title={t('reconciliation.export', 'Export report')}>
+                        <button type="button" onClick={handleExport} className="inline-flex min-h-11 items-center gap-1.5 rounded-none border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300" title={t('reconciliation.export', 'Export report')}>
                             <Download size={12} />
                             {t('reconciliation.exportShort', 'Export')}
                         </button>
                     )}
                     {onRefresh && (
-                        <button type="button" onClick={onRefresh} disabled={isLoading} className="inline-flex h-8 w-8 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300" title={t('reconciliation.refresh', 'Refresh')}>
+                        <button type="button" onClick={onRefresh} disabled={isLoading} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300" title={t('reconciliation.refresh', 'Refresh')}>
                             <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
                         </button>
                     )}
@@ -143,7 +138,7 @@ const CashDrawerReconciliation = ({
                                     </span>
                                 </div>
                                 <span className={`text-sm font-black ${hasVariance ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
-                                    {hasVariance ? '+' : ''}{roundFinancialAmount(variance).toFixed(2)}
+                                    {variance > 0 ? '+' : ''}{roundFinancialAmount(variance).toFixed(2)}
                                 </span>
                             </div>
 
@@ -164,7 +159,7 @@ const CashDrawerReconciliation = ({
                             <button
                                 type="button"
                                 onClick={() => setShowReview(true)}
-                                disabled={counted <= 0}
+                                disabled={countedCash === '' || counted < 0 || isSubmitting}
                                 className="mt-4 w-full rounded-none bg-gradient-to-b from-cyan-600 to-cyan-700 py-2.5 text-xs font-black text-white shadow-sm transition hover:from-cyan-700 hover:to-cyan-800 disabled:opacity-50"
                             >
                                 {t('reconciliation.reconcile', { defaultValue: 'Reconcile' })}
@@ -197,8 +192,8 @@ const CashDrawerReconciliation = ({
                                 <button type="button" onClick={() => { setShowReview(false); setCountedCash(''); setVarianceNotes(''); }} className="flex-1 rounded-none border border-slate-200 bg-white py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
                                     {t('common.adjust', 'Adjust')}
                                 </button>
-                                <button type="button" onClick={handleReconcile} className="flex-1 rounded-none bg-gradient-to-b from-emerald-600 to-emerald-700 py-2.5 text-xs font-black text-white shadow-sm transition hover:from-emerald-700 hover:to-emerald-800">
-                                    {t('reconciliation.confirmReconciliation', { defaultValue: 'Confirm Reconciliation' })}
+                                <button type="button" onClick={handleReconcile} disabled={isSubmitting} className="flex-1 rounded-none bg-gradient-to-b from-emerald-600 to-emerald-700 py-2.5 text-xs font-black text-white shadow-sm transition hover:from-emerald-700 hover:to-emerald-800 disabled:cursor-wait disabled:opacity-60">
+                                    {isSubmitting ? t('reconciliation.processing', { defaultValue: 'Saving...' }) : t('reconciliation.confirmReconciliation', { defaultValue: 'Confirm Reconciliation' })}
                                 </button>
                             </div>
                         </div>

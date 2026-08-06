@@ -56,12 +56,14 @@ const errorHandler = (err, req, res, next) => {
         status: statusCode >= 500 ? 'error' : 'fail',
         message,
         error: message,
-        code: statusCode
+        code: error.code || statusCode,
+        statusCode
     };
+
+    if (error.details) errorResponse.details = error.details;
 
     if (process.env.NODE_ENV !== 'production') {
         errorResponse.stack = error.stack;
-        if (error.details) errorResponse.details = error.details;
     }
 
     // Send error response

@@ -77,7 +77,7 @@ describe('public landing overview', () => {
 });
 
 describe('public last-case lookup', () => {
-    test('returns only a finalized last report without patient identity fields', async () => {
+    test('returns finalized status without clinical or signer content', async () => {
         const db = { query: jest.fn().mockResolvedValue({ rows: [{
             exam_id: 'exam-private-id',
             status: 'Finalized',
@@ -99,11 +99,8 @@ describe('public last-case lookup', () => {
         expect(res.set).toHaveBeenCalledWith('Cache-Control', 'no-store, private');
         const payload = res.json.mock.calls[0][0];
         expect(payload).toEqual(expect.objectContaining({ found: true, completed: true }));
-        expect(payload.report.sections).toEqual(expect.arrayContaining([
-            expect.objectContaining({ key: 'findings', content: 'No acute abnormality.' }),
-            expect.objectContaining({ key: 'impression', content: 'Normal study.' }),
-        ]));
-        expect(JSON.stringify(payload)).not.toMatch(/PAT-000001|exam-private-id|patient_name|phone|date_of_birth/i);
+        expect(payload).not.toHaveProperty('report');
+        expect(JSON.stringify(payload)).not.toMatch(/PAT-000001|exam-private-id|patient_name|phone|date_of_birth|acute abnormality|normal study|reporting radiologist|consultant radiologist/i);
     });
 
     test('returns a historical turnaround estimate for an unfinished report', async () => {

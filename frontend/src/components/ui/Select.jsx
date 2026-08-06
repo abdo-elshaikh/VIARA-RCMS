@@ -30,6 +30,7 @@ const Select = forwardRef(({
                     id={selectId}
                     required={required}
                     aria-invalid={error ? 'true' : 'false'}
+                    aria-errormessage={error ? errorId : undefined}
                     aria-describedby={error ? errorId : helperText ? helperId : undefined}
                     className={`
                         w-full px-4 py-2.5 bg-white dark:bg-[var(--rcms-field)] border rounded-xl appearance-none

@@ -98,7 +98,7 @@ export const templateToSections = (tpl) => {
 
 const uploadImageBatch = ({ examId, uploadSessionId, formData, onProgress }) =>
     new Promise((resolve, reject) => {
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+        const baseUrl = import.meta.env.VITE_API_URL || '/api';
         const xhr = new XMLHttpRequest();
         xhr.open('POST', `${baseUrl}/pacs/exams/${examId}/images`);
         xhr.withCredentials = true;

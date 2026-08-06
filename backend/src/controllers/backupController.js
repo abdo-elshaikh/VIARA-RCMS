@@ -12,6 +12,7 @@ const {
     listBackupFiles,
     resolveBackupPath
 } = require('../services/postgresBackupService');
+const { replicateBackup, isConfigured } = require('../services/backupOffsiteReplicator');
 
 const BACKUP_DIR = getBackupDir();
 const DEFAULT_JSON_RESTORE_MAX_BYTES = 50 * 1024 * 1024;
@@ -145,6 +146,7 @@ const generateBackup = (db) => async (req, res, next) => {
 
         if (getBackupMode() === 'postgres') {
             const backup = await createPostgresBackup();
+            const replicationResult = await replicateBackup(backup);
             await logAction(db, {
                 userId,
                 action: 'BACKUP_GENERATED',
@@ -154,14 +156,16 @@ const generateBackup = (db) => async (req, res, next) => {
                     filename: backup.filename,
                     size_bytes: backup.size_bytes,
                     type: backup.type,
-                    verified: backup.verified
+                    verified: backup.verified,
+                    offsiteReplicated: replicationResult.replicated,
                 }
             });
             return res.json({
                 message: 'Verified PostgreSQL backup generated successfully',
                 filename: backup.filename,
                 type: backup.type,
-                verified: backup.verified
+                verified: backup.verified,
+                offsiteReplicated: replicationResult.replicated
             });
         }
 
@@ -186,6 +190,23 @@ const generateBackup = (db) => async (req, res, next) => {
 const listBackups = (db) => async (req, res, next) => {
     try {
         res.json(await listBackupFiles());
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getBackupStatus = (db) => async (req, res, next) => {
+    try {
+        const backups = await listBackupFiles();
+        const latest = backups.length > 0 ? backups[0] : null;
+        res.json({
+            mode: getBackupMode(),
+            retentionDays: positiveInteger(process.env.BACKUP_RETENTION_DAYS, 30),
+            maxFiles: positiveInteger(process.env.BACKUP_MAX_FILES, 30),
+            scheduleEnabled: process.env.BACKUP_SCHEDULE_ENABLED === 'true',
+            offsiteReplicated: isConfigured(),
+            latestBackup: latest || null,
+        });
     } catch (error) {
         next(error);
     }
@@ -316,6 +337,7 @@ const restoreBackup = (db) => async (req, res, next) => {
 module.exports = {
     createJsonBackupSnapshot,
     generateBackup,
+    getBackupStatus,
     isJsonRestoreAllowed,
     listBackups,
     downloadBackup,

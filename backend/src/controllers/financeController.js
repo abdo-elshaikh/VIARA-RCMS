@@ -180,16 +180,27 @@ const createExpense = (db) => async (req, res, next) => {
         await client.query('BEGIN');
         const postingDate = await assertPeriodOpen(client, data.expenseDate);
 
+        if (data.idempotencyKey) {
+            const replay = await client.query(
+                'SELECT * FROM expenses WHERE idempotency_key = $1',
+                [data.idempotencyKey]
+            );
+            if (replay.rows.length) {
+                await client.query('COMMIT');
+                return res.json(replay.rows[0]);
+            }
+        }
+
         const result = await client.query(`
             INSERT INTO expenses (
                 category_id, supplier_id, amount, tax_amount, expense_date, payment_method,
-                reference_number, receipt_url, notes, logged_by, branch_id, currency_code
+                reference_number, receipt_url, notes, logged_by, branch_id, currency_code, idempotency_key
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'EGP') RETURNING *
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'EGP', $12) RETURNING *
         `, [
             data.categoryId, data.supplierId || null, data.amount, data.taxAmount, data.expenseDate,
             data.paymentMethod, data.referenceNumber, data.receiptUrl, data.notes, userId,
-            postingDate.branchId
+            postingDate.branchId, data.idempotencyKey || null
         ]);
         await postJournalBatch(client, {
             sourceType: 'Expense',

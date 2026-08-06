@@ -43,8 +43,10 @@ const PatientRegistrationModal = ({
                     placeholder={t('register.fullNamePlaceholder')}
                     className={`${inputClass} ${errors.fullName ? 'border-rose-400 ring-2 ring-rose-100' : ''}`}
                     aria-invalid={Boolean(errors.fullName)}
+                    aria-errormessage={errors.fullName ? 'register-full-name-error' : undefined}
+                    aria-describedby={errors.fullName ? 'register-full-name-error' : undefined}
                 />
-                <FieldError error={errors.fullName} />
+                <FieldError id="register-full-name-error" error={errors.fullName} />
             </div>
 
             <div>
@@ -55,8 +57,11 @@ const PatientRegistrationModal = ({
                     placeholder={t('register.mrnPlaceholder', { defaultValue: 'Leave blank to auto-generate' })}
                     className={`${inputClass} ltr-embed font-mono ${errors.mrn ? 'border-rose-400 ring-2 ring-rose-100' : ''}`}
                     dir="ltr"
+                    aria-invalid={Boolean(errors.mrn)}
+                    aria-errormessage={errors.mrn ? 'register-mrn-error' : undefined}
+                    aria-describedby={errors.mrn ? 'register-mrn-error' : undefined}
                 />
-                <FieldError error={errors.mrn} />
+                <FieldError id="register-mrn-error" error={errors.mrn} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -72,8 +77,10 @@ const PatientRegistrationModal = ({
                         })}
                         className={`${inputClass} ${errors.dob ? 'border-rose-400 ring-2 ring-rose-100' : ''}`}
                         aria-invalid={Boolean(errors.dob)}
+                        aria-errormessage={errors.dob ? 'register-dob-error' : undefined}
+                        aria-describedby={errors.dob ? 'register-dob-error' : undefined}
                     />
-                    <FieldError error={errors.dob} />
+                    <FieldError id="register-dob-error" error={errors.dob} />
                 </div>
                 <div>
                     <label htmlFor="register-age" className={labelClass}>{t('register.age')}</label>
@@ -85,8 +92,12 @@ const PatientRegistrationModal = ({
                         inputMode="numeric"
                         placeholder={t('register.age')}
                         {...register('age', { min: 0, max: 150, onChange: onAgeChange })}
-                        className={inputClass}
+                        className={`${inputClass} ${errors.age ? 'border-rose-400 ring-2 ring-rose-100' : ''}`}
+                        aria-invalid={Boolean(errors.age)}
+                        aria-errormessage={errors.age ? 'register-age-error' : undefined}
+                        aria-describedby={errors.age ? 'register-age-error' : undefined}
                     />
+                    <FieldError id="register-age-error" error={errors.age} />
                 </div>
             </div>
 
@@ -114,8 +125,10 @@ const PatientRegistrationModal = ({
                         className={`${inputClass} ltr-embed ${errors.phone ? 'border-rose-400 ring-2 ring-rose-100' : ''}`}
                         dir="ltr"
                         aria-invalid={Boolean(errors.phone)}
+                        aria-errormessage={errors.phone ? 'register-phone-error' : undefined}
+                        aria-describedby={errors.phone ? 'register-phone-error' : undefined}
                     />
-                    <FieldError error={errors.phone} />
+                    <FieldError id="register-phone-error" error={errors.phone} />
                 </div>
             </div>
 
@@ -129,8 +142,11 @@ const PatientRegistrationModal = ({
                     })}
                     placeholder={t('register.addressPlaceholder')}
                     className={`${inputClass} ${errors.address ? 'border-rose-400 ring-2 ring-rose-100' : ''}`}
+                    aria-invalid={Boolean(errors.address)}
+                    aria-errormessage={errors.address ? 'register-address-error' : undefined}
+                    aria-describedby={errors.address ? 'register-address-error' : undefined}
                 />
-                <FieldError error={errors.address} />
+                <FieldError id="register-address-error" error={errors.address} />
             </div>
 
             <div className="mt-4 flex justify-end gap-3 border-t border-slate-150/60 pt-4 dark:border-slate-800/60">

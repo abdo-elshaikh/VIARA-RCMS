@@ -2,6 +2,7 @@ import { AlertCircle, Clock3, ShieldCheck, TrendingUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGetReceivablesAgingQuery } from '../../store/api';
 import { formatFinancialCurrency } from '../../utils/financialFormat';
+import AccessibleChartData from '../ui/AccessibleChartData';
 
 const BUCKETS = [
     { label: '0–30 days', key: '0_30', color: 'bg-emerald-500', surface: 'border-emerald-200/70 bg-emerald-50/70 dark:border-emerald-500/20 dark:bg-emerald-500/10', text: 'text-emerald-800 dark:text-emerald-300' },
@@ -33,6 +34,15 @@ const AgingReceivables = () => {
 
     const total = Number(aging.total_outstanding || 0);
     const oldBalance = Number(aging['90_plus'] || 0);
+    const bucketRows = BUCKETS.map((bucket) => {
+        const amount = Number(aging[bucket.key] || 0);
+        return {
+            ...bucket,
+            name: t(`finance.receivables.buckets.${bucket.key}`, { defaultValue: bucket.label }),
+            amount,
+            percent: total > 0 ? (amount / total) * 100 : 0,
+        };
+    });
 
     return (
         <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
@@ -104,33 +114,35 @@ const AgingReceivables = () => {
                         </span>
                     </div>
 
-                    <div
-                        className="flex h-10 w-full overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-100/80 shadow-inner dark:border-white/10 dark:bg-slate-900/80"
-                        role="img"
-                        aria-label={t('finance.receivables.distributionLabel')}
+                    <AccessibleChartData
+                        title={t('finance.receivables.distributionLabel')}
+                        summary={t('finance.receivables.chartSummary', { count: bucketRows.length, defaultValue: 'Outstanding receivables across {{count}} aging buckets.' })}
+                        rows={bucketRows}
+                        columns={[
+                            { key: 'name', label: t('finance.receivables.bucket', { defaultValue: 'Aging bucket' }) },
+                            { key: 'amount', label: t('finance.receivables.amount', { defaultValue: 'Amount' }), render: row => money(row.amount) },
+                            { key: 'percent', label: t('finance.receivables.share', { defaultValue: 'Share' }), render: row => `${row.percent.toFixed(1)}%` },
+                        ]}
+                        disclosureLabel={t('finance.receivables.viewChartData', { defaultValue: 'View chart data' })}
+                        tableLabel={t('finance.receivables.chartDataTable', { defaultValue: 'Receivables aging distribution data' })}
                     >
-                        {total === 0 ? (
-                            <div className="flex w-full items-center justify-center text-xs font-bold text-slate-400">
-                                {t('finance.receivables.noOutstanding')}
-                            </div>
-                        ) : (
-                            BUCKETS.map((bucket) => {
-                                const amount = Number(aging[bucket.key] || 0);
-                                const percent = (amount / total) * 100;
-                                const label = t(`finance.receivables.buckets.${bucket.key}`);
-                                return percent > 0 ? (
-                                    <div
-                                        key={bucket.key}
-                                        style={{ width: `${percent}%` }}
-                                        className={`${bucket.color} flex min-w-px items-center justify-center overflow-hidden text-[10px] font-black text-white shadow-sm transition-all`}
-                                        title={`${label}: ${money(amount)}`}
-                                    >
-                                        {percent >= 8 ? `${percent.toFixed(0)}%` : ''}
-                                    </div>
-                                ) : null;
-                            })
-                        )}
-                    </div>
+                        <div className="flex h-10 w-full overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-100/80 shadow-inner dark:border-white/10 dark:bg-slate-900/80">
+                            {total === 0 ? (
+                                <div className="flex w-full items-center justify-center text-xs font-bold text-slate-400">
+                                    {t('finance.receivables.noOutstanding')}
+                                </div>
+                            ) : bucketRows.map((bucket) => bucket.percent > 0 ? (
+                                <div
+                                    key={bucket.key}
+                                    style={{ width: `${bucket.percent}%` }}
+                                    className={`${bucket.color} flex min-w-px items-center justify-center overflow-hidden text-[10px] font-black text-white shadow-sm transition-all`}
+                                    title={`${bucket.name}: ${money(bucket.amount)}`}
+                                >
+                                    {bucket.percent >= 8 ? `${bucket.percent.toFixed(0)}%` : ''}
+                                </div>
+                            ) : null)}
+                        </div>
+                    </AccessibleChartData>
 
                     <div className="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs font-bold text-slate-600 dark:text-slate-400">
                         {BUCKETS.map((bucket) => (

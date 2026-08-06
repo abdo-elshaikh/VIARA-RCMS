@@ -40,6 +40,7 @@ import {
 } from '../store/api';
 import { formatDuration } from '../utils/dateFormat';
 import PageHeader from '../components/ui/PageHeader';
+import AccessibleChartData from '../components/ui/AccessibleChartData';
 
 const DAY = 24 * 60 * 60 * 1000;
 const CHART_COLORS = ['#0891b2', '#059669', '#7c3aed', '#f59e0b', '#dc2626', '#2563eb'];
@@ -272,7 +273,7 @@ const AnalyticsDashboard = () => {
 
     const handleExport = async (type, groupBy = '') => {
         if (dateInvalid) return;
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+        const baseUrl = import.meta.env.VITE_API_URL || '/api';
         const params = new URLSearchParams({ type, startDate, endDate });
         if (groupBy) params.set('groupBy', groupBy);
         try {
@@ -617,7 +618,18 @@ const ChartPanel = ({ title, description, icon: Icon, data, group, groups, onGro
 
         <div className="p-4 sm:p-6">
             {loading ? <ChartSkeleton label={t('analytics.loading')} /> : error ? <ErrorState label={errorLabel} onRetry={onRetry} t={t} /> : data.length === 0 ? <EmptyChart label={emptyLabel} /> : (
-                <div className="overflow-x-auto pb-2" role="img" aria-label={`${title}: ${data.length} ${t('analytics.dataPoints')}`}>
+                <AccessibleChartData
+                    title={title}
+                    summary={t('analytics.chartSummary', { count: data.length, title, defaultValue: '{{count}} data points in {{title}}.' })}
+                    rows={data}
+                    columns={[
+                        { key: 'label', label: t(`analytics.groups.${group}`) },
+                        { key: 'value', label: valueLabel, render: row => valueFormatter(row.value) },
+                    ]}
+                    disclosureLabel={t('analytics.viewChartData', { defaultValue: 'View chart data' })}
+                    tableLabel={t('analytics.chartDataTable', { title, defaultValue: '{{title}} data' })}
+                    className="overflow-x-auto pb-2"
+                >
                     <div className="h-80 min-w-[560px]">
                         <ResponsiveContainer width="100%" height="100%">
                             {group === 'date' ? (
@@ -639,7 +651,7 @@ const ChartPanel = ({ title, description, icon: Icon, data, group, groups, onGro
                             )}
                         </ResponsiveContainer>
                     </div>
-                </div>
+                </AccessibleChartData>
             )}
         </div>
     </section>
@@ -685,16 +697,26 @@ const MixPanel = ({ icon: Icon, title, description, rows, loading, valueFormatte
             <div className="p-4">
                 {loading ? <PanelSkeleton /> : rows.length ? (
                     <>
-                        <div className="h-52">
-                            <ResponsiveContainer width="100%" height="100%">
+                        <AccessibleChartData
+                            title={title}
+                            summary={t('analytics.chartSummary', { count: rows.slice(0, 6).length, title, defaultValue: '{{count}} data points in {{title}}.' })}
+                            rows={rows.slice(0, 6)}
+                            columns={[
+                                { key: 'label', label: t('analytics.groups.payer') },
+                                { key: 'value', label: t('analytics.revenue.value'), render: row => valueFormatter(toNumber(row.value)) },
+                            ]}
+                            disclosureLabel={t('analytics.viewChartData', { defaultValue: 'View chart data' })}
+                            tableLabel={t('analytics.chartDataTable', { title, defaultValue: '{{title}} data' })}
+                        >
+                            <div className="h-52"><ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                     <Pie data={rows.slice(0, 6)} dataKey="value" nameKey="label" innerRadius={52} outerRadius={86} paddingAngle={2}>
                                         {rows.slice(0, 6).map((entry, index) => <Cell key={entry.label || index} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
                                     </Pie>
                                     <Tooltip formatter={(value) => [valueFormatter(toNumber(value)), t('analytics.revenue.value')]} contentStyle={tooltipStyle} />
                                 </PieChart>
-                            </ResponsiveContainer>
-                        </div>
+                            </ResponsiveContainer></div>
+                        </AccessibleChartData>
                         <div className="mt-3 space-y-2">
                             {rows.slice(0, 6).map((row, index) => {
                                 const share = total > 0 ? (toNumber(row.value) / total) * 100 : 0;

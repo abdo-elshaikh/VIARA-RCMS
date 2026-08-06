@@ -229,7 +229,7 @@ const Modality = () => {
                                             return (
                                                 <tr key={exam.exam_id} className="group relative align-top transition-colors hover:bg-white/60 dark:hover:bg-slate-800/30">
                                                     <td className="relative px-5 py-4">
-                                                        <span className={`absolute inset-y-2 left-0 w-1 rounded-full ${acuity.bar} ${exam.is_overdue ? 'animate-pulse' : ''}`} aria-hidden="true" />
+                                                        <span className={`absolute inset-y-2 start-0 w-1 rounded-full ${acuity.bar} ${exam.is_overdue ? 'animate-pulse' : ''}`} aria-hidden="true" />
                                                         <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                                                             {t(`common.stages.${exam.queue_stage}`, { defaultValue: exam.queue_stage })}
                                                         </span>
@@ -387,9 +387,9 @@ const ModalityQueueCard = ({ exam, t, locale, isMoving, onRelease, onHold, onSta
     const acuity = ACUITY[exam.priority] || ACUITY.Routine;
     return (
         <article className={`relative overflow-hidden p-4 ${exam.is_overdue ? 'bg-rose-50/20 dark:bg-rose-950/10' : 'bg-white dark:bg-[#0a0f1c]'}`}>
-            <span className={`absolute inset-y-0 left-0 w-1 ${acuity.bar} ${exam.is_overdue ? 'animate-pulse' : ''}`} aria-hidden="true" />
+            <span className={`absolute inset-y-0 start-0 w-1 ${acuity.bar} ${exam.is_overdue ? 'animate-pulse' : ''}`} aria-hidden="true" />
 
-            <div className="flex items-start justify-between gap-3 pl-2">
+            <div className="flex items-start justify-between gap-3 ps-2">
                 <div className="flex min-w-0 items-center gap-3">
                     <PatientAvatar exam={exam} />
                     <div className="min-w-0">
@@ -403,7 +403,7 @@ const ModalityQueueCard = ({ exam, t, locale, isMoving, onRelease, onHold, onSta
                 </span>
             </div>
 
-            <div className="mt-3 rounded-xl bg-slate-50/80 p-3 pl-2 ring-1 ring-slate-100 dark:bg-slate-900/50 dark:ring-slate-800">
+            <div className="mt-3 rounded-xl bg-slate-50/80 p-3 ps-2 ring-1 ring-slate-100 dark:bg-slate-900/50 dark:ring-slate-800">
                 <p className="font-semibold text-slate-800 dark:text-slate-100">{exam.exam_type_name || exam.modality_type || t('common.unknownModality')}</p>
                 <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">{exam.modality_name}{exam.body_part ? ` — ${exam.body_part}` : ''}</p>
 
@@ -415,7 +415,7 @@ const ModalityQueueCard = ({ exam, t, locale, isMoving, onRelease, onHold, onSta
                 </div>
             </div>
 
-            <div className="mt-2.5 flex flex-wrap gap-1.5 pl-2">
+            <div className="mt-2.5 flex flex-wrap gap-1.5 ps-2">
                 <PriorityBadge priority={exam.priority} t={t} />
                 {exam.is_on_hold && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:ring-amber-900/50">
@@ -425,18 +425,18 @@ const ModalityQueueCard = ({ exam, t, locale, isMoving, onRelease, onHold, onSta
             </div>
 
             {exam.clinical_indication && (
-                <div className="mt-2.5 ml-2 rounded-lg border border-slate-100 bg-slate-50/80 p-2.5 text-xs leading-relaxed text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+                <div className="mt-2.5 ms-2 rounded-lg border border-slate-100 bg-slate-50/80 p-2.5 text-xs leading-relaxed text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
                     <span className="font-semibold text-slate-700 dark:text-slate-200">{t('modality.indication', { defaultValue: 'Indication' })}:</span> {exam.clinical_indication}
                 </div>
             )}
 
             {exam.is_on_hold && exam.hold_reason && (
-                <div className="mt-2.5 ml-2 rounded-lg border border-amber-100 bg-amber-50/70 p-2.5 text-[11px] font-medium text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                <div className="mt-2.5 ms-2 rounded-lg border border-amber-100 bg-amber-50/70 p-2.5 text-[11px] font-medium text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
                     <span className="font-semibold">{t('common.onHold')}:</span> {exam.hold_reason}
                 </div>
             )}
 
-            <div className="mt-3.5 flex gap-2 pl-2">
+            <div className="mt-3.5 flex gap-2 ps-2">
                 {exam.is_on_hold ? (
                     <button disabled={isMoving} onClick={onRelease} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-2.5 text-xs font-semibold text-emerald-700 ring-1 ring-slate-200 transition-colors hover:bg-emerald-50 disabled:opacity-40 dark:bg-slate-900 dark:text-emerald-400 dark:ring-slate-800">
                         <PlayCircle size={14} /> {t('common.release')}

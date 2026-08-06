@@ -1,7 +1,4 @@
-const {
-    getReportStatusForSave,
-    getReportTransitionError
-} = require('../src/utils/reportWorkflow');
+const { getReportStatusForSave, getReportTransitionError } = require('../src/utils/reportWorkflow');
 
 describe('report workflow', () => {
     test('saving content promotes a draft once and preserves later workflow stages', () => {
@@ -26,20 +23,42 @@ describe('report workflow', () => {
         expect(getReportTransitionError('Typed', 'Finalized', { finalizing: true })).toBeNull();
     });
 
-    test('controller rejects a skipped workflow stage before opening a transaction', async () => {
+    test('controller rejects a skipped workflow stage within a transaction', async () => {
         const { updateReport } = require('../src/controllers/examController');
-        const db = {
-            query: jest.fn().mockResolvedValue({
-                rows: [{
-                    status: 'Reporting',
-                    appointment_id: 'appointment-1',
-                    report_locked: false,
-                    report_sections: { findings: 'Finding', impression: 'Impression' },
-                    report_content: 'Existing report',
-                    report_status: 'Draft'
-                }]
+
+        const mockClient = {
+            query: jest.fn().mockImplementation(async (sql, params) => {
+                const text = String(sql || '');
+
+                if (text === 'BEGIN') return { rows: [] };
+                if (text === 'ROLLBACK') return { rows: [] };
+                if (text.includes('SELECT e.status') && text.includes('FROM examinations e')) {
+                    return {
+                        rows: [{
+                            status: 'Reporting',
+                            appointment_id: 'appointment-1',
+                            report_locked: false,
+                            report_sections: { findings: 'Finding', impression: 'Impression' },
+                            report_content: 'Existing report',
+                            report_status: 'Draft'
+                        }]
+                    };
+                }
+                if (text.includes('INSERT INTO order_status_history')) return { rows: [] };
+                if (text.includes('INSERT INTO queue_events')) return { rows: [] };
+                if (text.includes('INSERT INTO report_versions')) return { rows: [] };
+                if (text.includes('INSERT INTO result_deliveries')) return { rows: [] };
+                if (text.includes('UPDATE examinations')) return { rows: [] };
+                if (text.includes('UPDATE appointments')) return { rows: [] };
+
+                return { rows: [] };
             }),
-            connect: jest.fn()
+            release: jest.fn()
+        };
+
+        const db = {
+            query: jest.fn().mockResolvedValue({ rows: [] }),
+            connect: jest.fn().mockResolvedValue(mockClient)
         };
         const next = jest.fn();
 
@@ -54,6 +73,7 @@ describe('report workflow', () => {
         }, {}, next);
 
         expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409 }));
-        expect(db.connect).not.toHaveBeenCalled();
+        expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(mockClient.release).toHaveBeenCalled();
     });
 });

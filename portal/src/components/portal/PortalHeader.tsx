@@ -1,7 +1,16 @@
+import { getCenterHours, getCenterName, getCenterPhone, PublicCenterSettings } from "@/hooks/use-center-settings";
+import { useLang } from "@/lib/i18n";
+import { useTheme } from "@/lib/theme";
+import { Activity, Clock, Languages, Mail, MapPin, Menu, Moon, Phone, Sun, X } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+
 const PHONE = "+20 19144";
 const EMAIL = "reservations@cairoscan.com.eg";
 const ADDRESS = "Cairo, Egypt";
 const HOURS = "8:00 AM - 11:00 PM";
+
+type NavLink = { href: string; labelKey?: string; label?: string };
 
 export function PortalHeader({
   brand = "CairoScan",
@@ -21,8 +30,15 @@ export function PortalHeader({
   centerSettings?: PublicCenterSettings | null;
 }) {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const { theme, toggle: toggleTheme } = useTheme();
   const { lang, toggle: toggleLang, t } = useLang();
+
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const label = (item: { labelKey?: string; label?: string }) =>
     item.labelKey ? t(item.labelKey, item.label) : (item.label ?? "");
@@ -36,59 +52,69 @@ export function PortalHeader({
   return (
     <header className="sticky top-0 z-50 flex flex-col">
       {/* Top Contact Bar */}
-      {(centerSettings || true) && (
-        <div className="border-b border-[#0E7C7B]/20 bg-gradient-to-r from-[#0E7C7B]/5 to-[#3FD6C7]/5 px-4 py-2.5 text-xs font-medium text-[#475467] dark:text-[#9CA3AF] sm:block">
-          <div className="mx-auto flex max-w-7xl items-center justify-between">
-            <div className="flex flex-wrap items-center gap-4">
-              {phone && (
-                <span className="flex items-center gap-2 transition-colors hover:text-[#0E7C7B]">
-                  <Phone className="h-3.5 w-3.5 text-[#0E7C7B]" />
-                  <a href={`tel:${phone.replace(/\s+/g, "")}`}>{phone}</a>
-                </span>
-              )}
-              {email && (
-                <span className="flex items-center gap-2 transition-colors hover:text-[#0E7C7B]">
-                  <Mail className="h-3.5 w-3.5 text-[#0E7C7B]" />
-                  <a href={`mailto:${email}`}>{email}</a>
-                </span>
-              )}
-              {address && (
-                <span className="hidden items-center gap-2 lg:flex">
-                  <MapPin className="h-3.5 w-3.5 text-[#0E7C7B]" />
-                  <span className="max-w-xs truncate">{address}</span>
-                </span>
-              )}
-            </div>
+      <div 
+        className={`origin-top transition-all duration-300 ${
+          scrolled ? "h-0 overflow-hidden opacity-0" : "h-10 opacity-100"
+        } hidden bg-gradient-to-r from-primary/5 to-primary-soft/10 text-xs font-medium text-muted-foreground dark:from-primary/10 dark:to-primary-soft/5 dark:text-slate-300 sm:block`}
+      >
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-5">
+            {phone && (
+              <a href={`tel:${phone.replace(/\s+/g, "")}`} className="flex items-center gap-2 transition-colors hover:text-primary">
+                <Phone className="h-3.5 w-3.5 text-primary" />
+                <span>{phone}</span>
+              </a>
+            )}
+            {email && (
+              <a href={`mailto:${email}`} className="flex items-center gap-2 transition-colors hover:text-primary">
+                <Mail className="h-3.5 w-3.5 text-primary" />
+                <span>{email}</span>
+              </a>
+            )}
+          </div>
+          <div className="flex items-center gap-5">
+            {address && (
+              <span className="flex items-center gap-2">
+                <MapPin className="h-3.5 w-3.5 text-primary" />
+                <span className="max-w-[200px] truncate">{address}</span>
+              </span>
+            )}
             {hours && (
-              <div className="flex items-center gap-2">
-                <Clock className="h-3.5 w-3.5 text-[#0E7C7B]" />
+              <span className="flex items-center gap-2">
+                <Clock className="h-3.5 w-3.5 text-primary" />
                 <span>{hours}</span>
-              </div>
+              </span>
             )}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Main Header */}
-      <div className="border-b border-[#0E7C7B]/10 bg-white/95 shadow-soft backdrop-blur-xl dark:bg-slate-900/95">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <Link to="/" className="flex min-w-0 items-center gap-3">
+      <div 
+        className={`transition-all duration-300 ${
+          scrolled 
+            ? "border-b border-border/50 bg-surface/80 shadow-sm backdrop-blur-xl" 
+            : "border-b border-border/30 bg-surface/95 backdrop-blur-md"
+        }`}
+      >
+        <div className={`mx-auto flex transition-all duration-300 ${scrolled ? "h-16" : "h-20"} max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8`}>
+          <Link to="/" className="flex min-w-0 items-center gap-3 transition-transform hover:scale-[1.02]">
             {centerSettings?.logo_url ? (
               <img
                 src={centerSettings.logo_url}
                 alt={displayBrand}
-                className="h-10 w-10 rounded-xl border border-[#0E7C7B]/20 object-cover shadow-md"
+                className="h-10 w-10 rounded-xl border border-primary/20 bg-surface shadow-sm"
               />
             ) : (
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#0E7C7B] to-[#0B5E5D] text-white shadow-md">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary to-primary-dark text-white shadow-md shadow-primary/20">
                 <Activity className="h-5 w-5" strokeWidth={2.5} />
               </span>
             )}
-            <span className="flex min-w-0 items-baseline gap-2">
-              <span className="text-lg font-semibold tracking-tight text-[#0E2A47] dark:text-white">
+            <span className="flex min-w-0 flex-col sm:flex-row sm:items-baseline sm:gap-2">
+              <span className="text-lg font-bold tracking-tight text-foreground">
                 {displayBrand}
               </span>
-              <span className="hidden rounded-full bg-gradient-to-r from-[#0E7C7B]/10 to-[#3FD6C7]/10 px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#0E7C7B] sm:inline">
+              <span className="hidden rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary sm:inline-block">
                 {suffix ?? t(suffixKey)}
               </span>
             </span>
@@ -99,39 +125,45 @@ export function PortalHeader({
               <a
                 key={l.href}
                 href={l.href}
-                className="rounded-full px-4 py-2 text-sm font-medium text-[#475467] transition-all hover:bg-[#0E7C7B]/5 hover:text-[#0E7C7B] dark:text-[#D1D5DB] dark:hover:bg-[#0E7C7B]/10 dark:hover:text-[#3FD6C7]"
+                className="relative rounded-full px-4 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:text-primary before:absolute before:inset-0 before:scale-95 before:rounded-full before:bg-primary/5 before:opacity-0 before:transition-all hover:before:scale-100 hover:before:opacity-100"
               >
-                {label(l)}
+                <span className="relative z-10">{label(l)}</span>
               </a>
             ))}
           </nav>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={toggleLang}
-              aria-label={t("ui.language")}
-              title={t("ui.language")}
-              className="hidden h-9 items-center gap-2 rounded-full border border-[#0E7C7B]/20 bg-white px-3 text-xs font-semibold text-[#475467] shadow-soft transition-all hover:-translate-y-px hover:border-[#0E7C7B]/40 hover:bg-[#0E7C7B]/5 hover:text-[#0E7C7B] sm:inline-flex dark:border-[#0E7C7B]/30 dark:bg-slate-800 dark:text-[#D1D5DB]"
-            >
-              <Languages className="h-4 w-4" />
-              {lang === "en" ? "العربية" : "English"}
-            </button>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              aria-label={t("ui.theme")}
-              title={t("ui.theme")}
-              className="hidden h-9 w-9 place-items-center rounded-full border border-[#0E7C7B]/20 bg-white text-[#475467] shadow-soft transition-all hover:-translate-y-px hover:border-[#0E7C7B]/40 hover:bg-[#0E7C7B]/5 hover:text-[#0E7C7B] sm:grid dark:border-[#0E7C7B]/30 dark:bg-slate-800 dark:text-[#D1D5DB]"
-            >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
+          <div className="flex items-center gap-3">
+            <div className="hidden items-center gap-1 sm:flex">
+              <button
+                type="button"
+                onClick={toggleLang}
+                aria-label={t("ui.language")}
+                title={t("ui.language")}
+                className="group flex h-9 items-center gap-2 rounded-full border border-border bg-surface px-3 text-xs font-semibold text-muted-foreground shadow-sm transition-all hover:-translate-y-px hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+              >
+                <Languages className="h-4 w-4 transition-transform group-hover:scale-110" />
+                {lang === "en" ? "العربية" : "English"}
+              </button>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                aria-label={t("ui.theme")}
+                title={t("ui.theme")}
+                className="group grid h-9 w-9 place-items-center rounded-full border border-border bg-surface text-muted-foreground shadow-sm transition-all hover:-translate-y-px hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+              >
+                {theme === "dark" ? (
+                  <Sun className="h-4 w-4 transition-transform group-hover:rotate-45" />
+                ) : (
+                  <Moon className="h-4 w-4 transition-transform group-hover:-rotate-12" />
+                )}
+              </button>
+            </div>
 
-            <div className="hidden items-center gap-2 md:flex">
+            <div className="hidden items-center gap-2 md:flex ml-2 border-l border-border pl-4">
               {secondaryCta && (
                 <Link
                   to={secondaryCta.to}
-                  className="rounded-full border border-[#0E7C7B]/20 bg-white px-5 py-2 text-sm font-semibold text-[#0E2A47] shadow-soft transition-all hover:-translate-y-px hover:border-[#0E7C7B] hover:bg-[#0E7C7B]/5 dark:border-[#0E7C7B]/30 dark:bg-slate-800 dark:text-white"
+                  className="rounded-full border border-border bg-surface px-5 py-2 text-sm font-semibold text-foreground shadow-sm transition-all hover:-translate-y-px hover:border-primary hover:bg-primary/5"
                 >
                   {label(secondaryCta)}
                 </Link>
@@ -139,7 +171,7 @@ export function PortalHeader({
               {primaryCta && (
                 <Link
                   to={primaryCta.to}
-                  className="rounded-full bg-gradient-to-r from-[#0E7C7B] to-[#0B5E5D] px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#0E7C7B]/20 transition-all hover:-translate-y-px hover:from-[#0B5E5D] hover:to-[#0E7C7B] hover:shadow-lg"
+                  className="rounded-full bg-gradient-to-r from-primary to-primary-dark px-5 py-2 text-sm font-semibold text-white shadow-md shadow-primary/20 transition-all hover:-translate-y-px hover:shadow-lg hover:shadow-primary/30"
                 >
                   {label(primaryCta)}
                 </Link>
@@ -149,7 +181,7 @@ export function PortalHeader({
             <button
               type="button"
               aria-label={open ? "Close menu" : "Open menu"}
-              className="grid h-10 w-10 place-items-center rounded-full border border-[#0E7C7B]/20 bg-white text-[#0E2A47] shadow-soft transition-all hover:-translate-y-px hover:border-[#0E7C7B] hover:bg-[#0E7C7B]/5 dark:border-[#0E7C7B]/30 dark:bg-slate-800 dark:text-white md:hidden"
+              className="grid h-10 w-10 place-items-center rounded-full border border-border bg-surface text-foreground shadow-sm transition-all hover:bg-primary/5 hover:text-primary md:hidden"
               onClick={() => setOpen((prev: boolean) => !prev)}
             >
               {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -158,50 +190,51 @@ export function PortalHeader({
         </div>
 
         {open && (
-          <div className="border-t border-[#0E7C7B]/10 bg-white/95 backdrop-blur md:hidden dark:bg-slate-900/95">
-            <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-4">
+          <div className="absolute inset-x-0 top-full border-b border-border/50 bg-surface/95 backdrop-blur-xl md:hidden shadow-lg">
+            <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-6">
               {navLinks.map((l) => (
                 <a
                   key={l.href}
                   href={l.href}
                   onClick={() => setOpen(false)}
-                  className="rounded-xl px-3 py-2.5 text-sm font-medium text-[#475467] hover:bg-[#0E7C7B]/5 hover:text-[#0E7C7B] dark:text-[#D1D5DB]"
+                  className="rounded-xl px-4 py-3 text-sm font-bold text-muted-foreground hover:bg-primary/5 hover:text-primary"
                 >
                   {label(l)}
                 </a>
               ))}
-              <div className="mt-2 flex items-center gap-2 border-t border-[#0E7C7B]/10 pt-3 sm:hidden">
+              <div className="mt-2 flex items-center gap-3 border-t border-border pt-4 sm:hidden">
                 <button
                   type="button"
                   onClick={toggleLang}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-full border border-[#0E7C7B]/20 bg-white px-3 py-2 text-xs font-semibold text-[#0E2A47] shadow-soft"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-xs font-bold text-foreground shadow-sm hover:bg-primary/5 hover:text-primary"
                 >
-                  <Languages className="h-3.5 w-3.5" />
+                  <Languages className="h-4 w-4" />
                   {lang === "en" ? "العربية" : "English"}
                 </button>
                 <button
                   type="button"
                   onClick={toggleTheme}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-full border border-[#0E7C7B]/20 bg-white px-3 py-2 text-xs font-semibold text-[#0E2A47] shadow-soft"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-xs font-bold text-foreground shadow-sm hover:bg-primary/5 hover:text-primary"
                 >
                   {theme === "dark" ? (
                     <>
-                      <Sun className="h-3.5 w-3.5" />
+                      <Sun className="h-4 w-4" />
                       <span>{t("ui.theme")}</span>
                     </>
                   ) : (
                     <>
-                      <Moon className="h-3.5 w-3.5" />
+                      <Moon className="h-4 w-4" />
                       <span>{t("ui.theme")}</span>
                     </>
                   )}
                 </button>
               </div>
-              <div className="mt-2 flex flex-col gap-2">
+              <div className="mt-4 flex flex-col gap-3">
                 {secondaryCta && (
                   <Link
                     to={secondaryCta.to}
-                    className="rounded-full border border-[#0E7C7B]/20 bg-white px-5 py-2.5 text-center text-sm font-semibold text-[#0E2A47] shadow-soft"
+                    onClick={() => setOpen(false)}
+                    className="rounded-xl border border-border bg-surface px-5 py-3 text-center text-sm font-bold text-foreground shadow-sm hover:bg-primary/5"
                   >
                     {label(secondaryCta)}
                   </Link>
@@ -209,7 +242,8 @@ export function PortalHeader({
                 {primaryCta && (
                   <Link
                     to={primaryCta.to}
-                    className="rounded-full bg-gradient-to-r from-[#0E7C7B] to-[#0B5E5D] px-5 py-2.5 text-center text-sm font-semibold text-white shadow-md"
+                    onClick={() => setOpen(false)}
+                    className="rounded-xl bg-gradient-to-r from-primary to-primary-dark px-5 py-3 text-center text-sm font-bold text-white shadow-md shadow-primary/20"
                   >
                     {label(primaryCta)}
                   </Link>

@@ -9,6 +9,8 @@ const {
   actionFromEventCode,
 } = require('./auditTaxonomy');
 const { persistAuditAlerts } = require('./auditDetectionService');
+const { logSecurityEvent } = require('./securityEventService');
+const logger = require('../config/logger');
 
 const MAX_AUDIT_STRING_LENGTH = 2000;
 
@@ -429,8 +431,8 @@ async function executeLogQuery(db, rawEntry) {
         return fallback();
       }
       await releaseSavepoint();
-      console.error('AuditService: Logging failed:', err.message);
-      return null;
+       logger.error('AuditService: Logging failed', { error: err.message, action: entry.action });
+       return null;
     }
   };
 
@@ -439,6 +441,30 @@ async function executeLogQuery(db, rawEntry) {
       runWithFallback(legacyQuery, legacyValues)
     ))
   ));
+
+  if (logId === null) {
+    logger.warn('AuditService: audit entry could not be persisted', {
+      action: entry.action,
+      userId: entry.userId,
+      resourceTable: entry.resourceTable,
+      resourceId: entry.resourceId
+    });
+
+    await logSecurityEvent(db, {
+      eventType: 'AUDIT_LOG_FAILURE',
+      severity: 'warning',
+      userId: entry.userId || null,
+      patientId: entry.patientId || null,
+      ipAddress: entry.ip_address,
+      userAgent: entry.user_agent,
+      details: {
+        action: entry.action,
+        resourceTable: entry.resourceTable,
+        resourceId: entry.resourceId,
+        reason: 'Audit entry could not be persisted'
+      }
+    });
+  }
 
   await persistAuditAlerts(db, entry, logId);
   return logId;

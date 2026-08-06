@@ -17,7 +17,7 @@ export class ApiError extends Error {
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
-  return sessionStorage.getItem("token") || localStorage.getItem("rcms_token");
+  return sessionStorage.getItem("token");
 }
 
 export function setAuthToken(token: string) {
@@ -30,7 +30,7 @@ export function setAuthToken(token: string) {
 export function clearAuthToken() {
   if (typeof window !== "undefined") {
     sessionStorage.removeItem("token");
-    localStorage.removeItem("rcms_token");
+    sessionStorage.removeItem("user");
   }
 }
 
@@ -42,16 +42,15 @@ export type PortalIdentity = {
   userId?: string;
 };
 
-export function getAuthIdentity(): PortalIdentity | null {
-  const token = getAuthToken();
-  if (!token) return null;
+/**
+ * Fetch the current user's identity from the backend /api/profile endpoint.
+ * Do NOT decode the JWT client-side — sensitive claims (permissions, email) are
+ * only returned by the server and never exposed to arbitrary JS.
+ */
+export async function getAuthIdentity(): Promise<PortalIdentity | null> {
   try {
-    const encoded = token.split(".")[1];
-    if (!encoded) return null;
-    const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-    const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes)) as PortalIdentity;
+    const res = await request<{ id?: string; name?: string; email?: string; role?: string; mustChangePassword?: boolean }>('/profile');
+    return res;
   } catch {
     return null;
   }
@@ -76,9 +75,17 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers["Authorization"] = `Bearer ${token}`;
   }
 
+  const method = (options.method || "GET").toUpperCase();
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    if (csrfMatch) {
+      headers["x-csrf-token"] = decodeURIComponent(csrfMatch[1]);
+    }
+  }
+
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers });
+    res = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers, credentials: 'include' });
   } catch (e) {
     throw new ApiError("Network error. Check your connection and try again.", 0);
   }

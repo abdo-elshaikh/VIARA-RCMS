@@ -9,7 +9,7 @@ import {
     TrendingUp, UsersRound, WalletCards,
 } from 'lucide-react';
 import { useGetDoctorCommissionsQuery, useGetRevenueReportQuery } from '../store/api';
-import { PageHeader, MetricCard, PagePanel, EmptyState } from '../components/ui';
+import { AccessibleChartData, PageHeader, MetricCard, PagePanel, EmptyState } from '../components/ui';
 
 const chartTooltipStyle = {
     background: 'rgba(255, 255, 255, 0.96)',
@@ -114,8 +114,20 @@ const Admin = () => {
                 <PagePanel title={t('dashboard.revenueOverview')} description={t('dashboard.revenueOverviewDescription')} icon={TrendingUp} action={<PanelBadge>{t('dashboard.yearToDate')}</PanelBadge>}>
                     {revLoading ? <PanelSkeleton /> : chartData.length > 0 ? (
                         <>
-                            <div className="h-72 min-w-0 sm:h-80" role="img" aria-label={t('dashboard.revenueOverview')}>
-                                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                            <AccessibleChartData
+                                title={t('dashboard.revenueOverview')}
+                                summary={t('dashboard.chartSummary', { count: chartData.length, defaultValue: '{{count}} data points showing revenue and insurance claims.' })}
+                                rows={chartData}
+                                columns={[
+                                    { key: 'label', label: t('dashboard.date', { defaultValue: 'Date' }) },
+                                    { key: 'total_revenue', label: t('dashboard.revenue'), render: row => currency(row.total_revenue) },
+                                    { key: 'insurance_claimable', label: t('dashboard.claims'), render: row => currency(row.insurance_claimable) },
+                                ]}
+                                disclosureLabel={t('dashboard.viewChartData', { defaultValue: 'View chart data' })}
+                                tableLabel={t('dashboard.chartDataTable', { defaultValue: 'Revenue overview data' })}
+                            >
+                                <div className="h-72 min-w-0 sm:h-80">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                     <AreaChart data={chartData} margin={{ top: 12, right: 4, left: -16, bottom: 0 }}>
                                         <defs>
                                             <linearGradient id="adminRevenue" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#06b6d4" stopOpacity={0.28} /><stop offset="95%" stopColor="#06b6d4" stopOpacity={0} /></linearGradient>
@@ -128,8 +140,9 @@ const Admin = () => {
                                         <Area type="monotone" dataKey="total_revenue" name={t('dashboard.revenue')} stroke="#06b6d4" strokeWidth={3} fill="url(#adminRevenue)" />
                                         <Area type="monotone" dataKey="insurance_claimable" name={t('dashboard.claims')} stroke="#3b82f6" strokeWidth={2.5} fill="url(#adminInsurance)" />
                                     </AreaChart>
-                                </ResponsiveContainer>
-                            </div>
+                                    </ResponsiveContainer>
+                                </div>
+                            </AccessibleChartData>
                             <div className="mt-4 flex flex-wrap justify-center gap-5 border-t border-slate-100 dark:border-slate-800 pt-4">
                                 <LegendItem color="bg-cyan-500" label={t('dashboard.revenue')} />
                                 <LegendItem color="bg-blue-500" label={t('dashboard.claims')} />

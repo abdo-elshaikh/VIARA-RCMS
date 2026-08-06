@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import '../../../i18n';
 import Modal from '../Modal';
 
@@ -48,5 +48,20 @@ describe('Modal accessibility', () => {
         const dialog = screen.getByRole('dialog', { name: 'Book Appointment' });
         expect(dialog).toHaveClass('h-[100dvh]', 'max-w-none', 'rounded-none');
         expect(screen.getByRole('button', { name: 'Confirm Booking' })).toBeInTheDocument();
+    });
+
+    it('closes only when the backdrop itself is pressed', () => {
+        const onClose = vi.fn();
+        render(
+            <Modal isOpen onClose={onClose} title="Patient details">
+                <button type="button">Inner action</button>
+            </Modal>
+        );
+
+        fireEvent.mouseDown(screen.getByRole('button', { name: 'Inner action' }));
+        expect(onClose).not.toHaveBeenCalled();
+
+        fireEvent.mouseDown(screen.getByRole('dialog').parentElement);
+        expect(onClose).toHaveBeenCalledOnce();
     });
 });

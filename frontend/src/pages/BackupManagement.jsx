@@ -7,7 +7,7 @@ import { useGenerateBackupMutation, useGetBackupsQuery, useRestoreBackupMutation
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import PageHeader from '../components/ui/PageHeader';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 const formatBytes = (bytes, decimals = 2) => {
     if (!Number(bytes)) return '0 B';

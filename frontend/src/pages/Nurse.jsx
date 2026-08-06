@@ -75,14 +75,14 @@ const Nurse = () => {
                 {/* ─── PAGE HEADER ─── */}
                 {/* ─── QUEUE TABLE (desktop) ─── */}
                 <section className="hidden overflow-hidden rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-900/50 md:block">
-                    <table className="min-w-full text-left text-sm">
+                    <table className="min-w-full text-start text-sm">
                         <thead>
                             <tr className="border-b border-slate-250/50 bg-slate-50/50 dark:border-slate-800/50 dark:bg-slate-900/30">
-                                <th scope="col" className="py-3.5 pl-5 pr-4 text-xs font-black uppercase tracking-wide text-slate-450 dark:text-slate-400">{t('nurse.patientDetails')}</th>
+                                <th scope="col" className="py-3.5 pe-4 ps-5 text-xs font-black uppercase tracking-wide text-slate-450 dark:text-slate-400">{t('nurse.patientDetails')}</th>
                                 <th scope="col" className="px-4 py-3.5 text-xs font-black uppercase tracking-wide text-slate-450 dark:text-slate-400">{t('nurse.studyInstructions')}</th>
                                 <th scope="col" className="px-4 py-3.5 text-xs font-black uppercase tracking-wide text-slate-450 dark:text-slate-400">{t('nurse.stagePriority')}</th>
                                 <th scope="col" className="px-4 py-3.5 text-xs font-black uppercase tracking-wide text-slate-450 dark:text-slate-400">{t('common.wait')}</th>
-                                <th scope="col" className="py-3.5 pl-4 pr-5 text-end text-xs font-black uppercase tracking-wide text-slate-450 dark:text-slate-400">{t('common.actions')}</th>
+                                <th scope="col" className="py-3.5 pe-5 ps-4 text-end text-xs font-black uppercase tracking-wide text-slate-450 dark:text-slate-400">{t('common.actions')}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
@@ -98,8 +98,8 @@ const Nurse = () => {
                                 return (
                                     <React.Fragment key={item.exam_id}>
                                         <tr className="group relative align-top transition-colors hover:bg-white/60 dark:hover:bg-slate-800/30">
-                                            <td className="relative py-4 pl-5 pr-4">
-                                                <span className={`absolute inset-y-2 left-0 w-1 rounded-full ${acuity.bar} ${item.is_overdue ? 'animate-pulse' : ''}`} aria-hidden="true" />
+                                            <td className="relative py-4 pe-4 ps-5">
+                                                <span className={`absolute inset-y-2 start-0 w-1 rounded-full ${acuity.bar} ${item.is_overdue ? 'animate-pulse' : ''}`} aria-hidden="true" />
                                                 <div className="font-semibold text-slate-900 dark:text-white">{item.patient_name || t('common.patientFallback')}</div>
                                                 <div className="mt-0.5 font-mono text-[11px] font-medium tracking-wide text-slate-400 ltr-embed">{item.mrn}</div>
                                                 <div className="mt-0.5 font-mono text-[10px] font-medium uppercase text-slate-400/80">{item.order_number}</div>
@@ -174,7 +174,7 @@ const Nurse = () => {
                                                 </span>
                                             </td>
 
-                                            <td className="py-4 pl-4 pr-5">
+                                            <td className="py-4 pe-5 ps-4">
                                                 <div className="flex flex-wrap items-center justify-end gap-1.5">
                                                     <ActionButton icon={expanded ? ChevronUp : ChevronDown} label={t(expanded ? 'nurse.hideDetails' : 'nurse.showDetails', { defaultValue: expanded ? 'Hide details' : 'Details' })} tone="slate" onClick={() => toggleExpanded(item.exam_id)} />
                                                     {item.is_on_hold ? (
@@ -352,9 +352,9 @@ const NurseQueueCard = ({ item, t, locale, isMoving, stockMovements, onRelease, 
 
     return (
         <article className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-[#0a0f1c]">
-            <span className={`absolute inset-y-0 left-0 w-1 ${acuity.bar} ${item.is_overdue ? 'animate-pulse' : ''}`} aria-hidden="true" />
+            <span className={`absolute inset-y-0 start-0 w-1 ${acuity.bar} ${item.is_overdue ? 'animate-pulse' : ''}`} aria-hidden="true" />
 
-            <div className="flex items-start justify-between gap-3 pl-2">
+            <div className="flex items-start justify-between gap-3 ps-2">
                 <div className="min-w-0">
                     <h2 className="truncate text-[15px] font-bold text-slate-900 dark:text-white">{item.patient_name || t('common.patientFallback')}</h2>
                     <p className="mt-0.5 font-mono text-[11px] font-medium tracking-wide text-slate-400 ltr-embed">{item.mrn}</p>
@@ -369,7 +369,7 @@ const NurseQueueCard = ({ item, t, locale, isMoving, stockMovements, onRelease, 
                 </button>
             </div>
 
-            <div className="mt-3 rounded-xl bg-slate-50/80 p-3 pl-2 ring-1 ring-slate-100 dark:bg-slate-900/50 dark:ring-slate-800">
+            <div className="mt-3 rounded-xl bg-slate-50/80 p-3 ps-2 ring-1 ring-slate-100 dark:bg-slate-900/50 dark:ring-slate-800">
                 <p className="font-semibold text-slate-800 dark:text-slate-100">{item.exam_type_name || item.modality_name}</p>
                 <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">{item.modality_name}{item.body_part ? ` — ${item.body_part}` : ''}</p>
 
@@ -402,7 +402,7 @@ const NurseQueueCard = ({ item, t, locale, isMoving, stockMovements, onRelease, 
                 </div>
             </div>
 
-            <div className={`${expanded ? '' : 'hidden'} mt-3 flex items-start gap-1.5 pl-2`}>
+            <div className={`${expanded ? '' : 'hidden'} mt-3 flex items-start gap-1.5 ps-2`}>
                 <div className="flex-1 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-1.5 text-xs leading-relaxed text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
                     <span className="font-semibold uppercase tracking-wide text-slate-400 text-[10px]">{t('nurse.complaint')}</span>
                     <p className="mt-0.5">{item.clinical_indication || <span className="italic text-slate-400">{t('nurse.notRecorded')}</span>}</p>
@@ -417,18 +417,18 @@ const NurseQueueCard = ({ item, t, locale, isMoving, stockMovements, onRelease, 
             </div>
 
             {expanded && item.preparation_instructions && (
-                <div className="mt-2.5 ml-2 rounded-lg border border-amber-100 bg-amber-50/70 px-3 py-1.5 text-xs leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                <div className="mt-2.5 ms-2 rounded-lg border border-amber-100 bg-amber-50/70 px-3 py-1.5 text-xs leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
                     <span className="font-semibold">{t('nurse.instructions')}:</span> {item.preparation_instructions}
                 </div>
             )}
 
             {item.is_on_hold && (
-                <div className="mt-2.5 ml-2 inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700 ring-1 ring-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:ring-rose-900/50">
+                <div className="mt-2.5 ms-2 inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700 ring-1 ring-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:ring-rose-900/50">
                     <PauseCircle size={13} /> {item.hold_reason || t('nurse.noHoldReason')}
                 </div>
             )}
 
-            <div className="mt-3.5 flex flex-wrap gap-1.5 pl-2">
+            <div className="mt-3.5 flex flex-wrap gap-1.5 ps-2">
                 {item.is_on_hold ? (
                     <ActionButton icon={PlayCircle} label={t('common.release')} tone="emerald" disabled={isMoving} onClick={onRelease} />
                 ) : (

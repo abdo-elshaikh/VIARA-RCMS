@@ -348,6 +348,37 @@ describe('request and lifecycle business rules', () => {
         expect(renderTemplate('Hello {{name}} {{missing}}', { name: 'Alice' })).toBe('Hello Alice ');
     });
 
+    test('offsite backup replicator reports not-configured when env vars missing', async () => {
+        const { isConfigured, replicateBackup } = require('../src/services/backupOffsiteReplicator');
+        delete process.env.BACKUP_OFFSITE_ENDPOINT;
+        delete process.env.BACKUP_OFFSITE_BUCKET;
+        delete process.env.BACKUP_OFFSITE_ACCESS_KEY;
+        delete process.env.BACKUP_OFFSITE_SECRET_KEY;
+        expect(isConfigured()).toBe(false);
+        const result = await replicateBackup({ filename: 'test.dump.enc', filepath: '/tmp/nonexistent' });
+        expect(result.replicated).toBe(false);
+        expect(result.reason).toBe('not_configured');
+    });
+
+    test('offsite backup replicator reports source_not_found for missing file', async () => {
+        const { isConfigured, replicateBackup } = require('../src/services/backupOffsiteReplicator');
+        process.env.BACKUP_OFFSITE_ENDPOINT = 's3.example.com';
+        process.env.BACKUP_OFFSITE_BUCKET = 'test-bucket';
+        process.env.BACKUP_OFFSITE_ACCESS_KEY = 'test';
+        process.env.BACKUP_OFFSITE_SECRET_KEY = 'test';
+        try {
+            expect(isConfigured()).toBe(true);
+            const result = await replicateBackup({ filename: 'test.dump.enc', filepath: '/tmp/nonexistent_file' });
+            expect(result.replicated).toBe(false);
+            expect(result.reason).toBe('source_not_found');
+        } finally {
+            delete process.env.BACKUP_OFFSITE_ENDPOINT;
+            delete process.env.BACKUP_OFFSITE_BUCKET;
+            delete process.env.BACKUP_OFFSITE_ACCESS_KEY;
+            delete process.env.BACKUP_OFFSITE_SECRET_KEY;
+        }
+    });
+
     test('receivables aging uses canonical status and as-of patient and insurer balances', async () => {
         const db = { query: jest.fn().mockResolvedValue({ rows: [{ total_outstanding: 0 }] }) };
         const res = { json: jest.fn() };
@@ -647,5 +678,67 @@ describe('request and lifecycle business rules', () => {
                 balanceAmount: 100
             })
         });
+    });
+});
+
+describe('RBAC permission cache', () => {
+    test('refreshPermissionCache populates cache from database', async () => {
+        const { refreshPermissionCache, permissionCache } = require('../src/middleware/rbacMiddleware');
+
+        const db = {
+            query: jest.fn().mockResolvedValue({
+                rows: [
+                    { role_name: 'Admin', permission_name: 'MANAGE_USERS' },
+                    { role_name: 'Radiologist', permission_name: 'READ_REPORTS' }
+                ]
+            })
+        };
+
+        await refreshPermissionCache(db);
+
+        expect(permissionCache.get('Admin')).toContain('MANAGE_USERS');
+        expect(permissionCache.get('Radiologist')).toContain('READ_REPORTS');
+        expect(db.query).toHaveBeenCalledTimes(1);
+    });
+
+    test('refreshPermissionCache skips concurrent refresh', async () => {
+        const { refreshPermissionCache } = require('../src/middleware/rbacMiddleware');
+
+        let resolveFirst;
+        const db1 = {
+            query: jest.fn().mockImplementation(() => new Promise((resolve) => { resolveFirst = resolve; }))
+        };
+        const db2 = {
+            query: jest.fn().mockResolvedValue({ rows: [] })
+        };
+
+        const p1 = refreshPermissionCache(db1);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        await refreshPermissionCache(db2);
+
+        expect(db2.query).not.toHaveBeenCalled();
+
+        resolveFirst({ rows: [] });
+        await p1;
+    });
+
+    test('refreshPermissionCache recovers and allows subsequent refreshes after error', async () => {
+        const { refreshPermissionCache } = require('../src/middleware/rbacMiddleware');
+
+        const db1 = {
+            query: jest.fn().mockRejectedValue(new Error('DB connection failed'))
+        };
+
+        await expect(refreshPermissionCache(db1)).resolves.toBeUndefined();
+        expect(db1.query).toHaveBeenCalledTimes(1);
+
+        const db2 = {
+            query: jest.fn().mockResolvedValue({ rows: [] })
+        };
+
+        await refreshPermissionCache(db2);
+        expect(db2.query).toHaveBeenCalledTimes(1);
     });
 });

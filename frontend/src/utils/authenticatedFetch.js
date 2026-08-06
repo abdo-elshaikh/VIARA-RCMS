@@ -1,9 +1,23 @@
 import { getInMemoryAccessToken } from './accessToken';
 
+function getCsrfToken() {
+    const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
 export const authenticatedFetch = (url, options = {}) => {
     const token = getInMemoryAccessToken();
     const headers = new Headers(options.headers || {});
     if (token) headers.set('Authorization', `Bearer ${token}`);
+
+    const method = (options.method || 'GET').toUpperCase();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        const csrfToken = getCsrfToken();
+        if (csrfToken) {
+            headers.set('x-csrf-token', csrfToken);
+        }
+    }
+
     return fetch(url, { ...options, headers, credentials: 'include' });
 };
 

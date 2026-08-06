@@ -21,10 +21,10 @@ export interface AuthState {
     isAuthenticated: boolean;
 }
 
-// Initialize state from localStorage / sessionStorage
+// Initialize state from sessionStorage (not localStorage — tokens must not persist across tabs/sessions)
 const getStoredUser = (): User | null => {
     try {
-        const stored = localStorage.getItem('user');
+        const stored = sessionStorage.getItem('user');
         return stored ? JSON.parse(stored) : null;
     } catch (_) {
         return null;
@@ -53,7 +53,7 @@ const authSlice = createSlice({
             state.token = token;
             state.isAuthenticated = true;
 
-            localStorage.setItem('user', JSON.stringify(state.user));
+            sessionStorage.setItem('user', JSON.stringify(state.user));
             sessionStorage.setItem('token', token);
         },
         logOut: (state) => {
@@ -61,7 +61,7 @@ const authSlice = createSlice({
             state.token = null;
             state.isAuthenticated = false;
 
-            localStorage.removeItem('user');
+            sessionStorage.removeItem('user');
             sessionStorage.removeItem('token');
         },
         rehydrateUser: (state) => {
@@ -80,7 +80,7 @@ const authSlice = createSlice({
                     ...state.user,
                     ...action.payload
                 };
-                localStorage.setItem('user', JSON.stringify(state.user));
+                sessionStorage.setItem('user', JSON.stringify(state.user));
             }
         },
         setAccessToken: (state, action: PayloadAction<string>) => {

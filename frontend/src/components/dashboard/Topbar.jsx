@@ -24,7 +24,8 @@ import {
     useClockInMutation,
     useClockOutMutation,
     useGetAttendanceQuery,
-    useGetNotificationUnreadCountQuery
+    useGetNotificationUnreadCountQuery,
+    useLogoutMutation
 } from '../../store/api';
 import NotificationCenter from '../NotificationCenter';
 import BreakGlassModal from '../auth/BreakGlassModal';
@@ -45,7 +46,7 @@ const actionBase = [
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950'
 ].join(' ');
 
-const HeaderAction = ({ label, active, tone = 'neutral', children, className, ...props }) => {
+const HeaderAction = ({ label, active, tone = 'neutral', children, className, triggerRef, ...props }) => {
     const tones = {
         neutral: active
             ? 'border-teal-500/40 bg-gradient-to-r from-teal-500/15 to-cyan-500/15 text-teal-800 shadow-sm shadow-teal-500/10 dark:border-teal-400/40 dark:from-teal-500/25 dark:to-cyan-500/20 dark:text-teal-300'
@@ -55,6 +56,7 @@ const HeaderAction = ({ label, active, tone = 'neutral', children, className, ..
 
     return (
         <button
+            ref={triggerRef}
             type="button"
             aria-label={label}
             title={label}
@@ -239,7 +241,7 @@ const ProfileMenu = ({
     </div>
 );
 
-const Topbar = ({ onMobileMenuClick }) => {
+const Topbar = ({ onMobileMenuClick, menuButtonRef }) => {
     const user = useSelector(selectCurrentUser);
     const preferences = useSelector(selectPreferences);
     const dispatch = useDispatch();
@@ -287,6 +289,7 @@ const Topbar = ({ onMobileMenuClick }) => {
 
     const [clockIn, { isLoading: isClockingIn }] = useClockInMutation();
     const [clockOut, { isLoading: isClockingOut }] = useClockOutMutation();
+    const [logout] = useLogoutMutation();
 
     const attendanceRecords = useMemo(() => {
         if (Array.isArray(attendanceData)) return attendanceData;
@@ -356,11 +359,16 @@ const Topbar = ({ onMobileMenuClick }) => {
         setNotificationOpen(false);
     }, []);
 
-    const handleLogout = useCallback(() => {
+    const handleLogout = useCallback(async () => {
         closeTransientMenus();
+        try {
+            await logout().unwrap();
+        } catch {
+            // Clear local credentials even when the server session is already unavailable.
+        }
         dispatch(logOut());
         navigate('/login', { replace: true });
-    }, [closeTransientMenus, dispatch, navigate]);
+    }, [closeTransientMenus, dispatch, logout, navigate]);
 
     const handleAttendance = useCallback(async () => {
         if (isAttendanceUpdating) return;
@@ -408,6 +416,7 @@ const Topbar = ({ onMobileMenuClick }) => {
         <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 shadow-xs backdrop-blur-2xl dark:border-slate-800/80 dark:bg-[#070e1b]/85 select-none">
             <div className="grid h-16 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:px-6">
                 <HeaderAction
+                    triggerRef={menuButtonRef}
                     label={t('topbar.openMenu', { defaultValue: 'Open navigation menu' })}
                     onClick={onMobileMenuClick}
                     className="lg:hidden"

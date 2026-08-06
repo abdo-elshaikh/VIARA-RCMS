@@ -16,3 +16,4 @@ export { default as Scheduler } from './Scheduler';
 export { default as PageHeader } from './PageHeader';
 export { default as MetricCard } from './MetricCard';
 export { default as PagePanel } from './PagePanel';
+export { default as AccessibleChartData } from './AccessibleChartData';

@@ -317,6 +317,14 @@ const transitionQueue = (db) => async (req, res, next) => {
             ]);
 
             await client.query('COMMIT');
+            await logAction(client, {
+                userId: req.user.user_id,
+                action: 'QUEUE_COMPLAINT_UPDATED',
+                resourceId: examId,
+                resourceTable: 'examinations',
+                ipAddress: req.ip,
+                details: { complaint: req.body.complaint || null, appointmentId: existing.appointment_id }
+            });
             return res.json(result.rows[0]);
         }
 
@@ -377,6 +385,19 @@ const transitionQueue = (db) => async (req, res, next) => {
             ]);
 
             await client.query('COMMIT');
+            await logAction(client, {
+                userId: req.user.user_id,
+                action: 'QUEUE_SAFETY_UPDATED',
+                resourceId: examId,
+                resourceTable: 'examinations',
+                ipAddress: req.ip,
+                details: {
+                    pregnancySafetyStatus,
+                    implantSafetyStatus,
+                    renalSafetyStatus,
+                    appointmentId: existing.appointment_id
+                }
+            });
             return res.json(resultRow);
         }
 
@@ -417,6 +438,14 @@ const transitionQueue = (db) => async (req, res, next) => {
             ]);
 
             await client.query('COMMIT');
+            await logAction(client, {
+                userId: req.user.user_id,
+                action: isHold ? 'QUEUE_ITEM_HELD' : 'QUEUE_ITEM_RELEASED',
+                resourceId: examId,
+                resourceTable: 'examinations',
+                ipAddress: req.ip,
+                details: { reason: reason || null, holdStartedAt: isHold, appointmentId: existing.appointment_id }
+            });
             return res.json(result.rows[0]);
         }
 
@@ -587,6 +616,24 @@ const transitionQueue = (db) => async (req, res, next) => {
         ]);
 
         await client.query('COMMIT');
+
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'QUEUE_TRANSITION',
+            resourceId: examId,
+            resourceTable: 'examinations',
+            ipAddress: req.ip,
+            details: {
+                fromStage: existing.queue_stage,
+                toStage,
+                fromStation: existing.current_station,
+                toStation,
+                action: action || null,
+                reason: reason || null,
+                appointmentId: existing.appointment_id
+            }
+        });
+
         res.json(updateResult.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');

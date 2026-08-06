@@ -105,6 +105,20 @@ describe('DashboardHome', () => {
         expect(screen.getByText('System Developer')).toBeInTheDocument();
     });
 
+    it('provides the executive charts as described disclosure tables', () => {
+        renderDashboard('Admin', {
+            scanVolumeData: [{ date: '2026-06-22', scans: 12, revenue: 12500 }],
+            modalityData: [{ name: 'MRI', value: 7 }],
+        });
+
+        const chart = screen.getByRole('img', { name: 'Weekly throughput and collections' });
+        expect(chart).toHaveAttribute('aria-describedby');
+        expect(document.getElementById(chart.getAttribute('aria-describedby'))).toHaveTextContent('1 data points');
+        expect(screen.getAllByText('View chart data')).toHaveLength(2);
+        expect(screen.getByRole('table', { name: 'Weekly throughput and collections data' })).toHaveTextContent('12');
+        expect(screen.getByRole('table', { name: 'Modality mix data' })).toHaveTextContent('MRI');
+    });
+
     it('routes reception users to the patient-flow command center', () => {
         renderDashboard('Receptionist', {
             todayCheckIns: 7,

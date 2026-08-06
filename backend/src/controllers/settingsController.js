@@ -388,7 +388,7 @@ const getAiSettingsStatus = () => async (req, res, next) => {
 
 const updateAiSettings = () => async (req, res, next) => {
     try {
-        const data = updateAiSettingsSchema.parse(req.body || {});
+        const data = await updateAiSettingsSchema.parseAsync(req.body || {});
         const groups = await aiProfileService.listProfiles();
         if (data.report) {
             const active = groups.report.profiles.find((item) => item.active) || groups.report.profiles[0];
@@ -411,7 +411,7 @@ const getAiProfiles = () => async (req, res, next) => {
 
 const createAiProfile = () => async (req, res, next) => {
     try {
-        const data = aiProfileSchema.parse(req.body || {});
+        const data = await aiProfileSchema.parseAsync(req.body || {});
         const profile = await aiProfileService.createProfile(data);
         res.status(201).json({ profile, profiles: await aiProfileService.listProfiles() });
     } catch (error) {
@@ -422,7 +422,7 @@ const createAiProfile = () => async (req, res, next) => {
 
 const updateAiProfile = () => async (req, res, next) => {
     try {
-        const data = updateAiProfileSchema.parse(req.body || {});
+        const data = await updateAiProfileSchema.parseAsync(req.body || {});
         const profile = await aiProfileService.updateProfile(req.params.id, data);
         res.json({ profile, profiles: await aiProfileService.listProfiles() });
     } catch (error) {
@@ -481,7 +481,8 @@ const testAiSettings = () => async (req, res, next) => {
                 headers = { Authorization: `Bearer ${apiKey}` };
             } else if (config.provider === 'cloud-custom') {
                 const apiKey = config.apiKey;
-                pingUrl = normalizeOpenAiCompatibleChatUrl(validateCustomAiEndpointUrl(config.baseUrl));
+                const safeBaseUrl = await validateCustomAiEndpointUrl(config.baseUrl);
+                pingUrl = normalizeOpenAiCompatibleChatUrl(safeBaseUrl);
                 headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
                 if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
                 requestInit = {

@@ -24,7 +24,7 @@ const MIGRATION_FILES = [
     '003_add_inventory.sql',
     '004_expand_appointments.sql',
     '005_add_exam_types.sql',
-    '004_performance_indexes.sql',
+    '100_performance_indexes.sql',
     '006_dashboard_indexes.sql',
     '007_fix_user_roles_enum.sql',
     '008_fix_appointment_overlap.sql',
@@ -50,12 +50,12 @@ const MIGRATION_FILES = [
     '028_hr_management.sql',
     '029_crm_marketing.sql',
     '030_security_events_and_roles.sql',
-    '030_encrypt_pii_fields.sql',
+    '102_encrypt_pii_fields.sql',
     '031_portal_schema_consistency.sql',
-    '031_refresh_token_audit.sql',
+    '103_refresh_token_audit.sql',
     '032_notification_preferences_consistency.sql',
-    '032_performance_indexes.sql',
-    '024_reporting_indices.sql',
+    '104_performance_indexes.sql',
+    '101_reporting_indices.sql',
     '033_expand_rbac_permissions.sql',
     '034_invoice_payment_discounts.sql',
     '035_patient_anonymized_status.sql',
@@ -117,7 +117,11 @@ const MIGRATION_FILES = [
     '091_partial_payment_exceptions.sql',
     '092_final_delivery_full_payment.sql',
     '093_portal_login_lockout.sql',
-    '094_move_startup_schema_changes.sql'
+    '094_move_startup_schema_changes.sql',
+    '105_cleanup_duplicate_constraints.sql',
+    '106_exclusion_constraint_appointments.sql',
+    '107_rename_duplicate_migrations_tracking.sql',
+    '108_pacs_reconciliation_queue.sql'
 ];
 
 const SEED_FILES = [
@@ -251,8 +255,12 @@ async function main() {
     const fresh = args.includes('--fresh');
     const seed = args.includes('--seed');
 
+    if (!process.env.DATABASE_URL) {
+        throw new Error('DATABASE_URL is required but not set');
+    }
+
     const pool = new Pool({
-        connectionString: process.env.DATABASE_URL || 'postgresql://***REMOVED***/rcms'
+        connectionString: process.env.DATABASE_URL
     });
 
     try {

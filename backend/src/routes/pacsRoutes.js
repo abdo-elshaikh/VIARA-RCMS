@@ -6,8 +6,7 @@ const multer = require('multer');
 const { AppError } = require('../middleware/errorHandler');
 const { hasAnyPermission } = require('../middleware/rbacMiddleware');
 const { authenticateDicomWeb } = require('../middleware/authMiddleware');
-const {
-    verifyPacsWebhook,
+const { verifyPacsWebhook,
     handleWebhook,
     getExamImagingStatus,
     getExamAiAnalysisJobs,
@@ -42,6 +41,7 @@ const {
     retryAllPacsAiJobs,
     cancelAllPacsAiJobs
 } = require('../controllers/pacsController');
+const { pacsWebhookLimiter } = require('../middleware/rateLimiters');
 
 const PACS_QUARANTINE_DIR = path.resolve(
     process.env.PACS_UPLOAD_QUARANTINE_DIR || path.join(__dirname, '../../uploads/.quarantine/pacs')
@@ -111,7 +111,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     const router = express.Router();
 
     // --- Machine-to-machine (no JWT) ---
-    router.post('/webhook', verifyPacsWebhook, handleWebhook(pool));
+    router.post('/webhook', pacsWebhookLimiter, verifyPacsWebhook, handleWebhook(pool));
 
     // DICOMweb proxy — QIDO/WADO/STOW forwarded to Orthanc with server-side
     // basic auth. Write verbs are rejected in the controller; local imports use

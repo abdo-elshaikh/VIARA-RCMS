@@ -16,10 +16,10 @@ const AuditTimeline = ({ resourceId, resourceTable }) => {
     }
 
     return (
-        <div className="relative border-l-2 border-slate-200 ml-3 pl-5 py-2 space-y-6">
+        <div className="relative ms-3 space-y-6 border-s-2 border-slate-200 py-2 ps-5">
             {logs.map(log => (
                 <div key={log.log_id} className="relative">
-                    <div className="absolute -left-[27px] top-1 w-3 h-3 bg-white border-2 border-blue-500 rounded-full"></div>
+                    <div className="absolute -start-[27px] top-1 h-3 w-3 rounded-full border-2 border-blue-500 bg-white"></div>
                     <div className="flex justify-between items-start mb-1">
                         <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
                             <Shield size={14} className="text-blue-500" />
@@ -34,7 +34,7 @@ const AuditTimeline = ({ resourceId, resourceTable }) => {
                         <User size={14} className="text-slate-400" />
                         <span className="font-medium">{log.user_name || 'System'}</span>
                         <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold">{log.user_role}</span>
-                        <span className="text-[10px] text-slate-400 ml-2">IP: {log.ip_address}</span>
+                        <span className="ms-2 text-[10px] text-slate-400">IP: {log.ip_address}</span>
                     </div>
                     {log.details && Object.keys(log.details).length > 0 && (
                         <div className="mt-2 bg-slate-50 border border-slate-100 rounded p-2 text-xs font-mono text-slate-600 break-words flex gap-2 items-start">

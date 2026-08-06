@@ -244,6 +244,16 @@ const createPatient = (db) => async (req, res, next) => {
 
         const result = await db.query(query, values);
 
+        await logAction(db, {
+            userId: req.user?.user_id,
+            action: 'PATIENT_CREATED',
+            resourceId: result.rows[0].patient_id,
+            resourceTable: 'patients',
+            ipAddress: req.ip,
+            details: { mrn: result.rows[0].mrn },
+            required: true
+        });
+
         res.status(201).json({
             message: 'Patient created successfully',
             data: result.rows[0],
@@ -260,10 +270,10 @@ const createPatient = (db) => async (req, res, next) => {
 
 const getPatients = (db) => async (req, res, next) => {
     try {
-        const { page = 1, limit = 20, offset: offsetQuery, status } = req.query;
+        const { page = 1, status } = req.query;
         const search = req.query.search || req.query.q;
-        const offset = (page - 1) * limit;
-        const resolvedOffset = offsetQuery ?? offset;
+        const { getPagination } = require('../utils/pagination');
+        const { limit, offset: resolvedOffset } = getPagination(req.query);
 
         let query = `
             SELECT p.*, manager.full_name as assigned_manager_name
@@ -353,8 +363,8 @@ const getPatients = (db) => async (req, res, next) => {
             data: decryptedPatients,
             meta: {
                 total,
-                page: parseInt(page, 10),
-                limit: parseInt(limit, 10),
+                page: parseInt(page, 10) || 1,
+                limit,
                 totalPages: Math.ceil(total / limit)
             }
         });

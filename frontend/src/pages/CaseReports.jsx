@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -54,8 +53,9 @@ import { authenticatedFetch } from '../utils/authenticatedFetch';
 import { formatLocalizedDate } from '../utils/localizedDate';
 import { getErrorMessage } from '../utils/getErrorMessage';
 import PageHeader from '../components/ui/PageHeader';
+import Modal from '../components/ui/Modal';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const PAGE_SIZE = 25;
 const REPORT_STATUSES = ['Draft', 'Typed', 'Reviewed', 'Approved', 'Finalized', 'Amended'];
 const EXAM_STATUSES = ['Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Finalized'];
@@ -133,15 +133,6 @@ const userHasPermission = (user, permission) => {
     if (user.role === 'Developer') return true;
     if (user.elevatedPermissions?.includes(permission)) return true;
     return Boolean(user.permissions?.includes(permission));
-};
-
-// Closes a portal dialog on Escape, without interfering with inputs that handle their own keys.
-const useEscapeToClose = (onClose) => {
-    useEffect(() => {
-        const handler = (event) => { if (event.key === 'Escape') onClose(); };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, [onClose]);
 };
 
 const CaseReports = () => {
@@ -580,7 +571,6 @@ const CaseReports = () => {
 };
 
 const ImproveDialog = ({ item, language, onClose, t }) => {
-    useEscapeToClose(onClose);
     const original = useMemo(() => reportPlainText(item), [item]);
     const [suggestion, setSuggestion] = useState('');
     const [improveReportFormat, { isLoading }] = useImproveReportFormatMutation();
@@ -621,14 +611,21 @@ const ImproveDialog = ({ item, language, onClose, t }) => {
         onClose();
     }, [suggestion, onClose, t]);
 
-    return createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
-            <div role="dialog" aria-modal="true" aria-label={t('caseReports.improveDialog.title')} className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-2xl dark:border-slate-800/60 dark:bg-slate-900 animate-in zoom-in-95 duration-200" onClick={(event) => event.stopPropagation()}>
-                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-                    <div className="flex items-center gap-2"><Sparkles size={18} className="text-teal-600" /><h2 className="text-sm font-black text-slate-900 dark:text-slate-100">{t('caseReports.improveDialog.title')}</h2></div>
-                    <button type="button" onClick={onClose} aria-label={t('caseReports.improveDialog.cancel')} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"><X size={17} /></button>
+    return (
+        <Modal
+            isOpen
+            onClose={onClose}
+            title={<span className="flex items-center gap-2"><Sparkles size={18} className="text-teal-600" />{t('caseReports.improveDialog.title')}</span>}
+            width="max-w-3xl"
+            footer={(
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button type="button" onClick={onClose} className={smallButtonClass}>{t('caseReports.improveDialog.cancel')}</button>
+                    <button type="button" onClick={runImprove} disabled={isLoading} className={smallButtonClass}><RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} /> {t('caseReports.improveDialog.regenerate')}</button>
+                    <button type="button" onClick={applySuggestion} disabled={isLoading || !suggestion} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 text-xs font-black text-white shadow-sm transition-colors hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"><Sparkles size={14} /> {t('caseReports.improveDialog.apply')}</button>
                 </div>
-                <div className="space-y-4 overflow-y-auto p-5">
+            )}
+        >
+                <div className="space-y-4">
                     <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('caseReports.improveDialog.description')}</p>
                     <div className="grid gap-4 lg:grid-cols-2">
                         <div>
@@ -643,14 +640,7 @@ const ImproveDialog = ({ item, language, onClose, t }) => {
                         </div>
                     </div>
                 </div>
-                <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-900/60 sm:flex-row sm:justify-end">
-                    <button type="button" onClick={onClose} className={smallButtonClass}>{t('caseReports.improveDialog.cancel')}</button>
-                    <button type="button" onClick={runImprove} disabled={isLoading} className={smallButtonClass}><RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} /> {t('caseReports.improveDialog.regenerate')}</button>
-                    <button type="button" onClick={applySuggestion} disabled={isLoading || !suggestion} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 text-xs font-black text-white shadow-sm transition-colors hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"><Sparkles size={14} /> {t('caseReports.improveDialog.apply')}</button>
-                </div>
-            </div>
-        </div>,
-        document.body
+        </Modal>
     );
 };
 
@@ -742,7 +732,6 @@ const ReportRow = ({ item, locale, t, selected, expanded, canDeliver, canImprove
 };
 
 const ScannerDialog = ({ value, onChange, onClose, onLookup, busy, t }) => {
-    useEscapeToClose(onClose);
     const videoRef = useRef(null);
     const streamRef = useRef(null);
     const rafRef = useRef(null);
@@ -788,14 +777,14 @@ const ScannerDialog = ({ value, onChange, onClose, onLookup, busy, t }) => {
         }
     };
 
-    return createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
-            <div role="dialog" aria-modal="true" aria-label={t('caseReports.scanner.title')} className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-2xl dark:border-slate-800/60 dark:bg-slate-900 animate-in zoom-in-95 duration-200" onClick={(event) => event.stopPropagation()}>
-                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-                    <div className="flex items-center gap-2"><QrCode size={18} className="text-teal-600" /><h2 className="text-sm font-black text-slate-900 dark:text-slate-100">{t('caseReports.scanner.title')}</h2></div>
-                    <button type="button" onClick={onClose} aria-label={t('caseReports.scanner.title')} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"><X size={17} /></button>
-                </div>
-                <div className="space-y-4 p-5">
+    return (
+        <Modal
+            isOpen
+            onClose={onClose}
+            title={<span className="flex items-center gap-2"><QrCode size={18} className="text-teal-600" />{t('caseReports.scanner.title')}</span>}
+            size="default"
+        >
+                <div className="space-y-4">
                     <label className="block">
                         <span className="mb-1 block text-[10px] font-black uppercase text-slate-400">{t('caseReports.scanner.input')}</span>
                         <input autoFocus value={value} onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && onLookup()} placeholder={t('caseReports.scanner.placeholder')} className={fieldClass} />
@@ -812,14 +801,11 @@ const ScannerDialog = ({ value, onChange, onClose, onLookup, busy, t }) => {
                         <IconButton icon={ScanLine} label={busy ? t('caseReports.scanner.searching') : t('caseReports.scanner.find')} onClick={() => onLookup()} disabled={busy} primary />
                     </div>
                 </div>
-            </div>
-        </div>,
-        document.body
+        </Modal>
     );
 };
 
 const DeliveryDialog = ({ item, onClose, onSubmit, busy, t }) => {
-    useEscapeToClose(onClose);
     const [method, setMethod] = useState('Patient Portal');
     const defaultContactFor = useCallback((deliveryMethod) => {
         if (deliveryMethod === 'Email' || deliveryMethod === 'Patient Portal') return item.patient_email || '';
@@ -833,14 +819,21 @@ const DeliveryDialog = ({ item, onClose, onSubmit, busy, t }) => {
         setMethod(nextMethod);
         setContact((current) => current || defaultContactFor(nextMethod));
     };
-    return createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
-            <form role="dialog" aria-modal="true" aria-label={t('caseReports.deliveryDialog.title')} className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-2xl dark:border-slate-800/60 dark:bg-slate-900 animate-in zoom-in-95 duration-200" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); onSubmit({ item, method, contact, notes }); }}>
-                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-                    <div className="flex items-center gap-2"><Send size={18} className="text-teal-600" /><h2 className="text-sm font-black text-slate-900 dark:text-slate-100">{t('caseReports.deliveryDialog.title')}</h2></div>
-                    <button type="button" onClick={onClose} aria-label={t('caseReports.deliveryDialog.cancel')} className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"><X size={17} /></button>
+    return (
+        <Modal
+            isOpen
+            onClose={onClose}
+            title={<span className="flex items-center gap-2"><Send size={18} className="text-teal-600" />{t('caseReports.deliveryDialog.title')}</span>}
+            size="default"
+            footer={(
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button type="button" onClick={onClose} className={smallButtonClass}>{t('caseReports.deliveryDialog.cancel')}</button>
+                    <button type="submit" form="case-report-delivery-form" disabled={busy || (contactRequired && !contact.trim())} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 text-xs font-black text-white shadow-sm transition-colors hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50">{busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {t('caseReports.deliveryDialog.send')}</button>
                 </div>
-                <div className="space-y-4 p-5">
+            )}
+        >
+            <form id="case-report-delivery-form" onSubmit={(event) => { event.preventDefault(); onSubmit({ item, method, contact, notes }); }}>
+                <div className="space-y-4">
                     <div className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-900/60">
                         <p className="font-black text-slate-900 dark:text-slate-100">{item.patient_name || item.mrn}</p>
                         <p className="mt-1 flex flex-wrap items-center gap-1.5 text-slate-500">
@@ -853,13 +846,8 @@ const DeliveryDialog = ({ item, onClose, onSubmit, busy, t }) => {
                     <Field label={t('caseReports.deliveryDialog.contact')}><input value={contact} onChange={(event) => setContact(event.target.value)} required={contactRequired} placeholder={contactRequired ? t('caseReports.deliveryDialog.contactRequired') : t('caseReports.deliveryDialog.contactOptional')} className={fieldClass} /></Field>
                     <Field label={t('caseReports.deliveryDialog.notes')}><input value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={1000} placeholder={t('caseReports.deliveryDialog.notesPlaceholder')} className={fieldClass} /></Field>
                 </div>
-                <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-900/60 sm:flex-row sm:justify-end">
-                    <button type="button" onClick={onClose} className={smallButtonClass}>{t('caseReports.deliveryDialog.cancel')}</button>
-                    <button type="submit" disabled={busy || (contactRequired && !contact.trim())} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 text-xs font-black text-white shadow-sm transition-colors hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50">{busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {t('caseReports.deliveryDialog.send')}</button>
-                </div>
             </form>
-        </div>,
-        document.body
+        </Modal>
     );
 };
 

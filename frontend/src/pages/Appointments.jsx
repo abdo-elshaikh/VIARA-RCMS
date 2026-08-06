@@ -452,7 +452,7 @@ const Appointments = () => {
         if (targets.length === 0) return false;
         try {
             await Promise.all(targets.map(appt =>
-                sendReminder({ appointmentId: appt.appointment_id, recipientEmail, patientName: appt.mrn, time: appt.start_time }).unwrap()
+                sendReminder({ appointmentId: appt.appointment_id, recipientEmail, patientName: `${appt.patient_name} | ${appt.mrn}`, time: appt.start_time }).unwrap()
             ));
             toast.success(targets.length > 1 ? t('toast.reminderSentBulk', { count: targets.length, defaultValue: `Sent ${targets.length} reminders` }) : t('toast.reminderSent'));
             setSelectedIds(new Set());

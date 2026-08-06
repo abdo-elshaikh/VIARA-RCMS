@@ -1,4 +1,5 @@
 const net = require('net');
+const dns = require('dns').promises;
 
 const CUSTOM_AI_URL_MESSAGE = 'Custom AI endpoint must be a valid URL';
 
@@ -57,7 +58,7 @@ const isProhibitedIpv6 = (hostname) => {
         || g0 === 0x2002;
 };
 
-const validateCustomAiEndpointUrl = (value, { production = process.env.NODE_ENV === 'production' } = {}) => {
+const validateCustomAiEndpointUrl = async (value, { production = process.env.NODE_ENV === 'production' } = {}) => {
     let url;
     try {
         url = new URL(String(value || '').trim());
@@ -77,8 +78,26 @@ const validateCustomAiEndpointUrl = (value, { production = process.env.NODE_ENV 
 
     const hostname = url.hostname.replace(/^\[|\]$/g, '');
     const ipVersion = net.isIP(hostname);
-    if ((ipVersion === 4 && isProhibitedIpv4(hostname)) || (ipVersion === 6 && isProhibitedIpv6(hostname))) {
-        throw new TypeError('Custom AI endpoint must not target a loopback, private, link-local, or reserved IP address');
+    if (ipVersion === 4) {
+        if (isProhibitedIpv4(hostname)) {
+            throw new TypeError('Custom AI endpoint must not target a loopback, private, link-local, or reserved IP address');
+        }
+    } else if (ipVersion === 6) {
+        if (isProhibitedIpv6(hostname)) {
+            throw new TypeError('Custom AI endpoint must not target a loopback, private, link-local, or reserved IP address');
+        }
+    } else {
+        // Resolve hostname to IP to prevent DNS rebinding bypass
+        try {
+            const resolved = await dns.lookup(hostname);
+            const resolvedIp = resolved.address;
+            const resolvedIpVersion = net.isIP(resolvedIp);
+            if ((resolvedIpVersion === 4 && isProhibitedIpv4(resolvedIp)) || (resolvedIpVersion === 6 && isProhibitedIpv6(resolvedIp))) {
+                throw new TypeError('Custom AI endpoint resolves to a prohibited IP address');
+            }
+        } catch (dnsErr) {
+            throw new TypeError(`Custom AI endpoint hostname could not be resolved: ${dnsErr.message}`);
+        }
     }
 
     return url.toString();

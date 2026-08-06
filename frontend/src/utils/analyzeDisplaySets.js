@@ -14,7 +14,7 @@
  */
 import { authenticatedFetch } from './authenticatedFetch';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 // Geometry tolerances. Positions/orientations from real scanners carry floating
 // point noise, so exact equality would produce constant false positives.

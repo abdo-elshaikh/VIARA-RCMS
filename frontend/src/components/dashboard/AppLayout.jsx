@@ -1,15 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import ChatBubble from '../communications/ChatBubble';
 import { useTranslation } from 'react-i18next';
 
 const AppLayout = ({ children, role }) => {
-    const { i18n } = useTranslation();
+    const { i18n, t } = useTranslation(['navigation']);
     const isRtl = i18n.dir() === 'rtl';
     
     // Mobile Drawer State
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const menuButtonRef = useRef(null);
+    const closeButtonRef = useRef(null);
+    const drawerRef = useRef(null);
+    const mainRef = useRef(null);
 
     // Desktop Collapse State (Persist in localStorage)
     const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -73,6 +77,43 @@ const AppLayout = ({ children, role }) => {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
+    useEffect(() => {
+        if (!isSidebarOpen || window.innerWidth >= 1024) return undefined;
+        const previousOverflow = document.body.style.overflow;
+        const mainElement = mainRef.current;
+        const triggerElement = menuButtonRef.current;
+        const previousInert = mainElement?.inert;
+        document.body.style.overflow = 'hidden';
+        if (mainElement) mainElement.inert = true;
+        closeButtonRef.current?.focus();
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                setIsSidebarOpen(false);
+                return;
+            }
+            if (event.key !== 'Tab' || !drawerRef.current) return;
+            const focusable = [...drawerRef.current.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])')];
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            if (mainElement) mainElement.inert = previousInert || false;
+            document.removeEventListener('keydown', handleKeyDown);
+            triggerElement?.focus();
+        };
+    }, [isSidebarOpen]);
+
     return (
         <div className="app-shell relative flex h-screen overflow-hidden">
 
@@ -81,18 +122,20 @@ const AppLayout = ({ children, role }) => {
                 <div
                     className="fixed inset-0 z-40 bg-slate-950/55 backdrop-blur-sm lg:hidden"
                     onClick={() => setIsSidebarOpen(false)}
+                    aria-hidden="true"
                 />
             )}
 
             {/* Sidebar Container */}
             <aside
+                ref={drawerRef}
                 className={`
-                    fixed inset-y-0 z-50 border-r border-slate-200 bg-white text-slate-900 shadow-2xl ease-in-out dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface)] dark:text-[var(--rcms-ink)]
+                    fixed inset-y-0 start-0 z-50 border-e border-slate-200 bg-white text-slate-900 shadow-2xl ease-in-out dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface)] dark:text-[var(--rcms-ink)]
                     ${isResizing ? '' : 'transition-all duration-300'}
-                    ${isRtl ? 'right-0' : 'left-0'}
                     ${isSidebarOpen ? 'translate-x-0' : (isRtl ? 'translate-x-full' : '-translate-x-full')}
                     lg:static lg:translate-x-0
                 `}
+                {...(isSidebarOpen ? { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('aria.mainNavigation', { defaultValue: 'Navigation menu' }) } : {})}
                 style={{
                     width: isCollapsed ? 80 : (window.innerWidth < 1024 ? 280 : sidebarWidth)
                 }}
@@ -102,13 +145,13 @@ const AppLayout = ({ children, role }) => {
                     isCollapsed={isCollapsed}
                     toggleCollapse={toggleCollapse}
                     onCloseMobile={() => setIsSidebarOpen(false)}
+                    closeButtonRef={closeButtonRef}
                 />
 
                 {/* Drag Handle */}
                 {!isCollapsed && (
                     <div
-                        className={`absolute top-0 bottom-0 w-1.5 cursor-col-resize z-[60] transition-colors hidden lg:block
-                            ${isRtl ? 'left-0 hover:bg-cyan-500/50' : 'right-0 hover:bg-cyan-500/50'}
+                        className={`absolute inset-y-0 end-0 w-1.5 cursor-col-resize z-[60] transition-colors hidden lg:block hover:bg-cyan-500/50
                             ${isResizing ? 'bg-cyan-500/80' : ''}
                         `}
                         onMouseDown={startResizing}
@@ -117,10 +160,11 @@ const AppLayout = ({ children, role }) => {
             </aside>
 
             {/* Main Content Wrapper */}
-            <div className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
+            <div ref={mainRef} className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
 
                 <Topbar
                     onMobileMenuClick={() => setIsSidebarOpen(true)}
+                    menuButtonRef={menuButtonRef}
                     isCollapsed={isCollapsed}
                     toggleCollapse={toggleCollapse}
                 />

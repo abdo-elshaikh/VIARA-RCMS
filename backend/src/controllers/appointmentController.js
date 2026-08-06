@@ -174,11 +174,34 @@ const createAppointment = (db) => async (req, res, next) => {
         try {
             await assertSchedulingRules(client, data.modalityId, data.startTime, data.endTime);
 
+            const idempotencyKey = req.get('Idempotency-Key');
+            if (idempotencyKey) {
+                if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
+                    await client.query('ROLLBACK');
+                    return next(new AppError('Invalid Idempotency-Key header format', 400));
+                }
+
+                const existing = await client.query(
+                    `SELECT appointment_id FROM appointment_idempotency_keys
+                     WHERE idempotency_key = $1 AND actor_id = $2 AND operation_type = 'CREATE_APPOINTMENT'`,
+                    [idempotencyKey, userId]
+                );
+                if (existing.rows.length > 0) {
+                    await client.query('ROLLBACK');
+                    const apptResult = await db.query(
+                        'SELECT * FROM appointments WHERE appointment_id = $1',
+                        [existing.rows[0].appointment_id]
+                    );
+                    return res.status(200).json(apptResult.rows[0]);
+                }
+            }
+
             const conflictQuery = `
               SELECT appointment_id FROM appointments
               WHERE modality_id = $1
               AND status != 'Cancelled'
               AND tstzrange(start_time, end_time) && tstzrange($2, $3)
+              FOR UPDATE
             `;
 
             const conflictCheck = await client.query(conflictQuery, [
@@ -190,6 +213,27 @@ const createAppointment = (db) => async (req, res, next) => {
             if (conflictCheck.rows.length > 0) {
                 await client.query('ROLLBACK');
                 return next(new AppError('This machine is already booked for the selected time slot.', 409));
+            }
+
+            const patientConflictQuery = `
+              SELECT appointment_id FROM appointments
+              WHERE patient_id = $1
+              AND status != 'Cancelled'
+              AND appointment_id != $4
+              AND tstzrange(start_time, end_time) && tstzrange($2, $3)
+              FOR UPDATE
+            `;
+
+            const patientConflictCheck = await client.query(patientConflictQuery, [
+                data.patientId,
+                data.startTime,
+                data.endTime,
+                null
+            ]);
+
+            if (patientConflictCheck.rows.length > 0) {
+                await client.query('ROLLBACK');
+                return next(new AppError('This patient already has an appointment scheduled for the selected time slot.', 409));
             }
 
             const examDefaults = await getExamDefaults(client, data.examTypeId, data.modalityId);
@@ -317,6 +361,16 @@ const createAppointment = (db) => async (req, res, next) => {
                 userId
             });
 
+            if (idempotencyKey) {
+                await client.query(
+                    `INSERT INTO appointment_idempotency_keys
+                     (idempotency_key, actor_id, operation_type, resource_id, request_fingerprint)
+                     VALUES ($1, $2, 'CREATE_APPOINTMENT', $3, $4)
+                     ON CONFLICT (actor_id, operation_type, idempotency_key) DO NOTHING`,
+                    [idempotencyKey, userId, appointment.appointment_id, crypto.createHash('sha256').update(JSON.stringify(data || {})).digest('hex')]
+                );
+            }
+
             await client.query('COMMIT');
 
             // #4 — Fetch the patient's real name before firing notification
@@ -404,12 +458,10 @@ const getAppointments = (db) => async (req, res, next) => {
             appointmentSource,
             preparationStatus,
             priority,
-            assignedStaffId,
-            limit = 200,
-            offset = 0
+            assignedStaffId
         } = req.query;
-        // #13 — Cap limit to prevent bulk enumeration
-        const safeLimit = Math.min(Number(limit) || 200, 500);
+        const { getPagination } = require('../utils/pagination');
+        const { limit: safeLimit, offset } = getPagination(req.query, { defaultLimit: 200, maxLimit: 500 });
         let query = `
             SELECT a.*, p.mrn, p.first_name_enc, p.last_name_enc, m.name as machine_name, m.type as modality_type, et.name as exam_type_name,
                    et.preparation_instructions, et.body_part as exam_type_body_part, et.contrast_required as exam_type_contrast_required,
@@ -616,6 +668,7 @@ const updateAppointment = (db) => async (req, res, next) => {
                 AND modality_id = $2
                 AND status != 'Cancelled'
                 AND tstzrange(start_time, end_time) && tstzrange($3, $4)
+                FOR UPDATE
             `;
 
             const conflictCheck = await client.query(conflictQuery, [
@@ -952,6 +1005,7 @@ const rescheduleAppointment = (db) => async (req, res, next) => {
             AND modality_id = $2
             AND status != 'Cancelled'
             AND tstzrange(start_time, end_time) && tstzrange($3, $4)
+            FOR UPDATE
         `, [id, existing.modality_id, startTime, endTime]);
 
         if (conflictResult.rows.length > 0) {
@@ -1065,45 +1119,68 @@ const getAvailability = (db) => async (req, res, next) => {
         const startDate = req.query.startDate || date;
         const endDate = req.query.endDate || date;
 
-        const [machinesResult, appointmentsResult, staffResult] = await Promise.all([
-            db.query('SELECT * FROM modalities WHERE deleted_at IS NULL ORDER BY name'),
+        // Single SQL query with JSON aggregation replaces the O(n*m) in-memory filtering.
+        const [machineAvailability, staffAvailability] = await Promise.all([
             db.query(`
-                SELECT a.appointment_id, a.start_time, a.end_time, a.status, a.modality_id,
-                       a.technician_id, a.nurse_id, a.radiologist_id,
-                       p.mrn, m.name as machine_name, et.name as exam_type_name
-                FROM appointments a
-                JOIN patients p ON a.patient_id = p.patient_id
-                JOIN modalities m ON a.modality_id = m.modality_id
+                SELECT
+                    m.*,
+                    CASE WHEN m.status = 'Active' THEN true ELSE false END as is_schedulable,
+                    COALESCE(json_agg(
+                        json_build_object(
+                            'appointment_id', a.appointment_id,
+                            'start_time', a.start_time,
+                            'end_time', a.end_time,
+                            'status', a.status,
+                            'mrn', p.mrn,
+                            'exam_type_name', et.name
+                        )
+                        ORDER BY a.start_time ASC
+                    ) FILTER (WHERE a.appointment_id IS NOT NULL), '[]') as appointments
+                FROM modalities m
+                LEFT JOIN appointments a
+                    ON a.modality_id = m.modality_id
+                    AND a.start_time >= $1::date
+                    AND a.start_time < ($2::date + '1 day'::interval)
+                    AND a.status != 'Cancelled'
+                LEFT JOIN patients p ON a.patient_id = p.patient_id
                 LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
-                WHERE a.start_time >= $1::date
-                  AND a.start_time < ($2::date + '1 day'::interval)
-                  AND a.status != 'Cancelled'
-                ORDER BY a.start_time ASC
+                WHERE m.deleted_at IS NULL
+                GROUP BY m.modality_id
+                ORDER BY m.name
             `, [startDate, endDate]),
             db.query(`
-                SELECT user_id, full_name, role
-                FROM users
-                WHERE role IN ('Radiologist', 'Technician', 'Nurse')
-                  AND is_active = true
-                ORDER BY role, full_name
-            `)
+                SELECT
+                    u.user_id, u.full_name, u.role,
+                    COALESCE(json_agg(
+                        json_build_object(
+                            'appointment_id', a.appointment_id,
+                            'start_time', a.start_time,
+                            'end_time', a.end_time,
+                            'status', a.status,
+                            'machine_name', m.name,
+                            'mrn', p.mrn,
+                            'exam_type_name', et.name
+                        )
+                        ORDER BY a.start_time ASC
+                    ) FILTER (WHERE a.appointment_id IS NOT NULL), '[]') as appointments
+                FROM users u
+                LEFT JOIN appointments a
+                    ON (a.technician_id = u.user_id OR a.nurse_id = u.user_id OR a.radiologist_id = u.user_id)
+                    AND a.start_time >= $1::date
+                    AND a.start_time < ($2::date + '1 day'::interval)
+                    AND a.status != 'Cancelled'
+                LEFT JOIN modalities m ON a.modality_id = m.modality_id
+                LEFT JOIN patients p ON a.patient_id = p.patient_id
+                LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
+                WHERE u.role IN ('Radiologist', 'Technician', 'Nurse')
+                  AND u.is_active = true
+                GROUP BY u.user_id
+                ORDER BY u.role, u.full_name
+            `, [startDate, endDate])
         ]);
 
-        const appointments = appointmentsResult.rows;
-        const machines = machinesResult.rows.map(machine => ({
-            ...machine,
-            is_schedulable: machine.status === 'Active',
-            appointments: appointments.filter(appt => appt.modality_id === machine.modality_id)
-        }));
-
-        const staff = staffResult.rows.map(user => ({
-            ...user,
-            appointments: appointments.filter(appt =>
-                appt.technician_id === user.user_id
-                || appt.nurse_id === user.user_id
-                || appt.radiologist_id === user.user_id
-            )
-        }));
+        const machines = machineAvailability.rows;
+        const staff = staffAvailability.rows;
 
         const workingHours = await getWorkingHours(db);
 
@@ -1277,5 +1354,9 @@ module.exports = {
     rescheduleAppointment,
     getAvailability,
     cancelAppointment,
-    getOrderTimeline
+    getOrderTimeline,
+    assertSchedulingRules,
+    getExamDefaults,
+    buildOrderFields,
+    resolveFollowUp
 };

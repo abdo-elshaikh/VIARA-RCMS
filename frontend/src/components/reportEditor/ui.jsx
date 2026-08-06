@@ -976,7 +976,7 @@ export const PatientDocumentsPanel = memo(({ patientId, locale, t }) => {
 
     const handleDownload = async (doc) => {
         try {
-            const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+            const baseUrl = import.meta.env.VITE_API_URL || '/api';
             const response = await authenticatedFetch(`${baseUrl}/documents/${doc.document_id}/download`);
             if (!response.ok) throw new Error('Could not download file');
             const blob = await response.blob();

@@ -30,8 +30,8 @@ class SettingsService {
                 ON CONFLICT (setting_key) DO NOTHING;
             `, [
                 process.env.ORTHANC_API_URL || process.env.ORTHANC_URL || 'http://orthanc:8042',
-                process.env.ORTHANC_USERNAME || 'orthanc',
-                process.env.ORTHANC_PASSWORD || 'orthanc',
+                process.env.ORTHANC_USERNAME || 'rcms',
+                process.env.ORTHANC_PASSWORD,
                 process.env.ORTHANC_AET || 'MiPACS2',
                 process.env.PACS_SERVER_IP || process.env.ORTHANC_DICOM_HOST || '127.0.0.1',
                 process.env.PACS_DICOM_PORT || '4242'

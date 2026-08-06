@@ -30,6 +30,7 @@ describe('privacy controller workflow hardening', () => {
     beforeAll(async () => {
         tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rcms-privacy-'));
         process.env.ENCRYPTION_KEY = TEST_KEY;
+        process.env.BLIND_INDEX_KEY = TEST_KEY;
         process.env.PRIVACY_EXPORT_DIR = tempDir;
         jest.resetModules();
         controller = require('../src/controllers/privacyController');

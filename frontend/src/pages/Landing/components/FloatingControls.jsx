@@ -92,7 +92,7 @@ export const FloatingControls = ({
 
     return (
         <header className="command-header" dir={isRtl ? 'rtl' : 'ltr'}>
-            <div className="command-header__inner">
+            <div className="command-header__inner command-content-frame">
                 <Link to="/" className="command-brand-link" aria-label={centerName}>
                     <BrandLogo centerName={centerName} logoUrl={logoUrl} isRtl={isRtl} />
                 </Link>

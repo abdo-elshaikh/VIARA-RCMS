@@ -11,7 +11,7 @@ describe('security and financial invariants', () => {
         process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     });
 
-    test('PII encryption authenticates new values and reads legacy CBC values', () => {
+    test('PII encryption uses AES-GCM and rejects legacy CBC values', () => {
         const { encrypt, decrypt } = require('../src/utils/crypto');
         const encrypted = encrypt('Sensitive value');
         expect(encrypted).toMatch(/^v2:/);
@@ -24,7 +24,7 @@ describe('security and financial invariants', () => {
         const iv = crypto.randomBytes(16);
         const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
         const legacy = Buffer.concat([cipher.update('Legacy value'), cipher.final()]);
-        expect(decrypt(`${iv.toString('hex')}:${legacy.toString('hex')}`)).toBe('Legacy value');
+        expect(() => decrypt(`${iv.toString('hex')}:${legacy.toString('hex')}`)).toThrow('legacy AES-CBC format is no longer supported');
     });
 
     test('unknown roles cannot inherit admin dashboard data', async () => {

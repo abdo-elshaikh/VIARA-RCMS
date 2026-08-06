@@ -23,6 +23,10 @@ const attachGrantedPermissions = (req, permissions = []) => {
  * Initializes or refreshes the permission cache from the database.
  */
 const refreshPermissionCache = async (db) => {
+    if (isRefreshing) {
+        return;
+    }
+    isRefreshing = true;
     try {
         const query = `
             SELECT rp.role_name, p.name as permission_name

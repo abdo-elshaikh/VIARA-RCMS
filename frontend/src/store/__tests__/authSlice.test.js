@@ -19,7 +19,8 @@ describe('staff access token storage', () => {
         }));
 
         expect(store.getState().auth.token).toBe('login-token');
-        expect(JSON.parse(localStorage.getItem('user'))).toMatchObject({ id: 'user-1' });
+        expect(JSON.parse(sessionStorage.getItem('user'))).toMatchObject({ id: 'user-1' });
+        expect(localStorage.getItem('user')).toBeNull();
         expect(localStorage.getItem('token')).toBeNull();
         expect(sessionStorage.getItem('token')).toBeNull();
 
@@ -31,7 +32,7 @@ describe('staff access token storage', () => {
     });
 
     it('cleans legacy token storage and rehydrates only with a refreshed token', () => {
-        localStorage.setItem('user', JSON.stringify({ id: 'user-1', role: 'Admin' }));
+        sessionStorage.setItem('user', JSON.stringify({ id: 'user-1', role: 'Admin' }));
         localStorage.setItem('token', 'legacy-local-token');
         sessionStorage.setItem('token', 'legacy-session-token');
         const store = makeStore();

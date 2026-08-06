@@ -17,6 +17,7 @@ jest.mock('../../src/services/pacsReconcileService', () => ({
 
 // Keep Orthanc URL/creds deterministic before the service captures them.
 process.env.ORTHANC_URL = 'http://orthanc:8042';
+process.env.ORTHANC_PASSWORD = 'test-password';
 
 const { reconcileInstance } = require('../../src/services/pacsReconcileService');
 const {

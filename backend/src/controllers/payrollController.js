@@ -1,4 +1,5 @@
 const { AppError } = require('../middleware/errorHandler');
+const { logAction } = require('../services/auditService');
 const {
     DEFAULT_BRANCH_ID,
     DEFAULT_CURRENCY,
@@ -193,10 +194,13 @@ const getPayrollPeriods = (db) => async (req, res, next) => {
 };
 
 const createPayrollPeriod = (db) => async (req, res, next) => {
+    let client;
     try {
         const data = req.body;
         const branchId = data.branchId || DEFAULT_BRANCH_ID;
-        const overlap = await db.query(`
+        client = await db.connect();
+        await client.query('BEGIN');
+        const overlap = await client.query(`
             SELECT period_id, name
             FROM payroll_periods
             WHERE status != 'Cancelled'
@@ -208,14 +212,35 @@ const createPayrollPeriod = (db) => async (req, res, next) => {
             return next(new AppError(`Payroll period overlaps with ${overlap.rows[0].name}`, 409));
         }
 
-        const result = await db.query(`
+        const finalizedOverlap = await client.query(`
+            SELECT 1
+            FROM financial_periods
+            WHERE status = 'Finalized'
+              AND branch_id = $3::uuid
+              AND daterange(start_date, end_date, '[]') && daterange($1::date, $2::date, '[]')
+            LIMIT 1
+        `, [data.startDate, data.endDate, branchId]);
+        if (finalizedOverlap.rows.length) {
+            return next(new AppError('Payroll period overlaps with a finalized financial period', 409));
+        }
+
+        const result = await client.query(`
             INSERT INTO payroll_periods (name, start_date, end_date, currency_code, notes, created_by, branch_id)
             VALUES ($1, $2, $3, UPPER($4), $5, $6, $7::uuid)
             RETURNING *
         `, [data.name, data.startDate, data.endDate, data.currencyCode, data.notes, getUserId(req), branchId]);
+        await logAction(client, {
+            userId: getUserId(req), action: 'PAYROLL_PERIOD_CREATED', resourceId: result.rows[0].period_id,
+            resourceTable: 'payroll_periods', ipAddress: req.ip,
+            details: { name: data.name, startDate: data.startDate, endDate: data.endDate, branchId }, required: false
+        });
+        await client.query('COMMIT');
         res.status(201).json(result.rows[0]);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 

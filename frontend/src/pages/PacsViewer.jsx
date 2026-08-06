@@ -63,7 +63,7 @@ import {
 import { authenticatedFetch, downloadAuthenticatedFile } from '../utils/authenticatedFetch';
 import { analyzeStudyDisplaySets, groupInstancesBySeries } from '../utils/analyzeDisplaySets';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const OHIF_BASE = import.meta.env.VITE_OHIF_URL || '';
 
 const RETRY_DELAYS_MS = [2000, 4000, 8000, 15000];

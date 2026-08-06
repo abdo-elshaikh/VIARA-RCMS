@@ -81,8 +81,8 @@
     "description": "Define the facility-wide scheduling window using whole hours in 24-hour time.",
     "open": "Opening hour",
     "close": "Closing hour",
-    "hourHint": "Enter a whole hour from 0 to 23.",
-    "invalid": "Opening and closing hours must be between 0 and 23.",
+    "hourHint": "Enter a whole hour from 0 to 24.",
+    "invalid": "Opening and closing hours must be between 0 and 24.",
     "window": "Configured scheduling window",
     "duration": "{{count}} operating hours",
     "operationalNote": "Appointment availability also considers configured resources, existing bookings, holidays retained in the settings record, and equipment downtime."

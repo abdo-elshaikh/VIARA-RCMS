@@ -15,8 +15,12 @@ const Modal = ({ isOpen, onClose, title, children, size = 'default', footer, wid
     const titleId = useId();
     const dialogRef = useRef(null);
     const previousFocusRef = useRef(null);
+    const wasOpenRef = useRef(false);
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
+
+    if (isOpen && !wasOpenRef.current) previousFocusRef.current = document.activeElement;
+    wasOpenRef.current = isOpen;
 
     useEffect(() => {
         const handleKeyDown = (event) => {
@@ -46,7 +50,6 @@ const Modal = ({ isOpen, onClose, title, children, size = 'default', footer, wid
         };
 
         if (isOpen) {
-            previousFocusRef.current = document.activeElement;
             const previousOverflow = document.body.style.overflow;
             document.addEventListener('keydown', handleKeyDown);
             document.body.style.overflow = 'hidden';

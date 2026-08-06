@@ -136,6 +136,10 @@
     "deleted": "Document deleted.",
     "deleteError": "The document could not be deleted.",
     "deleteAction": "Delete {{name}}",
+    "preview": "Preview",
+    "previewAction": "Preview {{name}}",
+    "download": "Download",
+    "downloadAction": "Download {{name}}",
     "fallbackName": "this document"
   },
   "privacy": {

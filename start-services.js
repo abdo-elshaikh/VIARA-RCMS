@@ -4,7 +4,6 @@ const fs = require('fs');
 
 const isWindows = process.platform === 'win32';
 
-// ANSI terminal color helpers
 const colors = {
   reset: '\x1b[0m',
   bright: '\x1b[1m',
@@ -18,13 +17,12 @@ const colors = {
   gray: '\x1b[90m'
 };
 
-// Parse command-line arguments
 const args = process.argv.slice(2);
 const helpRequested = args.includes('--help') || args.includes('-h');
 const noDocker = args.includes('--no-docker') || process.env.NO_DOCKER === 'true';
 const dockerAll = args.includes('--docker-all') || args.includes('--all');
 const dockerOnly = args.includes('--docker-only');
-const stopDockerOnExit = args.includes('--stop-docker') || args.includes('--down');
+const stopDockerOnExit = !args.includes('--no-stop-docker') || args.includes('--stop-docker') || args.includes('--down');
 
 let customDockerServices = null;
 const servicesArg = args.find(arg => arg.startsWith('--services='));
@@ -45,15 +43,41 @@ Options:
   --docker-all     Start all Docker containers defined in docker-compose.yml
   --docker-only    Start Docker containers only and attach to logs (no local Node processes)
   --no-docker      Skip Docker container startup and run Node services only
-  --stop-docker    Stop Docker containers automatically when exiting
+  --stop-docker    Stop Docker containers automatically when exiting (default)
+  --no-stop-docker Keep Docker containers running after exit
   --services=a,b   Specify custom Docker services to start (e.g. --services=postgres,orthanc)
   -h, --help       Show this help message
 
 Environment Variables:
   NO_DOCKER=true            Disable automatic Docker startup
   DOCKER_INFRA_SERVICES     Override default infra services (default: "postgres orthanc ohif")
+  COMPOSE_PROJECT_NAME      Override docker compose project name (default: directory name)
 `);
   process.exit(0);
+}
+
+const composeProject = process.env.COMPOSE_PROJECT_NAME || path.basename(__dirname);
+const composeFile = path.join(__dirname, 'docker-compose.yml');
+
+function dockerCmd() {
+  try {
+    execSync('docker compose version', { stdio: 'ignore' });
+    return 'docker compose';
+  } catch (e) {
+    try {
+      execSync('docker-compose version', { stdio: 'ignore' });
+      return 'docker-compose';
+    } catch (e2) {
+      return null;
+    }
+  }
+}
+
+function compose(...extraArgs) {
+  const cmd = dockerCmd();
+  if (!cmd) throw new Error('Docker Compose is not installed');
+  const parts = [cmd, '-f', composeFile, '-p', composeProject, ...extraArgs];
+  return parts.join(' ');
 }
 
 const services = [
@@ -88,6 +112,8 @@ const services = [
 
 const children = [];
 let activeDockerCmd = null;
+let dockerStartupFatal = false;
+const dockerManagedLocalServices = new Set();
 
 function prefixOutput(data, service) {
   const lines = data.toString().split('\r\n').join('\n').split('\n');
@@ -98,18 +124,88 @@ function prefixOutput(data, service) {
   });
 }
 
-function detectDockerCompose() {
+function getServiceStatus(serviceName) {
   try {
-    execSync('docker compose version', { stdio: 'ignore' });
-    return 'docker compose';
-  } catch (e) {
-    try {
-      execSync('docker-compose version', { stdio: 'ignore' });
-      return 'docker-compose';
-    } catch (e2) {
-      return null;
-    }
+    const output = execSync(compose('ps', '--format', 'json', serviceName), {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      shell: true
+    });
+    const entries = JSON.parse(output.trim());
+    if (!entries || entries.length === 0) return null;
+    const entry = entries[0];
+    return {
+      name: serviceName,
+      running: entry.State === 'running' || entry.State === 'healthy',
+      health: entry.Health || null,
+      state: entry.State
+    };
+  } catch (err) {
+    return null;
   }
+}
+
+function getAllServicesStatus() {
+  try {
+    const output = execSync(compose('ps', '--format', 'json'), {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      shell: true
+    });
+    return JSON.parse(output.trim());
+  } catch (err) {
+    return [];
+  }
+}
+
+function isUsableService(service) {
+  if (!service) return false;
+  return service.running && service.health !== 'unhealthy';
+}
+
+function registerDockerManagedApps() {
+  ['backend', 'frontend', 'portal'].forEach(serviceName => {
+    const status = getServiceStatus(serviceName);
+    if (isUsableService(status)) {
+      dockerManagedLocalServices.add(serviceName);
+    }
+  });
+}
+
+function reuseExistingStack(infraServices) {
+  const requested = infraServices.filter(s => {
+    const status = getServiceStatus(s);
+    return status !== null;
+  });
+
+  if (requested.length === 0) return false;
+
+  const allStatuses = getAllServicesStatus();
+  const projects = [...new Set(allStatuses.map(s => s.Project || 'unknown'))];
+
+  const missing = requested.filter(s => {
+    const status = getServiceStatus(s);
+    return !status || !status.running;
+  });
+
+  const unhealthy = requested.filter(s => {
+    const status = getServiceStatus(s);
+    return status && status.health === 'unhealthy';
+  });
+
+  if (missing.length > 0) {
+    console.error(`${colors.red}[docker] Existing RCMS containers belong to Compose project(s) ${projects.join(', ')}, but required services are not running: ${missing.join(', ')}.${colors.reset}`);
+    console.error(`${colors.yellow}[docker] Stop that stack or run this checkout with isolated container names and ports.${colors.reset}\n`);
+    dockerStartupFatal = true;
+    return false;
+  }
+
+  console.log(`${colors.yellow}[docker] RCMS infrastructure is already running under Compose project "${composeProject}". Reusing it without recreation.${colors.reset}`);
+  if (unhealthy.length > 0) {
+    console.log(`${colors.yellow}[docker] Health warning: ${unhealthy.join(', ')} reported unhealthy; inspect with docker compose ps and docker logs.${colors.reset}`);
+  }
+  registerDockerManagedApps();
+  return true;
 }
 
 function isDockerDaemonRunning() {
@@ -146,7 +242,7 @@ function attemptToStartDockerDaemon(maxWaitSec = 25) {
   if (isWindows) {
     const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
     const dockerDesktopPath = path.join(programFiles, 'Docker', 'Docker', 'Docker Desktop.exe');
-    
+
     if (fs.existsSync(dockerDesktopPath)) {
       if (!isDockerDesktopProcessRunning()) {
         console.log(`${colors.cyan}[docker] 🚀 Launching Docker Desktop...${colors.reset}`);
@@ -157,7 +253,7 @@ function attemptToStartDockerDaemon(maxWaitSec = 25) {
           try {
             execSync(`start "" "${dockerDesktopPath}"`, { shell: true, stdio: 'ignore' });
             launchAttempted = true;
-          } catch (err2) {}
+          } catch (err2) { }
         }
       } else {
         console.log(`${colors.cyan}[docker] ⏳ Docker Desktop process is running, waiting for engine...${colors.reset}`);
@@ -170,14 +266,19 @@ function attemptToStartDockerDaemon(maxWaitSec = 25) {
       try {
         execSync('open -a Docker', { stdio: 'ignore' });
         launchAttempted = true;
-      } catch (err) {}
+      } catch (err) { }
     }
   } else if (process.platform === 'linux') {
     console.log(`${colors.cyan}[docker] 🚀 Starting Docker service...${colors.reset}`);
     try {
-      execSync('sudo systemctl start docker', { stdio: 'ignore' });
+      execSync('systemctl start docker', { stdio: 'ignore' });
       launchAttempted = true;
-    } catch (err) {}
+    } catch (err) {
+      try {
+        execSync('service docker start', { stdio: 'ignore' });
+        launchAttempted = true;
+      } catch (err2) { }
+    }
   }
 
   if (!launchAttempted) {
@@ -208,49 +309,60 @@ function handleDockerStartup() {
     return false;
   }
 
-  let dockerCmd = detectDockerCompose();
+  const cmd = dockerCmd();
 
   if (!isDockerDaemonRunning()) {
     const daemonReady = attemptToStartDockerDaemon();
     if (!daemonReady) {
       return false;
     }
-    dockerCmd = dockerCmd || detectDockerCompose();
   }
 
-  if (!dockerCmd) {
+  if (!cmd) {
     console.log(`${colors.yellow}[docker] ⚠️ Docker / Docker Compose is not installed. Skipping Docker startup...${colors.reset}\n`);
     return false;
   }
 
-  activeDockerCmd = dockerCmd;
+  activeDockerCmd = cmd;
 
   if (dockerOnly) {
     console.log(`${colors.bright}${colors.blue}[docker] Launching full Docker Compose stack...${colors.reset}`);
     try {
-      execSync(`${dockerCmd} up --build`, { stdio: 'inherit' });
+      execSync(compose('up', '--build'), { stdio: 'inherit' });
     } catch (err) {
       console.error(`${colors.red}[docker] Error running Docker Compose: ${err.message}${colors.reset}`);
     }
     process.exit(0);
   }
 
-  const infraServices = customDockerServices || 
-    (process.env.DOCKER_INFRA_SERVICES ? process.env.DOCKER_INFRA_SERVICES.split(' ') : ['postgres', 'orthanc', 'ohif']);
+  const infraServices = customDockerServices ||
+    (process.env.DOCKER_INFRA_SERVICES ? process.env.DOCKER_INFRA_SERVICES.split(' ') : ['postgres', 'orthanc', 'ohif', 'backend']);
+
+  if (!dockerAll && reuseExistingStack(infraServices)) {
+    return true;
+  }
+
+  if (dockerStartupFatal) return false;
 
   const targetServicesStr = dockerAll ? '' : infraServices.join(' ');
   console.log(`${colors.bright}${colors.blue}[docker] 🐳 Starting Docker infrastructure services (${dockerAll ? 'all containers' : targetServicesStr})...${colors.reset}`);
 
   try {
-    execSync(`${dockerCmd} up -d ${targetServicesStr}`, { stdio: 'inherit' });
+    execSync(compose('up', '-d', '--force-recreate', '--remove-orphans', targetServicesStr), { stdio: 'inherit' });
     console.log(`${colors.green}[docker] ✅ Docker infrastructure services started successfully.${colors.reset}\n`);
-    
+
     if (!dockerAll && infraServices.includes('postgres')) {
-      waitForPostgres(dockerCmd);
+      waitForService('postgres', 'pg_isready -U rcms -d rcms', dockerCmd);
     }
+    if (!dockerAll && infraServices.includes('backend')) {
+      waitForService('backend', 'wget --quiet --spider http://127.0.0.1:3000/health/ready', dockerCmd);
+    }
+    registerDockerManagedApps();
     return true;
   } catch (err) {
     console.error(`${colors.red}[docker] ❌ Failed to start Docker services: ${err.message}${colors.reset}\n`);
+    console.error(`${colors.yellow}[docker] Local services were not started because they may connect to incomplete or incompatible infrastructure.${colors.reset}\n`);
+    dockerStartupFatal = true;
     return false;
   }
 }
@@ -260,26 +372,24 @@ function sleepSync(ms) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
   } catch (e) {
     const start = Date.now();
-    while (Date.now() - start < ms) {}
+    while (Date.now() - start < ms) { }
   }
 }
 
-function waitForPostgres(dockerCmd, maxWaitSec = 10) {
-  console.log(`${colors.blue}[docker] Checking PostgreSQL database readiness...${colors.reset}`);
+function waitForService(serviceName, healthCheckCmd, dockerCmd, maxWaitSec = 30) {
+  console.log(`${colors.blue}[docker] Checking ${serviceName} readiness...${colors.reset}`);
   const startTime = Date.now();
-  const user = process.env.POSTGRES_USER || 'rcms';
-  const db = process.env.POSTGRES_DB || 'rcms';
 
   while (Date.now() - startTime < maxWaitSec * 1000) {
     try {
-      execSync(`${dockerCmd} exec -T postgres pg_isready -U ${user} -d ${db}`, { stdio: 'ignore' });
-      console.log(`${colors.green}[docker] PostgreSQL is ready to accept connections.${colors.reset}\n`);
+      execSync(compose('exec', '-T', serviceName, healthCheckCmd), { stdio: 'ignore' });
+      console.log(`${colors.green}[docker] ${serviceName} is ready.${colors.reset}\n`);
       return true;
     } catch (e) {
       sleepSync(1000);
     }
   }
-  console.log(`${colors.yellow}[docker] PostgreSQL readiness check timed out. Proceeding...${colors.reset}\n`);
+  console.log(`${colors.yellow}[docker] ${serviceName} readiness check timed out. Proceeding...${colors.reset}\n`);
   return false;
 }
 
@@ -287,12 +397,19 @@ function main() {
   console.log(`${colors.bright}${colors.cyan}==================================================${colors.reset}`);
   console.log(`${colors.bright}   🚀 Launching RCMS Services (Backend, Frontend, Portal)${colors.reset}`);
   console.log(`${colors.bright}${colors.cyan}==================================================${colors.reset}`);
-  
-  // Handle Docker initialization
+
   const dockerStarted = handleDockerStartup();
 
-  if (dockerStarted) {
-    console.log(`  * ${colors.blue}${'docker'.padEnd(12)}${colors.reset} -> ${colors.yellow}postgres (5432), orthanc (8042), ohif (3005)${colors.reset}`);
+  if (dockerStartupFatal) {
+    process.exitCode = 1;
+    return;
+  }
+
+   if (dockerStarted) {
+     const infraServices = customDockerServices ||
+       (process.env.DOCKER_INFRA_SERVICES ? process.env.DOCKER_INFRA_SERVICES.split(' ') : ['postgres', 'orthanc', 'ohif', 'backend']);
+     const dockerStopNote = stopDockerOnExit ? ' (stopped on exit)' : '';
+     console.log(`  * ${colors.blue}${'docker'.padEnd(12)}${colors.reset} -> ${colors.yellow}infra: ${infraServices.join(', ')}${dockerStopNote}${colors.reset}`);
   }
   services.forEach(s => {
     console.log(`  * ${s.color}${s.name.padEnd(12)}${colors.reset} -> ${colors.yellow}${s.url}${colors.reset}`);
@@ -300,6 +417,11 @@ function main() {
   console.log(`${colors.bright}${colors.cyan}==================================================${colors.reset}\n`);
 
   services.forEach(service => {
+    if (dockerStarted && dockerManagedLocalServices.has(service.name)) {
+      console.log(`${service.color}${service.prefix}${colors.reset} Running via Docker container. Skipping duplicate local process.`);
+      return;
+    }
+
     console.log(`${service.color}${service.prefix}${colors.reset} Starting service in ${service.dir}...`);
 
     const child = spawn(service.command, service.args, {
@@ -347,7 +469,7 @@ function stopAllServices() {
   if (stopDockerOnExit && activeDockerCmd) {
     console.log(`${colors.blue}[docker] Stopping Docker containers...${colors.reset}`);
     try {
-      execSync(`${activeDockerCmd} stop`, { stdio: 'inherit' });
+      execSync(compose('down'), { stdio: 'inherit' });
       console.log(`${colors.green}[docker] Docker containers stopped.${colors.reset}`);
     } catch (err) {
       console.error(`${colors.red}[docker] Error stopping Docker containers: ${err.message}${colors.reset}`);
@@ -361,4 +483,3 @@ process.on('SIGINT', stopAllServices);
 process.on('SIGTERM', stopAllServices);
 
 main();
-

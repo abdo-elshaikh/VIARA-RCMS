@@ -3,10 +3,12 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from
 import toast, { Toaster } from 'react-hot-toast';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { selectCurrentToken, selectCurrentUser, selectIsAuthenticated, rehydrateUser, logOut } from './store/authSlice';
+import { selectCurrentToken, selectCurrentUser, selectIsAuthenticated, rehydrateUser, logOut, setAccessToken } from './store/authSlice';
 import ErrorBoundary from './components/ErrorBoundary';
 import { api, rehydrateSession, useGetPreferencesQuery } from './store/api';
+import Modal from './components/ui/Modal';
 import { DEFAULT_PREFERENCES, updateAllPreferences } from './store/preferencesSlice';
+import { getRouteRoles } from './config/routes';
 import {
     getDoctorPortalDashboardUrl,
     getDoctorPortalHomeUrl,
@@ -15,6 +17,14 @@ import {
     getPatientPortalHomeUrl,
     getPatientPortalLoginUrl,
 } from './utils/portalUrls';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
+const getCsrfToken = () => {
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+};
 
 // Eager-loaded components (needed immediately)
 import Login from './pages/Login';
@@ -201,6 +211,93 @@ const ConnectivityWatcher = () => {
     return null;
 };
 
+const SessionTimeout = ({ t }) => {
+    const dispatch = useDispatch();
+    const navigate = useNavigate();
+    const location = useLocation();
+    const isAuthenticated = useSelector(selectIsAuthenticated);
+    const [showWarning, setShowWarning] = useState(false);
+    const [isExtending, setIsExtending] = useState(false);
+    const [timerGeneration, setTimerGeneration] = useState(0);
+    const warningTimerRef = useRef(null);
+    const expiryTimerRef = useRef(null);
+    const warningOpenRef = useRef(false);
+
+    useEffect(() => {
+        warningOpenRef.current = showWarning;
+    }, [showWarning]);
+
+    useEffect(() => {
+        if (!isAuthenticated) {
+            setShowWarning(false);
+            return undefined;
+        }
+
+        const warningMs = 28 * 60 * 1000;
+        const expiryMs = 30 * 60 * 1000;
+        const clearTimers = () => {
+            window.clearTimeout(warningTimerRef.current);
+            window.clearTimeout(expiryTimerRef.current);
+        };
+        const expire = async () => {
+            const from = `${location.pathname}${location.search}${location.hash}`;
+            sessionStorage.setItem('rcms-return-path', from);
+            try {
+                await dispatch(api.endpoints.logout.initiate()).unwrap();
+            } catch {
+                // Local sign-out must still complete when the session is already unavailable.
+            }
+            dispatch(logOut());
+            navigate('/login', { replace: true, state: { from } });
+            toast.error(t('session.expired'));
+        };
+        const schedule = () => {
+            clearTimers();
+            setShowWarning(false);
+            warningTimerRef.current = window.setTimeout(() => setShowWarning(true), warningMs);
+            expiryTimerRef.current = window.setTimeout(expire, expiryMs);
+        };
+        const handleActivity = () => {
+            if (!warningOpenRef.current) schedule();
+        };
+
+        schedule();
+        const events = ['mousedown', 'keypress', 'scroll', 'touchstart'];
+        events.forEach((event) => document.addEventListener(event, handleActivity, { passive: true }));
+        return () => {
+            clearTimers();
+            events.forEach((event) => document.removeEventListener(event, handleActivity));
+        };
+    }, [dispatch, isAuthenticated, location.hash, location.pathname, location.search, navigate, t, timerGeneration]);
+
+    const extendSession = async () => {
+        setIsExtending(true);
+        try {
+            const result = await dispatch(api.endpoints.refreshSession.initiate()).unwrap();
+            if (result?.token) dispatch(setAccessToken(result.token));
+            setShowWarning(false);
+            setTimerGeneration((value) => value + 1);
+        } catch (error) {
+            toast.error(t('session.extendFailed'));
+        } finally {
+            setIsExtending(false);
+        }
+    };
+
+    return (
+        <Modal isOpen={showWarning} onClose={extendSession} title={t('session.warningTitle')} size="sm">
+            <div className="space-y-4">
+                <p className="text-sm leading-6 text-slate-600 dark:text-slate-300" role="status">{t('session.warningMessage')}</p>
+                <div className="flex justify-end gap-3">
+                    <button type="button" onClick={extendSession} disabled={isExtending} className="min-h-11 rounded-xl bg-cyan-700 px-4 text-sm font-bold text-white disabled:opacity-60">
+                        {isExtending ? t('status.updating') : t('session.staySignedIn')}
+                    </button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 const COLOR_MAP = {
     cyan: '#0891b2',
     indigo: '#4f46e5',
@@ -338,7 +435,23 @@ const App = () => {
         const token = currentToken;
         if (!token) return;
 
-        const eventSource = new EventSource(`/api/realtime/stream?token=${encodeURIComponent(token)}`);
+        let eventSource;
+        let isCancelled = false;
+
+        // Fetch a short-lived SSE session token so the access JWT is not placed in the URL.
+        const csrfToken = getCsrfToken();
+        fetch(`${API_BASE_URL}/realtime/session`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+            }
+        })
+            .then(res => res.ok ? res.json() : null)
+            .then(sseSession => {
+                if (isCancelled || !sseSession?.token) return;
+                eventSource = new EventSource(`${API_BASE_URL}/realtime/stream?token=${encodeURIComponent(sseSession.token)}`);
 
         eventSource.onmessage = (event) => {
             try {
@@ -436,24 +549,34 @@ const App = () => {
             }
         };
 
-        eventSource.onerror = (error) => {
+         eventSource.onerror = (error) => {
             console.error('SSE connection error:', error);
+            if (isCancelled) return;
             eventSource.close();
+            toast.error(t('sse.disconnected', 'Live updates disconnected. Attempting to reconnect...'), {
+                id: 'sse-disconnected',
+            });
         };
+            })
+            .catch(err => {
+                console.error('Failed to establish SSE session', err);
+            });
 
         return () => {
-            eventSource.close();
+            isCancelled = true;
+            if (eventSource) {
+                eventSource.close();
+            }
         };
-    }, [isAuthenticated, currentToken, dispatch]);
+    }, [isAuthenticated, currentToken, dispatch, t]);
 
-    if (!isRehydrated) {
-        return null;
-    }
+    if (!isRehydrated) return <PageLoader />;
 
     return (
         <ErrorBoundary>
             <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
                 <ConnectivityWatcher />
+                <SessionTimeout t={t} />
                 <Toaster
                     position="top-center"
                     reverseOrder={false}
@@ -494,23 +617,23 @@ const App = () => {
                         <Route path="/offline" element={<Offline />} />
 
                         <Route path="/print/sticker/:id" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/print/sticker/:id')}>
                                 <PrintSticker />
                             </ProtectedRoute>
                         } />
                         <Route path="/print/receipt/:id" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/print/receipt/:id')}>
                                 <PrintReceipt />
                             </ProtectedRoute>
                         } />
                         <Route path="/print/invoice/:id" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'Receptionist', 'Cashier', 'Accountant', 'Radiologist', 'Technician', 'Nurse', 'Insurance_Staff', 'HR', 'Referring_Doctor']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/print/invoice/:id')}>
                                 <PrintInvoice />
                             </ProtectedRoute>
                         } />
 
                         <Route path="/dashboard" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant', 'HR', 'Technician', 'Nurse', 'Insurance_Staff', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/dashboard')}>
                                 <AppLayout role="Staff">
                                     <RoleAwareDashboard />
                                 </AppLayout>
@@ -518,7 +641,7 @@ const App = () => {
                         } />
 
                         <Route path="/help" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant', 'HR', 'Technician', 'Nurse', 'Insurance_Staff', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/help')}>
                                 <AppLayout role="Staff">
                                     <Help />
                                 </AppLayout>
@@ -526,7 +649,7 @@ const App = () => {
                         } />
 
                         <Route path="/admin" element={
-                            <ProtectedRoute allowedRoles={['Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/admin')}>
                                 <AppLayout role="Admin">
                                     <Admin />
                                 </AppLayout>
@@ -534,7 +657,7 @@ const App = () => {
                         } />
 
                         <Route path="/users" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'HR']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/users')}>
                                 <AppLayout role="Admin">
                                     <Users />
                                 </AppLayout>
@@ -542,7 +665,7 @@ const App = () => {
                         } />
 
                         <Route path="/users/:userId" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'HR', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'Cashier', 'Accountant', 'Insurance_Staff', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/users/:userId')}>
                                 <AppLayout role="Admin">
                                     <UserDetailPage />
                                 </AppLayout>
@@ -550,7 +673,7 @@ const App = () => {
                         } />
 
                         <Route path="/referring-doctors" element={
-                            <ProtectedRoute allowedRoles={['Receptionist', 'Admin', 'Accountant', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/referring-doctors')}>
                                 <AppLayout role="Receptionist">
                                     <ReferringDoctors />
                                 </AppLayout>
@@ -558,7 +681,7 @@ const App = () => {
                         } />
 
                         <Route path="/referring-doctors/:doctorId" element={
-                            <ProtectedRoute allowedRoles={['Receptionist', 'Admin', 'Accountant', 'Radiologist', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/referring-doctors/:doctorId')}>
                                 <AppLayout role="Receptionist">
                                     <DoctorDetailPage />
                                 </AppLayout>
@@ -566,13 +689,13 @@ const App = () => {
                         } />
 
                         <Route path="/pacs/viewer" element={
-                            <ProtectedRoute allowedRoles={['Radiologist', 'Technician', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/pacs/viewer')}>
                                 <PacsViewer />
                             </ProtectedRoute>
                         } />
 
                         <Route path="/pacs/reconciliation" element={
-                            <ProtectedRoute allowedRoles={['Radiologist', 'Technician', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/pacs/reconciliation')}>
                                 <AppLayout role="Radiologist">
                                     <PacsReconciliation />
                                 </AppLayout>
@@ -580,7 +703,7 @@ const App = () => {
                         } />
 
                         <Route path="/settings" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant', 'HR', 'Technician', 'Nurse', 'Insurance_Staff', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/settings')}>
                                 <AppLayout role="Staff">
                                     <Settings />
                                 </AppLayout>
@@ -588,7 +711,7 @@ const App = () => {
                         } />
 
                         <Route path="/notifications" element={
-                            <ProtectedRoute allowedRoles={['Developer', 'Admin', 'Receptionist', 'HR', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/notifications')}>
                                 <AppLayout role="Staff">
                                     <Notifications />
                                 </AppLayout>
@@ -596,7 +719,7 @@ const App = () => {
                         } />
 
                         <Route path="/approvals" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'HR', 'Accountant', 'Insurance_Staff', 'Receptionist']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/approvals')}>
                                 <AppLayout role="Staff">
                                     <PendingRequests />
                                 </AppLayout>
@@ -604,7 +727,7 @@ const App = () => {
                         } />
 
                         <Route path="/analytics" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'Accountant', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/analytics')}>
                                 <AppLayout role="Admin">
                                     <RoleAwareAnalytics />
                                 </AppLayout>
@@ -613,7 +736,7 @@ const App = () => {
 
 
                         <Route path="/worklist" element={
-                            <ProtectedRoute allowedRoles={['Radiologist', 'Technician', 'Nurse', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/worklist')}>
                                 <AppLayout role="Staff">
                                     <Worklist />
                                 </AppLayout>
@@ -621,7 +744,7 @@ const App = () => {
                         } />
 
                         <Route path="/case-reports" element={
-                            <ProtectedRoute allowedRoles={['Radiologist', 'Admin', 'Receptionist', 'Technician', 'Nurse']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/case-reports')}>
                                 <AppLayout role="Staff">
                                     <CaseReports />
                                 </AppLayout>
@@ -629,7 +752,7 @@ const App = () => {
                         } />
 
                         <Route path="/cases/:examId" element={
-                            <ProtectedRoute allowedRoles={['Radiologist', 'Admin', 'Receptionist', 'Technician', 'Nurse', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/cases/:examId')}>
                                 <AppLayout role="Staff">
                                     <CaseDetailsPage />
                                 </AppLayout>
@@ -637,7 +760,7 @@ const App = () => {
                         } />
 
                         <Route path="/reports/editor/:examId" element={
-                            <ProtectedRoute allowedRoles={['Radiologist', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/reports/editor/:examId')}>
                                 <AppLayout role="Staff">
                                     <ReportEditorPage />
                                 </AppLayout>
@@ -647,7 +770,7 @@ const App = () => {
                         <Route path="/doctor" element={<Navigate to="/worklist" replace />} />
 
                         <Route path="/reception" element={
-                            <ProtectedRoute allowedRoles={['Receptionist', 'Cashier', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/reception')}>
                                 <AppLayout role="Receptionist">
                                     <Reception />
                                 </AppLayout>
@@ -655,7 +778,7 @@ const App = () => {
                         } />
 
                         <Route path="/appointments" element={
-                            <ProtectedRoute allowedRoles={['Receptionist', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/appointments')}>
                                 <AppLayout role="Receptionist">
                                     <Appointments />
                                 </AppLayout>
@@ -663,7 +786,7 @@ const App = () => {
                         } />
 
                         <Route path="/appointments/new" element={
-                            <ProtectedRoute allowedRoles={['Receptionist', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/appointments/new')}>
                                 <AppLayout role="Receptionist">
                                     <BookAppointment />
                                 </AppLayout>
@@ -671,7 +794,7 @@ const App = () => {
                         } />
 
                         <Route path="/patients" element={
-                            <ProtectedRoute allowedRoles={['Receptionist', 'Admin', 'Radiologist', 'Nurse', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/patients')}>
                                 <AppLayout role="Receptionist">
                                     <Patients />
                                 </AppLayout>
@@ -679,23 +802,15 @@ const App = () => {
                         } />
 
                         <Route path="/patients/:patientId" element={
-                            <ProtectedRoute allowedRoles={['Receptionist', 'Admin', 'Radiologist', 'Nurse', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/patients/:patientId')}>
                                 <AppLayout role="Receptionist">
                                     <PatientDetailPage />
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
 
-                        <Route path="/referring-doctors" element={
-                            <ProtectedRoute allowedRoles={['Receptionist', 'Admin', 'Accountant', 'Marketing']}>
-                                <AppLayout role="Receptionist">
-                                    <ReferringDoctors />
-                                </AppLayout>
-                            </ProtectedRoute>
-                        } />
-
                         <Route path="/financials" element={
-                            <ProtectedRoute allowedRoles={['Accountant', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/financials')}>
                                 <AppLayout role="Accountant">
                                     <Financials />
                                 </AppLayout>
@@ -703,7 +818,7 @@ const App = () => {
                         } />
 
                         <Route path="/payroll" element={
-                            <ProtectedRoute allowedRoles={['HR', 'Accountant', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/payroll')}>
                                 <AppLayout role="HR">
                                     <Payroll />
                                 </AppLayout>
@@ -711,7 +826,7 @@ const App = () => {
                         } />
 
                         <Route path="/insurance" element={
-                            <ProtectedRoute allowedRoles={['Accountant', 'Admin', 'Receptionist', 'Insurance_Staff']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/insurance')}>
                                 <AppLayout role="Accountant">
                                     <Insurance />
                                 </AppLayout>
@@ -719,7 +834,7 @@ const App = () => {
                         } />
 
                         <Route path="/equipment" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'Receptionist', 'Technician']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/equipment')}>
                                 <AppLayout role="Admin">
                                     <Equipment />
                                 </AppLayout>
@@ -727,7 +842,7 @@ const App = () => {
                         } />
 
                         <Route path="/hr" element={
-                            <ProtectedRoute allowedRoles={['HR', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/hr')}>
                                 <AppLayout role="HR">
                                     <HR />
                                 </AppLayout>
@@ -735,7 +850,7 @@ const App = () => {
                         } />
 
                         <Route path="/marketing" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'Receptionist', 'HR', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/marketing')}>
                                 <AppLayout role="Marketing">
                                     <Marketing />
                                 </AppLayout>
@@ -743,7 +858,7 @@ const App = () => {
                         } />
 
                         <Route path="/modality" element={
-                            <ProtectedRoute allowedRoles={['Technician', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/modality')}>
                                 <AppLayout role="Technician">
                                     <Modality />
                                 </AppLayout>
@@ -753,7 +868,7 @@ const App = () => {
                         <Route path="/technician" element={<Navigate to="/modality" replace />} />
 
                         <Route path="/nurse" element={
-                            <ProtectedRoute allowedRoles={['Nurse', 'Radiologist', 'Technician', 'Admin']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/nurse')}>
                                 <AppLayout role="Nurse">
                                     <Nurse />
                                 </AppLayout>
@@ -761,7 +876,7 @@ const App = () => {
                         } />
 
                         <Route path="/inventory" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'Technician']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/inventory')}>
                                 <AppLayout role="Admin">
                                     <Inventory />
                                 </AppLayout>
@@ -769,7 +884,7 @@ const App = () => {
                         } />
 
                         <Route path="/communications" element={
-                            <ProtectedRoute allowedRoles={['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'HR', 'Marketing']}>
+                            <ProtectedRoute allowedRoles={getRouteRoles('/communications')}>
                                 <AppLayout role="Staff">
                                     <CommunicationCenter />
                                 </AppLayout>

@@ -4,6 +4,7 @@ const dcmjs = require('dcmjs');
 const jpegLossless = require('jpeg-lossless-decoder-js');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
+const { createCircuitBreaker } = require('../utils/circuitBreaker');
 
 // Orthanc connection — the ONLY place that knows Orthanc's URL/credentials.
 // A future native DIMSE+DICOMweb engine swaps this module out while the
@@ -11,8 +12,7 @@ const { pipeline } = require('stream/promises');
 
 const LEGACY_DEFAULTS = {
     url: 'http://orthanc:8042',
-    username: 'orthanc',
-    password: 'orthanc'
+    username: 'rcms'
 };
 
 const envOrthancUrl = () => process.env.ORTHANC_API_URL || process.env.ORTHANC_URL || LEGACY_DEFAULTS.url;
@@ -25,7 +25,10 @@ const preferEnvOverLegacyDefault = (settingValue, envValue, legacyDefault) => {
 const getOrthancConfig = async () => {
     const envUrl = envOrthancUrl();
     const envUsername = process.env.ORTHANC_USERNAME || LEGACY_DEFAULTS.username;
-    const envPassword = process.env.ORTHANC_PASSWORD || LEGACY_DEFAULTS.password;
+    const envPassword = process.env.ORTHANC_PASSWORD;
+    if (!envPassword) {
+        throw new Error('ORTHANC_PASSWORD environment variable is required but not set');
+    }
 
     const settingUrl = await settingsService.get('orthanc_api_url', envUrl);
     const settingUsername = await settingsService.get('orthanc_username', envUsername);
@@ -33,7 +36,7 @@ const getOrthancConfig = async () => {
 
     const url = preferEnvOverLegacyDefault(settingUrl, envUrl, LEGACY_DEFAULTS.url).replace(/\/+$/, '');
     const username = preferEnvOverLegacyDefault(settingUsername, envUsername, LEGACY_DEFAULTS.username);
-    const password = preferEnvOverLegacyDefault(settingPassword, envPassword, LEGACY_DEFAULTS.password);
+    const password = preferEnvOverLegacyDefault(settingPassword, envPassword, envPassword);
 
     return {
         url,
@@ -44,6 +47,24 @@ const getOrthancConfig = async () => {
 const getOrthancUrl = async () => (await getOrthancConfig()).url;
 
 const getOrthancAuthHeader = async () => (await getOrthancConfig()).authorization;
+
+const orthancCircuitBreaker = createCircuitBreaker(
+    async (input, init) => fetch(input, init),
+    {
+        name: 'orthanc-api',
+        timeout: 30000,
+        errorThresholdPercentage: 50,
+        resetTimeout: 30000
+    }
+);
+
+const orthancFetch = async (url, options = {}) => {
+    const config = await getOrthancConfig();
+    const requestUrl = url.startsWith('http') ? url : `${config.url}${url}`;
+    const headers = { ...options.headers };
+    if (!headers.Authorization) headers.Authorization = config.authorization;
+    return orthancCircuitBreaker.fire(requestUrl, { ...options, headers });
+};
 
 // Hop-by-hop and auth headers we must not forward in either direction.
 const STRIP_REQUEST_HEADERS = new Set([

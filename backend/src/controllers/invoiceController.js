@@ -314,6 +314,7 @@ const updateInvoicePaymentStatus = async (client, invoiceId) => {
             FROM invoices i
             LEFT JOIN payments p ON p.invoice_id = i.invoice_id
             WHERE i.invoice_id = $1
+            FOR UPDATE
             GROUP BY i.invoice_id
         )
         SELECT patient_payable_amount, paid_amount, refunded_amount, credited_amount
@@ -867,8 +868,16 @@ const collectPayment = (db) => async (req, res, next) => {
 
         const operation = await claimFinancialOperation(client, req, 'collect_payment', invoice.invoice_id);
         if (operation.replay) {
+            await logAction(client, {
+                userId: req.user.user_id,
+                action: 'PAYMENT_SERVED_FROM_REPLAY',
+                resourceId: invoice.invoice_id,
+                resourceTable: 'invoices',
+                ipAddress: req.ip,
+                details: { idempotencyKey, operationId: operation.id }, required: true
+            });
             await client.query('COMMIT');
-            return res.status(operation.replay.response_status).json(operation.replay.response_body);
+            return res.status(operation.replay.response_status || 201).json(operation.replay.response_body);
         }
 
         const paymentTotalsResult = await client.query(`
@@ -1099,8 +1108,16 @@ const refundInvoice = (db) => async (req, res, next) => {
 
         const operation = await claimFinancialOperation(client, req, 'request_refund', invoice.invoice_id);
         if (operation.replay) {
+            await logAction(client, {
+                userId: req.user.user_id,
+                action: 'REFUND_SERVED_FROM_REPLAY',
+                resourceId: invoice.invoice_id,
+                resourceTable: 'invoices',
+                ipAddress: req.ip,
+                details: { idempotencyKey, operationId: operation.id }, required: true
+            });
             await client.query('COMMIT');
-            return res.status(operation.replay.response_status).json(operation.replay.response_body);
+            return res.status(operation.replay.response_status || 201).json(operation.replay.response_body);
         }
         const canRequestRefund = await roleHasAnyPermission(client, req.user.role, ['REQUEST_REFUNDS', 'ISSUE_REFUNDS']);
         if (!canRequestRefund) {

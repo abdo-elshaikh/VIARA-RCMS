@@ -42,7 +42,9 @@ const validateExpenseTax = (data, context) => {
     }
 };
 
-const createExpenseSchema = expenseBaseSchema.superRefine(validateExpenseTax);
+const createExpenseSchema = expenseBaseSchema
+    .extend({ idempotencyKey: z.string().uuid().optional() })
+    .superRefine(validateExpenseTax);
 
 const updateExpenseSchema = expenseBaseSchema.partial().superRefine(validateExpenseTax);
 

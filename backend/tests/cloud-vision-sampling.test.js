@@ -1,3 +1,13 @@
+jest.mock('../src/config/logger', () => ({
+    info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn()
+}));
+
+jest.mock('dns', () => ({
+    promises: {
+        lookup: jest.fn().mockResolvedValue({ address: '93.184.216.34' })
+    }
+}));
+
 const {
     analyzeStudy,
     isConfigured,
@@ -10,6 +20,7 @@ const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
 const originalPacsProviderTimeout = process.env.PACS_AI_PROVIDER_TIMEOUT_MS;
 const originalPacsTotalImageBytes = process.env.PACS_AI_MAX_CLOUD_TOTAL_IMAGE_BYTES;
+const originalOrthancPassword = process.env.ORTHANC_PASSWORD;
 
 const restoreEnv = (key, value) => {
     if (value === undefined) delete process.env[key];
@@ -35,6 +46,11 @@ describe('cloud vision study sampling', () => {
         restoreEnv('OPENROUTER_API_KEY', originalOpenRouterApiKey);
         restoreEnv('PACS_AI_PROVIDER_TIMEOUT_MS', originalPacsProviderTimeout);
         restoreEnv('PACS_AI_MAX_CLOUD_TOTAL_IMAGE_BYTES', originalPacsTotalImageBytes);
+        restoreEnv('ORTHANC_PASSWORD', originalOrthancPassword);
+    });
+
+    beforeEach(() => {
+        process.env.ORTHANC_PASSWORD = 'test-orthanc-password';
     });
 
     it('represents every series and allocates extra frames to longer series', () => {

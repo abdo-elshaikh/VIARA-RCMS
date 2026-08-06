@@ -49,10 +49,19 @@ const publicCaseStatusLimiter = rateLimit({
     message: { error: 'Too many case-status checks. Please wait and try again.' }
 });
 
+// PACS webhook limiter: rate-limited per source IP since it's machine-to-machine
+const pacsWebhookLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: isDevelopment ? 300 : 60, // 60 webhooks per 5 min in production
+    keyGenerator: ipKeyGenerator,
+    message: { error: 'Too many PACS webhook requests, please try again later.' }
+});
+
 module.exports = {
     patientDataLimiter,
     invoiceLimiter,
     sensitiveOpLimiter,
     notificationLimiter,
-    publicCaseStatusLimiter
+    publicCaseStatusLimiter,
+    pacsWebhookLimiter
 };

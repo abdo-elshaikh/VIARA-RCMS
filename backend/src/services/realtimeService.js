@@ -3,11 +3,46 @@
  * Native Server-Sent Events (SSE) based real-time pub/sub hub.
  * Handles instant event dispatching for staff chat, portal messaging, and system notifications.
  */
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const logger = require('../config/logger');
 
 // Store all active client connections
 let clients = [];
+
+// In-memory store for short-lived SSE session tokens.
+// Maps sse-session-token -> { userId, role, patientId, doctorId, expiresAt }
+const sseSessionTokens = new Map();
+const SSE_SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Periodic cleanup of expired SSE session tokens
+const sessionCleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [token, session] of sseSessionTokens.entries()) {
+        if (session.expiresAt < now) {
+            sseSessionTokens.delete(token);
+        }
+    }
+}, 60 * 1000); // every minute
+sessionCleanupInterval.unref?.();
+
+/**
+ * Create a short-lived SSE session token from an authenticated user's identity.
+ * The token is purpose-scoped: it only grants an SSE connection, not API access.
+ * @param {object} decoded - Decoded JWT payload containing userId/role/patientId/doctorId
+ * @returns {string} A random 32-byte hex SSE session token
+ */
+const createSseSession = (decoded) => {
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    sseSessionTokens.set(sessionToken, {
+        userId: decoded.user_id || decoded.userId || null,
+        role: decoded.role || null,
+        patientId: decoded.patientId || null,
+        doctorId: decoded.doctorId || null,
+        expiresAt: Date.now() + SSE_SESSION_TTL_MS
+    });
+    return sessionToken;
+};
 
 const removeClient = (clientInfo) => {
     clients = clients.filter(c => c !== clientInfo && c.res !== clientInfo.res);
@@ -33,28 +68,33 @@ const writeSse = (clientInfo, payload) => {
 };
 
 /**
- * Register a new SSE connection client
+ * Register a new SSE connection client.
+ * Expects a short-lived SSE session token (not the user's access JWT).
  */
 const registerClient = (req, res) => {
-    const token = req.query.token;
-    if (!token) {
-        res.status(401).json({ error: 'Authentication token required' });
+    const sessionToken = req.query.token;
+    if (!sessionToken) {
+        res.status(401).json({ error: 'SSE session token required' });
         return;
     }
 
+    // Validate against the in-memory session token store
+    const session = sseSessionTokens.get(sessionToken);
+    if (!session || session.expiresAt < Date.now()) {
+        res.status(401).json({ error: 'Invalid or expired SSE session token' });
+        return;
+    }
+
+    // Remove the session token after use (single-use)
+    sseSessionTokens.delete(sessionToken);
+
     try {
-        if (!process.env.JWT_SECRET) {
-            res.status(500).json({ error: 'JWT secret is not configured' });
-            return;
-        }
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
-        let clientInfo = {
+        const clientInfo = {
             res,
-            userId: decoded.user_id || decoded.userId || null,
-            role: decoded.role || null,
-            patientId: decoded.patientId || null,
-            doctorId: decoded.doctorId || null
+            userId: session.userId,
+            role: session.role,
+            patientId: session.patientId,
+            doctorId: session.doctorId
         };
 
         // Set headers for SSE stream
@@ -101,8 +141,8 @@ const registerClient = (req, res) => {
         }. Active clients: ${clients.length}`);
 
     } catch (error) {
-        logger.error('Realtime connection authentication failed', { error: error.message });
-        res.status(401).json({ error: 'Invalid authentication token' });
+        logger.error('Realtime connection registration failed', { error: error.message });
+        res.status(401).json({ error: 'Connection registration failed' });
     }
 };
 
@@ -173,6 +213,7 @@ const getOnlineUserIds = () => {
 
 module.exports = {
     registerClient,
+    createSseSession,
     sendToUser,
     sendToPatient,
     sendToDoctor,

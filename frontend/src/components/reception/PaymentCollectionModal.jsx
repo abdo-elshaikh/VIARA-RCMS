@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     AlertCircle,
     BadgePercent,
@@ -12,6 +13,7 @@ import {
 import Modal from '../ui/Modal';
 import StatusPill from '../ui/StatusPill';
 import { inputClass, labelClass, primaryBtn, secondaryBtn } from '../../utils/designTokens';
+import { formatMoney } from '../../utils/financialFormat';
 
 const PAYMENT_METHODS = ['Cash', 'Card', 'Credit Card', 'Wallet', 'Bank Transfer', 'Installment', 'Insurance'];
 const FORM_ID = 'collect-payment-form';
@@ -40,8 +42,11 @@ const PaymentCollectionModal = ({
     remainingBalance,
     t
 }) => {
+    const { i18n } = useTranslation();
     const [showDiscount, setShowDiscount] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
+    const currency = invoice?.currency_code || 'EGP';
+    const money = (value) => formatMoney(value, { currency, language: i18n.resolvedLanguage || i18n.language });
 
     // Reset internal state when a new invoice is loaded or closed
     useEffect(() => {
@@ -73,7 +78,7 @@ const PaymentCollectionModal = ({
                             <Wallet size={28} />
                         </div>
                         <h3 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">
-                            {adjustedBalance.toFixed(2)} <span className="text-lg font-bold text-slate-400">EGP</span>
+                            {money(adjustedBalance)}
                         </h3>
                         <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm font-medium text-slate-500">
                             <UserRound size={15} />
@@ -106,11 +111,11 @@ const PaymentCollectionModal = ({
                             <div className="mb-2 flex items-center justify-between px-1">
                                 <label htmlFor="payment-amount" className={labelClass}>{t('billing.amount', { defaultValue: 'Amount to pay' })}</label>
                                 <span className="font-mono text-[11px] font-bold text-slate-400">
-                                    {t('billing.remaining', { defaultValue: 'Remaining' })}: {remainingBalance.toFixed(2)}
+                                    {t('billing.remaining', { defaultValue: 'Remaining' })}: {money(remainingBalance)}
                                 </span>
                             </div>
                             <div className="relative">
-                                <span className="pointer-events-none absolute inset-y-0 start-4 flex items-center font-mono text-sm font-bold text-slate-400">EGP</span>
+                                <span className="pointer-events-none absolute inset-y-0 start-4 flex items-center font-mono text-sm font-bold text-slate-400">{currency}</span>
                                 <input
                                     id="payment-amount"
                                     type="number"
@@ -127,7 +132,7 @@ const PaymentCollectionModal = ({
                             <div className="mt-2 flex gap-2">
                                 <QuickAmount label={t('billing.payFullBalance', { defaultValue: 'Full Balance' })} onClick={() => onAmountChange(adjustedBalance.toFixed(2))} active={Number(paymentAmount) === adjustedBalance} />
                                 <QuickAmount label={t('billing.payHalf', { defaultValue: 'Half' })} onClick={() => onAmountChange((adjustedBalance / 2).toFixed(2))} active={Number(paymentAmount) === adjustedBalance / 2} />
-                                <QuickAmount label="0.00" onClick={() => onAmountChange('0.00')} active={Number(paymentAmount) === 0} />
+                                <QuickAmount label={money(0)} onClick={() => onAmountChange('0.00')} active={Number(paymentAmount) === 0} />
                             </div>
                             {Number(paymentAmount || 0) > adjustedBalance + 0.005 && <ValidationMessage>{t('billing.amountExceedsBalance', { defaultValue: 'Payment cannot exceed the outstanding balance.' })}</ValidationMessage>}
                             {Number(paymentAmount || 0) <= 0 && Number(discountAmount || 0) <= 0 && <ValidationMessage>{t('billing.amountRequired', { defaultValue: 'Enter an amount greater than zero.' })}</ValidationMessage>}
@@ -203,7 +208,7 @@ const PaymentCollectionModal = ({
                                                         <p className="mt-0.5 text-[10px] font-medium text-slate-400">{new Date(payment.created_at || payment.transaction_date).toLocaleString()}</p>
                                                         {payment.payment_reference && <p className="mt-1 font-mono text-[10px] text-slate-500">REF: {payment.payment_reference}</p>}
                                                     </div>
-                                                    <p className="font-mono text-sm font-black text-slate-800 dark:text-slate-200">{Number(payment.amount).toFixed(2)}</p>
+                                                    <p className="font-mono text-sm font-black text-slate-800 dark:text-slate-200">{money(payment.amount)}</p>
                                                 </div>
                                             ))
                                         )}

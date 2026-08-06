@@ -44,10 +44,19 @@ export default defineConfig({
                     if (id.includes('recharts') || id.includes('d3-')) return 'charts';
                     if (id.includes('i18next')) return 'i18n';
                     if (id.includes('lucide-react')) return 'icons';
+                    if (id.includes('date-fns')) return 'date-utils';
+                    if (id.includes('@tanstack')) return 'data-table';
+                    if (id.includes('axios')) return 'http';
+                    if (id.includes('jspdf') || id.includes('html2canvas')) return 'pdf-export';
                     if (['/docx/', '/jszip/', '/hash.js/', '/nanoid/', '/xml-js/', '/xml/'].some((dependency) => id.replaceAll('\\', '/').includes(dependency))) return 'word-export';
                     return 'vendor';
                 },
             },
+        },
+        sourcemap: true,
+        reportCompressedSize: true,
+        commonjsOptions: {
+            include: [/node_modules/],
         },
     },
 })

@@ -74,8 +74,10 @@ const TEST_SECRET = process.env.JWT_SECRET;
 describe('Chat API Endpoints', () => {
     let adminToken;
     let patientToken;
+    let csrfToken = '';
+    let cookies = {};
 
-    beforeAll(() => {
+    beforeAll(async () => {
         adminToken = jwt.sign(
             { user_id: '00000000-0000-4000-8000-000000000001', role: 'Admin' },
             TEST_SECRET,
@@ -86,6 +88,15 @@ describe('Chat API Endpoints', () => {
             TEST_SECRET,
             { expiresIn: '1h' }
         );
+
+        const csrfRes = await request(app).get('/api/csrf-token');
+        const setCookie = csrfRes.headers['set-cookie'];
+        if (setCookie && setCookie.length > 0) {
+            const match = setCookie[0].match(/csrf_token=([^;]+)/);
+            if (match) {
+                csrfToken = match[1];
+            }
+        }
     });
 
     beforeEach(() => {
@@ -99,7 +110,8 @@ describe('Chat API Endpoints', () => {
     test('GET /api/chat/users - returns list of chat users', async () => {
         const res = await request(app)
             .get('/api/chat/users')
-            .set('Authorization', `Bearer ${adminToken}`);
+            .set('Authorization', `Bearer ${adminToken}`)
+            .set('Cookie', `csrf_token=${csrfToken}`);
 
         expect(res.status).toBe(200);
         expect(Array.isArray(res.body)).toBe(true);
@@ -109,7 +121,8 @@ describe('Chat API Endpoints', () => {
     test('GET /api/chat/messages - validation error if neither recipientId nor channelName is provided', async () => {
         const res = await request(app)
             .get('/api/chat/messages')
-            .set('Authorization', `Bearer ${adminToken}`);
+            .set('Authorization', `Bearer ${adminToken}`)
+            .set('Cookie', `csrf_token=${csrfToken}`);
 
         expect(res.status).toBe(400);
         expect(res.body.error).toBe('recipientId or channelName is required');
@@ -119,6 +132,8 @@ describe('Chat API Endpoints', () => {
         const res = await request(app)
             .post('/api/chat/messages')
             .set('Authorization', `Bearer ${adminToken}`)
+            .set('Cookie', `csrf_token=${csrfToken}`)
+            .set('x-csrf-token', csrfToken)
             .send({ recipientId: '2', body: 'Hello' });
 
         expect(res.status).toBe(201);
@@ -130,6 +145,8 @@ describe('Chat API Endpoints', () => {
         const res = await request(app)
             .post('/api/chat/messages')
             .set('Authorization', `Bearer ${adminToken}`)
+            .set('Cookie', `csrf_token=${csrfToken}`)
+            .set('x-csrf-token', csrfToken)
             .send({ recipientId: '2', body: '✅', messageKind: 'sticker' });
 
         expect(res.status).toBe(201);
@@ -141,6 +158,8 @@ describe('Chat API Endpoints', () => {
         const res = await request(app)
             .post('/api/chat/messages')
             .set('Authorization', `Bearer ${adminToken}`)
+            .set('Cookie', `csrf_token=${csrfToken}`)
+            .set('x-csrf-token', csrfToken)
             .field('recipientId', '2')
             .field('body', 'See attached')
             .attach('attachments', Buffer.from('hello from chat'), {
@@ -164,7 +183,8 @@ describe('Chat API Endpoints', () => {
     test('GET /api/portal/messages - returns patient messages history', async () => {
         const res = await request(app)
             .get('/api/portal/messages')
-            .set('Authorization', `Bearer ${patientToken}`);
+            .set('Authorization', `Bearer ${patientToken}`)
+            .set('Cookie', `csrf_token=${csrfToken}`);
 
         expect(res.status).toBe(200);
         expect(res.body[0].body).toBe('Help please');

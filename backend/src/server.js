@@ -4,9 +4,10 @@ const dotenvPath = path.resolve(__dirname, '../.env');
 const result = require('dotenv').config({ path: dotenvPath });
 
 if (result.error) {
-    console.error('❌ DOTENV Error:', result.error);
-    process.exit(1);
+    console.warn('⚠️  No .env file found — relying on environment variables');
 }
+
+// NOTE: minor no-op change to trigger nodemon reload when env files are updated
 
 // Validate environment variables before proceeding
 const validateEnv = require('./config/validateEnv');
@@ -27,6 +28,7 @@ const {
 
 const { Pool } = require('pg');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 
 // Middlewares
 const auditLogger = require('./middleware/auditLogger');
@@ -34,6 +36,7 @@ const auditRead = require('./middleware/auditRead');
 const { authenticateToken, authorizeRole, configureAuthDatabase } = require('./middleware/authMiddleware');
 const { authLimiter, apiLimiter, strictLimiter } = require('./middleware/rateLimiter');
 const sanitizeInput = require('./middleware/sanitize');
+const { csrfProtection } = require('./middleware/csrf');
 const { validateRequest, validateQuery } = require('./middleware/validateRequest');
 const { tracingMiddleware } = require('./middleware/tracing');
 const { errorHandler, notFoundHandler, AppError } = require('./middleware/errorHandler');
@@ -52,6 +55,7 @@ const backupRoutes = require('./routes/backupRoutes');
 const systemRoutes = require('./routes/systemRoutes');
 const safetyRoutes = require('./routes/safetyRoutes');
 const importRoutes = require('./routes/importRoutes');
+const { verifyWebhookSignature } = require('./middleware/webhookAuth');
 const pacsRoutes = require('./routes/pacsRoutes');
 const v1Router = require('./routes/v1');
 const reportController = require('./controllers/reportController');
@@ -64,6 +68,7 @@ const { startPacsMwlJob } = require('./jobs/pacsMwlJob');
 const { startPacsTieringJob } = require('./jobs/pacsTieringJob');
 const { startPacsAiAnalysisJob } = require('./jobs/pacsAiAnalysisJob');
 const { startAuditDetectionJob } = require('./jobs/auditDetectionJob');
+const { startWorker: startPacsReconciliationWorker } = require('./services/pacsReconciliationQueue');
 const { syncRegisteredModalitiesToOrthanc } = require('./services/pacsModalityRegistryService');
 
 // RBAC Cache Initialization
@@ -215,7 +220,7 @@ const {
     mergePatients,
     generatePortalPassword
 } = require('./controllers/patientController');
-const { login, register, refresh, logout, setup2FA, enable2FA, verify2FA } = require('./controllers/authController');
+const { login, register, refresh, logout, setup2FA, enable2FA, verify2FA, changePortalPassword } = require('./controllers/authController');
 const {
     createMachine, getMachines, getMachineById, updateMachine, deleteMachine,
     getServiceContracts, createServiceContract, updateServiceContract,
@@ -438,8 +443,55 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
 
+const RETRYABLE_DATABASE_ERROR_CODES = new Set([
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'EHOSTUNREACH',
+    'ENETUNREACH'
+]);
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const waitForDatabaseConnection = async (pool, {
+    maxAttempts = 10,
+    baseDelayMs = 1000,
+    maxDelayMs = 10000
+} = {}) => {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        let client;
+        try {
+            client = await pool.connect();
+            return client;
+        } catch (error) {
+            lastError = error;
+
+            if (!RETRYABLE_DATABASE_ERROR_CODES.has(error?.code)) {
+                throw error;
+            }
+
+            if (attempt === maxAttempts) {
+                break;
+            }
+
+            const delayMs = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt - 1));
+            logger.warn(
+                `Database connection attempt ${attempt}/${maxAttempts} failed, retrying in ${delayMs}ms: ${error.message || error.name || error.toString()}`
+            );
+            await sleep(delayMs);
+        }
+    }
+
+    throw lastError;
+};
+
 // Database Connection
-const connectionString = process.env.DATABASE_URL || 'postgresql://***REMOVED***/rcms';
+    if (!process.env.DATABASE_URL) {
+        throw new Error('DATABASE_URL is required but not set');
+    }
+    const connectionString = process.env.DATABASE_URL;
 
 const pool = new Pool({
     connectionString,
@@ -460,54 +512,100 @@ const lifecycle = createServerLifecycle({
 
 const auditService = new AuditService(pool);
 
-const checkClamAv = () => {
-    if (!process.env.CLAMAV_HOST) return Promise.resolve();
+const checkClamAv = async () => {
+    if (!process.env.CLAMAV_HOST) return;
 
     const net = require('net');
-    return new Promise((resolve, reject) => {
-        const socket = net.createConnection({
-            host: process.env.CLAMAV_HOST,
-            port: Number(process.env.CLAMAV_PORT || 3310),
-        });
-        const timeout = setTimeout(() => socket.destroy(new Error('ClamAV readiness timed out')), 2000);
-        socket.setEncoding('utf8');
-        socket.once('connect', () => socket.write('zPING\0'));
-        socket.once('data', (data) => {
-            clearTimeout(timeout);
-            socket.end();
-            if (data.includes('PONG')) resolve();
-            else reject(new Error('ClamAV readiness returned an unexpected response'));
-        });
-        socket.once('error', (error) => {
-            clearTimeout(timeout);
-            reject(error);
-        });
-    });
+    const maxRetries = 3;
+    const baseDelay = 1000;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            await new Promise((resolve, reject) => {
+                const socket = net.createConnection({
+                    host: process.env.CLAMAV_HOST,
+                    port: Number(process.env.CLAMAV_PORT || 3310),
+                });
+                const timeout = setTimeout(() => socket.destroy(new Error('ClamAV readiness timed out')), 2000);
+                socket.setEncoding('utf8');
+                socket.once('connect', () => socket.write('zPING\0'));
+                socket.once('data', (data) => {
+                    clearTimeout(timeout);
+                    socket.end();
+                    if (data.includes('PONG')) resolve();
+                    else reject(new Error('ClamAV readiness returned an unexpected response'));
+                });
+                socket.once('error', (error) => {
+                    clearTimeout(timeout);
+                    reject(error);
+                });
+            });
+            return;
+        } catch (err) {
+            if (attempt >= maxRetries) throw err;
+            const backoff = baseDelay * Math.pow(2, attempt - 1);
+            logger.warn(`ClamAV readiness check failed (attempt ${attempt}/${maxRetries}), retrying in ${backoff}ms`, { error: err.message });
+            await new Promise(r => setTimeout(r, backoff));
+        }
+    }
 };
 
 // Test database connection
 if (process.env.NODE_ENV !== 'test') {
-    pool.connect((err, client, release) => {
-        if (err) {
-            logger.error('❌ Error acquiring client from database pool:', err.stack);
+    waitForDatabaseConnection(pool)
+        .then((client) => {
+            logger.info('✅ Successfully connected to PostgreSQL Database');
+
+            // Initialize global settings cache
+            const settingsService = require('./services/settingsService');
+            settingsService.initDb(pool).catch(err => {
+                logger.error('Failed to initialize settingsService:', err);
+            });
+
+            // Initialize RBAC Cache
+            refreshPermissionCache(pool).then(() => {
+                logger.info('✅ RBAC permissions cache initialized');
+            });
+
+            client.release();
+
+            const httpServer = app.listen(PORT, () => {
+                logger.info(`🚀 RCMS Server running on port ${PORT}`);
+                logger.info(`📊 Environment: ${process.env.NODE_ENV}`);
+                logger.info(`🌐 Client URL: ${process.env.CLIENT_URL}`);
+
+                // Start workers only after the required schema is ready and the API is listening.
+                lifecycle.addStopCallback(startIntegrationWorker(pool));
+                lifecycle.addStopCallback(scheduleDataRetentionJobs(pool));
+                lifecycle.trackStartupTimer(setTimeout(() => {
+                    syncRegisteredModalitiesToOrthanc(pool)
+                        .then((result) => logger.info('PACS modalities synchronized to Orthanc', result))
+                        .catch((error) => logger.error('PACS modality startup synchronization failed', { error: error.message }));
+                }, 5000));
+                lifecycle.addStopCallback(startPacsMwlJob(pool));
+                lifecycle.addStopCallback(startPacsTieringJob(pool));
+                lifecycle.addStopCallback(startPacsAiAnalysisJob(pool));
+                lifecycle.addStopCallback(startAuditDetectionJob(pool));
+
+                // Start PACS reconciliation queue worker
+                const pacsQueueWorker = startPacsReconciliationWorker(pool);
+                lifecycle.addStopCallback(pacsQueueWorker);
+                // Start notification job polling (every 60 seconds)
+                startPolling(pool, 60000);
+                startInventoryAlertPolling(pool);
+                startBackupScheduler(pool);
+                lifecycle.addStopCallback(stopPolling);
+                lifecycle.addStopCallback(stopInventoryAlertPolling);
+                lifecycle.addStopCallback(stopBackupScheduler);
+                lifecycle.markReady();
+                logger.info('🔔 Notification job polling started (60s interval)');
+            });
+            lifecycle.setHttpServer(httpServer);
+        })
+        .catch((err) => {
+            logger.error(`❌ Error acquiring client from database pool: ${err.message || err.name || err.toString()}`, { stack: err.stack });
             process.exit(1);
-        }
-
-        logger.info('✅ Successfully connected to PostgreSQL Database');
-
-        // Initialize global settings cache
-        const settingsService = require('./services/settingsService');
-        settingsService.initDb(pool).catch(err => {
-            logger.error('Failed to initialize settingsService:', err);
         });
-
-        // Initialize RBAC Cache
-        refreshPermissionCache(pool).then(() => {
-            logger.info('✅ RBAC permissions cache initialized');
-        });
-
-        release();
-    });
 }
 
 // Global Middleware
@@ -527,8 +625,8 @@ app.use((req, res, next) => {
     });
     next();
 });
-app.use(helmet());
 
+// CORS / CSP origin helpers (defined before helmet which uses them)
 const DEFAULT_ALLOWED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
@@ -563,6 +661,23 @@ const getAllowedOrigins = () => new Set([
     ...parseOriginList(process.env.ALLOWED_ORIGINS),
     ...(process.env.NODE_ENV === 'production' ? [] : parseOriginList('http://localhost:5175')),
 ].filter(Boolean));
+
+app.use(helmet({
+    contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "blob:", "https://*"],
+            connectSrc: ["'self'", "ws://*", "wss://*", ...Array.from(getAllowedOrigins()).map(o => o.replace(/^http/, 'ws'))],
+            frameSrc: ["'self'", ...Array.from(getAllowedOrigins())],
+            objectSrc: ["'none'"],
+            baseUri: ["'self'"],
+            formAction: ["'self'"],
+        },
+    },
+}));
 
 const isDevOriginAllowed = (origin) => {
     if (process.env.NODE_ENV === 'production') return false;
@@ -639,11 +754,21 @@ app.use((req, res, next) => {
     next();
 });
 
+// Raw body capture for webhook signature verification (must run BEFORE express.json)
+app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
+app.use('/api/webhooks/twilio', express.raw({ type: 'application/x-www-form-urlencoded' }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+app.use(cookieParser());
+
 // Input Sanitization to prevent XSS globally
 app.use(sanitizeInput);
+
+// CSRF protection (double-submit cookie pattern)
+// Validates x-csrf-token header against csrf_token cookie for state-changing methods.
+app.use(csrfProtection());
 
 // Apply general API rate limiting (excluding health check)
 app.use('/api', apiLimiter);
@@ -655,6 +780,17 @@ app.use(auditLogger(auditService));
 
 // V1 API Router
 app.use('/api/v1', v1Router(pool, authenticateToken, authorizeRole));
+
+app.get('/', (req, res) => {
+    res.json({
+        name: 'RCMS Radiology Center Management System API',
+        status: 'online',
+        version: '1.0.0',
+        environment: process.env.NODE_ENV || 'development',
+        health: '/health/ready',
+        docs: '/api/v1'
+    });
+});
 
 app.get('/health/live', (req, res) => {
     res.json({ status: 'OK' });
@@ -675,6 +811,69 @@ const readinessHandler = async (req, res) => {
 
 app.get('/health', readinessHandler);
 app.get('/health/ready', readinessHandler);
+
+// CSRF Token endpoint — returns a fresh CSRF token in the cookie.
+// The client reads it from the cookie and echoes it back in the x-csrf-token header.
+app.get('/api/csrf-token', (req, res) => {
+    res.json({ ok: true });
+});
+
+const httpRequestDurationMs = new Map();
+const activeConnections = { count: 0, total: 0 };
+
+const metricsMiddleware = (req, res, next) => {
+    const start = process.hrtime.bigint();
+    const connId = `${req.method}:${req.path}`;
+    const count = activeConnections.count + 1;
+    activeConnections.count = count;
+    activeConnections.total += 1;
+    res.on('close', () => {
+        activeConnections.count = Math.max(0, activeConnections.count - 1);
+    });
+    res.on('finish', () => {
+        const elapsedNs = Number(process.hrtime.bigint() - start);
+        const elapsedMs = elapsedNs / 1e6;
+        const existing = httpRequestDurationMs.get(connId) || { count: 0, sum: 0, min: Infinity, max: 0 };
+        httpRequestDurationMs.set(connId, {
+            count: existing.count + 1,
+            sum: existing.sum + elapsedMs,
+            min: Math.min(existing.min, elapsedMs),
+            max: Math.max(existing.max, elapsedMs),
+        });
+    });
+    next();
+};
+
+app.use(metricsMiddleware);
+
+app.get('/metrics', (req, res) => {
+    const lines = [];
+    lines.push('# HELP rcms_http_requests_total Total number of HTTP requests received');
+    lines.push('# TYPE rcms_http_requests_total counter');
+    let totalRequests = 0;
+    for (const [path, data] of httpRequestDurationMs) {
+        lines.push(`rcms_http_requests_total{method="${path}"} ${data.count}`);
+        totalRequests += data.count;
+    }
+    if (totalRequests === 0) {
+        lines.push('rcms_http_requests_total{method="none"} 0');
+    }
+    lines.push('# HELP rcms_http_request_duration_seconds HTTP request latency in seconds');
+    lines.push('# TYPE rcms_http_request_duration_seconds histogram');
+    for (const [path, data] of httpRequestDurationMs) {
+        lines.push(`rcms_http_request_duration_seconds_count{method="${path}"} ${data.count}`);
+        lines.push(`rcms_http_request_duration_seconds_sum{method="${path}"} ${(data.sum / 1000).toFixed(6)}`);
+    }
+    lines.push('# HELP rcms_active_connections Number of in-flight HTTP requests');
+    lines.push('# TYPE rcms_active_connections gauge');
+    lines.push(`rcms_active_connections ${activeConnections.count}`);
+    lines.push('# HELP rcms_total_connections_total Total connections handled');
+    lines.push('# TYPE rcms_total_connections_total counter');
+    lines.push(`rcms_total_connections_total ${activeConnections.total}`);
+    res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    res.set('Cache-Control', 'no-store');
+    res.send(lines.join('\n') + '\n');
+});
 
 // Auth Routes (Public) - with rate limiting and validation
 app.post('/api/auth/login',
@@ -726,6 +925,7 @@ app.get('/api/dashboard/stats',
 app.get('/api/profile', authenticateToken, getProfile(pool));
 app.put('/api/profile', authenticateToken, validateRequest(updateProfileSchema), updateProfile(pool));
 app.put('/api/profile/password', authenticateToken, validateRequest(changePasswordSchema), changePassword(pool));
+app.post('/api/auth/change-password', authenticateToken, validateRequest(changePasswordSchema), changePortalPassword(pool));
 app.get('/api/profile/preferences', authenticateToken, getProfilePreferences(pool));
 app.put('/api/profile/preferences', authenticateToken, validateRequest(profilePreferencesSchema), updateProfilePreferences(pool));
 app.get('/api/profile/audit', authenticateToken, getMyAuditLogs(pool));
@@ -1414,6 +1614,14 @@ app.use('/api/privacy', privacyRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/analytics', analyticsRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/documents', documentRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/integrations', integrationRoutes(pool, authenticateToken, authorizeRole));
+
+// ─── Webhook Routes (raw body enabled above, no JWT required) ──────────────────
+app.post('/api/webhooks/stripe', verifyWebhookSignature(pool, 'Stripe'), (req, res) => {
+    res.json({ received: true });
+});
+app.post('/api/webhooks/twilio', verifyWebhookSignature(pool, 'Twilio'), (req, res) => {
+    res.json({ received: true });
+});
 app.use('/api/settings', settingsRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/backups', backupRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/system', systemRoutes(pool, authenticateToken, authorizeRole));
@@ -1710,6 +1918,13 @@ app.put('/api/notification-preferences',
 );
 
 // ─── Real-time SSE Connection ────────────────────────────────────────────────
+// SSE session endpoint: exchanges a valid Bearer JWT for a short-lived
+// purpose-scoped SSE session token. The frontend must call this before
+// opening the EventSource stream to avoid placing the access JWT in the URL.
+app.post('/api/realtime/session', authenticateToken, (req, res) => {
+    const sessionToken = realtimeService.createSseSession(req.user);
+    res.json({ token: sessionToken });
+});
 app.get('/api/realtime/stream', realtimeService.registerClient);
 
 // ─── Staff Chat Routes ────────────────────────────────────────────────────────
@@ -1820,37 +2035,6 @@ app.use(notFoundHandler);
 
 // Centralized Error Handler - Must be last
 app.use(errorHandler);
-
-// Start Server conditionally
-if (process.env.NODE_ENV !== 'test') {
-    const httpServer = app.listen(PORT, () => {
-        logger.info(`🚀 RCMS Server running on port ${PORT}`);
-        logger.info(`📊 Environment: ${process.env.NODE_ENV}`);
-        logger.info(`🌐 Client URL: ${process.env.CLIENT_URL}`);
-        // Start workers only after the required schema is ready and the API is listening.
-        lifecycle.addStopCallback(startIntegrationWorker(pool));
-        lifecycle.addStopCallback(scheduleDataRetentionJobs(pool));
-        lifecycle.trackStartupTimer(setTimeout(() => {
-            syncRegisteredModalitiesToOrthanc(pool)
-                .then((result) => logger.info('PACS modalities synchronized to Orthanc', result))
-                .catch((error) => logger.error('PACS modality startup synchronization failed', { error: error.message }));
-        }, 5000));
-        lifecycle.addStopCallback(startPacsMwlJob(pool));
-        lifecycle.addStopCallback(startPacsTieringJob(pool));
-        lifecycle.addStopCallback(startPacsAiAnalysisJob(pool));
-        lifecycle.addStopCallback(startAuditDetectionJob(pool));
-        // Start notification job polling (every 60 seconds)
-        startPolling(pool, 60000);
-        startInventoryAlertPolling(pool);
-        startBackupScheduler(pool);
-        lifecycle.addStopCallback(stopPolling);
-        lifecycle.addStopCallback(stopInventoryAlertPolling);
-        lifecycle.addStopCallback(stopBackupScheduler);
-        lifecycle.markReady();
-        logger.info('🔔 Notification job polling started (60s interval)');
-    });
-    lifecycle.setHttpServer(httpServer);
-}
 
 // Graceful Shutdown
 if (process.env.NODE_ENV !== 'test') {

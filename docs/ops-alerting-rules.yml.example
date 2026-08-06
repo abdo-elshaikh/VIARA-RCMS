@@ -1,0 +1,82 @@
+# Example Prometheus Alerting Rules for RCMS
+# Save to: /etc/prometheus/rules/rcms-alerts.yml
+# Load via Prometheus server configuration.
+#
+# Requires the backend `/metrics` endpoint to be scraped by Prometheus.
+
+groups:
+  - name: rcms.health
+    rules:
+      # Alert when the application is not ready to accept traffic
+      - alert: RCMS_NotReady
+        expr: probe_success{job="rcms-health"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RCMS readiness probe failed"
+          description: "The /health/ready endpoint has been returning 503 for more than 2 minutes."
+
+      # Alert when 5xx error rate exceeds 5% for 5 minutes
+      - alert: RCMS_HighErrorRate
+        expr: sum(rate(node http_requests_total{status=~"^5..$"}[5m])) /
+              sum(rate(node http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RCMS 5xx error rate above 5%"
+          description: "{{ $value }}% of requests are returning 5xx errors."
+
+  - name: rcms.backup
+    rules:
+      # Alert when no successful backup has been logged in 24 hours
+      - alert: RCMS_NoBackup
+        expr: time() - rcms_db_backup_completed > 86400
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RCMS backup overdue"
+          description: "No successful backup has been completed in the last 24 hours."
+
+      # Alert when backup size drops to 0 (possible empty/corrupt backup)
+      - alert: RCMS_EmptyBackup
+        expr: rcms_db_backup_size_bytes == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RCMS backup size is zero"
+          description: "The most recent backup has a size of 0 bytes, indicating a possible corruption."
+
+  - name: rcms.resources
+    rules:
+      # Alert when active connections exceed 80% of threshold (20 pool size)
+      - alert: RCMS_HighConnectionCount
+        expr: rcms_active_connections > 16
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RCMS high active request count"
+          description: "{{ $value }} in-flight requests, exceeding 80% of connection pool capacity."
+
+# ---
+# Log-based alerting (alternative to Prometheus)
+# Configure in your log aggregation platform (Datadog, CloudWatch, ELK, etc.):
+#
+# Alert Name: RCMS Critical Error
+# Condition:  count(logs).level:"error" OR logs.level:"critical" > 0
+# Window:     5 minutes
+# Message:    "Critical error detected in RCMS backend. Check logs for details."
+#
+# Alert Name: RCMS Backup Failed
+# Condition:  message:"Scheduled PostgreSQL backup failed"
+# Window:     10 minutes
+# Message:    "Automated backup failed. Check backup scheduler logs."
+#
+# Alert Name: RCMS Readiness Failed
+# Condition:  HTTP check on /health/ready returns 503
+# Window:     2 consecutive checks (1 minute interval)
+# Message:    "RCMS is not ready to accept traffic."

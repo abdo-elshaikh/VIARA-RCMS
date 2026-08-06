@@ -47,35 +47,45 @@ const persistAuditAlerts = async (db, entry, logId) => {
     if (!db || !logId) return;
 
     const alerts = buildAuditAlerts(entry, logId);
-    for (const alert of alerts) {
-        try {
-            await db.query(`
-                INSERT INTO audit_alerts (
-                    audit_log_id, alert_type, severity, actor_user_id, patient_id,
-                    target_type, target_id, reason, evidence
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            `, [
-                alert.auditLogId,
-                alert.alertType,
-                alert.severity,
-                entry.actor_user_id || entry.user_id || null,
-                entry.patient_id || null,
-                entry.target_type || entry.resource_table || null,
-                entry.target_id || entry.resource_id || null,
-                alert.reason,
-                JSON.stringify({
-                    eventCode: entry.event_code || entry.action,
-                    outcome: entry.outcome,
-                    severity: entry.severity,
-                    riskScore: entry.risk_score || 0,
-                    requestId: entry.request_id || null,
-                }),
-            ]);
-        } catch (err) {
-            if (err.code !== '42P01' && err.code !== '42703') {
-                console.error('AuditDetectionService: Alert logging failed:', err.message);
-            }
+    if (alerts.length === 0) return;
+
+    const values = [];
+    const sqlParts = [];
+    const baseEvidence = JSON.stringify({
+        eventCode: entry.event_code || entry.action,
+        outcome: entry.outcome,
+        severity: entry.severity,
+        riskScore: entry.risk_score || 0,
+        requestId: entry.request_id || null,
+    });
+
+    alerts.forEach((alert, i) => {
+        const offset = i * 9;
+        sqlParts.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9})`);
+        values.push(
+            alert.auditLogId,
+            alert.alertType,
+            alert.severity,
+            entry.actor_user_id || entry.user_id || null,
+            entry.patient_id || null,
+            entry.target_type || entry.resource_table || null,
+            entry.target_id || entry.resource_id || null,
+            alert.reason,
+            baseEvidence
+        );
+    });
+
+    try {
+        await db.query(`
+            INSERT INTO audit_alerts (
+                audit_log_id, alert_type, severity, actor_user_id, patient_id,
+                target_type, target_id, reason, evidence
+            ) VALUES ${sqlParts.join(', ')}
+        `, values);
+    } catch (err) {
+        if (err.code !== '42P01' && err.code !== '42703') {
+            const logger = require('../config/logger');
+            logger.error('AuditDetectionService: Alert logging failed', { error: err.message });
         }
     }
 };

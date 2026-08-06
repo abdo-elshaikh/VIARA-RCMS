@@ -21,12 +21,13 @@
     "portalAppointment": "مواعيد البوابة",
     "profileUpdate": "تعديلات الملف الشخصي",
     "authorization": "الموافقات التأمينية المسبقة",
+    "partialPayment": "استثناءات الدفع الجزئي",
     "all": "كل الطلبات",
     "leave": "الإجازات",
     "privacy": "الخصوصية",
     "refund": "الاستردادات",
     "claim": "المطالبات",
-    "rule": "????? ????????"
+    "rule": "قواعد الرواتب"
   },
   "risk": {
     "critical": "حرج",
@@ -72,11 +73,12 @@
     "portalAppointmentSubtitle": "طلب موعد من بوابة المريض",
     "profileUpdateSubtitle": "طلب تعديل الملف من بوابة المريض",
     "authorizationSubtitle": "طلب موافقة تأمينية مسبقة",
+    "partialPaymentSubtitle": "استثناء {{transaction}} للفاتورة {{invoice}}",
     "leaveSubtitle": "إجازة {{type}} · {{count}} يوم",
     "leaveSubtitle_other": "إجازة {{type}} · {{count}} أيام",
     "privacySubtitle": "طلب {{type}}",
     "refundSubtitle": "استرداد للفاتورة {{invoice}}",
-    "payrollRuleSubtitle": "????? ?????? {{type}}"
+    "payrollRuleSubtitle": "قاعدة رواتب {{type}}"
   },
   "facts": {
     "penaltyType": "نوع الجزاء",
@@ -94,6 +96,9 @@
     "requestedChanges": "التغييرات المطلوبة",
     "requestedAmount": "المبلغ المطلوب",
     "approvalNumber": "رقم الموافقة",
+    "transaction": "المعاملة",
+    "netPaid": "صافي المدفوع",
+    "balance": "الرصيد",
     "fields": "{{count}} حقل",
     "fields_other": "{{count}} حقول",
     "requestedBy": "مقدم الطلب",
@@ -111,15 +116,19 @@
     "invoice": "الفاتورة",
     "payment": "الدفعة الأصلية",
     "provider": "شركة التأمين",
-    "ruleType": "??? ???????",
-    "method": "????? ??????",
-    "value": "??????",
-    "effectiveFrom": "????? ??"
+    "ruleType": "نوع القاعدة",
+    "method": "طريقة الحساب",
+    "value": "القيمة",
+    "effectiveFrom": "سارية من"
   },
   "privacyTypes": {
     "Export": "تصدير البيانات",
     "Correction": "تصحيح البيانات",
     "Anonymize": "إخفاء الهوية"
+  },
+  "partialPaymentTransactions": {
+    "ClinicalQueueTransition": "نقل قائمة الانتظار السريرية",
+    "ResultDelivery": "تسليم النتائج"
   },
   "profileFields": {
     "phone": "الهاتف",
@@ -167,7 +176,8 @@
     "failed": "تعذر حفظ القرار. ربما تمت مراجعة الطلب بالفعل."
   },
   "errors": {
-    "partial": "تعذر تحميل {{count}} من مصادر الطلبات. ما زالت الطلبات المتاحة ظاهرة."
+    "partial": "تعذر تحميل {{count}} من مصادر الطلبات. ما زالت الطلبات المتاحة ظاهرة.",
+    "partial_other": "تعذر تحميل {{count}} من مصادر الطلبات. ما زالت الطلبات المتاحة ظاهرة."
   },
   "empty": {
     "title": "تمت مراجعة كل الطلبات",
@@ -194,6 +204,6 @@
     "insuranceProvider": "شركة التأمين",
     "insuranceTeam": "فريق التأمين",
     "dateUnavailable": "وقت التقديم غير متاح",
-    "payrollRule": "????? ??????"
+    "payrollRule": "قاعدة رواتب"
   }
 }

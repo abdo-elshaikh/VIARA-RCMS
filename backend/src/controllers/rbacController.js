@@ -131,12 +131,7 @@ const updateRolePermissions = (db) => async (req, res, next) => {
             await client.query(`INSERT INTO role_permissions (role_name, permission_id) VALUES ${values}`, params);
         }
 
-        await client.query('COMMIT');
-
-        // Refresh memory cache
-        await refreshPermissionCache(db);
-
-        await logAction(db, {
+        await logAction(client, {
             userId: req.user?.user_id || req.user?.userId,
             action: 'ROLE_PERMISSIONS_UPDATED',
             resourceTable: 'role_permissions',
@@ -151,6 +146,11 @@ const updateRolePermissions = (db) => async (req, res, next) => {
                 userAgent: req.get?.('user-agent') || null
             }
         });
+
+        await client.query('COMMIT');
+
+        // Refresh memory cache (outside transaction)
+        await refreshPermissionCache(db);
 
         res.json({ message: 'Permissions updated successfully', role, permissionCount: uniquePermissionIds.length });
     } catch (error) {

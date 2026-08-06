@@ -39,6 +39,7 @@ const Input = forwardRef(({
                 required={required}
                 className={`${baseStyles} ${stateStyles} ${className}`}
                 aria-invalid={error ? 'true' : 'false'}
+                aria-errormessage={error ? errorId : undefined}
                 aria-describedby={error ? errorId : helperText ? helperId : undefined}
                 {...props}
             />

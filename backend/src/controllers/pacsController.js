@@ -8,6 +8,7 @@ const { AppError } = require('../middleware/errorHandler');
 const logger = require('../config/logger');
 const settingsService = require('../services/settingsService');
 const { reconcileInstance, reconcileQuarantine, discardQuarantine, writeAudit } = require('../services/pacsReconcileService');
+const { enqueueReconciliation } = require('../services/pacsReconciliationQueue');
 const { proxyToOrthanc, getOrthancUrl, getOrthancAuthHeader } = require('../services/pacsDicomWebService');
 const { uploadFilesToExam, getUploadProgress } = require('../services/pacsUploadService');
 const { fetchScheduledWorklist, regenerateWorklists, validateWorklistRow, WORKLIST_DIR } = require('../services/pacsMwlService');
@@ -558,16 +559,19 @@ const verifyPacsWebhook = (req, res, next) => {
 };
 
 /**
- * POST /api/pacs/webhook — receive one stored-instance notification from Orthanc
- * and reconcile it to the scheduled examination. Returns fast; heavy fan-out can
- * later move to a queue worker (Phase 7) without changing this contract.
+ * POST /api/pacs/webhook — receive one stored-instance notification from Orthanc.
+ * Acknowledges immediately and enqueues reconciliation for background processing.
+ * This prevents webhook timeouts from Orthanc and decouples reconciliation from the request lifecycle.
  */
 const handleWebhook = (db) => async (req, res, next) => {
     try {
         const payload = req.body || {};
         const remoteIp = req.headers['x-forwarded-for'] || req.ip || req.socket?.remoteAddress || null;
-        const result = await reconcileInstance(db, payload, { remoteIp });
-        res.status(200).json({ success: true, ...result });
+
+        // Enqueue for async processing — return immediately so Orthanc doesn't retry
+        await enqueueReconciliation(db, payload, { remoteIp });
+
+        res.status(200).json({ success: true, message: 'Webhook accepted for async processing' });
     } catch (error) {
         next(error);
     }
@@ -580,8 +584,11 @@ const handleWebhook = (db) => async (req, res, next) => {
 const getOrthancSystemStatus = () => async (req, res, next) => {
     try {
         const orthancUrl = await settingsService.get('orthanc_api_url', process.env.ORTHANC_API_URL || 'http://orthanc:8042');
-        const username = await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'orthanc');
-        const password = await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD || 'orthanc');
+        const username = await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'rcms');
+        const password = await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD);
+        if (!password) {
+            throw new Error('ORTHANC_PASSWORD is required but not set');
+        }
         
         let authHeader = {};
         if (username) {
@@ -661,8 +668,11 @@ const syncModalityToOrthanc = (db) => async (req, res, next) => {
         );
 
         const orthancUrl = await settingsService.get('orthanc_api_url', process.env.ORTHANC_API_URL || 'http://orthanc:8042');
-        const username = await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'orthanc');
-        const password = await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD || 'orthanc');
+        const username = await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'rcms');
+        const password = await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD);
+        if (!password) {
+            throw new Error('ORTHANC_PASSWORD is required but not set');
+        }
 
         try {
             await registerModalityInOrthanc({
@@ -683,7 +693,7 @@ const syncModalityToOrthanc = (db) => async (req, res, next) => {
                 remoteIp: req.headers['x-forwarded-for'] || req.ip || null,
                 detail: { modality_id: id, name: modality.name, aet, ip_address: ipAddress, port, dicom_role: dicomRole, orthanc_id: orthancId, error: error.message }
             });
-            return next(new AppError('Connection details saved, but Orthanc rejected the registration', 502));
+            return next(new AppError(`Connection details saved, but Orthanc rejected the registration: ${error.message}`, 502));
         }
 
         await db.query('UPDATE modalities SET dicom_synced = true WHERE modality_id = $1', [id]);
@@ -742,8 +752,11 @@ const pingModality = (db) => async (req, res, next) => {
         const orthancId = modality.name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
         
         const orthancUrl = await settingsService.get('orthanc_api_url', process.env.ORTHANC_API_URL || 'http://orthanc:8042');
-        const username = await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'orthanc');
-        const password = await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD || 'orthanc');
+        const username = await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'rcms');
+        const password = await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD);
+        if (!password) {
+            throw new Error('ORTHANC_PASSWORD is required but not set');
+        }
         
         let authHeader = {};
         if (username) {

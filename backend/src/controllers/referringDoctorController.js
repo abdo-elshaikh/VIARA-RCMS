@@ -1,4 +1,5 @@
 const { AppError } = require('../middleware/errorHandler');
+const { logAction } = require('../services/auditService');
 
 const getReferringDoctors = (db) => async (req, res, next) => {
     try {
@@ -174,6 +175,15 @@ const deleteReferringDoctor = (db) => async (req, res, next) => {
         if (result.rows.length === 0) {
             return next(new AppError('Referring doctor not found', 404));
         }
+
+        await logAction(db, {
+            userId: req.user.user_id,
+            action: 'REFERRING_DOCTOR_DEACTIVATED',
+            resourceId: id,
+            resourceTable: 'referring_doctors',
+            ipAddress: req.ip,
+            details: { reason: 'Doctor deactivated' }
+        });
 
         res.status(204).send();
     } catch (error) {

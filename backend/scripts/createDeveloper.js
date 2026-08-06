@@ -1,6 +1,8 @@
 const { Pool } = require('pg');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const {
@@ -19,6 +21,34 @@ const readArg = (name) => {
 };
 
 const generatePassword = () => `${crypto.randomBytes(15).toString('base64url')}A1!`;
+const isRunningInsideDocker = () => fs.existsSync('/.dockerenv') || process.env.RUNNING_IN_DOCKER === 'true';
+
+const formatArg = (name, value) => (value ? `--${name}=${value}` : null);
+
+const runInsideDockerBackend = ({ email, fullName, password, mustChangePassword }) => {
+    if (isRunningInsideDocker()) return false;
+
+    try {
+        execFileSync('docker', [
+            'exec',
+            '-e', `DEVELOPER_FORCE_PASSWORD_CHANGE=${mustChangePassword ? 'true' : 'false'}`,
+            'rcms_backend',
+            'node',
+            'scripts/createDeveloper.js',
+            formatArg('email', email),
+            formatArg('name', fullName),
+            formatArg('password', password),
+        ].filter(Boolean), { stdio: 'inherit' });
+        return true;
+    } catch (error) {
+        console.error('Docker fallback for developer bootstrap failed.');
+        console.error(`Message: ${error?.message || String(error)}`);
+        if (error?.stack) {
+            console.error(error.stack);
+        }
+        return false;
+    }
+};
 
 async function createDeveloper() {
     const email = String(readArg('email') || process.env.DEVELOPER_EMAIL || 'developer@rcms.com').trim().toLowerCase();
@@ -46,7 +76,31 @@ async function createDeveloper() {
             console.log('Store this generated password now; it will not be shown again.');
         }
     } catch (error) {
-        console.error(`Developer account setup failed: ${error.message}`);
+        const shouldFallbackToDocker = ['ECONNREFUSED', '28P01'].includes(error?.code)
+            || /password authentication failed|connect ECONNREFUSED/i.test(error?.message || '');
+
+        if (shouldFallbackToDocker) {
+            console.warn('Local database connection failed; trying the Docker backend container instead.');
+            const dockerSucceeded = runInsideDockerBackend({ email, fullName, password, mustChangePassword });
+            if (dockerSucceeded) {
+                return;
+            }
+        }
+
+        console.error('Developer account setup failed.');
+        console.error(`Message: ${error?.message || String(error)}`);
+        if (error?.code) {
+            console.error(`Code: ${error.code}`);
+        }
+        if (error?.detail) {
+            console.error(`Detail: ${error.detail}`);
+        }
+        if (error?.hint) {
+            console.error(`Hint: ${error.hint}`);
+        }
+        if (error?.stack) {
+            console.error(error.stack);
+        }
         process.exitCode = 1;
     } finally {
         await pool.end();

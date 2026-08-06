@@ -13,22 +13,29 @@ const orthancIdForName = (name) => String(name || 'modality')
     .replace(/[^a-zA-Z0-9_-]/g, '_')
     .toLowerCase();
 
-const getOrthancConnection = async () => ({
-    url: String(await settingsService.get('orthanc_api_url', process.env.ORTHANC_API_URL || process.env.ORTHANC_URL || 'http://orthanc:8042')).replace(/\/+$/, ''),
-    username: await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'orthanc'),
-    password: await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD || 'orthanc')
-});
+const getOrthancConnection = async () => {
+    const config = {
+        url: String(await settingsService.get('orthanc_api_url', process.env.ORTHANC_API_URL || process.env.ORTHANC_URL || 'http://orthanc:8042')).replace(/\/+$/, ''),
+        username: await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'rcms'),
+        password: await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD)
+    };
+    if (!config.password) {
+        throw new Error('ORTHANC_PASSWORD is required but not set in environment or system_settings');
+    }
+    return config;
+};
 
 const registerModalityInOrthanc = async ({ orthancUrl, username, password, name, aet, ipAddress, port }) => {
     const orthancId = orthancIdForName(name);
     const response = await fetch(`${orthancUrl}/modalities/${orthancId}`, {
         method: 'PUT',
         headers: buildOrthancHeaders(username, password, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify([aet, ipAddress, Number(port)])
+        body: JSON.stringify({ AET: aet, Host: ipAddress, Port: Number(port) })
     });
 
     if (!response.ok) {
-        throw new Error(`Orthanc rejected ${orthancId} registration with HTTP ${response.status}`);
+        const responseText = await response.text().catch(() => 'unknown error');
+        throw new Error(`Orthanc rejected ${orthancId} registration with HTTP ${response.status}: ${responseText}`);
     }
 
     return { orthancId };

@@ -31,6 +31,7 @@ import {
 import { logOut, selectCurrentUser } from '../../store/authSlice';
 import { api, useGetCenterSettingsQuery } from '../../store/api';
 import { normalizeCenterSettings } from '../../utils/centerSettings';
+import { getNavigationRoutes } from '../../config/routes';
 
 const CATEGORY_STYLES = {
     clinical: {
@@ -63,7 +64,15 @@ const CATEGORY_STYLES = {
     }
 };
 
-const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile }) => {
+const ICONS = { Activity, Banknote, Bell, Briefcase, Calendar, ClipboardCheck, ClipboardList, FileBarChart, HelpCircle, LayoutDashboard, Megaphone, MessageSquare, Monitor, Package, Settings, ShieldCheck, TrendingUp, UserCircle, Users };
+const NAVIGATION_ORDER = {
+    clinical: ['/dashboard', '/reception', '/communications', '/notifications', '/appointments', '/referring-doctors', '/worklist', '/modality', '/nurse', '/pacs/reconciliation', '/case-reports'],
+    management: ['/approvals', '/patients', '/admin', '/financials', '/payroll', '/insurance', '/inventory', '/equipment', '/hr', '/marketing', '/users'],
+    reports: ['/analytics'],
+    system: ['/settings', '/help'],
+};
+
+const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButtonRef }) => {
     const dispatch = useDispatch();
     const navigate = useNavigate();
     const user = useSelector(selectCurrentUser);
@@ -76,57 +85,14 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile }) => {
     const brandInitials = String(centerSettings.center_name || 'RCMS').trim().slice(0, 4).toUpperCase();
     const userInitial = String(user?.name || effectiveRole || 'U').trim().charAt(0).toUpperCase();
 
-    const navItems = useMemo(() => [
-        {
-            key: 'clinical',
-            group: t('groups.clinical'),
-            items: [
-                { to: '/dashboard', icon: LayoutDashboard, label: t('items.dashboard'), roles: ['All'] },
-                { to: '/reception', icon: Calendar, label: t('items.reception'), roles: ['Receptionist', 'Cashier', 'Admin'] },
-                { to: '/communications', icon: MessageSquare, label: t('items.communications', 'Inbox & Chat'), roles: ['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'HR', 'Marketing'] },
-                { to: '/notifications', icon: Bell, label: t('items.notifications', 'Notifications'), roles: ['Developer', 'Admin', 'Receptionist', 'HR', 'Marketing'] },
-                { to: '/appointments', icon: Users, label: t('items.appointments'), badge: true, roles: ['Receptionist', 'Admin'] },
-                { to: '/referring-doctors', icon: UserCircle, label: t('items.referringDoctors'), roles: ['Admin', 'Accountant'] },
-                { to: '/worklist', icon: Activity, label: t('items.worklist'), badge: true, roles: ['Radiologist', 'Technician', 'Nurse', 'Admin'] },
-                { to: '/modality', icon: Briefcase, label: t('items.modality'), roles: ['Technician', 'Admin'] },
-                { to: '/nurse', icon: Activity, label: t('items.nurse'), roles: ['Nurse', 'Admin'] },
-                { to: '/pacs/reconciliation', icon: Monitor, label: t('items.pacsReconciliation'), roles: ['Radiologist', 'Technician', 'Admin'] },
-                { to: '/case-reports', icon: ClipboardList, label: t('items.caseReports'), roles: ['Radiologist', 'Admin', 'Receptionist', 'Technician', 'Nurse'] },
-            ],
-        },
-        {
-            key: 'management',
-            group: t('groups.management'),
-            items: [
-                { to: '/approvals', icon: ClipboardCheck, label: t('items.approvals', 'Approval Inbox'), roles: ['Admin', 'HR', 'Accountant', 'Insurance_Staff', 'Receptionist'] },
-                { to: '/patients', icon: UserCircle, label: t('items.patients'), roles: ['Receptionist', 'Admin', 'Radiologist', 'Nurse', 'Marketing'] },
-                { to: '/admin', icon: FileBarChart, label: t('items.analytics'), roles: ['Admin'] },
-                { to: '/financials', icon: Package, label: t('items.financials'), roles: ['Admin', 'Accountant'] },
-                { to: '/payroll', icon: Banknote, label: t('items.payroll'), roles: ['Admin', 'Accountant', 'HR'] },
-                { to: '/insurance', icon: ShieldCheck, label: t('items.insurance'), roles: ['Admin', 'Accountant', 'Receptionist', 'Insurance_Staff'] },
-                { to: '/inventory', icon: Package, label: t('items.inventory'), roles: ['Admin', 'Technician'] },
-                { to: '/equipment', icon: Briefcase, label: t('items.equipment'), roles: ['Admin', 'Receptionist', 'Technician'] },
-                { to: '/hr', icon: Users, label: t('items.hr'), roles: ['Admin', 'HR'] },
-                { to: '/marketing', icon: Megaphone, label: t('items.marketing'), roles: ['Admin', 'Receptionist', 'HR', 'Marketing'] },
-                { to: '/users', icon: Users, label: t('items.users'), roles: ['Admin'] },
-            ],
-        },
-        {
-            key: 'reports',
-            group: t('groups.reports'),
-            items: [
-                { to: '/analytics', icon: TrendingUp, label: t('items.analytics'), roles: ['Admin', 'Accountant', 'Marketing'] },
-            ],
-        },
-        {
-            key: 'system',
-            group: t('groups.system'),
-            items: [
-                { to: '/settings', icon: Settings, label: t('items.settings'), roles: ['All'] },
-                { to: '/help', icon: HelpCircle, label: t('items.help'), roles: ['All'] },
-            ],
-        },
-    ], [t]);
+    const navItems = useMemo(() => Object.entries(NAVIGATION_ORDER).map(([key, paths]) => ({
+        key,
+        group: t(`groups.${key}`),
+        items: paths.map((to) => {
+            const route = getNavigationRoutes().find((item) => item.to === to);
+            return { ...route, icon: ICONS[route.iconId], label: t(`items.${route.key}`, { defaultValue: route.key === 'communications' ? 'Inbox & Chat' : route.key === 'approvals' ? 'Approval Inbox' : undefined }) };
+        }),
+    })), [t]);
 
     const handleLogout = () => {
         setIsSignOutOpen(true);
@@ -147,10 +113,7 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile }) => {
         ? (isRtl ? ChevronLeft : ChevronRight)
         : (isRtl ? ChevronRight : ChevronLeft);
 
-    // Correct tooltip positioning for LTR vs RTL in collapsed mode
-    const collapsedTooltipClass = isRtl
-        ? 'right-[calc(100%+0.75rem)] shadow-lg shadow-black/10 origin-right'
-        : 'left-[calc(100%+0.75rem)] shadow-lg shadow-black/10 origin-left';
+    const collapsedTooltipClass = 'start-[calc(100%+0.75rem)] shadow-lg shadow-black/10 origin-left rtl:origin-right';
 
     const activeBarRadius = isRtl ? 'rounded-l-full' : 'rounded-r-full';
 
@@ -184,6 +147,7 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile }) => {
 
                 <button
                     type="button"
+                    ref={closeButtonRef}
                     onClick={onCloseMobile}
                     className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-white lg:hidden"
                     aria-label={t('actions.close', { ns: 'common' })}
@@ -324,7 +288,7 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile }) => {
             <button
                 type="button"
                 onClick={toggleCollapse}
-                className="absolute -end-3.5 top-7 z-50 hidden h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md ring-2 ring-white/80 transition-all duration-200 hover:scale-110 hover:border-teal-500 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-950 dark:hover:border-teal-500 dark:hover:bg-teal-950/50 dark:hover:text-teal-300 lg:flex"
+                className="absolute -end-[22px] top-5 z-50 hidden h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md ring-2 ring-white/80 transition-all duration-200 hover:scale-105 hover:border-teal-500 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-950 dark:hover:border-teal-500 dark:hover:bg-teal-950/50 dark:hover:text-teal-300 lg:flex"
                 aria-label={isCollapsed ? t('actions.expandSidebar') : t('actions.collapseSidebar')}
                 title={isCollapsed ? t('actions.expandSidebar') : t('actions.collapseSidebar')}
             >

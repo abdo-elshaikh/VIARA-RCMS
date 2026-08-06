@@ -1,8 +1,14 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { setAccessToken, logOut } from './authSlice';
 
+const getCsrfToken = () => {
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+};
+
 const baseQuery = fetchBaseQuery({
-    baseUrl: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
+    baseUrl: import.meta.env.VITE_API_URL || '/api',
     credentials: 'include',
     prepareHeaders: (headers, { getState }) => {
         const token = getState().auth.token;
@@ -13,11 +19,27 @@ const baseQuery = fetchBaseQuery({
     },
 });
 
+const baseQueryWithCsrf = async (args, api, extraOptions) => {
+    const requestArgs = typeof args === 'string' ? { url: args } : { ...args };
+    const method = String(requestArgs.method || 'GET').toUpperCase();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        const csrfToken = getCsrfToken();
+        if (csrfToken) {
+            requestArgs.headers = {
+                ...(requestArgs.headers || {}),
+                'x-csrf-token': csrfToken,
+            };
+        }
+    }
+
+    return baseQuery(requestArgs, api, extraOptions);
+};
+
 let refreshPromise = null;
 
 const refreshAccessToken = (api, extraOptions) => {
     if (!refreshPromise) {
-        refreshPromise = baseQuery({
+        refreshPromise = baseQueryWithCsrf({
             url: '/auth/refresh',
             method: 'POST'
         }, api, extraOptions)
@@ -40,11 +62,11 @@ const refreshAccessToken = (api, extraOptions) => {
 };
 
 const baseQueryWithReauth = async (args, api, extraOptions) => {
-    let result = await baseQuery(args, api, extraOptions);
+    let result = await baseQueryWithCsrf(args, api, extraOptions);
     if (result.error && result.error.status === 401 && !['/auth/login', '/auth/refresh'].includes(args.url)) {
         const token = await refreshAccessToken(api, extraOptions);
         if (token) {
-            result = await baseQuery(args, api, extraOptions);
+            result = await baseQueryWithCsrf(args, api, extraOptions);
         }
     }
     return result;
@@ -165,10 +187,11 @@ export const api = createApi({
             providesTags: (result, error, id) => [{ type: 'Appointments', id }],
         }),
         createAppointment: builder.mutation({
-            query: (data) => ({
+            query: ({ idempotencyKey, ...data }) => ({
                 url: '/appointments',
                 method: 'POST',
                 body: data,
+                headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
             }),
             invalidatesTags: ['Appointments', 'Queue'],
         }),

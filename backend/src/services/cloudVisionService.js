@@ -23,6 +23,7 @@
 const logger = require('../config/logger');
 const { GEMINI_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL, normalizeGeminiModel } = require('./aiModelPolicy');
 const { validateCustomAiEndpointUrl } = require('../utils/customAiEndpointUrl');
+const pLimit = require('p-limit');
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -820,7 +821,7 @@ const callCustomCloudVision = async (base64Image, mimeType, prompt, apiKey, base
         max_tokens: 2048
     };
 
-    const safeBaseUrl = validateCustomAiEndpointUrl(baseUrl);
+    const safeBaseUrl = await validateCustomAiEndpointUrl(baseUrl);
     const url = `${safeBaseUrl.replace(/\/+$/, '')}/chat/completions`;
     const headers = { 'Content-Type': 'application/json' };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
@@ -949,11 +950,17 @@ const normaliseResult = (raw, providerName, modelName, analysisContext = {}) => 
  * Resolve Orthanc credentials from environment variables.
  * The auth object is used only to fetch the pixel-rendered JPEG preview.
  */
-const getOrthancAuth = () => ({
-    url:      process.env.ORTHANC_URL || process.env.ORTHANC_API_URL || 'http://orthanc:8042',
-    username: process.env.ORTHANC_USERNAME || 'orthanc',
-    password: process.env.ORTHANC_PASSWORD || 'orthanc'
-});
+const getOrthancAuth = () => {
+    const password = process.env.ORTHANC_PASSWORD;
+    if (!password) {
+        throw new Error('ORTHANC_PASSWORD is required but not set');
+    }
+    return {
+        url:      process.env.ORTHANC_URL || process.env.ORTHANC_API_URL || 'http://orthanc:8042',
+        username: process.env.ORTHANC_USERNAME || 'rcms',
+        password
+    };
+};
 
 /**
  * Analyses a study using a de-identified JPEG preview and Gemini or OpenRouter.
@@ -1011,7 +1018,18 @@ const analyzeStudy = async (payload, options = {}) => {
         let totalInlineBytes = 0;
         const inlineByteLimit = getMaxTotalInlineImageBytes();
         imageCoverage = { ...imageCoverage, inlineByteLimit };
-        for (const [index, instance] of selectedInstances.entries()) {
+
+        // Fetch previews concurrently with a bounded concurrency limit.
+        const CONCURRENCY = Number(process.env.PACS_AI_FETCH_CONCURRENCY || 4);
+        const limit = pLimit(CONCURRENCY);
+
+        const fetchResults = await Promise.allSettled(
+            selectedInstances.map((instance) => limit(() => fetchDicomPreviewAsBase64(instance.orthancId, getOrthancAuth())))
+        );
+
+        for (let index = 0; index < selectedInstances.length; index++) {
+            const instance = selectedInstances[index];
+            const result = fetchResults[index];
             logger.info('[CloudVision] Fetching sampled DICOM preview', {
                 current: index + 1,
                 total: selectedInstances.length,
@@ -1019,8 +1037,16 @@ const analyzeStudy = async (payload, options = {}) => {
                 series_instance_uid: instance.seriesInstanceUid,
                 instance_number: instance.instanceNumber
             });
+            if (result.status === 'rejected') {
+                imageCoverage.skippedRenderCount += 1;
+                logger.warn('[CloudVision] Sampled DICOM preview could not be rendered; continuing with remaining images', {
+                    orthanc_id: instance.orthancId,
+                    error: result.reason?.message || String(result.reason)
+                });
+                continue;
+            }
             try {
-                const image = await fetchDicomPreviewAsBase64(instance.orthancId, getOrthancAuth());
+                const image = result.value;
                 const inlineBytes = image.inlineByteLength || Buffer.byteLength(image.base64 || '', 'ascii');
                 if (images.length && totalInlineBytes + inlineBytes > inlineByteLimit) {
                     imageCoverage.omittedByByteBudget = selectedInstances.length - index;
@@ -1050,7 +1076,7 @@ const analyzeStudy = async (payload, options = {}) => {
                 }
             } catch (error) {
                 imageCoverage.skippedRenderCount += 1;
-                logger.warn('[CloudVision] Sampled DICOM preview could not be rendered; continuing with remaining images', {
+                logger.warn('[CloudVision] Sampled DICOM preview could not be processed; continuing with remaining images', {
                     orthanc_id: instance.orthancId,
                     error: error.message
                 });
@@ -1136,7 +1162,7 @@ const analyzeStudy = async (payload, options = {}) => {
 
     } else if (provider === 'cloud-custom') {
         if (!baseUrl) throw new Error('Custom provider selected but no Base URL is configured');
-        const safeBaseUrl = validateCustomAiEndpointUrl(baseUrl);
+        const safeBaseUrl = await validateCustomAiEndpointUrl(baseUrl);
         const key = apiKey || ''; // custom endpoint may not require key
         const targetModel = modelName || 'custom-vision-model';
 

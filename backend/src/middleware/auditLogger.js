@@ -5,6 +5,7 @@ const {
   outcomeFromStatus,
   categoryFromRequest,
 } = require('../services/auditTaxonomy');
+const logger = require('../config/logger');
 
 const SENSITIVE_KEYS = new Set([
   'password',
@@ -79,8 +80,7 @@ const auditLogger = (auditService) => async (req, res, next) => {
 
   if (writeMethods.includes(req.method)) {
     res.on('finish', async () => {
-      try {
-        const userId = req.user ? req.user.user_id || null : null;
+      try {        const userId = req.user ? req.user.user_id || null : null;
         const requestPath = req.originalUrl.split('?')[0];
         const action = `${req.method} ${requestPath}`;
         const ipAddress = req.ip || req.connection.remoteAddress;
@@ -129,7 +129,7 @@ const auditLogger = (auditService) => async (req, res, next) => {
           });
         }
       } catch (err) {
-        console.error("Audit Logging Failed:", err);
+        logger.error('Audit Logging Failed:', err.message);
       }
     });
   }

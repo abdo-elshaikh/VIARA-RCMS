@@ -37,7 +37,7 @@ import PageHeader from '../components/ui/PageHeader';
 import { formatDateTime, formatLocalizedDate } from '../utils/localizedDate';
 import { authenticatedFetch } from '../utils/authenticatedFetch';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const statusOrder = ['Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Finalized'];
 
 const getStatusIndex = (status) => {

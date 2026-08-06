@@ -6,11 +6,11 @@ const clearLegacyTokenStorage = () => {
 };
 
 const readStoredUser = () => {
-    if (typeof localStorage === 'undefined') return null;
+    if (typeof sessionStorage === 'undefined') return null;
     try {
-        return JSON.parse(localStorage.getItem('user') || 'null');
+        return JSON.parse(sessionStorage.getItem('user') || 'null');
     } catch {
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('user');
         return null;
     }
 };
@@ -36,7 +36,7 @@ const authSlice = createSlice({
             state.token = token;
             state.isAuthenticated = true;
 
-            localStorage.setItem('user', JSON.stringify(state.user));
+            sessionStorage.setItem('user', JSON.stringify(state.user));
             clearLegacyTokenStorage();
         },
         logOut: (state) => {
@@ -44,7 +44,7 @@ const authSlice = createSlice({
             state.token = null;
             state.isAuthenticated = false;
 
-            if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
+            if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
             clearLegacyTokenStorage();
         },
         rehydrateUser: (state, action) => {
@@ -63,7 +63,7 @@ const authSlice = createSlice({
                 ...state.user,
                 ...action.payload
             };
-            if (typeof localStorage !== 'undefined') localStorage.setItem('user', JSON.stringify(state.user));
+            if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('user', JSON.stringify(state.user));
         },
         setAccessToken: (state, action) => {
             state.token = action.payload;

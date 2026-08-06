@@ -14,15 +14,17 @@ const AuthService = require('../services/authService');
 const SALT_ROUNDS = 10;
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 
-const getPermissionNamesForRole = async (db, role) => {
+const getPermissionNamesForRole = async (db, role, bypassCache = false) => {
     if (role === 'Developer') {
         const result = await db.query('SELECT name FROM permissions ORDER BY name');
         return result.rows.map(row => row.name);
     }
 
-    const cached = permissionCache.get(role);
-    if (cached && cached.size > 0) {
-        return Array.from(cached);
+    if (!bypassCache) {
+        const cached = permissionCache.get(role);
+        if (cached && cached.size > 0) {
+            return Array.from(cached);
+        }
     }
 
     const result = await db.query(`
@@ -159,7 +161,7 @@ const login = (db) => async (req, res, next) => {
         res.cookie('refreshToken', refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
+            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
             path: '/api/auth',
             maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
         });
@@ -173,7 +175,7 @@ const login = (db) => async (req, res, next) => {
             details: { role: user.role }
         });
 
-        const permissions = await getPermissionNamesForRole(db, user.role);
+        const permissions = await getPermissionNamesForRole(db, user.role, true);
 
         res.json({
             message: 'Login Successful',
@@ -234,8 +236,13 @@ const refresh = (db) => async (req, res, next) => {
             // Token reuse detected - Security Breach!
             await client.query(`UPDATE refresh_tokens SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'token_reuse_detected' WHERE user_id = $1 OR patient_id = $1 OR doctor_id = $1`, [genericOwnerId]);
             await logSecurityEvent(client, { eventType: 'TOKEN_REUSE_DETECTED', severity: 'critical', details: { tokenId: tokenData.token_id, ownerId: genericOwnerId } });
-            await client.query('COMMIT');
-            transactionComplete = true;
+            try {
+                await client.query('COMMIT');
+                transactionComplete = true;
+            } catch (commitErr) {
+                logger.error('Token reuse COMMIT failed', { error: commitErr.message, userId: genericOwnerId });
+                await client.query('ROLLBACK');
+            }
             return next(new AppError('Security breach detected. All sessions revoked.', 401));
         }
 
@@ -288,19 +295,26 @@ const refresh = (db) => async (req, res, next) => {
             (req.get('user-agent') || tokenData.user_agent || '').slice(0, 500) || null
         ]);
 
-        await client.query('COMMIT');
-        transactionComplete = true;
+        try {
+            await client.query('COMMIT');
+            transactionComplete = true;
+        } catch (commitErr) {
+            logger.error('Token refresh COMMIT failed', { error: commitErr.message, userId: genericOwnerId });
+            return next(new AppError('Internal server error: transaction could not be committed', 500, 'INTERNAL_ERROR'));
+        }
 
-        res.cookie('refreshToken', newRefreshToken, {
+        const cookieOptions = {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
+            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
             path: '/api/auth',
             maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
-        });
+        };
 
-        const token = jwt.sign(payload, process.env.JWT_SECRET, { 
-            expiresIn: process.env.JWT_EXPIRY || '1h' 
+        res.cookie('refreshToken', newRefreshToken, cookieOptions);
+
+        const token = jwt.sign(payload, process.env.JWT_SECRET, {
+            expiresIn: process.env.JWT_EXPIRY || '1h'
         });
 
         res.json({ token });
@@ -335,7 +349,7 @@ const logout = (db) => async (req, res, next) => {
         res.clearCookie('refreshToken', {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
+            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
             path: '/api/auth'
         });
         res.json({ message: 'Logged out successfully' });
@@ -419,14 +433,14 @@ const verify2FA = (db) => async (req, res, next) => {
         res.cookie('refreshToken', refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
+            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
             path: '/api/auth',
             maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
         });
 
         await logAction(db, { userId: user.user_id, action: 'LOGIN_SUCCESS_2FA', resourceId: user.user_id, resourceTable: 'users', ipAddress: req.ip });
 
-        const permissions = await getPermissionNamesForRole(db, user.role);
+        const permissions = await getPermissionNamesForRole(db, user.role, true);
 
         res.json({
             message: 'Login Successful',
@@ -444,11 +458,98 @@ const verify2FA = (db) => async (req, res, next) => {
     }
 };
 
+const changePortalPassword = (db) => async (req, res, next) => {
+    let client;
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const userId = req.user.user_id || req.user.userId;
+        const doctorId = req.user.doctorId;
+        const authType = req.authType; // 'jwt' for staff, undefined for portal
+
+        const isPatient = req.user.role === 'Patient' && userId;
+        const isDoctor = req.user.role === 'Doctor' && doctorId;
+
+        if (!isPatient && !isDoctor) {
+            return next(new AppError('This endpoint is only for portal users', 403));
+        }
+
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        if (isPatient) {
+            const result = await client.query(
+                'SELECT password_hash FROM patients WHERE patient_id = $1 AND patient_status = \'Active\' FOR UPDATE',
+                [userId]
+            );
+            if (result.rows.length === 0) {
+                throw new AppError('Patient not found', 404);
+            }
+            const matches = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
+            if (!matches) {
+                throw new AppError('Current password is incorrect', 400);
+            }
+            const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+            await client.query(
+                'UPDATE patients SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE patient_id = $2',
+                [passwordHash, userId]
+            );
+        } else {
+            // Doctor portal
+            const result = await client.query(
+                'SELECT portal_password_hash FROM referring_doctors WHERE doctor_id = $1 AND portal_is_active = TRUE FOR UPDATE',
+                [doctorId]
+            );
+            if (result.rows.length === 0) {
+                throw new AppError('Doctor not found', 404);
+            }
+            const matches = await bcrypt.compare(currentPassword, result.rows[0].portal_password_hash);
+            if (!matches) {
+                throw new AppError('Current password is incorrect', 400);
+            }
+            const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+            await client.query(
+                'UPDATE referring_doctors SET portal_password_hash = $1 WHERE doctor_id = $2',
+                [passwordHash, doctorId]
+            );
+        }
+
+        await client.query(`
+            UPDATE refresh_tokens
+            SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'password_changed'
+            WHERE revoked = FALSE AND (
+                ${isPatient ? 'patient_id' : 'doctor_id'} = $1
+            )
+        `, [isPatient ? userId : doctorId]);
+
+        await client.query('COMMIT');
+        client.release();
+        client = null;
+
+        await logAction(db, {
+            userId: userId || doctorId,
+            action: 'PASSWORD_CHANGED_PORTAL',
+            resourceId: userId || doctorId,
+            resourceTable: isPatient ? 'patients' : 'referring_doctors',
+            ipAddress: req.ip,
+            details: { authType: 'portal' }
+        });
+
+        res.json({ message: 'Password changed successfully' });
+    } catch (error) {
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (_) {}
+            client.release();
+        }
+        next(error);
+    }
+};
+
 module.exports = {
     register,
     login,
     refresh,
     logout,
+    changePortalPassword,
     setup2FA,
     enable2FA,
     verify2FA,

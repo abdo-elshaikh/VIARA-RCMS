@@ -12,6 +12,7 @@ const PatientPortal = lazy(() => import('./pages/PatientPortal'));
 const DoctorLogin = lazy(() => import('./pages/DoctorLogin'));
 const DoctorPortal = lazy(() => import('./pages/DoctorPortal'));
 const PortalLanding = lazy(() => import('./pages/PortalLanding'));
+const PortalPasswordChange = lazy(() => import('./pages/PortalPasswordChange'));
 
 const PATIENT_ROLES = ['Patient'] as const;
 const DOCTOR_ROLES = ['Doctor'] as const;
@@ -27,7 +28,19 @@ const RequireRole = ({ roles, redirectTo, children }: RequireRoleProps) => {
     const user = useAppSelector(selectCurrentUser);
 
     if (!isAuthenticated) return <Navigate to={redirectTo} replace />;
+    if (isAuthenticated && (user as any)?.mustChangePassword) return <Navigate to="/portal/change-password" replace />;
     if (!user?.role || !roles.includes(user.role)) return <Navigate to={redirectTo} replace />;
+    return children;
+};
+
+const RequirePortalAccount = ({ children }: { children: ReactNode }) => {
+    const isAuthenticated = useAppSelector(selectIsAuthenticated);
+    const user = useAppSelector(selectCurrentUser);
+
+    if (!isAuthenticated || !user?.role) return <Navigate to="/" replace />;
+    if (![...PATIENT_ROLES, ...DOCTOR_ROLES].includes(user.role as 'Patient' | 'Doctor')) {
+        return <Navigate to="/" replace />;
+    }
     return children;
 };
 
@@ -103,6 +116,7 @@ const App = () => {
                     element={<Navigate to={isDoctor ? "/doctor/dashboard" : "/doctor/login"} replace />}
                 />
                 <Route path="/doctor/login" element={<DoctorLogin />} />
+                <Route path="/portal/change-password" element={<RequirePortalAccount><PortalPasswordChange /></RequirePortalAccount>} />
                 <Route
                     path="/doctor/dashboard"
                     element={

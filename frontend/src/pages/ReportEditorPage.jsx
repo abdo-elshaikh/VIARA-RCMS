@@ -792,7 +792,7 @@ const ReportEditorPage = () => {
         setIsOpeningPdf(true);
         try {
             const baseUrl =
-                import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+                import.meta.env.VITE_API_URL || '/api';
             const query = new URLSearchParams({
                 reportHeader: reportDocument.reportHeader,
                 reportFooter: reportDocument.reportFooter,

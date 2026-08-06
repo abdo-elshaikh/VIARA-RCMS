@@ -47,6 +47,7 @@ const CashierWorkspace = () => {
         shiftNotes,
         shiftAction,
         closeShiftDialog,
+        handleReconciliation,
     } = useShiftFlow({ skip: !canProcessPayments });
 
     const canChangeShift = currentShift ? canCloseShift : canOpenShift;
@@ -148,9 +149,8 @@ const CashierWorkspace = () => {
                 {/* Cash Drawer Reconciliation */}
                 <CashDrawerReconciliation
                     currentShift={currentShift}
-                    onReconcile={(data) => {
-                        toast.success(t('cashier.reconciled', 'Drawer reconciled successfully'));
-                    }}
+                    onReconcile={handleReconciliation}
+                    isSubmitting={isBusy}
                     onExport={(data) => {
                         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
                         const url = URL.createObjectURL(blob);
@@ -211,9 +211,7 @@ const CashierWorkspace = () => {
                         </label>
                         <textarea
                             rows="3"
-                            minLength={shiftAction === 'close' ? 3 : undefined}
-                            required={shiftAction === 'close'}
-                            value={shiftNotes}
+                             value={shiftNotes}
                             onChange={(e) => setShiftNotes(e.target.value)}
                             className="w-full rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800 dark:bg-[#0b1426] dark:text-white"
                         />
@@ -229,7 +227,7 @@ const CashierWorkspace = () => {
                         </button>
                         <button
                             type="submit"
-                            disabled={isBusy || (shiftAction === 'close' && (!countedCash || shiftNotes.trim().length < 3))}
+                             disabled={isBusy || (shiftAction === 'close' && countedCash === '')}
                             className="flex-1 rounded-xl bg-slate-900 py-3 font-bold text-white disabled:opacity-50 dark:bg-teal-700"
                         >
                             {isBusy ? t('billing.processing') : t('confirm')}

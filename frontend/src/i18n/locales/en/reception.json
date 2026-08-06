@@ -1,6 +1,13 @@
 {
   "title": "Reception Desk",
   "subtitle": "Manage daily schedules and patient flow",
+  "states": {
+    "loading": "Loading reception interface...",
+    "error": "Something went wrong.",
+    "tryAgain": "Try again",
+    "loginRequired": "Please log in to access reception.",
+    "profileMissing": "User profile not found. Please contact support."
+  },
   "command": {
     "live": "Live operations",
     "signedIn": "Signed in as {{name}}",
@@ -310,6 +317,7 @@
     "bookingFutureTime": "Booking Failed: start time must be in the future.",
     "bookingOverlap": "Booking Failed: this machine is already booked for that time.",
     "appointmentBooked": "Appointment Booked!",
+    "appointmentBookedApprovalFailed": "Appointment {{reference}} was booked, but insurance approval failed: {{error}}. Review the appointment before retrying the approval.",
     "bookingFailed": "Booking Failed: {{error}}",
     "waitlistMarked": "Waiting-list entry marked {{status}}.",
     "waitlistFailed": "Waiting-list entry could not be updated.",

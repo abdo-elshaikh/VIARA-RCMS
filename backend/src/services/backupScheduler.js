@@ -2,6 +2,7 @@ const logger = require('../config/logger');
 const { createPostgresBackup, getBackupMode } = require('./postgresBackupService');
 const { logSystemAuditEvent } = require('./systemAuditService');
 const { AUDIT_EVENT_CODES, AUDIT_OUTCOME } = require('./auditTaxonomy');
+const { replicateBackup } = require('./backupOffsiteReplicator');
 
 const LOCK_ID = 731942;
 let scheduleTimer = null;
@@ -28,6 +29,7 @@ const runScheduledBackup = async (db) => {
 
         const backup = await createPostgresBackup();
         logger.info(`Scheduled PostgreSQL backup created: ${backup.filename}`);
+        const replicationResult = await replicateBackup(backup);
         await logSystemAuditEvent(db, {
             eventCode: AUDIT_EVENT_CODES.SYSTEM_BACKUP_COMPLETED,
             jobName: 'postgres-backup',
@@ -37,6 +39,8 @@ const runScheduledBackup = async (db) => {
                 filename: backup.filename,
                 size: backup.size || backup.sizeBytes || null,
                 checksum: backup.checksum || null,
+                offsiteReplicated: replicationResult.replicated,
+                ...(replicationResult.error ? { offsiteError: replicationResult.error } : {}),
             },
         });
         return { skipped: false, backup };

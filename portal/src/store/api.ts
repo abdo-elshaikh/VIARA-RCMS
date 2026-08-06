@@ -1,6 +1,12 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { setAccessToken, logOut } from './authSlice';
 
+const getCsrfToken = (): string | null => {
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+};
+
 const baseQuery = fetchBaseQuery({
     baseUrl: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
     credentials: 'include',
@@ -14,11 +20,27 @@ const baseQuery = fetchBaseQuery({
     },
 });
 
+const baseQueryWithCsrf = async (args: any, apiInstance: any, extraOptions: any) => {
+    const requestArgs = typeof args === 'string' ? { url: args } : { ...args };
+    const method = String(requestArgs.method || 'GET').toUpperCase();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        const csrfToken = getCsrfToken();
+        if (csrfToken) {
+            requestArgs.headers = {
+                ...(requestArgs.headers || {}),
+                'x-csrf-token': csrfToken,
+            };
+        }
+    }
+
+    return baseQuery(requestArgs, apiInstance, extraOptions) as Promise<any>;
+};
+
 let refreshPromise: Promise<string | null> | null = null;
 
 const refreshAccessToken = (apiInstance: any, extraOptions: any): Promise<string | null> => {
     if (!refreshPromise) {
-        refreshPromise = (baseQuery({
+        refreshPromise = (baseQueryWithCsrf({
             url: '/auth/refresh',
             method: 'POST'
         }, apiInstance, extraOptions) as Promise<any>)
@@ -41,11 +63,11 @@ const refreshAccessToken = (apiInstance: any, extraOptions: any): Promise<string
 };
 
 const baseQueryWithReauth = async (args: any, apiInstance: any, extraOptions: any) => {
-    let result = await baseQuery(args, apiInstance, extraOptions);
+    let result = await baseQueryWithCsrf(args, apiInstance, extraOptions);
     if (result.error && result.error.status === 401 && args.url !== '/auth/login' && args.url !== '/portal/login' && args.url !== '/doctor-portal/login') {
         const token = await refreshAccessToken(apiInstance, extraOptions);
         if (token) {
-            result = await baseQuery(args, apiInstance, extraOptions);
+            result = await baseQueryWithCsrf(args, apiInstance, extraOptions);
         }
     }
     return result;
@@ -62,6 +84,14 @@ export const api = createApi({
     endpoints: (builder) => ({
         logout: builder.mutation<any, undefined>({
             query: () => ({ url: '/auth/logout', method: 'POST' }),
+        }),
+
+        changePassword: builder.mutation<any, { currentPassword: string; newPassword: string }>({
+            query: (body) => ({
+                url: '/auth/change-password',
+                method: 'POST',
+                body,
+            }),
         }),
 
         // ─── Patient Portal ─────────────────────────────────────────────
@@ -272,6 +302,7 @@ export const api = createApi({
 
 export const {
     usePatientLoginMutation,
+    useChangePasswordMutation,
     useGetMyRecordsQuery,
     useGetMyPortalProfileQuery,
     useGetMyPortalInvoicesQuery,

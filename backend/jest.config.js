@@ -10,6 +10,7 @@ module.exports = {
   testMatch: [
     '**/tests/**/*.test.js'
   ],
+  setupFiles: ['<rootDir>/tests/setupEnv.js'],
   reporters: [
     'default',
     '<rootDir>/tests/noSkippedTestsReporter.js'

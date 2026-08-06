@@ -34,7 +34,7 @@ export const useShiftFlow = ({ skip = false } = {}) => {
     );
 
     const currentShift = useMemo(
-        () => cashierData?.data?.find((shift) => shift.status === 'Open'),
+        () => cashierData?.data?.find((shift) => ['Open', 'Active'].includes(shift.status)),
         [cashierData]
     );
 
@@ -87,6 +87,24 @@ export const useShiftFlow = ({ skip = false } = {}) => {
         }
     }, [closeCashierShift, closeShiftDialog, currentShift, openCashierShift, state, t]);
 
+    const handleReconciliation = useCallback(async ({ countedCash, notes }) => {
+        if (!currentShift) return false;
+
+        try {
+            await closeCashierShift({
+                id: currentShift.shift_id,
+                countedCash: Number(countedCash),
+                varianceReason: notes?.trim() || undefined,
+                notes: notes?.trim() || undefined,
+            }).unwrap();
+            toast.success(t('cashier.reconciled', { defaultValue: 'Drawer reconciled successfully' }));
+            return true;
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('billing.shiftActionFailed', { defaultValue: 'Action failed' })));
+            return false;
+        }
+    }, [closeCashierShift, currentShift, t]);
+
     const shiftModalProps = useMemo(() => ({
         action: state.shiftAction,
         countedCash: state.countedCash,
@@ -116,6 +134,7 @@ export const useShiftFlow = ({ skip = false } = {}) => {
         setCountedCash,
         setShiftNotes,
         handleShiftAction,
+        handleReconciliation,
         shiftModalProps,
         ...state,
     };

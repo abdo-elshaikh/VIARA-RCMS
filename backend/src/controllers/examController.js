@@ -274,7 +274,7 @@ const getCaseReports = (db) => async (req, res, next) => {
                        e.queue_stage, e.current_station, e.clinical_indication,
                        e.provisional_diagnosis, e.icd_code, e.body_part, e.contrast_required,
                        a.start_time, a.end_time,
-                       p.mrn, p.gender, p.email AS patient_email, p.phone_enc, p.date_of_birth_enc,
+                       p.mrn, p.gender, p.email_enc AS patient_email_enc, p.phone_enc, p.date_of_birth_enc,
                        p.first_name_enc, p.last_name_enc, p.communication_preference,
                        p.consent_email, p.consent_sms, p.consent_whatsapp,
                        m.name AS modality_name, m.type AS modality_type, m.room_number,
@@ -461,20 +461,26 @@ const updateReport = (db) => async (req, res, next) => {
                 ? 'a.nurse_id = $2'
                 : '(e.performing_radiologist_id = $2 OR e.performing_radiologist_id IS NULL)';
 
+        client = await db.connect();
+        await client.query('BEGIN');
+
         const checkQuery = `
             SELECT e.status, e.appointment_id, e.report_locked, e.report_sections,
                    e.report_content, e.report_status
             FROM examinations e
             JOIN appointments a ON e.appointment_id = a.appointment_id
             WHERE e.exam_id = $1 AND ${assignmentPredicate}
+            FOR UPDATE
         `;
-        const checkResult = await db.query(checkQuery, [examId, userId]);
+        const checkResult = await client.query(checkQuery, [examId, userId]);
 
         if (checkResult.rows.length === 0) {
+            await client.query('ROLLBACK');
             return next(new AppError('Exam not found or assigned to another user', 404));
         }
 
         if (checkResult.rows[0].report_locked) {
+            await client.query('ROLLBACK');
             return next(new AppError('Report is already finalized', 400));
         }
 
@@ -502,6 +508,7 @@ const updateReport = (db) => async (req, res, next) => {
                 { finalizing: newStatus === 'Finalized' }
             );
             if (transitionError) {
+                await client.query('ROLLBACK');
                 return next(new AppError(transitionError, 409));
             }
         }
@@ -519,10 +526,7 @@ const updateReport = (db) => async (req, res, next) => {
                     : newStatus === 'Checked-in' ? 'Modality'
                         : 'Reception';
 
-        // #25 — All writes are atomic inside a single transaction
-        client = await db.connect();
-        await client.query('BEGIN');
-
+        // All writes are atomic inside a single transaction
         const updateQuery = `
         UPDATE examinations 
         SET report_content = COALESCE($1, report_content), 
@@ -646,7 +650,7 @@ const updateReport = (db) => async (req, res, next) => {
                 'SELECT patient_id, order_number, external_referring_doctor_id FROM examinations WHERE exam_id = $1',
                 [examId]
             );
-            if (examInfo.rows.length > 0) {
+                    if (examInfo.rows.length > 0) {
                 const e = examInfo.rows[0];
                 triggerEvent(db, 'ReportReady', {
                     patientId: e.patient_id,
@@ -689,7 +693,7 @@ const updateReport = (db) => async (req, res, next) => {
 const getReportPdf = (db) => async (req, res, next) => {
     try {
         const examId = req.params.id;
-        const userId = req.user.user_id || req.user.userId || req.user.patient_id || null;
+        const userId = req.user.user_id || req.user.userId || req.user.patient_id || req.user.doctorId || null;
         const userRole = req.user.role || '';
 
         const result = await db.query(`
@@ -714,7 +718,8 @@ const getReportPdf = (db) => async (req, res, next) => {
         const rawExam = result.rows[0];
 
         // Access permissions check
-        const isStaff = ['Developer', 'Admin', 'Receptionist', 'Accountant', 'Technician', 'Radiologist', 'Doctor', 'Referring Doctor', 'Referring_Doctor', 'Nurse'].includes(userRole);
+        const staffRoles = ['Developer', 'Admin', 'Radiologist', 'Doctor', 'Referring Doctor', 'Referring_Doctor'];
+        const isStaff = staffRoles.includes(userRole);
         const isPatientOwner = userRole === 'Patient' && rawExam.patient_id === userId && rawExam.status === 'Finalized';
 
         if (!isStaff && !isPatientOwner) {
@@ -863,15 +868,32 @@ const getReportPdf = (db) => async (req, res, next) => {
 };
 
 const amendReport = (db) => async (req, res, next) => {
+    let client;
     try {
         const { id } = req.params;
         const { reason, reportContent, sections } = req.body;
-        const existing = await db.query('SELECT * FROM examinations WHERE exam_id = $1', [id]);
+
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const existing = await client.query('SELECT * FROM examinations WHERE exam_id = $1 FOR UPDATE', [id]);
         if (existing.rows.length === 0) {
+            await client.query('ROLLBACK');
             return next(new AppError('Exam not found', 404));
         }
         if (!existing.rows[0].report_locked) {
+            await client.query('ROLLBACK');
             return next(new AppError('Only finalized reports can be amended', 400));
+        }
+
+        const isRadiologist = req.user.role === 'Radiologist';
+        const isDeveloper = req.user.role === 'Developer';
+        if (!isRadiologist && !isDeveloper) {
+            const canAmend = await roleHasAnyPermission(client, req.user.role, ['AMEND_FINALIZED_REPORTS']);
+            if (!canAmend) {
+                await client.query('ROLLBACK');
+                return next(new AppError('AMEND_FINALIZED_REPORTS permission is required', 403));
+            }
         }
 
         const nextSections = {
@@ -880,8 +902,7 @@ const amendReport = (db) => async (req, res, next) => {
         };
         const nextContent = buildReportContent(nextSections, reportContent || existing.rows[0].report_content);
 
-        // Archive the current (pre-amendment) version first
-        await addReportVersion(db, {
+        await addReportVersion(client, {
             examId: id,
             reportStatus: existing.rows[0].report_status || 'Finalized',
             reportContent: existing.rows[0].report_content,
@@ -890,7 +911,7 @@ const amendReport = (db) => async (req, res, next) => {
             userId: req.user.user_id
         });
 
-        const result = await db.query(`
+        const result = await client.query(`
             UPDATE examinations
             SET report_content = $1,
                 report_sections = $2,
@@ -904,10 +925,8 @@ const amendReport = (db) => async (req, res, next) => {
             WHERE exam_id = $5
             RETURNING *
         `, [nextContent, nextSections, reason, req.user.user_id, id]);
-        // Note: the UPDATE above already sets report_status = 'Amended';
-        // no second addReportVersion call is needed here.
 
-        await logAction(db, {
+        await logAction(client, {
             userId: req.user?.user_id,
             action: 'REPORT_AMEND',
             resourceId: id,
@@ -916,9 +935,13 @@ const amendReport = (db) => async (req, res, next) => {
             details: { reason }
         });
 
+        await client.query('COMMIT');
         res.json(result.rows[0]);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 

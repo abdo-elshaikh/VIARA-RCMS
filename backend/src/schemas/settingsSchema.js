@@ -1,10 +1,10 @@
 const { z } = require('zod');
 const { validateCustomAiEndpointUrl } = require('../utils/customAiEndpointUrl');
 
-const validateCustomBaseUrl = (value, context, provider, path = ['baseUrl']) => {
+const validateCustomBaseUrl = async (value, context, provider, path = ['baseUrl']) => {
     if (!value || !['custom', 'cloud-custom'].includes(provider)) return;
     try {
-        validateCustomAiEndpointUrl(value);
+        await validateCustomAiEndpointUrl(value);
     } catch (error) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: error.message, path });
     }

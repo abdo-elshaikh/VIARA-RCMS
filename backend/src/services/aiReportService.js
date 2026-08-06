@@ -350,7 +350,7 @@ const callAnthropic = async ({ baseUrl, model, apiKey, systemPrompt, userContent
 };
 
 const callOpenAiCompatible = async ({ provider, baseUrl, model, apiKey, systemPrompt, userContent, maxTokens = 2000, jsonMode = false }) => {
-    if (provider === 'custom') validateCustomAiEndpointUrl(baseUrl);
+    if (baseUrl) await validateCustomAiEndpointUrl(baseUrl);
     return withRetry(async () => {
         const isCurrentOpenAiModel = provider === 'openai' && /^gpt-5\.(?:[4-9]|\d{2,})(?:-|$)/i.test(String(model));
         const nativeJsonMode = jsonMode

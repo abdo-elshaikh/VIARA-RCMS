@@ -12,7 +12,17 @@ describe('form controls accessibility', () => {
 
         expect(input).toBeRequired();
         expect(input).toHaveAttribute('aria-invalid', 'true');
+        expect(input).toHaveAttribute('aria-errormessage', error.id);
         expect(input).toHaveAttribute('aria-describedby', error.id);
+    });
+
+    it('connects select validation messages with aria-errormessage', () => {
+        render(<Select label="Modality" error="Modality is required" options={[]} />);
+        const select = screen.getByRole('combobox', { name: 'Modality' });
+        const error = screen.getByRole('alert');
+
+        expect(select).toHaveAttribute('aria-invalid', 'true');
+        expect(select).toHaveAttribute('aria-errormessage', error.id);
     });
 
     it('connects select labels and helper text without a supplied id', () => {

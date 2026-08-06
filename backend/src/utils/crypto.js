@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const logger = require('../config/logger');
 
 // ENCRYPTION_KEY is validated at startup by validateEnv.js
 const GCM_IV_LENGTH = 12;
@@ -47,12 +48,7 @@ function decrypt(text) {
         decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
         encryptedText = Buffer.from(ciphertextHex, 'hex');
     } else {
-        // Read legacy AES-CBC values during the rolling data migration. All new
-        // writes use authenticated AES-GCM above.
-        if (textParts.length !== 2) throw new Error('Invalid encrypted value');
-        const { key } = getEncryptionKey('default');
-        decipher = crypto.createDecipheriv('aes-256-cbc', key, Buffer.from(textParts[0], 'hex'));
-        encryptedText = Buffer.from(textParts[1], 'hex');
+        throw new Error('Invalid encrypted value: legacy AES-CBC format is no longer supported. Run backend/scripts/reencryptPii.js migration.');
     }
 
     let decrypted = decipher.update(encryptedText);
@@ -66,7 +62,10 @@ function decrypt(text) {
  */
 function hash(text) {
     if (!text) return null;
-    const blindIndexKey = process.env.BLIND_INDEX_KEY || process.env.ENCRYPTION_KEY;
+    if (!process.env.BLIND_INDEX_KEY) {
+        throw new Error('BLIND_INDEX_KEY is required for blind indexing');
+    }
+    const blindIndexKey = process.env.BLIND_INDEX_KEY;
     const key = /^[0-9a-fA-F]{64}$/.test(blindIndexKey)
         ? Buffer.from(blindIndexKey, 'hex')
         : Buffer.from(blindIndexKey, 'utf8');

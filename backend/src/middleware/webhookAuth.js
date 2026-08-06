@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const { AppError } = require('./errorHandler');
 const { decrypt } = require('../utils/crypto');
+const stripe = require('stripe');
+const twilio = require('twilio');
 
 const safeEqual = (actual, expected) => {
     const actualBuffer = Buffer.from(actual || '', 'utf8');
@@ -12,6 +14,10 @@ const safeEqual = (actual, expected) => {
 /**
  * Middleware to verify incoming webhooks from external integration providers.
  * Requires the provider name to look up the correct API secret.
+ *
+ * IMPORTANT: Routes using this middleware MUST be mounted with a raw body parser
+ * (express.raw()) BEFORE express.json() consumes the body, so that signature
+ * verification operates on the exact bytes the provider signed.
  */
 const verifyWebhookSignature = (pool, providerName) => async (req, res, next) => {
     try {
@@ -25,40 +31,38 @@ const verifyWebhookSignature = (pool, providerName) => async (req, res, next) =>
         }
 
         const storedSecret = result.rows[0].api_secret;
-        // Preserve compatibility with credentials written before encryption was
-        // introduced, while ensuring every new write is encrypted at rest.
         const secret = storedSecret.startsWith('v2:') || /^[0-9a-f]+:[0-9a-f]+$/i.test(storedSecret)
             ? decrypt(storedSecret)
             : storedSecret;
-        const payload = JSON.stringify(req.body);
-        let signatureHeader = '';
-        let expectedSignature = '';
 
-        // Provider-specific signature logic
         if (providerName === 'Stripe') {
-            signatureHeader = req.headers['stripe-signature'];
+            const signatureHeader = req.headers['stripe-signature'];
             if (!signatureHeader) return next(new AppError('Missing Stripe signature', 401));
-            
-            // Simplified Stripe mock validation
-            const hmac = crypto.createHmac('sha256', secret);
-            expectedSignature = hmac.update(payload).digest('hex');
-            
-            // In a real app, use the official stripe SDK: stripe.webhooks.constructEvent
-            if (!safeEqual(signatureHeader, expectedSignature)) {
-                return next(new AppError('Invalid Stripe Signature', 401));
+
+            const rawBody = req.rawBody;
+            if (!rawBody) return next(new AppError('Raw body not captured for Stripe webhook verification', 500));
+
+            const stripeClient = stripe(secret);
+            try {
+                stripeClient.webhooks.constructEvent(rawBody, signatureHeader, secret);
+            } catch (sigErr) {
+                return next(new AppError(`Invalid Stripe signature: ${sigErr.message}`, 401));
             }
 
         } else if (providerName === 'Twilio') {
-            signatureHeader = req.headers['x-twilio-signature'];
+            const signatureHeader = req.headers['x-twilio-signature'];
             if (!signatureHeader) return next(new AppError('Missing Twilio signature', 401));
-            
-            // Simplified Twilio mock validation
-            const hmac = crypto.createHmac('sha1', secret);
-            // Twilio uses URL-encoded params for signature, this is just a placeholder
-            expectedSignature = hmac.update(payload).digest('base64');
-            
-            if (!safeEqual(signatureHeader, expectedSignature)) {
-                return next(new AppError('Invalid Twilio Signature', 401));
+
+            // Twilio validation requires the raw URL, method, and POST params.
+            // The raw body is URL-encoded form data; parse it for param extraction.
+            const rawBody = req.rawBody;
+            if (!rawBody) return next(new AppError('Raw body not captured for Twilio webhook verification', 500));
+
+            const originalUrl = req.originalUrl;
+            const params = new URLSearchParams(rawBody.toString());
+
+            if (!twilio.validateRequest(secret, originalUrl, params, signatureHeader)) {
+                return next(new AppError('Invalid Twilio signature', 401));
             }
         } else {
             return next(new AppError('Unsupported provider for webhook verification', 400));

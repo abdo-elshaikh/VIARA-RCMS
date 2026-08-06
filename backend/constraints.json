@@ -36,10 +36,6 @@
     "def": "CHECK (((report_status)::text = ANY ((ARRAY['Draft'::character varying, 'Typed'::character varying, 'Reviewed'::character varying, 'Approved'::character varying, 'Amended'::character varying, 'Finalized'::character varying])::text[])))"
   },
   {
-    "conname": "examinations_exam_id_not_null",
-    "def": "NOT NULL exam_id"
-  },
-  {
     "conname": "examinations_pkey",
     "def": "PRIMARY KEY (exam_id)"
   },
@@ -94,21 +90,5 @@
   {
     "conname": "fk_examinations_template",
     "def": "FOREIGN KEY (template_id) REFERENCES report_templates(template_id) ON DELETE SET NULL"
-  },
-  {
-    "conname": "chk_examinations_pregnancy_safety_status",
-    "def": "CHECK (((pregnancy_safety_status)::text = ANY ((ARRAY['Unknown'::character varying, 'Cleared'::character varying, 'At Risk'::character varying, 'Not Applicable'::character varying])::text[])))"
-  },
-  {
-    "conname": "chk_examinations_implant_safety_status",
-    "def": "CHECK (((implant_safety_status)::text = ANY ((ARRAY['Unknown'::character varying, 'Cleared'::character varying, 'At Risk'::character varying, 'Not Applicable'::character varying])::text[])))"
-  },
-  {
-    "conname": "chk_examinations_renal_safety_status",
-    "def": "CHECK (((renal_safety_status)::text = ANY ((ARRAY['Unknown'::character varying, 'Cleared'::character varying, 'At Risk'::character varying, 'Not Applicable'::character varying])::text[])))"
-  },
-  {
-    "conname": "chk_examinations_current_station",
-    "def": "CHECK (((current_station)::text = ANY ((ARRAY['Reception'::character varying, 'Cashier'::character varying, 'Nurse'::character varying, 'Modality'::character varying, 'Radiologist'::character varying, 'Delivery'::character varying])::text[])))"
   }
 ]

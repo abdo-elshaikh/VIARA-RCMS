@@ -1,7 +1,13 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PaymentCollectionModal from '../PaymentCollectionModal';
+
+let language = 'en';
+
+vi.mock('react-i18next', () => ({
+    useTranslation: () => ({ i18n: { language, resolvedLanguage: language } })
+}));
 
 vi.mock('../../ui/Modal', () => ({
     default: ({ children, footer, isOpen, title }) => isOpen ? <section aria-label={title}>{children}{footer}</section> : null
@@ -45,6 +51,10 @@ const baseProps = {
 };
 
 describe('PaymentCollectionModal', () => {
+    beforeEach(() => {
+        language = 'en';
+    });
+
     it('renders invoice context, payment controls, and submit action', () => {
         render(<PaymentCollectionModal {...baseProps} />);
 
@@ -52,6 +62,36 @@ describe('PaymentCollectionModal', () => {
         expect(screen.getByText('Test Patient')).toBeInTheDocument();
         expect(screen.getByLabelText('Amount to pay')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Confirm Payment' })).toBeEnabled();
+        expect(screen.getByText(/EGP\s+120\.00/)).toBeInTheDocument();
+        expect(screen.getByLabelText('Amount to pay')).toHaveValue(120);
+    });
+
+    it('formats visible amounts and input currency for the invoice currency', () => {
+        render(<PaymentCollectionModal
+            {...baseProps}
+            adjustedBalance={1234.5}
+            invoice={{ ...baseProps.invoice, currency_code: 'USD' }}
+            paymentAmount="1234.5"
+            remainingBalance={34.5}
+        />);
+
+        expect(screen.getByText('$1,234.50')).toBeInTheDocument();
+        expect(screen.getByText('Remaining: $34.50')).toBeInTheDocument();
+        expect(screen.getByText('USD')).toBeInTheDocument();
+        expect(screen.getByLabelText('Amount to pay')).toHaveValue(1234.5);
+    });
+
+    it('uses Arabic currency formatting for balances and payment history', () => {
+        language = 'ar';
+        render(<PaymentCollectionModal
+            {...baseProps}
+            invoiceDetail={{ payments: [{ payment_id: 'payment-1', amount: 20, method: 'Cash', created_at: '2026-08-04T10:00:00Z' }] }}
+        />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Previous Payments' }));
+
+        expect(screen.getByText(/١٢٠٫٠٠/)).toBeInTheDocument();
+        expect(screen.getByText((content, element) => element?.tagName === 'P' && /٢٠٫٠٠/.test(content))).toBeInTheDocument();
     });
 
     it('routes quick amount and method changes through callbacks', () => {

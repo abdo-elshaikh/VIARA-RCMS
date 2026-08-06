@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import {
@@ -61,6 +61,7 @@ const TRUST_CHIPS = [
 const Login = () => {
     const dispatch = useDispatch();
     const navigate = useNavigate();
+    const location = useLocation();
     const { t, i18n } = useTranslation(['auth', 'common']);
     const isRtl = i18n.dir() === 'rtl';
     const patientPortalLoginUrl = getPatientPortalLoginUrl();
@@ -133,6 +134,13 @@ const Login = () => {
     const toggleTheme = () => dispatch(setTheme(isDark ? 'light' : 'dark'));
 
     const resolveDestination = (user) => {
+        const requestedPath = typeof location.state?.from === 'string'
+            ? location.state.from
+            : sessionStorage.getItem('rcms-return-path');
+        if (requestedPath?.startsWith('/') && !requestedPath.startsWith('//') && requestedPath !== '/login') {
+            sessionStorage.removeItem('rcms-return-path');
+            return requestedPath;
+        }
         const preferredStartPage = user?.preferences?.startPage;
         const isSafeStartPage = typeof preferredStartPage === 'string'
             && preferredStartPage.startsWith('/')

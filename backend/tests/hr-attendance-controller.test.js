@@ -9,28 +9,48 @@ const createResponse = () => ({
 
 const makeReq = (overrides = {}) => ({
     body: {},
+    ip: '127.0.0.1',
     user: { user_id: USER_ID, role: 'Technician' },
     ...overrides
 });
 
+const makeClient = (handlers) => {
+    const client = {
+        query: jest.fn(async (sql, params) => {
+            const text = String(sql);
+            for (const [matcher, handler] of Object.entries(handlers)) {
+                if (text.includes(matcher)) return handler(sql, params);
+            }
+            return { rows: [] };
+        }),
+        release: jest.fn()
+    };
+    return client;
+};
+
+const makeDb = (client) => ({
+    connect: jest.fn().mockResolvedValue(client)
+});
+
 describe('HR attendance controller', () => {
     test('clock-in creates an attendance row for the authenticated user', async () => {
-        const db = {
-            query: jest.fn(async (sql) => {
-                const text = String(sql);
-                if (text.includes('SELECT * FROM attendance_logs')) return { rows: [] };
-                if (text.includes('INSERT INTO attendance_logs')) {
-                    return { rows: [{ log_id: 'log-1', user_id: USER_ID, clock_out: null }] };
-                }
-                return { rows: [] };
-            })
-        };
+        let captureInsertParams = null;
+        const client = makeClient({
+            'SELECT * FROM attendance_logs': () => ({ rows: [] }),
+            'INSERT INTO attendance_logs': (sql, params) => {
+                captureInsertParams = params;
+                return { rows: [{ log_id: 'log-1', user_id: USER_ID, clock_out: null }] };
+            },
+            'log_action': () => ({ rows: [] }),
+            'COMMIT': () => ({ rows: [] })
+        });
+        const db = makeDb(client);
         const res = createResponse();
         const next = jest.fn();
 
         await clockIn(db)(makeReq(), res, next);
 
-        expect(db.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO attendance_logs'), [USER_ID, undefined]);
+        expect(client.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO attendance_logs'), [USER_ID, undefined]);
         expect(res.status).toHaveBeenCalledWith(201);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ log_id: 'log-1' }));
         expect(next).not.toHaveBeenCalled();
@@ -38,9 +58,11 @@ describe('HR attendance controller', () => {
 
     test('duplicate clock-in returns the active session instead of failing', async () => {
         const active = { log_id: 'log-1', user_id: USER_ID, clock_out: null };
-        const db = {
-            query: jest.fn(async () => ({ rows: [active] }))
-        };
+        const client = makeClient({
+            'SELECT * FROM attendance_logs': () => ({ rows: [active] }),
+            'COMMIT': () => ({ rows: [] })
+        });
+        const db = makeDb(client);
         const res = createResponse();
         const next = jest.fn();
 
@@ -55,9 +77,11 @@ describe('HR attendance controller', () => {
     });
 
     test('clock-out with no active session returns a settled state instead of failing', async () => {
-        const db = {
-            query: jest.fn(async () => ({ rows: [] }))
-        };
+        const client = makeClient({
+            'UPDATE attendance_logs': () => ({ rows: [] }),
+            'COMMIT': () => ({ rows: [] })
+        });
+        const db = makeDb(client);
         const res = createResponse();
         const next = jest.fn();
 

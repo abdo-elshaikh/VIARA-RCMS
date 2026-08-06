@@ -1,3 +1,39 @@
+/*
+  ============================================================================
+  RCMS Design System — Frontend Styles
+  ============================================================================
+  Color Tokens:
+    --rcms-accent       Primary brand color (default: teal #0891b2)
+    --rcms-accent-dark  Hover/active variant of primary color
+    --rcms-accent-soft  Light tint for backgrounds/badges
+    --rcms-accent-rgb   RGB tuple for rgba() usage
+    --rcms-ink          Primary text color (#0d1b2a)
+    --rcms-muted        Secondary text (#66778a)
+    --rcms-line         Border/stroke color (#e3e9ef)
+    --rcms-line-strong  Stronger border (#cbd5e1)
+    --rcms-surface      Base background (#ffffff)
+    --rcms-surface-raised Elevated surface (#ffffff)
+    --rcms-surface-muted Subtle background (#f8fafc)
+    --rcms-surface-hover Hover state (#f1f5f9)
+    --rcms-field        Form field background (#ffffff)
+    --rcms-canvas       Page background (#f3f6f8)
+    --rcms-shadow       Box-shadow RGB tuple (15, 23, 42)
+
+  Theme Variants (set via data-primary-color attribute):
+    indigo  --rcms-accent: #4f46e5
+    rose    --rcms-accent: #e11d48
+    emerald --rcms-accent: #059669
+    amber   --rcms-accent: #d97706
+
+  Typography:
+    .rcms-heading-1 — Page title (3rem/1.5rem line)
+    .rcms-heading-2 — Section heading (1.75rem/2.25rem line)
+    .rcms-heading-3 — Subheading (1.5rem/2rem line)
+    .rcms-body      — Body text (1rem/1.625rem line)
+    .rcms-caption   — Caption/muted (0.875rem/1.25rem line)
+  ============================================================================
+*/
+
 /* Latin + Arabic web fonts */
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Tajawal:wght@400;500;600;700&display=swap');
 
@@ -54,7 +90,39 @@ body {
 
 button, input, select, textarea { font: inherit; }
 
-:focus-visible { outline: 3px solid rgba(var(--rcms-accent-rgb), .32); outline-offset: 2px; }
+:focus-visible {
+  @apply outline-2 outline-offset-2 outline-[var(--rcms-accent)];
+  outline-style: solid;
+}
+
+/* Ensure focus rings are visible in dark mode with higher contrast */
+:root.dark :focus-visible {
+  outline-color: rgb(144, 215, 204);
+  outline-offset: 3px;
+}
+
+/* Don't show focus ring on mouse interactions if keyboard was used */
+:root .mouse-active :focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Ensure consistent focus outline for all interactive elements */
+:focus-visible {
+  outline-width: 2px;
+}
+
+/* Enhanced focus for form inputs with ring styles */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline-offset: 2px;
+}
+
+/* RTL-aware focus ring positioning */
+[dir="rtl"] :focus-visible {
+  outline-offset: 3px;
+}
 
 /* Applied workspace appearance preferences */
 .app-shell .btn-primary,
@@ -239,6 +307,57 @@ button, input, select, textarea { font: inherit; }
   .delay-500 { animation-delay: 500ms; }
   .delay-700 { animation-delay: 700ms; }
   .delay-1000 { animation-delay: 1000ms; }
+
+  /* Responsive overflow helpers — prevent horizontal scroll on mobile */
+  .rcms-overflow-x-auto {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .rcms-overflow-y-auto {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .rcms-table-wrapper {
+    @apply w-full overflow-x-auto rounded-lg border border-slate-200 dark:border-white/10;
+  }
+
+  .rcms-table-wrapper::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .rcms-table-wrapper::-webkit-scrollbar-track {
+    @apply bg-slate-100 dark:bg-slate-800;
+  }
+
+  .rcms-table-wrapper::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 dark:bg-slate-600 rounded-full;
+  }
+
+  .rcms-table-wrapper::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400 dark:bg-slate-500;
+  }
+
+  /* Hide scrollbar but allow scrolling (for custom UX) */
+  .rcms-overflow-x-auto-scrollbar-hidden {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .rcms-overflow-x-auto-scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Mobile-friendly table container with sticky header */
+  .rcms-table-container {
+    @apply w-full overflow-x-auto;
+  }
+
+  .rcms-table-sticky-header {
+    @apply sticky top-0 z-10 bg-white dark:bg-[#0b1426] shadow-sm;
+  }
 
   /* Scroll-reveal: hidden until .is-visible is toggled by IntersectionObserver */
   .reveal {

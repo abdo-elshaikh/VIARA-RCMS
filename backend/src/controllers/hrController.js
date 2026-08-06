@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { AppError } = require('../middleware/errorHandler');
+const { logAction } = require('../services/auditService');
 const {
     updateProfileSchema,
     createShiftSchema, updateShiftSchema,
@@ -37,43 +38,57 @@ const getEmployeeProfiles = (db) => async (req, res, next) => {
 };
 
 const updateEmployeeProfile = (db) => async (req, res, next) => {
+    let client;
     try {
         const { id } = req.params;
         const data = updateProfileSchema.parse(req.body);
-        
-        // Upsert logic for employee_profiles
-        const existing = await db.query('SELECT * FROM employee_profiles WHERE user_id = $1', [id]);
-        
+
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const existing = await client.query('SELECT * FROM employee_profiles WHERE user_id = $1 FOR UPDATE', [id]);
+
+        let result;
         if (existing.rows.length === 0) {
-            // Insert
-            const result = await db.query(`
+            result = await client.query(`
                 INSERT INTO employee_profiles (user_id, employee_id, department, job_title, hire_date, employment_status, salary)
                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
             `, [id, data.employeeId, data.department, data.jobTitle, data.hireDate, data.employmentStatus, data.salary]);
-            res.json(result.rows[0]);
+            await logAction(client, {
+                userId: req.user.user_id, action: 'EMPLOYEE_PROFILE_CREATED', resourceId: id,
+                resourceTable: 'employee_profiles', ipAddress: req.ip,
+                details: { changedFields: Object.keys(data), changedSalary: data.salary != null }, required: data.salary != null
+            });
         } else {
-            // Update
             const keys = Object.keys(data);
             if (keys.length === 0) return res.status(400).json({ message: 'No data provided' });
-            
+
             const setClauses = keys.map((k, i) => {
                 const dbKey = k.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
                 return `${dbKey} = $${i + 1}`;
             });
             const values = Object.values(data);
             values.push(id);
-            
-            const result = await db.query(`
+
+            result = await client.query(`
                 UPDATE employee_profiles 
                 SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
                 WHERE user_id = $${values.length} RETURNING *
             `, values);
-            
-            res.json(result.rows[0]);
+            await logAction(client, {
+                userId: req.user.user_id, action: 'EMPLOYEE_PROFILE_UPDATED', resourceId: id,
+                resourceTable: 'employee_profiles', ipAddress: req.ip,
+                details: { changedFields: keys, changedSalary: keys.includes('salary') }, required: keys.includes('salary')
+            });
         }
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
@@ -129,6 +144,11 @@ const createShift = (db) => async (req, res, next) => {
             INSERT INTO staff_shifts (user_id, start_time, end_time, notes)
             VALUES ($1, $2, $3, $4) RETURNING *
         `, [data.userId, data.startTime, data.endTime, data.notes]);
+        logAction(db, {
+            userId: req.user.user_id, action: 'SHIFT_CREATED', resourceId: result.rows[0].shift_id,
+            resourceTable: 'staff_shifts', ipAddress: req.ip,
+            details: { userId: data.userId, startTime: data.startTime, endTime: data.endTime }, required: true
+        }).catch(err => console.error('Non-blocking audit log error:', err));
         res.status(201).json(result.rows[0]);
     } catch (error) {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
@@ -141,6 +161,11 @@ const deleteShift = (db) => async (req, res, next) => {
         const { id } = req.params;
         const result = await db.query('DELETE FROM staff_shifts WHERE shift_id = $1 RETURNING *', [id]);
         if (result.rows.length === 0) return next(new AppError('Shift not found', 404));
+        logAction(db, {
+            userId: req.user.user_id, action: 'SHIFT_DELETED', resourceId: id,
+            resourceTable: 'staff_shifts', ipAddress: req.ip,
+            details: { startTime: result.rows[0].start_time, endTime: result.rows[0].end_time }, required: true
+        }).catch(err => console.error('Non-blocking audit log error:', err));
         res.status(204).send();
     } catch (error) {
         next(error);
@@ -186,14 +211,17 @@ const getAttendance = (db) => async (req, res, next) => {
 };
 
 const clockIn = (db) => async (req, res, next) => {
+    let client;
     try {
         const data = clockInSchema.parse(req.body || {});
         const userId = getAuthenticatedUserId(req);
         if (!userId) return next(new AppError('Authenticated user id is missing', 401));
 
-        // Check if already clocked in
-        const existing = await db.query('SELECT * FROM attendance_logs WHERE user_id = $1 AND clock_out IS NULL', [userId]);
+        client = await db.connect();
+        await client.query('BEGIN');
+        const existing = await client.query('SELECT * FROM attendance_logs WHERE user_id = $1 AND clock_out IS NULL FOR UPDATE', [userId]);
         if (existing.rows.length > 0) {
+            await client.query('COMMIT');
             return res.json({
                 ...existing.rows[0],
                 already_clocked_in: true,
@@ -201,40 +229,61 @@ const clockIn = (db) => async (req, res, next) => {
             });
         }
 
-        const result = await db.query(`
+        const result = await client.query(`
             INSERT INTO attendance_logs (user_id, clock_in, notes)
             VALUES ($1, CURRENT_TIMESTAMP, $2) RETURNING *
         `, [userId, data.notes]);
-        
+        await logAction(client, {
+            userId, action: 'ATTENDANCE_CLOCK_IN', resourceId: result.rows[0].log_id,
+            resourceTable: 'attendance_logs', ipAddress: req.ip,
+            details: { notes: data.notes || null }, required: true
+        });
+        await client.query('COMMIT');
         res.status(201).json(result.rows[0]);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
 const clockOut = (db) => async (req, res, next) => {
+    let client;
     try {
         const data = clockOutSchema.parse(req.body || {});
         const userId = getAuthenticatedUserId(req);
         if (!userId) return next(new AppError('Authenticated user id is missing', 401));
 
-        const result = await db.query(`
+        client = await db.connect();
+        await client.query('BEGIN');
+        const result = await client.query(`
             UPDATE attendance_logs 
             SET clock_out = CURRENT_TIMESTAMP, notes = COALESCE($1, notes)
             WHERE user_id = $2 AND clock_out IS NULL RETURNING *
         `, [data.notes, userId]);
-        
+
         if (result.rows.length === 0) {
+            await client.query('COMMIT');
             return res.json({
                 clocked_in: false,
                 message: 'No active clock-in session found'
             });
         }
+        await logAction(client, {
+            userId, action: 'ATTENDANCE_CLOCK_OUT', resourceId: result.rows[0].log_id,
+            resourceTable: 'attendance_logs', ipAddress: req.ip,
+            details: { notes: data.notes || null }, required: true
+        });
+        await client.query('COMMIT');
         res.json(result.rows[0]);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
@@ -286,7 +335,11 @@ const createLeaveRequest = (db) => async (req, res, next) => {
             INSERT INTO leave_requests (user_id, start_date, end_date, leave_type, reason)
             VALUES ($1, $2, $3, $4, $5) RETURNING *
         `, [userId, data.startDate, data.endDate, data.leaveType, data.reason]);
-        
+        logAction(db, {
+            userId: userId, action: 'LEAVE_REQUEST_CREATED', resourceId: result.rows[0].request_id,
+            resourceTable: 'leave_requests', ipAddress: req.ip,
+            details: { startDate: data.startDate, endDate: data.endDate, leaveType: data.leaveType }, required: false
+        }).catch(err => console.error('Non-blocking audit log error:', err));
         res.status(201).json(result.rows[0]);
     } catch (error) {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
@@ -295,22 +348,37 @@ const createLeaveRequest = (db) => async (req, res, next) => {
 };
 
 const updateLeaveStatus = (db) => async (req, res, next) => {
+    let client;
     try {
         const { id } = req.params;
         const data = updateLeaveStatusSchema.parse(req.body);
         const adminId = req.user.user_id;
 
-        const result = await db.query(`
+        client = await db.connect();
+        await client.query('BEGIN');
+        const result = await client.query(`
             UPDATE leave_requests 
             SET status = $1, approved_by = $2, updated_at = CURRENT_TIMESTAMP
             WHERE request_id = $3 AND status = 'Pending' RETURNING *
         `, [data.status, adminId, id]);
         
-        if (result.rows.length === 0) return next(new AppError('Leave request not found or already reviewed', 409));
+        if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return next(new AppError('Leave request not found or already reviewed', 409));
+        }
+        await logAction(client, {
+            userId: adminId, action: 'LEAVE_REQUEST_STATUS_CHANGED', resourceId: id,
+            resourceTable: 'leave_requests', ipAddress: req.ip,
+            details: { previousStatus: 'Pending', newStatus: data.status, notes: data.notes || null }, required: true
+        });
+        await client.query('COMMIT');
         res.json(result.rows[0]);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
@@ -330,16 +398,16 @@ const getProductivityReport = (db) => async (req, res, next) => {
             SELECT u.user_id, u.full_name, 'Receptionist' as role, COUNT(i.invoice_id) as metric_count, 'Invoices Generated' as metric_name
             FROM users u
             JOIN invoices i ON u.user_id = i.generated_by
-            WHERE u.role IN ('Receptionist', 'Admin')
+            WHERE u.role = 'Receptionist'
             AND i.generated_at >= $1::date AND i.generated_at <= $2::date
             GROUP BY u.user_id, u.full_name
         `;
-        
+
         const technicianQuery = `
             SELECT u.user_id, u.full_name, 'Technician' as role, COUNT(e.exam_id) as metric_count, 'Exams Completed' as metric_name
             FROM users u
             JOIN examinations e ON u.user_id = e.technician_id
-            WHERE u.role IN ('Technician', 'Admin')
+            WHERE u.role = 'Technician'
             AND e.completed_at >= $1::date AND e.completed_at <= $2::date
             GROUP BY u.user_id, u.full_name
         `;

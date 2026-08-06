@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, Phone, ArrowUpRight, ArrowRight, ShieldCheck, Clock, MapPin, CalendarCheck, UserRound, Stethoscope } from 'lucide-react';
+import { Menu, X, Phone, ArrowUpRight, ArrowRight, ShieldCheck, Clock, MapPin, CalendarCheck, UserRound, Stethoscope, ScanLine } from 'lucide-react';
 
 import LanguageToggle from '../../ui/LanguageToggle';
 import ThemeToggle from '../../ui/ThemeToggle';
@@ -129,6 +129,7 @@ export const PortalHeader = ({ navLinks = [], portalType = 'public', center, tex
 
   return (
     <header className="portal-site-header fixed inset-x-0 top-0 z-50 font-sans transition-all duration-300" dir={isRtl ? 'rtl' : 'ltr'}>
+      {/* Utility bar — collapses on scroll */}
       <div className={`portal-header-utility overflow-hidden border-b px-4 text-xs transition-all duration-300 sm:px-6 lg:px-8 ${scrolled ? 'max-h-0 border-transparent py-0 opacity-0' : 'max-h-12 py-2 opacity-100'}`}>
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-4 sm:gap-6">
@@ -158,21 +159,35 @@ export const PortalHeader = ({ navLinks = [], portalType = 'public', center, tex
         </div>
       </div>
 
+      {/* Main navigation bar */}
       <nav
         className={`portal-header-nav border-b transition-all duration-300 ${scrolled
-            ? 'portal-header-nav--scrolled shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:shadow-slate-950/40'
-            : 'backdrop-blur-md'
+          ? 'portal-header-nav--scrolled shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:shadow-slate-950/40'
+          : 'backdrop-blur-md'
           }`}
         aria-label={text?.primaryNav || 'Primary navigation'}
       >
         <div className={`mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 transition-[height] duration-300 sm:px-6 lg:px-8 ${scrolled ? 'h-14' : 'h-16'}`}>
+          {/* Brand */}
           <Link to="/" className="group flex min-w-0 items-center gap-3">
-            <span className={`portal-header-brand-mark relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200/60 bg-white text-[11px] font-black text-[#082761] shadow-md transition-all duration-300 group-hover:-translate-y-0.5 group-hover:shadow-lg dark:border-white/15 ${scrolled ? 'h-9 w-9' : 'h-11 w-11'}`}>
-              {logo ? <img src={logo} alt="" className="h-full w-full object-contain p-1" /> : initials}
+            <span className={`portal-header-brand-mark relative flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-blue-50/60 shadow-[0_4px_16px_-4px_rgba(7,92,183,0.2)] transition-all duration-300 group-hover:-translate-y-0.5 group-hover:scale-105 group-hover:border-[#075cb7]/40 group-hover:shadow-[0_8px_24px_-6px_rgba(7,92,183,0.35)] dark:border-white/15 dark:from-slate-900 dark:via-slate-900/90 dark:to-slate-800 ${scrolled ? 'h-9 w-9' : 'h-11 w-11'} ${logo ? 'is-has-logo' : ''}`}>
+              <span className="absolute inset-0 bg-gradient-to-tr from-[#075cb7]/10 via-transparent to-sky-400/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+              {logo ? (
+                <img src={logo} alt="" className="relative z-10 h-full w-full object-contain p-0.5" />
+              ) : (
+                <div className="relative z-10 flex items-center justify-center gap-1 font-black text-[#082761] dark:text-sky-300">
+                  <ScanLine className="h-4 w-4 text-[#075cb7] transition-transform duration-300 group-hover:rotate-12 dark:text-sky-400" />
+                  <span className="text-[11px] tracking-tight">{initials}</span>
+                </div>
+              )}
             </span>
             <span className="min-w-0 text-left rtl:text-right">
-              <bdi className="portal-header-brand-name block max-w-52 truncate font-sans text-sm font-black tracking-tight transition-colors xl:max-w-60">{centerName}</bdi>
-              <span className="portal-header-brand-subtitle mt-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
+              <bdi className="portal-header-brand-name block max-w-52 truncate font-sans text-sm font-black tracking-tight text-[#071d43] transition-colors group-hover:text-[#075cb7] dark:text-white dark:group-hover:text-sky-300 xl:max-w-60">{centerName}</bdi>
+              <span className="portal-header-brand-subtitle mt-0.5 flex items-center gap-1.5 text-[9.5px] font-bold uppercase tracking-wider text-[#075cb7] dark:text-sky-400">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75 motion-reduce:animate-none" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                </span>
                 <ShieldCheck className="h-3 w-3" />
                 {text?.brandSuffix || (isRtl ? 'مراكز الأشعة والتشخيص المعتمدة' : 'Diagnostic Centers')}
               </span>
@@ -191,22 +206,23 @@ export const PortalHeader = ({ navLinks = [], portalType = 'public', center, tex
                   className={`portal-header-nav-link group relative rounded-lg px-2 py-2 text-[10.5px] font-extrabold transition-all xl:px-2.5 xl:text-[11px] ${active ? 'is-active' : ''}`}
                 >
                   <span>{link.label}</span>
-                  <span className={`absolute inset-x-2 -bottom-1.5 mx-auto h-0.5 rounded-full bg-[#075cb7] transition-all duration-200 ${active ? 'w-[calc(100%-1rem)] opacity-100' : 'w-0 opacity-0 group-hover:w-4 group-hover:opacity-100'}`} aria-hidden="true" />
+                  <span className={`absolute inset-x-2 -bottom-1.5 mx-auto h-0.5 rounded-full transition-all duration-300 ${active ? 'w-[calc(100%-1rem)] bg-gradient-to-r from-[#075cb7] to-[#19a78c] opacity-100' : 'w-0 bg-[#075cb7] opacity-0 group-hover:w-4 group-hover:opacity-100'}`} aria-hidden="true" />
                 </a>
               );
             })}
           </div>
 
+          {/* Desktop actions */}
           <div className="hidden items-center gap-2 lg:flex">
-            {isPublic && <button type="button" onClick={openBooking} aria-label={isRtl ? 'احجز موعداً' : 'Book appointment'} className="portal-header-book inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-[10.5px] font-extrabold text-white shadow-md transition hover:-translate-y-0.5 xl:px-4"><CalendarCheck className="h-4 w-4" /><span className="hidden xl:inline">{isRtl ? 'احجز موعداً' : 'Book appointment'}</span></button>}
+            {isPublic && <button type="button" onClick={openBooking} aria-label={isRtl ? 'احجز موعداً' : 'Book appointment'} className="portal-header-book group inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-[10.5px] font-extrabold text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg xl:px-4"><CalendarCheck className="h-4 w-4 transition-transform group-hover:scale-110" /><span className="hidden xl:inline">{isRtl ? 'احجز موعداً' : 'Book appointment'}</span></button>}
             <div className="portal-header-portal-group flex items-center gap-0.5 rounded-xl border p-1">
               <Link
                 to="/patient/login"
                 aria-label={text?.patientPortal || 'Patient Portal'}
                 title={text?.patientPortal || (isRtl ? 'بوابة المرضى' : 'Patient Portal')}
-                className="portal-header-portal-link inline-flex min-h-8 items-center gap-2 rounded-lg px-2.5 text-[10px] font-extrabold transition xl:px-3"
+                className="portal-header-portal-link group inline-flex min-h-8 items-center gap-2 rounded-lg px-2.5 text-[10px] font-extrabold transition-all hover:scale-[1.02] xl:px-3"
               >
-                <UserRound className="h-3.5 w-3.5" />
+                <UserRound className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
                 <span className="hidden xl:inline">{text?.patientPortal || (isRtl ? 'المرضى' : 'Patients')}</span>
               </Link>
               {isPublic && <span className="h-5 w-px bg-slate-200 dark:bg-slate-700" aria-hidden="true" />}
@@ -215,15 +231,16 @@ export const PortalHeader = ({ navLinks = [], portalType = 'public', center, tex
                   to="/doctor/login"
                   aria-label={text?.doctorPortal || 'Doctor Portal'}
                   title={text?.doctorPortal || (isRtl ? 'بوابة الأطباء' : 'Doctor Portal')}
-                  className="portal-header-portal-link inline-flex min-h-8 items-center gap-2 rounded-lg px-2.5 text-[10px] font-extrabold transition xl:px-3"
+                  className="portal-header-portal-link group inline-flex min-h-8 items-center gap-2 rounded-lg px-2.5 text-[10px] font-extrabold transition-all hover:scale-[1.02] xl:px-3"
                 >
-                  <Stethoscope className="h-3.5 w-3.5" />
+                  <Stethoscope className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
                   <span className="hidden xl:inline">{text?.doctorPortal || (isRtl ? 'الأطباء' : 'Doctors')}</span>
                 </Link>
               )}
             </div>
           </div>
 
+          {/* Mobile menu button */}
           <div className="flex items-center gap-2 lg:hidden">
             <button
               ref={menuButtonRef}
@@ -232,7 +249,7 @@ export const PortalHeader = ({ navLinks = [], portalType = 'public', center, tex
               aria-expanded={menuOpen}
               aria-controls="portal-mobile-menu"
               aria-label={menuOpen ? (text?.menu?.close || 'Close menu') : (text?.menu?.open || 'Open menu')}
-              className="portal-header-menu-button flex h-10 w-10 items-center justify-center rounded-xl border shadow-sm transition"
+              className="portal-header-menu-button flex h-10 w-10 items-center justify-center rounded-xl border shadow-sm transition-all hover:scale-105"
             >
               {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
@@ -240,10 +257,12 @@ export const PortalHeader = ({ navLinks = [], portalType = 'public', center, tex
         </div>
       </nav>
 
+      {/* Scroll progress bar */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[2px] overflow-hidden bg-transparent" aria-hidden="true">
         <span className="block h-full bg-gradient-to-r from-[#075cb7] via-[#28a7d8] to-[#19a78c] transition-[width] duration-150" style={{ width: `${scrollProgress}%` }} />
       </div>
 
+      {/* Mobile menu drawer */}
       {menuOpen && (
         <>
           <button
@@ -253,18 +272,35 @@ export const PortalHeader = ({ navLinks = [], portalType = 'public', center, tex
             onClick={() => setMenuOpen(false)}
           />
           <div id="portal-mobile-menu" ref={menuRef} role="dialog" aria-modal="true" aria-label={text?.primaryNav || 'Primary navigation'} className="portal-header-mobile-menu portal-header-drawer fixed inset-y-0 end-0 z-[70] flex w-[min(90vw,23rem)] flex-col overflow-y-auto border-s px-5 py-5 shadow-2xl lg:hidden">
+            {/* Drawer header */}
             <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-4 dark:border-slate-700">
-              <Link to="/" onClick={() => setMenuOpen(false)} className="flex min-w-0 items-center gap-3">
-                <span className="portal-header-brand-mark flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl text-white shadow-md">{logo ? <img src={logo} alt="" className="h-full w-full object-contain p-1.5" /> : <span className="text-xs font-extrabold tracking-wider">{initials}</span>}</span>
-                <span className="min-w-0"><bdi className="portal-header-brand-name block max-w-48 truncate text-sm font-black">{centerName}</bdi><small className="portal-header-brand-subtitle mt-0.5 block text-[8px] font-black uppercase tracking-wider">{isRtl ? 'مركز الأشعة التشخيصية' : 'Diagnostic Imaging Center'}</small></span>
+              <Link to="/" onClick={() => setMenuOpen(false)} className="group flex min-w-0 items-center gap-3">
+                <span className={`portal-header-brand-mark relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-blue-50/60 shadow-md dark:border-white/15 dark:from-slate-900 dark:to-slate-800 ${logo ? 'is-has-logo' : ''}`}>
+                  {logo ? (
+                    <img src={logo} alt="" className="h-full w-full object-contain p-0.5" />
+                  ) : (
+                    <div className="flex items-center justify-center gap-1 font-black text-[#082761] dark:text-sky-300">
+                      <ScanLine className="h-4 w-4 text-[#075cb7] dark:text-sky-400" />
+                      <span className="text-xs tracking-tight">{initials}</span>
+                    </div>
+                  )}
+                </span>
+                <span className="min-w-0">
+                  <bdi className="portal-header-brand-name block max-w-48 truncate text-sm font-black text-[#071d43] dark:text-white">{centerName}</bdi>
+                  <small className="portal-header-brand-subtitle mt-0.5 flex items-center gap-1 text-[8.5px] font-extrabold uppercase tracking-wider text-[#075cb7] dark:text-sky-400">
+                    <ShieldCheck className="h-2.5 w-2.5" />
+                    {isRtl ? 'مركز الأشعة التشخيصية' : 'Diagnostic Imaging Center'}
+                  </small>
+                </span>
               </Link>
-              <button type="button" onClick={() => setMenuOpen(false)} aria-label={text?.menu?.close || 'Close menu'} className="portal-header-menu-button flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border"><X className="h-5 w-5" /></button>
+              <button type="button" onClick={() => setMenuOpen(false)} aria-label={text?.menu?.close || 'Close menu'} className="portal-header-menu-button flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-transform hover:scale-105"><X className="h-5 w-5" /></button>
             </div>
 
+            {/* Drawer body */}
             <div className="mt-5 flex flex-1 flex-col">
               <p className="px-2 text-[9px] font-black uppercase tracking-[.14em] text-slate-400">{isRtl ? 'تصفح الموقع' : 'Explore'}</p>
               <nav className="mt-2 flex flex-col gap-1.5" aria-label={text?.primaryNav || 'Primary navigation'}>
-                {navLinks.map((link) => {
+                {navLinks.map((link, index) => {
                   const active = activeHref === link.href;
                   return (
                     <a
@@ -272,10 +308,11 @@ export const PortalHeader = ({ navLinks = [], portalType = 'public', center, tex
                       href={link.href}
                       onClick={() => setMenuOpen(false)}
                       aria-current={active ? 'location' : undefined}
-                      className={`portal-header-mobile-link group flex min-h-12 items-center justify-between rounded-xl px-4 py-3 text-sm font-extrabold transition-all ${active ? 'is-active' : ''}`}
+                      className={`portal-header-mobile-link portal-drawer-stagger group flex min-h-12 items-center justify-between rounded-xl px-4 py-3 text-sm font-extrabold transition-all ${active ? 'is-active' : ''}`}
+                      style={{ animationDelay: `${0.06 + index * 0.04}s` }}
                     >
                       <span className="flex items-center gap-3"><span className={`h-1.5 w-1.5 rounded-full transition ${active ? 'bg-[#075cb7]' : 'bg-slate-300 group-hover:bg-[#075cb7] dark:bg-slate-600'}`} />{link.label}</span>
-                      <ArrowRight className="h-4 w-4 rtl:rotate-180" />
+                      <ArrowRight className={`h-4 w-4 transition-transform rtl:rotate-180 ${active ? '' : 'opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5'}`} />
                     </a>
                   );
                 })}
@@ -284,17 +321,18 @@ export const PortalHeader = ({ navLinks = [], portalType = 'public', center, tex
                 <button
                   type="button"
                   onClick={openBooking}
-                  className="portal-header-book mt-5 flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 text-sm font-extrabold text-white shadow-lg"
+                  className="portal-header-book portal-drawer-stagger mt-5 flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 text-sm font-extrabold text-white shadow-lg"
+                  style={{ animationDelay: `${0.06 + navLinks.length * 0.04 + 0.04}s` }}
                 >
                   <CalendarCheck className="h-4 w-4" />
                   {isRtl ? 'احجز موعداً' : 'Book appointment'}
                 </button>
               )}
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="portal-drawer-stagger mt-3 grid grid-cols-2 gap-2" style={{ animationDelay: `${0.06 + navLinks.length * 0.04 + 0.08}s` }}>
                 <Link
                   to="/patient/login"
                   onClick={() => setMenuOpen(false)}
-                  className="portal-header-secondary flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 text-center text-xs font-extrabold transition-colors"
+                  className="portal-header-secondary group flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 text-center text-xs font-extrabold transition-all hover:scale-[1.02]"
                 >
                   <UserRound className="h-4 w-4" />
                   {text?.patientPortal || (isRtl ? 'نتائج المرضى' : 'Patient Portal')}
@@ -302,18 +340,19 @@ export const PortalHeader = ({ navLinks = [], portalType = 'public', center, tex
                 <Link
                   to="/doctor/login"
                   onClick={() => setMenuOpen(false)}
-                  className="portal-header-secondary flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 text-center text-xs font-extrabold transition-colors"
+                  className="portal-header-secondary group flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 text-center text-xs font-extrabold transition-all hover:scale-[1.02]"
                 >
                   <Stethoscope className="h-4 w-4" />
                   {text?.doctorPortal || (isRtl ? 'بوابة الأطباء' : 'Doctor Portal')}
                 </Link>
               </div>
 
-              <div className="mt-auto pt-6">
+              {/* Drawer footer */}
+              <div className="portal-drawer-stagger mt-auto pt-6" style={{ animationDelay: `${0.06 + navLinks.length * 0.04 + 0.12}s` }}>
                 <div className="rounded-2xl border border-[#d8e6f1] bg-[#f5f9fd] p-4 dark:border-slate-700 dark:bg-slate-800/70">
-                  <a href={`tel:${hotline}`} className="portal-header-mobile-hotline flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs font-bold"><span className="flex items-center gap-2"><Phone className="h-4 w-4" />{isRtl ? 'الخط الساخن' : 'Hotline'}</span><b className="font-mono text-sm" dir="ltr">{hotline}</b></a>
+                  <a href={`tel:${hotline}`} className="portal-header-mobile-hotline flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs font-bold transition-all hover:shadow-md"><span className="flex items-center gap-2"><Phone className="h-4 w-4" />{isRtl ? 'الخط الساخن' : 'Hotline'}</span><b className="font-mono text-sm" dir="ltr">{hotline}</b></a>
                   <p className="portal-header-meta mt-3 flex items-center gap-2 text-[10px] font-semibold"><Clock className="h-3.5 w-3.5" /><span>{isRtl ? 'مفتوح يومياً' : 'Open daily'}</span><b dir="ltr">{workingHours}</b></p>
-                  <a href="/#locations" onClick={() => setMenuOpen(false)} className="portal-header-meta mt-2 flex items-center gap-2 text-[10px] font-semibold"><MapPin className="h-3.5 w-3.5" />{isRtl ? 'الفروع والاتجاهات' : 'Locations and directions'}<ArrowUpRight className="ms-auto h-3.5 w-3.5 rtl:-scale-x-100" /></a>
+                  <a href="/#locations" onClick={() => setMenuOpen(false)} className="portal-header-meta mt-2 flex items-center gap-2 text-[10px] font-semibold transition-colors hover:text-[#075cb7]"><MapPin className="h-3.5 w-3.5" />{isRtl ? 'الفروع والاتجاهات' : 'Locations and directions'}<ArrowUpRight className="ms-auto h-3.5 w-3.5 rtl:-scale-x-100" /></a>
                 </div>
               </div>
             </div>

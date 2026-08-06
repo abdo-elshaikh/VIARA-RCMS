@@ -53,7 +53,7 @@ const ReferralsTab = () => {
 
     const handleExport = async () => {
         if (dateInvalid) return;
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+        const baseUrl = import.meta.env.VITE_API_URL || '/api';
         const params = new URLSearchParams({ type: 'referrals', startDate, endDate });
         try {
             await downloadAuthenticatedFile(`${baseUrl}/analytics/export?${params.toString()}`, 'referral-analytics.csv');

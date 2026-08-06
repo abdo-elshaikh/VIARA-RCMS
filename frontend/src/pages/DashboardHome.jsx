@@ -14,7 +14,7 @@ import {
 import { selectCurrentUser } from '../store/authSlice';
 import { useGetDashboardStatsQuery } from '../store/api';
 import { formatDuration } from '../utils/dateFormat';
-import { PageHeader, MetricCard, PagePanel } from '../components/ui';
+import { AccessibleChartData, PageHeader, MetricCard, PagePanel } from '../components/ui';
 
 const chartTooltipStyle = {
     background: 'rgba(255, 255, 255, 0.95)',
@@ -117,8 +117,18 @@ const ReceptionDashboard = props => {
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,.7fr)]">
                 <PagePanel title={t('reception.patientFlow')} description={t('reception.patientFlowDescription')} action={<PanelBadge>{t('common.today')}</PanelBadge>}>
                     {flow.length > 0 ? (
-                        <div className="h-80 w-full" role="img" aria-label={t('reception.patientFlow')}>
-                            <ResponsiveContainer width="100%" height="100%">
+                        <ChartData
+                            title={t('reception.patientFlow')}
+                            rows={flow}
+                            columns={[
+                                { key: 'time', label: t('common.time', { defaultValue: 'Time' }) },
+                                { key: 'waiting', label: t('flow.waiting'), render: row => formatNumber(row.waiting, language) },
+                                { key: 'in_progress', label: t('flow.inProgress'), render: row => formatNumber(row.in_progress, language) },
+                                { key: 'completed', label: t('flow.completed'), render: row => formatNumber(row.completed, language) },
+                            ]}
+                            t={t}
+                        >
+                            <div className="h-80 w-full"><ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={flow} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
                                     <defs>
                                         <linearGradient id="waitingArea" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2} /><stop offset="95%" stopColor="#f59e0b" stopOpacity={0} /></linearGradient>
@@ -133,8 +143,8 @@ const ReceptionDashboard = props => {
                                     <Area type="monotone" dataKey="in_progress" name={t('flow.inProgress')} stroke="#3b82f6" strokeWidth={3} fill="url(#progressArea)" />
                                     <Area type="monotone" dataKey="completed" name={t('flow.completed')} stroke="#10b981" strokeWidth={3} fill="url(#completedArea)" />
                                 </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
+                            </ResponsiveContainer></div>
+                        </ChartData>
                     ) : <ChartEmpty />}
                     <ChartLegend items={[[t('flow.waiting'), '#f59e0b'], [t('flow.inProgress'), '#3b82f6'], [t('flow.completed'), '#10b981']]} />
                 </PagePanel>
@@ -223,8 +233,17 @@ const ExecutiveDashboard = props => {
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,.7fr)]">
                 <PagePanel title={t('executive.weeklyPerformance')} description={t('executive.performanceDescription')} action={<PanelBadge>{t('common.currentWeek')}</PanelBadge>}>
                     {performance.length > 0 ? (
-                        <div className="h-80 w-full" role="img" aria-label={t('executive.weeklyPerformance')}>
-                            <ResponsiveContainer width="100%" height="100%">
+                        <ChartData
+                            title={t('executive.weeklyPerformance')}
+                            rows={performance}
+                            columns={[
+                                { key: 'name', label: t('common.date', { defaultValue: 'Date' }) },
+                                { key: 'scans', label: t('executive.scans'), render: row => formatNumber(row.scans, language) },
+                                { key: 'revenue', label: t('executive.revenue'), render: row => formatCurrency(row.revenue, language) },
+                            ]}
+                            t={t}
+                        >
+                            <div className="h-80 w-full"><ResponsiveContainer width="100%" height="100%">
                                 <ComposedChart data={performance} margin={{ top: 10, right: 4, left: -18, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="4 4" stroke="#f1f5f9" vertical={false} />
                                     <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 600 }} axisLine={false} tickLine={false} />
@@ -234,8 +253,8 @@ const ExecutiveDashboard = props => {
                                     <Bar yAxisId="scans" dataKey="scans" name={t('executive.scans')} fill="#0ea5e9" radius={[8, 8, 0, 0]} maxBarSize={48} />
                                     <Line yAxisId="revenue" type="monotone" dataKey="revenue" name={t('executive.revenue')} stroke="#10b981" strokeWidth={4} dot={{ r: 5, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} />
                                 </ComposedChart>
-                            </ResponsiveContainer>
-                        </div>
+                            </ResponsiveContainer></div>
+                        </ChartData>
                     ) : <ChartEmpty />}
                     <ChartLegend items={[[t('executive.scans'), '#0ea5e9'], [t('executive.revenue'), '#10b981']]} />
                 </PagePanel>
@@ -265,16 +284,24 @@ const DistributionPanel = ({ data, title, description }) => {
         <PagePanel title={title} description={description}>
             {data.length > 0 ? (
                 <div className="flex-1 flex flex-col justify-center">
-                    <div className="h-56" role="img" aria-label={title}>
-                        <ResponsiveContainer width="100%" height="100%">
+                    <ChartData
+                        title={title}
+                        rows={data}
+                        columns={[
+                            { key: 'name', label: t('common.modality', { defaultValue: 'Category' }) },
+                            { key: 'value', label: t('common.value', { defaultValue: 'Value' }) },
+                        ]}
+                        t={t}
+                    >
+                        <div className="h-56"><ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4} cornerRadius={4}>
                                     {data.map((entry, index) => <Cell key={`${entry.name}-${index}`} fill={entry.color} />)}
                                 </Pie>
                                 <Tooltip contentStyle={chartTooltipStyle} />
                             </PieChart>
-                        </ResponsiveContainer>
-                    </div>
+                        </ResponsiveContainer></div>
+                    </ChartData>
                     <div className="mt-4 grid gap-2 grid-cols-2">
                         {data.map(item => (
                             <div key={item.name} className="flex items-center justify-between gap-2 text-xs">
@@ -358,6 +385,19 @@ const QuickActions = ({ actions }) => {
 const PrimaryAction = ({ icon: Icon, label, onClick }) => <button type="button" onClick={onClick} className="inline-flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gradient-to-r from-slate-900 to-slate-950 px-4 text-sm font-bold text-white shadow-sm transition hover:brightness-110 active:scale-[0.98] dark:from-white dark:to-slate-100 dark:text-slate-950"><Icon size={18} /><span>{label}</span></button>;
 
 const ChartLegend = ({ items }) => <div className="mt-4 flex flex-wrap justify-center gap-5">{items.map(([label, color]) => <span key={label} className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300"><span className="h-2.5 w-2.5 rounded-full shadow-sm" style={{ backgroundColor: color }} />{label}</span>)}</div>;
+
+const ChartData = ({ title, rows, columns, t, children }) => (
+    <AccessibleChartData
+        title={title}
+        summary={t('common.chartSummary', { count: rows.length, defaultValue: '{{count}} data points in {{title}}.', title })}
+        rows={rows}
+        columns={columns}
+        disclosureLabel={t('common.viewChartData', { defaultValue: 'View chart data' })}
+        tableLabel={t('common.chartDataTable', { title, defaultValue: '{{title}} data' })}
+    >
+        {children}
+    </AccessibleChartData>
+);
 
 const ChartEmpty = ({ label }) => {
     const { t } = useTranslation('dashboard');

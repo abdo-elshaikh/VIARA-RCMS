@@ -56,6 +56,14 @@ const emptyOrder = {
     contactPhone: '',
 };
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+const getCsrfToken = (): string | null => {
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+};
+
 // status tones now handled in StatusBadge
 
 const STATUS_OPTIONS = ['Scheduled', 'Confirmed', 'Arrived', 'In Progress', 'Finalized', 'Completed', 'Cancelled'];
@@ -92,34 +100,57 @@ const DoctorPortal = () => {
         const token = sessionStorage.getItem('token');
         if (!token) return;
 
-        const eventSource = new EventSource(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/realtime/stream?token=${encodeURIComponent(token)}`);
+        let eventSource: EventSource;
+        let isCancelled = false;
 
-        eventSource.onmessage = (event) => {
-            try {
-                const parsed = JSON.parse(event.data);
-                if (parsed.type === 'PING' || parsed.type === 'CONNECTED') return;
-
-                const { event: sseEvent, data } = parsed;
-
-                if (sseEvent === 'NEW_DOCTOR_PORTAL_MESSAGE') {
-                    dispatch(api.util.invalidateTags(['DoctorMessages']));
-                    toast.success(t('doctor.messages.newReply', { defaultValue: 'New message reply from staff.' }));
-                } else if (sseEvent === 'NEW_NOTIFICATION') {
-                    dispatch(api.util.invalidateTags(['DoctorCases', 'DoctorNotifications']));
-                    toast.success(data.content || t('doctor.notifications.newUpdate', { defaultValue: 'New portal update.' }));
-                }
-            } catch (err) {
-                console.error('Failed to parse SSE payload in doctor portal', err);
+        // Fetch a short-lived SSE session token so the access JWT is not placed in the URL.
+        const csrfToken = getCsrfToken();
+        fetch(`${API_BASE_URL}/realtime/session`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
             }
-        };
+        })
+            .then(res => res.ok ? res.json() : null)
+            .then(sseSession => {
+                if (isCancelled || !sseSession?.token) return;
+                eventSource = new EventSource(`${API_BASE_URL}/realtime/stream?token=${encodeURIComponent(sseSession.token)}`);
 
-        eventSource.onerror = (error) => {
-            console.error('Doctor Portal SSE connection error:', error);
-            eventSource.close();
-        };
+                eventSource.onmessage = (event) => {
+                    try {
+                        const parsed = JSON.parse(event.data);
+                        if (parsed.type === 'PING' || parsed.type === 'CONNECTED') return;
+
+                        const { event: sseEvent, data } = parsed;
+
+                        if (sseEvent === 'NEW_DOCTOR_PORTAL_MESSAGE') {
+                            dispatch(api.util.invalidateTags(['DoctorMessages']));
+                            toast.success(t('doctor.messages.newReply', { defaultValue: 'New message reply from staff.' }));
+                        } else if (sseEvent === 'NEW_NOTIFICATION') {
+                            dispatch(api.util.invalidateTags(['DoctorCases', 'DoctorNotifications']));
+                            toast.success(data.content || t('doctor.notifications.newUpdate', { defaultValue: 'New portal update.' }));
+                        }
+                    } catch (err) {
+                        console.error('Failed to parse SSE payload in doctor portal', err);
+                    }
+                };
+
+                eventSource.onerror = (error) => {
+                    console.error('Doctor Portal SSE connection error:', error);
+                    eventSource.close();
+                };
+            })
+            .catch(err => {
+                console.error('Failed to establish SSE session in doctor portal', err);
+            });
 
         return () => {
-            eventSource.close();
+            isCancelled = true;
+            if (eventSource) {
+                eventSource.close();
+            }
         };
     }, [dispatch, t]);
 
@@ -256,25 +287,25 @@ const DoctorPortal = () => {
                         <WorkspaceStat icon={MessageCircle} label={t('doctor.metrics.messages')} value={unreadCount} hint={t('doctor.metrics.messagesHint', { defaultValue: 'Unread conversations' })} tone="violet" onClick={() => setActiveTab('messages')} />
                     </section>
 
-                        <CasesView
-                            cases={sortedCases}
-                            selectedCase={selectedCase}
-                            loading={casesLoading}
-                            fetching={casesFetching}
-                            search={search}
-                            setSearch={setSearch}
-                            statusFilter={statusFilter}
-                            setStatusFilter={setStatusFilter}
-                            onRefresh={refetchCases}
-                            onClear={() => { setSearch(''); setStatusFilter(''); }}
-                            queryPending={search !== deferredSearch || casesFetching}
-                            onSelect={(item: any) => setSelectedCaseKey(getCaseKey(item))}
-                            onReport={setSelectedExamId}
-                            onMessage={startCaseMessage}
-                            formatDate={formatDate}
-                            formatDateTime={formatDateTime}
-                            t={t}
-                        />
+                    <CasesView
+                        cases={sortedCases}
+                        selectedCase={selectedCase}
+                        loading={casesLoading}
+                        fetching={casesFetching}
+                        search={search}
+                        setSearch={setSearch}
+                        statusFilter={statusFilter}
+                        setStatusFilter={setStatusFilter}
+                        onRefresh={refetchCases}
+                        onClear={() => { setSearch(''); setStatusFilter(''); }}
+                        queryPending={search !== deferredSearch || casesFetching}
+                        onSelect={(item: any) => setSelectedCaseKey(getCaseKey(item))}
+                        onReport={setSelectedExamId}
+                        onMessage={startCaseMessage}
+                        formatDate={formatDate}
+                        formatDateTime={formatDateTime}
+                        t={t}
+                    />
                 </div>
             )}
 

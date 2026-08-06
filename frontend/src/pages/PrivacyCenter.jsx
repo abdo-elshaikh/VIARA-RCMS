@@ -8,7 +8,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import PageHeader from '../components/ui/PageHeader';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const CLOSED_STATUSES = new Set(['Completed', 'Resolved', 'Rejected', 'Cancelled']);
 
 const PrivacyCenter = ({ embedded = false }) => {

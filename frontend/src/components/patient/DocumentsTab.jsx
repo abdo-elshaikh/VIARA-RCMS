@@ -67,7 +67,7 @@ const DocumentsTab = ({ patient }) => {
     }, [previewUrl]);
 
     const fetchDocumentBlob = async (doc) => {
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+        const baseUrl = import.meta.env.VITE_API_URL || '/api';
         const response = await authenticatedFetch(`${baseUrl}/documents/${doc.document_id}/download`);
 
         if (!response.ok) {
@@ -262,29 +262,31 @@ const DocumentsTab = ({ patient }) => {
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    {canDelete && <button 
+                                                    <button
                                                         onClick={() => handlePreview(doc)}
                                                         className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                        title="Preview"
+                                                        title={t('documents.preview')}
+                                                        aria-label={t('documents.previewAction', { name: doc.file_name })}
                                                     >
                                                         <Eye size={16} />
-                                                    </button>}
+                                                    </button>
                                                     <button 
                                                         onClick={() => handleDownload(doc)}
                                                         className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                                                        title="Download"
+                                                        title={t('documents.download')}
+                                                        aria-label={t('documents.downloadAction', { name: doc.file_name })}
                                                     >
                                                         <Download size={16} />
                                                     </button>
-                                                    <button 
+                                                    {canDelete && <button
                                                         onClick={() => setDocumentToDelete(doc)}
                                                         disabled={isDeleting}
                                                         className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                                        title="Delete"
+                                                        title={t('documents.delete')}
                                                         aria-label={t('documents.deleteAction', { name: doc.file_name })}
                                                     >
                                                         <Trash2 size={16} />
-                                                    </button>
+                                                    </button>}
                                                 </div>
                                             </td>
                                         </tr>
