@@ -49,6 +49,12 @@
     - [Cloud Reference Architectures (AWS / Azure / GCP)](#5-️-cloud-infrastructure-reference-architectures-aws--azure--gcp)
     - [Hospital On-Premise Hypervisors (VMware / Proxmox & TrueNAS)](#6--hospital-on-premise-hypervisors-vmware-esxi-proxmox-ve--truenas-san)
 15. [Troubleshooting & FAQ](#-troubleshooting--faq)
+16. [Licensing, System Protection & IP Safeguards](#-licensing-system-protection--ip-safeguards)
+    - [Commercial License & Deployment Models](#1-commercial-license--deployment-models)
+    - [Defensive Architecture & Anti-Tamper Protection](#2-defensive-architecture--anti-tamper-protection)
+    - [Regulatory, Clinical & Data Liability Disclaimers](#3-regulatory-clinical--data-liability-disclaimers)
+    - [Vulnerability Disclosure & Security Inquiries](#4-vulnerability-disclosure--security-inquiries)
+
 
 
 ---
@@ -894,8 +900,90 @@ Run <code>node database/migrate.js --fresh</code> followed by <code>npm run seed
 
 ---
 
-## 📄 License & Intellectual Property
+## 🛡️ Licensing, System Protection & IP Safeguards
 
-This software and its documentation are **Proprietary and Confidential**. All rights reserved. Unauthorized copying, reverse engineering, or distribution of this codebase via any medium is strictly prohibited.
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                             VIARA Intellectual Property & Protection                             │
+├──────────────────────────┬─────────────────────────────────┬─────────────────────────────────────┤
+│ License Type             │ Commercial Enterprise Software  │ Proprietary Closed-Source           │
+│ Copyright Status         │ © 2026 VIARA Healthcare Systems │ All Global Rights Reserved          │
+│ Compliance Attestation   │ HIPAA Security Rule & GDPR Art. │ SOC-2 Type II Compatible Design     │
+│ Software Classification  │ Medical Device Workflow (SaMD)  │ Class I / IIa Supportive RIS/PACS   │
+└──────────────────────────┴─────────────────────────────────┴─────────────────────────────────────┘
+```
+
+### 1. 📜 Commercial License & Deployment Models
+
+VIARA is licensed exclusively under an **Enterprise Commercial License Agreement**. It is **not** open-source or public domain software.
+
+#### Permitted Production Deployment Models:
+- **On-Premise Perpetual / Subscription License:** Authorized for installation inside designated physical healthcare facilities, hospitals, and outpatient imaging centers.
+- **Private Cloud Multi-Branch SaaS:** Authorized for private cloud deployments managing accredited branch locations belonging to the licensed healthcare organization.
+- **Disaster Recovery & High-Availability Hot Standbys:** Includes secondary passive replication nodes strictly for failover and business continuity.
+
+#### Explicit License Restrictions & Prohibitions:
+- ❌ **No Reverse Engineering:** Decompiling, reverse engineering, disassembling, or extracting algorithms, schemas, or source code from any system module is strictly prohibited.
+- ❌ **No Unauthorized Resale or Sublicensing:** You may not resell, rent, lease, sublicense, distribute, or operate a public multi-tenant bureau without an explicit Commercial OEM Agreement.
+- ❌ **No Circumvention of Security Controls:** Disabling, tampering with, or bypassing field encryption, blind indexing, audit log chaining, or licensing checks is an immediate material breach of contract.
+
+---
+
+### 2. 🔐 Defensive Architecture & Anti-Tamper Protection
+
+To preserve system integrity, clinical audit compliance, and data non-repudiation, VIARA embeds multi-tier defense mechanisms:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                  Layered Defensive Controls                                      │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 1. Cryptographic License & Node-Locking:                                                         │
+│    • Hardware fingerprint binding (Motherboard UUID + Network MAC + CPU ID hash)                 │
+│    • Ed25519 digitally signed runtime license tokens with expiration and seat limits             │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 2. Anti-Tamper Cryptographic Audit Chaining:                                                    │
+│    • All clinical, financial, and access logs linked via SHA-256 hash chains                    │
+│    • Unlinkable log gaps or modified records immediately flag tamper alarms on startup           │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 3. Zero-Knowledge Search via HMAC Blind Indexing:                                                │
+│    • PII database fields encrypted with random AES-256-GCM IVs                                   │
+│    • Database administrators with direct SQL access cannot view or extract unencrypted patient PII│
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 4. Antivirus & Malware Quarantining:                                                             │
+│    • Real-time in-memory ClamAV scanning on every uploaded attachment, PDF, and DICOM stream     │
+│    • Infected payloads are dropped immediately prior to filesystem persistence                    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3. ⚖️ Regulatory, Clinical & Data Liability Disclaimers
+
+#### A. Clinical Decision Support & AI Finding Disclaimer
+- **Supportive Diagnostic Tool Only:** The built-in AI findings (PyTorch TorchXRayVision, Cloud LLM report structuring) are intended solely as supportive clinical aids to assist board-certified radiologists and medical practitioners.
+- **Mandatory Physician Review:** All AI-suggested classifications, measurements, and drafted reports **must** be independently reviewed, verified, and digitally signed by a qualified, licensed medical specialist prior to clinical distribution or patient diagnosis.
+
+#### B. Patient Protected Health Information (PHI) Ownership
+- **100% Customer Data Ownership:** The deploying healthcare organization maintains 100% legal ownership, custody, and sovereignty of all patient demographics, examination studies, DICOM pixel data, and diagnostic reports.
+- **Zero Telemetry on Clinical Records:** VIARA does **not** exfiltrate, collect, or transmit any clinical records, patient PII, or diagnostic imagery to external servers or third-party telemetry aggregators.
+
+---
+
+### 4. 🚨 Vulnerability Disclosure & Security Inquiries
+
+We take security and healthcare patient privacy with the utmost seriousness. If you discover a potential vulnerability or security concern within VIARA:
+
+1. **Do not disclose publicly:** Please refrain from opening public GitHub issues or publishing details prior to coordinated remediation.
+2. **Contact the Security Response Team:** Submit full technical details, reproduction steps, and proof-of-concept payloads directly to:
+   - 📧 **Email:** `security@VIARA.health` (PGP Key Fingerprint available upon request)
+   - 🔒 **Response SLA:** Critical vulnerabilities are acknowledged within **12 hours** and patched via emergency security hotfixes.
+
+---
+
+<div align="center">
+  <sub>Copyright © 2026 VIARA Healthcare Systems. All Global Rights Reserved.</sub><br>
+  <sub>VIARA™ and the VIARA logo are registered trademarks. Unauthorized use is prohibited.</sub>
+</div>
+
 
 

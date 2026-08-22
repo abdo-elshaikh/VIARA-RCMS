@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
+import React, { useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import {
     Activity,
     AlertTriangle,
     BellRing,
     Blocks,
     BrainCircuit,
-    ChevronLeft,
     ChevronRight,
     Database,
     FileText,
@@ -127,7 +126,7 @@ const NavItem = ({ tab, selected, collapsed, groupName, onClick }) => {
                 {/* Floating Rich Tooltip for Collapsed Mode */}
                 <div className="pointer-events-none absolute start-full top-1/2 z-[150] ms-3 hidden w-56 -translate-y-1/2 rounded-2xl border border-slate-200/90 bg-slate-950/95 p-3 text-white shadow-2xl backdrop-blur-xl group-hover/tooltip:block dark:border-slate-800 dark:bg-slate-900/95 animate-in fade-in zoom-in-95 duration-150 rtl:end-full rtl:start-auto rtl:me-3 rtl:ms-0">
                     <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5 mb-1.5">
-                        <span className="font-extrabold text-xs text-white truncate">{tab.label}</span>
+                        <span className="text-xs font-extrabold text-white">{tab.label}</span>
                         <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${accent.badgeTag}`}>
                             {groupName}
                         </span>
@@ -156,10 +155,10 @@ const NavItem = ({ tab, selected, collapsed, groupName, onClick }) => {
             </span>
 
             <span className="min-w-0 flex-1">
-                <span className={`block truncate text-xs font-black ${selected ? 'text-slate-950 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>
+                <span className={`block break-words text-xs font-black leading-5 ${selected ? 'text-slate-950 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>
                     {tab.label}
                 </span>
-                <span className="mt-0.5 block truncate text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                <span className="mt-0.5 block break-words text-[11px] font-medium leading-4 text-slate-500 dark:text-slate-400">
                     {tab.description}
                 </span>
             </span>
@@ -170,24 +169,6 @@ const NavItem = ({ tab, selected, collapsed, groupName, onClick }) => {
                     }`}
                 aria-hidden="true"
             />
-        </button>
-    );
-};
-
-const MobileTab = ({ tab, selected, onClick }) => {
-    const Icon = tab.icon;
-    return (
-        <button
-            type="button"
-            onClick={() => onClick(tab.id)}
-            aria-current={selected ? 'page' : undefined}
-            className={`flex h-10 shrink-0 items-center gap-2 rounded-xl border px-3.5 text-xs font-bold transition-all ${selected
-                ? 'border-cyan-600 bg-cyan-600 text-white shadow-md shadow-cyan-600/20'
-                : 'border-slate-200/80 bg-white text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
-                }`}
-        >
-            <Icon size={15} aria-hidden="true" />
-            <span>{tab.label}</span>
         </button>
     );
 };
@@ -219,7 +200,6 @@ const Settings = () => {
     const [activeTab, setActiveTab] = useState(initialTab);
     const [query, setQuery] = useState('');
     const [animKey, setAnimKey] = useState(0);
-    const mobileNavRef = useRef(null);
     const locale = i18n.resolvedLanguage || 'en';
     const isRtl = i18n.dir() === 'rtl';
 
@@ -317,13 +297,6 @@ const Settings = () => {
         }
     }, [activeTab, searchParams, setSearchParams, tabs]);
 
-    useEffect(() => {
-        const activePill = mobileNavRef.current?.querySelector('[aria-current="page"]');
-        if (typeof activePill?.scrollIntoView === 'function') {
-            activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-        }
-    }, [activeTab]);
-
     return (
         <div dir={isRtl ? 'rtl' : 'ltr'} lang={isRtl ? 'ar' : 'en'}>
             <style>{`
@@ -354,18 +327,17 @@ const Settings = () => {
                                 {initials || 'RC'}
                             </div>
                             <div className="min-w-0">
-                                <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{displayName}</p>
-                                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('settings.summary.access', { role })}</p>
+                                <p className="break-words text-sm font-bold text-slate-950 dark:text-white">{displayName}</p>
+                                <p className="break-words text-xs font-semibold text-slate-500 dark:text-slate-400">{t('settings.summary.access', { role })}</p>
                             </div>
                         </div>
                     </div>
                 </header>
 
                 {/*  settings navigation with Minimizable & Resizable Sidebar */}
-                <div className={`grid items-start gap-5 transition-all duration-300 ${isNavCollapsed ? 'lg:grid-cols-[76px_minmax(0,1fr)]' : 'lg:grid-cols-[280px_minmax(0,1fr)]'}`}>
+                <div className={`grid items-start gap-5 transition-all duration-300 ${isNavCollapsed ? '2xl:grid-cols-[76px_minmax(0,1fr)]' : '2xl:grid-cols-[minmax(260px,280px)_minmax(0,1fr)]'}`}>
                     <aside
-                        className={`hidden rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-sm backdrop-blur-xl transition-all duration-300 dark:border-slate-800/80 dark:bg-slate-900/60 lg:sticky lg:top-5 lg:block ${isNavCollapsed ? 'w-[76px]' : 'w-[280px]'
-                            }`}
+                        className="hidden w-full rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-sm backdrop-blur-xl transition-all duration-300 dark:border-slate-800/80 dark:bg-slate-900/60 2xl:sticky 2xl:top-5 2xl:block"
                         aria-label={t('settings.navigationLabel')}
                     >
                         {/* Sidebar Header & Collapse Toggle */}
