@@ -53,11 +53,11 @@ const Insurance = () => {
     const [providerForm, setProviderForm] = useState({ name: '', payerCode: '', phone: '', email: '' });
     const [contractForm, setContractForm] = useState({ providerId: '', entityName: '', entityType: 'Insurance', contractNumber: '', startDate: '', endDate: '' });
     const [ruleForm, setRuleForm] = useState({ providerId: '', contractId: '', coveragePercentage: '80', coverageCeiling: '', copayAmount: '0', modalityType: '', preauthorizationRequired: false });
-    const [approvalForm, setApprovalForm] = useState({ patientId: '', providerId: '', policyId: '', appointmentId: '', examTypeId: '', status: 'Pending', requestedAmount: '', approvedAmount: '', documentUrl: '' });
+    const [approvalForm, setApprovalForm] = useState({ patientId: '', providerId: '', policyId: '', appointmentId: '', examTypeId: '', status: 'Pending', requestedAmount: '', documentUrl: '' });
     const [claimForm, setClaimForm] = useState({ patientId: '', providerId: '', invoiceId: '', policyId: '', approvalId: '', claimReferenceNumber: '', expectedAmount: '' });
 
     // Interactive Calculator State
-    const [calcParams, setCalcParams] = useState({ providerId: '', modalityType: '', amount: '1000' });
+    const [calcParams, setCalcParams] = useState({ providerId: '', contractId: '', modalityType: '', amount: '1000' });
 
     // Claims Filtering State
     const [claimSearch, setClaimSearch] = useState('');
@@ -76,9 +76,10 @@ const Insurance = () => {
     // Auxiliary Queries for Smart Selectors
     const { data: patientData = [] } = useGetPatientsQuery({ limit: 100 });
     const { data: invoiceData = [] } = useGetInvoicesQuery({ limit: 100 });
-    const { data: patientPolicies = [] } = useGetInsurancePoliciesQuery({ patientId: claimForm.patientId }, { skip: !claimForm.patientId });
+    const { data: claimPolicies = [] } = useGetInsurancePoliciesQuery({ patientId: claimForm.patientId }, { skip: !claimForm.patientId });
+    const { data: approvalPolicies = [] } = useGetInsurancePoliciesQuery({ patientId: approvalForm.patientId }, { skip: !approvalForm.patientId });
     const { data: calcResult, isFetching: calcLoading } = usePreviewCoverageQuery(
-        { providerId: calcParams.providerId, modalityType: calcParams.modalityType || undefined, amount: Number(calcParams.amount) || 0 },
+        { providerId: calcParams.providerId, contractId: calcParams.contractId || undefined, modalityType: calcParams.modalityType || undefined, amount: Number(calcParams.amount) || 0 },
         { skip: !calcParams.providerId || !calcParams.amount }
     );
 
@@ -193,11 +194,10 @@ const Insurance = () => {
                 appointmentId: approvalForm.appointmentId || undefined,
                 examTypeId: approvalForm.examTypeId || undefined,
                 requestedAmount: approvalForm.requestedAmount ? Number(approvalForm.requestedAmount) : undefined,
-                approvedAmount: approvalForm.approvedAmount ? Number(approvalForm.approvedAmount) : undefined,
                 documentUrl: approvalForm.documentUrl || undefined,
             }).unwrap();
             toast.success(t('messages.approvalAdded'));
-            setApprovalForm({ patientId: '', providerId: '', policyId: '', appointmentId: '', examTypeId: '', status: 'Pending', requestedAmount: '', approvedAmount: '', documentUrl: '' });
+            setApprovalForm({ patientId: '', providerId: '', policyId: '', appointmentId: '', examTypeId: '', status: 'Pending', requestedAmount: '', documentUrl: '' });
         } catch (error) {
             toast.error(getErrorMessage(error, t('messages.approvalError')));
         }
@@ -311,34 +311,36 @@ const Insurance = () => {
             </section>
 
             {/* Navigation Tabs Bar */}
-            <nav className="flex space-x-1.5 overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/60 p-1.5 shadow-xs backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/60" aria-label="Insurance Subsystems">
-                {tabs.map(tab => {
-                    const Icon = tab.icon;
-                    const isActive = activeTab === tab.id;
-                    return (
-                        <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`group inline-flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-xs font-bold transition-all sm:text-sm whitespace-nowrap ${
-                                isActive
-                                    ? 'bg-slate-950 text-white shadow-md shadow-slate-950/10 dark:bg-cyan-500 dark:text-slate-950'
-                                    : 'text-slate-600 hover:bg-slate-100/70 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
-                            }`}
-                        >
-                            <Icon size={17} className={isActive ? 'text-cyan-400 dark:text-slate-950' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'} />
-                            <span>{tab.label}</span>
-                            <span className={`ms-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
-                                isActive
-                                    ? 'bg-white/20 text-white dark:bg-slate-950/20 dark:text-slate-950'
-                                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                            }`}>
-                                {tab.count}
-                            </span>
-                        </button>
-                    );
-                })}
-            </nav>
+            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+                <nav className="flex gap-2 overflow-x-auto p-1 scrollbar-none" aria-label="Insurance Subsystems">
+                    {tabs.map(tab => {
+                        const Icon = tab.icon;
+                        const isActive = activeTab === tab.id;
+                        return (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`group inline-flex items-center gap-2.5 rounded-2xl px-4 py-2.5 text-xs font-black transition-all whitespace-nowrap ${
+                                    isActive
+                                        ? 'border border-teal-500/40 bg-teal-600 text-white shadow-sm shadow-teal-600/20'
+                                        : 'border border-transparent bg-slate-50 text-slate-600 hover:bg-slate-100 dark:bg-slate-950/40 dark:text-slate-400 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <Icon size={16} className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'} />
+                                <span>{tab.label}</span>
+                                <span className={`ms-1 rounded-full px-2 py-0.5 text-[10px] font-black ${
+                                    isActive
+                                        ? 'bg-white/20 text-white'
+                                        : 'bg-slate-200/80 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                }`}>
+                                    {tab.count}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </nav>
+            </div>
 
             {/* TAB 1: CLAIMS WORKBENCH */}
             {activeTab === 'claims' && (
@@ -400,7 +402,7 @@ const Insurance = () => {
                                     <PolicySelect
                                         value={claimForm.policyId}
                                         onChange={policyId => setClaimForm(prev => ({ ...prev, policyId }))}
-                                        policies={patientPolicies}
+                                        policies={claimPolicies}
                                         t={t}
                                         disabled={!claimForm.patientId}
                                     />
@@ -705,8 +707,16 @@ const Insurance = () => {
                                 <Field label={t('fields.provider')}>
                                     <ProviderSelect
                                         value={calcParams.providerId}
-                                        onChange={providerId => setCalcParams(prev => ({ ...prev, providerId }))}
+                                        onChange={providerId => setCalcParams(prev => ({ ...prev, providerId, contractId: '' }))}
                                         providers={providers}
+                                        t={t}
+                                    />
+                                </Field>
+                                <Field label={t('fields.contract')}>
+                                    <ContractSelect
+                                        value={calcParams.contractId}
+                                        onChange={contractId => setCalcParams(prev => ({ ...prev, contractId }))}
+                                        contracts={contracts.filter(contract => !calcParams.providerId || contract.provider_id === calcParams.providerId)}
                                         t={t}
                                     />
                                 </Field>
@@ -814,7 +824,7 @@ const Insurance = () => {
                                 <PolicySelect
                                     value={approvalForm.policyId}
                                     onChange={policyId => setApprovalForm(prev => ({ ...prev, policyId }))}
-                                    policies={patientPolicies}
+                                    policies={approvalPolicies}
                                     t={t}
                                     disabled={!approvalForm.patientId}
                                 />
@@ -825,16 +835,13 @@ const Insurance = () => {
                                     onChange={event => setApprovalForm(prev => ({ ...prev, status: event.target.value }))}
                                     className={inputClass}
                                 >
-                                    {['Not Required', 'Pending', 'Approved', 'Rejected', 'Expired'].map(status => (
+                                    {['Not Required', 'Pending'].map(status => (
                                         <option key={status} value={status}>{t(`statuses.${status}`)}</option>
                                     ))}
                                 </select>
                             </Field>
                             <Field label={t('fields.requested')}>
                                 <input type="number" min="0" value={approvalForm.requestedAmount} onChange={event => setApprovalForm(prev => ({ ...prev, requestedAmount: event.target.value }))} placeholder={t('fields.requested')} className={inputClass} />
-                            </Field>
-                            <Field label={t('fields.approved')}>
-                                <input type="number" min="0" value={approvalForm.approvedAmount} onChange={event => setApprovalForm(prev => ({ ...prev, approvedAmount: event.target.value }))} placeholder={t('fields.approved')} className={inputClass} />
                             </Field>
                             <Field label={t('fields.documentUrl')} className="sm:col-span-2">
                                 <input type="url" value={approvalForm.documentUrl} onChange={event => setApprovalForm(prev => ({ ...prev, documentUrl: event.target.value }))} placeholder={t('fields.documentUrl')} className={inputClass} />
@@ -1039,14 +1046,49 @@ const StatusBadge = ({ status, t }) => (
     </span>
 );
 
-const ClaimActions = ({ claim, t, onStatus, updating, compact = false }) => (
-    <div className={`flex flex-wrap gap-2 ${compact ? '' : 'justify-end'}`}>
-        <button type="button" onClick={() => onStatus(claim, 'Submitted')} disabled={updating} className="rounded-lg border border-cyan-200 bg-cyan-50 px-2.5 py-1.5 text-xs font-bold text-cyan-800 transition hover:bg-cyan-100 disabled:opacity-50 dark:border-cyan-900/50 dark:bg-cyan-950/40 dark:text-cyan-300">{t('actions.submit')}</button>
-        <button type="button" onClick={() => onStatus(claim, 'Partially Paid')} disabled={updating} className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-xs font-bold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50 dark:border-violet-900/50 dark:bg-violet-950/40 dark:text-violet-300">{t('actions.partialPaid')}</button>
-        <button type="button" onClick={() => onStatus(claim, 'Paid')} disabled={updating} className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">{t('actions.paid')}</button>
-        <button type="button" onClick={() => onStatus(claim, 'Rejected')} disabled={updating} className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-bold text-rose-800 transition hover:bg-rose-100 disabled:opacity-50 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300">{t('actions.reject')}</button>
-    </div>
-);
+const ClaimActions = ({ claim, t, onStatus, updating, compact = false }) => {
+    const status = claim.status || 'Draft';
+    const actionClass = 'rounded-lg border px-2.5 py-1.5 text-xs font-bold transition disabled:opacity-50';
+    const actions = [];
+
+    if (status === 'Draft') {
+        actions.push(
+            <button key="approval" type="button" onClick={() => onStatus(claim, 'Pending Approval')} disabled={updating} className={`${actionClass} border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300`}>
+                {t('actions.requestApproval', { defaultValue: 'Request approval' })}
+            </button>
+        );
+    }
+    if (status === 'Approved') {
+        actions.push(
+            <button key="submit" type="button" onClick={() => onStatus(claim, 'Submitted')} disabled={updating} className={`${actionClass} border-cyan-200 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/40 dark:text-cyan-300`}>
+                {t('actions.submit')}
+            </button>
+        );
+    }
+    if (['Submitted', 'Resubmitted', 'Partially Paid'].includes(status)) {
+        actions.push(
+            <button key="partial" type="button" onClick={() => onStatus(claim, 'Partially Paid')} disabled={updating} className={`${actionClass} border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 dark:border-violet-900/50 dark:bg-violet-950/40 dark:text-violet-300`}>
+                {t('actions.partialPaid')}
+            </button>,
+            <button key="paid" type="button" onClick={() => onStatus(claim, 'Paid')} disabled={updating} className={`${actionClass} border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300`}>
+                {t('actions.paid')}
+            </button>,
+            <button key="reject" type="button" onClick={() => onStatus(claim, 'Rejected')} disabled={updating} className={`${actionClass} border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300`}>
+                {t('actions.reject')}
+            </button>
+        );
+    }
+    if (status === 'Rejected') {
+        actions.push(
+            <button key="resubmit" type="button" onClick={() => onStatus(claim, 'Resubmitted')} disabled={updating} className={`${actionClass} border-cyan-200 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/40 dark:text-cyan-300`}>
+                {t('actions.resubmit', { defaultValue: 'Resubmit' })}
+            </button>
+        );
+    }
+
+    if (!actions.length) return null;
+    return <div className={`flex flex-wrap gap-2 ${compact ? '' : 'justify-end'}`}>{actions}</div>;
+};
 
 const ClaimRow = ({ claim, t, currency, onStatus, updating }) => (
     <tr className="group transition hover:bg-cyan-50/30 dark:hover:bg-cyan-950/20">

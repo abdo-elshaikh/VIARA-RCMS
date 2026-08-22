@@ -61,6 +61,8 @@ MIGRATIONS=(
   "086_structured_audit_events.sql"
   "087_audit_governance_permissions.sql"
   "057_case_report_permissions.sql"
+  "114_financial_branch_integrity.sql"
+  "115_reception_integrity.sql"
 )
 
 for file in "${MIGRATIONS[@]}"; do

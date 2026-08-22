@@ -20,8 +20,10 @@ import {
     buildReportFooter,
     buildReportHeader,
     getCenterDisplayName,
-    normalizeCenterSettings
+    normalizeCenterSettings,
+    resolveDocumentIdentity
 } from './centerSettings';
+import { VIARA_BRAND } from '../config/brand';
 
 const COLORS = {
     ink: '0F172A',
@@ -100,7 +102,7 @@ const safeFilename = (value) => String(value || 'report')
     .replace(/-+/g, '-')
     .slice(0, 100);
 
-const colorHex = (value, fallback = '0F766E') => {
+const colorHex = (value, fallback = '087F5B') => {
     const clean = String(value || '').replace('#', '').toUpperCase();
     return /^[0-9A-F]{6}$/.test(clean) ? clean : fallback;
 };
@@ -168,7 +170,7 @@ export const exportReportToWord = async ({
     const rtl = String(locale).toLowerCase().startsWith('ar');
     const startAlignment = rtl ? AlignmentType.RIGHT : AlignmentType.LEFT;
     const endAlignment = rtl ? AlignmentType.LEFT : AlignmentType.RIGHT;
-    const center = normalizeCenterSettings(centerSettings);
+    const center = resolveDocumentIdentity(normalizeCenterSettings(centerSettings), exam, { language: locale, kind: 'report' });
     const facilityName = getCenterDisplayName(center);
     const reportHeader = String(
         documentSettings.reportHeader || buildReportHeader(center) || ''
@@ -184,8 +186,8 @@ export const exportReportToWord = async ({
     const includeFooter = documentSettings.includeFooter !== false;
     const includeSignature = documentSettings.includeSignature !== false;
     const statusTone = STATUS_TONES[reportStatus] || STATUS_TONES.Draft;
-    const logoRun = includeHeader ? await loadLogoRun(center.logo_url) : null;
-    const logoText = String(center.center_name || 'RCMS').trim().slice(0, 4).toUpperCase();
+    const logoRun = includeHeader ? await loadLogoRun(center.logoUrl || center.logo_url) : null;
+    const logoText = String(center.centerName || center.center_name || VIARA_BRAND.name).trim().slice(0, 4).toUpperCase();
     const tr = (key, fallback) => typeof t === 'function'
         ? t(key, { defaultValue: fallback })
         : fallback;

@@ -12,7 +12,6 @@ vi.mock('react-redux', () => ({
 }));
 
 vi.mock('../../components/settings/ProfileSettings', () => ({ default: () => <div>Profile panel</div> }));
-vi.mock('../../components/settings/SecuritySettings', () => ({ default: () => <div>Security panel</div> }));
 vi.mock('../../components/settings/AppearanceSettings', () => ({ default: () => <div>Appearance panel</div> }));
 vi.mock('../../components/settings/PreferencesSettings', () => ({ default: () => <div>Preferences panel</div> }));
 vi.mock('../../components/settings/AdminSettings', () => ({ default: () => <div>System panel</div> }));
@@ -32,7 +31,7 @@ const renderSettings = () => render(
 
 describe('Settings workspace', () => {
     beforeEach(async () => {
-        currentUser = { fullName: 'Alice Morgan', email: 'alice@rcms.com', role: 'Developer', mustChangePassword: false };
+        currentUser = { fullName: 'Alice Morgan', email: 'alice@VIARA.com', role: 'Developer', mustChangePassword: false };
         await i18n.changeLanguage('en');
     });
 
@@ -50,12 +49,11 @@ describe('Settings workspace', () => {
         expect(screen.getByText('Developer panel')).toBeInTheDocument();
     });
 
-    it('limits temporary-password accounts to the security workflow', () => {
-        currentUser = { fullName: 'Temporary User', role: 'Nurse', mustChangePassword: true };
+    it('keeps account-owned sections outside the settings workspace', () => {
+        currentUser = { fullName: 'Temporary User', role: 'Nurse', mustChangePassword: false };
         renderSettings();
 
-        expect(screen.getByRole('alert')).toHaveTextContent('Secure your temporary account');
-        expect(screen.getByText('Security panel')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /Profile Identity and contact details/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Security Password, 2FA, and sessions/i })).not.toBeInTheDocument();
     });
 });

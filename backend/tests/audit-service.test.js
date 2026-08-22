@@ -108,6 +108,8 @@ describe('audit logging resilience', () => {
                 status: 'Active',
                 patient_id: 'MRN-123',
                 raw_patient_name: 'DOE^JANE',
+                clinicalIndication: 'Persistent headache',
+                icdCode: 'R51.9',
             },
         })).toEqual({
             password: '[REDACTED]',
@@ -116,8 +118,20 @@ describe('audit logging resilience', () => {
                 status: 'Active',
                 patient_id: '[REDACTED]',
                 raw_patient_name: '[REDACTED]',
+                clinicalIndication: '[REDACTED]',
+                icdCode: '[REDACTED]',
             },
         });
+    });
+
+    it('throws when a required audit entry cannot be persisted', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+
+        await expect(logAction(db, {
+            action: 'BILLING.PAYMENT_COLLECTED',
+            resourceTable: 'invoices',
+            required: true,
+        })).rejects.toMatchObject({ code: 'AUDIT_LOG_REQUIRED_FAILED' });
     });
 
     it('creates alert records for sensitive or high-risk audit events', async () => {

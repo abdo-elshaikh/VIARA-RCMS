@@ -1,5 +1,6 @@
 import { SECTION_CONFIG, BUILT_IN_REPORT_TEMPLATES } from './constants';
 import { getInMemoryAccessToken } from '../../utils/accessToken';
+import { generateUUID } from '../../utils/uuid';
 
 const IMAGE_UPLOAD_BATCH_SIZE = 10;
 const IMAGE_UPLOAD_TIMEOUT_MS = 12 * 60 * 1000;
@@ -263,8 +264,8 @@ export const uploadExamImagesWithProgress = async ({
     }
 
     const totalBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
-    const uploadSessionId = globalThis.crypto?.randomUUID?.()
-        || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const uploadSessionId = generateUUID();
+    // || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const aggregate = {
         stored: 0,
         reconciled: 0,

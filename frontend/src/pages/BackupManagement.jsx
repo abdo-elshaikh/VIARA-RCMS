@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Clock, Database, Download, FileJson, HardDrive, LockKeyhole, RotateCcw, ShieldAlert, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import { downloadAuthenticatedFile } from '../utils/authenticatedFetch';
 import { useGenerateBackupMutation, useGetBackupsQuery, useRestoreBackupMutation } from '../store/api';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import PageHeader from '../components/ui/PageHeader';
+import { selectCurrentUser } from '../store/authSlice';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -18,6 +20,8 @@ const formatBytes = (bytes, decimals = 2) => {
 
 const BackupManagement = ({ embedded = false }) => {
     const { t, i18n } = useTranslation('governance');
+    const currentUser = useSelector(selectCurrentUser);
+    const canRestore = currentUser?.role === 'Developer';
     const { data: backups = [], isLoading } = useGetBackupsQuery();
     const [generateBackup, { isLoading: isGenerating }] = useGenerateBackupMutation();
     const [restoreBackup, { isLoading: isRestoring }] = useRestoreBackupMutation();
@@ -62,67 +66,103 @@ const BackupManagement = ({ embedded = false }) => {
         }
     };
 
+    const totalSnapshots = backups?.length || 0;
+    const verifiedSnapshots = backups?.filter(b => b.verified || isEncryptedBackup(b))?.length || 0;
+    const totalVolumeBytes = backups?.reduce((acc, b) => acc + (Number(b.size_bytes || b.size) || 0), 0) || 0;
+
     return (
-        <div className={embedded ? 'space-y-6' : 'mx-auto max-w-6xl space-y-6 pb-10'}>
-            {embedded ? (
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{t('backups.description')}</p>
-                    <button
-                        type="button"
-                        onClick={handleGenerate}
-                        disabled={isGenerating}
-                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-                    >
-                        <Zap size={16} className={isGenerating ? 'animate-pulse' : ''} />
-                        {isGenerating ? t('backups.generating') : t('backups.generate')}
-                    </button>
-                </div>
-            ) : (
-                <PageHeader
-                    icon={Database}
-                    title={t('backups.title')}
-                    description={t('backups.description')}
-                    actions={
+        <div className="space-y-6 max-w-7xl mx-auto pb-10">
+            {/* VIARA Hero Command Deck */}
+            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8 space-y-6">
+                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
+                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
+
+                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-start gap-4 sm:items-center min-w-0">
+                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-sky-500/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
+                            <Database size={26} strokeWidth={2} />
+                        </div>
+                        <div className="min-w-0">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                                <HardDrive size={11} />
+                                <span>Disaster Recovery & Persistence</span>
+                            </span>
+                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                                {t('backups.title', { defaultValue: 'Database Snapshot & Backup Operations' })}
+                            </h1>
+                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                                {t('backups.description', { defaultValue: 'Generate verified Point-in-Time snapshots, download AES-256 archives, and orchestrate transactional database rollbacks.' })}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
                         <button
                             type="button"
                             onClick={handleGenerate}
                             disabled={isGenerating}
-                        className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-lg bg-cyan-300 px-5 text-sm font-semibold text-slate-950 shadow-sm shadow-cyan-500/20 transition hover:bg-cyan-200 disabled:opacity-50"
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 text-xs font-bold text-white shadow-sm transition hover:bg-teal-500 disabled:opacity-50"
                         >
-                            <Zap size={18} className={isGenerating ? 'animate-pulse' : ''} />
-                            <span>{isGenerating ? t('backups.generating') : t('backups.generate')}</span>
+                            <Zap size={15} className={isGenerating ? 'animate-pulse' : ''} />
+                            <span>{isGenerating ? t('backups.generating', { defaultValue: 'Creating Snapshot...' }) : t('backups.generate', { defaultValue: 'Create Snapshot' })}</span>
                         </button>
-                    }
-                />
-            )}
-
-            <section style={reveal(80).style} className={`grid gap-5 rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-900/50 p-5 sm:grid-cols-[1fr_auto] sm:items-center ${reveal(80).className}`}>
-                <div className="flex items-center gap-4">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                        <HardDrive size={20} />
-                    </span>
-                    <div>
-                        <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('backups.healthTitle')}</h2>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t('backups.healthDescription')}</p>
                     </div>
                 </div>
-                <div className="rounded-xl border border-slate-200/60 bg-slate-50/30 px-5 py-4 dark:border-slate-800/60 dark:bg-slate-950/20 sm:text-end">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t('backups.retention')}</p>
-                    <p className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">{t('backups.retentionValue')}</p>
-                </div>
-            </section>
 
-            <section style={reveal(120).style} className={`rounded-2xl border border-blue-200/70 bg-blue-50/70 p-5 text-sm text-blue-900 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-100 ${reveal(120).className}`}>
-                <div className="flex gap-3">
-                    <LockKeyhole size={20} className="mt-0.5 shrink-0" />
-                    <div>
-                        <h2 className="font-semibold">{t('backups.restoreGuardTitle')}</h2>
-                        <p className="mt-1 text-blue-800/80 dark:text-blue-100/75">{t('backups.restoreGuardDescription')}</p>
+                {/* Telemetry Facts HUD */}
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-slate-100/80 px-4 py-3 shadow-2xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <Database size={16} className="text-teal-600 dark:text-teal-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Snapshots</p>
+                            <p className="font-mono text-base font-black text-slate-900 dark:text-white">{totalSnapshots}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-emerald-800 dark:text-emerald-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <HardDrive size={16} className="text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">Verified & Encrypted</p>
+                            <p className="font-mono text-base font-black text-emerald-900 dark:text-white">{verifiedSnapshots}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-sky-800 dark:text-sky-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <Download size={16} className="text-sky-600 dark:text-sky-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">Storage Volume</p>
+                            <p className="font-mono text-base font-black text-sky-900 dark:text-white">{formatBytes(totalVolumeBytes)}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-amber-800 dark:text-amber-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <Clock size={16} className="text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">Retention Scope</p>
+                            <p className="font-mono text-base font-black text-amber-900 dark:text-white">{t('backups.retentionValue', { defaultValue: '30-Day Automated' })}</p>
+                        </div>
                     </div>
                 </div>
-            </section>
+            </div>
 
-            <section style={reveal(160).style} className={`overflow-hidden rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-900/50 ${reveal(160).className}`}>
+            {/* Restore Guard Notice */}
+            <div className="flex items-start gap-3 rounded-2xl border border-sky-500/30 bg-sky-500/10 p-4 text-sky-900 dark:text-sky-200">
+                <LockKeyhole size={18} className="mt-0.5 shrink-0 text-sky-600 dark:text-sky-400" />
+                <div className="text-xs leading-relaxed">
+                    <span className="font-bold">{t('backups.restoreGuardTitle', { defaultValue: 'Safe Transaction Rollback:' })} </span>
+                    {t('backups.restoreGuardDescription', { defaultValue: 'Restoration executes within an isolated database transaction. All active connections are temporarily routed to read-only replica until validation passes.' })}
+                </div>
+            </div>
+
+            <section style={reveal(160).style} className={`overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 ${reveal(160).className}`}>
                 <div className="flex items-center gap-3 border-b border-slate-200/60 bg-slate-50/40 px-6 py-5 dark:border-slate-800/60 dark:bg-slate-950/20">
                     <FileJson size={20} className="text-slate-400" />
                     <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">{t('backups.available')}</h2>
@@ -148,12 +188,13 @@ const BackupManagement = ({ embedded = false }) => {
                         onDownload={handleDownload} 
                         onRestore={setRestoreCandidate} 
                         isRestoring={isRestoring} 
+                        canRestore={canRestore}
                         t={t} 
                     />
                 )}
             </section>
 
-            <ConfirmDialog 
+            {canRestore && <ConfirmDialog 
                 isOpen={Boolean(restoreCandidate)} 
                 onClose={() => setRestoreCandidate(null)} 
                 onConfirm={handleRestore} 
@@ -163,7 +204,7 @@ const BackupManagement = ({ embedded = false }) => {
                 cancelLabel={t('backups.cancel')} 
                 variant="warning" 
                 isLoading={isRestoring} 
-            />
+            />}
         </div>
     );
 };
@@ -171,7 +212,7 @@ const BackupManagement = ({ embedded = false }) => {
 const isPostgresBackup = (backup) => backup.type?.includes('PostgreSQL') || backup.filename.endsWith('.dump') || backup.filename.endsWith('.dump.enc');
 const isEncryptedBackup = (backup) => backup.type?.toLowerCase().includes('encrypted') || backup.filename.endsWith('.enc');
 
-const BackupActions = ({ backup, onDownload, onRestore, isRestoring, t }) => (
+const BackupActions = ({ backup, onDownload, onRestore, isRestoring, canRestore, t }) => (
     <div className="flex flex-wrap justify-end gap-2">
         <button 
             type="button" 
@@ -181,7 +222,7 @@ const BackupActions = ({ backup, onDownload, onRestore, isRestoring, t }) => (
             <Download size={15} className="text-slate-400 transition-colors group-hover:text-slate-600 dark:group-hover:text-slate-200" />
             {t('backups.download')}
         </button>
-        {!isPostgresBackup(backup) && (
+        {canRestore && !isPostgresBackup(backup) && (
             <button 
                 type="button" 
                 onClick={() => onRestore(backup)} 
@@ -195,7 +236,7 @@ const BackupActions = ({ backup, onDownload, onRestore, isRestoring, t }) => (
     </div>
 );
 
-const BackupList = ({ backups, locale, onDownload, onRestore, isRestoring, t }) => (
+const BackupList = ({ backups, locale, onDownload, onRestore, isRestoring, canRestore, t }) => (
     <>
         <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-start text-sm">
@@ -225,7 +266,7 @@ const BackupList = ({ backups, locale, onDownload, onRestore, isRestoring, t }) 
                                 </span>
                             </td>
                             <td className="px-6 py-5">
-                                <BackupActions backup={backup} onDownload={onDownload} onRestore={onRestore} isRestoring={isRestoring} t={t} />
+                                <BackupActions backup={backup} onDownload={onDownload} onRestore={onRestore} isRestoring={isRestoring} canRestore={canRestore} t={t} />
                             </td>
                         </tr>
                     ))}
@@ -249,7 +290,7 @@ const BackupList = ({ backups, locale, onDownload, onRestore, isRestoring, t }) 
                         </div>
                     </div>
                     <div className="mt-5">
-                        <BackupActions backup={backup} onDownload={onDownload} onRestore={onRestore} isRestoring={isRestoring} t={t} />
+                        <BackupActions backup={backup} onDownload={onDownload} onRestore={onRestore} isRestoring={isRestoring} canRestore={canRestore} t={t} />
                     </div>
                 </article>
             ))}

@@ -199,8 +199,13 @@ const createProfile = async (input) => {
         modelVersion: input.modelVersion || '',
         createdAt: now, updatedAt: now
     };
-    await saveProfiles([...profiles, profile]);
-    if (input.apiKey) await settingsService.set(secretKey(profile.id), encrypt(input.apiKey));
+    const updates = {
+        [PROFILES_KEY]: JSON.stringify([...profiles, profile])
+    };
+    if (input.apiKey) {
+        updates[secretKey(profile.id)] = encrypt(input.apiKey);
+    }
+    await settingsService.updateAll(updates);
     return profile;
 };
 
@@ -236,11 +241,30 @@ const updateProfile = async (id, input) => {
     };
     delete updated.apiKey; delete updated.clearApiKey;
     profiles[index] = updated;
-    await saveProfiles(profiles);
-    if (provider !== current.provider && !input.apiKey) await settingsService.set(secretKey(id), '');
-    if (input.clearApiKey) await settingsService.set(secretKey(id), '');
-    if (input.apiKey) await settingsService.set(secretKey(id), encrypt(input.apiKey));
-    if ((await settingsService.get(ACTIVE_KEYS[current.target])) === id) await mirrorActive(updated);
+
+    const updates = {
+        [PROFILES_KEY]: JSON.stringify(profiles)
+    };
+    if (provider !== current.provider && !input.apiKey) updates[secretKey(id)] = '';
+    if (input.clearApiKey) updates[secretKey(id)] = '';
+    if (input.apiKey) updates[secretKey(id)] = encrypt(input.apiKey);
+
+    const activeId = await settingsService.get(ACTIVE_KEYS[current.target]);
+    if (activeId === id) {
+        const prefix = `ai.${updated.target}`;
+        const baseUrl = normalizeBaseUrl(updated.target, updated.provider, updated.baseUrl);
+        updates[ACTIVE_KEYS[updated.target]] = updated.id;
+        updates[`${prefix}.enabled`] = String(updated.enabled);
+        updates[`${prefix}.provider`] = updated.provider;
+        updates[`${prefix}.model`] = updated.model || '';
+        updates[`${prefix}.base_url`] = baseUrl;
+        if (updated.target === 'pacs') {
+            updates['ai.pacs.worker_url'] = updated.workerUrl || '';
+            updates['ai.pacs.model_version'] = updated.modelVersion || '';
+        }
+    }
+
+    await settingsService.updateAll(updates);
     return updated;
 };
 

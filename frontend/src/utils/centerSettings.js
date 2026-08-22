@@ -1,17 +1,68 @@
+import {
+    DEFAULT_CENTER_IDENTITY,
+    buildDocumentFooter,
+    buildDocumentHeader,
+    resolveDocumentIdentity
+} from './documentIdentity';
+
 const DEFAULT_CENTER_SETTINGS = {
-    center_name: 'RCMS Radiology Center',
+    center_id: DEFAULT_CENTER_IDENTITY.center_id,
+    center_name: DEFAULT_CENTER_IDENTITY.center_name,
+    center_name_ar: '',
+    legal_name: '',
+    legal_name_ar: '',
+    branch_id: '',
+    branch_code: '',
     branch_name: '',
+    branch_name_ar: '',
+    branch_display_name: '',
+    branch_display_name_ar: '',
     logo_url: '',
+    logo_dark_url: '',
+    logo_light_url: '',
+    favicon_url: '',
+    primary_color: DEFAULT_CENTER_IDENTITY.primary_color,
+    secondary_color: DEFAULT_CENTER_IDENTITY.secondary_color,
+    accent_color: DEFAULT_CENTER_IDENTITY.accent_color,
     contact_person: '',
     other_details: '',
     tax_id: '',
+    tax_number: '',
+    commercial_registration: '',
+    medical_license: '',
     phone: '',
+    alternative_phone: '',
+    hotline: '',
+    whatsapp: '',
     email: '',
+    support_email: '',
+    website: '',
     address: '',
+    address_ar: '',
+    country: '',
+    governorate: '',
+    city: '',
+    postal_code: '',
     invoice_prefix: 'INV-',
     report_header: '',
     report_footer: '',
-    working_hours: { start: 6, end: 22, holidays: [] },
+    footer_text: '',
+    footer_text_ar: '',
+    report_disclaimer: '',
+    report_disclaimer_ar: '',
+    invoice_footer: '',
+    invoice_footer_ar: '',
+    receipt_footer: '',
+    receipt_footer_ar: '',
+    portal_welcome_message: '',
+    portal_welcome_message_ar: '',
+    default_language: 'en',
+    timezone: 'Africa/Cairo',
+    currency: 'EGP',
+    vat_enabled: false,
+    vat_rate: 0,
+    showPoweredByViara: true,
+    working_hours: { start: 6, end: 22, workingDays: [0, 1, 2, 3, 4, 5, 6], holidays: [] },
     print_settings: {
         stickerWidth: '3.8in',
         stickerHeight: '1.8in',
@@ -19,7 +70,7 @@ const DEFAULT_CENTER_SETTINGS = {
         receiptHeader: '',
         receiptFooter: '',
         showQR: true,
-        themeColor: '#0f766e',
+        themeColor: DEFAULT_CENTER_IDENTITY.primary_color,
         fontFamily: 'Inter',
         invoiceTerms: '',
         showWatermark: true,
@@ -31,7 +82,7 @@ const DEFAULT_CENTER_SETTINGS = {
         heroSubtitle: 'Book MRI, CT, ultrasound, X-ray, mammography, and specialized radiology services with a team focused on comfort, accuracy, and fast report delivery.',
         announcement: 'Same-day appointments available for selected studies',
         heroImageUrl: '/images/radiology-scan-montage.png',
-        accentColor: '#0891b2',
+        accentColor: DEFAULT_CENTER_IDENTITY.primary_color,
         primaryCtaLabel: 'Book appointment',
         primaryCtaUrl: '#contact',
         secondaryCtaLabel: 'Patient portal',
@@ -66,6 +117,9 @@ export const normalizeCenterSettings = (settings = {}) => {
         working_hours: {
             ...DEFAULT_CENTER_SETTINGS.working_hours,
             ...workingHours,
+            workingDays: Array.isArray(workingHours.workingDays)
+                ? workingHours.workingDays
+                : (Array.isArray(workingHours.days) ? workingHours.days : [0, 1, 2, 3, 4, 5, 6]),
             holidays: Array.isArray(workingHours.holidays) ? workingHours.holidays : []
         },
         print_settings: {
@@ -101,44 +155,36 @@ export const normalizeCenterSettings = (settings = {}) => {
 };
 
 export const getCenterDisplayName = (settings = {}) => {
-    const normalized = normalizeCenterSettings(settings);
-    return [normalized.center_name, normalized.branch_name].filter(Boolean).join(' - ');
+    const identity = resolveDocumentIdentity(settings);
+    return identity.displayName;
 };
 
 export const buildReceiptHeader = (settings = {}) => {
     const normalized = normalizeCenterSettings(settings);
     if (normalized.print_settings.receiptHeader?.trim()) return normalized.print_settings.receiptHeader;
-
-    return [
-        normalized.center_name,
-        normalized.branch_name,
-        normalized.address,
-        normalized.phone && `Phone: ${normalized.phone}`,
-        normalized.email && `Email: ${normalized.email}`,
-        normalized.contact_person && `Contact: ${normalized.contact_person}`,
-        normalized.other_details
-    ].filter(Boolean).join('\n');
+    return buildDocumentHeader(normalized, {}, { kind: 'receipt' });
 };
 
 export const buildReceiptFooter = (settings = {}) => {
     const normalized = normalizeCenterSettings(settings);
     return normalized.print_settings.receiptFooter?.trim()
-        || `Thank you for choosing ${normalized.center_name}.`;
+        || buildDocumentFooter(normalized, {}, { kind: 'receipt' });
 };
 
 export const buildReportHeader = (settings = {}) => {
     const normalized = normalizeCenterSettings(settings);
     return normalized.report_header?.trim()
-        || [
-            getCenterDisplayName(normalized),
-            normalized.address,
-            normalized.phone && `Phone: ${normalized.phone}`,
-            normalized.email && `Email: ${normalized.email}`
-        ].filter(Boolean).join('\n');
+        || buildDocumentHeader(normalized, {}, { kind: 'report' });
 };
 
 export const buildReportFooter = (settings = {}) => {
     const normalized = normalizeCenterSettings(settings);
     return normalized.report_footer?.trim()
-        || `${normalized.center_name} - Confidential medical report`;
+        || buildDocumentFooter(normalized, {}, { kind: 'report' });
+};
+
+export {
+    buildDocumentFooter,
+    buildDocumentHeader,
+    resolveDocumentIdentity
 };

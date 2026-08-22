@@ -13,6 +13,7 @@ export const payrollPermissions = {
     deductions: 'MANAGE_DEDUCTIONS',
     penalties: 'MANAGE_PENALTIES',
     rules: 'MANAGE_PAYROLL_RULES',
+    export: 'EXPORT_PAYROLL',
 };
 
 export const createPayrollPermissionChecker = (user) => {
@@ -47,7 +48,6 @@ export const lastDayOfCurrentMonthInput = () => {
 };
 
 export const createIdempotencyKey = () => {
-    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
         const value = Math.floor(Math.random() * 16);
         const replacement = char === 'x' ? value : ((value & 0x3) | 0x8);

@@ -10,10 +10,10 @@ const HOUR_HEIGHT = 72;
 
 const eventTone = {
     Scheduled: 'border-teal-200 bg-gradient-to-br from-teal-50/95 to-white text-teal-900 before:bg-teal-500 shadow-sm shadow-teal-500/10',
-    Confirmed: 'border-cyan-200 bg-gradient-to-br from-cyan-50/95 to-white text-cyan-900 before:bg-cyan-500 shadow-sm shadow-cyan-500/10',
+    Confirmed: 'border-teal-200 bg-gradient-to-br from-teal-50/95 to-white text-teal-900 before:bg-teal-500 shadow-sm shadow-teal-500/10',
     Arrived: 'border-amber-200 bg-gradient-to-br from-amber-50/95 to-white text-amber-900 before:bg-amber-500 shadow-sm shadow-amber-500/10',
-    'Checked-in': 'border-cyan-200 bg-gradient-to-br from-cyan-50/95 to-white text-cyan-900 before:bg-cyan-500 shadow-sm shadow-cyan-500/10',
-    'Checked-In': 'border-cyan-200 bg-gradient-to-br from-cyan-50/95 to-white text-cyan-900 before:bg-cyan-500 shadow-sm shadow-cyan-500/10',
+    'Checked-in': 'border-teal-200 bg-gradient-to-br from-teal-50/95 to-white text-teal-900 before:bg-teal-500 shadow-sm shadow-teal-500/10',
+    'Checked-In': 'border-teal-200 bg-gradient-to-br from-teal-50/95 to-white text-teal-900 before:bg-teal-500 shadow-sm shadow-teal-500/10',
     'In Progress': 'border-teal-200 bg-gradient-to-br from-teal-50/95 to-white text-teal-900 before:bg-teal-600 shadow-sm shadow-teal-500/10',
     'In-Progress': 'border-teal-200 bg-gradient-to-br from-teal-50/95 to-white text-teal-900 before:bg-teal-600 shadow-sm shadow-teal-500/10',
     Completed: 'border-emerald-200 bg-gradient-to-br from-emerald-50/95 to-white text-emerald-900 before:bg-emerald-500 shadow-sm shadow-emerald-500/10',
@@ -51,7 +51,7 @@ const StatusLegend = ({ t }) => (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
         {[
             ['Scheduled', 'bg-teal-500'],
-            ['Confirmed', 'bg-cyan-500'],
+            ['Confirmed', 'bg-teal-500'],
             ['Completed', 'bg-emerald-500'],
             ['Emergency', 'bg-rose-500']
         ].map(([status, color]) => (

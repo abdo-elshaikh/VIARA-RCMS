@@ -1,13 +1,13 @@
-# RCMS Full UX and UI Design Audit
+# VIARA Full UX and UI Design Audit
 
 **Audit date:** 2026-08-04  
-**Audit basis:** Static review of the RCMS staff frontend and the audit criteria in `docs/Full UX and UI Design Audit.md`  
+**Audit basis:** Static review of the VIARA staff frontend and the audit criteria in `docs/Full UX and UI Design Audit.md`  
 **Primary application reviewed:** `frontend/`  
 **Decision:** **UX READY WITH ACCEPTED RISKS** (after remediation)
 
 ## 1. Executive Summary
 
-RCMS has a substantial and generally mature interface foundation. The application includes role-aware navigation, reusable UI primitives, responsive layouts, English and Arabic resources, document-level RTL switching, light and dark themes, loading and empty states, keyboard focus styling, route-level code splitting, and several safety-oriented workflows. The strongest areas are the shared shell, permission-aware route structure, patient registration validation, the base modal focus trap, and the breadth of operational states represented in the UI.
+VIARA has a substantial and generally mature interface foundation. The application includes role-aware navigation, reusable UI primitives, responsive layouts, English and Arabic resources, document-level RTL switching, light and dark themes, loading and empty states, keyboard focus styling, route-level code splitting, and several safety-oriented workflows. The strongest areas are the shared shell, permission-aware route structure, patient registration validation, the base modal focus trap, and the breadth of operational states represented in the UI.
 
 The application is **not yet ready** to receive an unconditional **UX READY FOR PRODUCTION** approval. Static review identified one critical workflow defect in cashier reconciliation, several high-risk workflow and accessibility gaps, incomplete Arabic localization, divergent component implementations, and inconsistent handling of system feedback. These issues matter more than cosmetic polish because they can produce false confirmation, block legitimate financial work, interrupt users without warning, or make important interfaces harder to operate with assistive technology.
 
@@ -693,7 +693,7 @@ Record completion rate, time, errors, wrong-patient/study selections, backtracki
 
 ### Acceptance Standard
 
-RCMS should move to **UX READY WITH ACCEPTED RISKS** only after all Critical and High findings are resolved or explicitly accepted by accountable product, clinical, financial, accessibility, and security owners. **UX READY FOR PRODUCTION** requires successful task-based testing of the high-frequency and high-risk workflows, not only passing visual or automated checks.
+VIARA should move to **UX READY WITH ACCEPTED RISKS** only after all Critical and High findings are resolved or explicitly accepted by accountable product, clinical, financial, accessibility, and security owners. **UX READY FOR PRODUCTION** requires successful task-based testing of the high-frequency and high-risk workflows, not only passing visual or automated checks.
 
 ## 16. Final Decision
 

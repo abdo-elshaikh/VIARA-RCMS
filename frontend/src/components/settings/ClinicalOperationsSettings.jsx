@@ -191,7 +191,7 @@ const ClinicalOperationsSettings = () => {
   const visibleExams = useMemo(() => {
     return normalizedExams
       .filter((exam) => {
-        if (selectedMachineId !== 'all' && !sameId(exam.modality_id, selectedMachineId)) return false;
+        if (selectedMachineId !== 'all' && !sameId(exam.modality_id || exam.modalityId, selectedMachineId)) return false;
         if (selectedCategory !== 'all' && exam.machineType !== selectedCategory) return false;
         if (selectedAnatomy !== 'all' && !String(exam.anatomy).toLowerCase().includes(selectedAnatomy.toLowerCase())) return false;
 
@@ -556,13 +556,34 @@ const ClinicalOperationsSettings = () => {
     if (selectedExamIds.length === 0) return;
 
     try {
-      const updatedExams = await Promise.all(selectedExamIds.map((id) => updateExam({ id, isActive: activate }).unwrap()));
-      updatedExams.forEach((savedExam, index) => {
-        applyExamOverride(selectedExamIds[index], savedExam, { isActive: activate });
+      const results = await Promise.allSettled(
+        selectedExamIds.map((id) => updateExam({ id, isActive: activate }).unwrap())
+      );
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      results.forEach((res, index) => {
+        if (res.status === 'fulfilled') {
+          successCount++;
+          applyExamOverride(selectedExamIds[index], res.value, { isActive: activate });
+        } else {
+          failureCount++;
+        }
       });
-      toast.success(t('settings.clinical.messages.bulkStatusUpdated', { defaultValue: 'Selected procedures updated.' }));
-      setSelectedExamIds([]);
-      await refetchExams();
+
+      if (successCount > 0) {
+        toast.success(
+          t('settings.clinical.messages.bulkStatusUpdated', {
+            defaultValue: `Updated ${successCount} procedure(s)${failureCount > 0 ? `, ${failureCount} failed` : ''}.`,
+            count: successCount
+          })
+        );
+        setSelectedExamIds([]);
+        await refetchExams();
+      } else {
+        toast.error(t('settings.clinical.messages.bulkStatusFailed', { defaultValue: 'Failed to update selected procedures' }));
+      }
     } catch (error) {
       toast.error(getErrorMessage(error, t('settings.clinical.messages.bulkStatusFailed', { defaultValue: 'Failed to update selected procedures' })));
     }
@@ -642,7 +663,7 @@ const ClinicalOperationsSettings = () => {
         machine.status || 'Active',
         machine.installation_date ? machine.installation_date.slice(0, 10) : '',
       ]);
-      downloadBlob(makeCsvFile(header, rows), `rcms_modality_machines_${new Date().toISOString().slice(0, 10)}.csv`);
+      downloadBlob(makeCsvFile(header, rows), `VIARA_modality_machines_${new Date().toISOString().slice(0, 10)}.csv`);
       toast.success(t('settings.clinical.messages.machinesExported', { defaultValue: 'Machines exported.', count: visibleMachines.length }));
       return;
     }
@@ -659,9 +680,10 @@ const ClinicalOperationsSettings = () => {
       exam.active ? 'Active' : 'Inactive',
       exam.preparationInstructions || '',
     ]);
-    downloadBlob(makeCsvFile(header, rows), `rcms_procedure_catalog_${new Date().toISOString().slice(0, 10)}.csv`);
+    downloadBlob(makeCsvFile(header, rows), `VIARA_procedure_catalog_${new Date().toISOString().slice(0, 10)}.csv`);
     toast.success(t('settings.clinical.messages.examsExported', { defaultValue: 'Procedures exported.', count: visibleExams.length }));
   };
+
 
   const closeImportModal = async () => {
     setImportModalTarget(null);
@@ -669,7 +691,7 @@ const ClinicalOperationsSettings = () => {
   };
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-5">
+    <div className="mx-auto max-w-[1600px] space-y-3">
       <ClinicalHeader
         t={t}
         metrics={metrics}
@@ -714,104 +736,57 @@ const ClinicalOperationsSettings = () => {
         onAddMachine={() => openMachine()}
       />
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-4 lg:p-6">
-        <div className="mb-4 flex flex-col gap-4 border-b border-slate-100 pb-4 dark:border-slate-800 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-400">
-              {selectedMachine ? selectedMachine.machineType : t('settings.clinical.allMachines', 'All machines')}
-            </p>
-            <h3 className="mt-1 truncate text-lg font-bold tracking-tight text-slate-950 dark:text-white sm:text-xl">
-              {selectedMachine?.name || t('settings.clinical.procedureCatalog', 'Procedure catalog')}
-            </h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-              {t('settings.clinical.procedureSummary', '{{visible}} visible of {{total}} procedures. {{contrast}} require contrast. Average duration {{duration}} min.', {
-                visible: visibleExams.length,
-                total: normalizedExams.length,
-                contrast: metrics.contrastExams,
-                duration: metrics.avgDuration,
-              })}
-            </p>
-            {selectedMachine ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                <span className="rounded-md bg-slate-100 px-2 py-1 font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                  {selectedMachine.status || t('settings.clinical.statuses.Active', 'Active')}
-                </span>
-                {selectedMachine.roomNumber ? (
-                  <span className="rounded-md bg-slate-50 px-2 py-1 dark:bg-slate-800/60">
-                    {t('settings.clinical.machines.room', 'Room')} {selectedMachine.roomNumber}
-                  </span>
-                ) : null}
-                {selectedMachine.location ? (
-                  <span className="rounded-md bg-slate-50 px-2 py-1 dark:bg-slate-800/60">{selectedMachine.location}</span>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
+      <ClinicalFilterPanel
+        t={t}
+        query={query}
+        selectedAnatomy={selectedAnatomy}
+        statusFilter={statusFilter}
+        contrastFilter={contrastFilter}
+        sortBy={sortBy}
+        anatomiesList={anatomiesList}
+        onQueryChange={(value) => {
+          setQuery(value);
+          setSelectedExamIds([]);
+        }}
+        onAnatomyChange={(value) => {
+          setSelectedAnatomy(value);
+          setSelectedExamIds([]);
+        }}
+        onStatusFilterChange={(value) => {
+          setStatusFilter(value);
+          setSelectedExamIds([]);
+        }}
+        onContrastFilterChange={(value) => {
+          setContrastFilter(value);
+          setSelectedExamIds([]);
+        }}
+        onSortByChange={setSortBy}
+        onClear={resetFilters}
+      />
 
-          <button
-            type="button"
-            onClick={() => openExam(null, selectedMachineId !== 'all' ? selectedMachineId : undefined)}
-            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900 active:scale-[0.98]"
-          >
-            <Plus size={16} strokeWidth={2.25} />
-            {t('settings.clinical.addProcedure', 'Add procedure')}
-          </button>
-        </div>
-
-        <ClinicalFilterPanel
+      <CatalogState
+        loading={examsLoading || machinesLoading}
+        error={examsError || machinesError}
+        empty={visibleExams.length === 0}
+        retry={() => Promise.all([refetchMachines(), refetchExams()])}
+        t={t}
+      >
+        <ProcedureList
           t={t}
-          query={query}
-          selectedAnatomy={selectedAnatomy}
-          statusFilter={statusFilter}
-          contrastFilter={contrastFilter}
-          sortBy={sortBy}
-          anatomiesList={anatomiesList}
-          onQueryChange={(value) => {
-            setQuery(value);
-            setSelectedExamIds([]);
-          }}
-          onAnatomyChange={(value) => {
-            setSelectedAnatomy(value);
-            setSelectedExamIds([]);
-          }}
-          onStatusFilterChange={(value) => {
-            setStatusFilter(value);
-            setSelectedExamIds([]);
-          }}
-          onContrastFilterChange={(value) => {
-            setContrastFilter(value);
-            setSelectedExamIds([]);
-          }}
-          onSortByChange={setSortBy}
-          onClear={resetFilters}
+          exams={visibleExams}
+          selectedExamIds={selectedExamIds}
+          allVisibleExamsSelected={allVisibleExamsSelected}
+          someVisibleExamsSelected={someVisibleExamsSelected}
+          onToggleVisibleSelection={handleToggleVisibleExamSelection}
+          onToggleExamSelection={handleToggleExamSelection}
+          onBulkActiveChange={handleBulkToggleActive}
+          onBulkDelete={requestBulkDeleteExams}
+          onToggleActive={handleToggleExamActive}
+          onEditExam={openExam}
+          onDeleteExam={requestDeleteExam}
+          onPreviewExam={setProcedurePreview}
         />
-
-        <div className="mt-5">
-          <CatalogState
-            loading={examsLoading || machinesLoading}
-            error={examsError || machinesError}
-            empty={visibleExams.length === 0}
-            retry={() => Promise.all([refetchMachines(), refetchExams()])}
-            t={t}
-          >
-            <ProcedureList
-              t={t}
-              exams={visibleExams}
-              selectedExamIds={selectedExamIds}
-              allVisibleExamsSelected={allVisibleExamsSelected}
-              someVisibleExamsSelected={someVisibleExamsSelected}
-              onToggleVisibleSelection={handleToggleVisibleExamSelection}
-              onToggleExamSelection={handleToggleExamSelection}
-              onBulkActiveChange={handleBulkToggleActive}
-              onBulkDelete={requestBulkDeleteExams}
-              onToggleActive={handleToggleExamActive}
-              onEditExam={openExam}
-              onDeleteExam={requestDeleteExam}
-              onPreviewExam={setProcedurePreview}
-            />
-          </CatalogState>
-        </div>
-      </section>
+      </CatalogState>
 
       <MachineDialog
         open={Boolean(machineEditor)}
@@ -822,6 +797,14 @@ const ClinicalOperationsSettings = () => {
         onSave={saveMachine}
         busy={busy}
         t={t}
+      />
+
+      <ExamDialog
+        open={Boolean(examEditor)}
+        editing={examEditor !== 'new'}
+        form={examForm}
+        setForm={setExamForm}
+        machines={normalizedMachines}
       />
 
       <ExamDialog

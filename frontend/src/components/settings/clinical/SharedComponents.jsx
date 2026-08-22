@@ -1,5 +1,6 @@
 import React from 'react';
 import { Activity, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export const Signal = ({ icon: Icon, label, value }) => (
     <div className="flex min-w-[140px] flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
@@ -13,7 +14,10 @@ export const Signal = ({ icon: Icon, label, value }) => (
     </div>
 );
 
-export const CatalogState = ({ loading, error, empty, retry, t, children }) => {
+export const CatalogState = ({ loading, error, empty, retry, t: propT, children }) => {
+    const { t: hookT } = useTranslation('settings');
+    const t = typeof propT === 'function' ? propT : hookT;
+
     if (loading) {
         return (
             <div className="flex flex-col items-center gap-3 p-16 text-center">
@@ -61,7 +65,10 @@ export const Detail = ({ label, value, wide }) => (
     </div>
 );
 
-export const Status = ({ value, t }) => {
+export const Status = ({ value, t: propT }) => {
+    const { t: hookT } = useTranslation('settings');
+    const t = typeof propT === 'function' ? propT : hookT;
+
     const activeStyles = value === 'Active'
         ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800/50'
         : value === 'Under Maintenance'
@@ -125,25 +132,30 @@ export const Check = ({ label, checked, onChange }) => (
     </label>
 );
 
-export const Actions = ({ busy, onClose, t }) => (
-    <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 dark:border-slate-800 sm:flex-row sm:justify-end">
-        <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="min-h-[42px] rounded-xl px-5 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-        >
-            {t('settings.clinical.cancel', { defaultValue: 'Cancel' })}
-        </button>
-        <button
-            type="submit"
-            disabled={busy}
-            className="min-h-[42px] rounded-xl bg-cyan-700 px-6 text-xs font-bold text-white shadow-sm transition-all hover:bg-cyan-600 active:scale-95 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500"
-        >
-            {busy
-                ? t('settings.clinical.saving', { defaultValue: 'Applying Changes...' })
-                : t('settings.clinical.save', { defaultValue: 'Apply Configurations' })
-            }
-        </button>
-    </div>
-);
+export const Actions = ({ busy, onClose, t: propT }) => {
+    const { t: hookT } = useTranslation('settings');
+    const t = typeof propT === 'function' ? propT : hookT;
+
+    return (
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 dark:border-slate-800 sm:flex-row sm:justify-end">
+            <button
+                type="button"
+                onClick={onClose}
+                disabled={busy}
+                className="min-h-[42px] rounded-xl px-5 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+                {t('settings.clinical.cancel', { defaultValue: 'Cancel' })}
+            </button>
+            <button
+                type="submit"
+                disabled={busy}
+                className="min-h-[42px] rounded-xl bg-cyan-700 px-6 text-xs font-bold text-white shadow-sm transition-all hover:bg-cyan-600 active:scale-95 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500"
+            >
+                {busy
+                    ? t('settings.clinical.saving', { defaultValue: 'Applying Changes...' })
+                    : t('settings.clinical.save', { defaultValue: 'Apply Configurations' })
+                }
+            </button>
+        </div>
+    );
+};

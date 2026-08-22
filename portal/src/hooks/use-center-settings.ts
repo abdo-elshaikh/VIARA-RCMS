@@ -26,7 +26,7 @@ export type PublicCenterSettings = {
 };
 
 export function getCenterName(settings?: PublicCenterSettings | null) {
-  return settings?.center_name || settings?.branch_name || "RCMS Radiology Center";
+  return settings?.center_name || settings?.branch_name || "Radiology Center";
 }
 
 export function getCenterPhone(settings?: PublicCenterSettings | null) {
@@ -88,7 +88,7 @@ export function useCenterSettings() {
       hours: getCenterHours(settings),
       email: settings?.email || "",
       address: settings?.address || "",
-      logoUrl: settings?.logo_url || "",
+      logoUrl: settings?.logo_url || "/favicon.svg",
     }),
     [settings],
   );

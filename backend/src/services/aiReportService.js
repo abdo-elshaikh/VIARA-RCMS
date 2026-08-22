@@ -1,5 +1,5 @@
 const { AppError } = require('../utils/errors');
-const logger = require('../utils/logger');
+const logger = require('../config/logger');
 const settingsService = require('./settingsService');
 const { decrypt } = require('../utils/crypto');
 const aiProfileService = require('./aiProfileService');
@@ -110,10 +110,10 @@ const getProviderConfig = async () => {
             ? safeDecrypt(allSettings['ai.report.api_key_enc'])
             : '';
         if (encrypted) return encrypted;
-        if (provider === 'gemini')     return process.env.GEMINI_API_KEY     || process.env.AI_API_KEY || '';
-        if (provider === 'openrouter') return process.env.OPENROUTER_API_KEY  || process.env.AI_API_KEY || '';
-        if (provider === 'groq')       return process.env.GROQ_API_KEY        || process.env.AI_API_KEY || '';
-        if (provider === 'openai')     return process.env.OPENAI_API_KEY      || process.env.AI_API_KEY || '';
+        if (provider === 'gemini') return process.env.GEMINI_API_KEY || process.env.AI_API_KEY || '';
+        if (provider === 'openrouter') return process.env.OPENROUTER_API_KEY || process.env.AI_API_KEY || '';
+        if (provider === 'groq') return process.env.GROQ_API_KEY || process.env.AI_API_KEY || '';
+        if (provider === 'openai') return process.env.OPENAI_API_KEY || process.env.AI_API_KEY || '';
         return process.env.AI_API_KEY || '';
     };
     const provider = (allSettings['ai.report.provider'] || process.env.AI_PROVIDER || 'anthropic').toLowerCase();
@@ -161,12 +161,12 @@ const withRetry = async (fn, maxAttempts = 3) => {
             return await fn();
         } catch (err) {
             const isRateLimit =
-                err?.status    === 429 ||
+                err?.status === 429 ||
                 err?.statusCode === 429 ||
                 String(err?.message).includes('429') ||
                 String(err?.message).includes('RESOURCE_EXHAUSTED');
             const isTransient =
-                err?.status    === 503 ||
+                err?.status === 503 ||
                 String(err?.message).includes('overloaded');
 
             if (attempt === maxAttempts || (!isRateLimit && !isTransient)) throw err;
@@ -373,8 +373,8 @@ const callOpenAiCompatible = async ({ provider, baseUrl, model, apiKey, systemPr
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${apiKey}`,
                 ...(provider === 'openrouter' ? {
-                    'HTTP-Referer': 'https://github.com/rcms',
-                    'X-Title': 'RCMS Radiology Reports'
+                    'HTTP-Referer': 'https://github.com/VIARA',
+                    'X-Title': 'VIARA Radiology Reports'
                 } : {})
             },
             body: JSON.stringify(requestBody),

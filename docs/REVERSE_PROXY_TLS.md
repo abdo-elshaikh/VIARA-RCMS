@@ -2,25 +2,25 @@
 
 ## Overview
 
-RCMS backend and frontend are designed to run behind a reverse proxy that handles TLS termination, request forwarding, and optional static asset serving. This document provides production-ready configurations for common reverse proxies.
+VIARA backend and frontend are designed to run behind a reverse proxy that handles TLS termination, request forwarding, and optional static asset serving. This document provides production-ready configurations for common reverse proxies.
 
 ## Nginx (Recommended)
 
 ### Full Configuration
 
 ```nginx
-# /etc/nginx/sites-available/rcms
-upstream rcms-backend {
+# /etc/nginx/sites-available/VIARA
+upstream VIARA-backend {
     server 127.0.0.1:3000;
     keepalive 32;
 }
 
-upstream rcms-frontend {
+upstream VIARA-frontend {
     server 127.0.0.1:5173;
     keepalive 16;
 }
 
-upstream rcms-portal {
+upstream VIARA-portal {
     server 127.0.0.1:5174;
     keepalive 16;
 }
@@ -33,11 +33,11 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name rcms.example.com;
+    server_name VIARA.example.com;
 
     # TLS Configuration
-    ssl_certificate /etc/ssl/certs/rcms.crt;
-    ssl_certificate_key /etc/ssl/private/rcms.key;
+    ssl_certificate /etc/ssl/certs/VIARA.crt;
+    ssl_certificate_key /etc/ssl/private/VIARA.key;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
@@ -60,7 +60,7 @@ server {
 
     # Backend API
     location /api/ {
-        proxy_pass http://rcms-backend;
+        proxy_pass http://VIARA-backend;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -75,7 +75,7 @@ server {
 
     # Health & Metrics (no auth required for scraping)
     location /metrics {
-        proxy_pass http://rcms-backend;
+        proxy_pass http://VIARA-backend;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         access_log off;
@@ -96,7 +96,7 @@ server {
 
     # Frontend (Staff)
     location / {
-        proxy_pass http://rcms-frontend;
+        proxy_pass http://VIARA-frontend;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -114,17 +114,17 @@ server {
 If your backend is served under `/api`, adjust the `CLIENT_URL` environment variable:
 
 ```bash
-CLIENT_URL=https://rcms.example.com
+CLIENT_URL=https://VIARA.example.com
 # The frontend proxy config in vite.config.js handles /api forwarding
 ```
 
 ## Caddy (Automatic HTTPS)
 
 ```caddy
-rcms.example.com {
-    reverse_proxy /api/* rcms-backend:3000
-    reverse_proxy /pacs-viewer/* rcms-ohif:3005
-    reverse_proxy rcms-frontend:5173
+VIARA.example.com {
+    reverse_proxy /api/* VIARA-backend:3000
+    reverse_proxy /pacs-viewer/* VIARA-ohif:3005
+    reverse_proxy VIARA-frontend:5173
 
     encode gzip
     header {
@@ -142,12 +142,12 @@ For zero-trust or edge deployments, configure a Cloudflare Tunnel:
 
 ```yaml
 # ~/.cloudflared/config.yml
-tunnel: rcms-tunnel
+tunnel: VIARA-tunnel
 credentials-file: /etc/cloudflared/credentials.yml
 ingress:
-  - hostname: api.rcms.example.com
+  - hostname: api.VIARA.example.com
     service: http://127.0.0.1:3000
-  - hostname: rcms.example.com
+  - hostname: VIARA.example.com
     service: http://127.0.0.1:5173
   - service: http_status:404
 ```
@@ -171,7 +171,7 @@ Ensure the following headers are forwarded:
 
 ```nginx
 location /api/v1/notifications/stream {
-    proxy_pass http://rcms-backend;
+    proxy_pass http://VIARA-backend;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
@@ -186,6 +186,6 @@ location /api/v1/notifications/stream {
 After deployment, verify TLS settings using SSL Labs:
 
 ```bash
-curl -I https://rcms.example.com/
+curl -I https://VIARA.example.com/
 # Expected: HTTP/2 200, Strict-Transport-Security header present
 ```

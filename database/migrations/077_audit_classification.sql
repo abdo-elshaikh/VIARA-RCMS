@@ -9,7 +9,7 @@
 -- applyTrackedMigration wraps this whole file in a single BEGIN/COMMIT, so
 -- SET LOCAL is scoped to the migration and reverts automatically on COMMIT.
 
-SET LOCAL rcms.audit_maintenance = 'on';
+SET LOCAL VIARA.audit_maintenance = 'on';
 
 ALTER TABLE system_logs
     ADD COLUMN IF NOT EXISTS category    VARCHAR(32),

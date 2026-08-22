@@ -37,24 +37,6 @@ const updateExamReportSchema = z.object({
     impression: z.string()
         .max(2000, 'Impression must be less than 2000 characters')
         .optional()
-}).refine((data) => {
-    // #24 — If status is Finalized, ensure report content OR at least one non-empty section is present
-    if (data.status === 'Finalized') {
-        if (data.reportContent && data.reportContent.trim().length >= 10) return true;
-        if (data.sections) {
-            const hasContent = Object.values(data.sections).some(
-                (v) => typeof v === 'string' && v.trim().length > 0
-            );
-            if (hasContent) return true;
-        }
-        if (data.findings && data.findings.trim().length > 0) return true;
-        if (data.impression && data.impression.trim().length > 0) return true;
-        return false;
-    }
-    return true;
-}, {
-    message: 'Report content or at least one section with content is required when finalizing an exam',
-    path: ['reportContent']
 });
 
 // Get worklist query schema

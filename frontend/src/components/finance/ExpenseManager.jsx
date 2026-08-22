@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { useCreateExpenseMutation, useDeleteExpenseMutation, useGetExpenseCategoriesQuery, useGetExpensesQuery, useGetSuppliersQuery } from '../../store/api';
 import { formatFinancialCurrency, formatFinancialDate } from '../../utils/financialFormat';
+import { generateUUID } from '../../utils/uuid';
 
 const initialForm = () => ({
     categoryId: '',
@@ -42,7 +43,8 @@ const ExpenseManager = () => {
                 ...form,
                 amount: parseFloat(form.amount),
                 taxAmount: parseFloat(form.taxAmount || 0),
-                supplierId: form.supplierId || null
+                supplierId: form.supplierId || null,
+                idempotencyKey: generateUUID()
             }).unwrap();
             toast.success(t('finance.expenses.success'));
             setShowNew(false);
@@ -69,12 +71,12 @@ const ExpenseManager = () => {
     };
 
     return (
-        <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
+        <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
             {/* Header */}
-            <div className="flex flex-col gap-4 border-b border-slate-100/80 bg-slate-50/50 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6 dark:border-white/5 dark:bg-white/5">
+            <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6 dark:border-slate-800 dark:bg-slate-950/30">
                 <div className="flex items-start gap-4">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700 ring-1 ring-rose-200 shadow-md dark:bg-rose-500/20 dark:text-rose-300 dark:ring-rose-500/30">
-                        <Receipt size={22} />
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 text-rose-700 dark:text-rose-300">
+                        <Receipt size={20} />
                     </span>
                     <div>
                         <h2 className="text-lg font-black tracking-tight text-slate-900 dark:text-white sm:text-xl">

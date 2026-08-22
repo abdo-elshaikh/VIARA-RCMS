@@ -6,6 +6,7 @@ const {
     assertProtectedUserMutation,
     isProtectedRole
 } = require('../utils/roleGovernance');
+const { triggerEventForRole } = require('../services/notificationJobService');
 
 const getAllStaff = (db) => async (req, res, next) => {
     try {
@@ -49,6 +50,26 @@ const createStaff = (db) => async (req, res, next) => {
             userId: req.user.user_id, action: 'STAFF_CREATED', resourceId: result.rows[0].user_id,
             resourceTable: 'users', ipAddress: req.ip, details: { role, protectedRole: isProtectedRole(role) }, required: isProtectedRole(role)
         }).catch(err => console.error("Non-blocking audit log error:", err));
+
+        triggerEventForRole(db, 'STAFF_CREATED', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                staff_name: fullName,
+                staff_email: email,
+                role: role,
+                created_by: req.user?.full_name || req.user?.email || 'Unknown'
+            }
+        }).catch(() => {});
+
+        triggerEventForRole(db, 'STAFF_CREATED', 'HR', {
+            priority: 'Normal',
+            variables: {
+                staff_name: fullName,
+                staff_email: email,
+                role: role,
+                created_by: req.user?.full_name || req.user?.email || 'Unknown'
+            }
+        }).catch(() => {});
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
@@ -121,6 +142,24 @@ const updateStaff = (db) => async (req, res, next) => {
             required: isProtectedRole(target.role) || isProtectedRole(role)
         }).catch(err => console.error("Non-blocking audit log error:", err));
 
+        triggerEventForRole(db, 'STAFF_UPDATED', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                staff_name: fullName || target.full_name,
+                staff_email: email || '',
+                changed_fields: Object.keys(req.body).filter(key => key !== 'password').join(', ') || 'none'
+            }
+        }).catch(() => {});
+
+        triggerEventForRole(db, 'STAFF_UPDATED', 'HR', {
+            priority: 'Normal',
+            variables: {
+                staff_name: fullName || target.full_name,
+                staff_email: email || '',
+                changed_fields: Object.keys(req.body).filter(key => key !== 'password').join(', ') || 'none'
+            }
+        }).catch(() => {});
+
         res.json(result.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -162,6 +201,24 @@ const deleteStaff = (db) => async (req, res, next) => {
             required: true
         });
         await client.query('COMMIT');
+
+        triggerEventForRole(db, 'STAFF_DEACTIVATED', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                staff_name: targetResult.rows[0].full_name || '',
+                staff_email: '',
+                role: targetResult.rows[0].role
+            }
+        }).catch(() => {});
+
+        triggerEventForRole(db, 'STAFF_DEACTIVATED', 'HR', {
+            priority: 'Normal',
+            variables: {
+                staff_name: targetResult.rows[0].full_name || '',
+                staff_email: '',
+                role: targetResult.rows[0].role
+            }
+        }).catch(() => {});
 
         res.json({ message: 'User deactivated successfully' });
     } catch (error) {

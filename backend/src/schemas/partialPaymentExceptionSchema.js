@@ -6,6 +6,7 @@ const dateTimeString = z.string().datetime({ offset: true }).or(z.string().regex
 
 const requestPartialPaymentExceptionSchema = z.object({
     transactionType: transactionTypeSchema,
+    targetStage: z.enum(['Prep Pending', 'Ready for Exam', 'In Exam']),
     reason: z.string().trim().min(5).max(1000),
     responsiblePartyId: z.string().uuid().optional(),
     expiresAt: dateTimeString.optional(),

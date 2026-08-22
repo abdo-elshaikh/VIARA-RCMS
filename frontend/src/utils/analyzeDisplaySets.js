@@ -1,6 +1,6 @@
 /**
  * Client-side re-analysis of DICOM series geometry to surface the same class of
- * "display set" quality warnings that OHIF computes internally. RCMS loads OHIF
+ * "display set" quality warnings that OHIF computes internally. VIARA loads OHIF
  * in a cross-origin iframe and cannot read its internal state, so we independently
  * fetch WADO-RS study metadata through the existing DICOMweb proxy and recompute
  * the conditions here.
@@ -224,7 +224,7 @@ export const computeDisplaySetReport = (instances = []) => {
 };
 
 /**
- * Fetch WADO-RS study metadata through the RCMS DICOMweb proxy and analyse it.
+ * Fetch WADO-RS study metadata through the VIARA DICOMweb proxy and analyse it.
  * Returns null on any failure — quality warnings are advisory, so a metadata
  * fetch error must never block the viewer.
  */

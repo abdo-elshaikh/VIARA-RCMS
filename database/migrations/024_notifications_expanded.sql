@@ -99,70 +99,70 @@ INSERT INTO notification_templates (event_type, channel, language, subject, body
 -- AppointmentCreated
 ('AppointmentCreated', 'Email', 'en',
  'Appointment Confirmed – {{order_number}}',
- 'Dear {{patient_name}},\n\nYour appointment has been scheduled.\n\nOrder: {{order_number}}\nDate & Time: {{appointment_time}}\nExam: {{exam_type}}\nModality: {{modality}}\n\n{{prep_instructions}}\n\nPlease arrive 15 minutes early.\n\nRegards,\nRCMS Radiology Center'),
+ 'Dear {{patient_name}},\n\nYour appointment has been scheduled.\n\nOrder: {{order_number}}\nDate & Time: {{appointment_time}}\nExam: {{exam_type}}\nModality: {{modality}}\n\n{{prep_instructions}}\n\nPlease arrive 15 minutes early.\n\nRegards,\nVIARA Radiology Center'),
 ('AppointmentCreated', 'SMS', 'en',
  NULL,
- 'RCMS: Appt confirmed for {{patient_name}} on {{appointment_time}}. Order: {{order_number}}. {{prep_short}}'),
+ 'VIARA: Appt confirmed for {{patient_name}} on {{appointment_time}}. Order: {{order_number}}. {{prep_short}}'),
 
 -- AppointmentReminder
 ('AppointmentReminder', 'Email', 'en',
  'Reminder: Your Appointment Tomorrow – {{order_number}}',
- 'Dear {{patient_name}},\n\nThis is a reminder that you have an appointment tomorrow.\n\nDate & Time: {{appointment_time}}\nExam: {{exam_type}}\nOrder: {{order_number}}\n\n{{prep_instructions}}\n\nRegards,\nRCMS Radiology Center'),
+ 'Dear {{patient_name}},\n\nThis is a reminder that you have an appointment tomorrow.\n\nDate & Time: {{appointment_time}}\nExam: {{exam_type}}\nOrder: {{order_number}}\n\n{{prep_instructions}}\n\nRegards,\nVIARA Radiology Center'),
 ('AppointmentReminder', 'SMS', 'en',
  NULL,
- 'RCMS Reminder: Appointment tomorrow {{appointment_time}}. Order: {{order_number}}. Reply STOP to opt out.'),
+ 'VIARA Reminder: Appointment tomorrow {{appointment_time}}. Order: {{order_number}}. Reply STOP to opt out.'),
 
 -- AppointmentRescheduled
 ('AppointmentRescheduled', 'Email', 'en',
  'Appointment Rescheduled – {{order_number}}',
- 'Dear {{patient_name}},\n\nYour appointment has been rescheduled.\n\nNew Date & Time: {{appointment_time}}\nOrder: {{order_number}}\nReason: {{reschedule_reason}}\n\nRegards,\nRCMS Radiology Center'),
+ 'Dear {{patient_name}},\n\nYour appointment has been rescheduled.\n\nNew Date & Time: {{appointment_time}}\nOrder: {{order_number}}\nReason: {{reschedule_reason}}\n\nRegards,\nVIARA Radiology Center'),
 ('AppointmentRescheduled', 'SMS', 'en',
  NULL,
- 'RCMS: Appt rescheduled to {{appointment_time}}. Order: {{order_number}}.'),
+ 'VIARA: Appt rescheduled to {{appointment_time}}. Order: {{order_number}}.'),
 
 -- AppointmentCancelled
 ('AppointmentCancelled', 'Email', 'en',
  'Appointment Cancelled – {{order_number}}',
- 'Dear {{patient_name}},\n\nYour appointment (Order: {{order_number}}) has been cancelled.\nReason: {{cancellation_reason}}\n\nPlease contact us to reschedule.\n\nRegards,\nRCMS Radiology Center'),
+ 'Dear {{patient_name}},\n\nYour appointment (Order: {{order_number}}) has been cancelled.\nReason: {{cancellation_reason}}\n\nPlease contact us to reschedule.\n\nRegards,\nVIARA Radiology Center'),
 ('AppointmentCancelled', 'SMS', 'en',
  NULL,
- 'RCMS: Appt {{order_number}} cancelled. Contact us to reschedule.'),
+ 'VIARA: Appt {{order_number}} cancelled. Contact us to reschedule.'),
 
 -- ReportReady
 ('ReportReady', 'Email', 'en',
  'Your Radiology Report is Ready – {{order_number}}',
- 'Dear {{patient_name}},\n\nYour radiology report for Order {{order_number}} is now finalized and available.\n\nYou can download your report from the Patient Portal at any time.\n\nRegards,\nRCMS Radiology Center'),
+ 'Dear {{patient_name}},\n\nYour radiology report for Order {{order_number}} is now finalized and available.\n\nYou can download your report from the Patient Portal at any time.\n\nRegards,\nVIARA Radiology Center'),
 ('ReportReady', 'SMS', 'en',
  NULL,
- 'RCMS: Report ready for {{patient_name}}. Order: {{order_number}}. Log in to your portal to download.'),
+ 'VIARA: Report ready for {{patient_name}}. Order: {{order_number}}. Log in to your portal to download.'),
 
 -- ResultDelivered
 ('ResultDelivered', 'Email', 'en',
  'Results Delivered – {{order_number}}',
- 'Dear {{patient_name}},\n\nYour radiology results for Order {{order_number}} have been delivered via {{delivery_method}}.\n\nRegards,\nRCMS Radiology Center'),
+ 'Dear {{patient_name}},\n\nYour radiology results for Order {{order_number}} have been delivered via {{delivery_method}}.\n\nRegards,\nVIARA Radiology Center'),
 
 -- PaymentDue
 ('PaymentDue', 'Email', 'en',
  'Payment Due – Invoice {{invoice_number}}',
- 'Dear {{patient_name}},\n\nThis is a reminder that payment is due for Invoice {{invoice_number}}.\n\nAmount: {{amount}}\nDue Date: {{due_date}}\n\nPlease contact us to arrange payment.\n\nRegards,\nRCMS Radiology Center'),
+ 'Dear {{patient_name}},\n\nThis is a reminder that payment is due for Invoice {{invoice_number}}.\n\nAmount: {{amount}}\nDue Date: {{due_date}}\n\nPlease contact us to arrange payment.\n\nRegards,\nVIARA Radiology Center'),
 ('PaymentDue', 'SMS', 'en',
  NULL,
- 'RCMS: Payment due for Invoice {{invoice_number}}. Amount: {{amount}}. Due: {{due_date}}. Contact us for payment options.'),
+ 'VIARA: Payment due for Invoice {{invoice_number}}. Amount: {{amount}}. Due: {{due_date}}. Contact us for payment options.'),
 
 -- PrepInstructions
 ('PrepInstructions', 'Email', 'en',
  'Preparation Instructions – {{order_number}}',
- 'Dear {{patient_name}},\n\nPlease follow these preparation instructions before your appointment (Order: {{order_number}}) on {{appointment_time}}:\n\n{{prep_instructions}}\n\nIf you have questions, please contact us.\n\nRegards,\nRCMS Radiology Center'),
+ 'Dear {{patient_name}},\n\nPlease follow these preparation instructions before your appointment (Order: {{order_number}}) on {{appointment_time}}:\n\n{{prep_instructions}}\n\nIf you have questions, please contact us.\n\nRegards,\nVIARA Radiology Center'),
 ('PrepInstructions', 'SMS', 'en',
  NULL,
- 'RCMS: Prep required for appt {{order_number}} on {{appointment_time}}. {{prep_short}} Contact us for details.'),
+ 'VIARA: Prep required for appt {{order_number}} on {{appointment_time}}. {{prep_short}} Contact us for details.'),
 
 -- FollowUpReminder
 ('FollowUpReminder', 'Email', 'en',
- 'Follow-Up Reminder – RCMS Radiology',
- 'Dear {{patient_name}},\n\nThis is a reminder to schedule your follow-up radiology appointment.\n\nPrevious exam: {{exam_type}} (Order: {{order_number}})\n\nPlease contact us at your convenience to book your next visit.\n\nRegards,\nRCMS Radiology Center'),
+ 'Follow-Up Reminder – VIARA Radiology',
+ 'Dear {{patient_name}},\n\nThis is a reminder to schedule your follow-up radiology appointment.\n\nPrevious exam: {{exam_type}} (Order: {{order_number}})\n\nPlease contact us at your convenience to book your next visit.\n\nRegards,\nVIARA Radiology Center'),
 ('FollowUpReminder', 'SMS', 'en',
  NULL,
- 'RCMS: Follow-up reminder for {{patient_name}}. Please schedule your next radiology visit. Call us to book.')
+ 'VIARA: Follow-up reminder for {{patient_name}}. Please schedule your next radiology visit. Call us to book.')
 
 ON CONFLICT (event_type, channel, language) DO NOTHING;

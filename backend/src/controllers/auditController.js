@@ -20,6 +20,7 @@ const auditAdminAction = async (db, req, {
     statusCode = 200,
     riskScore = 0,
     riskReason = null,
+    required = false,
 }) => {
     await logAction(db, {
         actor: {
@@ -51,6 +52,7 @@ const auditAdminAction = async (db, req, {
             score: riskScore,
             reason: riskReason,
         },
+        required,
     });
 };
 
@@ -74,7 +76,7 @@ const buildAuditFilters = (query) => {
     if (outcome && VALID_OUTCOMES.has(outcome)) { clauses.push(`s.outcome = $${i++}`); params.push(outcome); }
     if (actorType && VALID_ACTOR_TYPES.has(actorType)) { clauses.push(`s.actor_type = $${i++}`); params.push(actorType); }
     if (eventCode) { clauses.push(`s.event_code ILIKE $${i++}`); params.push(`%${eventCode}%`); }
-    if (targetType) { clauses.push(`s.target_type = $${i++}`); params.push(targetType); }
+    if (targetType) { clauses.push(`(s.target_type = $${i} OR s.resource_table = $${i})`); params.push(targetType); i++; }
     if (targetId) { clauses.push(`s.target_id = $${i++}`); params.push(targetId); }
     if (patientId) { clauses.push(`s.patient_id = $${i++}`); params.push(patientId); }
     if (examId) { clauses.push(`s.exam_id = $${i++}`); params.push(examId); }
@@ -82,8 +84,8 @@ const buildAuditFilters = (query) => {
     if (requestId) { clauses.push(`s.request_id = $${i++}`); params.push(requestId); }
     if (Number.isFinite(minSeverity)) { clauses.push(`s.severity >= $${i++}`); params.push(minSeverity); }
     if (Number.isFinite(minRisk)) { clauses.push(`s.risk_score >= $${i++}`); params.push(minRisk); }
-    if (startDate) { clauses.push(`s.timestamp >= $${i++}`); params.push(startDate); }
-    if (endDate) { clauses.push(`s.timestamp <= $${i++}`); params.push(endDate); }
+    if (startDate) { clauses.push(`s.timestamp >= $${i++}::date`); params.push(startDate); }
+    if (endDate) { clauses.push(`s.timestamp < ($${i++}::date + INTERVAL '1 day')`); params.push(endDate); }
     if (action) { clauses.push(`(s.action ILIKE $${i} OR s.event_action ILIKE $${i})`); params.push(`%${action}%`); i++; }
     // Full-text-ish search across action, request path, and the joined user name.
     if (q) {
@@ -123,9 +125,9 @@ const getAuditLogs = (db) => async (req, res, next) => {
         const listQuery = `
             SELECT ${AUDIT_SELECT}
             FROM system_logs s
-            LEFT JOIN users u ON s.user_id = u.user_id
+            LEFT JOIN users u ON COALESCE(s.actor_user_id, s.user_id) = u.user_id
             WHERE ${where}
-            ORDER BY s.timestamp DESC
+            ORDER BY s.timestamp DESC, s.log_id DESC
             LIMIT $${nextIndex} OFFSET $${nextIndex + 1}
         `;
         const listResult = await db.query(listQuery, [...params, limit, offset]);
@@ -141,7 +143,7 @@ const getAuditLogs = (db) => async (req, res, next) => {
                 COUNT(*) FILTER (WHERE s.risk_score >= 50)::int AS risky,
                 COUNT(*) FILTER (WHERE s.actor_type = 'SYSTEM')::int AS system_events
             FROM system_logs s
-            LEFT JOIN users u ON s.user_id = u.user_id
+            LEFT JOIN users u ON COALESCE(s.actor_user_id, s.user_id) = u.user_id
             WHERE ${where}
         `;
         const aggResult = await db.query(aggQuery, params);
@@ -183,9 +185,9 @@ const exportAuditLogs = (db) => async (req, res, next) => {
         const result = await db.query(`
             SELECT ${AUDIT_SELECT}
             FROM system_logs s
-            LEFT JOIN users u ON s.user_id = u.user_id
+            LEFT JOIN users u ON COALESCE(s.actor_user_id, s.user_id) = u.user_id
             WHERE ${where}
-            ORDER BY s.timestamp DESC
+            ORDER BY s.timestamp DESC, s.log_id DESC
             LIMIT $${nextIndex}
         `, [...params, cap]);
 
@@ -205,9 +207,6 @@ const exportAuditLogs = (db) => async (req, res, next) => {
             ].map(csvCell).join(','));
         }
 
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="audit-logs-${new Date().toISOString().slice(0, 10)}.csv"`);
-
         await auditAdminAction(db, req, {
             eventCode: AUDIT_EVENT_CODES.AUDIT_EXPORT_CREATED,
             target: { type: 'system_logs' },
@@ -218,8 +217,11 @@ const exportAuditLogs = (db) => async (req, res, next) => {
             },
             riskScore: 60,
             riskReason: 'Audit log export can expose sensitive operational history.',
+            required: true,
         });
 
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="audit-logs-${new Date().toISOString().slice(0, 10)}.csv"`);
         res.send(lines.join('\r\n'));
     } catch (error) {
         next(error);
@@ -227,7 +229,7 @@ const exportAuditLogs = (db) => async (req, res, next) => {
 };
 
 // Verify the tamper-evident hash chain server-side. Recomputes each entry_hash
-// using the SAME formula as the rcms_chain_audit_log() trigger (migration 038)
+// using the SAME formula as the VIARA_chain_audit_log() trigger (migration 038)
 // and confirms previous_hash linkage.
 const verifyAuditChain = (db) => async (req, res, next) => {
     try {
@@ -235,83 +237,129 @@ const verifyAuditChain = (db) => async (req, res, next) => {
             .update(parts.join('|')).digest('hex');
         const GENESIS = '0'.repeat(64);
 
-        // Stream in ascending log_id order. Bounded scan for very large tables.
-        const maxRows = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100000, 1), 1000000);
-        const result = await db.query(`
-            SELECT log_id, user_id, action, resource_id, resource_table,
-                   ip_address, details, details::text AS details_text,
-                   timestamp, timestamp::text AS timestamp_text, previous_hash, entry_hash,
-                   audit_hash_version, actor_type, actor_user_id, actor_role,
-                   session_id, request_id, event_code, event_family, event_action,
-                   target_type, target_id, patient_id, exam_id, invoice_id, report_id,
-                   appointment_id, source_system, user_agent, status_code, risk_score,
-                   risk_reason, changed_fields::text AS changed_fields_text,
-                   metadata::text AS metadata_text, previous_value::text AS previous_value_text,
-                   new_value::text AS new_value_text
-            FROM system_logs
-            ORDER BY log_id ASC
-            LIMIT $1
-        `, [maxRows]);
+        // Verify the full chain by default. An explicit limit creates a clearly
+        // identified partial verification window instead of claiming full integrity.
+        const maxRows = req.query.limit || null;
+        const startLogId = req.query.startLogId || 0;
 
-        let priorHash = GENESIS;
+        const totalResult = await db.query('SELECT COUNT(*)::int AS total, MIN(log_id) AS min_id, MAX(log_id) AS max_id FROM system_logs');
+        const totalLogs = totalResult.rows[0]?.total || 0;
+
         let checkedCount = 0;
         let firstBrokenLogId = null;
+        let priorHash = GENESIS;
+        let cursor = startLogId - 1;
+        let endLogId = null;
+        let rowsRemaining = maxRows;
+        let hasMore = false;
 
-        for (const row of result.rows) {
-            const baseParts = [
-                priorHash,
-                row.user_id ? String(row.user_id) : '',
-                row.action,
-                row.resource_id ? String(row.resource_id) : '',
-                row.resource_table || '',
-                row.ip_address || '',
-                row.details_text || '',
-                row.timestamp_text || '',
-            ];
-            const structuredParts = Number(row.audit_hash_version || 1) >= 2 ? [
-                row.actor_type || '',
-                row.actor_user_id ? String(row.actor_user_id) : '',
-                row.actor_role || '',
-                row.session_id ? String(row.session_id) : '',
-                row.request_id || '',
-                row.event_code || '',
-                row.event_family || '',
-                row.event_action || '',
-                row.target_type || '',
-                row.target_id ? String(row.target_id) : '',
-                row.patient_id ? String(row.patient_id) : '',
-                row.exam_id ? String(row.exam_id) : '',
-                row.invoice_id ? String(row.invoice_id) : '',
-                row.report_id ? String(row.report_id) : '',
-                row.appointment_id ? String(row.appointment_id) : '',
-                row.source_system || '',
-                row.user_agent || '',
-                row.status_code !== null && row.status_code !== undefined ? String(row.status_code) : '',
-                row.risk_score !== null && row.risk_score !== undefined ? String(row.risk_score) : '',
-                row.risk_reason || '',
-                row.changed_fields_text || '',
-                row.metadata_text || '',
-                row.previous_value_text || '',
-                row.new_value_text || '',
-            ] : [];
-            const computed = sha256([...baseParts, ...structuredParts]);
+        while (rowsRemaining === null || rowsRemaining > 0) {
+            const take = Math.min(2000, rowsRemaining ?? 2000);
+            const result = await db.query(`
+                SELECT log_id, user_id, action, resource_id, resource_table,
+                       ip_address, details, details::text AS details_text,
+                       timestamp, timestamp::text AS timestamp_text, previous_hash, entry_hash,
+                       audit_hash_version, actor_type, actor_user_id, actor_role,
+                       session_id, request_id, event_code, event_family, event_action,
+                       target_type, target_id, patient_id, exam_id, invoice_id, report_id,
+                       appointment_id, source_system, user_agent, status_code, risk_score,
+                       risk_reason, changed_fields::text AS changed_fields_text,
+                       metadata::text AS metadata_text, previous_value::text AS previous_value_text,
+                       new_value::text AS new_value_text
+                FROM system_logs
+                WHERE log_id >= $1 AND log_id > $2
+                ORDER BY log_id ASC
+                LIMIT $3
+            `, [startLogId, cursor, take]);
 
-            if (row.previous_hash !== priorHash || row.entry_hash !== computed) {
-                firstBrokenLogId = row.log_id;
-                break;
+            if (result.rows.length === 0) break;
+            if (checkedCount === 0 && startLogId > 0) {
+                priorHash = result.rows[0].previous_hash || GENESIS;
             }
-            priorHash = row.entry_hash;
-            checkedCount += 1;
+
+            for (const row of result.rows) {
+                const baseParts = [
+                    priorHash,
+                    row.user_id ? String(row.user_id) : '',
+                    row.action,
+                    row.resource_id ? String(row.resource_id) : '',
+                    row.resource_table || '',
+                    row.ip_address || '',
+                    row.details_text || '',
+                    row.timestamp_text || '',
+                ];
+                const structuredParts = Number(row.audit_hash_version || 1) >= 2 ? [
+                    row.actor_type || '',
+                    row.actor_user_id ? String(row.actor_user_id) : '',
+                    row.actor_role || '',
+                    row.session_id ? String(row.session_id) : '',
+                    row.request_id || '',
+                    row.event_code || '',
+                    row.event_family || '',
+                    row.event_action || '',
+                    row.target_type || '',
+                    row.target_id ? String(row.target_id) : '',
+                    row.patient_id ? String(row.patient_id) : '',
+                    row.exam_id ? String(row.exam_id) : '',
+                    row.invoice_id ? String(row.invoice_id) : '',
+                    row.report_id ? String(row.report_id) : '',
+                    row.appointment_id ? String(row.appointment_id) : '',
+                    row.source_system || '',
+                    row.user_agent || '',
+                    row.status_code !== null && row.status_code !== undefined ? String(row.status_code) : '',
+                    row.risk_score !== null && row.risk_score !== undefined ? String(row.risk_score) : '',
+                    row.risk_reason || '',
+                    row.changed_fields_text || '',
+                    row.metadata_text || '',
+                    row.previous_value_text || '',
+                    row.new_value_text || '',
+                ] : [];
+                const computed = sha256([...baseParts, ...structuredParts]);
+
+                if (row.previous_hash !== priorHash || (row.entry_hash && row.entry_hash !== computed)) {
+                    // If legacy un-hashed entries exist, tolerate until first formal entry_hash
+                    if (row.entry_hash) {
+                        firstBrokenLogId = row.log_id;
+                        break;
+                    }
+                }
+                priorHash = row.entry_hash || priorHash;
+                checkedCount += 1;
+                cursor = row.log_id;
+                endLogId = row.log_id;
+            }
+
+            if (firstBrokenLogId !== null || result.rows.length < take) break;
+            if (rowsRemaining !== null) rowsRemaining -= result.rows.length;
         }
+
+        if (maxRows !== null && firstBrokenLogId === null) {
+            const moreResult = await db.query(
+                'SELECT EXISTS(SELECT 1 FROM system_logs WHERE log_id >= $1 AND log_id > $2) AS has_more',
+                [startLogId, cursor]
+            );
+            hasMore = moreResult.rows[0]?.has_more === true;
+        }
+
+        const beginsAtGenesis = startLogId === 0 || startLogId <= Number(totalResult.rows[0]?.min_id || 0);
+        const scopeComplete = beginsAtGenesis && !hasMore;
 
         const response = {
             ok: firstBrokenLogId === null,
             checkedCount,
+            totalLogs,
+            startLogId,
+            endLogId,
             firstBrokenLogId,
+            scopeComplete,
+            hasMore,
+            nextStartLogId: hasMore && endLogId !== null ? endLogId + 1 : null,
             verifiedAt: new Date().toISOString(),
             note: firstBrokenLogId !== null
-                ? 'Hash mismatch may also indicate a timestamp/details serialization difference; investigate before assuming tampering.'
-                : undefined,
+                ? 'Hash mismatch detected at log ID ' + firstBrokenLogId + '; investigate audit tampering.'
+                : scopeComplete
+                    ? 'The complete audit chain was verified across ' + checkedCount + ' records.'
+                    : 'The requested audit window was verified across ' + checkedCount + ' records; this is not a complete-chain verification.',
         };
 
         await auditAdminAction(db, req, {
@@ -333,17 +381,27 @@ const verifyAuditChain = (db) => async (req, res, next) => {
 const getMyAuditLogs = (db) => async (req, res, next) => {
     try {
         const userId = req.user.user_id;
-        const limit = 50;
+        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 200);
+        const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
 
         const query = `
             SELECT log_id as id, action as event, category, outcome, severity,
                    ip_address as ip, details as metadata, timestamp as time
             FROM system_logs
-            WHERE user_id = $1
-            ORDER BY timestamp DESC
-            LIMIT $2
+            WHERE COALESCE(actor_user_id, user_id) = $1
+            ORDER BY timestamp DESC, log_id DESC
+            LIMIT $2 OFFSET $3
         `;
-        const result = await db.query(query, [userId, limit]);
+        const [result, countResult] = await Promise.all([
+            db.query(query, [userId, limit, offset]),
+            db.query(`
+                SELECT COUNT(*)::int AS total,
+                       COUNT(*) FILTER (WHERE outcome IN ('failure', 'denied'))::int AS failed,
+                       COUNT(*) FILTER (WHERE category = 'AUTH' OR event_family = 'AUTH' OR action ILIKE '%login%')::int AS auth
+                FROM system_logs
+                WHERE COALESCE(actor_user_id, user_id) = $1
+            `, [userId])
+        ]);
 
         const logs = result.rows.map(row => ({
             id: row.id,
@@ -356,7 +414,8 @@ const getMyAuditLogs = (db) => async (req, res, next) => {
             metadata: row.metadata,
         }));
 
-        res.json({ logs });
+        const summary = countResult.rows[0] || { total: 0, failed: 0, auth: 0 };
+        res.json({ logs, total: summary.total || 0, summary, limit, offset });
     } catch (error) {
         next(error);
     }
@@ -390,7 +449,7 @@ const getAuditAlerts = (db) => async (req, res, next) => {
             LEFT JOIN users r ON a.reviewed_by = r.user_id
             LEFT JOIN system_logs s ON a.audit_log_id = s.log_id
             WHERE ${where}
-            ORDER BY a.created_at DESC
+            ORDER BY a.created_at DESC, a.alert_id DESC
             LIMIT $${nextIndex} OFFSET $${nextIndex + 1}
         `, [...params, limit, offset]);
 
@@ -407,13 +466,13 @@ const getAuditAlerts = (db) => async (req, res, next) => {
 };
 
 const reviewAuditAlert = (db) => async (req, res, next) => {
+    let client;
     try {
         const { status, resolutionNotes } = req.body || {};
-        if (!['reviewing', 'resolved', 'dismissed'].includes(status)) {
-            return res.status(400).json({ message: 'Invalid alert status' });
-        }
+        client = await db.connect();
+        await client.query('BEGIN');
 
-        const result = await db.query(`
+        const result = await client.query(`
             UPDATE audit_alerts
             SET status = $1,
                 reviewed_by = $2,
@@ -424,10 +483,11 @@ const reviewAuditAlert = (db) => async (req, res, next) => {
         `, [status, req.user?.user_id || null, resolutionNotes || null, req.params.alertId]);
 
         if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ message: 'Audit alert not found' });
         }
 
-        await auditAdminAction(db, req, {
+        await auditAdminAction(client, req, {
             eventCode: AUDIT_EVENT_CODES.AUDIT_ALERT_REVIEWED,
             target: { type: 'audit_alerts', id: req.params.alertId },
             details: {
@@ -436,11 +496,18 @@ const reviewAuditAlert = (db) => async (req, res, next) => {
                 alertType: result.rows[0].alert_type,
                 severity: result.rows[0].severity,
             },
+            required: true,
         });
 
+        await client.query('COMMIT');
         res.json({ alert: result.rows[0] });
     } catch (error) {
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch { /* preserve original error */ }
+        }
         next(error);
+    } finally {
+        client?.release();
     }
 };
 

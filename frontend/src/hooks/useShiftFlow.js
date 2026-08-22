@@ -20,7 +20,7 @@ const INITIAL_STATE = {
 
 const SHIFT_LIFECYCLE_STAGES = ['Open', 'Active', 'PendingReview', 'Reconciled', 'Closed'];
 
-export const useShiftFlow = ({ skip = false } = {}) => {
+export const useShiftFlow = ({ skip = false, includeAllForReview = false } = {}) => {
     const { t } = useTranslation('reception');
     const user = useSelector(selectCurrentUser);
     const currentUserId = getCurrentUserId(user);
@@ -32,10 +32,21 @@ export const useShiftFlow = ({ skip = false } = {}) => {
         { cashierId: currentUserId },
         { skip: skip || !currentUserId }
     );
+    const { data: supervisorData, isFetching: isLoadingSupervisorShifts } = useGetCashierReconciliationQuery(
+        {},
+        { skip: !includeAllForReview }
+    );
 
     const currentShift = useMemo(
         () => cashierData?.data?.find((shift) => ['Open', 'Active'].includes(shift.status)),
         [cashierData]
+    );
+
+    const pendingReviewShift = useMemo(
+        () => ((includeAllForReview ? supervisorData?.data : cashierData?.data) || [])
+            .find((shift) => shift.review_status === 'Requires Review'
+                && (!includeAllForReview || shift.cashier_id !== currentUserId)),
+        [cashierData, currentUserId, includeAllForReview, supervisorData]
     );
 
     const openShifts = useMemo(
@@ -124,9 +135,10 @@ export const useShiftFlow = ({ skip = false } = {}) => {
 
     return {
         currentShift,
+        pendingReviewShift,
         openShifts,
         closedShifts,
-        isLoadingShift,
+        isLoadingShift: isLoadingShift || isLoadingSupervisorShifts,
         isBusy: isOpening || isClosing,
         openShiftDialog,
         closeShiftDialog,

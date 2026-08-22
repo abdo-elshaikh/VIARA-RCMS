@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
 import { Clock, FileText, Info, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const PreviewField = ({ label, value }) => (
   <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/40">
@@ -8,7 +9,10 @@ const PreviewField = ({ label, value }) => (
   </div>
 );
 
-const ProcedurePreviewModal = ({ exam, t, onClose }) => {
+const ProcedurePreviewModal = ({ exam, t: propT, onClose }) => {
+  const { t: hookT } = useTranslation('settings');
+  const t = typeof propT === 'function' ? propT : hookT;
+
   if (!exam) return null;
 
   return createPortal(
@@ -17,7 +21,7 @@ const ProcedurePreviewModal = ({ exam, t, onClose }) => {
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-400">
-              {t('settings.clinical.previewEyebrow', 'Procedure details')}
+              {t('settings.clinical.previewEyebrow', { defaultValue: 'Procedure details' })}
             </p>
             <h3 className="mt-1 truncate text-lg font-bold text-slate-950 dark:text-white">{exam.name}</h3>
           </div>
@@ -25,7 +29,7 @@ const ProcedurePreviewModal = ({ exam, t, onClose }) => {
             type="button"
             onClick={onClose}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
-            aria-label={t('settings.clinical.close', 'Close')}
+            aria-label={t('settings.clinical.close', { defaultValue: 'Close' })}
           >
             <X size={18} />
           </button>
@@ -33,22 +37,22 @@ const ProcedurePreviewModal = ({ exam, t, onClose }) => {
 
         <div className="space-y-4 overflow-y-auto px-5 py-5">
           <div className="grid gap-3 sm:grid-cols-2">
-            <PreviewField label={t('settings.clinical.code', 'Code')} value={exam.code} />
-            <PreviewField label={t('settings.clinical.modality', 'Modality')} value={exam.modality || exam.machineType} />
-            <PreviewField label={t('settings.clinical.anatomy', 'Anatomy')} value={exam.anatomy} />
+            <PreviewField label={t('settings.clinical.code', { defaultValue: 'Code' })} value={exam.code} />
+            <PreviewField label={t('settings.clinical.modality', { defaultValue: 'Modality' })} value={exam.modality || exam.machineType} />
+            <PreviewField label={t('settings.clinical.anatomy', { defaultValue: 'Anatomy' })} value={exam.anatomy} />
             <PreviewField
-              label={t('settings.clinical.duration', 'Duration')}
-              value={`${exam.durationMinutes || exam.duration || 0} ${t('settings.clinical.exams.minutes', 'min')}`}
+              label={t('settings.clinical.duration', { defaultValue: 'Duration' })}
+              value={`${exam.durationMinutes || exam.duration || 0} ${t('settings.clinical.exams.minutes', { defaultValue: 'min' })}`}
             />
             <PreviewField
-              label={t('settings.clinical.price', 'Price')}
+              label={t('settings.clinical.price', { defaultValue: 'Price' })}
               value={Number(exam.price || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
             />
             <PreviewField
-              label={t('settings.clinical.contrast', 'Contrast')}
-              value={exam.requiresContrast ? t('settings.clinical.requiresContrast', 'Requires contrast') : t('settings.clinical.noContrast', 'No contrast')}
+              label={t('settings.clinical.contrast', { defaultValue: 'Contrast' })}
+              value={exam.requiresContrast ? t('settings.clinical.requiresContrast', { defaultValue: 'Requires contrast' }) : t('settings.clinical.noContrast', { defaultValue: 'No contrast' })}
             />
-            <PreviewField label={t('settings.clinical.machine', 'Machine')} value={exam.machineName} />
+            <PreviewField label={t('settings.clinical.machine', { defaultValue: 'Machine' })} value={exam.machineName} />
           </div>
 
           {exam.preparationInstructions && (
@@ -57,7 +61,7 @@ const ProcedurePreviewModal = ({ exam, t, onClose }) => {
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
                   <FileText size={14} />
                 </span>
-                {t('settings.clinical.preparation', 'Preparation')}
+                {t('settings.clinical.preparation', { defaultValue: 'Preparation' })}
               </div>
               <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">{exam.preparationInstructions}</p>
             </section>
@@ -69,7 +73,7 @@ const ProcedurePreviewModal = ({ exam, t, onClose }) => {
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
                   <Info size={14} />
                 </span>
-                {t('settings.clinical.notes', 'Clinical notes')}
+                {t('settings.clinical.notes', { defaultValue: 'Clinical notes' })}
               </div>
               <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">{exam.clinicalNotes}</p>
             </section>
@@ -77,7 +81,7 @@ const ProcedurePreviewModal = ({ exam, t, onClose }) => {
 
           <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:bg-slate-950/40 dark:text-slate-300">
             <Clock size={16} className="shrink-0 text-cyan-700 dark:text-cyan-400" />
-            {t('settings.clinical.previewFooter', 'Scheduling duration and contrast requirements are used by appointment booking.')}
+            {t('settings.clinical.previewFooter', { defaultValue: 'Scheduling duration and contrast requirements are used by appointment booking.' })}
           </div>
         </div>
       </div>

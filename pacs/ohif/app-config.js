@@ -1,5 +1,5 @@
 /**
- * OHIF runtime configuration for the RCMS local viewer.
+ * OHIF runtime configuration for the VIARA local viewer.
  *
  * Mounted into the ohif/app container at /usr/share/nginx/html/app-config.js
  * (see docker-compose `ohif` service). The single DICOMweb data source uses
@@ -69,7 +69,7 @@ window.config = {
         React.createElement(
           'span',
           { className: 'hidden text-sm font-semibold sm:block' },
-          'RCMS Imaging'
+          'VIARA Imaging'
         )
       );
     },
@@ -98,8 +98,8 @@ window.config = {
       namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
       sourceName: 'dicomweb',
       configuration: {
-        friendlyName: 'RCMS PACS',
-        name: 'RCMS',
+        friendlyName: 'VIARA PACS',
+        name: 'VIARA',
         qidoRoot: '/api/pacs/dicom-web',
         wadoRoot: '/api/pacs/dicom-web',
         wadoUriRoot: '/api/pacs/dicom-web',
@@ -117,18 +117,18 @@ window.config = {
         const urlParams = new URLSearchParams(window.location.search);
         const token = urlParams.get('token');
         if (token) {
-          sessionStorage.setItem('rcms_viewer_token', token);
+          sessionStorage.setItem('VIARA_viewer_token', token);
           dicomWebConfig.headers = dicomWebConfig.headers || {};
           dicomWebConfig.headers.Authorization = `Bearer ${token}`;
         } else {
-          // RCMS uses a same-site, HTTP-only PACS cookie. Never reuse a token
+          // VIARA uses a same-site, HTTP-only PACS cookie. Never reuse a token
           // left by an older query-string session after the cookie is renewed.
-          sessionStorage.removeItem('rcms_viewer_token');
+          sessionStorage.removeItem('VIARA_viewer_token');
           if (dicomWebConfig.headers) {
             delete dicomWebConfig.headers.Authorization;
           }
         }
-        
+
         return dicomWebConfig;
       }
     },

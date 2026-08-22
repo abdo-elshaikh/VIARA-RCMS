@@ -1,5 +1,5 @@
 const getStoredPreferences = () => {
-    try { return JSON.parse(localStorage.getItem('rcms_preferences') || '{}'); }
+    try { return JSON.parse(localStorage.getItem('VIARA_preferences') || '{}'); }
     catch { return {}; }
 };
 

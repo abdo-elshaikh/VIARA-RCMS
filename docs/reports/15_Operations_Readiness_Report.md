@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-RCMS is equipped with solid operational foundations, including structured JSON logging, explicit startup validation, graceful shutdown handling, dedicated health endpoints, and a built-in `/metrics` endpoint. Monitoring integration with Prometheus/Grafana is supported via the native metrics endpoint.
+VIARA is equipped with solid operational foundations, including structured JSON logging, explicit startup validation, graceful shutdown handling, dedicated health endpoints, and a built-in `/metrics` endpoint. Monitoring integration with Prometheus/Grafana is supported via the native metrics endpoint.
 
 **Operations Readiness Score: 85/100**
 
@@ -31,7 +31,7 @@ RCMS is equipped with solid operational foundations, including structured JSON l
 
 ### Audit Trail
 
-RCMS maintains a comprehensive, tamper-evident audit trail in the `audit_logs` table.
+VIARA maintains a comprehensive, tamper-evident audit trail in the `audit_logs` table.
 - All state-changing API requests are logged via middleware (`auditLogger.js`)
 - Contains structured before/after state diffs (Migration 086)
 - Can be viewed via the Admin dashboard
@@ -40,7 +40,7 @@ RCMS maintains a comprehensive, tamper-evident audit trail in the `audit_logs` t
 
 ## Health & Readiness Checks
 
-RCMS exposes dedicated endpoints for container orchestrators (like Kubernetes or Docker swarm):
+VIARA exposes dedicated endpoints for container orchestrators (like Kubernetes or Docker swarm):
 
 | Endpoint | Purpose | Checks |
 |----------|---------|--------|
@@ -82,7 +82,7 @@ This ensures zero-downtime deployments when deployed behind a load balancer that
 ### OPS-01: Metrics Endpoint
 - **Severity:** Medium
 - **Status:** ✅ REMEDIATED
-- **Issue:** RCMS did not expose a `/metrics` endpoint for Prometheus.
+- **Issue:** VIARA did not expose a `/metrics` endpoint for Prometheus.
 - **Fix:** Added `/metrics` endpoint (`server.js`) exposing HTTP request counters, latency histograms, and active connection gauges in Prometheus text format. Endpoint is unauthenticated and suitable for scraping by Prometheus or container orchestrator probes.
 
 ### OPS-02: Alerting Not Configured

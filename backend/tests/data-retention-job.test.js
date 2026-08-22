@@ -6,7 +6,7 @@ describe('data retention privacy export cleanup', () => {
     let tempDir;
 
     beforeEach(async () => {
-        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rcms-retention-'));
+        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'VIARA-retention-'));
         process.env.PRIVACY_EXPORT_DIR = tempDir;
         jest.resetModules();
     });
@@ -41,7 +41,7 @@ describe('data retention privacy export cleanup', () => {
     });
 
     test('skips expired export rows that point outside the export directory', async () => {
-        const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rcms-retention-outside-'));
+        const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'VIARA-retention-outside-'));
         const outsidePath = path.join(outsideDir, 'expired.json.enc');
         await fs.writeFile(outsidePath, 'encrypted');
         const pool = {

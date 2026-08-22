@@ -1,17 +1,22 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+
     plugins: [react()],
     resolve: {
         dedupe: ['react', 'react-dom', 'react-redux', 'react-router-dom', '@reduxjs/toolkit'],
+    },
+    optimizeDeps: {
+        include: ['jsqr', 'docx', 'qrcode.react', 'lucide-react', 'framer-motion'],
     },
     server: {
         host: true, // Needed for Docker port mapping
         ...(process.env.PORT
             ? { port: Number(process.env.PORT), strictPort: true }
-            : {}),
+            : { port: 5173, strictPort: true }),
         proxy: {
             '/api': {
                 target: process.env.API_PROXY_TARGET || 'http://127.0.0.1:3000',
@@ -42,6 +47,8 @@ export default defineConfig({
                 manualChunks(id) {
                     if (!id.includes('node_modules')) return undefined;
                     if (id.includes('recharts') || id.includes('d3-')) return 'charts';
+                    if (id.includes('framer-motion')) return 'motion';
+                    if (id.includes('react-dom') || id.includes('react-router-dom') || id.includes('@reduxjs/toolkit') || id.includes('react-redux')) return 'framework';
                     if (id.includes('i18next')) return 'i18n';
                     if (id.includes('lucide-react')) return 'icons';
                     if (id.includes('date-fns')) return 'date-utils';

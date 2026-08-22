@@ -1,6 +1,7 @@
 const { z } = require('zod');
+const { calendarDateSchema } = require('../utils/dateValidation');
 
-const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD format');
+const dateString = calendarDateSchema('Date must be a valid YYYY-MM-DD calendar date');
 
 const validateRange = (schema) => schema.refine(({ startDate, endDate }) => startDate <= endDate, {
     message: 'startDate must be on or before endDate',

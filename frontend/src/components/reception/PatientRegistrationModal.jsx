@@ -8,7 +8,6 @@ const PatientRegistrationModal = ({
     errors,
     isLoading,
     isOpen,
-    onAgeChange,
     onClose,
     onDobChange,
     onInvalid,
@@ -90,9 +89,10 @@ const PatientRegistrationModal = ({
                         min="0"
                         max="150"
                         inputMode="numeric"
+                        readOnly
                         placeholder={t('register.age')}
-                        {...register('age', { min: 0, max: 150, onChange: onAgeChange })}
-                        className={`${inputClass} ${errors.age ? 'border-rose-400 ring-2 ring-rose-100' : ''}`}
+                        {...register('age', { min: 0, max: 150 })}
+                        className={`${inputClass} cursor-not-allowed bg-slate-50 dark:bg-slate-900 ${errors.age ? 'border-rose-400 ring-2 ring-rose-100' : ''}`}
                         aria-invalid={Boolean(errors.age)}
                         aria-errormessage={errors.age ? 'register-age-error' : undefined}
                         aria-describedby={errors.age ? 'register-age-error' : undefined}

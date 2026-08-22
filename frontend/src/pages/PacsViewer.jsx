@@ -86,47 +86,38 @@ const EXPORT_OPTIONS = [
         id: 'dicom',
         icon: Archive,
         titleKey: 'pacs.viewer.exportDicomTitle',
-        titleDefault: 'DICOM archive',
+        titleDefault: 'DICOM Archive (.zip)',
         detailKey: 'pacs.viewer.exportDicomDetail',
-        detailDefault: 'Original study files in a ZIP archive for diagnostic interchange.',
+        detailDefault: 'Full resolution original DICOM files for PACS interchange.',
         filenameSuffix: 'dicom.zip'
     },
     {
         id: 'images',
         icon: ImageIcon,
         titleKey: 'pacs.viewer.exportImagesTitle',
-        titleDefault: 'Rendered images',
+        titleDefault: 'Rendered Images (.zip)',
         detailKey: 'pacs.viewer.exportImagesDetail',
-        detailDefault: 'JPEG/PNG review images with a manifest for non-DICOM recipients.',
+        detailDefault: 'High quality JPEG/PNG review images for patient or doctor.',
         filenameSuffix: 'images.zip'
-    },
-    {
-        id: 'cd',
-        icon: Disc,
-        titleKey: 'pacs.viewer.exportCdTitle',
-        titleDefault: 'CD media package',
-        detailKey: 'pacs.viewer.exportCdDetail',
-        detailDefault: 'DICOMDIR-compatible media ZIP ready to write to disc.',
-        filenameSuffix: 'cd-media.zip'
     }
 ];
 
 const SURFACE =
-    'border border-white/10 bg-[#0b111d]/95 shadow-2xl shadow-black/45 backdrop-blur-xl';
+    'border border-white/10 bg-[#080d19]/95 shadow-2xl shadow-black/50 backdrop-blur-2xl';
 const PANEL =
-    'border border-white/10 bg-[#090f1a]/96 shadow-xl shadow-black/35 backdrop-blur-xl';
+    'border border-white/10 bg-[#060a14]/96 shadow-xl shadow-black/40 backdrop-blur-2xl';
 const ICON_BUTTON =
-    'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-slate-400 transition duration-150 hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 disabled:cursor-not-allowed disabled:opacity-40';
+    'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-all duration-150 hover:bg-white/10 hover:text-white focus-visible:outline-none active:scale-95 disabled:cursor-not-allowed disabled:opacity-40';
 const TOOL_BUTTON = (active) =>
-    `relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xs font-bold transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 ${
+    `relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-black transition-all duration-200 focus-visible:outline-none ${
         active
-            ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-500/20'
-            : 'text-slate-400 hover:bg-white/[0.08] hover:text-white'
+            ? 'bg-gradient-to-r from-cyan-400 to-teal-400 text-slate-950 shadow-md shadow-cyan-400/30 ring-1 ring-cyan-300'
+            : 'text-slate-400 hover:bg-white/10 hover:text-white'
     }`;
 const PRIMARY_BUTTON =
-    'inline-flex min-h-9 items-center justify-center gap-2 rounded-md bg-cyan-400 px-4 text-xs font-black text-slate-950 transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50';
+    'inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-cyan-400 to-teal-400 px-4 text-xs font-black text-slate-950 shadow-md shadow-cyan-400/25 transition hover:brightness-110 focus-visible:outline-none active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50';
 const SECONDARY_BUTTON =
-    'inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.045] px-4 text-xs font-bold text-slate-200 transition hover:border-white/20 hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50';
+    'inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-white/12 bg-white/[0.05] px-4 text-xs font-bold text-slate-200 transition hover:border-white/25 hover:bg-white/[0.09] focus-visible:outline-none active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50';
 
 const normalizeUidList = (value = '') =>
     String(value)
@@ -279,6 +270,7 @@ const PacsViewer = () => {
     const [exportPanelOpen, setExportPanelOpen] = useState(false);
     const [selectedExportStudyUid, setSelectedExportStudyUid] = useState('');
     const [exportState, setExportState] = useState({ status: 'idle', format: '', error: '' });
+    const [seriesSearch, setSeriesSearch] = useState('');
 
     const studyUids = requestedStudyUids || resolvedStudyUids;
     const studyUidList = useMemo(() => normalizeUidList(studyUids), [studyUids]);
@@ -287,6 +279,15 @@ const PacsViewer = () => {
     const seriesGroups = useMemo(() => {
         return groupInstancesBySeries(rawInstances);
     }, [rawInstances]);
+
+    const filteredSeriesGroups = useMemo(() => {
+        if (!seriesSearch.trim()) return seriesGroups;
+        const term = seriesSearch.trim().toLowerCase();
+        return seriesGroups.filter((s, idx) => {
+            const text = `${s.seriesDescription || ''} ${s.modality || ''} ${s.seriesNumber || idx + 1}`.toLowerCase();
+            return text.includes(term);
+        });
+    }, [seriesGroups, seriesSearch]);
 
     const activeSeries = useMemo(() => {
         if (!seriesGroups.length) return null;
@@ -309,6 +310,35 @@ const PacsViewer = () => {
         });
         return `${base}/viewer?${query.toString()}`;
     }, [lang, studyUids, viewerAuthorized]);
+
+    // Keyboard Shortcuts Listener for Diagnostics
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+            const key = e.key.toLowerCase();
+            if (key === 's') {
+                e.preventDefault();
+                setSidebarOpen((prev) => !prev);
+            } else if (key === 'i') {
+                e.preventDefault();
+                setDrawerOpen((prev) => !prev);
+            } else if (key === ' ') {
+                e.preventDefault();
+                setIsCinePlaying((prev) => !prev);
+            } else if (key === 'w') {
+                setActiveTool('wl');
+            } else if (key === 'z') {
+                setActiveTool('zoom');
+            } else if (key === 'p') {
+                setActiveTool('pan');
+            } else if (key === 'm') {
+                setActiveTool('ruler');
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     const startSession = useCallback(
         async ({ retry = false, resetContext = false } = {}) => {
@@ -831,78 +861,30 @@ const PacsViewer = () => {
                 t={t}
             />
 
-            {/* Central Viewport Area with Series Thumbnail Carousel */}
-            <div className="relative flex min-h-0 flex-1 overflow-hidden bg-[#050914]">
-                {/* Series Thumbnail Carousel Sidebar */}
-                {sidebarOpen && (
-                    <aside className="z-20 hidden w-72 shrink-0 flex-col overflow-hidden border-e border-white/10 bg-[#080d17]/98 shadow-2xl shadow-black/40 md:flex">
-                        <div className="flex min-h-14 items-center justify-between border-b border-white/10 px-4">
-                            <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-cyan-300">
-                                <Layers size={14} />
-                                {t('pacs.viewer.series', { defaultValue: 'Series' })} ({seriesGroups.length || 1})
-                            </span>
-                            <button
-                                type="button"
-                                onClick={() => setSidebarOpen(false)}
-                                className={ICON_BUTTON}
-                                title={t('actions.close', { defaultValue: 'Close' })}
-                            >
-                                <ChevronLeft size={16} />
-                            </button>
-                        </div>
-                        <div className="border-b border-white/10 px-4 py-3">
-                            <div className="grid grid-cols-2 gap-2 text-[11px]">
-                                <MetricTile label={t('pacs.viewer.images', { defaultValue: 'Images' })} value={rawInstances.length || caseDetails?.imageCount || '-'} />
-                                <MetricTile label={t('pacs.viewer.modality', { defaultValue: 'Modality' })} value={caseDetails?.modality || orderContext?.modality_name || '-'} />
-                            </div>
-                        </div>
-                        <div className="flex-1 space-y-2 overflow-y-auto p-3">
-                            {seriesGroups.length === 0 ? (
-                                <div className="rounded-md border border-dashed border-white/10 p-4 text-center text-xs text-slate-500">
-                                    {t('pacs.viewer.noSeriesDetected', { defaultValue: 'No DICOM series detected' })}
-                                </div>
-                            ) : (
-                                seriesGroups.map((s, idx) => {
-                                    const isSelected = (activeSeries?.seriesInstanceUid === s.seriesInstanceUid) || (!selectedSeriesUid && idx === 0);
-                                    return (
-                                        <button
-                                            key={s.seriesInstanceUid}
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedSeriesUid(s.seriesInstanceUid);
-                                                setActiveFrameIndex(0);
-                                            }}
-                                            className={`group w-full rounded-md border p-3 text-start transition-all ${
-                                                isSelected
-                                                    ? 'border-cyan-400/70 bg-cyan-400/10 text-white ring-1 ring-cyan-400/30'
-                                                    : 'border-white/10 bg-white/[0.025] text-slate-400 hover:border-white/20 hover:bg-white/[0.055] hover:text-slate-200'
-                                            }`}
-                                        >
-                                            <div className="mb-3 flex aspect-[16/9] items-center justify-center rounded-md border border-white/10 bg-black/45">
-                                                <Monitor size={24} className={isSelected ? 'text-cyan-300' : 'text-slate-600 group-hover:text-slate-400'} />
-                                            </div>
-                                            <div className="flex items-center justify-between gap-2 text-[11px] font-bold">
-                                                <span className="rounded bg-cyan-400/15 px-1.5 py-0.5 text-[10px] text-cyan-300">
-                                                    {s.modality || 'DICOM'}
-                                                </span>
-                                                <span className="text-slate-500">{t('pacs.viewer.seriesNumber', { defaultValue: 'Series #{{number}}', number: s.seriesNumber || idx + 1 })}</span>
-                                            </div>
-                                            <p className="mt-2 truncate text-xs font-bold text-slate-100">
-                                                {s.seriesDescription || `Series ${idx + 1}`}
-                                            </p>
-                                            <p className="mt-1 text-[10px] text-slate-500">
-                                                {t('pacs.viewer.imageFrames', { defaultValue: '{{count}} images / frames', count: s.instances?.length || 1 })}
-                                            </p>
-                                        </button>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </aside>
-                )}
+            {/* Central Viewport Area with Series Navigation */}
+            <div className="relative grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden bg-[#030712] p-2 md:grid-cols-[auto_minmax(0,1fr)]">
+                <SeriesSidebar
+                    open={sidebarOpen}
+                    onClose={() => setSidebarOpen(false)}
+                    seriesGroups={seriesGroups}
+                    filteredSeriesGroups={filteredSeriesGroups}
+                    activeSeries={activeSeries}
+                    selectedSeriesUid={selectedSeriesUid}
+                    onSelectSeries={(seriesUid) => {
+                        setSelectedSeriesUid(seriesUid);
+                        setActiveFrameIndex(0);
+                    }}
+                    seriesSearch={seriesSearch}
+                    onSeriesSearchChange={setSeriesSearch}
+                    rawInstances={rawInstances}
+                    caseDetails={caseDetails}
+                    orderContext={orderContext}
+                    metadataState={metadataState}
+                    t={t}
+                />
 
                 {/* Main Viewing Viewport */}
-                <section className="relative flex flex-1 flex-col overflow-hidden bg-black">
+                <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/10 bg-black shadow-2xl shadow-black/40">
                     {!sidebarOpen && (
                         <button
                             type="button"
@@ -1073,7 +1055,6 @@ const PacsViewer = () => {
 
 // Native Canvas Engine Component (HTML5/Canvas Fallback Viewer)
 const NativeCanvasViewport = memo(({ activeSeries, activeFrameIndex, activeTool, activePreset, gridMode, isKeyImage, onToggleKeyImage, showAiOverlay, qualityReport }) => {
-    const canvasRef = useRef(null);
     const [zoom, setZoom] = useState(1.0);
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [rotation, setRotation] = useState(0);
@@ -1154,27 +1135,59 @@ const NativeCanvasViewport = memo(({ activeSeries, activeFrameIndex, activeTool,
             onMouseUp={handleMouseUp}
             onWheel={handleWheel}
         >
-            {/* Viewport Overlay Indicators */}
-            <div className="pointer-events-none absolute start-3 top-3 z-10 max-w-[calc(100%-1.5rem)] space-y-0.5 rounded-md border border-white/10 bg-[#080d17]/85 px-3 py-2 font-mono text-[11px] font-bold text-cyan-300 shadow-xl backdrop-blur-md sm:max-w-md">
+            {/* Clean Viewport Overlay Indicators */}
+            <div className="pointer-events-none absolute start-3 top-3 z-10 max-w-[calc(100%-1.5rem)] space-y-0.5 rounded-lg border border-white/10 bg-[#080d17]/85 px-3 py-2 font-mono text-[11px] font-bold text-cyan-300 shadow-xl backdrop-blur-md sm:max-w-md">
                 <p className="truncate">{activeSeries?.seriesDescription || 'DICOM Viewport'}</p>
-                <p className="truncate text-[10px] text-slate-400">Modality: {activeSeries?.modality || 'CR'} | Preset: {presetObj.label}</p>
+                <p className="truncate text-[10px] text-slate-400">Modality: {activeSeries?.modality || 'CR'} | Preset: {presetObj.label} | Grid: {gridMode}</p>
             </div>
 
-            <div className="pointer-events-none absolute end-3 top-16 z-10 space-y-0.5 rounded-md border border-white/10 bg-[#080d17]/85 px-3 py-2 text-end font-mono text-[10px] font-bold text-slate-400 shadow-xl backdrop-blur-md sm:top-3">
+            <div className="hidden pointer-events-none absolute end-3 top-3 z-10 space-y-0.5 rounded-lg border border-white/10 bg-[#080d17]/85 px-3 py-2 text-end font-mono text-[10px] font-bold text-slate-400 shadow-xl backdrop-blur-md">
+                <p>Zoom: {Math.round(zoom * 100)}%</p>
+                <p>Rot: {rotation}° | Invert: {invert ? 'ON' : 'OFF'}</p>
+            </div>
+
+            <div className="pointer-events-none absolute end-3 top-3 z-10 space-y-0.5 rounded-lg border border-white/10 bg-[#080d17]/85 px-3 py-2 text-end font-mono text-[10px] font-bold text-slate-400 shadow-xl backdrop-blur-md">
                 <p>Zoom: {Math.round(zoom * 100)}%</p>
                 <p>Rot: {rotation} deg | Invert: {invert ? 'ON' : 'OFF'}</p>
             </div>
 
-            {/* Controls Bar Overlay */}
-            <div className="absolute start-1/2 top-3 z-10 hidden -translate-x-1/2 items-center gap-1 rounded-md border border-white/10 bg-[#080d17]/90 px-2 py-1 shadow-xl backdrop-blur-md md:flex">
-                <button type="button" onClick={() => setZoom(z => Math.min(8, z + 0.2))} className={ICON_BUTTON} title="Zoom In"><ZoomIn size={15} /></button>
-                <button type="button" onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} className={ICON_BUTTON} title="Zoom Out"><ZoomOut size={15} /></button>
-                <button type="button" onClick={() => setRotation(r => (r + 90) % 360)} className={ICON_BUTTON} title="Rotate 90 deg"><RotateCw size={15} /></button>
-                <button type="button" onClick={() => setFlipH(f => !f)} className={ICON_BUTTON} title="Flip Horizontal"><FlipHorizontal size={15} /></button>
-                <button type="button" onClick={() => setFlipV(f => !f)} className={ICON_BUTTON} title="Flip Vertical"><FlipVertical size={15} /></button>
-                <button type="button" onClick={() => setInvert(i => !i)} className={ICON_BUTTON} title="Invert Colors"><Eye size={15} /></button>
-                <button type="button" onClick={onToggleKeyImage} className={`${ICON_BUTTON} ${isKeyImage ? 'text-amber-400' : ''}`} title="Mark Key Image"><Star size={15} className={isKeyImage ? 'fill-amber-400' : ''} /></button>
-                <button type="button" onClick={resetTransforms} className={ICON_BUTTON} title="Reset Viewport"><RotateCcw size={15} /></button>
+            {showAiOverlay && (
+                <div className="pointer-events-none absolute start-3 bottom-20 z-10 max-w-xs rounded-xl border border-violet-300/20 bg-violet-400/10 px-3 py-2 text-xs font-bold text-violet-100 shadow-xl backdrop-blur-md">
+                    <p className="flex items-center gap-2">
+                        <Sparkles size={14} />
+                        {qualityReport?.summary || 'AI quality overlay ready'}
+                    </p>
+                </div>
+            )}
+
+            <div className="absolute end-3 bottom-20 z-20 hidden items-center gap-1 rounded-xl border border-white/10 bg-[#07111b]/88 p-1.5 shadow-2xl shadow-black/40 backdrop-blur-md md:flex">
+                <button type="button" onClick={() => setZoom((value) => Math.max(0.2, value - 0.1))} className={ICON_BUTTON} title="Zoom out">
+                    <ZoomOut size={15} />
+                </button>
+                <button type="button" onClick={() => setZoom((value) => Math.min(8, value + 0.1))} className={ICON_BUTTON} title="Zoom in">
+                    <ZoomIn size={15} />
+                </button>
+                <button type="button" onClick={() => setRotation((value) => (value - 90 + 360) % 360)} className={ICON_BUTTON} title="Rotate left">
+                    <RotateCcw size={15} />
+                </button>
+                <button type="button" onClick={() => setRotation((value) => (value + 90) % 360)} className={ICON_BUTTON} title="Rotate right">
+                    <RotateCw size={15} />
+                </button>
+                <button type="button" onClick={() => setFlipH((value) => !value)} className={TOOL_BUTTON(flipH)} title="Flip horizontal">
+                    <FlipHorizontal size={15} />
+                </button>
+                <button type="button" onClick={() => setFlipV((value) => !value)} className={TOOL_BUTTON(flipV)} title="Flip vertical">
+                    <FlipVertical size={15} />
+                </button>
+                <button type="button" onClick={() => setInvert((value) => !value)} className={TOOL_BUTTON(invert)} title="Invert image">
+                    <Eye size={15} />
+                </button>
+                <button type="button" onClick={onToggleKeyImage} className={TOOL_BUTTON(isKeyImage)} title="Key image">
+                    <Star size={15} />
+                </button>
+                <button type="button" onClick={resetTransforms} className={ICON_BUTTON} title="Reset viewport">
+                    <RotateCcw size={15} />
+                </button>
             </div>
 
             {/* Diagnostic Interactive Grid Display */}
@@ -1221,9 +1234,165 @@ const NativeCanvasViewport = memo(({ activeSeries, activeFrameIndex, activeTool,
 });
 NativeCanvasViewport.displayName = 'NativeCanvasViewport';
 
+const SeriesSidebar = memo(({
+    open,
+    onClose,
+    seriesGroups,
+    filteredSeriesGroups,
+    activeSeries,
+    selectedSeriesUid,
+    onSelectSeries,
+    seriesSearch,
+    onSeriesSearchChange,
+    rawInstances,
+    caseDetails,
+    orderContext,
+    metadataState,
+    t,
+}) => {
+    if (!open) return null;
+
+    const imageCount = rawInstances.length || caseDetails?.imageCount || 0;
+    const seriesCount = seriesGroups.length || filteredSeriesGroups.length || 0;
+    const modality = caseDetails?.modality || orderContext?.modality_name || '-';
+
+    return (
+        <aside className="z-20 hidden h-full w-[18rem] shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#07111b]/96 shadow-2xl shadow-black/45 backdrop-blur-2xl md:flex md:flex-col">
+            <div className="border-b border-white/10 bg-white/[0.025] p-3">
+                <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-emerald-300">
+                            <Layers size={14} />
+                            {t('pacs.viewer.series', { defaultValue: 'Series' })}
+                        </p>
+                        <p className="mt-1 truncate text-xs font-semibold text-slate-400">
+                            {t('pacs.viewer.seriesReady', {
+                                defaultValue: '{{count}} stacks ready',
+                                count: seriesCount || 1,
+                            })}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/35 text-slate-300 transition hover:border-emerald-300/50 hover:bg-emerald-400/10 hover:text-white"
+                        title={t('actions.close', { defaultValue: 'Close' })}
+                    >
+                        <ChevronLeft size={16} />
+                    </button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-1.5">
+                    <MetricTile label={t('pacs.viewer.images', { defaultValue: 'Images' })} value={imageCount || '-'} />
+                    <MetricTile label={t('pacs.viewer.series', { defaultValue: 'Series' })} value={seriesCount || 1} />
+                    <MetricTile label={t('pacs.viewer.modality', { defaultValue: 'Modality' })} value={modality} />
+                </div>
+
+                <div className="relative mt-3">
+                    <Search size={13} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                        type="text"
+                        value={seriesSearch}
+                        onChange={(event) => onSeriesSearchChange(event.target.value)}
+                        placeholder={t('pacs.viewer.filterSeries', { defaultValue: 'Filter series...' })}
+                        className="h-9 w-full rounded-lg border border-white/10 bg-black/35 ps-8 pe-8 text-xs font-semibold text-slate-200 placeholder-slate-500 outline-none transition focus:border-emerald-300/60 focus:bg-black/50"
+                    />
+                    {seriesSearch && (
+                        <button
+                            type="button"
+                            onClick={() => onSeriesSearchChange('')}
+                            className="absolute end-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 transition hover:bg-white/10 hover:text-white"
+                            title={t('actions.clear', { defaultValue: 'Clear' })}
+                        >
+                            <X size={12} />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2.5">
+                {filteredSeriesGroups.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-5 text-center">
+                        <ImageOff size={22} className="mx-auto text-slate-600" />
+                        <p className="mt-2 text-xs font-bold text-slate-400">
+                            {seriesSearch
+                                ? t('pacs.viewer.noMatchingSeries', { defaultValue: 'No series match filter' })
+                                : t('pacs.viewer.noSeriesDetected', { defaultValue: 'No DICOM series detected' })}
+                        </p>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {filteredSeriesGroups.map((series, idx) => {
+                            const isSelected =
+                                activeSeries?.seriesInstanceUid === series.seriesInstanceUid ||
+                                (!selectedSeriesUid && idx === 0);
+
+                            return (
+                                <button
+                                    key={series.seriesInstanceUid}
+                                    type="button"
+                                    onClick={() => onSelectSeries(series.seriesInstanceUid)}
+                                    className={`group w-full rounded-xl border p-2.5 text-start transition-all ${
+                                        isSelected
+                                            ? 'border-emerald-300/70 bg-emerald-400/12 text-white shadow-lg shadow-emerald-950/30 ring-1 ring-emerald-300/25'
+                                            : 'border-white/10 bg-white/[0.025] text-slate-400 hover:border-white/20 hover:bg-white/[0.06] hover:text-slate-100'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`flex h-14 w-16 shrink-0 items-center justify-center rounded-lg border ${
+                                            isSelected
+                                                ? 'border-emerald-300/40 bg-emerald-400/15'
+                                                : 'border-white/10 bg-black/35'
+                                        }`}>
+                                            <Monitor size={22} className={isSelected ? 'text-emerald-200' : 'text-slate-600 group-hover:text-slate-400'} />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${
+                                                    isSelected ? 'bg-emerald-300 text-emerald-950' : 'bg-white/10 text-slate-300'
+                                                }`}>
+                                                    {series.modality || 'DICOM'}
+                                                </span>
+                                                <span className="font-mono text-[10px] font-bold text-slate-500">
+                                                    {String(series.seriesNumber || idx + 1).padStart(2, '0')}
+                                                </span>
+                                            </div>
+                                            <p className="mt-1.5 truncate text-xs font-black text-slate-100">
+                                                {series.seriesDescription || t('pacs.viewer.seriesNumber', { defaultValue: 'Series #{{number}}', number: idx + 1 })}
+                                            </p>
+                                            <p className="mt-1 text-[10px] font-semibold text-slate-500">
+                                                {t('pacs.viewer.imageFrames', { defaultValue: '{{count}} images / frames', count: series.instances?.length || 1 })}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            <div className="border-t border-white/10 bg-black/25 p-2.5">
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                    <span className="flex items-center gap-2 text-[11px] font-bold text-slate-400">
+                        <span className={`h-2 w-2 rounded-full ${metadataState === 'ready' ? 'bg-emerald-300' : 'bg-amber-300'}`} />
+                        {t('pacs.viewer.metadata', { defaultValue: 'Metadata' })}
+                    </span>
+                    <span className="text-[11px] font-black text-slate-200">
+                        {metadataState === 'ready'
+                            ? t('common.ready', { defaultValue: 'Ready' })
+                            : t('common.loading', { defaultValue: 'Loading' })}
+                    </span>
+                </div>
+            </div>
+        </aside>
+    );
+});
+SeriesSidebar.displayName = 'SeriesSidebar';
+
 const MetricTile = memo(({ label, value }) => (
-    <div className="min-w-0 rounded-md border border-white/10 bg-white/[0.035] px-3 py-2">
-        <p className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
+    <div className="min-w-0 rounded-lg border border-white/10 bg-white/[0.035] px-2 py-2">
+        <p className="truncate text-[9px] font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
         <p className="mt-1 truncate font-mono text-xs font-black text-slate-100">{value}</p>
     </div>
 ));
@@ -1249,34 +1418,30 @@ const ViewportStatusBar = memo(({
             : t('pacs.viewer.metadataPending', { defaultValue: 'Metadata pending' });
 
     return (
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 hidden items-center justify-between gap-3 rounded-md border border-white/10 bg-[#080d17]/82 px-3 py-2 text-[11px] font-bold text-slate-300 shadow-xl backdrop-blur-md md:flex">
-            <div className="flex min-w-0 items-center gap-3">
-                <span className="inline-flex items-center gap-1.5 text-cyan-300">
-                    <Server size={13} />
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 hidden items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#06101a]/86 px-3 py-2 text-[11px] font-bold text-slate-300 shadow-2xl shadow-black/40 backdrop-blur-md md:flex">
+            <div className="flex min-w-0 items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400/10 px-2 py-1 text-emerald-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(52,211,153,0.85)]" />
+                    <Server size={12} />
                     {stateLabel}
                 </span>
-                <span className="h-4 w-px bg-white/10" />
-                <span className="truncate font-mono text-slate-400">
+                <span className="truncate rounded-lg border border-white/10 bg-black/25 px-2 py-1 font-mono text-slate-400">
                     {t('pacs.viewer.accessionShort', { defaultValue: 'ACC' })}: {accession}
                 </span>
-                <span className="hidden truncate text-slate-500 lg:inline">
+                <span className="hidden max-w-[28rem] truncate rounded-lg bg-white/[0.04] px-2 py-1 text-slate-400 lg:inline">
                     {activeSeries?.seriesDescription || t('pacs.viewer.noSeries', { defaultValue: 'No series selected' })}
                 </span>
             </div>
-            <div className="flex shrink-0 items-center gap-3">
-                <span className="font-mono text-slate-400">
+            <div className="flex shrink-0 items-center gap-2">
+                <span className="rounded-lg border border-white/10 bg-black/25 px-2 py-1 font-mono text-slate-300">
                     {Math.min(frameIndex + 1, framesCount || 1)} / {framesCount || 1}
                 </span>
-                <span className="h-4 w-px bg-white/10" />
-                <span className="text-slate-500">{metadataLabel}</span>
+                <span className="rounded-lg bg-white/[0.04] px-2 py-1 text-slate-400">{metadataLabel}</span>
                 {qualityCount > 0 && (
-                    <>
-                        <span className="h-4 w-px bg-white/10" />
-                        <span className="inline-flex items-center gap-1 text-amber-300">
-                            <AlertTriangle size={13} />
-                            {qualityCount}
-                        </span>
-                    </>
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-amber-400/10 px-2 py-1 text-amber-200">
+                        <AlertTriangle size={12} />
+                        {qualityCount}
+                    </span>
                 )}
             </div>
         </div>
@@ -1316,13 +1481,21 @@ const ViewerToolbar = memo(
         exportBusy,
         qualityCount,
         t
-    }) => (
-        <header className="relative z-30 flex min-h-16 shrink-0 items-center gap-3 border-b border-white/10 bg-[#080d17]/98 px-3 shadow-2xl shadow-black/25 backdrop-blur-xl sm:px-4">
-            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+    }) => {
+        const toolItems = [
+            { id: 'pan', icon: Move, title: t('pacs.viewer.panTool', { defaultValue: 'Pan tool (P)' }) },
+            { id: 'zoom', icon: ZoomIn, title: t('pacs.viewer.zoomTool', { defaultValue: 'Zoom tool (Z)' }) },
+            { id: 'wl', icon: SunMedium, title: t('pacs.viewer.windowLevelTool', { defaultValue: 'Window / level (W)' }) },
+            { id: 'ruler', icon: Ruler, title: t('pacs.viewer.rulerTool', { defaultValue: 'Ruler measurement (M)' }) },
+        ];
+
+        return (
+        <header className="relative z-30 grid min-h-16 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-white/10 bg-[#07111b]/98 px-2.5 shadow-2xl shadow-black/25 backdrop-blur-xl lg:grid-cols-[minmax(18rem,1fr)_auto_minmax(16rem,1fr)] sm:px-3">
+            <div className="flex min-w-0 items-center gap-2">
                 <button
                     type="button"
                     onClick={onExit}
-                    className={ICON_BUTTON}
+                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-black/25 text-slate-300 transition hover:border-emerald-300/50 hover:bg-emerald-400/10 hover:text-white"
                     aria-label={t('actions.back', { defaultValue: 'Back' })}
                     title={t('actions.back', { defaultValue: 'Back' })}
                 >
@@ -1338,54 +1511,69 @@ const ViewerToolbar = memo(
                     <Layers size={16} />
                 </button>
 
-                <div className="hidden h-5 w-px bg-white/10 sm:block" />
-
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
                     <div className="flex min-w-0 items-center gap-2">
                         <h1 className="truncate text-sm font-black text-white">
                             {patientLabel}
                         </h1>
-                        <span className="hidden rounded-md bg-cyan-400/15 px-1.5 py-0.5 text-[10px] font-black uppercase text-cyan-300 sm:inline-block">
+                        <span className="hidden rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-black uppercase text-emerald-200 sm:inline-block">
                             {modality}
                         </span>
+                        <span className="relative flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                        </span>
                     </div>
-                    <p className="truncate text-[11px] font-medium text-slate-400">
-                        {studyLabel} <span className="text-slate-600">|</span> {t('pacs.viewer.accessionShort', { defaultValue: 'ACC' })}: {accession}
-                    </p>
+                    <div className="flex items-center gap-2">
+                        <p className="truncate text-[11px] font-medium text-slate-400">
+                            {studyLabel} <span className="text-slate-600">|</span> <span className="font-mono text-slate-300">{t('pacs.viewer.accessionShort', { defaultValue: 'ACC' })}: {accession}</span>
+                        </p>
+                    </div>
                 </div>
             </div>
 
-            {/* Center Diagnostic Tools Toolbar */}
-            <div className="hidden items-center gap-1 rounded-md border border-white/10 bg-white/[0.045] p-1 lg:flex">
-                <button type="button" onClick={() => setActiveTool('pan')} className={TOOL_BUTTON(activeTool === 'pan')} title={t('pacs.viewer.panTool', { defaultValue: 'Pan tool (P)' })}><Move size={16} /></button>
-                <button type="button" onClick={() => setActiveTool('zoom')} className={TOOL_BUTTON(activeTool === 'zoom')} title={t('pacs.viewer.zoomTool', { defaultValue: 'Zoom tool (Z)' })}><ZoomIn size={16} /></button>
-                <button type="button" onClick={() => setActiveTool('wl')} className={TOOL_BUTTON(activeTool === 'wl')} title={t('pacs.viewer.windowLevelTool', { defaultValue: 'Window / level (W)' })}><SunMedium size={16} /></button>
-                <button type="button" onClick={() => setActiveTool('ruler')} className={TOOL_BUTTON(activeTool === 'ruler')} title={t('pacs.viewer.rulerTool', { defaultValue: 'Ruler measurement (M)' })}><Ruler size={16} /></button>
-                
-                {/* W/L Preset Dropdown Selector */}
+            <div className="hidden items-center gap-1.5 rounded-xl border border-white/10 bg-black/25 p-1.5 lg:flex">
+                {toolItems.map(({ id, icon: Icon, title }) => (
+                    <button
+                        key={id}
+                        type="button"
+                        onClick={() => setActiveTool(id)}
+                        className={TOOL_BUTTON(activeTool === id)}
+                        title={title}
+                    >
+                        <Icon size={16} />
+                    </button>
+                ))}
                 <select
                     value={activePreset}
-                    onChange={e => setActivePreset(e.target.value)}
-                    className="h-8 max-w-44 rounded-md border border-white/10 bg-[#101827] px-2 text-[11px] font-bold text-slate-200 outline-none focus:ring-1 focus:ring-cyan-400"
+                    onChange={(event) => setActivePreset(event.target.value)}
+                    className="h-8 max-w-40 rounded-lg border border-white/10 bg-[#0d1724] px-2 text-[11px] font-bold text-slate-200 outline-none focus:ring-1 focus:ring-emerald-300/80"
+                    title={t('pacs.viewer.windowPreset', { defaultValue: 'Window preset' })}
                 >
-                    {WL_PRESETS.map(p => (
-                        <option key={p.id} value={p.id}>{p.label}</option>
+                    {WL_PRESETS.map((preset) => (
+                        <option key={preset.id} value={preset.id}>{preset.label}</option>
                     ))}
                 </select>
-
-                <div className="mx-1 h-4 w-px bg-white/10" />
-
-                {/* Viewport Grid Layout Selector */}
+                <span className="mx-0.5 h-5 w-px bg-white/10" />
                 <button type="button" onClick={() => setGridMode('1x1')} className={TOOL_BUTTON(gridMode === '1x1')} title={t('pacs.viewer.singleViewport', { defaultValue: 'Single viewport (1x1)' })}><Grid size={15} /></button>
                 <button type="button" onClick={() => setGridMode('1x2')} className={TOOL_BUTTON(gridMode === '1x2')} title={t('pacs.viewer.dualViewport', { defaultValue: 'Dual viewport (1x2)' })}><Sliders size={15} /></button>
+                <button type="button" onClick={() => setIsCinePlaying((playing) => !playing)} className={TOOL_BUTTON(isCinePlaying)} title={isCinePlaying ? t('pacs.viewer.pauseCine', { defaultValue: 'Pause cine' }) : t('pacs.viewer.playCine', { defaultValue: 'Play cine' })}>
+                    {isCinePlaying ? <Pause size={15} /> : <Play size={15} />}
+                </button>
             </div>
 
-            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-1.5">
+                {retrying && (
+                    <span className="hidden items-center gap-1.5 rounded-lg border border-amber-300/20 bg-amber-300/10 px-2.5 py-2 text-[11px] font-black text-amber-200 xl:inline-flex">
+                        <Loader2 size={13} className="animate-spin" />
+                        {t('pacs.viewer.retrying', { defaultValue: 'Retrying' })}
+                    </span>
+                )}
                 {canOpenReport && (
                     <button
                         type="button"
                         onClick={onOpenReport}
-                        className={PRIMARY_BUTTON}
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-3 text-xs font-black text-white shadow-lg shadow-emerald-950/35 transition hover:bg-emerald-400 disabled:opacity-50"
                         title={t('pacs.viewer.openReport', { defaultValue: 'Open report editor' })}
                     >
                         <FileText size={15} />
@@ -1399,7 +1587,7 @@ const ViewerToolbar = memo(
                     type="button"
                     onClick={onOpenExport}
                     disabled={loading || exportBusy}
-                    className={SECONDARY_BUTTON}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.045] px-3 text-xs font-black text-slate-200 transition hover:border-emerald-300/40 hover:bg-emerald-400/10 disabled:cursor-not-allowed disabled:opacity-40"
                     title={t('pacs.viewer.exportCase', { defaultValue: 'Export case' })}
                 >
                     {exportBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
@@ -1423,7 +1611,7 @@ const ViewerToolbar = memo(
                     type="button"
                     onClick={onOpenExternal}
                     disabled={loading}
-                    className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 disabled:cursor-not-allowed disabled:opacity-40 sm:inline-flex"
+                    className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.035] text-slate-400 transition hover:border-emerald-300/40 hover:bg-emerald-400/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70 disabled:cursor-not-allowed disabled:opacity-40 sm:inline-flex"
                     title={t('pacs.viewer.openStandalone', { defaultValue: 'Open standalone viewer' })}
                 >
                     <ExternalLink size={16} />
@@ -1455,7 +1643,8 @@ const ViewerToolbar = memo(
                 </button>
             </div>
         </header>
-    )
+        );
+    }
 );
 ViewerToolbar.displayName = 'ViewerToolbar';
 
@@ -1685,15 +1874,7 @@ const ExportCasePanel = memo(({
                     })}
                 </div>
 
-                <div className="border-t border-white/10 bg-white/[0.025] px-5 py-4">
-                    <div className="flex gap-3 rounded-md border border-amber-400/20 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
-                        <Disc size={16} className="mt-0.5 shrink-0 text-amber-300" />
-                        <p>
-                            {t('pacs.viewer.cdBurnHelp', {
-                                defaultValue: 'CD export downloads a DICOMDIR-compatible media package. Write the extracted package to disc using the workstation burner so the DICOMDIR remains at the disc root.'
-                            })}
-                        </p>
-                    </div>
+                <div className="border-t border-white/10 bg-white/[0.025] px-5 py-3">
 
                     {exportState.status === 'done' && (
                         <p className="mt-3 flex items-center gap-2 text-xs font-bold text-cyan-300">
@@ -1729,88 +1910,114 @@ const InfoDrawer = memo(
         onClose,
         isRtl,
         studyUidList,
+        lang,
+        sessionState,
         copied,
         onCopy,
         caseDetails,
         orderContext,
         metadataState,
         qualityReport,
+        qualityState,
         t
     }) => {
         if (!open) return null;
 
+        const details = [
+            [t('pacs.viewer.patientName', { defaultValue: 'Patient Name' }), caseDetails?.patientName || orderContext?.patient_name || '-'],
+            [t('pacs.viewer.patientIdMrn', { defaultValue: 'Patient ID / MRN' }), caseDetails?.patientId || '-'],
+            [t('pacs.viewer.accessionNumber', { defaultValue: 'Accession #' }), caseDetails?.accessionNumber || orderContext?.order_number || '-'],
+            [t('pacs.viewer.studyDate', { defaultValue: 'Study Date' }), caseDetails?.studyDate || '-'],
+            [t('pacs.viewer.modality', { defaultValue: 'Modality' }), caseDetails?.modality || orderContext?.modality_name || '-'],
+            [t('pacs.viewer.language', { defaultValue: 'Language' }), String(lang || '-').toUpperCase()],
+        ];
+
         return (
-            <aside className="fixed bottom-14 end-0 top-16 z-40 w-[22rem] max-w-[92vw] space-y-5 overflow-y-auto border-s border-white/10 bg-[#080d17]/98 p-5 shadow-2xl shadow-black/50 backdrop-blur-xl animate-in slide-in-from-end duration-200 lg:bottom-0">
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                    <h3 className="flex items-center gap-2 text-sm font-black text-white">
-                        <Info size={16} className="text-cyan-300" />
-                        {t('pacs.viewer.studyDetailsTitle', { defaultValue: 'Study details & DICOM metadata' })}
-                    </h3>
-                    <button type="button" onClick={onClose} className={ICON_BUTTON} title={t('actions.close', { defaultValue: 'Close' })}>
-                        <X size={16} />
-                    </button>
-                </div>
-
-                {/* Patient & Study Summary */}
-                <div className="space-y-3 rounded-md border border-white/10 bg-white/[0.035] p-3.5 text-xs">
-                    <div className="flex items-center justify-between">
-                        <span className="text-zinc-400">{t('pacs.viewer.patientName', { defaultValue: 'Patient Name' })}</span>
-                        <span className="font-bold text-white">{caseDetails?.patientName || orderContext?.patient_name || '-'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-zinc-400">{t('pacs.viewer.patientIdMrn', { defaultValue: 'Patient ID / MRN' })}</span>
-                        <span className="font-mono text-zinc-300">{caseDetails?.patientId || '-'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-zinc-400">{t('pacs.viewer.accessionNumber', { defaultValue: 'Accession #' })}</span>
-                        <span className="font-mono text-zinc-300">{caseDetails?.accessionNumber || orderContext?.order_number || '-'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-zinc-400">{t('pacs.viewer.studyDate', { defaultValue: 'Study Date' })}</span>
-                        <span className="font-mono text-zinc-300">{caseDetails?.studyDate || '-'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-zinc-400">{t('pacs.viewer.modality', { defaultValue: 'Modality' })}</span>
-                        <span className="font-bold text-cyan-300">{caseDetails?.modality || '-'}</span>
-                    </div>
-                </div>
-
-                {/* DICOM Study UID & Copy Action */}
-                <div className="space-y-2">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">StudyInstanceUID</span>
-                    <div className="flex items-center gap-2 rounded-md border border-white/10 bg-[#101827] p-2 text-xs font-mono">
-                        <span className="truncate flex-1 text-zinc-300">{studyUidList[0] || '-'}</span>
-                        <button type="button" onClick={onCopy} className="text-zinc-400 hover:text-white" title={t('pacs.viewer.copyStudyUid', { defaultValue: 'Copy Study UID' })}>
-                            {copied ? <Check size={14} className="text-cyan-300" /> : <Copy size={14} />}
+            <aside className={`fixed bottom-14 end-2 top-[4.5rem] z-40 flex w-[23rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#07111b]/98 shadow-2xl shadow-black/55 backdrop-blur-2xl animate-in duration-200 lg:bottom-2 ${isRtl ? 'slide-in-from-left' : 'slide-in-from-right'}`}>
+                <div className="border-b border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-emerald-300">
+                                <Info size={15} />
+                                {t('pacs.viewer.studyDetailsTitle', { defaultValue: 'Study details & DICOM metadata' })}
+                            </p>
+                            <h3 className="mt-2 truncate text-base font-black text-white">
+                                {caseDetails?.patientName || orderContext?.patient_name || t('pacs.viewer.unknownPatient', { defaultValue: 'Unknown patient' })}
+                            </h3>
+                            <p className="mt-1 truncate font-mono text-[11px] font-semibold text-slate-500">
+                                {caseDetails?.accessionNumber || orderContext?.order_number || '-'}
+                            </p>
+                        </div>
+                        <button type="button" onClick={onClose} className={ICON_BUTTON} title={t('actions.close', { defaultValue: 'Close' })}>
+                            <X size={16} />
                         </button>
                     </div>
+
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                        <span className="rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-2 py-2 text-center text-[10px] font-black text-emerald-200">
+                            {sessionState === 'ready' ? t('pacs.viewer.connected', { defaultValue: 'Connected' }) : t('pacs.viewer.connecting', { defaultValue: 'Connecting' })}
+                        </span>
+                        <span className="rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-2 py-2 text-center text-[10px] font-black text-cyan-100">
+                            {metadataState === 'ready' ? t('pacs.viewer.metadataReady', { defaultValue: 'Metadata ready' }) : t('pacs.viewer.metadataPending', { defaultValue: 'Metadata pending' })}
+                        </span>
+                        <span className="rounded-xl border border-violet-300/20 bg-violet-400/10 px-2 py-2 text-center text-[10px] font-black text-violet-100">
+                            {qualityState === 'ready' ? t('pacs.viewer.qualityReady', { defaultValue: 'Quality ready' }) : t('pacs.viewer.qualityPending', { defaultValue: 'Quality pending' })}
+                        </span>
+                    </div>
                 </div>
 
-                {/* Quality Geometry Advisory Warnings */}
-                {qualityReport?.flaggedSeries?.length > 0 && (
-                    <div className="space-y-2 border-t border-white/10 pt-4">
-                        <span className="flex items-center gap-1.5 text-xs font-bold text-rose-400">
-                            <AlertTriangle size={14} />
-                            {t('pacs.viewer.geometryWarnings', {
-                                defaultValue: 'Geometry warnings ({{count}})',
-                                count: qualityReport.flaggedSeries.length
-                            })}
-                        </span>
-                        <div className="space-y-2">
-                            {qualityReport.flaggedSeries.map((s, i) => (
-                                <div key={i} className="space-y-1 rounded-md border border-rose-500/20 bg-rose-500/10 p-2.5 text-xs text-rose-300">
-                                    <p className="font-bold">
-                                        {t('pacs.viewer.seriesNumber', {
-                                            defaultValue: 'Series #{{number}}',
-                                            number: s.seriesNumber || i + 1
-                                        })} - {s.seriesDescription || t('pacs.viewer.seriesLabel', { defaultValue: 'Series' })}
-                                    </p>
-                                        <p className="text-[10px] text-rose-400">{s.warnings?.join(', ')}</p>
+                <div className="flex-1 space-y-4 overflow-y-auto p-4">
+                    <section className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
+                        <div className="grid grid-cols-2 gap-2">
+                            {details.map(([label, value]) => (
+                                <div key={label} className="min-w-0 rounded-lg bg-black/20 px-2.5 py-2">
+                                    <p className="truncate text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">{label}</p>
+                                    <p className="mt-1 truncate text-xs font-black text-slate-100">{value}</p>
                                 </div>
                             ))}
                         </div>
-                    </div>
-                )}
+                    </section>
+
+                    <section className="space-y-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">StudyInstanceUID</span>
+                        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 p-2 text-xs font-mono">
+                            <span className="min-w-0 flex-1 truncate text-slate-300">{studyUidList[0] || '-'}</span>
+                            <button type="button" onClick={onCopy} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 text-slate-400 transition hover:border-emerald-300/40 hover:bg-emerald-400/10 hover:text-white" title={t('pacs.viewer.copyStudyUid', { defaultValue: 'Copy Study UID' })}>
+                                {copied ? <Check size={14} className="text-emerald-300" /> : <Copy size={14} />}
+                            </button>
+                        </div>
+                    </section>
+
+                    {qualityReport?.flaggedSeries?.length > 0 ? (
+                        <section className="space-y-2 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3">
+                            <span className="flex items-center gap-1.5 text-xs font-black text-amber-100">
+                                <AlertTriangle size={14} />
+                                {t('pacs.viewer.geometryWarnings', {
+                                    defaultValue: 'Geometry warnings ({{count}})',
+                                    count: qualityReport.flaggedSeries.length
+                                })}
+                            </span>
+                            {qualityReport.flaggedSeries.map((series, index) => (
+                                <div key={`${series.seriesInstanceUid || index}`} className="rounded-lg border border-amber-200/15 bg-black/20 p-2.5 text-xs text-amber-100">
+                                    <p className="truncate font-black">
+                                        {t('pacs.viewer.seriesNumber', {
+                                            defaultValue: 'Series #{{number}}',
+                                            number: series.seriesNumber || index + 1
+                                        })} - {series.seriesDescription || t('pacs.viewer.seriesLabel', { defaultValue: 'Series' })}
+                                    </p>
+                                    <p className="mt-1 text-[10px] font-semibold text-amber-200/80">{series.warnings?.join(', ')}</p>
+                                </div>
+                            ))}
+                        </section>
+                    ) : (
+                        <section className="rounded-xl border border-emerald-300/15 bg-emerald-400/10 p-3 text-xs font-bold text-emerald-100">
+                            <span className="flex items-center gap-2">
+                                <ShieldCheck size={15} />
+                                {t('pacs.viewer.noQualityWarnings', { defaultValue: 'No quality warnings detected.' })}
+                            </span>
+                        </section>
+                    )}
+                </div>
             </aside>
         );
     }

@@ -1,6 +1,7 @@
 const { AppError } = require('../middleware/errorHandler');
 const crypto = require('crypto');
 const { buildReportHtml } = require('../services/pdfService').default;
+const { buildReportPdf, cleanFilenamePart } = require('../services/reportPdfRenderer');
 const settingsService = require('../services/settingsService');
 const { triggerEvent } = require('../services/notificationJobService');
 const { logAction } = require('../services/auditService');
@@ -435,6 +436,7 @@ const getExamById = (db) => async (req, res, next) => {
 
 const updateReport = (db) => async (req, res, next) => {
     let client;
+    let patientPortalRelease = null;
     try {
         const { examId, status, reportContent, findings, impression, sections, templateId, reportStatus } = req.body;
         const userId = req.user.user_id;
@@ -500,6 +502,15 @@ const updateReport = (db) => async (req, res, next) => {
                     ? getReportStatusForSave(currentReportStatus)
                     : currentReportStatus))
             : currentReportStatus;
+
+        if (newStatus === 'Finalized') {
+            const hasFindings = typeof nextSections.findings === 'string' && nextSections.findings.trim().length > 0;
+            const hasImpression = typeof nextSections.impression === 'string' && nextSections.impression.trim().length > 0;
+            if (!hasFindings || !hasImpression) {
+                await client.query('ROLLBACK');
+                return next(new AppError('Findings and impression are required before finalizing a report', 422));
+            }
+        }
 
         if (isRadiologist) {
             const transitionError = getReportTransitionError(
@@ -590,26 +601,6 @@ const updateReport = (db) => async (req, res, next) => {
             });
         }
 
-        if (newStatus === 'Finalized') {
-            await client.query(`
-                INSERT INTO result_deliveries (
-                    exam_id, appointment_id, patient_id, referring_doctor_id,
-                    delivery_method, recipient_name, delivery_status, delivered_by, notes
-                )
-                SELECT e.exam_id, e.appointment_id, e.patient_id, e.external_referring_doctor_id,
-                       'Patient Portal', p.mrn, 'Delivered', $2, 'Automatically available after report finalization'
-                FROM examinations e
-                JOIN patients p ON e.patient_id = p.patient_id
-                WHERE e.exam_id = $1
-                  AND NOT EXISTS (
-                      SELECT 1 FROM result_deliveries rd
-                      WHERE rd.exam_id = e.exam_id
-                        AND rd.delivery_method = 'Patient Portal'
-                        AND rd.notes = 'Automatically available after report finalization'
-                  )
-            `, [examId, userId]);
-        }
-
         if (checkResult.rows[0].status !== newStatus) {
             await client.query(`
                 INSERT INTO order_status_history (
@@ -642,6 +633,57 @@ const updateReport = (db) => async (req, res, next) => {
             ]);
         }
 
+        if (newStatus === 'Finalized') {
+            const releaseResult = await client.query(`
+                WITH ready AS (
+                    SELECT e.exam_id, e.appointment_id, e.patient_id, e.order_number, p.mrn
+                    FROM examinations e
+                    JOIN patients p ON p.patient_id = e.patient_id
+                    WHERE e.exam_id = $1
+                      AND EXISTS (
+                          SELECT 1 FROM invoices i
+                          WHERE i.invoice_status <> 'Voided'
+                            AND (i.exam_id = e.exam_id OR i.appointment_id = e.appointment_id)
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM invoices i
+                          WHERE i.invoice_status <> 'Voided'
+                            AND (i.exam_id = e.exam_id OR i.appointment_id = e.appointment_id)
+                            AND GREATEST(
+                                COALESCE(i.patient_payable_amount, 0)
+                                - COALESCE((SELECT SUM(pmt.amount) FROM payments pmt
+                                            WHERE pmt.invoice_id = i.invoice_id AND pmt.payment_status = 'Completed'), 0)
+                                - COALESCE((SELECT SUM(cn.patient_amount) FROM credit_notes cn
+                                            WHERE cn.invoice_id = i.invoice_id AND cn.reversed_at IS NULL), 0)
+                                + COALESCE((SELECT SUM(r.amount) FROM refunds r
+                                            WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0),
+                                0
+                            ) > 0.005
+                      )
+                ), inserted AS (
+                    INSERT INTO result_deliveries (
+                        exam_id, appointment_id, patient_id, delivery_method,
+                        recipient_name, delivery_status, delivered_by, notes
+                    )
+                    SELECT exam_id, appointment_id, patient_id, 'Patient Portal',
+                           mrn, 'Delivered', $2, 'Released to patient portal after report finalization and invoice settlement'
+                    FROM ready
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM result_deliveries rd
+                        WHERE rd.exam_id = ready.exam_id
+                          AND rd.delivery_method = 'Patient Portal'
+                          AND rd.delivery_status = 'Delivered'
+                    )
+                    RETURNING exam_id
+                )
+                SELECT ready.exam_id, ready.patient_id, ready.order_number,
+                       EXISTS (SELECT 1 FROM inserted) AS newly_released
+                FROM ready
+            `, [examId, userId]);
+            patientPortalRelease = releaseResult.rows[0] || null;
+        }
+
         await client.query('COMMIT');
 
         // Fire notifications outside the transaction (fire-and-forget)
@@ -650,16 +692,25 @@ const updateReport = (db) => async (req, res, next) => {
                 'SELECT patient_id, order_number, external_referring_doctor_id FROM examinations WHERE exam_id = $1',
                 [examId]
             );
-                    if (examInfo.rows.length > 0) {
+            if (examInfo.rows.length > 0) {
                 const e = examInfo.rows[0];
                 triggerEvent(db, 'ReportReady', {
-                    patientId: e.patient_id,
                     doctorId: e.external_referring_doctor_id,
                     entityType: 'Exam',
                     entityId: examId,
                     channels: ['Email', 'SMS'],
                     variables: { order_number: e.order_number }
                 });
+            }
+
+            if (patientPortalRelease?.newly_released) {
+                triggerEvent(db, 'ReportReady', {
+                    patientId: patientPortalRelease.patient_id,
+                    entityType: 'Exam',
+                    entityId: patientPortalRelease.exam_id,
+                    channels: ['Email', 'SMS'],
+                    variables: { order_number: patientPortalRelease.order_number || '' }
+                }).catch(() => {});
             }
 
             await logAction(db, {
@@ -673,10 +724,22 @@ const updateReport = (db) => async (req, res, next) => {
         }
 
         if (checkResult.rows[0].status !== newStatus) {
+            const examInfo = await db.query(
+                'SELECT patient_id, order_number FROM examinations WHERE exam_id = $1',
+                [examId]
+            );
             triggerEvent(db, 'ExamStatusChanged', {
-                examId: examId,
-                appointmentId: checkResult.rows[0].appointment_id,
-                newStatus: newStatus
+                patientId: examInfo.rows[0]?.patient_id,
+                entityType: 'Exam',
+                entityId: examId,
+                channels: ['InApp'],
+                priority: 'Normal',
+                variables: {
+                    order_number: examInfo.rows[0]?.order_number || '',
+                    old_status: checkResult.rows[0].status,
+                    new_status: newStatus,
+                    exam_id: examId
+                }
             });
         }
 
@@ -700,7 +763,10 @@ const getReportPdf = (db) => async (req, res, next) => {
             SELECT e.*, p.mrn, p.gender, p.first_name_enc, p.last_name_enc, p.date_of_birth_enc,
                    m.name as modality_name, m.type as modality_type, m.room_number,
                    et.name as exam_type_name, u.full_name as radiologist_name,
-                   COALESCE(rd.full_name, appt.referring_doctor) as referring_doctor_name
+                   COALESCE(rd.full_name, appt.referring_doctor) as referring_doctor_name,
+                   COALESCE(appt.referring_doctor_id, e.external_referring_doctor_id) AS access_referring_doctor_id,
+                   billing.invoice_id AS report_invoice_id,
+                   billing.balance_amount AS report_balance_amount
             FROM examinations e
             JOIN patients p ON e.patient_id = p.patient_id
             JOIN modalities m ON e.modality_id = m.modality_id
@@ -708,6 +774,22 @@ const getReportPdf = (db) => async (req, res, next) => {
             LEFT JOIN users u ON e.performing_radiologist_id = u.user_id
             LEFT JOIN appointments appt ON e.appointment_id = appt.appointment_id
             LEFT JOIN referring_doctors rd ON appt.referring_doctor_id = rd.doctor_id
+            LEFT JOIN LATERAL (
+                SELECT (ARRAY_AGG(i.invoice_id ORDER BY i.generated_at DESC))[1] AS invoice_id,
+                       SUM(GREATEST(
+                           COALESCE(i.patient_payable_amount, 0)
+                           - COALESCE((SELECT SUM(pmt.amount) FROM payments pmt
+                                      WHERE pmt.invoice_id = i.invoice_id AND pmt.payment_status = 'Completed'), 0)
+                           - COALESCE((SELECT SUM(cn.patient_amount) FROM credit_notes cn
+                                      WHERE cn.invoice_id = i.invoice_id AND cn.reversed_at IS NULL), 0)
+                           + COALESCE((SELECT SUM(r.amount) FROM refunds r
+                                      WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0),
+                           0
+                       )) AS balance_amount
+                FROM invoices i
+                WHERE i.invoice_status <> 'Voided'
+                  AND (i.exam_id = e.exam_id OR i.appointment_id = e.appointment_id)
+            ) billing ON TRUE
             WHERE e.exam_id = $1
         `, [examId]);
 
@@ -716,13 +798,26 @@ const getReportPdf = (db) => async (req, res, next) => {
         }
 
         const rawExam = result.rows[0];
+        const isFinalized = ['Finalized', 'Amended'].includes(rawExam.report_status) || rawExam.report_locked || rawExam.status === 'Finalized';
 
         // Access permissions check
-        const staffRoles = ['Developer', 'Admin', 'Radiologist', 'Doctor', 'Referring Doctor', 'Referring_Doctor'];
-        const isStaff = staffRoles.includes(userRole);
-        const isPatientOwner = userRole === 'Patient' && rawExam.patient_id === userId && rawExam.status === 'Finalized';
+        const isStaff = userRole === 'Developer' || req.user.permissions?.includes('VIEW_REPORTS');
+        const isReferringDoctorPortalUser = ['Doctor', 'Referring Doctor', 'Referring_Doctor'].includes(userRole);
+        const isReferringDoctorOwner = isReferringDoctorPortalUser
+            && rawExam.access_referring_doctor_id === (req.user.doctorId || req.user.doctor_id)
+            && isFinalized;
+        const isInvoiceSettled = Boolean(rawExam.report_invoice_id)
+            && Number(rawExam.report_balance_amount || 0) <= 0.005;
+        const isPatientOwner = userRole === 'Patient'
+            && rawExam.patient_id === userId
+            && isFinalized
+            && isInvoiceSettled;
+        const isPublicReportAccess = userRole === 'PublicReport'
+            && req.publicReportAccess?.examId === String(rawExam.exam_id)
+            && isFinalized
+            && isInvoiceSettled;
 
-        if (!isStaff && !isPatientOwner) {
+        if (!isStaff && !isReferringDoctorOwner && !isPatientOwner && !isPublicReportAccess) {
             return next(new AppError('Access denied for this report', 403));
         }
 
@@ -730,7 +825,6 @@ const getReportPdf = (db) => async (req, res, next) => {
         const lastName = decrypt(rawExam.last_name_enc) || '';
         const dob = decrypt(rawExam.date_of_birth_enc) || '';
 
-        const isFinalized = ['Finalized', 'Amended'].includes(rawExam.report_status) || rawExam.report_locked || rawExam.status === 'Finalized';
         const signatureHash = rawExam.digital_signature_hash || (isFinalized
             ? crypto.createHash('sha256').update(`${rawExam.exam_id}:${rawExam.report_finalized_at || rawExam.updated_at || Date.now()}`).digest('hex').slice(0, 32).toUpperCase()
             : null);
@@ -770,10 +864,12 @@ const getReportPdf = (db) => async (req, res, next) => {
         const isDoctorPortalUser = ['Doctor', 'Referring Doctor', 'Referring_Doctor'].includes(userRole);
         const method = userRole === 'Patient'
             ? 'Patient Portal'
+            : userRole === 'PublicReport'
+                ? 'Patient Portal'
             : isDoctorPortalUser
                 ? 'Doctor Portal'
                 : 'Printed';
-        const status = userRole === 'Patient' || isDoctorPortalUser
+        const status = userRole === 'Patient' || userRole === 'PublicReport' || isDoctorPortalUser
             ? 'Accessed'
             : 'Printed';
 
@@ -792,7 +888,7 @@ const getReportPdf = (db) => async (req, res, next) => {
             method,
             report.mrn || null,
             status,
-            req.user.user_id || null,
+            req.user?.user_id || null,
             status === 'Printed' ? 1 : 0,
             req.ip || null,
             req.get('user-agent') || null
@@ -800,21 +896,22 @@ const getReportPdf = (db) => async (req, res, next) => {
 
         await logAction(db, {
             userId: req.user?.user_id || req.user?.userId,
-            action: 'REPORT_PRINT',
+            action: userRole === 'PublicReport' ? 'REPORT_PUBLIC_ACCESS' : 'REPORT_PRINT',
             resourceId: report.exam_id,
             resourceTable: 'examinations',
             ipAddress: req.ip,
             details: { role: userRole, method }
         });
 
-        if (userRole === 'Patient') {
+        if (userRole === 'Patient' || userRole === 'PublicReport') {
             await db.query(`
                 INSERT INTO patient_portal_audit (
                     patient_id, event_type, resource_type, resource_id, details, ip_address, user_agent
                 )
-                VALUES ($1, 'ReportDownloaded', 'ExamReport', $2, $3, $4, $5)
+                VALUES ($1, $2, 'ExamReport', $3, $4, $5, $6)
             `, [
                 report.patient_id,
+                userRole === 'PublicReport' ? 'ReportPublicAccessed' : 'ReportDownloaded',
                 report.exam_id,
                 { orderNumber: report.order_number || null, examType: report.exam_type_name || null },
                 req.ip || null,
@@ -833,7 +930,7 @@ const getReportPdf = (db) => async (req, res, next) => {
             if (normalized === undefined) return fallback;
             return normalized.toLowerCase() !== 'false';
         };
-        const canCustomizeDocument = !['Patient', 'Doctor', 'Referring Doctor', 'Referring_Doctor'].includes(userRole);
+        const canCustomizeDocument = !['Patient', 'Doctor', 'Referring Doctor', 'Referring_Doctor', 'PublicReport'].includes(userRole);
         const reportHeader = canCustomizeDocument ? queryText(req.query.reportHeader) : undefined;
         const reportFooter = canCustomizeDocument ? queryText(req.query.reportFooter) : undefined;
         const templateStyle = queryText(req.query.templateStyle || req.query.template || req.query.style);
@@ -843,7 +940,7 @@ const getReportPdf = (db) => async (req, res, next) => {
         const customLabels = parseJSONSafe(queryText(req.query.customLabels || req.query.labels));
         const customizeParam = queryText(req.query.customize);
         const downloadParam = queryText(req.query.download || req.query.mode);
-        const hideCustomizePanel = customizeParam === 'false' || downloadParam === 'true' || downloadParam === 'download' || ['Patient', 'Doctor', 'Referring Doctor', 'Referring_Doctor'].includes(userRole);
+        const hideCustomizePanel = customizeParam === 'false' || downloadParam === 'true' || downloadParam === 'download' || ['Patient', 'Doctor', 'Referring Doctor', 'Referring_Doctor', 'PublicReport'].includes(userRole);
 
         const documentSettings = {
             ...allSettings,
@@ -858,6 +955,20 @@ const getReportPdf = (db) => async (req, res, next) => {
             includeFooter: canCustomizeDocument ? queryFlag(req.query.includeFooter) : true,
             includeSignature: canCustomizeDocument ? queryFlag(req.query.includeSignature) : true
         };
+
+        const requestedFormat = String(req.publicReportFormat || req.body?.format || req.query?.format || '').toLowerCase();
+        if (requestedFormat === 'pdf') {
+            const pdf = await buildReportPdf(report, documentSettings);
+            const requestedDisposition = String(req.publicReportDisposition || req.body?.disposition || req.query?.disposition || '').toLowerCase();
+            const disposition = requestedDisposition === 'attachment' ? 'attachment' : 'inline';
+            const reportId = cleanFilenamePart(report.order_number || report.accession_number || report.mrn || report.exam_id) || 'report';
+            const filename = `Diagnostic-Report-${reportId}.pdf`;
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Length', String(pdf.length));
+            res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);
+            res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+            return res.send(pdf);
+        }
 
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');

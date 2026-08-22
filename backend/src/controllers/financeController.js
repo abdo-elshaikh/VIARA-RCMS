@@ -39,28 +39,31 @@ const expenseJournalEntries = (expense, reverse = false) => {
     return entries.map(entry => ({ ...entry, debit: entry.credit, credit: entry.debit }));
 };
 
-const getClosurePreflight = async (client, closureDate) => {
+const getClosurePreflight = async (client, closureDate, branchId) => {
     const result = await client.query(`
         SELECT
             COALESCE((SELECT COUNT(*)
                       FROM cashier_shifts
                       WHERE status = 'Open'
+                        AND branch_id = $2
                         AND business_date <= $1::date), 0)::int AS open_shifts,
             COALESCE((SELECT COUNT(*)
                       FROM cashier_closures cc
                       JOIN cashier_shifts cs ON cs.shift_id = cc.shift_id
-                      WHERE cc.review_status = 'Requires Review'
-                        AND cs.business_date = $1::date), 0)::int AS unresolved_variances,
+                       WHERE cc.review_status = 'Requires Review'
+                         AND cc.branch_id = $2
+                         AND cs.business_date = $1::date), 0)::int AS unresolved_variances,
             COALESCE((SELECT COUNT(*)
                       FROM refunds
-                      WHERE status IN ('Pending', 'Approved')
-                        AND business_date <= $1::date), 0)::int AS pending_refunds
-    `, [closureDate]);
+                       WHERE status IN ('Pending', 'Approved')
+                         AND branch_id = $2
+                         AND business_date <= $1::date), 0)::int AS pending_refunds
+    `, [closureDate, branchId]);
     return result.rows[0] || { open_shifts: 0, unresolved_variances: 0, pending_refunds: 0 };
 };
 
-const assertClosureReady = async (client, closureDate) => {
-    const preflight = await getClosurePreflight(client, closureDate);
+const assertClosureReady = async (client, closureDate, branchId) => {
+    const preflight = await getClosurePreflight(client, closureDate, branchId);
     const blockers = [
         Number(preflight.open_shifts || 0) > 0 && `${preflight.open_shifts} open cashier shift(s)`,
         Number(preflight.unresolved_variances || 0) > 0 && `${preflight.unresolved_variances} unresolved cashier variance(s)`,
@@ -130,7 +133,8 @@ const updateExpenseCategory = (db) => async (req, res, next) => {
 
 const getExpenses = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, categoryId, branchId } = req.query;
+        const { startDate, endDate, categoryId } = req.query;
+        const branchId = req.query.branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
         
         validateUUID(categoryId, 'categoryId');
         
@@ -157,10 +161,8 @@ const getExpenses = (db) => async (req, res, next) => {
             query += ` AND e.category_id = $${paramCount++}`;
             params.push(categoryId);
         }
-        if (branchId) {
-            query += ` AND e.branch_id = $${paramCount++}::uuid`;
-            params.push(branchId);
-        }
+        query += ` AND e.branch_id = $${paramCount++}::uuid`;
+        params.push(branchId);
 
         query += ` ORDER BY e.expense_date DESC, e.created_at DESC`;
         
@@ -178,29 +180,32 @@ const createExpense = (db) => async (req, res, next) => {
         const userId = req.user.user_id;
         client = await db.connect();
         await client.query('BEGIN');
-        const postingDate = await assertPeriodOpen(client, data.expenseDate);
-
-        if (data.idempotencyKey) {
-            const replay = await client.query(
-                'SELECT * FROM expenses WHERE idempotency_key = $1',
-                [data.idempotencyKey]
-            );
-            if (replay.rows.length) {
-                await client.query('COMMIT');
-                return res.json(replay.rows[0]);
+        const requestFingerprint = crypto.createHash('sha256').update(JSON.stringify(req.body || {})).digest('hex');
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`expense:${data.idempotencyKey}`]);
+        const replay = await client.query(
+            'SELECT * FROM expenses WHERE idempotency_key = $1',
+            [data.idempotencyKey]
+        );
+        if (replay.rows.length) {
+            if (replay.rows[0].request_fingerprint && replay.rows[0].request_fingerprint !== requestFingerprint) {
+                throw new AppError('Idempotency key was already used with a different expense request', 409);
             }
+            await client.query('COMMIT');
+            return res.json(replay.rows[0]);
         }
+        const postingDate = await assertPeriodOpen(client, data.expenseDate, data.branchId || DEFAULT_BRANCH_ID);
 
         const result = await client.query(`
             INSERT INTO expenses (
                 category_id, supplier_id, amount, tax_amount, expense_date, payment_method,
-                reference_number, receipt_url, notes, logged_by, branch_id, currency_code, idempotency_key
+                reference_number, receipt_url, notes, logged_by, branch_id, currency_code,
+                idempotency_key, request_fingerprint
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'EGP', $12) RETURNING *
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'EGP', $12, $13) RETURNING *
         `, [
             data.categoryId, data.supplierId || null, data.amount, data.taxAmount, data.expenseDate,
             data.paymentMethod, data.referenceNumber, data.receiptUrl, data.notes, userId,
-            postingDate.branchId, data.idempotencyKey || null
+            postingDate.branchId, data.idempotencyKey, requestFingerprint
         ]);
         await postJournalBatch(client, {
             sourceType: 'Expense',
@@ -325,14 +330,16 @@ const deleteExpense = (db) => async (req, res, next) => {
 
 const getCommissionPayables = (db) => async (req, res, next) => {
     try {
+        const branchId = req.query.branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
         const result = await db.query(`
             SELECT cp.*, 
                    COALESCE(rd.full_name, u.full_name) as doctor_name
             FROM commission_payables cp
             LEFT JOIN referring_doctors rd ON cp.doctor_id = rd.doctor_id
             LEFT JOIN users u ON cp.doctor_id = u.user_id
+            WHERE cp.branch_id = $1
             ORDER BY cp.created_at DESC
-        `);
+        `, [branchId]);
         res.json(result.rows);
     } catch (error) {
         next(error);
@@ -343,6 +350,7 @@ const payCommission = (db) => async (req, res, next) => {
     let client;
     try {
         const data = payCommissionSchema.parse(req.body);
+        const branchId = data.branchId || DEFAULT_BRANCH_ID;
         client = await db.connect();
         await client.query('BEGIN');
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [data.doctorId]);
@@ -352,8 +360,14 @@ const payCommission = (db) => async (req, res, next) => {
             [data.idempotencyKey]
         );
         if (existingRequest.rows.length) {
+            const existing = existingRequest.rows[0];
+            if (existing.doctor_id !== data.doctorId
+                || existing.branch_id !== branchId
+                || moneyNumber(existing.amount) !== moneyNumber(data.amount)) {
+                throw new AppError('Idempotency key was already used with a different commission payment', 409);
+            }
             await client.query('COMMIT');
-            return res.json(existingRequest.rows[0]);
+            return res.json(existing);
         }
 
         const balance = await client.query(`
@@ -367,22 +381,24 @@ const payCommission = (db) => async (req, res, next) => {
                 JOIN appointments a ON a.appointment_id = e.appointment_id
                 JOIN referring_doctors rd ON rd.doctor_id = a.referring_doctor_id
                 JOIN invoices i ON i.exam_id = e.exam_id
-                WHERE rd.doctor_id = $1 AND COALESCE(i.invoice_status, i.status::text) <> 'Voided'
+                WHERE rd.doctor_id = $1
+                  AND i.branch_id = $3
+                  AND COALESCE(i.invoice_status, i.status::text) <> 'Voided'
             ), paid AS (
                 SELECT COALESCE(SUM(amount), 0) AS amount
                 FROM commission_payables
-                WHERE doctor_id = $1 AND status = 'Paid'
+                WHERE doctor_id = $1 AND branch_id = $3 AND status = 'Paid'
             )
             SELECT earned.amount - paid.amount AS pending
             FROM earned, paid
-        `, [data.doctorId, DEFAULT_COMMISSION_PERCENTAGE]);
+        `, [data.doctorId, DEFAULT_COMMISSION_PERCENTAGE, branchId]);
         const pending = Number(balance.rows[0]?.pending || 0);
         if (Number(data.amount) > pending + 0.005) {
             throw new AppError('Commission payment exceeds the verified pending balance', 409);
         }
 
         const paidDate = data.paidDate || new Date().toISOString();
-        const postingDate = await assertPeriodOpen(client, paidDate);
+        const postingDate = await assertPeriodOpen(client, paidDate, branchId);
         const result = await client.query(`
             INSERT INTO commission_payables (
                 doctor_id, amount, status, transaction_ref, paid_date, idempotency_key, paid_by,
@@ -430,7 +446,7 @@ const payCommission = (db) => async (req, res, next) => {
 
 const getFinancialClosures = (db) => async (req, res, next) => {
     try {
-        const { status, startDate, endDate } = req.query;
+        const { status, startDate, endDate, branchId = DEFAULT_BRANCH_ID } = req.query;
         
         validateEnum(status, VALID_FINANCE_STATUSES, 'status');
         const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -449,21 +465,24 @@ const getFinancialClosures = (db) => async (req, res, next) => {
                     COALESCE((SELECT COUNT(*)
                               FROM cashier_shifts
                               WHERE status = 'Open'
+                                AND branch_id = fc.branch_id
                                 AND business_date <= fc.closure_date::date), 0)::int AS open_shifts,
                     COALESCE((SELECT COUNT(*)
                               FROM cashier_closures cc
                               JOIN cashier_shifts cs ON cs.shift_id = cc.shift_id
-                              WHERE cc.review_status = 'Requires Review'
+                               WHERE cc.review_status = 'Requires Review'
+                                AND cc.branch_id = fc.branch_id
                                 AND cs.business_date = fc.closure_date::date), 0)::int AS unresolved_variances,
                     COALESCE((SELECT COUNT(*)
                               FROM refunds
-                              WHERE status IN ('Pending', 'Approved')
+                               WHERE status IN ('Pending', 'Approved')
+                                AND branch_id = fc.branch_id
                                 AND business_date <= fc.closure_date::date), 0)::int AS pending_refunds
             ) preflight ON TRUE
-            WHERE 1=1
+            WHERE fc.branch_id = $1::uuid
         `;
-        const params = [];
-        let paramCount = 1;
+        const params = [branchId];
+        let paramCount = 2;
 
         if (status) {
             query += ` AND fc.status = $${paramCount++}`;
@@ -493,11 +512,11 @@ const createFinancialClosure = (db) => async (req, res, next) => {
         const userId = req.user.user_id;
         client = await db.connect();
         await client.query('BEGIN');
-        const postingDate = await assertPeriodOpen(client, data.closureDate);
+        const postingDate = await assertPeriodOpen(client, data.closureDate, data.branchId || DEFAULT_BRANCH_ID);
 
         const existing = await client.query(
-            'SELECT closure_id FROM financial_closures WHERE closure_date = $1 FOR UPDATE',
-            [data.closureDate]
+            'SELECT closure_id FROM financial_closures WHERE closure_date = $1 AND branch_id = $2 FOR UPDATE',
+            [data.closureDate, postingDate.branchId]
         );
         if (existing.rows.length > 0) {
             throw new AppError('A financial closure already exists for this date', 409);
@@ -511,12 +530,12 @@ const createFinancialClosure = (db) => async (req, res, next) => {
         const totalRevenue = cash.net_collections;
         const totalExpenses = moneyNumber(cash.expenses_paid + cash.commissions_paid);
         const netProfit = cash.net_cash_flow;
-        const preflight = await getClosurePreflight(client, data.closureDate);
+        const preflight = await getClosurePreflight(client, data.closureDate, postingDate.branchId);
 
         const result = await client.query(`
-            INSERT INTO financial_closures (closure_date, total_revenue, total_expenses, net_profit, status, closed_by)
-            VALUES ($1, $2, $3, $4, 'Draft', $5) RETURNING *
-        `, [data.closureDate, totalRevenue, totalExpenses, netProfit, userId]);
+            INSERT INTO financial_closures (closure_date, total_revenue, total_expenses, net_profit, status, closed_by, branch_id)
+            VALUES ($1, $2, $3, $4, 'Draft', $5, $6) RETURNING *
+        `, [data.closureDate, totalRevenue, totalExpenses, netProfit, userId, postingDate.branchId]);
 
         await client.query('COMMIT');
         res.status(201).json({ ...result.rows[0], preflight });
@@ -542,8 +561,8 @@ const finalizeFinancialClosure = (db) => async (req, res, next) => {
         if (existing.rows.length === 0) throw new AppError('Financial closure not found', 404);
         if (existing.rows[0].status === 'Finalized') throw new AppError('Closure is already finalized', 409);
         const closureDate = normalizeBusinessDate(existing.rows[0].closure_date);
-        const postingDate = await assertPeriodOpen(client, closureDate);
-        await assertClosureReady(client, closureDate);
+        const postingDate = await assertPeriodOpen(client, closureDate, existing.rows[0].branch_id || DEFAULT_BRANCH_ID);
+        await assertClosureReady(client, closureDate, postingDate.branchId);
         const reportOptions = {
             startDate: closureDate,
             endDate: closureDate,

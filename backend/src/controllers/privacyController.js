@@ -12,6 +12,7 @@ const {
     resolvePrivacyRequestSchema,
     revokeConsentSchema
 } = require('../schemas/privacySchema');
+const { triggerEventForRole } = require('../services/notificationJobService');
 
 const EXPORT_DIR = path.resolve(process.env.PRIVACY_EXPORT_DIR || path.join(__dirname, '../../private/privacy_exports'));
 const EXPORT_TTL_HOURS = Math.max(Number.parseInt(process.env.PRIVACY_EXPORT_TTL_HOURS, 10) || 24, 1);
@@ -274,6 +275,25 @@ const revokePatientConsent = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+
+        triggerEventForRole(db, 'CONSENT_REVOKED', 'Admin', {
+            priority: 'Warning',
+            variables: {
+                patient_id: consent.patient_id,
+                consent_type: consent.type,
+                revoked_at: new Date().toISOString()
+            }
+        }).catch(() => {});
+
+        triggerEventForRole(db, 'CONSENT_REVOKED', 'HR', {
+            priority: 'Warning',
+            variables: {
+                patient_id: consent.patient_id,
+                consent_type: consent.type,
+                revoked_at: new Date().toISOString()
+            }
+        }).catch(() => {});
+
         res.json(result.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -325,6 +345,27 @@ const createPrivacyRequest = (db) => async (req, res, next) => {
             requestId: result.rows[0].request_id,
             details: { requestType: data.request_type }
         });
+
+        triggerEventForRole(db, 'DATA_EXPORT_REQUESTED', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                patient_id: patientId,
+                request_id: result.rows[0].request_id,
+                request_type: data.request_type,
+                requested_by: req.user?.email || 'Unknown'
+            }
+        }).catch(() => {});
+
+        triggerEventForRole(db, 'DATA_EXPORT_REQUESTED', 'HR', {
+            priority: 'Normal',
+            variables: {
+                patient_id: patientId,
+                request_id: result.rows[0].request_id,
+                request_type: data.request_type,
+                requested_by: req.user?.email || 'Unknown'
+            }
+        }).catch(() => {});
+
         res.status(201).json(result.rows[0]);
     } catch (error) {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
@@ -338,7 +379,7 @@ const resolvePrivacyRequest = (db) => async (req, res, next) => {
         const { requestId } = req.params;
         const { action, notes } = resolvePrivacyRequestSchema.parse(req.body);
         if (action === 'Export') await assertPermission(db, req, 'EXPORT_PATIENT_DATA');
-        if (action === 'Anonymize') await assertPermission(db, req, 'ANONYMIZE_PATIENT_DATA');
+        if (['Anonymize', 'CompleteAnonymization'].includes(action)) await assertPermission(db, req, 'ANONYMIZE_PATIENT_DATA');
 
         client = await db.connect();
         await client.query('BEGIN');
@@ -350,8 +391,32 @@ const resolvePrivacyRequest = (db) => async (req, res, next) => {
             throw new AppError('Privacy request is already closed', 409);
         }
         const isCorrectionResolve = action === 'Resolve' && request.request_type === 'Correction';
-        if (action !== 'Reject' && !isCorrectionResolve && request.request_type !== action) {
+        const isAnonymizationCompletion = action === 'CompleteAnonymization'
+            && request.request_type === 'Anonymize'
+            && request.status === 'InReview';
+        if (action !== 'Reject' && !isCorrectionResolve && !isAnonymizationCompletion && request.request_type !== action) {
             throw new AppError(`Cannot execute ${action} for a ${request.request_type} request`, 409);
+        }
+
+        if (action === 'CompleteAnonymization') {
+            if (!notes) throw new AppError('Manual review confirmation notes are required', 400);
+            const updated = await client.query(`
+                UPDATE data_privacy_requests
+                SET status = 'Completed', completed_at = CURRENT_TIMESTAMP,
+                    resolved_at = CURRENT_TIMESTAMP, resolved_by = $2,
+                    resolution_notes = $3,
+                    metadata = COALESCE(metadata, '{}'::jsonb) || $4::jsonb
+                WHERE request_id = $1 AND status = 'InReview'
+                RETURNING *
+            `, [requestId, getUserId(req), notes, JSON.stringify({ manualReviewCompletedAt: new Date().toISOString() })]);
+            await logPrivacyAction(client, req, 'PATIENT_ANONYMIZATION_COMPLETED', {
+                patientId: request.patient_id,
+                requestId,
+                details: { manualReviewConfirmed: true },
+                severity: AUDIT_SEVERITY.CRITICAL
+            });
+            await client.query('COMMIT');
+            return res.json({ message: 'Patient anonymization completed after manual review', request: updated.rows[0] });
         }
 
         if (action === 'Reject') {
@@ -394,6 +459,27 @@ const resolvePrivacyRequest = (db) => async (req, res, next) => {
                 details: { requestType: request.request_type }
             });
             await client.query('COMMIT');
+
+            triggerEventForRole(db, 'PRIVACY_REQUEST_RESOLVED', 'Admin', {
+                priority: 'Normal',
+                variables: {
+                    patient_id: request.patient_id,
+                    request_id: requestId,
+                    resolution: action,
+                    request_type: request.request_type
+                }
+            }).catch(() => {});
+
+            triggerEventForRole(db, 'PRIVACY_REQUEST_RESOLVED', 'HR', {
+                priority: 'Normal',
+                variables: {
+                    patient_id: request.patient_id,
+                    request_id: requestId,
+                    resolution: action,
+                    request_type: request.request_type
+                }
+            }).catch(() => {});
+
             return res.json({ message: 'Privacy request resolved', request: updated.rows[0] });
         }
 
@@ -484,9 +570,9 @@ const resolvePrivacyRequest = (db) => async (req, res, next) => {
             `, [request.patient_id, getUserId(req)]);
             await client.query(`
                 UPDATE data_privacy_requests
-                SET status = 'Completed',
-                    completed_at = CURRENT_TIMESTAMP,
-                    resolved_at = CURRENT_TIMESTAMP,
+                SET status = 'InReview',
+                    completed_at = NULL,
+                    resolved_at = NULL,
                     resolved_by = $2,
                     resolution_notes = $3,
                     metadata = COALESCE(metadata, '{}'::jsonb) || $4::jsonb
@@ -498,7 +584,7 @@ const resolvePrivacyRequest = (db) => async (req, res, next) => {
                 notes || null,
                 JSON.stringify({
                     previousStatus: patient.rows[0].patient_status,
-                    manualReviewRecommended: ['documents.file_name', 'documents.notes', 'examinations.report_content', 'patient_portal_messages.body']
+                    manualReviewRequired: ['documents.file_name', 'documents.notes', 'documents.file_content', 'examinations.report_content', 'patient_portal_messages.body']
                 })
             ]);
             await logPrivacyAction(client, req, 'PATIENT_ANONYMIZED', {
@@ -508,7 +594,10 @@ const resolvePrivacyRequest = (db) => async (req, res, next) => {
                 severity: AUDIT_SEVERITY.CRITICAL
             });
             await client.query('COMMIT');
-            return res.json({ message: 'Patient anonymized' });
+            return res.json({
+                message: 'Direct identifiers removed; manual review of free-text and document content is required before completion',
+                status: 'InReview'
+            });
         }
 
         throw new AppError('Invalid action', 400);

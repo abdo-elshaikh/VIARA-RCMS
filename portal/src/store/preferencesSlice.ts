@@ -37,7 +37,7 @@ const loadInitialState = (): PreferencesState => {
     };
 
     try {
-        const saved = localStorage.getItem('rcms_preferences');
+        const saved = localStorage.getItem('VIARA_preferences');
         const legacyTheme = localStorage.getItem('theme');
         const validLegacyTheme = legacyTheme && ['light', 'dark'].includes(legacyTheme) ? (legacyTheme as 'light' | 'dark') : undefined;
         if (saved) {
@@ -60,32 +60,32 @@ const preferencesSlice = createSlice({
     reducers: {
         setTheme: (state, action: PayloadAction<'light' | 'dark' | 'system'>) => {
             state.theme = action.payload;
-            localStorage.setItem('rcms_preferences', JSON.stringify(state));
+            localStorage.setItem('VIARA_preferences', JSON.stringify(state));
             localStorage.removeItem('theme');
         },
         setPrimaryColor: (state, action: PayloadAction<string>) => {
             state.primaryColor = action.payload;
-            localStorage.setItem('rcms_preferences', JSON.stringify(state));
+            localStorage.setItem('VIARA_preferences', JSON.stringify(state));
         },
         setDensity: (state, action: PayloadAction<'compact' | 'comfortable'>) => {
             state.density = action.payload;
-            localStorage.setItem('rcms_preferences', JSON.stringify(state));
+            localStorage.setItem('VIARA_preferences', JSON.stringify(state));
         },
         setFontScale: (state, action: PayloadAction<'small' | 'normal' | 'large'>) => {
             state.fontScale = action.payload;
-            localStorage.setItem('rcms_preferences', JSON.stringify(state));
+            localStorage.setItem('VIARA_preferences', JSON.stringify(state));
         },
         setMotion: (state, action: PayloadAction<'system' | 'reduced'>) => {
             state.motion = action.payload;
-            localStorage.setItem('rcms_preferences', JSON.stringify(state));
+            localStorage.setItem('VIARA_preferences', JSON.stringify(state));
         },
         setLanguage: (state, action: PayloadAction<string>) => {
             state.language = action.payload;
-            localStorage.setItem('rcms_preferences', JSON.stringify(state));
+            localStorage.setItem('VIARA_preferences', JSON.stringify(state));
         },
         updateAllPreferences: (state, action: PayloadAction<Partial<PreferencesState>>) => {
             Object.assign(state, action.payload);
-            localStorage.setItem('rcms_preferences', JSON.stringify(state));
+            localStorage.setItem('VIARA_preferences', JSON.stringify(state));
         }
     }
 });

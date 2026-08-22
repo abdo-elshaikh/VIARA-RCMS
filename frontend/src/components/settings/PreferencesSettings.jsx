@@ -34,14 +34,14 @@ const DATE_FORMATS = ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'];
 const TIME_FORMATS = ['12h', '24h'];
 const LANGUAGES = [
     { id: 'en', name: 'English (US)', mark: 'EN', dir: 'LTR' },
-    { id: 'ar', name: 'العربية (مصر)', mark: 'AR', dir: 'RTL' }
+    { id: 'ar', name: '\u0627\u0644\u0639\u0631\u0628\u064a\u0629 (\u0645\u0635\u0631)', mark: 'AR', dir: 'RTL' }
 ];
 const START_PAGES = [
-    { id: '/dashboard', labelKey: 'dashboard' },
-    { id: '/patients', labelKey: 'patients' },
-    { id: '/appointments', labelKey: 'appointments' },
-    { id: '/worklist', labelKey: 'worklist' },
-    { id: '/communications', labelKey: 'messages' }
+    { id: '/dashboard', labelKey: 'dashboard', roles: ['*'] },
+    { id: '/patients', labelKey: 'patients', roles: ['Admin', 'Developer', 'Receptionist', 'Radiologist'] },
+    { id: '/appointments', labelKey: 'appointments', roles: ['Admin', 'Developer', 'Receptionist'] },
+    { id: '/worklist', labelKey: 'worklist', roles: ['Admin', 'Developer', 'Radiologist', 'Technician'] },
+    { id: '/communications', labelKey: 'messages', roles: ['Admin', 'Developer', 'Receptionist', 'Radiologist'] }
 ];
 const CALENDAR_VIEWS = [
     { id: 'day', labelKey: 'day' },
@@ -60,12 +60,14 @@ const DAYS_OF_WEEK = [
     { id: 6, labelKey: 'saturday' }
 ];
 
-const panelClass = 'rounded-2xl border border-slate-200/80 bg-white shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/50';
+const panelClass = 'rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90';
 
 const PreferencesSettings = () => {
     const { t, i18n } = useTranslation('settings');
     const dispatch = useDispatch();
     const stored = useSelector(selectPreferences) || {};
+    const currentUser = useSelector((state) => state.auth?.user);
+    const userRole = currentUser?.role || 'Developer';
     const preferences = { ...DEFAULTS, ...stored };
     const [updatePreferences, { isLoading: isSaving }] = useUpdatePreferencesMutation();
     const [exportPersonalData, { isLoading: isExporting }] = useExportPersonalDataMutation();
@@ -76,10 +78,16 @@ const PreferencesSettings = () => {
         typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
     );
 
+    const availableStartPages = useMemo(() => {
+        return START_PAGES.filter((page) => {
+            if (page.roles.includes('*')) return true;
+            return page.roles.includes(userRole);
+        });
+    }, [userRole]);
+
     const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const activeTimezone = preferences.timezone === 'auto' ? detectedTimezone : preferences.timezone;
     const selectedLanguage = LANGUAGES.find(l => l.id === preferences.language) || LANGUAGES[0];
-
     useEffect(() => {
         const timer = setInterval(() => setLiveTime(new Date()), 1000);
         return () => clearInterval(timer);
@@ -192,7 +200,7 @@ const PreferencesSettings = () => {
             const url = URL.createObjectURL(new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' }));
             const anchor = document.createElement('a');
             anchor.href = url;
-            anchor.download = `rcms-personal-data-${new Date().toISOString().slice(0, 10)}.json`;
+            anchor.download = `VIARA-personal-data-${new Date().toISOString().slice(0, 10)}.json`;
             document.body.appendChild(anchor);
             anchor.click();
             anchor.remove();
@@ -205,7 +213,7 @@ const PreferencesSettings = () => {
 
     const handleExportPreferences = () => {
         const archive = {
-            type: 'rcms.preferences',
+            type: 'VIARA.preferences',
             version: 1,
             exportedAt: new Date().toISOString(),
             preferences: normalizePreferences(preferences)
@@ -213,7 +221,7 @@ const PreferencesSettings = () => {
         const url = URL.createObjectURL(new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' }));
         const anchor = document.createElement('a');
         anchor.href = url;
-        anchor.download = `rcms-preferences-${new Date().toISOString().slice(0, 10)}.json`;
+        anchor.download = `VIARA-preferences-${new Date().toISOString().slice(0, 10)}.json`;
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();
@@ -237,7 +245,7 @@ const PreferencesSettings = () => {
                 await persist(next, next.language !== preferences.language);
                 toast.success(t('settings.preferences.preferencesImported', { defaultValue: 'Workspace preferences imported.' }));
             } catch {
-                toast.error(t('settings.preferences.invalidPreferencesFile', { defaultValue: 'Choose a valid RCMS preferences JSON file.' }));
+                toast.error(t('settings.preferences.invalidPreferencesFile', { defaultValue: 'Choose a valid VIARA preferences JSON file.' }));
             } finally {
                 event.target.value = '';
             }
@@ -246,44 +254,54 @@ const PreferencesSettings = () => {
     };
 
     return (
-        <div className="space-y-4">
-            {/* Overview Header Section */}
-            <section className={`${panelClass} p-4 sm:p-5`}>
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex min-w-0 items-start gap-3">
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
-                            <Globe2 size={18} aria-hidden="true" />
-                        </span>
+        <div className="space-y-6">
+            {/* Top Localization & Preferences Hero Command Deck */}
+            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8">
+                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
+                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
+
+                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-start gap-4 sm:items-center">
+                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-sky-500/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
+                            <Globe2 size={26} aria-hidden="true" />
+                        </div>
                         <div className="min-w-0">
-                            <h2 className="text-base font-black text-slate-950 dark:text-white">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                                <Clock3 size={11} />
+                                <span>Regional & Workstation Config</span>
+                            </span>
+                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('settings.preferencesTab', { defaultValue: 'Workstation Preferences & Localization' })}
-                            </h2>
-                            <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                            </h1>
+                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
                                 {t('settings.preferencesDesc', { defaultValue: 'Configure workspace languages, timezones, date formatting, notification chimes, and personal data exports.' })}
                             </p>
                         </div>
                     </div>
-                    <button
-                        type="button"
-                        onClick={resetPreferences}
-                        disabled={isSaving}
-                        className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                    >
-                        <RotateCcw size={14} aria-hidden="true" />
-                        {t('settings.preferences.reset', { defaultValue: 'Reset Preferences' })}
-                    </button>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={resetPreferences}
+                            disabled={isSaving}
+                            className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 px-3.5 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                            <RotateCcw size={14} aria-hidden="true" />
+                            <span>{t('settings.preferences.reset', { defaultValue: 'Reset Preferences' })}</span>
+                        </button>
+                    </div>
                 </div>
 
-                <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-6 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
                     <Fact label={t('settings.language', { defaultValue: 'Language' })} value={t(`settings.preferences.languages.${selectedLanguage.id}.name`, { defaultValue: selectedLanguage.name })} />
                     <Fact label={t('settings.timezone', { defaultValue: 'Timezone' })} value={preferences.timezone === 'auto' ? t('settings.preferences.autoDetectedTimezone', { timezone: detectedTimezone, defaultValue: `Auto (${detectedTimezone})` }) : activeTimezone} />
                     <Fact label={t('settings.notifications', { defaultValue: 'Badge Alerts' })} value={preferences.showNotificationBadge ? t('settings.preferences.enabled', { defaultValue: 'Enabled' }) : t('settings.preferences.disabled', { defaultValue: 'Disabled' })} />
                     <Fact label={t('settings.preferences.soundTitle', { defaultValue: 'Notification Chime' })} value={preferences.notificationSound ? t('settings.preferences.soundOnWithVolume', { volume: Math.round((preferences.soundVolume || 0.5) * 100), defaultValue: `Sound on (${Math.round((preferences.soundVolume || 0.5) * 100)}%)` }) : t('settings.preferences.soundOff', { defaultValue: 'Muted' })} />
                 </div>
-            </section>
+            </div>
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-                <div className="space-y-4">
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+                <div className="space-y-6">
                     {/* Language & Regional Localization */}
                     <Panel icon={Globe2} title={t('settings.language', { defaultValue: 'Language & Locale' })} description={t('settings.preferences.languageDescription', { defaultValue: 'Select active workstation language and direction.' })}>
                         <div className="grid gap-3 sm:grid-cols-2">
@@ -327,7 +345,6 @@ const PreferencesSettings = () => {
                                         ))}
                                     </select>
                                 </div>
-
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">{t('settings.preferences.dateDisplay', { defaultValue: 'Date display' })}</label>
                                     <select
@@ -341,7 +358,6 @@ const PreferencesSettings = () => {
                                         ))}
                                     </select>
                                 </div>
-
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">{t('settings.preferences.timeDisplay', { defaultValue: 'Time display' })}</label>
                                     <select
@@ -355,7 +371,7 @@ const PreferencesSettings = () => {
                                         ))}
                                     </select>
                                 </div>
-                                
+
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
                                         <CalendarDays size={12} className="text-slate-400" />
@@ -452,7 +468,7 @@ const PreferencesSettings = () => {
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">{t('settings.preferences.defaultStartupPage', { defaultValue: 'Default startup page' })}</label>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    {START_PAGES.map(page => (
+                                    {availableStartPages.map(page => (
                                         <ChoiceButton
                                             key={page.id}
                                             selected={preferences.startPage === page.id}
@@ -485,7 +501,7 @@ const PreferencesSettings = () => {
                                     ))}
                                 </div>
                             </div>
-                            
+
                             <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
                                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
                                     <Lock size={12} className="text-slate-400" />
@@ -633,7 +649,7 @@ const PreferencesSettings = () => {
                         </div>
                     </Panel>
 
-                    <Panel icon={Mail} title={t('settings.preferences.emailTitle', { defaultValue: 'Email digest rules' })} description={t('settings.preferences.emailDescription', { defaultValue: 'Choose which account-level emails RCMS can send to this user.' })}>
+                    <Panel icon={Mail} title={t('settings.preferences.emailTitle', { defaultValue: 'Email digest rules' })} description={t('settings.preferences.emailDescription', { defaultValue: 'Choose which account-level emails VIARA can send to this user.' })}>
                         <div className="space-y-3">
                             <EmailToggle
                                 title={t('settings.preferences.notifications.dailySummary', { defaultValue: 'Daily operational summary' })}
@@ -684,11 +700,10 @@ const ChoiceButton = ({ selected, disabled, onClick, center, children }) => (
         type="button"
         disabled={disabled}
         onClick={onClick}
-        className={`relative flex ${center ? 'items-center justify-center text-center' : 'items-center text-start'} gap-3 rounded-2xl border p-3.5 transition-all ${
-            selected
+        className={`relative flex ${center ? 'items-center justify-center text-center' : 'items-center text-start'} gap-3 rounded-2xl border p-3.5 transition-all ${selected
                 ? 'border-cyan-500 bg-cyan-50/50 shadow-md ring-2 ring-cyan-500/20 dark:border-cyan-500 dark:bg-cyan-950/40'
                 : 'border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/40 dark:hover:bg-slate-800/50'
-        } disabled:opacity-50`}
+            } disabled:opacity-50`}
     >
         {children}
         {selected && (
@@ -714,14 +729,12 @@ const Toggle = ({ label, checked, disabled, onChange }) => (
         aria-label={label}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-            checked ? 'bg-cyan-600' : 'bg-slate-200 dark:bg-slate-800'
-        } disabled:opacity-50`}
+        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${checked ? 'bg-cyan-600' : 'bg-slate-200 dark:bg-slate-800'
+            } disabled:opacity-50`}
     >
         <span
-            className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                checked ? 'translate-x-5' : 'translate-x-0'
-            }`}
+            className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${checked ? 'translate-x-5' : 'translate-x-0'
+                }`}
         />
     </button>
 );

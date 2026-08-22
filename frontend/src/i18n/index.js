@@ -49,12 +49,28 @@ import arApprovals from './locales/ar/approvals.json';
 
 export const SUPPORTED_LANGUAGES = [
     { code: 'en', label: 'English', dir: 'ltr' },
-    { code: 'ar', label: 'العربية', dir: 'rtl' },
+    { code: 'ar', label: '\u0627\u0644\u0639\u0631\u0628\u064a\u0629', dir: 'rtl' },
 ];
 
 export const RTL_LANGUAGES = ['ar'];
 
 export const getDirection = (lng = 'en') => (RTL_LANGUAGES.includes(lng.split('-')[0]) ? 'rtl' : 'ltr');
+const getSupportedLanguage = (lng) => {
+    const code = String(lng || '').split('-')[0];
+    return SUPPORTED_LANGUAGES.some((language) => language.code === code) ? code : undefined;
+};
+
+const getInitialLanguage = () => {
+    if (typeof localStorage === 'undefined') return undefined;
+    try {
+        const detectedLanguage = getSupportedLanguage(localStorage.getItem('VIARA_lang'));
+        if (detectedLanguage) return detectedLanguage;
+        const preferences = JSON.parse(localStorage.getItem('VIARA_preferences') || '{}');
+        return getSupportedLanguage(preferences.language);
+    } catch {
+        return undefined;
+    }
+};
 
 const resources = {
     en: { common: enCommon, navigation: enNavigation, auth: enAuth, dashboard: enDashboard, patients: enPatients, reception: enReception, appointments: enAppointments, landing: enLanding, system: enSystem, workspace: enWorkspace, insurance: enInsurance, payroll: enPayroll, worklist: enWorklist, patientDetail: enPatientDetail, integrations: enIntegrations, admin: enAdmin, facilitySettings: enFacilitySettings, clinicalQueues: enClinicalQueues, governance: enGovernance, settings: enSettings, help: enHelp, approvals: enApprovals },
@@ -67,6 +83,7 @@ i18n
     .init({
         resources,
         fallbackLng: 'en',
+        lng: getInitialLanguage(),
         supportedLngs: SUPPORTED_LANGUAGES.map((l) => l.code),
         ns: ['common', 'navigation', 'auth', 'dashboard', 'patients', 'reception', 'appointments', 'landing', 'system', 'workspace', 'insurance', 'payroll', 'worklist', 'patientDetail', 'integrations', 'admin', 'facilitySettings', 'clinicalQueues', 'governance', 'settings', 'help', 'approvals'],
         defaultNS: 'common',
@@ -75,7 +92,7 @@ i18n
         },
         detection: {
             order: ['localStorage', 'navigator', 'htmlTag'],
-            lookupLocalStorage: 'rcms_lang',
+            lookupLocalStorage: 'VIARA_lang',
             caches: ['localStorage'],
         },
     });

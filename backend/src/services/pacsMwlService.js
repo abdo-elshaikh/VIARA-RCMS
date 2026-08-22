@@ -83,15 +83,39 @@ const fetchScheduledWorklist = async (pool, options = {}) => {
     const date = options.date || null;
     const modalityId = options.modalityId || null;
     const includeInvalid = Boolean(options.includeInvalid);
+
+    // Auto-create missing examination rows for scheduled appointments
+    try {
+        await pool.query(`
+            INSERT INTO examinations (
+                appointment_id, patient_id, modality_id, exam_type_id,
+                status, queue_stage, order_number, priority, clinical_indication
+            )
+            SELECT a.appointment_id, a.patient_id, a.modality_id, a.exam_type_id,
+                   CASE WHEN a.status = 'Arrived' THEN 'Checked-in'::exam_status ELSE 'Scheduled'::exam_status END,
+                   CASE WHEN a.status = 'Arrived' THEN 'Arrived' ELSE 'Scheduled' END,
+                   COALESCE(a.order_number, 'ORD-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || SUBSTRING(a.appointment_id::text, 1, 6)),
+                   COALESCE(a.priority, 'Routine'),
+                   a.clinical_indication
+            FROM appointments a
+            WHERE a.status::text IN ('Scheduled', 'Confirmed', 'Arrived', 'In-Progress', 'Checked-in')
+              AND NOT EXISTS (
+                  SELECT 1 FROM examinations e WHERE e.appointment_id = a.appointment_id
+              )
+        `);
+    } catch (err) {
+        logger.warn('MWL: Auto-provisioning examinations for appointments failed silently', { error: err.message });
+    }
+
     const values = [];
-    const filters = ["e.status IN ('Scheduled', 'Checked-in')"];
+    const filters = ["e.status::text IN ('Scheduled', 'Checked-in', 'Scanning')"];
 
     if (!includeInvalid) filters.push('e.order_number IS NOT NULL');
     if (date) {
         values.push(date);
         filters.push(`COALESCE(a.start_time, e.created_at)::date = $${values.length}::date`);
     } else {
-        filters.push('COALESCE(a.start_time, e.created_at)::date = CURRENT_DATE');
+        filters.push('COALESCE(a.start_time, e.created_at)::date >= CURRENT_DATE - 2');
     }
     if (modalityId) {
         values.push(modalityId);
@@ -189,7 +213,7 @@ const buildWorklistBuffer = (row, serverAet) => {
         '00020003': { vr: 'UI', Value: [sopInstanceUid] },
         '00020010': { vr: 'UI', Value: [TRANSFER_SYNTAX] },
         '00020012': { vr: 'UI', Value: [IMPLEMENTATION_CLASS_UID] },
-        '00020013': { vr: 'SH', Value: ['RCMS_MWL_1'] }
+        '00020013': { vr: 'SH', Value: ['VIARA_MWL_1'] }
     });
     dict.dict = DicomMetaDictionary.denaturalizeDataset(naturalDataset);
     return Buffer.from(dict.write());

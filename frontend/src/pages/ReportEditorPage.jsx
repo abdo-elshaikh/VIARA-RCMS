@@ -9,47 +9,58 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
+    Activity,
     AlertCircle,
     AlertTriangle,
     ArrowLeft,
     CalendarDays,
-    Check,
     CheckCircle2,
     ClipboardCheck,
-    Clock3,
     Download,
+    Eye,
+    EyeOff,
     FileCheck2,
+    FileText,
+    Hash,
     Layers3,
     Loader2,
     LockKeyhole,
     Monitor,
     PenLine,
+    Phone,
+    Printer,
+    RefreshCw,
     Save,
     Send,
     ShieldAlert,
-    Upload,
-    X
+    ShieldCheck,
+    Sparkles,
+    Stethoscope,
+    UploadCloud,
+    User,
+    X,
+    Zap
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
     useAmendReportMutation,
+    useCancelPacsAiJobMutation,
     useCreateReportTemplateMutation,
     useDeliverResultMutation,
+    useGeneratePreliminaryReportDraftMutation,
+    useGetAiReportDraftsQuery,
+    useGetAiSettingsStatusQuery,
     useGetCenterSettingsQuery,
     useGetExamImagingStatusQuery,
     useGetExamQuery,
-    useGetAiReportDraftsQuery,
-    useGetAiSettingsStatusQuery,
     useGetPacsAiAnalysisJobsQuery,
-    useGeneratePreliminaryReportDraftMutation,
     useGetReportTemplatesQuery,
     useGetResultDeliveryHistoryQuery,
+    useImproveReportFormatMutation,
     useMarkAiReportDraftAppliedMutation,
     useRequestPacsAiAnalysisMutation,
-    useImproveReportFormatMutation,
-    useUpdateReportMutation,
     useRetryPacsAiJobMutation,
-    useCancelPacsAiJobMutation
+    useUpdateReportMutation
 } from '../store/api';
 import { selectCurrentUser } from '../store/authSlice';
 import { authenticatedFetch } from '../utils/authenticatedFetch';
@@ -62,9 +73,15 @@ import { getErrorMessage } from '../utils/getErrorMessage';
 import { hasDeveloperOrAdminRole } from '../utils/roles';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
-import { inputClass, secondaryBtn } from '../utils/designTokens';
+import { inputClass } from '../utils/designTokens';
 
-import { PANEL, PRIMARY_BUTTON, SOFT_BUTTON, FLOATING_FOOTER, SECTION_CONFIG } from '../components/reportEditor';
+import {
+    FLOATING_FOOTER,
+    PANEL,
+    PRIMARY_BUTTON,
+    SECTION_CONFIG,
+    SOFT_BUTTON
+} from '../components/reportEditor';
 import {
     buildReportText,
     countWords,
@@ -81,14 +98,10 @@ import {
 } from '../components/reportEditor';
 import { useClickOutside, useUnsavedChangesGuard } from '../components/reportEditor';
 import {
-    ActionButton,
-    ClinicalContextPanel,
     DeliveryPanel,
     ImageUploadOverlay,
-    InspectorTabs,
     MobileWorkspaceTabs,
     Notice,
-    OverflowMenu,
     PageState,
     PatientDocumentsPanel,
     ProgressBar,
@@ -103,17 +116,11 @@ import {
     WorkflowStepper
 } from '../components/reportEditor';
 
-const HeaderDetail = ({ icon: Icon, label, value, mono = false }) => (
-    <div className="min-w-0 border-slate-200 px-3 py-1.5 first:ps-0 odd:border-e sm:border-e sm:last:border-e-0 dark:border-slate-800">
-        <dt className="flex items-center gap-1.5 text-[9px] font-black uppercase text-slate-400">
-            {Icon && <Icon size={11} aria-hidden="true" />}
-            {label}
-        </dt>
-        <dd className={`mt-1 truncate text-[11px] font-bold text-slate-700 dark:text-slate-200 ${mono ? 'font-mono' : ''}`}>
-            {value || '-'}
-        </dd>
-    </div>
-);
+const priorityTone = {
+    Emergency: 'bg-rose-500/10 text-rose-700 border-rose-500/30 dark:text-rose-300 dark:border-rose-900',
+    Urgent: 'bg-amber-500/10 text-amber-700 border-amber-500/30 dark:text-amber-300 dark:border-amber-900',
+    Routine: 'bg-teal-500/10 text-teal-700 border-teal-500/30 dark:text-teal-300 dark:border-teal-900'
+};
 
 const userHasPermission = (user, permission) => (
     Array.isArray(user?.permissions) && user.permissions.includes(permission)
@@ -125,20 +132,19 @@ const ReportEditorPage = () => {
     const navigate = useNavigate();
     const { t, i18n } = useTranslation('worklist');
     const user = useSelector(selectCurrentUser);
-    const isArabic = i18n.resolvedLanguage?.startsWith('ar') ||
-        i18n.language?.startsWith('ar');
+    const isArabic = i18n.resolvedLanguage?.startsWith('ar') || i18n.language?.startsWith('ar');
     const locale = isArabic ? 'ar-EG' : 'en-US';
     const initialExam = location.state?.exam || null;
 
     const [exam, setExam] = useState(initialExam);
     const [sections, setSections] = useState(() => normalizeSections(initialExam));
     const [baseline, setBaseline] = useState(() => normalizeSections(initialExam));
-    const [selectedTemplateId, setSelectedTemplateId] = useState(
-        initialExam?.template_id || ''
-    );
+    const [selectedTemplateId, setSelectedTemplateId] = useState(initialExam?.template_id || '');
     const [activeSection, setActiveSection] = useState('clinicalHistory');
     const [mobileView, setMobileView] = useState('editor');
     const [inspectorTab, setInspectorTab] = useState('preview');
+    const [studyToolsDrawerOpen, setStudyToolsDrawerOpen] = useState(false);
+    const [drawerTool, setDrawerTool] = useState(null);
     const [focusMode, setFocusMode] = useState(false);
     const [amendmentMode, setAmendmentMode] = useState(false);
     const [amendmentReason, setAmendmentReason] = useState('');
@@ -158,9 +164,6 @@ const ReportEditorPage = () => {
     });
     const [aiDraft, setAiDraft] = useState(null);
     const [imageUploadProgress, setImageUploadProgress] = useState(null);
-    /* Tracks which optional sections (clinical history, technique, recommendations)
-       are collapsed. Seeded from whichever sections already have content so nothing
-       the radiologist wrote gets hidden. */
     const [collapsedSections, setCollapsedSections] = useState(() => {
         const seeded = normalizeSections(initialExam);
         return SECTION_CONFIG.reduce((acc, { key, collapsible }) => {
@@ -181,75 +184,47 @@ const ReportEditorPage = () => {
         isFetching: examRefreshing,
         refetch
     } = useGetExamQuery(examId, { skip: !examId });
-    const { data: imaging, refetch: refetchImaging } = useGetExamImagingStatusQuery(examId, {
-        skip: !examId
-    });
+    const { data: imaging, refetch: refetchImaging } = useGetExamImagingStatusQuery(examId, { skip: !examId });
     const { data: centerSettings } = useGetCenterSettingsQuery();
-    const { data: aiSettingsStatus } = useGetAiSettingsStatusQuery(undefined, {
-        skip: !user
-    });
-    const normalizedCenterSettings = useMemo(
-        () => normalizeCenterSettings(centerSettings),
-        [centerSettings]
-    );
+    const { data: aiSettingsStatus } = useGetAiSettingsStatusQuery(undefined, { skip: !user });
+    const normalizedCenterSettings = useMemo(() => normalizeCenterSettings(centerSettings), [centerSettings]);
 
     const effectiveExamTypeId = exam?.exam_type_id || fetchedExam?.exam_type_id;
-    const effectiveModalityType =
-        exam?.modality_type ||
-        fetchedExam?.modality_type ||
-        exam?.modality_name ||
-        fetchedExam?.modality_name;
-    const { data: reportTemplates = [], isLoading: templatesLoading } =
-        useGetReportTemplatesQuery(
-            {
-                examTypeId: effectiveExamTypeId,
-                modalityType: effectiveModalityType
-            },
-            { skip: !effectiveExamTypeId && !effectiveModalityType }
-        );
-    const { data: deliveryHistory = [] } =
-        useGetResultDeliveryHistoryQuery(examId, {
-            skip: !examId || !exam?.report_locked
-        });
+    const effectiveModalityType = exam?.modality_type || fetchedExam?.modality_type || exam?.modality_name || fetchedExam?.modality_name;
+    const { data: reportTemplates = [], isLoading: templatesLoading } = useGetReportTemplatesQuery(
+        { examTypeId: effectiveExamTypeId, modalityType: effectiveModalityType },
+        { skip: !effectiveExamTypeId && !effectiveModalityType }
+    );
+    const { data: deliveryHistory = [] } = useGetResultDeliveryHistoryQuery(examId, {
+        skip: !examId || !exam?.report_locked
+    });
     const [updateReport, { isLoading: isSaving }] = useUpdateReportMutation();
-    const [createTemplate, { isLoading: isCreatingTemplate }] =
-        useCreateReportTemplateMutation();
+    const [createTemplate, { isLoading: isCreatingTemplate }] = useCreateReportTemplateMutation();
     const [amendReport, { isLoading: isAmending }] = useAmendReportMutation();
-    const [deliverResult, { isLoading: isDelivering }] =
-        useDeliverResultMutation();
-    const [generatePreliminaryDraft, { isLoading: isGeneratingAiDraft }] =
-        useGeneratePreliminaryReportDraftMutation();
+    const [deliverResult, { isLoading: isDelivering }] = useDeliverResultMutation();
+    const [generatePreliminaryDraft, { isLoading: isGeneratingAiDraft }] = useGeneratePreliminaryReportDraftMutation();
     const [markAiDraftApplied] = useMarkAiReportDraftAppliedMutation();
-    const [requestPacsAiAnalysis, { isLoading: isRequestingAiAnalysis }] =
-        useRequestPacsAiAnalysisMutation();
+    const [requestPacsAiAnalysis, { isLoading: isRequestingAiAnalysis }] = useRequestPacsAiAnalysisMutation();
     const [retryPacsAiJob, { isLoading: isRetryingJob }] = useRetryPacsAiJobMutation();
     const [cancelPacsAiJob, { isLoading: isCancelingJob }] = useCancelPacsAiJobMutation();
     const [improveReportFormat] = useImproveReportFormatMutation();
     const [improvingKey, setImprovingKey] = useState(null);
+    const [improvementUndo, setImprovementUndo] = useState(null);
 
-    const dirty = useMemo(
-        () => !sectionsAreEqual(sections, baseline),
-        [baseline, sections]
-    );
+    const dirty = useMemo(() => !sectionsAreEqual(sections, baseline), [baseline, sections]);
     const currentReportStatus = exam?.report_status || 'Draft';
     const saveStatus = getReportStatusForSave(currentReportStatus);
     const nextReportStatus = getNextReportStatus(currentReportStatus);
-    const previewText = useMemo(
-        () => buildReportText(sections, t),
-        [sections, t]
-    );
+    const previewText = useMemo(() => buildReportText(sections, t), [sections, t]);
     const locked = Boolean(exam?.report_locked);
     const canAuthor = user?.role === 'Radiologist';
+    const canFinalize = canAuthor && userHasPermission(user, 'FINALIZE_REPORTS');
     const isAdmin = hasDeveloperOrAdminRole(user?.role);
     const canUseImageAi = hasDeveloperOrAdminRole(user?.role) || user?.role === 'Radiologist';
-    const canUseReportAi = canUseImageAi ||
-        userHasPermission(user, 'WRITE_REPORTS') ||
-        userHasPermission(user, 'IMPROVE_REPORT_FORMAT');
+    const canUseReportAi = canUseImageAi || userHasPermission(user, 'WRITE_REPORTS') || userHasPermission(user, 'IMPROVE_REPORT_FORMAT');
     const editable = canAuthor && (!locked || amendmentMode);
     const reportAiConfigured = aiSettingsStatus?.report?.configured;
-    const { data: aiDraftHistoryData } = useGetAiReportDraftsQuery(examId, {
-        skip: !examId || !canUseReportAi
-    });
+    const { data: aiDraftHistoryData } = useGetAiReportDraftsQuery(examId, { skip: !examId || !canUseReportAi });
     const aiDraftHistory = aiDraftHistoryData?.drafts || [];
     const { data: aiAnalysisData } = useGetPacsAiAnalysisJobsQuery(examId, {
         skip: !examId || !canUseImageAi,
@@ -265,237 +240,109 @@ const ReportEditorPage = () => {
     const aiDraftGenerationAvailable = canUseReportAi && (reportAiConfigured || structuredPacsDraftAvailable);
     const sectionImproveAvailable = canUseReportAi && reportAiConfigured;
     const isUploadingImages = Boolean(imageUploadProgress && imageUploadProgress.phase !== 'done');
-    const studyInstanceUid =
-        imaging?.study_instance_uid || exam?.study_instance_uid || '';
+    const studyInstanceUid = imaging?.study_instance_uid || exam?.study_instance_uid || '';
     const canOpenPacsViewer = Boolean(imaging?.images_available && (studyInstanceUid || examId));
     const imagesReady = canOpenPacsViewer;
     const hasReportContent = Object.values(sections).some((value) => value.trim());
     const effectiveReportTemplates = useMemo(() => {
-        const databaseTemplates = reportTemplates.map((template) => ({
-            ...template,
-            is_builtin: false
-        }));
-        const seen = new Set(
-            databaseTemplates.map((template) =>
-                `${template.name}|${normalizeModality(template.modality_type)}`
-            )
-        );
-        const builtIns = getBuiltInTemplatesForExam(exam || fetchedExam).filter(
-            (template) =>
-                !seen.has(`${template.name}|${normalizeModality(template.modality_type)}`)
-        );
+        const databaseTemplates = reportTemplates.map((template) => ({ ...template, is_builtin: false }));
+        const seen = new Set(databaseTemplates.map((t) => `${t.name}|${normalizeModality(t.modality_type)}`));
+        const builtIns = getBuiltInTemplatesForExam(exam || fetchedExam).filter((t) => !seen.has(`${t.name}|${normalizeModality(t.modality_type)}`));
         return [...databaseTemplates, ...builtIns];
     }, [exam, fetchedExam, reportTemplates]);
 
-    const finalizationErrors = useMemo(
-        () =>
-            [
-                !sections.findings.trim()
-                    ? t('editor.findingsRequired')
-                    : '',
-                !sections.impression.trim()
-                    ? t('editor.impressionRequired')
-                    : ''
-            ].filter(Boolean),
-        [sections.findings, sections.impression, t]
-    );
+    const finalizationErrors = useMemo(() => [
+        !sections.findings.trim() ? t('editor.findingsRequired') : '',
+        !sections.impression.trim() ? t('editor.impressionRequired') : ''
+    ].filter(Boolean), [sections.findings, sections.impression, t]);
+
     const firstIncompleteRequiredSection = !sections.findings.trim()
         ? 'findings'
         : (!sections.impression.trim() ? 'impression' : null);
 
-    const completion = useMemo(
-        () =>
-            Math.round(
-                (SECTION_CONFIG.filter(({ key }) => sections[key].trim()).length /
-                    SECTION_CONFIG.length) *
-                100
-            ),
-        [sections]
-    );
+    const completion = useMemo(() => Math.round(
+        (SECTION_CONFIG.filter(({ key }) => sections[key].trim()).length / SECTION_CONFIG.length) * 100
+    ), [sections]);
     const reportWords = useMemo(() => countWords(previewText), [previewText]);
-    const qualityChecks = useMemo(
-        () => [
-            {
-                key: 'required',
-                complete: finalizationErrors.length === 0,
-                label: t('editor.quality.required'),
-                detail: t('editor.quality.requiredHelp')
-            },
-            {
-                key: 'context',
-                complete: Boolean(
-                    sections.clinicalHistory.trim() || exam?.clinical_indication
-                ),
-                label: t('editor.quality.context'),
-                detail: t('editor.quality.contextHelp')
-            },
-            {
-                key: 'technique',
-                complete: Boolean(sections.technique.trim()),
-                label: t('editor.quality.technique'),
-                detail: t('editor.quality.techniqueHelp')
-            },
-            {
-                key: 'images',
-                complete: imagesReady,
-                label: t('editor.quality.images'),
-                detail: imagesReady
-                    ? t('editor.quality.imagesReady')
-                    : t('editor.quality.imagesMissing')
-            },
-            {
-                key: 'saved',
-                complete: !dirty,
-                label: t('editor.quality.saved'),
-                detail: dirty
-                    ? t('editor.quality.unsavedHelp')
-                    : t('editor.quality.savedHelp')
-            }
-        ],
-        [
-            dirty,
-            exam?.clinical_indication,
-            finalizationErrors.length,
-            imagesReady,
-            sections.clinicalHistory,
-            sections.technique,
-            t
-        ]
-    );
-    const qualityScore = Math.round(
-        (qualityChecks.filter((check) => check.complete).length /
-            qualityChecks.length) *
-        100
-    );
+
+    const qualityChecks = useMemo(() => [
+        { key: 'required', complete: finalizationErrors.length === 0, label: t('editor.quality.required'), detail: t('editor.quality.requiredHelp') },
+        { key: 'context', complete: Boolean(sections.clinicalHistory.trim() || exam?.clinical_indication), label: t('editor.quality.context'), detail: t('editor.quality.contextHelp') },
+        { key: 'technique', complete: Boolean(sections.technique.trim()), label: t('editor.quality.technique'), detail: t('editor.quality.techniqueHelp') },
+        { key: 'images', complete: imagesReady, label: t('editor.quality.images'), detail: imagesReady ? t('editor.quality.imagesReady') : t('editor.quality.imagesMissing') },
+        { key: 'saved', complete: !dirty, label: t('editor.quality.saved'), detail: dirty ? t('editor.quality.savedDirty') : t('editor.quality.savedClean') }
+    ], [finalizationErrors.length, sections.clinicalHistory, sections.technique, exam?.clinical_indication, imagesReady, dirty, t]);
+
+    const qualityScore = useMemo(() => {
+        const completedCount = qualityChecks.filter((c) => c.complete).length;
+        return Math.round((completedCount / qualityChecks.length) * 100);
+    }, [qualityChecks]);
 
     dirtyRef.current = dirty;
+    useUnsavedChangesGuard(dirty, t);
 
     useEffect(() => {
         if (!fetchedExam) return;
-
-        setExam(fetchedExam);
-        const isDifferentExam =
-            initializedExamId.current !== fetchedExam.exam_id;
-
-        if (isDifferentExam || !dirtyRef.current) {
-            const nextSections = normalizeSections(fetchedExam);
-            setSections(nextSections);
-            setBaseline(nextSections);
+        if (!exam || fetchedExam.exam_id !== initializedExamId.current) {
+            setExam(fetchedExam);
+            const normalized = normalizeSections(fetchedExam);
+            setSections(normalized);
+            setBaseline(normalized);
             setSelectedTemplateId(fetchedExam.template_id || '');
             initializedExamId.current = fetchedExam.exam_id;
-            if (isDifferentExam) {
-                setCollapsedSections(
-                    SECTION_CONFIG.reduce((acc, { key, collapsible }) => {
-                        if (collapsible) acc[key] = !nextSections[key]?.trim();
-                        return acc;
-                    }, {})
-                );
-            }
         }
-    }, [fetchedExam]);
+    }, [fetchedExam, exam]);
 
     useEffect(() => {
-        if (appliedDocumentDefaults.current) return;
-        if (!centerSettings) return;
-
+        if (appliedDocumentDefaults.current || !normalizedCenterSettings) return;
+        setReportDocument((current) => ({
+            ...current,
+            reportHeader: buildReportHeader(normalizedCenterSettings, current.reportHeader),
+            reportFooter: buildReportFooter(normalizedCenterSettings, current.reportFooter)
+        }));
         appliedDocumentDefaults.current = true;
-        setReportDocument({
-            includeHeader: true,
-            includeFooter: true,
-            includeSignature: true,
-            reportHeader: buildReportHeader(normalizedCenterSettings),
-            reportFooter: buildReportFooter(normalizedCenterSettings)
-        });
-    }, [centerSettings, normalizedCenterSettings]);
+    }, [normalizedCenterSettings]);
 
-    const updateReportDocument = useCallback((nextOrField, value) => {
-        setReportDocument((current) => typeof nextOrField === 'string'
-            ? { ...current, [nextOrField]: value }
-            : { ...current, ...(nextOrField || {}) });
-    }, []);
-
-    const saveReport = useCallback(
-        async (reportStatus = 'Typed', finalize = false) => {
-            if (!canAuthor || locked) return false;
-            if (finalize && finalizationErrors.length > 0) {
-                toast.error(finalizationErrors[0]);
-                return false;
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape' && studyToolsDrawerOpen) {
+                setStudyToolsDrawerOpen(false);
             }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [studyToolsDrawerOpen]);
 
-            try {
-                const result = await updateReport({
-                    examId,
-                    status: finalize ? 'Finalized' : 'Reporting',
-                    reportStatus,
-                    templateId: isUuid(selectedTemplateId)
-                        ? selectedTemplateId
-                        : undefined,
-                    sections,
-                    reportContent: previewText
-                }).unwrap();
-
-                setExam((current) => ({ ...current, ...result }));
-                setBaseline({ ...sections });
-                const statusChanged = reportStatus !== currentReportStatus;
-                toast.success(finalize
-                    ? t('messages.reportFinalized')
-                    : statusChanged
-                        ? t('messages.reportStatusUpdated', {
-                            defaultValue: `Report marked ${reportStatus}.`,
-                            status: t(`statuses.${reportStatus}`, { defaultValue: reportStatus })
-                        })
-                        : t('messages.reportSaved'));
-                return true;
-            } catch (error) {
-                toast.error(
-                    getErrorMessage(error, t('messages.reportError'))
-                );
-                return false;
-            }
-        },
-        [
-            canAuthor,
-            currentReportStatus,
-            examId,
-            finalizationErrors,
-            locked,
-            previewText,
-            sections,
-            selectedTemplateId,
-            t,
-            updateReport
-        ]
-    );
-
-    const saveTypedReport = useCallback(() => saveReport(saveStatus), [saveReport, saveStatus]);
-
-    const advanceReportStatus = useCallback(() => {
-        if (!nextReportStatus || nextReportStatus === 'Typed') return;
-        if (nextReportStatus === 'Approved') {
-            setPendingReportStatus(nextReportStatus);
-            return;
-        }
-        saveReport(nextReportStatus);
-    }, [nextReportStatus, saveReport]);
-
-    useUnsavedChangesGuard({
-        dirty,
-        canSave: editable && !locked && !isSaving,
-        onSave: saveTypedReport
-    });
-
-    const updateSection = useCallback((key, value) => {
+    const updateSection = useCallback((key, value, options = {}) => {
+        if (!options.preserveImprovementUndo) setImprovementUndo(null);
         setSections((current) => ({ ...current, [key]: value }));
     }, []);
 
+    const updateReportDocument = useCallback((patch) => {
+        setReportDocument((current) => ({
+            ...current,
+            ...(typeof patch === 'function' ? patch(current) : patch)
+        }));
+    }, []);
+
+    const undoImprovement = useCallback((snapshot, toastId) => {
+        if (!snapshot?.key) return;
+        setSections((current) => ({
+            ...current,
+            [snapshot.key]: snapshot.previous
+        }));
+        setImprovementUndo((current) => (current?.id === snapshot.id ? null : current));
+        if (toastId) toast.dismiss(toastId);
+        toast.success(t('messages.improvementUndone', { defaultValue: 'Text improvement undone' }));
+    }, [t]);
+
     const improveSectionText = useCallback(async (key) => {
         if (!canUseReportAi) {
-            toast.error(t('editor.aiDraft.accessDenied', {
-                defaultValue: 'You do not have permission to use the AI report assistant.'
-            }));
+            toast.error(t('editor.aiDraft.accessDenied', { defaultValue: 'You do not have permission to use the AI report assistant.' }));
             return;
         }
-        const originalText = sections[key]?.trim();
+        const previousText = sections[key] || '';
+        const originalText = previousText.trim();
         if (!originalText || originalText.length < 10) {
             toast.error(t('messages.improveMinLength', { defaultValue: 'Text must be at least 10 characters to improve' }));
             return;
@@ -511,7 +358,9 @@ const ReportEditorPage = () => {
                 language: 'en'
             }).unwrap();
             if (result?.improved) {
-                updateSection(key, result.improved);
+                const snapshot = { id: `${key}-${Date.now()}`, key, previous: previousText, improved: result.improved };
+                setImprovementUndo(snapshot);
+                updateSection(key, result.improved, { preserveImprovementUndo: true });
                 toast.success(t('messages.sectionImproved', { defaultValue: 'Section text improved by AI' }));
             }
         } catch (error) {
@@ -527,15 +376,11 @@ const ReportEditorPage = () => {
 
     const generateAiPreliminaryDraft = useCallback(async () => {
         if (!canUseReportAi) {
-            toast.error(t('editor.aiDraft.accessDenied', {
-                defaultValue: 'You do not have permission to use the AI report assistant.'
-            }));
+            toast.error(t('editor.aiDraft.accessDenied', { defaultValue: 'You do not have permission to use the AI report assistant.' }));
             return;
         }
         try {
-            const template = effectiveReportTemplates.find(
-                (item) => String(item.template_id) === String(selectedTemplateId)
-            );
+            const template = effectiveReportTemplates.find((item) => String(item.template_id) === String(selectedTemplateId));
             const templatePayload = template ? {
                 name: template.name,
                 clinical_history: template.clinical_history || '',
@@ -552,29 +397,20 @@ const ReportEditorPage = () => {
                 template: templatePayload
             }).unwrap();
             setAiDraft(result);
-            toast.success(t('editor.aiDraft.generated', {
-                defaultValue: 'AI preliminary draft generated'
-            }));
+            toast.success(t('editor.aiDraft.generated', { defaultValue: 'AI preliminary draft generated' }));
         } catch (error) {
-            toast.error(getErrorMessage(error, t('editor.aiDraft.error', {
-                defaultValue: 'Could not generate AI preliminary draft'
-            })));
+            toast.error(getErrorMessage(error, t('editor.aiDraft.error', { defaultValue: 'Could not generate AI preliminary draft' })));
         }
     }, [canUseReportAi, effectiveReportTemplates, examId, generatePreliminaryDraft, selectedTemplateId, t]);
 
     const requestAiImageAnalysis = useCallback(async () => {
         try {
-            const result = await requestPacsAiAnalysis({
-                examId,
-                analysisType: 'preliminary_image_review'
-            }).unwrap();
+            const result = await requestPacsAiAnalysis({ examId, analysisType: 'preliminary_image_review' }).unwrap();
             toast.success(result?.existing
                 ? t('editor.aiImage.alreadyQueued', { defaultValue: 'AI analysis is already queued' })
                 : t('editor.aiImage.requested', { defaultValue: 'AI image analysis queued' }));
         } catch (error) {
-            toast.error(getErrorMessage(error, t('editor.aiImage.error', {
-                defaultValue: 'Could not queue AI image analysis'
-            })));
+            toast.error(getErrorMessage(error, t('editor.aiImage.error', { defaultValue: 'Could not queue AI image analysis' })));
         }
     }, [examId, requestPacsAiAnalysis, t]);
 
@@ -613,9 +449,7 @@ const ReportEditorPage = () => {
             provenance: item.prompt_context?.draftProvenance || {
                 provider: item.provider,
                 model: item.model,
-                sourceMode: item.prompt_context?.imageAnalysis
-                    ? 'pacs-image-analysis'
-                    : 'exam-metadata',
+                sourceMode: item.prompt_context?.imageAnalysis ? 'pacs-image-analysis' : 'exam-metadata',
                 coverage: item.prompt_context?.imageAnalysis?.provenance?.coverage || null
             },
             sourceContext: {
@@ -628,23 +462,7 @@ const ReportEditorPage = () => {
     const applyAiPreliminaryDraft = useCallback((mode = 'fill_empty', sectionKeys = []) => {
         if (!aiDraft?.sections) return;
         const overwrite = mode === 'replace';
-        const selectedKeys = new Set(
-            sectionKeys.length
-                ? sectionKeys
-                : SECTION_CONFIG.map(({ key }) => key)
-        );
-        const replacingPopulatedSections = overwrite && SECTION_CONFIG.some(({ key }) => (
-            selectedKeys.has(key) &&
-            String(aiDraft.sections[key] || '').trim() &&
-            String(sections[key] || '').trim()
-        ));
-        if (
-            replacingPopulatedSections &&
-            !window.confirm(t('editor.aiDraft.replaceConfirm', {
-                defaultValue: 'Replace the selected populated report sections with this AI draft? Your current text will be overwritten.'
-            }))
-        ) return;
-
+        const selectedKeys = new Set(sectionKeys.length ? sectionKeys : SECTION_CONFIG.map(({ key }) => key));
         const applicableKeys = SECTION_CONFIG
             .map(({ key }) => key)
             .filter((key) => (
@@ -653,14 +471,11 @@ const ReportEditorPage = () => {
                 (overwrite || !String(sections[key] || '').trim())
             ));
         if (!applicableKeys.length) {
-            toast(t('editor.aiDraft.nothingToApply', {
-                defaultValue: overwrite
-                    ? 'Select at least one draft section to replace.'
-                    : 'The selected report sections already contain text.'
-            }));
+            toast(t('editor.aiDraft.nothingToApply', { defaultValue: 'The selected report sections already contain text.' }));
             return;
         }
         const applicableKeySet = new Set(applicableKeys);
+        setImprovementUndo(null);
         setSections((current) => {
             const next = { ...current };
             SECTION_CONFIG.forEach(({ key }) => {
@@ -669,27 +484,12 @@ const ReportEditorPage = () => {
             });
             return next;
         });
-        setCollapsedSections((current) => {
-            const next = { ...current };
-            SECTION_CONFIG.forEach(({ key, collapsible }) => {
-                if (selectedKeys.has(key) && collapsible && String(aiDraft.sections[key] || '').trim()) {
-                    next[key] = false;
-                }
-            });
-            return next;
-        });
         if (aiDraft.draftId) {
-            markAiDraftApplied({
-                examId,
-                draftId: aiDraft.draftId,
-                mode
-            }).catch(() => undefined);
+            markAiDraftApplied({ examId, draftId: aiDraft.draftId, mode }).catch(() => undefined);
         }
         toast.success(t('editor.aiDraft.inserted', {
             count: applicableKeys.length,
-            defaultValue: overwrite
-                ? `AI draft replaced ${applicableKeys.length} selected sections`
-                : `AI draft filled ${applicableKeys.length} empty sections`
+            defaultValue: `AI draft inserted into ${applicableKeys.length} sections`
         }));
     }, [aiDraft, examId, markAiDraftApplied, sections, t]);
 
@@ -698,67 +498,100 @@ const ReportEditorPage = () => {
         setMobileView('editor');
         setCollapsedSections((current) => (current[key] ? { ...current, [key]: false } : current));
         window.requestAnimationFrame(() => {
-            document
-                .getElementById(`report-section-${key}`)
-                ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            document.getElementById(`report-section-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         });
     }, []);
 
-    const applyTemplate = useCallback(
-        (templateId) => {
-            setSelectedTemplateId(templateId);
-            const template = effectiveReportTemplates.find(
-                (item) => String(item.template_id) === String(templateId)
-            );
-            if (!template) return;
-            const nextSections = templateToSections(template, exam);
-            setSections(nextSections);
-            setCollapsedSections((current) => {
-                const next = { ...current };
-                SECTION_CONFIG.forEach(({ key, collapsible }) => {
-                    if (collapsible && nextSections[key]?.trim()) next[key] = false;
-                });
-                return next;
+    const applyTemplate = useCallback((templateId) => {
+        setSelectedTemplateId(templateId);
+        const template = effectiveReportTemplates.find((item) => String(item.template_id) === String(templateId));
+        if (!template) return;
+        const next = templateToSections(template, sections);
+        setImprovementUndo(null);
+        setSections(next);
+        setCollapsedSections((current) => {
+            const updated = { ...current };
+            SECTION_CONFIG.forEach(({ key, collapsible }) => {
+                if (collapsible && next[key]?.trim()) updated[key] = false;
             });
-        },
-        [effectiveReportTemplates, exam]
-    );
+            return updated;
+        });
+        toast.success(t('messages.templateApplied'));
+    }, [effectiveReportTemplates, sections, t]);
 
-    const saveTemplate = async (name) => {
+    const saveTypedReport = async () => {
+        if (!editable) return false;
         try {
-            await createTemplate({
-                name,
-                modalityType: exam?.modality_type || undefined,
-                examTypeId: exam?.exam_type_id || undefined,
-                ...sections
-            }).unwrap();
-            toast.success(t('messages.templateSaved'));
+            const payload = {
+                sections,
+                template_id: isUuid(selectedTemplateId) ? selectedTemplateId : undefined,
+                report_status: saveStatus
+            };
+            const updated = await updateReport({ examId, ...payload }).unwrap();
+            setExam(updated);
+            setBaseline({ ...sections });
+            toast.success(t('messages.saved'));
             return true;
         } catch (error) {
-            toast.error(getErrorMessage(error, t('messages.templateError')));
+            toast.error(getErrorMessage(error, t('messages.saveError')));
+            return false;
+        }
+    };
+
+    const advanceReportStatus = async () => {
+        if (!nextReportStatus) return false;
+        try {
+            const payload = {
+                sections,
+                template_id: isUuid(selectedTemplateId) ? selectedTemplateId : undefined,
+                report_status: nextReportStatus
+            };
+            const updated = await updateReport({ examId, ...payload }).unwrap();
+            setExam(updated);
+            setBaseline({ ...sections });
+            toast.success(t(`statuses.${nextReportStatus}`, { defaultValue: nextReportStatus }));
+            return true;
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('messages.saveError')));
+            return false;
+        }
+    };
+
+    const finalizeReport = async () => {
+        if (finalizationErrors.length > 0) {
+            toast.error(finalizationErrors[0]);
+            return false;
+        }
+        try {
+            const payload = {
+                sections,
+                template_id: isUuid(selectedTemplateId) ? selectedTemplateId : undefined,
+                report_status: 'Finalized'
+            };
+            const updated = await updateReport({ examId, ...payload }).unwrap();
+            setExam(updated);
+            setBaseline({ ...sections });
+            setShowFinalize(false);
+            toast.success(t('messages.finalized'));
+            return true;
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('messages.finalizeError')));
             return false;
         }
     };
 
     const submitAmendment = async () => {
-        if (amendmentReason.trim().length < 3) {
-            toast.error(t('messages.amendmentRequired'));
+        if (!amendmentReason.trim()) {
+            toast.error(t('messages.amendmentReasonRequired'));
             return false;
         }
-        if (finalizationErrors.length > 0) {
-            toast.error(finalizationErrors[0]);
-            return false;
-        }
-
         try {
-            const result = await amendReport({
-                id: examId,
-                reason: amendmentReason.trim(),
+            const updated = await amendReport({
+                examId,
                 sections,
-                reportContent: previewText
+                reason: amendmentReason
             }).unwrap();
-
-            setExam((current) => ({ ...current, ...result }));
+            setExam(updated);
             setBaseline({ ...sections });
             setAmendmentMode(false);
             setAmendmentReason('');
@@ -768,12 +601,6 @@ const ReportEditorPage = () => {
             toast.error(getErrorMessage(error, t('messages.amendError')));
             return false;
         }
-    };
-
-    const cancelAmendment = () => {
-        setSections({ ...baseline });
-        setAmendmentReason('');
-        setAmendmentMode(false);
     };
 
     const deliver = async (payload) => {
@@ -791,8 +618,7 @@ const ReportEditorPage = () => {
         if (isOpeningPdf) return false;
         setIsOpeningPdf(true);
         try {
-            const baseUrl =
-                import.meta.env.VITE_API_URL || '/api';
+            const baseUrl = import.meta.env.VITE_API_URL || '/api';
             const query = new URLSearchParams({
                 reportHeader: reportDocument.reportHeader,
                 reportFooter: reportDocument.reportFooter,
@@ -800,26 +626,17 @@ const ReportEditorPage = () => {
                 includeFooter: String(reportDocument.includeFooter !== false),
                 includeSignature: String(reportDocument.includeSignature !== false)
             });
-            const response = await authenticatedFetch(
-                `${baseUrl}/exams/${examId}/report/pdf?${query.toString()}`
-            );
-
+            const response = await authenticatedFetch(`${baseUrl}/exams/${examId}/report/pdf?${query.toString()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
             const html = await response.text();
-            const url = URL.createObjectURL(
-                new Blob([html], { type: 'text/html' })
-            );
+            const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
             const popup = window.open(url, '_blank', 'noopener,noreferrer');
-
             if (!popup) {
                 const anchor = document.createElement('a');
                 anchor.href = url;
                 anchor.target = '_blank';
-                anchor.rel = 'noopener noreferrer';
                 anchor.click();
             }
-
             window.setTimeout(() => URL.revokeObjectURL(url), 60000);
             return true;
         } catch (error) {
@@ -830,126 +647,11 @@ const ReportEditorPage = () => {
         }
     };
 
-    const requestExit = () => {
-        if (dirty) {
-            setShowExitConfirm(true);
-            return;
-        }
-        navigate('/worklist');
-    };
-
-    const handleImageUpload = async (event) => {
-        const files = Array.from(event.target.files || []);
-        event.target.value = '';
-        if (files.length === 0) return;
-        if (isUploadingImages) return;
-
-        try {
-            setImageUploadProgress({
-                percent: 0,
-                loaded: 0,
-                total: files.reduce((sum, file) => sum + Number(file.size || 0), 0),
-                files: files.length,
-                phase: 'uploading'
-            });
-
-            const response = await uploadExamImagesWithProgress({
-                examId,
-                files,
-                orderNumber: exam?.order_number,
-                onProgress: (progress) => {
-                    setImageUploadProgress((current) => ({
-                        ...(current || {}),
-                        ...progress,
-                        files: files.length
-                    }));
-                }
-            });
-            const stored = Number(response?.stored || 0);
-            const reconciled = Number(response?.reconciled ?? stored);
-            const unreconciled = Number(response?.unreconciled || 0);
-            const failed = Number(response?.failed || 0);
-            const rejected = Number(response?.rejected || 0);
-
-            setImageUploadProgress((current) => ({
-                ...(current || {}),
-                percent: 100,
-                phase: 'done'
-            }));
-
-            if (reconciled > 0) {
-                refetchImaging?.();
-                refetch?.();
-                if (unreconciled || failed || rejected) {
-                    toast(
-                        t('editor.uploadImagesPartial', {
-                            defaultValue: `${reconciled} linked; ${unreconciled + failed + rejected} need attention`,
-                            linked: reconciled,
-                            attention: unreconciled + failed + rejected
-                        }),
-                        { duration: 6000 }
-                    );
-                } else {
-                    toast.success(
-                        t('editor.uploadImagesDone', {
-                            defaultValue: `${reconciled} image(s) uploaded and linked`,
-                            count: reconciled
-                        })
-                    );
-                }
-                return;
-            }
-
-            if (stored > 0) {
-                refetchImaging?.();
-                toast.error(
-                    t('editor.uploadImagesUnreconciled', {
-                        defaultValue: `${stored} image(s) reached PACS but could not be linked. Review Study Reconciliation.`,
-                        count: stored
-                    }),
-                    { duration: 7000 }
-                );
-                return;
-            }
-
-            const reason = response?.results?.find(
-                (result) => result.status !== 'stored'
-            )?.reason;
-            toast.error(
-                reason
-                    ? t('editor.uploadImagesFailed', {
-                        defaultValue: `Upload failed: ${reason}`,
-                        reason
-                    })
-                    : t('editor.uploadImagesNone', {
-                        defaultValue: 'No files could be stored'
-                    })
-            );
-        } catch (error) {
-            setImageUploadProgress(null);
-            toast.error(
-                getErrorMessage(
-                    error,
-                    t('editor.uploadImagesError', {
-                        defaultValue: 'Image upload failed'
-                    })
-                )
-            );
-        } finally {
-            window.setTimeout(() => {
-                setImageUploadProgress((current) => current?.phase === 'done' ? null : current);
-            }, 1200);
-        }
-    };
-
     const exportWord = async () => {
         if (isExportingWord) return false;
         setIsExportingWord(true);
-
         try {
-            const { exportReportToWord } = await import(
-                '../utils/exportReportToWord'
-            );
+            const { exportReportToWord } = await import('../utils/exportReportToWord');
             await exportReportToWord({
                 exam,
                 sections,
@@ -972,6 +674,18 @@ const ReportEditorPage = () => {
         }
     };
 
+    const openPacsViewer = () => {
+        if (!studyInstanceUid && !examId) return;
+        const params = new URLSearchParams();
+        if (studyInstanceUid) params.set('StudyInstanceUIDs', studyInstanceUid);
+        if (examId) params.set('examId', examId);
+        if (exam?.order_number) {
+            params.set('order', exam.order_number);
+            params.set('accession', exam.order_number);
+        }
+        window.open(`/pacs/viewer?${params.toString()}`, '_blank', 'noopener,noreferrer');
+    };
+
     if (examLoading && !exam) {
         return <PageState icon={Loader2} spin title={t('editor.loading')} />;
     }
@@ -987,71 +701,8 @@ const ReportEditorPage = () => {
         );
     }
 
-    const reportStatus = currentReportStatus;
-    const imageStatusLabel = imaging?.images_available
-        ? t('editor.viewImagesReady', {
-            defaultValue: `${imaging?.image_count || 0} order image(s)`
-        })
-        : t('editor.viewImagesNone', {
-            defaultValue: 'No order images yet'
-        });
-
-    const openPacsViewer = () => {
-        if (!studyInstanceUid && !examId) return;
-
-        const params = new URLSearchParams();
-        if (studyInstanceUid) params.set('StudyInstanceUIDs', studyInstanceUid);
-        if (examId) params.set('examId', examId);
-        if (exam?.order_number) {
-            params.set('order', exam.order_number);
-            params.set('accession', exam.order_number);
-        }
-        const viewerPath = `/pacs/viewer?${params.toString()}`;
-        const viewerTab = window.open('', '_blank');
-
-        if (!viewerTab) {
-            navigate(viewerPath);
-            return;
-        }
-
-        viewerTab.opener = null;
-        viewerTab.location.href = viewerPath;
-    };
-
-    const inspectorContent = {
-        preview: (
-            <ReportPreviewPanel exam={exam} sections={sections} t={t} />
-        ),
-        context: <ClinicalContextPanel exam={exam} locale={locale} t={t} />,
-        documents: exam?.patient_id ? (
-            <PatientDocumentsPanel
-                patientId={exam.patient_id}
-                locale={locale}
-                t={t}
-            />
-        ) : null,
-        delivery: locked ? (
-            <DeliveryPanel
-                history={deliveryHistory}
-                onDeliver={deliver}
-                isDelivering={isDelivering}
-                locale={locale}
-                t={t}
-            />
-        ) : null
-    };
-
-    const desktopGridClass = focusMode
-        ? 'xl:grid-cols-[minmax(0,1fr)]'
-        : 'xl:grid-cols-[minmax(0,1fr)_390px] 2xl:grid-cols-[minmax(0,1fr)_420px]';
-
-    const toggleFocusMode = () => {
-        setFocusMode((current) => {
-            const next = !current;
-            if (next) setMobileView('editor');
-            return next;
-        });
-    };
+    const priorityKey = exam?.priority || 'Routine';
+    const studyTitle = exam?.exam_type_name || exam?.modality_name || 'Imaging Examination';
 
     const studyToolsProps = {
         exam,
@@ -1090,12 +741,502 @@ const ReportEditorPage = () => {
     };
 
     return (
-        <div
-            dir={isArabic ? 'rtl' : 'ltr'}
-            lang={isArabic ? 'ar' : 'en'}
-            className="min-h-[calc(100vh-4rem)] bg-slate-50 pb-48 dark:bg-[var(--rcms-canvas)] sm:pb-32 print:bg-white print:pb-0"
-        >
+        <div className="space-y-4 pb-12" dir={isArabic ? 'rtl' : 'ltr'}>
             <ImageUploadOverlay progress={imageUploadProgress} t={t} />
+
+            {/* Master Patient & Study Hero Deck */}
+            <section className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    {/* Patient & Exam Identity */}
+                    <div className="flex min-w-0 items-center gap-3.5">
+                        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-teal-500/10 text-teal-700 dark:text-teal-300 font-black text-lg">
+                            <User size={22} />
+                        </span>
+                        <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h1 className="text-base font-black text-slate-900 dark:text-white sm:text-lg truncate">
+                                    {exam?.patient_name || '—'}
+                                </h1>
+                                <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${priorityTone[priorityKey] || priorityTone.Routine}`}>
+                                    {priorityKey}
+                                </span>
+                                {locked && (
+                                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-black text-emerald-700 dark:text-emerald-300">
+                                        <LockKeyhole size={11} />
+                                        <span>FINALIZED & LOCKED</span>
+                                    </span>
+                                )}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2.5 text-xs text-slate-500 dark:text-slate-400">
+                                <span className="font-mono font-bold">MRN: {exam?.mrn || '—'}</span>
+                                <span>·</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-200">{studyTitle}</span>
+                                <span>·</span>
+                                <span>Order #{exam?.order_number || examId}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Stepper + Actions */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        {/* Primary Image Preview Button (Shown only when images are available) */}
+                        {canOpenPacsViewer && (
+                            <button
+                                type="button"
+                                onClick={openPacsViewer}
+                                className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-4 text-xs font-black text-white hover:bg-teal-500 shadow-sm shadow-teal-600/20 transition active:scale-95"
+                                title={isArabic ? 'فتح عارض صور الفحص DICOM' : 'Launch DICOM PACS Image Viewer'}
+                            >
+                                <Eye size={16} />
+                                <span>{isArabic ? 'معاينة الصور (DICOM)' : 'Preview Images'}</span>
+                                {imaging?.image_count > 0 && (
+                                    <span className="rounded-full bg-teal-700/80 px-2 py-0.5 text-[10px] font-black text-teal-100">
+                                        {imaging.image_count}
+                                    </span>
+                                )}
+                            </button>
+                        )}
+
+                        {/* Open Study Tools Drawer */}
+                        <button
+                            type="button"
+                            onClick={() => setStudyToolsDrawerOpen(true)}
+                            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3.5 text-xs font-black text-teal-700 dark:text-teal-300 hover:bg-teal-500 hover:text-white transition shadow-xs"
+                        >
+                            <Layers3 size={15} />
+                            <span>{isArabic ? 'أدوات الدراسة' : 'Study & AI Tools'}</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setShowExportDialog(true)}
+                            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                            <Download size={15} />
+                            <span>{isArabic ? 'تصدير' : 'Export'}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => navigate('/worklist')}
+                            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                            <ArrowLeft size={15} className="rtl:rotate-180" />
+                            <span>{isArabic ? 'قائمة العمل' : 'Worklist'}</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Workflow Stepper */}
+                <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <WorkflowStepper currentStatus={currentReportStatus} t={t} />
+                </div>
+            </section>
+
+            {/* Read-only / Amendment Alerts */}
+            {!canAuthor && (
+                <Notice
+                    icon={LockKeyhole}
+                    tone="blue"
+                    title={t('editor.readOnly')}
+                    description={t('editor.readOnlyHelp')}
+                />
+            )}
+
+            {locked && !amendmentMode && canAuthor && (
+                <Notice
+                    icon={FileCheck2}
+                    tone="emerald"
+                    title={t('editor.signedLocked')}
+                    description={t('editor.signedLockedHelp')}
+                    action={
+                        <button
+                            type="button"
+                            onClick={() => setAmendmentMode(true)}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-amber-600 px-4 text-xs font-black text-white hover:bg-amber-500 transition"
+                        >
+                            <PenLine size={14} />
+                            <span>{t('reporting.amend')}</span>
+                        </button>
+                    }
+                />
+            )}
+
+            {/* Main 2-Column Responsive Workspace */}
+            <div className={`grid items-start gap-4 ${focusMode ? 'grid-cols-1' : 'lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_400px]'}`}>
+                {/* Left: Section Cards Editor Suite */}
+                <div className="min-w-0 space-y-3">
+                    {/* Section Quick Nav & Focus Toggle */}
+                    <div className="flex items-center justify-between gap-2">
+                        <SectionQuickNav
+                            sections={sections}
+                            activeSection={activeSection}
+                            completion={completion}
+                            onSelect={selectSection}
+                            t={t}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setFocusMode(!focusMode)}
+                            className="hidden lg:inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                            {focusMode ? <EyeOff size={14} /> : <Eye size={14} />}
+                            <span>{focusMode ? (isArabic ? 'عرض اللوحة الجانبية' : 'Show Inspector') : (isArabic ? 'وضع التركيز' : 'Focus Mode')}</span>
+                        </button>
+                    </div>
+
+                    {/* Template Selector Bar */}
+                    {!locked && canAuthor && (
+                        <TemplateBar
+                            templates={effectiveReportTemplates}
+                            editable={editable}
+                            isSavingTemplate={isCreatingTemplate || templatesLoading}
+                            currentExamTypeId={effectiveExamTypeId}
+                            currentModalityType={effectiveModalityType}
+                            currentStudyTypeLabel={studyTitle}
+                            onApply={applyTemplate}
+                            onSaveTemplate={hasReportContent ? () => setShowTemplatePrompt(true) : undefined}
+                            t={t}
+                        />
+                    )}
+
+                    {/* Diagnostic Section Cards */}
+                    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 divide-y divide-slate-100 dark:divide-slate-800">
+                        {SECTION_CONFIG.map((config) => (
+                            <ReportSectionCard
+                                key={config.key}
+                                config={config}
+                                value={sections[config.key]}
+                                editable={editable}
+                                active={activeSection === config.key}
+                                collapsed={collapsedSections[config.key]}
+                                embedded
+                                onToggleCollapse={toggleSectionCollapse}
+                                onFocus={() => setActiveSection(config.key)}
+                                onChange={updateSection}
+                                canImprove={sectionImproveAvailable}
+                                isImproving={improvingKey === config.key}
+                                onImprove={improveSectionText}
+                                canUndoImprove={improvementUndo?.key === config.key && sections[config.key] === improvementUndo.improved}
+                                onUndoImprove={() => undoImprovement(improvementUndo)}
+                                locale={locale}
+                                t={t}
+                            />
+                        ))}
+                    </div>
+
+                    {/* Sticky Action Command Bar */}
+                    <div className="sticky bottom-3 z-30 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-2 text-xs">
+                            <span className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold ${
+                                dirty
+                                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                    : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                            }`}>
+                                {dirty ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />}
+                                <span>{dirty ? (isArabic ? 'تعديلات غير محفوظة' : 'Unsaved changes') : (isArabic ? 'تم حفظ التقرير' : 'All saved')}</span>
+                            </span>
+                            {finalizationErrors.length > 0 && (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600">
+                                    <AlertTriangle size={13} />
+                                    <span>{finalizationErrors.length} {isArabic ? 'حقول إلزامية متبقية' : 'required sections empty'}</span>
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                            {/* Preview Images Quick Action (Shown only when images are available) */}
+                            {canOpenPacsViewer && (
+                                <button
+                                    type="button"
+                                    onClick={openPacsViewer}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                    title={isArabic ? 'معاينة صور الفحص DICOM' : 'Preview DICOM Images'}
+                                >
+                                    <Eye size={14} />
+                                    <span>{isArabic ? 'معاينة الصور' : 'Preview Images'}</span>
+                                </button>
+                            )}
+
+                            {amendmentMode ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAmendmentMode(false)}
+                                        className="inline-flex h-9 items-center rounded-xl border border-slate-200 px-3.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300"
+                                    >
+                                        {isArabic ? 'إلغاء' : 'Cancel'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={submitAmendment}
+                                        disabled={isAmending || !dirty || amendmentReason.trim().length < 3}
+                                        className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-amber-600 px-4 text-xs font-black text-white hover:bg-amber-500 disabled:opacity-50"
+                                    >
+                                        {isAmending ? <Loader2 size={14} className="animate-spin" /> : <FileCheck2 size={14} />}
+                                        <span>{isArabic ? 'حفظ الاستدراك' : 'Save Amendment'}</span>
+                                    </button>
+                                </>
+                            ) : !locked && canAuthor ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={saveTypedReport}
+                                        disabled={isSaving || (!dirty && currentReportStatus !== 'Draft')}
+                                        className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 disabled:opacity-40"
+                                    >
+                                        {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                        <span>{currentReportStatus === 'Draft' ? (isArabic ? 'حفظ كمسودة' : 'Save Draft') : (isArabic ? 'حفظ التعديلات' : 'Save Changes')}</span>
+                                    </button>
+
+                                    {nextReportStatus && nextReportStatus !== 'Typed' && (
+                                        <button
+                                            type="button"
+                                            onClick={advanceReportStatus}
+                                            disabled={isSaving}
+                                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3.5 text-xs font-black text-teal-700 dark:text-teal-300 hover:bg-teal-500 hover:text-white transition"
+                                        >
+                                            <ClipboardCheck size={14} />
+                                            <span>{nextReportStatus === 'Approved' ? (isArabic ? 'اعتماد' : 'Approve') : (isArabic ? 'مراجعة' : 'Review')}</span>
+                                        </button>
+                                    )}
+
+                                    {canFinalize && currentReportStatus === 'Approved' && <button
+                                        type="button"
+                                        onClick={() => setShowFinalize(true)}
+                                        disabled={isSaving || finalizationErrors.length > 0}
+                                        className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-5 text-xs font-black text-white hover:bg-emerald-500 transition disabled:opacity-40 shadow-sm"
+                                    >
+                                        <LockKeyhole size={14} />
+                                        <span>{isArabic ? 'اعتماد وتوقيع التقرير نهائياً' : 'Finalize & Sign Report'}</span>
+                                    </button>}
+                                </>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowExportDialog(true)}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-600 px-4 text-xs font-black text-white hover:bg-teal-500"
+                                >
+                                    <Download size={14} />
+                                    <span>{isArabic ? 'تصدير التقرير' : 'Export Report'}</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right: Diagnostic Telemetry & Inspector Panel */}
+                {!focusMode && (
+                    <aside className="space-y-3">
+                        {/* Quick Trigger for Study Tools Drawer */}
+                        <button
+                            type="button"
+                            onClick={() => setStudyToolsDrawerOpen(true)}
+                            className="w-full flex items-center justify-between rounded-2xl border border-teal-500/30 bg-teal-50/80 p-3 text-start shadow-xs transition hover:bg-teal-100/80 dark:border-teal-900/50 dark:bg-teal-950/20 dark:hover:bg-teal-950/40"
+                        >
+                            <div className="flex items-center gap-2.5">
+                                <span className="grid h-8 w-8 place-items-center rounded-xl bg-teal-600 text-white shadow-xs">
+                                    <Layers3 size={16} />
+                                </span>
+                                <div>
+                                    <span className="block text-xs font-black text-teal-900 dark:text-teal-200">
+                                        {isArabic ? 'درج أدوات الدراسة والـ PACS' : 'Study & AI Tools Drawer'}
+                                    </span>
+                                    <span className="block text-[10px] text-teal-700/80 dark:text-teal-400">
+                                        {isArabic ? 'الصور، الذكاء الاصطناعي، وإعدادات الوثيقة' : 'Images, AI assistant, and document'}
+                                    </span>
+                                </div>
+                            </div>
+                            <span className="rounded-lg bg-white/80 px-2 py-1 text-[10px] font-black text-teal-700 dark:bg-slate-900 dark:text-teal-300">
+                                {isArabic ? 'فتح الدرج' : 'Open'}
+                            </span>
+                        </button>
+
+                        {/* Inspector Tabs */}
+                        <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 flex flex-wrap gap-1">
+                            {[
+                                { id: 'preview', icon: Eye, label: isArabic ? 'معاينة حية' : 'Preview' },
+                                { id: 'quality', icon: ShieldCheck, label: isArabic ? 'الجودة' : 'Quality' },
+                                ...(locked ? [{ id: 'delivery', icon: Send, label: isArabic ? 'التسليم' : 'Delivery' }] : [])
+                            ].map((tab) => {
+                                const Icon = tab.icon;
+                                const isActive = inspectorTab === tab.id;
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setInspectorTab(tab.id)}
+                                        className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-black transition-all ${
+                                            isActive
+                                                ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20'
+                                                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                                        }`}
+                                    >
+                                        <Icon size={14} />
+                                        <span>{tab.label}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Inspector Content Box */}
+                        <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 min-h-[400px]">
+                            {inspectorTab === 'preview' && (
+                                <ReportPreviewPanel exam={exam} sections={sections} t={t} />
+                            )}
+                            {inspectorTab === 'quality' && (
+                                <QualityPanel
+                                    completion={completion}
+                                    reportWords={reportWords}
+                                    qualityScore={qualityScore}
+                                    checks={qualityChecks}
+                                    t={t}
+                                />
+                            )}
+                            {inspectorTab === 'delivery' && locked && (
+                                <DeliveryPanel
+                                    history={deliveryHistory}
+                                    onDeliver={deliver}
+                                    isDelivering={isDelivering}
+                                    locale={locale}
+                                    t={t}
+                                />
+                            )}
+                        </div>
+                    </aside>
+                )}
+            </div>
+
+            {/* Slide-out Study Tools Drawer */}
+            {studyToolsDrawerOpen && (
+                <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true">
+                    {/* Backdrop */}
+                    <div
+                        className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+                        onClick={() => setStudyToolsDrawerOpen(false)}
+                    />
+
+                    <div className={`fixed inset-y-0 ${isArabic ? 'left-0' : 'right-0'} flex max-w-full ${isArabic ? 'pr-6' : 'pl-6'}`}>
+                        <div className={`w-screen max-w-2xl bg-white shadow-2xl backdrop-blur-2xl dark:bg-slate-900 border-x border-slate-200 dark:border-slate-800 flex flex-col ${isArabic ? 'animate-in slide-in-from-left duration-250' : 'animate-in slide-in-from-right duration-250'}`}>
+                            {/* Drawer Header */}
+                            <div className="border-b border-slate-100 p-4 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/40 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <span className="grid h-10 w-10 place-items-center rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300">
+                                            <Layers3 size={20} />
+                                        </span>
+                                        <div>
+                                            <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                                                {isArabic ? 'أدوات دراسة الفحص والذكاء الاصطناعي' : 'Study Imaging & AI Tools'}
+                                            </h3>
+                                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                                {studyTitle} · Order #{exam?.order_number || examId}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        {canOpenPacsViewer && (
+                                            <button
+                                                type="button"
+                                                onClick={openPacsViewer}
+                                                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-600 px-3 text-xs font-black text-white hover:bg-teal-500 shadow-xs transition"
+                                            >
+                                                <Monitor size={14} />
+                                                <span>{isArabic ? 'فتح عارض PACS' : 'Launch PACS'}</span>
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => setStudyToolsDrawerOpen(false)}
+                                            className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 transition"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Drawer Tool Filter Tabs */}
+                                <div className="flex gap-1 overflow-x-auto pb-0.5 scrollbar-none">
+                                    {[
+                                        { key: null, label: isArabic ? 'الكل' : 'All Tools', icon: Layers3 },
+                                        { key: 'imaging', label: isArabic ? 'صور الفحص' : 'Images & PACS', icon: Monitor },
+                                        { key: 'aiImage', label: isArabic ? 'تحليل الصور AI' : 'AI Analysis', icon: Activity },
+                                        { key: 'aiDraft', label: isArabic ? 'المساعد الذكي' : 'AI Draft', icon: Sparkles },
+                                        { key: 'document', label: isArabic ? 'الترويسة' : 'Document', icon: FileCheck2 }
+                                    ].map((tab) => {
+                                        const Icon = tab.icon;
+                                        const isActive = drawerTool === tab.key;
+                                        return (
+                                            <button
+                                                key={String(tab.key)}
+                                                type="button"
+                                                onClick={() => setDrawerTool(tab.key)}
+                                                className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition-all ${
+                                                    isActive
+                                                        ? 'bg-teal-600 text-white shadow-xs'
+                                                        : 'border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+                                                }`}
+                                            >
+                                                <Icon size={13} />
+                                                <span>{tab.label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Drawer Body with StudyToolsPanel */}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                <StudyToolsPanel
+                                    {...studyToolsProps}
+                                    activeTool={drawerTool}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Finalization Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={showFinalize}
+                title={isArabic ? 'تأكيد اعتماد وتوقيع التقرير الطبي' : 'Confirm Finalize & Sign Report'}
+                message={isArabic ? 'هل أنت متأكد من اعتماد التقرير الطبي؟ سيتم قفل التقرير وتوليد التوقيع الرقمي ولن يمكن تعديله إلا عبر إجراء استدراك رسمي.' : 'Are you sure you want to finalize this report? Once finalized, the report will be locked and digitally signed.'}
+                confirmLabel={isArabic ? 'تأكيد وقفل التقرير' : 'Finalize & Lock'}
+                cancelLabel={isArabic ? 'إلغاء' : 'Cancel'}
+                onConfirm={finalizeReport}
+                onCancel={() => setShowFinalize(false)}
+                isDangerous={false}
+            />
+
+            {/* Template Prompt Dialog */}
+            <TextPromptDialog
+                isOpen={showTemplatePrompt}
+                title={isArabic ? 'حفظ كقالب تقرير جديد' : 'Save As Report Template'}
+                label={isArabic ? 'اسم القالب' : 'Template Name'}
+                placeholder={isArabic ? 'مثال: فحص ركبة طبيعي بدون تباين' : 'e.g. Normal Knee MRI'}
+                onConfirm={async (name) => {
+                    try {
+                        await createTemplate({
+                            name,
+                            exam_type_id: effectiveExamTypeId,
+                            modality_type: effectiveModalityType,
+                            clinical_history: sections.clinicalHistory,
+                            technique: sections.technique,
+                            findings: sections.findings,
+                            impression: sections.impression,
+                            recommendations: sections.recommendations
+                        }).unwrap();
+                        setShowTemplatePrompt(false);
+                        toast.success(t('messages.templateSaved'));
+                    } catch (error) {
+                        toast.error(getErrorMessage(error, t('messages.templateSaveError')));
+                    }
+                }}
+                onCancel={() => setShowTemplatePrompt(false)}
+            />
+
+            {/* Export Dialog */}
             <ReportExportDialog
                 open={showExportDialog}
                 onClose={() => setShowExportDialog(false)}
@@ -1109,549 +1250,6 @@ const ReportEditorPage = () => {
                 settings={reportDocument}
                 onSettingsChange={updateReportDocument}
                 t={t}
-            />
-            <header className="z-30 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur-xl dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface)]/95 print:static xl:sticky xl:top-0">
-                <div className="mx-auto max-w-[1720px] px-3 sm:px-5 lg:px-6">
-                    <div className="grid gap-3 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-                            <button
-                                type="button"
-                                onClick={requestExit}
-                                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
-                                aria-label={t('editor.backToWorklist')}
-                            >
-                                <ArrowLeft size={18} className="rtl:rotate-180" />
-                            </button>
-
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-black text-white shadow-sm dark:bg-slate-100 dark:text-slate-900 sm:h-11 sm:w-11">
-                                {(exam.patient_name || exam.mrn || 'P')
-                                    .trim()
-                                    .split(/\s+/)
-                                    .slice(0, 2)
-                                    .map((part) => part[0])
-                                    .join('')
-                                    .toUpperCase()}
-                            </span>
-
-                            <div className="min-w-0">
-                                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                                    <h1 className="max-w-full truncate text-[15px] font-black text-slate-900 dark:text-white sm:text-lg">
-                                        {exam.patient_name || exam.mrn}
-                                    </h1>
-                                    {exam.priority && exam.priority !== 'Routine' && (
-                                        <span
-                                            className={`inline-flex rounded-md px-2 py-0.5 text-[9px] font-black uppercase ring-1 ${exam.priority === 'Emergency'
-                                                ? 'bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-900'
-                                                : 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900'
-                                                }`}
-                                        >
-                                            {t(`priorities.${exam.priority}`, {
-                                                defaultValue: exam.priority
-                                            })}
-                                        </span>
-                                    )}
-                                    {exam.is_follow_up && (
-                                        <span className="inline-flex rounded-md bg-sky-50 px-2 py-0.5 text-[9px] font-black uppercase text-sky-700 ring-1 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-900">
-                                            {t('editor.followUp', { defaultValue: 'Follow-up' })}
-                                        </span>
-                                    )}
-                                    <StatusPill
-                                        locked={locked}
-                                        status={reportStatus}
-                                        dirty={dirty}
-                                        t={t}
-                                    />
-                                    <span className="hidden text-[10px] font-bold tabular-nums text-slate-400 sm:inline">
-                                        {t('editor.completion')}: {completion}%
-                                    </span>
-                                </div>
-                                <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                                    <span className="truncate text-slate-700 dark:text-slate-300">
-                                        {exam.exam_type_name || exam.modality_name || t('editor.reportWorkspace', { defaultValue: 'Radiology report' })}
-                                    </span>
-                                    {exam.body_part && (
-                                        <>
-                                            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">|</span>
-                                            <span className="truncate">{exam.body_part}</span>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        <input
-                            ref={imageUploadRef}
-                            type="file"
-                            multiple
-                            accept=".dcm,application/dicom,image/png,image/jpeg"
-                            className="hidden"
-                            onChange={handleImageUpload}
-                        />
-
-                        <div className="flex w-full shrink-0 items-center gap-2 print:hidden lg:w-auto lg:justify-end">
-                            <ActionButton
-                                icon={Clock3}
-                                label={t('editor.refresh')}
-                                onClick={() => refetch()}
-                                disabled={examRefreshing}
-                                loading={examRefreshing}
-                                className="ms-auto px-3 lg:ms-0"
-                                compactOnMobile
-                            />
-                            <ActionButton
-                                icon={Monitor}
-                                label={imageStatusLabel}
-                                onClick={openPacsViewer}
-                                disabled={!imagesReady}
-                                className="border-slate-900 bg-slate-900 px-3.5 text-white hover:bg-slate-800 hover:text-white disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 dark:border-teal-500 dark:bg-teal-500 dark:text-slate-950 dark:hover:bg-teal-400"
-                            >
-                                <span className="hidden sm:inline">
-                                    {t('editor.viewImages', {
-                                        defaultValue: 'View Images'
-                                    })}
-                                </span>
-                                {imaging?.image_count ? (
-                                    <span className="inline-flex min-w-5 items-center justify-center rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-black tabular-nums">
-                                        {imaging.image_count}
-                                    </span>
-                                ) : null}
-                            </ActionButton>
-
-                            <ActionButton
-                                icon={Download}
-                                label={t('editor.export.title', { defaultValue: 'Export report' })}
-                                onClick={() => setShowExportDialog(true)}
-                                className="px-3.5"
-                            />
-
-                            <OverflowMenu
-                                label={t('editor.moreActions', {
-                                    defaultValue: 'More actions'
-                                })}
-                                items={[
-                                    {
-                                        key: 'upload',
-                                        icon: Upload,
-                                        label: isUploadingImages
-                                            ? t('editor.uploadingImages', {
-                                                defaultValue: 'Uploading images...'
-                                            })
-                                            : t('editor.uploadImages', {
-                                                defaultValue: 'Upload images'
-                                            }),
-                                        onSelect: () =>
-                                            imageUploadRef.current?.click(),
-                                        disabled: isUploadingImages
-                                    },
-                                    {
-                                        key: 'focus',
-                                        icon: Layers3,
-                                        label: focusMode
-                                            ? t('editor.exitFocusMode', {
-                                                defaultValue:
-                                                    'Exit focus mode'
-                                            })
-                                            : t('editor.focusMode', {
-                                                defaultValue: 'Focus mode'
-                                            }),
-                                        onSelect: toggleFocusMode,
-                                        active: focusMode
-                                    }
-                                ]}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="grid border-t border-slate-200 dark:border-slate-800 lg:grid-cols-[minmax(0,1fr)_minmax(520px,0.9fr)] lg:items-center print:hidden">
-                        <dl className="grid min-w-0 grid-cols-2 py-2 sm:grid-cols-4 lg:pe-5">
-                            <HeaderDetail label={t('details.mrn')} value={exam.mrn} mono />
-                            <HeaderDetail
-                                label={t('details.patient', { defaultValue: 'Patient' })}
-                                value={[
-                                    exam.patient_sex || exam.gender,
-                                    exam.patient_age
-                                ].filter(Boolean).join(' / ') || '-'}
-                            />
-                            <HeaderDetail
-                                icon={CalendarDays}
-                                label={t('details.studyDate')}
-                                value={formatDateTime(exam.start_time || exam.created_at, locale)}
-                            />
-                            <HeaderDetail
-                                label={t('details.accessionNumber', { defaultValue: 'Accession' })}
-                                value={exam.order_number || examId}
-                                mono
-                            />
-                        </dl>
-                        <div className="hidden min-w-0 overflow-x-auto border-slate-200 py-2 lg:block lg:border-s lg:ps-5 dark:border-slate-800">
-                            <WorkflowStepper status={reportStatus} t={t} />
-                        </div>
-                    </div>
-                </div>
-                <ProgressBar value={completion} />
-            </header>
-
-            <div className="mx-auto max-w-[1720px] px-3 py-3 sm:px-5 sm:py-4 lg:px-6">
-                {!canAuthor && (
-                    <Notice
-                        icon={LockKeyhole}
-                        tone="blue"
-                        title={t('editor.readOnly')}
-                        description={t('editor.readOnlyHelp')}
-                    />
-                )}
-
-                {locked && !amendmentMode && canAuthor && (
-                    <Notice
-                        icon={FileCheck2}
-                        tone="emerald"
-                        title={t('editor.signedLocked')}
-                        description={t('editor.signedLockedHelp')}
-                        action={
-                            <button
-                                type="button"
-                                onClick={() => setAmendmentMode(true)}
-                                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 text-xs font-bold text-white transition hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 active:scale-[0.98]"
-                            >
-                                <PenLine size={14} />
-                                {t('reporting.amend')}
-                            </button>
-                        }
-                    />
-                )}
-
-                {amendmentMode && (
-                    <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/40">
-                        <div className="flex items-center gap-2 text-sm font-bold text-amber-900 dark:text-amber-200">
-                            <ShieldAlert size={17} />
-                            {t('editor.amendmentMode')}
-                        </div>
-                        <textarea
-                            value={amendmentReason}
-                            onChange={(event) =>
-                                setAmendmentReason(event.target.value)
-                            }
-                            maxLength={1000}
-                            rows={2}
-                            className={`${inputClass} mt-3 border-amber-200 dark:border-amber-900/60`}
-                            placeholder={t('reporting.amendmentPlaceholder')}
-                        />
-                        <p className="mt-1 text-end text-[9px] font-semibold text-amber-600 dark:text-amber-400">
-                            {amendmentReason.length}/1000
-                        </p>
-                    </div>
-                )}
-
-                {!focusMode && (
-                    <MobileWorkspaceTabs
-                        activeTab={mobileView}
-                        onChange={setMobileView}
-                        showSidebar
-                        t={t}
-                    />
-                )}
-
-                <div
-                    className={`mt-4 grid items-start gap-5 ${desktopGridClass}`}
-                >
-                    <main
-                        className={`${mobileView === 'editor' ? 'block' : 'hidden'
-                            } min-w-0 space-y-4 xl:block ${focusMode ? 'mx-auto w-full max-w-5xl' : ''
-                            }`}
-                    >
-                        <SectionQuickNav
-                            sections={sections}
-                            activeSection={activeSection}
-                            completion={completion}
-                            onSelect={selectSection}
-                            t={t}
-                        />
-
-                        {!locked && canAuthor && (
-                            <TemplateBar
-                                templates={effectiveReportTemplates}
-                                editable={editable}
-                                isSavingTemplate={isCreatingTemplate || templatesLoading}
-                                onApply={applyTemplate}
-                                onSaveTemplate={hasReportContent ? () => setShowTemplatePrompt(true) : undefined}
-                                t={t}
-                            />
-                        )}
-
-                        <div className={`${PANEL} divide-y divide-slate-100 overflow-hidden dark:divide-slate-800`}>
-                            {SECTION_CONFIG.map((config) => (
-                                <ReportSectionCard
-                                    key={config.key}
-                                    config={config}
-                                    value={sections[config.key]}
-                                    editable={editable}
-                                    active={activeSection === config.key}
-                                    collapsed={collapsedSections[config.key]}
-                                    embedded
-                                    onToggleCollapse={toggleSectionCollapse}
-                                    onFocus={() => setActiveSection(config.key)}
-                                    onChange={updateSection}
-                                    canImprove={sectionImproveAvailable}
-                                    isImproving={improvingKey === config.key}
-                                    onImprove={improveSectionText}
-                                    locale={locale}
-                                    t={t}
-                                />
-                            ))}
-                        </div>
-                    </main>
-
-                    {!focusMode && (
-                        <aside
-                            className={`${mobileView === 'editor' ? 'hidden' : 'block'
-                                } min-w-0 space-y-3 xl:sticky xl:top-[9.25rem] xl:block xl:max-h-[calc(100vh-10.25rem)] xl:overflow-y-auto xl:pe-1 print:hidden`}
-                        >
-                            <div className="hidden space-y-3 xl:block">
-                                <QualityPanel
-                                    completion={completion}
-                                    reportWords={reportWords}
-                                    qualityScore={qualityScore}
-                                    checks={qualityChecks}
-                                    t={t}
-                                />
-
-                                <InspectorTabs
-                                    activeTab={inspectorTab}
-                                    onChange={setInspectorTab}
-                                    showDelivery={locked}
-                                    showDocuments={Boolean(exam?.patient_id)}
-                                    t={t}
-                                />
-
-                                {inspectorContent[inspectorTab] ||
-                                    inspectorContent.preview}
-
-                                <StudyToolsPanel {...studyToolsProps} />
-                            </div>
-
-                            <div
-                                className={
-                                    mobileView === 'preview'
-                                        ? 'block xl:hidden'
-                                        : 'hidden'
-                                }
-                            >
-                                {inspectorContent.preview}
-                            </div>
-
-                            <div
-                                className={
-                                    mobileView === 'tools'
-                                        ? 'space-y-4 xl:hidden'
-                                        : 'hidden'
-                                }
-                            >
-                                <QualityPanel
-                                    completion={completion}
-                                    reportWords={reportWords}
-                                    qualityScore={qualityScore}
-                                    checks={qualityChecks}
-                                    t={t}
-                                />
-                                <StudyToolsPanel {...studyToolsProps} />
-                                {inspectorContent.context}
-                                {inspectorContent.documents}
-                                {inspectorContent.delivery}
-                            </div>
-                        </aside>
-                    )}
-                </div>
-            </div>
-
-            <footer className={FLOATING_FOOTER}>
-                <div className="mx-auto flex max-w-[1720px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                        <span
-                            className={`inline-flex min-h-9 items-center gap-2 rounded-md px-3 ring-1 ring-inset ${dirty
-                                ? 'bg-amber-50/80 text-amber-700 ring-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800/40'
-                                : 'bg-emerald-50/80 text-emerald-700 ring-emerald-200/60 dark:bg-emerald-950/25 dark:text-emerald-300 dark:ring-emerald-800/40'
-                                }`}
-                        >
-                            {dirty ? (
-                                <AlertCircle size={15} />
-                            ) : (
-                                <CheckCircle2 size={15} />
-                            )}
-                            {dirty
-                                ? t('editor.unsavedChanges')
-                                : t('editor.allSaved')}
-                        </span>
-                        {finalizationErrors.length > 0 && (
-                            <button
-                                type="button"
-                                onClick={() => firstIncompleteRequiredSection && selectSection(firstIncompleteRequiredSection)}
-                                className="inline-flex min-h-9 min-w-0 items-center gap-2 rounded-md bg-rose-50 px-3 text-start ring-1 ring-inset ring-rose-200 transition-colors hover:bg-rose-100 dark:bg-rose-950/30 dark:ring-rose-800/40 dark:hover:bg-rose-900/40"
-                            >
-                                <AlertTriangle size={14} className="shrink-0 text-rose-500" />
-                                <span className="font-black text-rose-700 dark:text-rose-400">
-                                    {finalizationErrors.length} {t('editor.requiredRemaining', { defaultValue: 'required remaining' })}
-                                </span>
-                                <span className="hidden max-w-72 truncate opacity-75 text-rose-600 dark:text-rose-300 lg:inline">
-                                    {finalizationErrors[0]}
-                                </span>
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
-                        {amendmentMode ? (
-                            <>
-                                <button
-                                    type="button"
-                                    onClick={cancelAmendment}
-                                    disabled={isAmending}
-                                    className={secondaryBtn}
-                                >
-                                    <X size={14} />
-                                    {t('confirm.cancel')}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={submitAmendment}
-                                    disabled={
-                                        isAmending ||
-                                        !dirty ||
-                                        amendmentReason.trim().length < 3 ||
-                                        finalizationErrors.length > 0
-                                    }
-                                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 text-xs font-bold text-white transition hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 active:scale-[0.98] disabled:opacity-50"
-                                >
-                                    {isAmending ? (
-                                        <Loader2
-                                            size={14}
-                                            className="animate-spin"
-                                        />
-                                    ) : (
-                                        <FileCheck2 size={14} />
-                                    )}
-                                    {t('reporting.saveAmendment')}
-                                </button>
-                            </>
-                        ) : !locked && canAuthor ? (
-                            <>
-                                <button
-                                    id="save-draft"
-                                    type="button"
-                                    onClick={saveTypedReport}
-                                    disabled={
-                                        isSaving ||
-                                        (!dirty && reportStatus !== 'Draft') ||
-                                        previewText.length < 10
-                                    }
-                                    className={SOFT_BUTTON}
-                                >
-                                    {isSaving ? (
-                                        <Loader2
-                                            size={14}
-                                            className="animate-spin"
-                                        />
-                                    ) : (
-                                        <Save size={14} />
-                                    )}
-                                    {reportStatus === 'Draft'
-                                        ? t('reporting.saveTyped')
-                                        : t('editor.saveChanges', { defaultValue: 'Save changes' })}
-                                </button>
-
-                                {nextReportStatus && nextReportStatus !== 'Typed' && (
-                                    <button
-                                        type="button"
-                                        onClick={advanceReportStatus}
-                                        disabled={isSaving || previewText.length < 10}
-                                        className="inline-flex min-h-10 min-w-0 items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-xs font-bold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70"
-                                        aria-label={t('editor.advanceToStatus', {
-                                            defaultValue: `Advance report to ${nextReportStatus}`,
-                                            status: t(`statuses.${nextReportStatus}`, { defaultValue: nextReportStatus })
-                                        })}
-                                    >
-                                        {nextReportStatus === 'Approved'
-                                            ? <FileCheck2 size={14} />
-                                            : <ClipboardCheck size={14} />}
-                                        {nextReportStatus === 'Approved'
-                                            ? t('reporting.approve')
-                                            : t('reporting.review')}
-                                    </button>
-                                )}
-
-                                <button
-                                    type="button"
-                                    onClick={() => setShowFinalize(true)}
-                                    disabled={
-                                        isSaving ||
-                                        finalizationErrors.length > 0
-                                    }
-                                    className={`${PRIMARY_BUTTON} ${nextReportStatus && nextReportStatus !== 'Typed' ? 'col-span-2' : ''} sm:col-span-1`}
-                                >
-                                    <LockKeyhole size={14} />
-                                    {t('reporting.finalize')}
-                                </button>
-                            </>
-                        ) : (
-                            <button
-                                type="button"
-                                onClick={() => setShowExportDialog(true)}
-                                className={SOFT_BUTTON}
-                            >
-                                <Download size={14} />
-                                {t('editor.export.title', { defaultValue: 'Export report' })}
-                            </button>
-                        )}
-                    </div>
-                </div>
-            </footer>
-
-            <TextPromptDialog
-                isOpen={showTemplatePrompt}
-                onClose={() => setShowTemplatePrompt(false)}
-                onConfirm={saveTemplate}
-                title={t('templateDialog.title')}
-                message={t('templateDialog.description')}
-                label={t('templateDialog.label')}
-                placeholder={t('templateDialog.placeholder')}
-                confirmLabel={t('templateDialog.save')}
-                cancelLabel={t('confirm.cancel')}
-                validationMessage={t('templateDialog.required')}
-                inputProps={{ maxLength: 150 }}
-                isLoading={isCreatingTemplate}
-            />
-            <ConfirmDialog
-                isOpen={pendingReportStatus === 'Approved'}
-                onClose={() => setPendingReportStatus(null)}
-                onConfirm={() => saveReport('Approved')}
-                title={t('confirm.approveTitle', { defaultValue: 'Approve report' })}
-                message={t('messages.approveConfirm', {
-                    defaultValue: 'Confirm that the report has been clinically reviewed and is ready for final signature.'
-                })}
-                confirmLabel={t('confirm.approveAction', { defaultValue: 'Approve report' })}
-                cancelLabel={t('confirm.cancel')}
-                variant="info"
-                isLoading={isSaving}
-            />
-            <ConfirmDialog
-                isOpen={showFinalize}
-                onClose={() => setShowFinalize(false)}
-                onConfirm={() => saveReport('Finalized', true)}
-                title={t('confirm.finalizeTitle')}
-                message={t('messages.finalizeConfirm')}
-                confirmLabel={t('confirm.finalizeAction')}
-                cancelLabel={t('confirm.cancel')}
-                variant="warning"
-                isLoading={isSaving}
-            />
-            <ConfirmDialog
-                isOpen={showExitConfirm}
-                onClose={() => setShowExitConfirm(false)}
-                onConfirm={() => navigate('/worklist')}
-                title={t('editor.discardTitle')}
-                message={t('editor.discardMessage')}
-                confirmLabel={t('editor.discardAction')}
-                cancelLabel={t('confirm.cancel')}
-                variant="warning"
             />
         </div>
     );

@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-RCMS demonstrates a **strong and mature security posture** with defense-in-depth across authentication, cryptography, authorization, input validation, and infrastructure. The system implements AES-256-GCM field-level encryption, HMAC-SHA256 blind indexing, per-DB-query RBAC, double-submit cookie CSRF protection, content-aware antivirus scanning, and comprehensive SSRF prevention including DNS resolution checks.
+VIARA demonstrates a **strong and mature security posture** with defense-in-depth across authentication, cryptography, authorization, input validation, and infrastructure. The system implements AES-256-GCM field-level encryption, HMAC-SHA256 blind indexing, per-DB-query RBAC, double-submit cookie CSRF protection, content-aware antivirus scanning, and comprehensive SSRF prevention including DNS resolution checks.
 
 **Security Score: 88/100** — ready for production with accepted risks documented below.
 

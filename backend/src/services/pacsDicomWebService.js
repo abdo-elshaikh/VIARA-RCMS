@@ -12,13 +12,16 @@ const { createCircuitBreaker } = require('../utils/circuitBreaker');
 
 const LEGACY_DEFAULTS = {
     url: 'http://orthanc:8042',
-    username: 'rcms'
+    username: 'VIARA'
 };
 
 const envOrthancUrl = () => process.env.ORTHANC_API_URL || process.env.ORTHANC_URL || LEGACY_DEFAULTS.url;
 
 const preferEnvOverLegacyDefault = (settingValue, envValue, legacyDefault) => {
-    if (envValue && settingValue === legacyDefault && envValue !== legacyDefault) return envValue;
+    if (settingValue === 'orthanc' || !settingValue) return envValue || legacyDefault;
+    if (envValue && (settingValue === legacyDefault || settingValue.includes('localhost') || settingValue.includes('127.0.0.1')) && !envValue.includes('localhost') && !envValue.includes('127.0.0.1')) {
+        return envValue;
+    }
     return settingValue || envValue || legacyDefault;
 };
 
@@ -309,7 +312,7 @@ const fetchPreviewFallback = async (orthancUrl, authorization, sopInstanceUid) =
     const bmp = await renderDicomFileToBmp(orthancUrl, authorization, instanceId);
     if (!bmp) return null;
 
-    logger.warn('PACS: Orthanc preview failed, rendered DICOM pixels in RCMS fallback', {
+    logger.warn('PACS: Orthanc preview failed, rendered DICOM pixels in VIARA fallback', {
         instanceId, status: previewRes.status
     });
 
@@ -404,7 +407,7 @@ const proxyToOrthanc = async (req, res, subPath) => {
     }
 
     res.status(upstream.status);
-    res.setHeader('X-RCMS-DICOMweb-Status', String(upstream.status));
+    res.setHeader('X-VIARA-DICOMweb-Status', String(upstream.status));
 
     const contentType = upstream.headers.get('content-type') || '';
     const isDicomJson = /(?:application\/dicom\+json|application\/json)/i.test(contentType);

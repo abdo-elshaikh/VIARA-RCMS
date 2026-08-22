@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { calendarDateSchema } = require('../utils/dateValidation');
 
 /**
  * Patient validation schemas
@@ -20,7 +21,8 @@ const phoneSchema = z.string()
     .trim();
 
 const communicationPreferenceSchema = z.enum(['Phone', 'Email', 'SMS', 'WhatsApp']);
-const patientStatusSchema = z.enum(['Active', 'Inactive', 'Deceased', 'Merged', 'Restricted']);
+const mutablePatientStatusSchema = z.enum(['Active', 'Inactive', 'Deceased', 'Merged', 'Restricted']);
+const patientStatusSchema = z.enum(['Active', 'Inactive', 'Deceased', 'Merged', 'Restricted', 'Anonymized']);
 const pregnancyStatusSchema = z.enum(['Unknown', 'Not Pregnant', 'Pregnant', 'Possibly Pregnant', 'Not Applicable']);
 
 // Create patient schema
@@ -40,8 +42,7 @@ const createPatientSchema = z.object({
         .max(100, 'Last name must be less than 100 characters')
         .trim(),
 
-    dateOfBirth: z.string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date of birth must be in YYYY-MM-DD format')
+    dateOfBirth: calendarDateSchema('Date of birth must be a valid YYYY-MM-DD date')
         .refine((date) => {
             const dob = new Date(date);
             const now = new Date();
@@ -85,7 +86,7 @@ const createPatientSchema = z.object({
     consentEmail: z.boolean().optional(),
     consentWhatsapp: z.boolean().optional(),
     consentMarketing: z.boolean().optional(),
-    patientStatus: patientStatusSchema.optional(),
+    patientStatus: mutablePatientStatusSchema.optional(),
 
     assignedManagerId: z.string()
         .uuid('Invalid manager ID format')
@@ -105,7 +106,7 @@ const updatePatientSchema = z.object({
     mrn: z.string().max(50).trim().optional(),
     firstName: z.string().min(1).max(100).trim().optional(),
     lastName: z.string().min(1).max(100).trim().optional(),
-    dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    dateOfBirth: calendarDateSchema().refine(date => new Date(`${date}T00:00:00.000Z`) < new Date(), 'Date of birth must be in the past').optional(),
     phone: phoneSchema.optional(),
     address: z.string().min(5).max(500).trim().optional(),
     gender: z.enum(['Male', 'Female', 'Other']).optional(),
@@ -128,7 +129,7 @@ const updatePatientSchema = z.object({
     consentEmail: z.boolean().optional(),
     consentWhatsapp: z.boolean().optional(),
     consentMarketing: z.boolean().optional(),
-    patientStatus: patientStatusSchema.optional(),
+    patientStatus: mutablePatientStatusSchema.optional(),
     assignedManagerId: z.string().uuid().nullable().optional(),
     leadStatus: z.enum(['New', 'Processed', 'Qualified', 'Deferred']).optional(),
     plannedActivity: z.string().max(255).trim().nullable().optional()
@@ -139,10 +140,14 @@ const updatePatientSchema = z.object({
 // Get patients query schema
 const getPatientsQuerySchema = z.object({
     search: z.string().optional(),
+    q: z.string().optional(),
     page: z.string().regex(/^\d+$/).transform(Number).optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
     offset: z.string().regex(/^\d+$/).transform(Number).optional(),
-    status: patientStatusSchema.optional()
+    status: patientStatusSchema.optional(),
+    gender: z.enum(['Male', 'Female', 'Other']).optional(),
+    sortBy: z.enum(['mrn', 'gender', 'dateOfBirth', 'createdAt']).optional(),
+    sortDirection: z.enum(['asc', 'desc']).optional()
 });
 
 const getDuplicatePatientsQuerySchema = z.object({
@@ -152,7 +157,7 @@ const getDuplicatePatientsQuerySchema = z.object({
     phone: z.string().trim().optional(),
     firstName: z.string().trim().optional(),
     lastName: z.string().trim().optional(),
-    dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    dateOfBirth: calendarDateSchema().optional()
 }).refine((data) => Object.values(data).some(Boolean), {
     message: 'At least one duplicate search field is required'
 });

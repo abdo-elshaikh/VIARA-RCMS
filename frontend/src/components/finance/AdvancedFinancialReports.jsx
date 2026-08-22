@@ -105,12 +105,24 @@ const AdvancedFinancialReports = () => {
     // key so a single trend table/row carries both accrual (revenue, expenses,
     // commission, net profit, margin) and cash (net cash flow) columns per period.
     const trend = useMemo(() => {
+        const plByDate = new Map(plSeries.map((row) => [row.date, row]));
         const cashByDate = new Map(cashFlowSeries.map((row) => [row.date, row]));
-        return plSeries.map((row) => ({
-            ...row,
-            net_cash_flow: number(cashByDate.get(row.date)?.net_cash_flow),
-        }));
-    }, [plSeries, cashFlowSeries]);
+        const dates = new Set([...plByDate.keys(), ...cashByDate.keys()]);
+        return [...dates].sort().map((dateKey) => {
+            const row = plByDate.get(dateKey) || {};
+            return {
+                date: dateKey,
+                group_by: row.group_by || cashByDate.get(dateKey)?.group_by || period,
+                basis: row.basis || 'accrual',
+                net_revenue: number(row.net_revenue),
+                operating_expenses: number(row.operating_expenses),
+                commission_expense: number(row.commission_expense),
+                net_profit: number(row.net_profit),
+                net_margin: number(row.net_margin),
+                net_cash_flow: number(cashByDate.get(dateKey)?.net_cash_flow),
+            };
+        });
+    }, [plSeries, cashFlowSeries, period]);
     const discountItems = useMemo(() => discount.items || [], [discount.items]);
 
     const categories = useMemo(() => {

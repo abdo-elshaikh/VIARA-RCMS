@@ -127,27 +127,85 @@ const PrivacyCenter = ({ embedded = false }) => {
     if (isLoading) return <div className="p-10 text-center text-sm font-semibold text-slate-500">{t('privacyCenter.loading')}</div>;
 
     return (
-        <div className={embedded ? 'space-y-6' : 'mx-auto max-w-6xl space-y-6'}>
-            {!embedded && (
-                <PageHeader
-                    icon={ShieldAlert}
-                    title={t('privacyCenter.title')}
-                    description={t('privacyCenter.description')}
-                    actions={
-                        <span className="self-start rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">{t('privacyCenter.pendingCount', { count: pendingCount })}</span>
-                    }
-                />
-            )}
+        <div className="space-y-6 max-w-7xl mx-auto pb-10">
+            {/* VIARA Hero Command Deck */}
+            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8 space-y-6">
+                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
+                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
 
-            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Metric label={t('privacyCenter.summary.open')} value={summary.open} tone="amber" />
-                <Metric label={t('privacyCenter.summary.completed')} value={summary.completed} tone="emerald" />
-                <Metric label={t('privacyCenter.summary.rejected')} value={summary.rejected} tone="red" />
-                <Metric label={t('privacyCenter.summary.exportsReady')} value={summary.exportsReady} tone="blue" />
-            </section>
+                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-start gap-4 sm:items-center min-w-0">
+                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-sky-500/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
+                            <ShieldAlert size={26} strokeWidth={2} />
+                        </div>
+                        <div className="min-w-0">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                                <UserRound size={11} />
+                                <span>Patient Data Rights & Governance</span>
+                            </span>
+                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                                {t('privacyCenter.title', { defaultValue: 'Patient Privacy & Data Rights Center' })}
+                            </h1>
+                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                                {t('privacyCenter.description', { defaultValue: 'Process DSAR export requests, patient record anonymization, right-to-be-forgotten directives, and data correction workflows.' })}
+                            </p>
+                        </div>
+                    </div>
 
-            <section style={reveal(80).style} className={`overflow-hidden rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-900/50 ${reveal(80).className}`}>
-                <div className="grid gap-3 border-b border-slate-100 p-4 dark:border-slate-800/70 md:grid-cols-[minmax(0,1fr)_180px_180px]">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <span className="inline-flex items-center gap-1.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-bold text-amber-800 dark:text-amber-300 shadow-2xs backdrop-blur-md">
+                            <Clock size={14} />
+                            <span>{t('privacyCenter.pendingCount', { count: pendingCount, defaultValue: `${pendingCount} Open Requests` })}</span>
+                        </span>
+                    </div>
+                </div>
+
+                {/* Telemetry Facts HUD */}
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="flex items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-amber-800 dark:text-amber-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <Clock size={16} className="text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">{t('privacyCenter.summary.open', { defaultValue: 'Pending / Open' })}</p>
+                            <p className="font-mono text-base font-black text-amber-900 dark:text-white">{summary.open}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-emerald-800 dark:text-emerald-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <CheckCircle size={16} className="text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">{t('privacyCenter.summary.completed', { defaultValue: 'Completed' })}</p>
+                            <p className="font-mono text-base font-black text-emerald-900 dark:text-white">{summary.completed}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-rose-800 dark:text-rose-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <XCircle size={16} className="text-rose-600 dark:text-rose-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-rose-600/80 dark:text-rose-400/80">{t('privacyCenter.summary.rejected', { defaultValue: 'Rejected' })}</p>
+                            <p className="font-mono text-base font-black text-rose-900 dark:text-white">{summary.rejected}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-sky-800 dark:text-sky-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <Download size={16} className="text-sky-600 dark:text-sky-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">{t('privacyCenter.summary.exportsReady', { defaultValue: 'Exports Ready' })}</p>
+                            <p className="font-mono text-base font-black text-sky-900 dark:text-white">{summary.exportsReady}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <section style={reveal(80).style} className={`overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 ${reveal(80).className}`}>
+                <div className="grid gap-3 border-b border-slate-100 p-4 dark:border-slate-800/80 md:grid-cols-[minmax(0,1fr)_180px_180px]">
                     <label className="relative block">
                         <span className="sr-only">{t('privacyCenter.filters.search')}</span>
                         <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -155,23 +213,23 @@ const PrivacyCenter = ({ embedded = false }) => {
                             type="search"
                             value={searchTerm}
                             onChange={(event) => setSearchTerm(event.target.value)}
-                            placeholder={t('privacyCenter.filters.searchPlaceholder')}
-                            className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-10 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:ring-blue-950/40"
+                            placeholder={t('privacyCenter.filters.searchPlaceholder', { defaultValue: 'Search patient name, MRN, or notes...' })}
+                            className="min-h-11 w-full rounded-xl border border-slate-200 bg-white/80 px-10 text-sm font-semibold text-slate-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
                         />
                     </label>
                     <label>
                         <span className="sr-only">{t('privacyCenter.filters.status')}</span>
-                        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:ring-blue-950/40">
-                            <option value="Open">{t('privacyCenter.filters.openOnly')}</option>
-                            <option value="All">{t('privacyCenter.filters.allStatuses')}</option>
-                            {['Pending', 'InReview', 'Approved', 'Completed', 'Resolved', 'Rejected', 'Cancelled'].map((status) => <option key={status} value={status}>{t(`privacyCenter.statuses.${status}`)}</option>)}
+                        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white/80 px-3 text-sm font-bold text-slate-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                            <option value="Open">{t('privacyCenter.filters.openOnly', { defaultValue: 'Open Requests' })}</option>
+                            <option value="All">{t('privacyCenter.filters.allStatuses', { defaultValue: 'All Statuses' })}</option>
+                            {['Pending', 'InReview', 'Approved', 'Completed', 'Resolved', 'Rejected', 'Cancelled'].map((status) => <option key={status} value={status}>{t(`privacyCenter.statuses.${status}`, { defaultValue: status })}</option>)}
                         </select>
                     </label>
                     <label>
                         <span className="sr-only">{t('privacyCenter.filters.type')}</span>
-                        <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:ring-blue-950/40">
-                            <option value="All">{t('privacyCenter.filters.allTypes')}</option>
-                            {['Export', 'Correction', 'Anonymize'].map((type) => <option key={type} value={type}>{t(`privacyCenter.types.${type}`)}</option>)}
+                        <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white/80 px-3 text-sm font-bold text-slate-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                            <option value="All">{t('privacyCenter.filters.allTypes', { defaultValue: 'All Types' })}</option>
+                            {['Export', 'Correction', 'Anonymize'].map((type) => <option key={type} value={type}>{t(`privacyCenter.types.${type}`, { defaultValue: type })}</option>)}
                         </select>
                     </label>
                 </div>

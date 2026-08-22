@@ -95,7 +95,7 @@ const ShiftManager = () => {
 
     const formatDay = value => new Date(value).toLocaleDateString(locale, { weekday: 'short', day: '2-digit', month: 'short' });
     const formatTime = value => new Date(value).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
-    const weekLabel = `${formatDay(weekStart)} – ${formatDay(new Date(weekEnd.getTime() - 86400000))}`;
+    const weekLabel = `${formatDay(weekStart)} - ${formatDay(new Date(weekEnd.getTime() - 86400000))}`;
 
     return (
         <div className="space-y-6">
@@ -254,7 +254,7 @@ const ShiftCard = ({ shift, copy, formatDay, formatTime, onDelete }) => {
                 </div>
                 <div className="flex items-center justify-between gap-3">
                     <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">{copy('time')}</dt>
-                    <dd className="font-bold text-slate-800 dark:text-slate-200">{formatTime(shift.start_time)} – {formatTime(shift.end_time)}</dd>
+                    <dd className="font-bold text-slate-800 dark:text-slate-200">{formatTime(shift.start_time)} - {formatTime(shift.end_time)}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                     <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">{copy('duration')}</dt>

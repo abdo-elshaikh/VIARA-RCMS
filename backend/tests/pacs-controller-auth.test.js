@@ -3,7 +3,7 @@ jest.mock('../src/config/logger', () => ({
 }));
 
 jest.mock('../src/services/pacsDicomWebService', () => ({
-    proxyToOrthanc: jest.fn(async () => {}),
+    proxyToOrthanc: jest.fn(async () => { }),
     getOrthancUrl: jest.fn(async () => 'http://orthanc'),
     getOrthancAuthHeader: jest.fn(async () => 'Basic test')
 }));
@@ -12,7 +12,7 @@ jest.mock('../src/services/pacsReconcileService', () => ({
     reconcileInstance: jest.fn(),
     reconcileQuarantine: jest.fn(),
     discardQuarantine: jest.fn(),
-    writeAudit: jest.fn(async () => {})
+    writeAudit: jest.fn(async () => { })
 }));
 
 const { proxyToOrthanc, getOrthancUrl, getOrthancAuthHeader } = require('../src/services/pacsDicomWebService');
@@ -66,6 +66,60 @@ describe('PACS controller authorization', () => {
             eventType: 'PACS_ACCESS_DENIED',
             statusCode: 403
         }));
+    });
+
+    it('allows scoped viewer series metadata when the path is already scoped to the allowed study', async () => {
+        const db = { query: jest.fn(async () => ({ rows: [] })) };
+        const req = {
+            method: 'GET',
+            params: { 0: 'dicom-web', 1: '/studies/1.2.3/series/1.2.3.4/metadata' },
+            query: {},
+            originalUrl: '/api/pacs/dicom-web/studies/1.2.3/series/1.2.3.4/metadata',
+            authType: 'pacs_viewer_cookie',
+            user: {
+                role: 'Radiologist',
+                user_id: 'user-1',
+                study_instance_uids: ['1.2.3']
+            },
+            setTimeout: jest.fn()
+        };
+        const next = jest.fn();
+
+        await dicomWebProxy(db)(req, makeRes(), next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(proxyToOrthanc).toHaveBeenCalledWith(
+            req,
+            expect.any(Object),
+            '/dicom-web/studies/1.2.3/series/1.2.3.4/metadata'
+        );
+    });
+
+    it('returns an empty safe study list for scoped viewer patient-level browse requests', async () => {
+        const db = { query: jest.fn(async () => ({ rows: [] })) };
+        const req = {
+            method: 'GET',
+            params: { 0: 'dicom-web', 1: '/studies' },
+            query: { '00100020': '25963..', limit: '101' },
+            originalUrl: '/api/pacs/dicom-web/studies?00100020=25963..&limit=101',
+            authType: 'pacs_viewer_cookie',
+            user: {
+                role: 'Radiologist',
+                user_id: 'user-1',
+                study_instance_uids: ['1.2.3']
+            },
+            setTimeout: jest.fn()
+        };
+        const res = makeRes();
+        const next = jest.fn();
+
+        await dicomWebProxy(db)(req, res, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(proxyToOrthanc).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith([]);
+        expect(res.setHeader).toHaveBeenCalledWith('X-VIARA-DICOMweb-Scoped', 'empty-study-browse');
     });
 
     it('does not treat RECONCILE_STUDIES as global DICOMweb image access', async () => {
@@ -259,7 +313,7 @@ describe('PACS controller authorization', () => {
 
         expect(next).not.toHaveBeenCalled();
         expect(res.status).toHaveBeenCalledWith(200);
-        expect(res.setHeader).toHaveBeenCalledWith('X-RCMS-PACS-Export-Format', 'images');
+        expect(res.setHeader).toHaveBeenCalledWith('X-VIARA-PACS-Export-Format', 'images');
         expect(Buffer.isBuffer(res.end.mock.calls[0][0])).toBe(true);
         expect(res.end.mock.calls[0][0].subarray(0, 4).toString('hex')).toBe('504b0304');
         expect(writeAudit).toHaveBeenCalledWith(db, expect.objectContaining({

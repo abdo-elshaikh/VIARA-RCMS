@@ -11,7 +11,7 @@
     "offline": {
       "eyebrow": "Offline mode",
       "title": "The connection was interrupted.",
-      "description": "RCMS cannot reach the network right now. Keep this page open and retry when the connection returns.",
+      "description": "VIARA cannot reach the network right now. Keep this page open and retry when the connection returns.",
       "online": "Your browser reports that the connection is back.",
       "disconnected": "Your browser reports that you are currently offline.",
       "checking": "Checking...",
@@ -92,11 +92,27 @@
     "allRead": "All notifications marked as read",
     "failed": "The action could not be completed",
     "sendFailed": "The notification could not be sent",
-    "tabs": { "all": "All", "unread": "Unread", "failed": "Failed" },
+    "tabs": {
+      "all": "All",
+      "unread": "Unread",
+      "failed": "Failed"
+    },
     "loading": "Loading notifications...",
     "emptyTitle": "No notifications",
-    "empty": { "all": "Nothing here yet.", "unread": "You are all caught up.", "failed": "There are no failed sends." },
-    "time": { "now": "Just now", "minutes": "{{count}}m ago", "hours": "{{count}}h ago" },
-    "status": { "Sent": "Sent", "Failed": "Failed", "Pending": "Pending" }
+    "empty": {
+      "all": "Nothing here yet.",
+      "unread": "You are all caught up.",
+      "failed": "There are no failed sends."
+    },
+    "time": {
+      "now": "Just now",
+      "minutes": "{{count}}m ago",
+      "hours": "{{count}}h ago"
+    },
+    "status": {
+      "Sent": "Sent",
+      "Failed": "Failed",
+      "Pending": "Pending"
+    }
   }
 }

@@ -1,5 +1,5 @@
 /**
- * RCMS Backend API Client
+ * VIARA Backend API Client
  * Compatible with Node/Express & PostgreSQL backend running at http://localhost:3000/api
  */
 
@@ -23,7 +23,7 @@ export function getAuthToken(): string | null {
 export function setAuthToken(token: string) {
   if (typeof window !== "undefined") {
     sessionStorage.setItem("token", token);
-    localStorage.removeItem("rcms_token");
+    localStorage.removeItem("VIARA_token");
   }
 }
 
@@ -111,7 +111,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       body = await res.json();
       if (body?.message) errorMsg = body.message;
       else if (body?.error) errorMsg = body.error;
-    } catch {}
+    } catch { }
     throw new ApiError(errorMsg, res.status, body);
   }
 
@@ -180,7 +180,7 @@ export async function fetchProcedureApproachDetails(nameOrId: string) {
       );
       if (match) return match;
     }
-  } catch {}
+  } catch { }
   return null;
 }
 

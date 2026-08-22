@@ -52,7 +52,9 @@
     "required": "Required",
     "close": "Close",
     "copied": "Copied",
-    "copyError": "Failed to copy"
+    "copyError": "Failed to copy",
+    "viewAll": "View all",
+    "download": "Download"
   },
   "chat": {
     "title": "Radiology Support Chat",
@@ -115,7 +117,7 @@
     "overview": "Overview",
     "records": "Medical Records",
     "invoices": "Billing & Payments",
-    "crm": "RCMS Care Club",
+    "crm": "VIARA Care Club",
     "documents": "Documents",
     "requests": "Requests & Profile",
     "notifications": "Notifications",
@@ -136,6 +138,9 @@
     "readError": "Could not update notifications."
   },
   "records": {
+    "previewReport": "Preview final report",
+    "printReport": "Print final report",
+    "notReady": "Preview, print, and export become available after the final report is approved.",
     "wordTitle": "Download Word report"
   },
   "patient": {
@@ -147,7 +152,7 @@
     "upcoming": "Upcoming appointment",
     "examFallback": "Radiology examination",
     "noUpcoming": "No upcoming appointments are scheduled.",
-    "carePoints": "RCMS Care Points",
+    "carePoints": "VIARA Care Points",
     "points": "pts",
     "viewInstructions": "View Instructions",
     "printInvoice": "Print Invoice",
@@ -168,6 +173,7 @@
     "quickActionsHint": "Common tasks, one tap away.",
     "preparation": "Preparation guidance",
     "summary": {
+      "label": "Account summary",
       "records": "Studies",
       "recordsHint": "All imaging records",
       "finalized": "Final reports",
@@ -223,7 +229,7 @@
       "points": "points",
       "nextTier": "{{count}} points to the next tier",
       "topTier": "You reached the highest tier",
-      "careClub": "RCMS Care Club",
+      "careClub": "VIARA Care Club",
       "pointsBalance": "Member points balance",
       "pts": "PTS",
       "patientMrn": "Patient MRN",
@@ -258,7 +264,27 @@
       "nationalId": "National ID",
       "allergies": "Allergies",
       "chronicDiseases": "Chronic Diseases",
-      "none": "None"
+      "none": "None",
+      "emergencyName": "Emergency contact name",
+      "emergencyPhone": "Emergency contact phone",
+      "communication": "Preferred contact method",
+      "language": "Preferred language",
+      "contactOptions": {
+        "phone": "Phone",
+        "email": "Email",
+        "whatsapp": "WhatsApp"
+      },
+      "languageOptions": {
+        "en": "English",
+        "ar": "Arabic"
+      }
+    },
+    "profileUpdate": {
+      "title": "Request a profile update",
+      "description": "Send corrected contact and emergency information to the center for review.",
+      "submit": "Send update request",
+      "success": "Profile update request sent.",
+      "error": "The profile update request could not be sent."
     },
     "billing": {
       "eyebrow": "Financial overview",
@@ -274,24 +300,55 @@
       "balance": "Balance"
     },
     "newValuePlaceholder": "New {{field}}...",
-    "metrics": { "appointments": "Appointments", "reports": "Reports", "invoices": "Invoices", "instructions": "Instructions", "documents": "Documents" },
-    "panels": { "records": "Appointments and reports", "invoices": "Invoices and payments", "documents": "Documents", "appointmentRequest": "Request an appointment", "profileRequest": "Update profile details", "recentRecords": "Recent records", "activity": "Activity", "crm": "Care Club" },
-    "empty": { "records": "Nothing has been recorded yet.", "invoices": "No invoices are available yet.", "documents": "No approved patient documents are available yet." },
-    "requests": { "loading": "Loading requests" },
-    "invoices": { "loading": "Loading invoices" },
+    "metrics": {
+      "appointments": "Appointments",
+      "reports": "Reports",
+      "invoices": "Invoices",
+      "instructions": "Instructions",
+      "documents": "Documents"
+    },
+    "panels": {
+      "records": "Appointments and reports",
+      "invoices": "Invoices and payments",
+      "documents": "Documents",
+      "appointmentRequest": "Request an appointment",
+      "profileRequest": "Update profile details",
+      "recentRecords": "Recent records",
+      "activity": "Activity",
+      "crm": "Care Club"
+    },
+    "empty": {
+      "records": "Nothing has been recorded yet.",
+      "invoices": "No invoices are available yet.",
+      "documents": "No approved patient documents are available yet."
+    },
+    "requests": {
+      "loading": "Loading requests"
+    },
+    "invoices": {
+      "loading": "Loading invoices"
+    },
     "documents": {
       "loading": "Loading documents",
       "eyebrow": "Secure files",
       "description": "Access referrals, consent forms, receipts, and other files shared with you.",
       "file": "Medical document"
     },
-    "invoice": { "total": "Total", "paid": "Paid", "balance": "Balance" },
+    "invoice": {
+      "total": "Total",
+      "paid": "Paid",
+      "balance": "Balance"
+    },
     "report": "View report",
     "reportPending": "Report pending",
     "documentError": "The document could not be opened.",
     "outstanding": "Outstanding balance: {{amount}} EGP",
     "invoiceFallback": "Invoice",
-    "amounts": { "total": "Total", "paid": "Paid", "balance": "Balance" },
+    "amounts": {
+      "total": "Total",
+      "paid": "Paid",
+      "balance": "Balance"
+    },
     "paymentPlaceholder": "Online payment",
     "paymentNotice": "Online payment is ready for payment-gateway integration.",
     "appointment": {
@@ -300,6 +357,11 @@
       "newRequest": "New appointment request",
       "selectService": "Select a service",
       "anyTime": "Any available time",
+      "timeWindows": {
+        "morning": "Morning (8am–12pm)",
+        "afternoon": "Afternoon (12pm–4pm)",
+        "evening": "Evening (4pm–7pm)"
+      },
       "dateRequired": "Choose a preferred date.",
       "submit": "Send appointment request",
       "date": "Preferred date",
@@ -336,7 +398,9 @@
       "success": "Profile update request sent.",
       "error": "The profile update request could not be sent."
     },
-    "activity": { "title": "Recent care activity" },
+    "activity": {
+      "title": "Recent care activity"
+    },
     "messages": {
       "eyebrow": "Secure support",
       "description": "Ask reception about appointments, reports, billing, or preparation guidance."
@@ -348,7 +412,7 @@
   },
   "doctor": {
     "brand": "Physician portal",
-    "product": "RCMS Radiology",
+    "product": "VIARA Radiology",
     "roleFallback": "Referring physician",
     "heroTitle": "Clinical referral workspace",
     "heroDescription": "Track referred cases, open finalized reports, submit new orders, and coordinate securely with the radiology center.",
@@ -372,7 +436,12 @@
       "pendingHint": "Awaiting completion",
       "messagesHint": "Unread conversations"
     },
-    "tabs": { "cases": "My cases", "reports": "Finalized reports", "order": "New order", "messages": "Messages" },
+    "tabs": {
+      "cases": "My cases",
+      "reports": "Finalized reports",
+      "order": "New order",
+      "messages": "Messages"
+    },
     "cases": {
       "search": "Search by patient, MRN, or order...",
       "allStatuses": "All statuses",
@@ -383,8 +452,8 @@
       "mrn": "MRN",
       "order": "Order #{{number}}",
       "viewReport": "View report",
-      "clinical": "Clinical indication"
-      ,"resultCount": "{{count}} cases",
+      "clinical": "Clinical indication",
+      "resultCount": "{{count}} cases",
       "clearSearch": "Clear search",
       "clearFilters": "Clear filters"
     },

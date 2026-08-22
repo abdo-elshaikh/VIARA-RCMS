@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-RCMS utilizes a modern, containerized architecture orchestrated via Docker Compose. The infrastructure consists of **9 specialized services** including backend API, frontend SPA, patient portal, PostgreSQL database, Redis (optional), Orthanc PACS, OHIF viewer, AI worker, and an Nginx reverse proxy. The configuration demonstrates production readiness with proper isolation, resource limits, health checks, and non-root execution.
+VIARA utilizes a modern, containerized architecture orchestrated via Docker Compose. The infrastructure consists of **9 specialized services** including backend API, frontend SPA, patient portal, PostgreSQL database, Redis (optional), Orthanc PACS, OHIF viewer, AI worker, and an Nginx reverse proxy. The configuration demonstrates production readiness with proper isolation, resource limits, health checks, and non-root execution.
 
 **Infrastructure Health Score: 84/100**
 

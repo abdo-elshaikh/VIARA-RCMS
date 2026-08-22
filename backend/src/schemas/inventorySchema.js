@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { calendarDateSchema } = require('../utils/dateValidation');
 
 // ─── Inventory Items ─────────────────────────────────────────────────────────
 
@@ -8,11 +9,20 @@ const createInventoryItemSchema = z.object({
     quantity: z.number().int().min(0),
     unit: z.string().optional(),
     minLevel: z.number().int().min(0),
-    unitPrice: z.number().min(0).default(0)
+    unitPrice: z.number().min(0).default(0),
+    isContrastAgent: z.boolean().default(false)
 });
 
 const updateInventoryStockSchema = z.object({
-    quantity: z.number().int().min(0)
+    unitPrice: z.number().min(0).optional(),
+    unit_price: z.number().min(0).optional(),
+    name: z.string().min(1).optional(),
+    unit: z.string().optional(),
+    minLevel: z.number().int().min(0).optional(),
+    category: z.string().optional(),
+    isContrastAgent: z.boolean().optional()
+}).strict().refine(data => Object.keys(data).length > 0, {
+    message: 'At least one inventory metadata field must be provided'
 });
 
 // ─── Suppliers ────────────────────────────────────────────────────────────────
@@ -34,8 +44,7 @@ const updateSupplierSchema = createSupplierSchema.partial();
 const createPurchaseOrderSchema = z.object({
     poNumber: z.string().min(1).max(50),
     supplierId: z.string().uuid(),
-    status: z.enum(['Draft', 'Sent', 'Partially Received', 'Completed', 'Cancelled']).default('Draft'),
-    expectedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    expectedDate: calendarDateSchema().optional(),
     notes: z.string().optional(),
     items: z.array(z.object({
         itemId: z.string().uuid(),
@@ -45,7 +54,7 @@ const createPurchaseOrderSchema = z.object({
 });
 
 const updatePurchaseOrderStatusSchema = z.object({
-    status: z.enum(['Draft', 'Sent', 'Partially Received', 'Completed', 'Cancelled'])
+    status: z.enum(['Sent', 'Cancelled'])
 });
 
 const receiveStockSchema = z.object({
@@ -53,7 +62,7 @@ const receiveStockSchema = z.object({
         poItemId: z.string().uuid(),
         receivedQuantity: z.number().int().min(1),
         lotNumber: z.string().optional(),
-        expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+        expiryDate: calendarDateSchema().optional()
     })).min(1, "At least one item must be received")
 });
 

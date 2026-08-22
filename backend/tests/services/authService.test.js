@@ -1,5 +1,10 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+jest.mock('../../src/services/realtimeService', () => ({
+    sendToUser: jest.fn(),
+    sendToPatient: jest.fn(),
+    sendToDoctor: jest.fn()
+}));
 const AuthService = require('../../src/services/authService');
 
 // Mock external dependencies
@@ -21,6 +26,7 @@ describe('AuthService', () => {
 
         // Setup crypto mocks
         crypto.randomBytes.mockReturnValue(Buffer.from('mocked-random-bytes'));
+        crypto.randomUUID.mockReturnValue('session-uuid');
         
         // Mock the chainable crypto.createHash
         const mockHash = {
@@ -62,18 +68,20 @@ describe('AuthService', () => {
 
             // Verify JWT Generation
             expect(jwt.sign).toHaveBeenCalledWith(
-                userPayload,
+                { ...userPayload, session_id: 'session-uuid' },
                 'test-secret',
                 { expiresIn: '1h' }
             );
 
-            // Verify Database Insertion
-            expect(mockDb.query).toHaveBeenCalledTimes(1);
-            expect(mockDb.query.mock.calls[0][0]).toContain('INSERT INTO refresh_tokens');
-            expect(mockDb.query.mock.calls[0][0]).toContain('user_id');
+            // Verify session ownership update and refresh-token insertion
+            expect(mockDb.query).toHaveBeenCalledTimes(2);
+            expect(mockDb.query.mock.calls[0][0]).toContain('UPDATE users SET current_session_id');
+            expect(mockDb.query.mock.calls[0][1]).toEqual(['session-uuid', ownerId]);
+            expect(mockDb.query.mock.calls[1][0]).toContain('INSERT INTO refresh_tokens');
+            expect(mockDb.query.mock.calls[1][0]).toContain('user_id');
             
             // Verify DB Parameters
-            const queryParams = mockDb.query.mock.calls[0][1];
+            const queryParams = mockDb.query.mock.calls[1][1];
             expect(queryParams[0]).toBe(123); // ownerId
             expect(queryParams[1]).toBe('mocked-hash-digest'); // refreshHash
             expect(queryParams[2]).toBeInstanceOf(Date); // expiresAt

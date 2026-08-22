@@ -3,7 +3,7 @@
 **Review date:** 2026-08-04  
 **Re-validation date:** 2026-08-05  
 **Reviewer panel:** Software Architect, Security Engineer, QA Lead, Frontend Engineer, Backend Engineer, Database Architect, DevOps Engineer, UX Designer, Accessibility Specialist, Clinical Workflow Reviewer  
-**Workspace:** `D:\RCMS`  
+**Workspace:** `D:\VIARA`  
 **Review type:** Complete Production Readiness Assessment  
 **Decision:** **APPROVED FOR PRODUCTION**
 
@@ -13,7 +13,7 @@
 
 ## Overall Health
 
-RCMS is a mature, feature-rich Radiology Center Management System spanning **47 backend controllers, 38 services, 105 database migrations, ~40+ frontend pages, and a TypeScript patient/doctor portal**, served via Docker Compose with 9 services. The system demonstrates strong architectural foundations, well-implemented security controls, and comprehensive clinical workflows.
+VIARA is a mature, feature-rich Radiology Center Management System spanning **47 backend controllers, 38 services, 105 database migrations, ~40+ frontend pages, and a TypeScript patient/doctor portal**, served via Docker Compose with 9 services. The system demonstrates strong architectural foundations, well-implemented security controls, and comprehensive clinical workflows.
 
 ### Readiness Score: **92 / 100**
 

@@ -4,13 +4,16 @@ export interface UserPermissions {
     [key: string]: boolean | string[];
 }
 
+export type PortalRole = 'Patient' | 'Doctor';
+
 export interface User {
     id?: string;
     mrn?: string;
     email?: string;
     name?: string;
     fullName?: string;
-    role?: 'Patient' | 'Doctor' | 'Admin' | string;
+    role?: PortalRole | 'Admin' | string;
+    mustChangePassword?: boolean;
     permissions?: string[] | UserPermissions;
     [key: string]: any;
 }

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
     Activity,
@@ -7,303 +7,331 @@ import {
     AlertTriangle,
     ArrowLeft,
     Baby,
+    Building2,
     Calendar,
     CalendarCheck2,
     Check,
     CheckCircle2,
+    ClipboardCheck,
     ClipboardSignature,
     Clock,
     Copy,
     Download,
     ExternalLink,
+    FileCheck2,
     FileSearch,
     FileText,
     Hash,
+    HeartPulse,
+    Info,
     Loader2,
+    Monitor,
     PenLine,
+    Phone,
     Printer,
     Radio,
+    RotateCcw,
     ScanLine,
+    ShieldAlert,
     ShieldCheck,
     Sparkles,
     Stethoscope,
     User,
     UserCheck,
-    UserRound
+    UserRound,
+    Zap
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useGetWorklistQuery, useGetCaseReportsQuery } from '../store/api';
-import PageHeader from '../components/ui/PageHeader';
+import { useGetCaseReportsQuery, useGetWorklistQuery } from '../store/api';
 import { formatDateTime, formatLocalizedDate } from '../utils/localizedDate';
 import { authenticatedFetch } from '../utils/authenticatedFetch';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
-const statusOrder = ['Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Finalized'];
+const STATUS_ORDER = ['Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Finalized'];
+
+const ar = {
+    loading: 'جاري تحميل ملف الحالة والبيانات التشخيصية...',
+    notFound: 'الحالة غير موجودة أو تعذر الوصول إليها.',
+    back: 'الرجوع لقائمة الفحوصات',
+    eyebrow: 'ملف الحالة الإشعاعية',
+    title: 'تفاصيل الحالة التشخيصية',
+    description: 'مراجعة حالة الفحص، مسار العمل، بيانات المريض، التقرير الإشعاعي ومؤشرات السلامة.',
+    unnamedPatient: 'مريض بدون اسم',
+    patientProfile: 'ملف المريض الكامل',
+    writeReport: 'كتابة التقرير الإشعاعي',
+    printReport: 'طباعة التقرير PDF',
+    openPdf: 'فتح ملف PDF',
+    viewDicom: 'عارض DICOM (PACS)',
+    printPage: 'طباعة الصفحة',
+    template: 'قالب التقرير',
+    status: 'حالة الفحص',
+    priority: 'الأولوية',
+    modality: 'الجهاز / الغرفة',
+    report: 'التقرير',
+    ready: 'معتمد وجاهز',
+    pending: 'قيد الإعداد',
+    workflow: 'مسار الفحص الإشعاعي',
+    patientInfo: 'بيانات المريض الديموغرافية',
+    clinicalInfo: 'التفاصيل والملخص السريري',
+    safety: 'مؤشرات السلامة وموانع الفحص',
+    timeline: 'سجل التوقيتات والأحداث',
+    diagnosticReport: 'التقرير التشخيصي المعتمد',
+    reportUnavailable: 'لم يتم تسجيل نص التقرير بعد. الحالة قيد المراجعة الإشعاعية.',
+    copied: 'تم النسخ إلى الحافظة',
+    printError: 'تعذر فتح ملف التقرير تلقائياً. سيتم فتح نافذة الطباعة.',
+    step: 'المرحلة',
+    of: 'من',
+    copySummary: 'نسخ ملخص الحالة',
+    radiologistSign: 'توقيع واعتماد استشاري الأشعة',
+    telemetry: 'معلومات الجهاز ومكان الفحص'
+};
+
+const tr = (t, key, defaultEn, defaultAr, isAr) => t(key, { defaultValue: isAr ? defaultAr : defaultEn });
+
+const translateStatus = (status, t, isAr) => {
+    const fallback = {
+        Scheduled: ['Scheduled', 'مجدول'],
+        'Checked-in': ['Checked-in', 'تم الوصول'],
+        Arrived: ['Arrived', 'تم الوصول'],
+        Scanning: ['Scanning', 'جاري التصوير'],
+        Reporting: ['Reporting', 'قيد كتابة التقرير'],
+        Finalized: ['Finalized', 'معتمد ونهائي']
+    }[status] || [status || 'Scheduled', status || 'مجدول'];
+    return t(`status.${status}`, { defaultValue: isAr ? fallback[1] : fallback[0] });
+};
+
+const translatePriority = (priority, t, isAr) => {
+    const fallback = {
+        Routine: ['Routine', 'عادي'],
+        Urgent: ['Urgent', 'عاجل'],
+        Emergency: ['Emergency', 'طوارئ فوري']
+    }[priority] || [priority || 'Routine', priority || 'عادي'];
+    return t(`priority.${priority}`, { defaultValue: isAr ? fallback[1] : fallback[0] });
+};
+
+const translateGender = (gender, t, isAr) => {
+    const fallback = {
+        Male: ['Male', 'ذكر'],
+        Female: ['Female', 'أنثى'],
+        M: ['Male', 'ذكر'],
+        F: ['Female', 'أنثى']
+    }[gender] || [gender || '-', gender || '-'];
+    return t(`gender.${gender}`, { defaultValue: isAr ? fallback[1] : fallback[0] });
+};
+
+const translateSafety = (status, t, isAr) => {
+    const fallback = {
+        Safe: ['Safe / Clear', 'آمن / سليم'],
+        'Not Pregnant': ['Not Pregnant', 'غير حامل'],
+        Pregnant: ['Pregnant (High Risk)', 'حامل (تنبيه)'],
+        Warning: ['Caution / Warning', 'تحذير / يلزم مراجعة'],
+        Danger: ['High Risk / Contraindicated', 'موانع فحص حرجة'],
+        Unknown: ['Not Assessed', 'غير محدد']
+    }[status] || ['Not Assessed', 'غير محدد'];
+    return t(`safety.${status || 'Unknown'}`, { defaultValue: isAr ? fallback[1] : fallback[0] });
+};
 
 const getStatusIndex = (status) => {
     if (status === 'Arrived') return 1;
-    const idx = statusOrder.indexOf(status);
+    const idx = STATUS_ORDER.indexOf(status);
     return idx === -1 ? 0 : idx;
-};
-
-// Robust helper that provides fallback strings for both English and Arabic
-const tr = (t, key, defaultEn, defaultAr, isAr) => {
-    const fallback = isAr ? defaultAr : defaultEn;
-    return t(key, { defaultValue: fallback });
-};
-
-const getStatusTranslation = (status, t, isAr) => {
-    const mapEn = {
-        'Scheduled': 'Scheduled',
-        'Checked-in': 'Checked-in',
-        'Arrived': 'Arrived',
-        'Scanning': 'Scanning',
-        'Reporting': 'Reporting',
-        'Finalized': 'Finalized',
-    };
-    const mapAr = {
-        'Scheduled': 'مجدول',
-        'Checked-in': 'تم الوصول',
-        'Arrived': 'تم الوصول',
-        'Scanning': 'جاري التصوير',
-        'Reporting': 'جاري التقرير',
-        'Finalized': 'معتمد',
-    };
-    const fallback = isAr ? (mapAr[status] || status) : (mapEn[status] || status);
-    return t(`status.${status}`, { defaultValue: fallback });
-};
-
-const getPriorityTranslation = (priority, t, isAr) => {
-    const mapEn = { 'Routine': 'Routine', 'Urgent': 'Urgent', 'Emergency': 'Emergency' };
-    const mapAr = { 'Routine': 'عادي', 'Urgent': 'عاجل', 'Emergency': 'طوارئ' };
-    const fallback = isAr ? (mapAr[priority] || priority) : (mapEn[priority] || priority);
-    return t(`priority.${priority}`, { defaultValue: fallback || (isAr ? 'عادي' : 'Routine') });
-};
-
-const getGenderTranslation = (gender, t, isAr) => {
-    const mapEn = { 'Male': 'Male', 'Female': 'Female', 'M': 'Male', 'F': 'Female' };
-    const mapAr = { 'Male': 'ذكر', 'Female': 'أنثى', 'M': 'ذكر', 'F': 'أنثى' };
-    const fallback = isAr ? (mapAr[gender] || gender) : (mapEn[gender] || gender);
-    return t(`gender.${gender}`, { defaultValue: fallback || '--' });
-};
-
-const getSafetyTranslation = (status, t, isAr) => {
-    const mapEn = { 'Safe': 'Safe', 'Not Pregnant': 'Not Pregnant', 'Warning': 'Warning', 'Danger': 'Danger', 'Unknown': 'Unknown' };
-    const mapAr = { 'Safe': 'آمن', 'Not Pregnant': 'غير حوامل', 'Warning': 'تحذير', 'Danger': 'خطر / حامل', 'Unknown': 'غير محدد' };
-    const fallback = isAr ? (mapAr[status] || status) : (mapEn[status] || status);
-    return t(`safety.${status}`, { defaultValue: fallback || (isAr ? 'غير محدد' : 'Unknown') });
 };
 
 const getInitials = (name) => {
     if (!name) return 'PT';
-    return name.split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+    return String(name).split(' ').map((part) => part[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
 };
 
-// Interactive Card Container with cursor-tracking glow
-const GlowCard = ({ children, className = '' }) => {
-    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+const formatOrDash = (value, language, options) => (value ? formatLocalizedDate(value, language, options) : '—');
+const formatDateTimeOrDash = (value, language) => (value ? formatDateTime(value, language) : '—');
 
-    const handleMouseMove = (e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+const priorityBadgeStyles = {
+    Emergency: 'bg-rose-500/15 text-rose-700 border-rose-500/30 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/60',
+    Urgent: 'bg-amber-500/15 text-amber-700 border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60',
+    Routine: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+};
+
+const statusBadgeStyles = {
+    Finalized: 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60',
+    Reporting: 'bg-sky-500/15 text-sky-700 border-sky-500/30 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800/60',
+    Scanning: 'bg-teal-500/15 text-teal-700 border-teal-500/30 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800/60',
+    'Checked-in': 'bg-indigo-500/15 text-indigo-700 border-indigo-500/30 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800/60',
+    Scheduled: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+};
+
+/* ─── Glassmorphism Panel Container ─── */
+const SectionPanel = ({ icon: Icon, title, description, badge, action, children, className = '', tone = 'slate' }) => {
+    return (
+        <section className={`overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl transition-all duration-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/90 ${className}`}>
+            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100/80 bg-slate-50/50 px-4 py-3.5 dark:border-slate-800/80 dark:bg-slate-950/30 sm:px-5">
+                <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-teal-500/15 text-teal-700 dark:text-teal-300">
+                        <Icon size={16} aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <h2 className="truncate text-sm font-black text-slate-900 dark:text-white">{title}</h2>
+                            {badge}
+                        </div>
+                        {description && <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500 dark:text-slate-400">{description}</p>}
+                    </div>
+                </div>
+                {action && <div className="shrink-0">{action}</div>}
+            </header>
+            <div className="p-4 sm:p-5">{children}</div>
+        </section>
+    );
+};
+
+/* ─── Detail Field Component with Copy ─── */
+const DetailField = ({ icon: Icon, label, value, copyable = false, strong = false, isAr = false }) => {
+    const [copied, setCopied] = useState(false);
+
+    const copyValue = async () => {
+        if (!copyable || !value) return;
+        try {
+            await navigator.clipboard?.writeText(String(value));
+            setCopied(true);
+            toast.success(isAr ? ar.copied : `Copied ${label}`);
+            window.setTimeout(() => setCopied(false), 1800);
+        } catch {
+            toast.error(isAr ? 'تعذر النسخ' : 'Copy failed');
+        }
     };
 
     return (
-        <div
-            onMouseMove={handleMouseMove}
-            className={`group relative overflow-hidden rounded-3xl border border-slate-200/70 bg-white/80 p-6 sm:p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-2xl transition-all duration-300 hover:shadow-[0_12px_40px_rgb(0,0,0,0.08)] dark:border-slate-800/70 dark:bg-slate-900/60 ${className}`}
-        >
-            <div
-                className="pointer-events-none absolute -inset-px rounded-3xl opacity-0 transition duration-300 group-hover:opacity-100"
-                style={{
-                    background: `radial-gradient(350px circle at ${mousePos.x}px ${mousePos.y}px, rgba(8, 145, 178, 0.1), transparent 40%)`,
-                }}
-            />
-            <div className="relative z-10">{children}</div>
+        <div className="group relative min-w-0 rounded-xl border border-slate-200/70 bg-slate-50/70 p-3 transition-colors hover:border-slate-300 dark:border-slate-800/80 dark:bg-slate-950/40 dark:hover:border-slate-700">
+            <dt className="flex items-center justify-between text-[9.5px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <span className="flex items-center gap-1.5 truncate">
+                    {Icon && <Icon size={12} className="shrink-0 text-teal-600 dark:text-teal-400" aria-hidden="true" />}
+                    <span className="truncate">{label}</span>
+                </span>
+                {copyable && value && (
+                    <button
+                        type="button"
+                        onClick={copyValue}
+                        className="rounded p-0.5 text-slate-400 opacity-0 transition-opacity hover:text-teal-700 group-hover:opacity-100 dark:hover:text-teal-300"
+                        title="Copy"
+                    >
+                        {copied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                    </button>
+                )}
+            </dt>
+            <dd className="mt-1.5 flex min-w-0 items-center gap-2">
+                <span className={`min-w-0 break-words text-xs sm:text-[13px] ${strong ? 'font-black text-slate-900 dark:text-white' : 'font-semibold text-slate-700 dark:text-slate-200'}`}>
+                    {value || '—'}
+                </span>
+            </dd>
         </div>
     );
 };
 
-const WorkflowStepper = ({ currentStatus, timestamps, language, isRtl, isAr, t }) => {
-    const currentIndex = getStatusIndex(currentStatus);
-
+/* ─── Workflow Stepper Timeline ─── */
+const WorkflowStepper = ({ status, timestamps, language, isRtl, isAr, t }) => {
+    const currentIndex = getStatusIndex(status);
     const steps = [
-        {
-            key: 'scheduled',
-            title: tr(t, 'workflow.scheduled', 'Scheduled', 'الموعد', isAr),
-            description: timestamps.created_at ? formatDateTime(timestamps.created_at, language) : '--',
-            icon: CalendarCheck2,
-            isActive: currentIndex >= 0,
-            isCurrent: currentIndex === 0
-        },
-        {
-            key: 'arrived',
-            title: tr(t, 'workflow.arrived', 'Arrived', 'تم الوصول', isAr),
-            description: timestamps.arrived_at ? formatDateTime(timestamps.arrived_at, language) : '--',
-            icon: UserCheck,
-            isActive: currentIndex >= 1,
-            isCurrent: currentIndex === 1
-        },
-        {
-            key: 'scanning',
-            title: tr(t, 'workflow.scanning', 'Scanning', 'التصوير', isAr),
-            description: timestamps.exam_started_at ? formatDateTime(timestamps.exam_started_at, language) : '--',
-            icon: ScanLine,
-            isActive: currentIndex >= 2,
-            isCurrent: currentIndex === 2
-        },
-        {
-            key: 'reporting',
-            title: tr(t, 'workflow.reporting', 'Reporting', 'التقرير', isAr),
-            description: timestamps.reporting_started_at ? formatDateTime(timestamps.reporting_started_at, language) : '--',
-            icon: FileSearch,
-            isActive: currentIndex >= 3,
-            isCurrent: currentIndex === 3
-        },
-        {
-            key: 'finalized',
-            title: tr(t, 'workflow.finalized', 'Finalized', 'معتمد', isAr),
-            description: timestamps.report_finalized_at ? formatDateTime(timestamps.report_finalized_at, language) : '--',
-            icon: CheckCircle2,
-            isActive: currentIndex >= 4,
-            isCurrent: currentIndex === 4
-        }
+        { key: 'Scheduled', icon: CalendarCheck2, date: timestamps.created_at },
+        { key: 'Checked-in', icon: UserCheck, date: timestamps.arrived_at },
+        { key: 'Scanning', icon: ScanLine, date: timestamps.exam_started_at },
+        { key: 'Reporting', icon: FileSearch, date: timestamps.reporting_started_at },
+        { key: 'Finalized', icon: CheckCircle2, date: timestamps.report_finalized_at }
     ];
 
-    const progressPercentage = (currentIndex / (steps.length - 1)) * 100;
-
     return (
-        <GlowCard className="overflow-x-auto relative before:absolute before:inset-x-0 before:top-0 before:h-1 before:rounded-t-3xl before:bg-gradient-to-r before:from-cyan-500 before:to-blue-600 before:opacity-60">
-            <div className="flex items-center justify-between mb-4">
+        <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-5">
+            <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <span className="flex h-2 w-2 rounded-full bg-cyan-500" />
-                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                        {tr(t, 'caseDetails.workflow', 'Workflow Tracking', 'تتبع مسار العمل', isAr)}
+                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-teal-500/15 text-teal-700 dark:text-teal-300">
+                        <Activity size={15} />
+                    </span>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                        {tr(t, 'caseDetails.workflow', 'Workflow Tracking', ar.workflow, isAr)}
                     </h3>
                 </div>
-                <span className="rounded-full bg-cyan-500/10 px-3 py-1 font-mono text-[11px] font-bold text-cyan-600 dark:text-cyan-400">
-                    Step {currentIndex + 1} of {steps.length} ({Math.round(progressPercentage)}%)
+                <span className="rounded-full bg-teal-500/15 px-2.5 py-0.5 font-mono text-[10px] font-black text-teal-700 dark:text-teal-300">
+                    {isAr ? `${ar.step} ${currentIndex + 1} ${ar.of} ${steps.length}` : `Stage 0${currentIndex + 1} / 0${steps.length}`}
                 </span>
             </div>
-            <div className="relative z-10 min-w-[640px] pt-2">
-                <div className="relative flex items-start justify-between">
-                    {/* Connecting Line background */}
-                    <div className="absolute top-6 start-6 end-6 h-1 rounded-full bg-slate-100/80 shadow-inner dark:bg-slate-800/60 -z-10" />
-                    
-                    {/* Connecting Line active fill */}
-                    <div
-                        className={`absolute top-6 h-1 rounded-full bg-gradient-to-r ${isRtl ? 'from-blue-600 to-cyan-500' : 'from-cyan-500 to-blue-600'} shadow-[0_0_12px_rgba(6,182,212,0.5)] -z-10 transition-all duration-700 ease-in-out`}
-                        style={{ width: `calc(${progressPercentage}% - 3rem)` }}
-                    />
 
+            <div className="relative pt-2 pb-1">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-3">
                     {steps.map((step, index) => {
-                        const Icon = step.icon;
-                        const isCompleted = index < currentIndex;
-                        const isCurrent = step.isCurrent;
-
-                        let colorClass = 'bg-slate-50 border-slate-200/60 text-slate-400 dark:bg-slate-900/50 dark:border-slate-700 dark:text-slate-500';
-                        if (isCompleted) {
-                            colorClass = 'bg-gradient-to-br from-emerald-500 to-teal-600 border-transparent text-white shadow-lg shadow-emerald-500/30 ring-4 ring-emerald-50 dark:ring-emerald-500/10';
-                        } else if (isCurrent) {
-                            colorClass = 'bg-gradient-to-br from-cyan-500 to-blue-600 border-transparent text-white shadow-lg shadow-cyan-500/30 ring-4 ring-cyan-50 dark:ring-cyan-500/10';
-                        }
+                        const isDone = index < currentIndex;
+                        const isCurrent = index === currentIndex;
+                        const isFuture = index > currentIndex;
+                        const StepIcon = step.icon;
 
                         return (
-                            <div key={step.key} className="flex flex-col items-center flex-1 z-10 group cursor-default">
-                                <div className={`relative flex h-12 w-12 items-center justify-center rounded-2xl border-2 transition-all duration-500 group-hover:scale-110 ${isRtl ? 'group-hover:-rotate-3' : 'group-hover:rotate-3'} ${colorClass}`}>
-                                    {isCurrent && <span className="absolute h-full w-full animate-ping rounded-2xl bg-cyan-400/50"></span>}
-                                    <Icon size={20} className={`relative z-10 ${isCompleted || isCurrent ? 'text-white' : ''}`} />
+                            <div
+                                key={step.key}
+                                className={`relative flex flex-col justify-between rounded-xl border p-2.5 transition-all ${
+                                    isCurrent
+                                        ? 'border-teal-500/50 bg-teal-500/10 shadow-sm ring-2 ring-teal-500/20 dark:bg-teal-950/30'
+                                        : isDone
+                                        ? 'border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-950/40'
+                                        : 'border-slate-200/60 bg-white/40 opacity-50 dark:border-slate-800/60 dark:bg-slate-900/40'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between">
+                                    <span
+                                        className={`grid h-7 w-7 place-items-center rounded-lg ${
+                                            isCurrent
+                                                ? 'bg-teal-600 text-white shadow-xs'
+                                                : isDone
+                                                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                                                : 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                        }`}
+                                    >
+                                        <StepIcon size={14} />
+                                    </span>
+                                    {isDone && <CheckCircle2 size={14} className="text-emerald-600 dark:text-emerald-400" />}
+                                    {isCurrent && <span className="h-2 w-2 animate-ping rounded-full bg-teal-500" />}
                                 </div>
-                                <div className="mt-4 text-center">
-                                    <h4 className={`text-sm transition-colors ${isCompleted || isCurrent ? 'font-black text-slate-950 dark:text-white' : 'font-bold text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`}>
-                                        {step.title}
-                                    </h4>
-                                    <p className="mt-1.5 font-mono text-[10px] font-bold text-slate-400 dark:text-slate-500 opacity-80">
-                                        {step.description}
-                                    </p>
+                                <div className="mt-2 min-w-0">
+                                    <strong className={`block truncate text-xs font-black ${isCurrent ? 'text-teal-900 dark:text-teal-200' : 'text-slate-800 dark:text-slate-200'}`}>
+                                        {translateStatus(step.key, t, isAr)}
+                                    </strong>
+                                    <small className="block truncate font-mono text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                                        {formatDateTimeOrDash(step.date, language)}
+                                    </small>
                                 </div>
                             </div>
                         );
                     })}
                 </div>
             </div>
-        </GlowCard>
+        </div>
     );
 };
 
-const SectionHeader = ({ icon: Icon, title, badge, action }) => (
-    <div className="relative mb-6 flex items-center justify-between border-b border-slate-100/60 pb-4 dark:border-slate-800/60">
-        <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 text-cyan-600 shadow-inner ring-1 ring-cyan-500/20 dark:text-cyan-400">
-                <Icon size={18} />
-            </div>
-            <h3 className="text-sm font-black tracking-wide text-slate-950 dark:text-white">{title}</h3>
-        </div>
-        <div className="flex items-center gap-2">
-            {badge && <span className="rounded-full bg-slate-100 px-3 py-1 font-mono text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{badge}</span>}
-            {action}
-        </div>
-    </div>
-);
+/* ─── Safety Metric Tile ─── */
+const SafetyCheckCard = ({ icon: Icon, label, status, t, isAr }) => {
+    const isSafe = status === 'Safe' || status === 'Not Pregnant';
+    const isDanger = status === 'Danger' || status === 'Pregnant';
+    const isWarning = status === 'Warning';
 
-const DetailRow = ({ label, value, highlight = false, copyable = false, isAr = false, icon: Icon }) => {
-    const [copied, setCopied] = useState(false);
-
-    const handleCopy = () => {
-        if (!value) return;
-        navigator.clipboard.writeText(value);
-        setCopied(true);
-        toast.success(isAr ? `تم نسخ ${label}` : `Copied ${label}`);
-        setTimeout(() => setCopied(false), 2000);
-    };
+    const toneStyles = isSafe
+        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+        : isDanger
+        ? 'border-rose-500/30 bg-rose-500/10 text-rose-800 dark:text-rose-300 ring-1 ring-rose-500/20'
+        : isWarning
+        ? 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300 ring-1 ring-amber-500/20'
+        : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-400';
 
     return (
-        <div className="group flex flex-col py-2 transition-all duration-300">
-            <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[.15em] text-slate-400 transition-colors group-hover:text-cyan-600 dark:group-hover:text-cyan-400">
-                {Icon && <Icon size={12} className="shrink-0 text-slate-400" />}
-                {label}
+        <div className={`flex items-center justify-between gap-2.5 rounded-xl border p-3 ${toneStyles}`}>
+            <span className="flex min-w-0 items-center gap-2 font-bold text-xs">
+                <Icon size={16} className="shrink-0" />
+                <span className="truncate">{label}</span>
             </span>
-            <div className="mt-2 flex items-center gap-2">
-                <span className={`break-words text-sm ${highlight ? 'font-black text-slate-950 dark:text-white' : 'font-bold text-slate-700 dark:text-slate-300'}`}>
-                    {value || '--'}
-                </span>
-                {copyable && value && (
-                    <button
-                        type="button"
-                        onClick={handleCopy}
-                        aria-label={`Copy ${label}`}
-                        className="opacity-0 transition-opacity group-hover:opacity-100 text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400"
-                    >
-                        {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                    </button>
-                )}
-            </div>
+            <span className="shrink-0 font-mono text-[10.5px] font-black uppercase">
+                {translateSafety(status, t, isAr)}
+            </span>
         </div>
     );
 };
 
-const SafetyRow = ({ icon: Icon, label, status, t, isAr }) => {
-    const translatedStatus = getSafetyTranslation(status, t, isAr);
-    let toneClass = 'text-slate-500 bg-slate-50/80 ring-1 ring-slate-200/60 dark:bg-slate-900/50 dark:ring-slate-800/50 dark:text-slate-400';
-    if (status === 'Safe' || status === 'Not Pregnant') {
-        toneClass = 'text-emerald-700 bg-emerald-50/80 ring-1 ring-emerald-200 shadow-[0_2px_10px_rgba(16,185,129,0.08)] dark:text-emerald-300 dark:bg-emerald-500/10 dark:ring-emerald-500/20';
-    } else if (status === 'Warning') {
-        toneClass = 'text-amber-700 bg-amber-50/80 ring-1 ring-amber-200 shadow-[0_2px_10px_rgba(245,158,11,0.08)] dark:text-amber-300 dark:bg-amber-500/10 dark:ring-amber-500/20';
-    } else if (status === 'Danger' || status === 'Pregnant') {
-        toneClass = 'text-rose-700 bg-rose-50/80 ring-1 ring-rose-200 shadow-[0_2px_10px_rgba(244,63,94,0.08)] dark:text-rose-300 dark:bg-rose-500/10 dark:ring-rose-500/20';
-    }
-
-    return (
-        <div className={`flex items-center justify-between rounded-2xl p-4 transition-all duration-300 hover:scale-[1.01] ${toneClass}`}>
-            <div className="flex items-center gap-3">
-                <Icon size={18} className="shrink-0" />
-                <span className="text-xs font-bold uppercase tracking-wider">{label}</span>
-            </div>
-            <span className="text-xs font-black">{translatedStatus}</span>
-        </div>
-    );
-};
-
+/* ─── Main Case Details Page ─── */
 const CaseDetailsPage = () => {
     const { examId } = useParams();
     const navigate = useNavigate();
@@ -312,26 +340,34 @@ const CaseDetailsPage = () => {
     const isRtl = i18n.dir() === 'rtl';
     const isAr = language?.startsWith('ar');
     const [isPrintingReport, setIsPrintingReport] = useState(false);
-    const [selectedTemplate, setSelectedTemplate] = useState('modern');
 
-    // Fetch from Worklist (active cases) or Case Reports (finalized cases)
     const { data: queueRes, isLoading: qLoading, isError: qError } = useGetWorklistQuery({ exam_id: examId }, { skip: !examId });
     const { data: reportRes, isLoading: rLoading } = useGetCaseReportsQuery({ exam_id: examId }, { skip: !examId });
-    
+
     const qList = queueRes?.data || queueRes?.items || (Array.isArray(queueRes) ? queueRes : []);
     const rList = reportRes?.data || reportRes?.items || (Array.isArray(reportRes) ? reportRes : []);
-    
-    // Find exact match or use the first returned if backend filtered it
-    const exam = qList.find(x => x.exam_id === examId) || qList[0] || rList.find(x => x.exam_id === examId) || rList[0];
+    const exam = qList.find((item) => item.exam_id === examId) || qList[0] || rList.find((item) => item.exam_id === examId) || rList[0];
     const isLoading = qLoading || rLoading;
     const isError = qError && !exam;
 
+    const timestamps = useMemo(() => ({
+        created_at: exam?.created_at || exam?.start_time,
+        arrived_at: exam?.arrived_at,
+        exam_started_at: exam?.exam_started_at,
+        exam_completed_at: exam?.exam_completed_at,
+        reporting_started_at: exam?.reporting_started_at,
+        report_finalized_at: exam?.report_finalized_at,
+        delivered_at: exam?.delivered_at || exam?.last_delivery_at
+    }), [exam]);
+
     if (isLoading) {
         return (
-            <div className="flex min-h-[400px] items-center justify-center">
-                <div className="flex flex-col items-center gap-4">
-                    <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-100 border-t-cyan-600 dark:border-slate-800" />
-                    <p className="text-sm font-semibold text-slate-500">{tr(t, 'status.loading', 'Loading details...', 'جارٍ تحميل التفاصيل...', isAr)}</p>
+            <div className="flex min-h-[500px] items-center justify-center p-6">
+                <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 p-8 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+                    <Loader2 size={32} className="animate-spin text-teal-600 dark:text-teal-400" />
+                    <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                        {tr(t, 'status.loading', 'Loading case details...', ar.loading, isAr)}
+                    </p>
                 </div>
             </div>
         );
@@ -339,70 +375,46 @@ const CaseDetailsPage = () => {
 
     if (isError || !exam) {
         return (
-            <div className="flex min-h-[400px] items-center justify-center">
-                <div className="flex flex-col items-center gap-4 text-rose-500">
-                    <AlertCircle size={48} />
-                    <p className="text-sm font-semibold">{tr(t, 'status.error', 'Case not found or access denied.', 'الحالة غير موجودة أو تعذر الوصول إليها.', isAr)}</p>
+            <div className="flex min-h-[500px] items-center justify-center p-6">
+                <div className="max-w-md rounded-2xl border border-rose-200 bg-white/90 p-8 text-center shadow-sm backdrop-blur-xl dark:border-rose-900/50 dark:bg-slate-900/90">
+                    <AlertCircle size={40} className="mx-auto text-rose-500" />
+                    <h2 className="mt-3 text-base font-black text-slate-900 dark:text-white">
+                        {tr(t, 'status.error', 'Case not found or access denied.', ar.notFound, isAr)}
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        The requested study ID #{examId} could not be resolved from active worklists.
+                    </p>
                     <button
                         type="button"
-                        onClick={() => navigate(-1)}
-                        className="mt-2 rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                        onClick={() => navigate('/worklist')}
+                        className="mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950"
                     >
-                        {tr(t, 'actions.goBack', 'Go Back', 'رجوع', isAr)}
+                        <ArrowLeft size={14} className="rtl:rotate-180" />
+                        <span>{tr(t, 'actions.goBack', 'Back to Worklist', ar.back, isAr)}</span>
                     </button>
                 </div>
             </div>
         );
     }
 
-    const {
-        status,
-        created_at,
-        arrived_at,
-        exam_started_at,
-        exam_completed_at,
-        reporting_started_at,
-        report_finalized_at,
-        delivered_at,
-        patient_name,
-        mrn,
-        patient_id,
-        gender,
-        date_of_birth,
-        phone,
-        exam_type_name,
-        modality_name,
-        order_number,
-        clinical_indication,
-        provisional_diagnosis,
-        pregnancy_safety_status,
-        implant_safety_status,
-        renal_safety_status,
-        priority,
-        referring_doctor_name,
-        performing_radiologist_name,
-        report_text,
-        impression
-    } = exam;
+    const status = exam.status || 'Scheduled';
+    const priority = exam.priority || 'Routine';
+    const patientName = exam.patient_name || tr(t, 'fallback.unnamedPatient', 'Unnamed Patient', ar.unnamedPatient, isAr);
+    const examTitle = exam.exam_type_name || exam.modality_name || 'Diagnostic Study';
+    const radiologist = exam.performing_radiologist_name || exam.radiologist_name;
+    const reportText = exam.report_text || exam.report_content || '';
+    const impression = exam.impression || exam.report_sections?.impression || '';
+    const isReportComplete = status === 'Finalized' || Boolean(reportText) || Boolean(impression);
+    const translatedStatus = translateStatus(status, t, isAr);
+    const translatedPriority = translatePriority(priority, t, isAr);
+    const patientInitials = getInitials(patientName);
 
-    const timestamps = {
-        created_at,
-        arrived_at,
-        exam_started_at,
-        exam_completed_at,
-        reporting_started_at,
-        report_finalized_at,
-        delivered_at
-    };
-
-    const isReportComplete = status === 'Finalized' || Boolean(report_text) || Boolean(impression);
-
-    const handlePrintReport = async (autoPrint = true, style = selectedTemplate) => {
+    const handlePrintReport = async (autoPrint = true) => {
         if (isPrintingReport) return;
         setIsPrintingReport(true);
         try {
             const queryParams = new URLSearchParams({
-                templateStyle: style || 'modern',
+                templateStyle: 'modern',
                 fields: 'patient_name,mrn,study_date,referring_doctor'
             });
             const response = await authenticatedFetch(`${API_BASE}/exams/${examId}/report/pdf?${queryParams.toString()}`);
@@ -419,7 +431,8 @@ const CaseDetailsPage = () => {
                 popup.addEventListener('load', () => popup.print(), { once: true });
             }
             window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-        } catch (error) {
+        } catch {
+            toast.error(isAr ? ar.printError : 'Could not open report PDF.');
             window.print();
         } finally {
             setIsPrintingReport(false);
@@ -433,319 +446,349 @@ const CaseDetailsPage = () => {
         navigate(`/pacs/viewer?${params.toString()}`);
     };
 
-    const translatedStatus = getStatusTranslation(status, t, isAr);
-    const translatedPriority = getPriorityTranslation(priority, t, isAr);
-    const patientInitials = getInitials(patient_name);
+    const copyCaseSummary = async () => {
+        const summary = `Case: ${examTitle}\nPatient: ${patientName} (MRN: ${exam.mrn || 'N/A'})\nOrder: #${exam.order_number || examId}\nStatus: ${status}\nModality: ${exam.modality_name || 'N/A'}`;
+        try {
+            await navigator.clipboard.writeText(summary);
+            toast.success(isAr ? ar.copied : 'Case summary copied to clipboard');
+        } catch {
+            toast.error('Failed to copy summary');
+        }
+    };
 
     return (
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 space-y-6" dir={isRtl ? 'rtl' : 'ltr'}>
-            
-            {/* Page Header with Actions */}
-            <PageHeader
-                icon={FileText}
-                eyebrowIcon={Activity}
-                eyebrow={tr(t, 'caseDetails.eyebrow', 'Case Overview', 'نظرة عامة على الحالة', isAr)}
-                title={tr(t, 'caseDetails.title', 'Case Details', 'تفاصيل الحالة', isAr)}
-                description={tr(t, 'caseDetails.description', 'Review exam status, patient information, and clinical summaries.', 'مراجعة حالة الفحص والمعلومات السريرية وملخصات التقرير.', isAr)}
-                actions={(
-                    <div className="flex items-center gap-2">
-                        {status === 'Reporting' ? (
-                            <button
-                                type="button"
-                                onClick={() => navigate(`/reports/editor/${examId}`)}
-                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 px-5 text-xs font-bold text-white shadow-lg shadow-cyan-600/25 transition hover:shadow-cyan-600/40 hover:scale-[1.02] active:scale-[0.98]"
-                            >
-                                <PenLine size={16} />
-                                {tr(t, 'actions.writeReport', 'Write Report', 'كتابة التقرير', isAr)}
-                            </button>
-                        ) : null}
-                        {isReportComplete ? (
-                            <div className="flex items-center gap-1.5 rounded-xl border border-emerald-200/80 bg-emerald-50/50 p-1 dark:border-emerald-500/20 dark:bg-emerald-500/10" dir={isRtl ? 'rtl' : undefined}>
-                                <select
-                                    value={selectedTemplate}
-                                    onChange={(e) => setSelectedTemplate(e.target.value)}
-                                    className="h-8 rounded-lg border-0 bg-white/90 px-2.5 text-xs font-bold text-slate-700 shadow-sm outline-none cursor-pointer hover:bg-white dark:bg-slate-900 dark:text-slate-200"
-                                    dir={isRtl ? 'rtl' : 'ltr'}
-                                    title={tr(t, 'report.template', 'Select Template', 'اختر قالب التقرير', isAr)}
-                                >
-                                    {isRtl ? (
-                                        <>
-                                            <option value="corporate">Royal Corporate</option>
-                                            <option value="clinical">Clinical Emerald</option>
-                                            <option value="minimal">Minimal Clean</option>
-                                            <option value="classic">Classic Hospital</option>
-                                            <option value="modern">Modern Template</option>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <option value="modern">Modern Template</option>
-                                            <option value="classic">Classic Hospital</option>
-                                            <option value="minimal">Minimal Clean</option>
-                                            <option value="clinical">Clinical Emerald</option>
-                                            <option value="corporate">Royal Corporate</option>
-                                        </>
-                                    )}
-                                </select>
-                                <button
-                                    type="button"
-                                    onClick={() => handlePrintReport(true)}
-                                    disabled={isPrintingReport}
-                                    className="inline-flex h-8 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 text-xs font-bold text-white shadow-md shadow-emerald-600/20 transition hover:shadow-emerald-600/35 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-                                >
-                                    {isPrintingReport ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                                    {tr(t, 'actions.printReport', 'Print PDF', 'طباعة تقرير PDF', isAr)}
-                                </button>
-                            </div>
-                        ) : null}
-                        <button
-                            type="button"
-                            onClick={handleOpenViewer}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50/80 px-4 text-xs font-bold text-cyan-700 shadow-sm backdrop-blur transition hover:bg-cyan-100 hover:text-cyan-800 dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-300 dark:hover:bg-cyan-500/20"
-                        >
-                            <Radio size={16} />
-                            {tr(t, 'actions.viewDicom', 'View DICOM', 'عرض الصور DICOM', isAr)}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => window.print()}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
-                            title={tr(t, 'actions.printPage', 'Print Case Page', 'طباعة صفحة الحالة', isAr)}
-                        >
-                            <Printer size={16} />
-                        </button>
-                    </div>
-                )}
-                meta={(
+        <div className="space-y-4 pb-12" dir={isRtl ? 'rtl' : 'ltr'}>
+            {/* Top Navigation & Action Command Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-4">
+                <div className="flex items-center gap-2.5">
                     <button
                         type="button"
-                        onClick={() => navigate(-1)}
-                        className="group inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-4 py-2 text-xs font-bold text-slate-700 shadow-sm backdrop-blur transition hover:bg-slate-100 hover:text-slate-950 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+                        onClick={() => navigate('/worklist')}
+                        className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        title={tr(t, 'actions.goBack', 'Back to Worklist', ar.back, isAr)}
                     >
-                        <ArrowLeft size={16} className={`transition-transform group-hover:-translate-x-1 ${isRtl ? 'rotate-180 group-hover:translate-x-1' : ''}`} />
-                        {tr(t, 'actions.back', 'Back', 'رجوع', isAr)}
+                        <ArrowLeft size={16} className="rtl:rotate-180" />
                     </button>
-                )}
-            />
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-black uppercase text-teal-600 dark:text-teal-400">
+                                {tr(t, 'caseDetails.eyebrow', 'Case File', ar.eyebrow, isAr)}
+                            </span>
+                            <span className="text-slate-300 dark:text-slate-700">/</span>
+                            <span className="font-mono text-xs font-bold text-slate-600 dark:text-slate-400">
+                                #{exam.order_number || examId}
+                            </span>
+                        </div>
+                        <h1 className="text-sm font-black text-slate-900 dark:text-white sm:text-base">
+                            {examTitle}
+                        </h1>
+                    </div>
+                </div>
 
-            {/* Patient & Exam Cockpit Summary Banner */}
-            <div className="fade-in-up">
-            <GlowCard className="p-6 sm:p-8">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex items-start gap-4">
-                        {/* Patient Initials Avatar */}
-                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-xl font-black text-white shadow-lg shadow-cyan-500/25 ring-4 ring-cyan-500/10">
+                {/* Primary Action Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                    {/* Launch DICOM PACS Viewer */}
+                    <button
+                        type="button"
+                        onClick={handleOpenViewer}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3.5 text-xs font-bold text-sky-800 shadow-xs transition hover:bg-sky-500/20 dark:text-sky-300"
+                    >
+                        <Radio size={14} className="text-sky-500 animate-pulse" />
+                        <span>{tr(t, 'actions.viewDicom', 'View DICOM', ar.viewDicom, isAr)}</span>
+                    </button>
+
+                    {/* Write / Edit Diagnostic Report */}
+                    {status === 'Reporting' && (
+                        <button
+                            type="button"
+                            onClick={() => navigate(`/reports/editor/${examId}`)}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 text-xs font-black text-white shadow-xs transition hover:bg-teal-500"
+                        >
+                            <PenLine size={14} />
+                            <span>{tr(t, 'actions.writeReport', 'Write Report', ar.writeReport, isAr)}</span>
+                        </button>
+                    )}
+
+                    {/* Print / Download Report PDF */}
+                    {isReportComplete && (
+                        <button
+                            type="button"
+                            onClick={() => handlePrintReport(true)}
+                            disabled={isPrintingReport}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 text-xs font-bold text-emerald-800 shadow-xs transition hover:bg-emerald-500/20 dark:text-emerald-300"
+                        >
+                            <Printer size={14} />
+                            <span>{tr(t, 'actions.printReport', 'Print PDF', ar.printReport, isAr)}</span>
+                        </button>
+                    )}
+
+                    {/* Copy Summary */}
+                    <button
+                        type="button"
+                        onClick={copyCaseSummary}
+                        className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-xs transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        title={tr(t, 'caseDetails.copySummary', 'Copy Case Summary', ar.copySummary, isAr)}
+                    >
+                        <Copy size={15} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Hero Patient & Case Card */}
+            <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                {/* Patient Master Card */}
+                <div className="flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-5">
+                    <div className="flex items-start gap-3.5">
+                        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-teal-500/30 bg-teal-500/15 text-base font-black text-teal-700 dark:text-teal-300 sm:h-14 sm:w-14 sm:text-lg">
                             {patientInitials}
                         </div>
-                        <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2.5">
-                                <h1 className="truncate text-2xl font-black tracking-tight text-slate-950 dark:text-white sm:text-3xl">
-                                    {patient_name || tr(t, 'fallback.unnamedPatient', 'Unnamed Patient', 'مريض بدون اسم', isAr)}
-                                </h1>
-                                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-xs font-bold ${
-                                    status === 'Finalized'
-                                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                                        : status === 'Reporting'
-                                        ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
-                                        : 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20'
-                                }`}>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h2 className="text-base font-black text-slate-900 dark:text-white sm:text-lg">
+                                    {patientName}
+                                </h2>
+                                <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10.5px] font-black uppercase ${statusBadgeStyles[status] || statusBadgeStyles.Scheduled}`}>
                                     <span className="h-1.5 w-1.5 rounded-full bg-current" />
                                     {translatedStatus}
                                 </span>
-                                {priority === 'Urgent' || priority === 'Emergency' ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-0.5 font-mono text-xs font-bold text-rose-600 border border-rose-500/20 dark:text-rose-400">
-                                        <AlertTriangle size={12} />
-                                        {translatedPriority}
-                                    </span>
-                                ) : null}
+                                <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10.5px] font-black uppercase ${priorityBadgeStyles[priority] || priorityBadgeStyles.Routine}`}>
+                                    {translatedPriority}
+                                </span>
                             </div>
 
-                            <p className="mt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                                {exam_type_name || modality_name} {modality_name && exam_type_name ? `· ${modality_name}` : ''}
-                            </p>
-
-                            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
-                                {mrn && (
-                                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1 font-mono dark:bg-slate-800 dark:text-slate-200">
-                                        <User size={13} className="text-cyan-600 dark:text-cyan-400" />
-                                        MRN: {mrn}
-                                    </span>
-                                )}
-                                {order_number && (
-                                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1 font-mono dark:bg-slate-800 dark:text-slate-200">
-                                        <Hash size={13} className="text-blue-600 dark:text-blue-400" />
-                                        Order #: {order_number}
-                                    </span>
-                                )}
-                                {gender && (
-                                    <span className="rounded-lg bg-slate-100 px-2.5 py-1 dark:bg-slate-800">
-                                        {getGenderTranslation(gender, t, isAr)}
-                                    </span>
-                                )}
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                                <span>MRN: <strong className="text-slate-900 dark:text-white">{exam.mrn || '—'}</strong></span>
+                                <span>Gender: <strong>{translateGender(exam.gender, t, isAr)}</strong></span>
+                                {exam.age && <span>Age: <strong>{exam.age} yrs</strong></span>}
+                                {exam.date_of_birth && <span>DOB: <strong>{formatOrDash(exam.date_of_birth, language)}</strong></span>}
                             </div>
                         </div>
                     </div>
 
-                    {patient_id && (
-                        <div className="shrink-0">
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                            <Phone size={13} className="text-teal-600" />
+                            <span>{exam.phone || exam.patient_phone || 'No phone registered'}</span>
+                        </div>
+                        {exam.patient_id && (
                             <Link
-                                to={`/patients/${patient_id}`}
-                                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm transition hover:border-cyan-300 hover:bg-white hover:text-cyan-700 dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                                to={`/patients/${exam.patient_id}`}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-teal-500/40 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                             >
-                                <UserRound size={15} />
-                                {tr(t, 'actions.patientProfile', 'Full Patient Profile', 'الملف الكامل للمريض', isAr)}
-                                <ExternalLink size={13} />
+                                <UserRound size={13} />
+                                <span>{tr(t, 'actions.patientProfile', 'Full Patient Record', ar.patientProfile, isAr)}</span>
                             </Link>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
-            </GlowCard>
-            </div>
 
-            {/* Workflow Tracker Section */}
-            <div className="fade-in-up" style={{ animationDelay: '100ms' }}>
-            <WorkflowStepper currentStatus={status} timestamps={timestamps} language={language} isRtl={isRtl} isAr={isAr} t={t} />
-            </div>
-
-            {/* Case Details Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* Left Column: Patient & Exam Details */}
-                <div className="lg:col-span-2 space-y-6">
-                    <div className="fade-in-up" style={{ animationDelay: '200ms' }}>
-                    <GlowCard className="relative before:absolute before:inset-x-0 before:top-0 before:h-1 before:rounded-t-3xl before:bg-gradient-to-r before:from-cyan-500 before:to-blue-600 before:opacity-60">
-                        <SectionHeader icon={User} title={tr(t, 'caseDetails.patientInfo', 'Patient Information', 'بيانات المريض', isAr)} badge={mrn ? `MRN: ${mrn}` : undefined} />
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                            <DetailRow icon={User} label={tr(t, 'patient.name', 'Patient Name', 'اسم المريض', isAr)} value={patient_name} highlight copyable isAr={isAr} />
-                            <DetailRow icon={Hash} label={tr(t, 'patient.mrn', 'MRN', 'رقم السجل الطبي (MRN)', isAr)} value={mrn} highlight copyable isAr={isAr} />
-                            <DetailRow icon={UserCheck} label={tr(t, 'patient.gender', 'Gender', 'الجنس', isAr)} value={getGenderTranslation(gender, t, isAr)} isAr={isAr} />
-                            {date_of_birth && <DetailRow icon={Calendar} label={tr(t, 'patient.dob', 'Date of Birth', 'تاريخ الميلاد', isAr)} value={formatLocalizedDate(date_of_birth, language)} isAr={isAr} />}
-                            {phone && <DetailRow icon={Activity} label={tr(t, 'patient.phone', 'Phone Number', 'رقم الهاتف', isAr)} value={phone} copyable isAr={isAr} />}
-                            {referring_doctor_name && <DetailRow icon={Stethoscope} label={tr(t, 'patient.referringDoctor', 'Referring Doctor', 'الطبيب المحول', isAr)} value={referring_doctor_name} isAr={isAr} />}
+                {/* Modality & Clinical Summary Card */}
+                <div className="flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-5">
+                    <div>
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
+                            <span className="uppercase tracking-wider">{tr(t, 'caseDetails.telemetry', 'Equipment Telemetry', ar.telemetry, isAr)}</span>
+                            <span className="font-mono text-[10px] font-black text-teal-600 dark:text-teal-400">ONLINE</span>
                         </div>
-                    </GlowCard>
-                    </div>
-
-                    <div className="fade-in-up" style={{ animationDelay: '300ms' }}>
-                    <GlowCard className="relative before:absolute before:inset-x-0 before:top-0 before:h-1 before:rounded-t-3xl before:bg-gradient-to-r before:from-sky-500 before:to-indigo-600 before:opacity-60">
-                        <SectionHeader icon={Stethoscope} title={tr(t, 'caseDetails.clinicalInfo', 'Clinical Details', 'التفاصيل السريرية', isAr)} />
-                        <div className="space-y-6">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                                <DetailRow icon={ScanLine} label={tr(t, 'exam.modality', 'Modality', 'الجهاز', isAr)} value={modality_name} highlight isAr={isAr} />
-                                <DetailRow icon={FileSearch} label={tr(t, 'exam.type', 'Examination Type', 'نوع الفحص', isAr)} value={exam_type_name} highlight isAr={isAr} />
-                                <DetailRow icon={AlertTriangle} label={tr(t, 'exam.priority', 'Priority', 'الأولوية', isAr)} value={translatedPriority} isAr={isAr} />
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                            <div className="rounded-xl border border-slate-200/70 bg-slate-50/70 p-2.5 dark:border-slate-800 dark:bg-slate-950/40">
+                                <small className="block text-[9px] font-bold uppercase text-slate-400">Modality</small>
+                                <strong className="mt-0.5 block text-xs font-black text-slate-900 dark:text-white">
+                                    {exam.modality_name || exam.modality_type || 'General'}
+                                </strong>
                             </div>
-                            
-                            {clinical_indication && (
-                                <div className="group">
-                                    <span className="text-[10px] font-black uppercase tracking-[.15em] text-slate-400 transition-colors group-hover:text-cyan-600 dark:group-hover:text-cyan-400">{tr(t, 'exam.indication', 'Clinical Indication', 'دواعي الفحص السريرية', isAr)}</span>
-                                    <div className="mt-2.5 rounded-2xl border border-slate-200/60 bg-slate-50/80 p-5 text-sm font-semibold leading-relaxed text-slate-700 shadow-inner dark:border-slate-800/80 dark:bg-slate-950/40 dark:text-slate-300">
-                                        {clinical_indication}
-                                    </div>
-                                </div>
-                            )}
-
-                            {provisional_diagnosis && (
-                                <div className="group">
-                                    <span className="text-[10px] font-black uppercase tracking-[.15em] text-slate-400 transition-colors group-hover:text-cyan-600 dark:group-hover:text-cyan-400">{tr(t, 'exam.provisional', 'Provisional Diagnosis', 'التشخيص المبدئي', isAr)}</span>
-                                    <div className="mt-2.5 rounded-2xl border border-slate-200/60 bg-slate-50/80 p-5 text-sm font-semibold leading-relaxed text-slate-700 shadow-inner dark:border-slate-800/80 dark:bg-slate-950/40 dark:text-slate-300">
-                                        {provisional_diagnosis}
-                                    </div>
-                                </div>
-                            )}
+                            <div className="rounded-xl border border-slate-200/70 bg-slate-50/70 p-2.5 dark:border-slate-800 dark:bg-slate-950/40">
+                                <small className="block text-[9px] font-bold uppercase text-slate-400">Machine Room</small>
+                                <strong className="mt-0.5 block text-xs font-black text-slate-900 dark:text-white">
+                                    {exam.machine_name || 'Suite 01'}
+                                </strong>
+                            </div>
+                            <div className="rounded-xl border border-slate-200/70 bg-slate-50/70 p-2.5 dark:border-slate-800 dark:bg-slate-950/40">
+                                <small className="block text-[9px] font-bold uppercase text-slate-400">Referring Physician</small>
+                                <strong className="mt-0.5 block truncate text-xs font-black text-slate-900 dark:text-white">
+                                    {exam.referring_doctor_name || 'Self-referred'}
+                                </strong>
+                            </div>
+                            <div className="rounded-xl border border-slate-200/70 bg-slate-50/70 p-2.5 dark:border-slate-800 dark:bg-slate-950/40">
+                                <small className="block text-[9px] font-bold uppercase text-slate-400">Radiologist</small>
+                                <strong className="mt-0.5 block truncate text-xs font-black text-slate-900 dark:text-white">
+                                    {radiologist || 'Pending Assignment'}
+                                </strong>
+                            </div>
                         </div>
-                    </GlowCard>
                     </div>
+                </div>
+            </div>
 
-                    {/* Diagnostic Report Section (Available or Finalized) */}
-                    {(report_text || impression || status === 'Finalized') && (
-                        <div className="fade-in-up" style={{ animationDelay: '400ms' }}>
-                        <GlowCard className="relative before:absolute before:inset-x-0 before:top-0 before:h-1 before:rounded-t-3xl before:bg-gradient-to-r before:from-rose-500 before:to-pink-600 before:opacity-60">
-                            <SectionHeader
+            {/* Workflow Progress Timeline Stepper */}
+            <WorkflowStepper
+                status={status}
+                timestamps={timestamps}
+                language={language}
+                isRtl={isRtl}
+                isAr={isAr}
+                t={t}
+            />
+
+            {/* Main Two-Column Clinical Stage */}
+            <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                {/* Left Column: Diagnostic Report & Clinical Requisition */}
+                <div className="space-y-4">
+                    {/* Diagnostic Report Section */}
+                    <SectionPanel
+                        icon={FileText}
+                        title={tr(t, 'caseDetails.diagnosticReport', 'Diagnostic Report', ar.diagnosticReport, isAr)}
+                        description={isReportComplete ? 'Final verified interpretation' : 'Awaiting radiologist review'}
+                        badge={
+                            isReportComplete ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 font-mono text-[9.5px] font-black text-emerald-700 dark:text-emerald-300">
+                                    <CheckCircle2 size={11} />
+                                    {tr(t, 'report.ready', 'Verified & Signed', ar.ready, isAr)}
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 font-mono text-[9.5px] font-black text-amber-700 dark:text-amber-300">
+                                    <Clock size={11} />
+                                    {tr(t, 'report.pending', 'Draft / In Progress', ar.pending, isAr)}
+                                </span>
+                            )
+                        }
+                        action={
+                            status === 'Reporting' && (
+                                <button
+                                    type="button"
+                                    onClick={() => navigate(`/reports/editor/${examId}`)}
+                                    className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-teal-500 transition"
+                                >
+                                    <PenLine size={13} />
+                                    <span>{tr(t, 'actions.writeReport', 'Open Report Editor', ar.writeReport, isAr)}</span>
+                                </button>
+                            )
+                        }
+                    >
+                        {impression ? (
+                            <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 dark:bg-emerald-950/20">
+                                <div className="flex items-center justify-between text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-300">
+                                    <span className="flex items-center gap-1.5">
+                                        <Sparkles size={13} />
+                                        {tr(t, 'report.impression', 'Diagnostic Impression', 'الخلاصة والتشخيص النهائي', isAr)}
+                                    </span>
+                                </div>
+                                <p className="mt-2 text-xs font-bold leading-relaxed text-slate-900 dark:text-white sm:text-sm">
+                                    {impression}
+                                </p>
+                            </div>
+                        ) : null}
+
+                        <div className="space-y-3">
+                            <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                {tr(t, 'report.body', 'Full Report Content', 'نص التقرير الإشعاعي', isAr)}
+                            </h4>
+                            <div className="whitespace-pre-wrap rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 font-mono text-xs leading-relaxed text-slate-800 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-200">
+                                {reportText || tr(t, 'report.unavailable', 'Report text has not been recorded yet.', ar.reportUnavailable, isAr)}
+                            </div>
+                        </div>
+
+                        {radiologist && (
+                            <div className="mt-4 flex items-center justify-between rounded-xl border border-slate-200/60 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-950/30">
+                                <div className="flex items-center gap-2">
+                                    <UserCheck size={16} className="text-teal-600" />
+                                    <div>
+                                        <span className="block text-[9px] font-bold uppercase text-slate-400">{tr(t, 'report.radiologistSign', 'Radiologist Signature', ar.radiologistSign, isAr)}</span>
+                                        <strong className="text-xs font-black text-slate-900 dark:text-white">{radiologist}</strong>
+                                    </div>
+                                </div>
+                                {timestamps.report_finalized_at && (
+                                    <span className="font-mono text-[10px] font-semibold text-slate-500">
+                                        {formatDateTimeOrDash(timestamps.report_finalized_at, language)}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </SectionPanel>
+
+                    {/* Clinical Requisition & Reason for Exam */}
+                    <SectionPanel
+                        icon={Stethoscope}
+                        title={tr(t, 'caseDetails.clinicalInfo', 'Clinical Details', ar.clinicalInfo, isAr)}
+                        description="Requisition notes & physician indications"
+                    >
+                        <div className="space-y-3">
+                            <DetailField
                                 icon={FileText}
-                                title={tr(t, 'caseDetails.diagnosticReport', 'Diagnostic Report', 'التقرير التشخيصي المعتمد', isAr)}
-                                badge={performing_radiologist_name || undefined}
-                                action={
-                                    <button
-                                        type="button"
-                                        onClick={() => handlePrintReport(true)}
-                                        disabled={isPrintingReport}
-                                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-600 transition hover:bg-emerald-500/20 dark:text-emerald-400"
-                                    >
-                                        {isPrintingReport ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
-                                        {tr(t, 'actions.printReportPdf', 'Print Report PDF', 'طباعة تقرير PDF', isAr)}
-                                    </button>
-                                }
+                                label={tr(t, 'exam.indication', 'Clinical Indication', 'دواعي الفحص والشكوى السريرية', isAr)}
+                                value={exam.clinical_indication || 'No clinical history recorded'}
+                                isAr={isAr}
                             />
-                            <div className="space-y-4">
-                                {performing_radiologist_name && (
-                                    <div className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
-                                        <Stethoscope size={15} className="text-cyan-600 dark:text-cyan-400" />
-                                        <span>{tr(t, 'report.radiologist', 'Radiologist', 'الطبيب الاستشاري', isAr)}:</span>
-                                        <span className="font-black text-slate-950 dark:text-white">{performing_radiologist_name}</span>
-                                    </div>
-                                )}
-
-                                {impression && (
-                                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 shadow-sm">
-                                        <p className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">{tr(t, 'report.impression', 'Impression', 'الخلاصة والتوصيات', isAr)}</p>
-                                        <p className="mt-2 text-sm font-bold leading-relaxed text-slate-900 dark:text-white">{impression}</p>
-                                    </div>
-                                )}
-
-                                {report_text ? (
-                                    <div className="rounded-2xl border border-slate-200/60 bg-slate-50 p-5 text-sm leading-relaxed text-slate-800 dark:border-slate-800/60 dark:bg-slate-950/40 dark:text-slate-200 font-mono whitespace-pre-wrap">
-                                        {report_text}
-                                    </div>
-                                ) : (
-                                    <div className="rounded-2xl border border-slate-200/40 bg-slate-50/50 p-4 text-xs font-semibold text-slate-500 text-center">
-                                        {tr(t, 'report.availableInPdf', 'Full finalized report document available for printing.', 'مستند التقرير النهائي المعتمد جاهز للطباعة.', isAr)}
-                                    </div>
-                                )}
-                            </div>
-                        </GlowCard>
+                            {exam.provisional_diagnosis && (
+                                <DetailField
+                                    icon={Activity}
+                                    label={tr(t, 'exam.provisional', 'Provisional Diagnosis', 'التشخيص المبدئي', isAr)}
+                                    value={exam.provisional_diagnosis}
+                                    isAr={isAr}
+                                />
+                            )}
                         </div>
-                    )}
+                    </SectionPanel>
                 </div>
 
-                {/* Right Column: Safety & Timing */}
-                <div className="space-y-6">
-                    <div className="fade-in-up" style={{ animationDelay: '250ms' }}>
-                    <GlowCard className="relative before:absolute before:inset-x-0 before:top-0 before:h-1 before:rounded-t-3xl before:bg-gradient-to-r before:from-cyan-500 before:to-blue-600 before:opacity-60">
-                        <SectionHeader icon={ClipboardSignature} title={tr(t, 'caseDetails.safety', 'Safety Checks', 'فحوصات السلامة', isAr)} />
-                        <div className="space-y-4">
-                            <SafetyRow icon={Baby} label={tr(t, 'safety.pregnancy', 'Pregnancy Check', 'فحص الحمل', isAr)} status={pregnancy_safety_status} t={t} isAr={isAr} />
-                            <SafetyRow icon={ShieldCheck} label={tr(t, 'safety.implant', 'Implants Check', 'فحص الغرسات والأجهزة', isAr)} status={implant_safety_status} t={t} isAr={isAr} />
-                            <SafetyRow icon={Activity} label={tr(t, 'safety.renal', 'Renal Function', 'وظائف الكلى', isAr)} status={renal_safety_status} t={t} isAr={isAr} />
+                {/* Right Column: Safety Checklist & Timeline */}
+                <div className="space-y-4">
+                    {/* Clinical Safety Panel */}
+                    <SectionPanel
+                        icon={ClipboardCheck}
+                        title={tr(t, 'caseDetails.safety', 'Clinical Safety Checks', ar.safety, isAr)}
+                        description="Patient safety assessment & contraindications"
+                    >
+                        <div className="space-y-2.5">
+                            <SafetyCheckCard
+                                icon={Baby}
+                                label={tr(t, 'safety.pregnancy', 'Pregnancy Check', 'فحص الحمل', isAr)}
+                                status={exam.pregnancy_safety_status}
+                                t={t}
+                                isAr={isAr}
+                            />
+                            <SafetyCheckCard
+                                icon={ShieldAlert}
+                                label={tr(t, 'safety.implant', 'Metal Implants / Pacemaker', 'فحص الغرسات والأجسام المعدنية', isAr)}
+                                status={exam.implant_safety_status}
+                                t={t}
+                                isAr={isAr}
+                            />
+                            <SafetyCheckCard
+                                icon={HeartPulse}
+                                label={tr(t, 'safety.renal', 'Renal Function / Contrast Risk', 'وظائف الكلى وتحمل الصبغة', isAr)}
+                                status={exam.renal_safety_status}
+                                t={t}
+                                isAr={isAr}
+                            />
                         </div>
-                    </GlowCard>
-                    </div>
+                    </SectionPanel>
 
-                    <div className="fade-in-up" style={{ animationDelay: '350ms' }}>
-                    <GlowCard className="relative before:absolute before:inset-x-0 before:top-0 before:h-1 before:rounded-t-3xl before:bg-gradient-to-r before:from-emerald-500 before:to-teal-600 before:opacity-60">
-                        <SectionHeader icon={Clock} title={tr(t, 'caseDetails.timeline', 'Key Timestamps', 'التوقيتات الزمنية', isAr)} />
-                        <div className={`space-y-5 divide-y divide-slate-100/60 dark:divide-slate-800/60 ${isRtl ? 'space-x-reverse divide-x-reverse' : ''}`}>
-                            <div className="group flex items-center justify-between pt-2">
-                                <span className="text-[10px] font-black uppercase tracking-[.15em] text-slate-400 transition-colors group-hover:text-cyan-600 dark:group-hover:text-cyan-400">{tr(t, 'timeline.created', 'Created', 'وقت الموعد', isAr)}</span>
-                                <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">{timestamps.created_at ? formatDateTime(timestamps.created_at, language) : '--'}</span>
-                            </div>
-                            <div className="group flex items-center justify-between pt-5">
-                                <span className="text-[10px] font-black uppercase tracking-[.15em] text-slate-400 transition-colors group-hover:text-cyan-600 dark:group-hover:text-cyan-400">{tr(t, 'timeline.arrived', 'Arrived', 'وقت الوصول', isAr)}</span>
-                                <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">{timestamps.arrived_at ? formatDateTime(timestamps.arrived_at, language) : '--'}</span>
-                            </div>
-                            <div className="group flex items-center justify-between pt-5">
-                                <span className="text-[10px] font-black uppercase tracking-[.15em] text-slate-400 transition-colors group-hover:text-cyan-600 dark:group-hover:text-cyan-400">{tr(t, 'timeline.examStart', 'Exam Started', 'بداية الفحص', isAr)}</span>
-                                <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">{timestamps.exam_started_at ? formatDateTime(timestamps.exam_started_at, language) : '--'}</span>
-                            </div>
-                            <div className="group flex items-center justify-between pt-5">
-                                <span className="text-[10px] font-black uppercase tracking-[.15em] text-slate-400 transition-colors group-hover:text-cyan-600 dark:group-hover:text-cyan-400">{tr(t, 'timeline.reported', 'Report Finalized', 'اعتماد التقرير', isAr)}</span>
-                                <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">{timestamps.report_finalized_at ? formatDateTime(timestamps.report_finalized_at, language) : '--'}</span>
-                            </div>
+                    {/* Timeline & Event History */}
+                    <SectionPanel
+                        icon={Clock}
+                        title={tr(t, 'caseDetails.timeline', 'Audit Timeline', ar.timeline, isAr)}
+                        description="Exact chronological timestamps"
+                    >
+                        <div className="divide-y divide-slate-100 text-xs dark:divide-slate-800">
+                            {[
+                                ['Created / Booked', timestamps.created_at],
+                                ['Patient Arrived', timestamps.arrived_at],
+                                ['Acquisition Started', timestamps.exam_started_at],
+                                ['Acquisition Completed', timestamps.exam_completed_at],
+                                ['Reporting Initiated', timestamps.reporting_started_at],
+                                ['Report Finalized', timestamps.report_finalized_at],
+                                ['Delivered to Patient', timestamps.delivered_at]
+                            ].map(([label, date]) => (
+                                <div key={label} className="flex items-center justify-between py-2.5">
+                                    <span className="font-semibold text-slate-600 dark:text-slate-400">{label}</span>
+                                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                                        {formatDateTimeOrDash(date, language)}
+                                    </span>
+                                </div>
+                            ))}
                         </div>
-                    </GlowCard>
-                    </div>
-
+                    </SectionPanel>
                 </div>
-
             </div>
         </div>
     );

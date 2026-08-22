@@ -41,7 +41,21 @@ const pruneEmpty = (payload) => Object.fromEntries(
 );
 
 export const toMachinePayload = (form, { mode = 'create' } = {}) => {
-    const payload = pruneEmpty({
+    if (mode === 'update') {
+        return {
+            name: form.name?.trim(),
+            type: form.type,
+            roomNumber: form.roomNumber?.trim() || null,
+            serialNumber: form.serialNumber?.trim() || null,
+            manufacturer: form.manufacturer?.trim() || null,
+            model: form.model?.trim() || null,
+            installationDate: form.installationDate || null,
+            location: form.location?.trim() || null,
+            status: form.status || 'Active'
+        };
+    }
+
+    return pruneEmpty({
         name: form.name?.trim(),
         type: form.type,
         roomNumber: form.roomNumber?.trim() || undefined,
@@ -52,13 +66,24 @@ export const toMachinePayload = (form, { mode = 'create' } = {}) => {
         location: form.location?.trim() || undefined,
         status: form.status || 'Active'
     });
-
-    if (mode === 'update') return payload;
-    return payload;
 };
 
 export const toExamPayload = (form, { mode = 'create' } = {}) => {
-    const payload = pruneEmpty({
+    if (mode === 'update') {
+        return {
+            modalityId: form.modalityId || null,
+            code: form.code?.trim() ? form.code.trim().toUpperCase() : null,
+            name: form.name?.trim(),
+            price: form.price === '' || form.price === undefined ? null : Number(form.price),
+            durationMinutes: form.durationMinutes === '' || form.durationMinutes === undefined ? 30 : Number(form.durationMinutes),
+            bodyPart: form.bodyPart?.trim() || null,
+            preparationInstructions: form.preparationInstructions?.trim() || null,
+            contrastRequired: Boolean(form.contrastRequired),
+            isActive: form.isActive !== false
+        };
+    }
+
+    return pruneEmpty({
         modalityId: form.modalityId || undefined,
         code: form.code?.trim() ? form.code.trim().toUpperCase() : undefined,
         name: form.name?.trim(),
@@ -69,9 +94,6 @@ export const toExamPayload = (form, { mode = 'create' } = {}) => {
         contrastRequired: Boolean(form.contrastRequired),
         isActive: form.isActive !== false
     });
-
-    if (mode === 'update') return payload;
-    return payload;
 };
 
 export const makeCsvFile = (header, rows) => {

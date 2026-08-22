@@ -49,7 +49,7 @@ const MarketingDashboard = ({ onOpenTab }) => {
 
     const [rangeDays, setRangeDays] = useState(30);
     const referralRange = useMemo(() => ({
-        startDate: isoDate(new Date(Date.now() - rangeDays * DAY)),
+        startDate: isoDate(new Date(Date.now() - (rangeDays - 1) * DAY)),
         endDate: isoDate(new Date())
     }), [rangeDays]);
     const { data: campaigns = [], isLoading: campaignsLoading } = useGetCampaignsQuery(undefined, { skip: !canCampaigns });

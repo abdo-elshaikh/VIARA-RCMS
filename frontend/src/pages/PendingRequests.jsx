@@ -50,7 +50,57 @@ import {
     todayInput,
 } from '../utils/payrollWorkflow';
 
-const OPEN_PRIVACY_STATUSES = new Set(['Pending', 'InReview', 'Approved']);
+const INBOX_APPROVAL_STATUS = 'pendingApproval';
+const SOURCE_PENDING_APPROVAL_STATUSES = Object.freeze({
+    leave: new Set(['Pending']),
+    privacy: new Set(['Pending', 'InReview', 'Approved']),
+    refund: new Set(['Pending']),
+    claim: new Set(['Pending Approval']),
+    authorization: new Set(['Pending']),
+    deduction: new Set(['Draft']),
+    rule: new Set(['Pending Approval']),
+    penalty: new Set(['Pending Approval']),
+    variance: new Set(['Requires Review']),
+    partialPayment: new Set(['Pending']),
+    portalAppointment: new Set(['Pending']),
+    profileUpdate: new Set(['Pending']),
+});
+
+const getRequestSourceStatus = (source, raw = {}) => {
+    if (source === 'payroll') return raw.run_status || raw.status || null;
+    if (source === 'variance') return raw.review_status || raw.status || null;
+    return raw.status || null;
+};
+
+const getSourceStatus = (item) => getRequestSourceStatus(item.source, item.raw || {});
+
+const isPendingApprovalSourceRequest = (source, request) => (
+    SOURCE_PENDING_APPROVAL_STATUSES[source]?.has(getRequestSourceStatus(source, request)) || false
+);
+
+const getPrimaryPendingApprovalStatus = (source) => (
+    SOURCE_PENDING_APPROVAL_STATUSES[source]?.values().next().value
+);
+
+const markPendingApproval = (item, sourceLabels, t) => {
+    const approvalStatusLabel = t(`status.${INBOX_APPROVAL_STATUS}`, { defaultValue: 'Pending approval' });
+    const sourceLabel = sourceLabels[item.source] || item.source;
+    const sourceStatus = getSourceStatus(item);
+
+    return {
+        ...item,
+        approvalStatus: INBOX_APPROVAL_STATUS,
+        approvalStatusLabel,
+        sourceLabel,
+        sourceStatus,
+        facts: [
+            [t('facts.approvalStatus', { defaultValue: 'Approval status' }), approvalStatusLabel],
+            [t('facts.requestSource', { defaultValue: 'Request source' }), sourceLabel],
+            [t('facts.sourceStatus', { defaultValue: 'Source status' }), sourceStatus || t('fallback.notSpecified')],
+            ...(item.facts || []),
+        ],
+    };
+};
 
 const SOURCE_STYLES = {
     leave: {
@@ -179,14 +229,12 @@ const PendingRequests = () => {
     const hasPermission = (permission) => elevated || permissions.has(permission);
     const payrollPermissions = useMemo(() => getPayrollPermissions(user), [user]);
 
-    const canReviewLeave = elevated || user?.role === 'HR';
+    const canReviewLeave = hasPermission('MANAGE_LEAVE');
     const canReviewPrivacy = hasPermission('RESOLVE_PRIVACY_REQUESTS');
     const canExportPatientData = hasPermission('EXPORT_PATIENT_DATA');
     const canAnonymizePatientData = hasPermission('ANONYMIZE_PATIENT_DATA');
     const canReviewRefund = hasPermission('APPROVE_REFUNDS') || hasPermission('ISSUE_REFUNDS');
-    const canReviewClaims = elevated
-        || ['Accountant', 'Insurance_Staff'].includes(user?.role)
-        || hasPermission('MANAGE_INSURANCE_CLAIMS');
+    const canReviewClaims = hasPermission('MANAGE_INSURANCE_CLAIMS');
     const canReviewAuthorization = hasPermission('MANAGE_INSURANCE_APPROVALS');
     const canViewPayroll = payrollPermissions.view;
     const canApprovePayroll = canViewPayroll && payrollPermissions.approve;
@@ -197,7 +245,9 @@ const PendingRequests = () => {
         || payrollPermissions.lock
     );
     const canReviewVariance = hasPermission('APPROVE_SHIFT_VARIANCE');
-    const canReviewPortal = elevated || user?.role === 'Receptionist';
+    const canReviewPortalAppointments = hasPermission('EDIT_APPOINTMENTS');
+    const canReviewProfileUpdates = hasPermission('EDIT_PATIENTS');
+    const canReviewPortal = canReviewPortalAppointments || canReviewProfileUpdates;
     const canReviewPartialPayment = hasPermission('APPROVE_PARTIAL_PAYMENT_EXCEPTION');
 
     const leaveQuery = useGetLeaveRequestsQuery({}, {
@@ -208,11 +258,11 @@ const PendingRequests = () => {
         skip: !canReviewPrivacy,
         pollingInterval: 30000,
     });
-    const refundQuery = useGetRefundsQuery({ status: 'Pending', limit: '100' }, {
+    const refundQuery = useGetRefundsQuery({ status: getPrimaryPendingApprovalStatus('refund'), limit: '100' }, {
         skip: !canReviewRefund,
         pollingInterval: 30000,
     });
-    const claimQuery = useGetClaimsQuery({ status: 'Pending Approval', limit: 100 }, {
+    const claimQuery = useGetClaimsQuery({ status: getPrimaryPendingApprovalStatus('claim'), limit: 100 }, {
         skip: !canReviewClaims,
         pollingInterval: 30000,
     });
@@ -220,15 +270,15 @@ const PendingRequests = () => {
         skip: !canReviewAuthorization,
         pollingInterval: 30000,
     });
-    const deductionQuery = useGetPayrollDeductionsQuery({ status: 'Draft', limit: 100 }, {
+    const deductionQuery = useGetPayrollDeductionsQuery({ status: getPrimaryPendingApprovalStatus('deduction'), limit: 100 }, {
         skip: !canApprovePayroll,
         pollingInterval: 30000,
     });
-    const penaltyQuery = useGetPayrollPenaltiesQuery({ status: 'Pending Approval', limit: 100 }, {
+    const penaltyQuery = useGetPayrollPenaltiesQuery({ status: getPrimaryPendingApprovalStatus('penalty'), limit: 100 }, {
         skip: !canApprovePayroll,
         pollingInterval: 30000,
     });
-    const ruleQuery = useGetPayrollRulesQuery({ status: 'Pending Approval' }, {
+    const ruleQuery = useGetPayrollRulesQuery({ status: getPrimaryPendingApprovalStatus('rule') }, {
         skip: !canApprovePayroll,
         pollingInterval: 30000,
     });
@@ -240,7 +290,7 @@ const PendingRequests = () => {
         skip: !canReviewVariance,
         pollingInterval: 30000,
     });
-    const partialPaymentQuery = useGetPartialPaymentExceptionsQuery({ status: 'Pending', limit: 100 }, {
+    const partialPaymentQuery = useGetPartialPaymentExceptionsQuery({ status: getPrimaryPendingApprovalStatus('partialPayment'), limit: 100 }, {
         skip: !canReviewPartialPayment,
         pollingInterval: 30000,
     });
@@ -296,12 +346,13 @@ const PendingRequests = () => {
         canUsePayrollQueue && 'payroll',
         canReviewVariance && 'variance',
         canReviewPartialPayment && 'partialPayment',
-        canReviewPortal && 'portalAppointment',
-        canReviewPortal && 'profileUpdate',
+        canReviewPortalAppointments && 'portalAppointment',
+        canReviewProfileUpdates && 'profileUpdate',
         canReviewAuthorization && 'authorization',
     ].filter(Boolean), [
         canApprovePayroll, canReviewClaims, canReviewLeave, canReviewPrivacy,
-        canReviewRefund, canReviewVariance, canReviewPartialPayment, canReviewPortal, canReviewAuthorization,
+        canReviewRefund, canReviewVariance, canReviewPartialPayment, canReviewPortalAppointments,
+        canReviewProfileUpdates, canReviewAuthorization,
         canUsePayrollQueue,
     ]);
 
@@ -310,7 +361,7 @@ const PendingRequests = () => {
 
         if (canReviewLeave) {
             (leaveQuery.data || [])
-                .filter((request) => request.status === 'Pending')
+                .filter((request) => isPendingApprovalSourceRequest('leave', request))
                 .forEach((request) => {
                     const days = differenceInDays(request.start_date, request.end_date);
                     normalized.push({
@@ -338,7 +389,7 @@ const PendingRequests = () => {
 
         if (canReviewPrivacy) {
             (privacyQuery.data || [])
-                .filter((request) => OPEN_PRIVACY_STATUSES.has(request.status))
+                .filter((request) => isPendingApprovalSourceRequest('privacy', request))
                 .forEach((request) => {
                     const critical = request.request_type === 'Anonymize';
                     normalized.push({
@@ -371,7 +422,7 @@ const PendingRequests = () => {
 
         if (canReviewRefund) {
             (refundQuery.data || [])
-                .filter((request) => request.status === 'Pending'
+                .filter((request) => isPendingApprovalSourceRequest('refund', request)
                     && (elevated && user?.role === 'Developer'
                         || String(request.requested_by) !== String(user?.user_id)))
                 .forEach((request) => {
@@ -401,7 +452,9 @@ const PendingRequests = () => {
 
         if (canReviewClaims) {
             (claimQuery.data || [])
-                .filter((request) => request.status === 'Pending Approval')
+                .filter((request) => isPendingApprovalSourceRequest('claim', request)
+                    && (user?.role === 'Developer'
+                        || String(request.created_by) !== String(user?.user_id)))
                 .forEach((request) => {
                     const amount = Number(request.expected_amount || 0);
                     normalized.push({
@@ -430,7 +483,7 @@ const PendingRequests = () => {
 
         if (canReviewAuthorization) {
             (authorizationQuery.data || [])
-                .filter((request) => request.status === 'Pending'
+                .filter((request) => isPendingApprovalSourceRequest('authorization', request)
                     && (user?.role === 'Developer'
                         || String(request.requested_by) !== String(user?.user_id)))
                 .forEach((request) => {
@@ -460,7 +513,7 @@ const PendingRequests = () => {
 
         if (canApprovePayroll) {
             (deductionQuery.data || [])
-                .filter((request) => request.status === 'Draft'
+                .filter((request) => isPendingApprovalSourceRequest('deduction', request)
                     && (user?.role === 'Developer'
                         || String(request.created_by) !== String(user?.user_id)))
                 .forEach((request) => {
@@ -488,7 +541,7 @@ const PendingRequests = () => {
                 });
 
             (ruleQuery.data || [])
-                .filter((request) => request.status === 'Pending Approval'
+                .filter((request) => isPendingApprovalSourceRequest('rule', request)
                     && (user?.role === 'Developer'
                         || String(request.created_by) !== String(user?.user_id)))
                 .forEach((request) => {
@@ -519,7 +572,7 @@ const PendingRequests = () => {
                 });
 
             (penaltyQuery.data || [])
-                .filter((request) => request.status === 'Pending Approval'
+                .filter((request) => isPendingApprovalSourceRequest('penalty', request)
                     && (user?.role === 'Developer'
                         || String(request.created_by) !== String(user?.user_id)))
                 .forEach((request) => {
@@ -588,9 +641,9 @@ const PendingRequests = () => {
 
         if (canReviewVariance) {
             (varianceQuery.data?.data || [])
-                .filter((request) => request.closure_id
-                    && request.review_status === 'Requires Review'
-                    && String(request.cashier_id) !== String(user?.user_id))
+                .filter((request) => isPendingApprovalSourceRequest('variance', request)
+                    && request.closure_id
+                    && (user?.role === 'Developer' || String(request.cashier_id) !== String(user?.user_id)))
                 .forEach((request) => {
                     const variance = Number(request.variance || 0);
                     normalized.push({
@@ -619,7 +672,7 @@ const PendingRequests = () => {
 
         if (canReviewPartialPayment) {
             (partialPaymentQuery.data || [])
-                .filter((request) => request.status === 'Pending'
+                .filter((request) => isPendingApprovalSourceRequest('partialPayment', request)
                     && (user?.role === 'Developer'
                         || String(request.requested_by) !== String(user?.user_id)))
                 .forEach((request) => {
@@ -655,9 +708,9 @@ const PendingRequests = () => {
                 });
         }
 
-        if (canReviewPortal) {
+        if (canReviewPortalAppointments) {
             (portalQuery.data?.appointmentRequests || [])
-                .filter((request) => request.status === 'Pending')
+                .filter((request) => isPendingApprovalSourceRequest('portalAppointment', request))
                 .forEach((request) => {
                     const preferredTime = request.preferred_date
                         ? new Date(request.preferred_date).getTime()
@@ -688,9 +741,11 @@ const PendingRequests = () => {
                         raw: request,
                     });
                 });
+        }
 
+        if (canReviewProfileUpdates) {
             (portalQuery.data?.profileUpdateRequests || [])
-                .filter((request) => request.status === 'Pending')
+                .filter((request) => isPendingApprovalSourceRequest('profileUpdate', request))
                 .forEach((request) => {
                     const changes = Object.entries(request.requested_changes || {});
                     const changeSummary = changes.map(([field, value]) => (
@@ -718,15 +773,16 @@ const PendingRequests = () => {
                 });
         }
 
-        return normalized;
+        return normalized.map((item) => markPendingApproval(item, sourceLabels, t));
     }, [
         canAnonymizePatientData, canExportPatientData,
         authorizationQuery.data, canApprovePayroll, canUsePayrollQueue,
         canReviewAuthorization, canReviewClaims, canReviewLeave,
-        canReviewPrivacy, canReviewRefund, canReviewVariance, canReviewPartialPayment, claimQuery.data, elevated,
+        canReviewPrivacy, canReviewRefund, canReviewVariance, canReviewPartialPayment,
+        canReviewPortalAppointments, canReviewProfileUpdates, claimQuery.data, elevated,
         deductionQuery.data, leaveQuery.data, locale, partialPaymentQuery.data, payrollPermissions, payrollQuery.data, penaltyQuery.data, privacyQuery.data,
-        portalQuery.data, refundQuery.data, t, user?.role, user?.user_id,
-        varianceQuery.data, canReviewPortal, ruleQuery.data,
+        portalQuery.data, refundQuery.data, sourceLabels, t, user?.role, user?.user_id,
+        varianceQuery.data, ruleQuery.data,
     ]);
 
     const counts = useMemo(() => items.reduce((result, item) => {
@@ -742,7 +798,7 @@ const PendingRequests = () => {
             if (!query) return true;
             return [
                 item.title, item.subtitle, item.requester, item.reference,
-                item.reason, sourceLabels[item.source],
+                item.reason, item.approvalStatusLabel, item.sourceLabel, item.sourceStatus, sourceLabels[item.source],
             ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
         });
 
@@ -850,7 +906,11 @@ const PendingRequests = () => {
                 }).unwrap();
             } else if (item.source === 'privacy') {
                 const privacyAction = approved
-                    ? (item.raw.request_type === 'Correction' ? 'Resolve' : item.raw.request_type)
+                    ? (item.raw.request_type === 'Correction'
+                        ? 'Resolve'
+                        : item.raw.request_type === 'Anonymize' && item.raw.status === 'InReview'
+                            ? 'CompleteAnonymization'
+                            : item.raw.request_type)
                     : 'Reject';
                 await resolvePrivacyRequest({
                     requestId: item.id,
@@ -1255,6 +1315,12 @@ const RiskBadge = ({ risk, t }) => {
     );
 };
 
+const ApprovalStatusBadge = ({ label }) => (
+    <span className="inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-cyan-700 dark:border-cyan-900/60 dark:bg-cyan-950/30 dark:text-cyan-300">
+        {label}
+    </span>
+);
+
 const QueueItem = ({ item, active, sourceLabel, locale, t, onSelect }) => {
     const style = SOURCE_STYLES[item.source];
     const Icon = style.icon;
@@ -1285,6 +1351,7 @@ const QueueItem = ({ item, active, sourceLabel, locale, t, onSelect }) => {
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                         <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${style.badge}`}>{sourceLabel}</span>
+                        <ApprovalStatusBadge label={item.approvalStatusLabel} />
                         <RiskBadge risk={item.risk} t={t} />
                         <span className="ms-auto inline-flex items-center gap-1 text-[10px] font-bold text-slate-400">
                             <Clock3 size={11} />
@@ -1316,6 +1383,7 @@ const RequestDetail = ({ item, sourceLabel, locale, t, busy, onNavigate, onAppro
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                                 <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${style.badge}`}>{sourceLabel}</span>
+                                <ApprovalStatusBadge label={item.approvalStatusLabel} />
                                 <RiskBadge risk={item.risk} t={t} />
                             </div>
                             <h2 className="mt-2 break-words text-xl font-black tracking-tight text-slate-950 dark:text-white sm:text-2xl">{item.title}</h2>

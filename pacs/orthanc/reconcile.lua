@@ -1,6 +1,6 @@
--- Orthanc -> RCMS reconciliation bridge.
+-- Orthanc -> VIARA reconciliation bridge.
 --
--- On every stored instance we notify the RCMS backend so it can link the study
+-- On every stored instance we notify the VIARA backend so it can link the study
 -- to the scheduled examination (by AccessionNumber / StudyInstanceUID) and
 -- advance the RIS workflow. Heavy work happens in the backend; this stays thin.
 --
@@ -9,7 +9,7 @@
 -- high-entropy shared secret over the compose-internal network is the pragmatic
 -- equivalent of the guide's HMAC. Rotate PACS_WEBHOOK_SECRET to revoke.
 
-local WEBHOOK_URL = os.getenv('RCMS_WEBHOOK_URL') or 'http://backend:3000/api/pacs/webhook'
+local WEBHOOK_URL = os.getenv('VIARA_WEBHOOK_URL') or 'http://backend:3000/api/pacs/webhook'
 local WEBHOOK_SECRET = os.getenv('PACS_WEBHOOK_SECRET') or ''
 
 function OnStoredInstance(instanceId, tags, metadata, origin)
@@ -59,6 +59,6 @@ function OnStoredInstance(instanceId, tags, metadata, origin)
     HttpPost(WEBHOOK_URL, body, headers)
   end)
   if not ok then
-    print('RCMS reconcile webhook failed for instance ' .. instanceId .. ': ' .. tostring(err))
+    print('VIARA reconcile webhook failed for instance ' .. instanceId .. ': ' .. tostring(err))
   end
 end

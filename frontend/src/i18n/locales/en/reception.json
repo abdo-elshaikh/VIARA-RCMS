@@ -58,6 +58,7 @@
     "actions": "Actions",
     "noExamType": "No exam type",
     "createInvoice": "Create invoice",
+    "noInvoice": "No invoice",
     "prep": "Prep",
     "patientFallback": "Patient",
     "followUp": "Follow-up",
@@ -69,28 +70,37 @@
   },
   "waitlist": {
     "title": "Waiting list for selected day",
+    "entries": "entries",
     "activeRequests": "{{count}} active requests",
     "pickPatient": "Pick patient to book",
     "noEntries": "No waiting-list entries for this date.",
+    "emptySubtitle": "No patients are waiting.",
     "anyRoom": "Any room",
     "anyExam": "Any exam",
     "contacted": "Contacted",
     "cancel": "Cancel",
+    "bookNow": "Book",
     "statuses": {
-      "Contacted": "contacted",
-      "Cancelled": "cancelled"
+      "Waiting": "Waiting",
+      "Contacted": "Contacted",
+      "Scheduled": "Scheduled",
+      "Cancelled": "Cancelled"
     }
   },
   "queue": {
-    "search": "Search queue",
-    "searchPlaceholder": "Search patient, MRN, or exam",
+    "search": "Search operations",
+    "searchPlaceholder": "Search patient, MRN, or exam...",
     "print": "Print documents",
     "title": "Live Patient Queue",
+    "unifiedSummary": "{{count}} appointments and active cases in one workspace",
     "total": "total",
     "overdue": "overdue",
+    "transitionTo": "Move to:",
     "avgWait": "Average wait {{avg}} min",
     "summary": "{{total}} active, {{overdue}} overdue, average wait {{avg}} min",
     "noItems": "No active queue items for this day.",
+    "empty": "No matching operations",
+    "emptySearch": "Try a different search term.",
     "waitingMin": "Waiting {{count}} min",
     "onHold": " - On hold: {{reason}}",
     "noReason": "No reason",
@@ -98,11 +108,16 @@
     "cashier": "Send to Cashier",
     "prep": "Prep",
     "pickup": "Deliver Result",
+    "sticker": "Barcode sticker",
+    "receipt": "Receipt",
+    "readOnly": "Read only",
     "columns": {
       "waitingRoom": "Waiting Room",
       "financial": "Financial",
       "clinical": "Prep & Exam",
-      "completed": "Completed"
+      "completed": "Completed",
+      "priority": "Priority",
+      "wait": "Wait"
     },
     "emptyColumn": "No patients in this stage",
     "changeStage": "Change Stage",
@@ -119,6 +134,28 @@
       "Finalized": "Finalized",
       "Delivered": "Delivered"
     }
+  },
+  "filters": {
+    "all": "All",
+    "allPriorities": "All Priorities",
+    "overdue": "Overdue",
+    "urgent": "Urgent & Emergency",
+    "stage": "Stage"
+  },
+  "focus": {
+    "overdue": "Overdue",
+    "ready": "Ready"
+  },
+  "pagination": {
+    "showing": "Showing {{from}}–{{to}} of {{total}}",
+    "perPage": "Rows:",
+    "selectPageSize": "Rows per page"
+  },
+  "sort": {
+    "urgency": "Sort: Urgency",
+    "wait": "Sort: Longest Wait",
+    "balance": "Sort: Highest Balance",
+    "name": "Sort: Patient Name"
   },
   "priority": {
     "Routine": "Routine",
@@ -159,7 +196,7 @@
     }
   },
   "booking": {
-    "title": "Book Appointment",
+    "title": "Book Examination Appointment",
     "patientAndTime": "Patient and Time",
     "selectedPatient": "Selected Patient",
     "noPatientSelected": "No patient selected",
@@ -408,6 +445,7 @@
     "status": "Status",
     "actions": "Actions",
     "collectPayment": "Collect Payment",
+    "payRemainingBalance": "Pay balance",
     "managePayments": "Manage",
     "printPdf": "Print PDF",
     "paymentTitle": "Collect Payment",
@@ -429,6 +467,9 @@
       "ar": "Arabic only"
     },
     "unnamedPatient": "Unnamed patient",
+    "paymentHistory": "Previous payments",
+    "loadingHistory": "Loading payment history...",
+    "noPaymentHistory": "No previous payments for this invoice.",
     "currentBalance": "Current balance",
     "adjustedBalance": "After discount",
     "remaining": "Remaining",
@@ -442,9 +483,6 @@
     "discountRestricted": "Your role does not have APPLY_DISCOUNTS permission. You can still collect a payment.",
     "paymentDetails": "Payment details",
     "paymentDetailsHelp": "Choose the payment amount and reconciliation method.",
-    "paymentHistory": "Previous payments",
-    "loadingHistory": "Loading payment history...",
-    "noPaymentHistory": "No previous payments for this invoice.",
     "paymentReference": "Reference number",
     "paymentReferencePlaceholder": "Required for every non-cash payment",
     "payFullBalance": "Pay full balance",

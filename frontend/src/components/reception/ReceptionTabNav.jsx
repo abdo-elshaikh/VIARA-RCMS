@@ -1,10 +1,11 @@
 import React from 'react';
 
 const ReceptionTabNav = ({ activeTab, cashierPending, onTabChange, tabs, t }) => (
-    <div className="sticky top-0 z-20 mx-auto w-full max-w-screen-2xl">
+    <div className="sticky top-0 z-20 mx-auto w-full">
         <nav
-            className="flex gap-1 overflow-x-auto rounded-none border border-slate-200/60 bg-white/70 p-1 shadow-sm backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-900/50"
+            className="flex gap-1.5 overflow-x-auto rounded-3xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90"
             aria-label={t('tabs.label')}
+            role="tablist"
         >
             {tabs.map((tab) => {
                 const Icon = tab.icon;
@@ -15,16 +16,22 @@ const ReceptionTabNav = ({ activeTab, cashierPending, onTabChange, tabs, t }) =>
                         key={tab.id}
                         type="button"
                         onClick={() => onTabChange(tab.id)}
-                        aria-current={isActive ? 'page' : undefined}
-                        className={`relative inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-none px-3 text-xs font-black transition sm:flex-1 sm:px-4 sm:text-sm ${isActive
-                                ? 'bg-teal-700 text-white shadow-sm dark:bg-teal-500 dark:text-slate-950'
-                                : 'text-slate-500 hover:bg-teal-50 hover:text-teal-800 dark:text-slate-400 dark:hover:bg-white/[.06] dark:hover:text-white'
-                            }`}
+                        id={`reception-tab-${tab.id}`}
+                        role="tab"
+                        aria-selected={isActive}
+                        aria-controls={`reception-panel-${tab.id}`}
+                        className={`relative inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-2xl px-5 text-xs font-black transition-all duration-200 focus-visible:outline-hidden sm:flex-1 ${
+                            isActive
+                                ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20 dark:bg-teal-600 dark:text-white'
+                                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/80 dark:hover:text-white'
+                        }`}
                     >
-                        <Icon size={16} aria-hidden="true" />
+                        {Icon && <Icon size={16} aria-hidden="true" className={isActive ? 'text-white' : 'text-slate-400 dark:text-slate-500'} />}
                         <span>{tab.label}</span>
                         {tab.id === 'cashier' && cashierPending > 0 && (
-                            <span className={`flex h-5 min-w-5 items-center justify-center rounded-none px-1 text-[10px] font-black ${isActive ? 'bg-amber-300 text-amber-950' : 'bg-amber-100 text-amber-800'}`}>
+                            <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-black ${
+                                isActive ? 'bg-amber-400 text-amber-950' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                            }`}>
                                 {cashierPending}
                             </span>
                         )}

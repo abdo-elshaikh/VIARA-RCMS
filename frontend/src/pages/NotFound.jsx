@@ -6,17 +6,17 @@ import { selectCurrentUser, selectIsAuthenticated } from '../store/authSlice';
 import getRoleHomePath from '../utils/getRoleHomePath';
 import SystemState from '../components/ui/SystemState';
 
-const actionBase = 'inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-500/20 sm:w-auto';
-const secondaryAction = `${actionBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-transparent dark:text-slate-200 dark:hover:bg-slate-800/50`;
-const primaryAction = `${actionBase} bg-cyan-700 text-white shadow-sm hover:bg-cyan-800 dark:bg-cyan-600 dark:hover:bg-cyan-700`;
+const actionBase = 'inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(var(--VIARA-accent-rgb),0.18)] sm:w-auto';
+const secondaryAction = `${actionBase} border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-ink)] hover:bg-[var(--VIARA-surface-hover)] dark:hover:bg-slate-800/50`;
+const primaryAction = `${actionBase} bg-[var(--VIARA-accent)] text-white shadow-sm hover:brightness-110 disabled:opacity-60`;
 
 const HintItem = ({ icon: Icon, title, text }) => (
-    <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 p-4 text-start dark:border-slate-700 dark:bg-slate-900/40">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-cyan-700 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-cyan-300 dark:ring-slate-700">
+    <div className="rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-4 text-start">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--VIARA-surface)] text-[var(--VIARA-accent)] ring-1 ring-[var(--VIARA-line)]">
             <Icon size={17} />
         </span>
-        <p className="mt-3 text-sm font-bold text-slate-900 dark:text-slate-100">{title}</p>
-        <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{text}</p>
+        <p className="mt-3 text-sm font-bold text-[var(--VIARA-ink)]">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-[var(--VIARA-muted)]">{text}</p>
     </div>
 );
 
@@ -30,11 +30,11 @@ const NotFound = () => {
     const homePath = getRoleHomePath(user, isAuthenticated);
     const notice = (
         <div className="mx-auto mt-7 max-w-xl">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-start dark:border-slate-700 dark:bg-slate-900/40">
-                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+            <div className="rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-4 py-3 text-start">
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--VIARA-muted)]">
                     {t('states.notFound.requestedRoute', { defaultValue: 'Requested route' })}
                 </p>
-                <p className="mt-1 truncate font-mono text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <p className="mt-1 truncate font-mono text-sm font-semibold text-[var(--VIARA-ink)]">
                     {location.pathname}
                 </p>
             </div>

@@ -1,17 +1,17 @@
--- Initial Seed Data for RCMS
+-- Initial Seed Data for VIARA
 
 -- 1. Insert demo users
 -- Demo user passwords are provisioned by deployment/CI and must not be committed as plaintext.
 INSERT INTO users (full_name, email, password_hash, role, is_active)
 VALUES 
-('System Admin', 'admin@rcms.com', '***REMOVED***', 'Admin', TRUE),
-('Dr. Alice Smith', 'alice@rcms.com', '***REMOVED***', 'Radiologist', TRUE),
-('Front Desk', 'reception@rcms.com', '***REMOVED***', 'Receptionist', TRUE),
-('Cashier Desk', 'cashier@rcms.com', '***REMOVED***', 'Cashier', TRUE),
-('Finance User', 'accountant@rcms.com', '***REMOVED***', 'Accountant', TRUE),
-('HR Manager', 'hr@rcms.com', '***REMOVED***', 'HR', TRUE),
-('Lead Technician', 'tech@rcms.com', '***REMOVED***', 'Technician', TRUE),
-('Charge Nurse', 'nurse@rcms.com', '***REMOVED***', 'Nurse', TRUE)
+('System Admin', 'admin@VIARA.com', '***REMOVED***', 'Admin', TRUE),
+('Dr. Alice Smith', 'alice@VIARA.com', '***REMOVED***', 'Radiologist', TRUE),
+('Front Desk', 'reception@VIARA.com', '***REMOVED***', 'Receptionist', TRUE),
+('Cashier Desk', 'cashier@VIARA.com', '***REMOVED***', 'Cashier', TRUE),
+('Finance User', 'accountant@VIARA.com', '***REMOVED***', 'Accountant', TRUE),
+('HR Manager', 'hr@VIARA.com', '***REMOVED***', 'HR', TRUE),
+('Lead Technician', 'tech@VIARA.com', '***REMOVED***', 'Technician', TRUE),
+('Charge Nurse', 'nurse@VIARA.com', '***REMOVED***', 'Nurse', TRUE)
 ON CONFLICT (email) DO UPDATE SET
     full_name = EXCLUDED.full_name,
     password_hash = EXCLUDED.password_hash,

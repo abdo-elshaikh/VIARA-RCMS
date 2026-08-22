@@ -12,18 +12,18 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN groupadd --system rcms-ai \
-    && useradd --system --gid rcms-ai --create-home rcms-ai \
+RUN groupadd --system VIARA-ai \
+    && useradd --system --gid VIARA-ai --create-home VIARA-ai \
     && mkdir -p /models/huggingface \
-    && chown -R rcms-ai:rcms-ai /app /models
+    && chown -R VIARA-ai:VIARA-ai /app /models
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-RUN chown -R rcms-ai:rcms-ai /app
+RUN chown -R VIARA-ai:VIARA-ai /app
 
-USER rcms-ai
+USER VIARA-ai
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

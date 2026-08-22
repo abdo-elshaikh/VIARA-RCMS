@@ -8,7 +8,7 @@ const getIntegrations = (db) => async (req, res, next) => {
     try {
         const result = await db.query(`
             SELECT integration_id, provider_name, type, webhook_url, is_active,
-                   created_at, updated_at,
+                   created_at, updated_at, secret_version, last_rotated_at,
                    (api_key IS NOT NULL) AS has_api_key,
                    (api_secret IS NOT NULL) AS has_api_secret
             FROM integrations
@@ -31,15 +31,19 @@ const updateIntegration = (db) => async (req, res, next) => {
                  api_secret = COALESCE($2, api_secret),
                  webhook_url = COALESCE($3, webhook_url),
                  is_active = COALESCE($4, is_active),
+                 secret_version = COALESCE($5, secret_version),
+                 last_rotated_at = CASE WHEN $2 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE last_rotated_at END,
                  updated_at = CURRENT_TIMESTAMP
-             WHERE integration_id = $5
+             WHERE integration_id = $6
              RETURNING integration_id, provider_name, type, webhook_url, is_active,
-                       created_at, updated_at,
+                       created_at, updated_at, secret_version, last_rotated_at,
                        (api_key IS NOT NULL) AS has_api_key,
                        (api_secret IS NOT NULL) AS has_api_secret`,
-            [data.api_key ? encrypt(data.api_key) : data.api_key,
+            [
+                data.api_key ? encrypt(data.api_key) : data.api_key,
                 data.api_secret ? encrypt(data.api_secret) : data.api_secret,
-                data.webhook_url, data.is_active, id]
+                data.webhook_url, data.is_active, data.secret_version || 1, id
+            ]
         );
 
         if (result.rows.length === 0) return next(new AppError('Integration not found', 404));
@@ -53,13 +57,25 @@ const updateIntegration = (db) => async (req, res, next) => {
 
 const getLogs = (db) => async (req, res, next) => {
     try {
-        const result = await db.query(`
-            SELECT l.*, i.provider_name 
-            FROM integration_logs l
-            JOIN integrations i ON l.integration_id = i.integration_id
-            ORDER BY l.created_at DESC
-            LIMIT 100
-        `);
+        const { status, limit = 100, offset = 0 } = req.query;
+        const clauses = ['1=1'];
+        const params = [];
+        let param = 1;
+
+        if (status) {
+            clauses.push(`l.status = $${param++}`);
+            params.push(status);
+        }
+
+        const result = await db.query(
+            `SELECT l.*, i.provider_name
+             FROM integration_logs l
+             JOIN integrations i ON l.integration_id = i.integration_id
+             WHERE ${clauses.join(' AND ')}
+             ORDER BY l.created_at DESC
+             LIMIT $${param++} OFFSET $${param++}`,
+            [...params, limit, offset]
+        );
         res.json(result.rows);
     } catch (error) {
         next(error);
@@ -68,11 +84,21 @@ const getLogs = (db) => async (req, res, next) => {
 
 const retryEvent = (db) => async (req, res, next) => {
     try {
-        const { id } = req.params; // log_id
+        const { id } = req.params;
         const service = new IntegrationService(db);
-        
-        await service.retryEvent(id);
-        res.json({ message: 'Retry executed successfully' });
+        const result = await service.retryEvent(id);
+        res.json({ message: 'Retry executed successfully', deduped: result.deduped });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const retryDeadLetter = (db) => async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const service = new IntegrationService(db);
+        const result = await service.retryDeadLetterEvent(id);
+        res.json({ message: 'Dead-letter event requeued successfully', ...result });
     } catch (error) {
         next(error);
     }
@@ -80,7 +106,10 @@ const retryEvent = (db) => async (req, res, next) => {
 
 const seedIntegrations = (db) => async (req, res, next) => {
     try {
-        // Seed default providers if they don't exist
+        if (process.env.NODE_ENV === 'production') {
+            return next(new AppError('Seeding integrations is disabled in production', 403));
+        }
+
         const providers = [
             { name: 'Twilio', type: 'SMS' },
             { name: 'WhatsApp', type: 'Messaging' },
@@ -91,8 +120,9 @@ const seedIntegrations = (db) => async (req, res, next) => {
 
         for (const p of providers) {
             await db.query(
-                `INSERT INTO integrations (provider_name, type) 
-                 VALUES ($1, $2) ON CONFLICT (provider_name) DO NOTHING`,
+                `INSERT INTO integrations (provider_name, type)
+                 VALUES ($1, $2)
+                 ON CONFLICT (provider_name) DO UPDATE SET type = EXCLUDED.type`,
                 [p.name, p.type]
             );
         }
@@ -107,30 +137,102 @@ const testIntegration = (db) => async (req, res, next) => {
     try {
         const { id } = req.params;
         const result = await db.query(
-            'SELECT integration_id, provider_name, type, is_active, (api_key IS NOT NULL) as has_key FROM integrations WHERE integration_id = $1',
+            'SELECT integration_id, provider_name, type, is_active, (api_key IS NOT NULL) as has_key, (api_secret IS NOT NULL) as has_secret FROM integrations WHERE integration_id = $1',
             [id]
         );
         if (result.rows.length === 0) return next(new AppError('Integration not found', 404));
 
         const integration = result.rows[0];
+        const service = new IntegrationService(db);
+        let testResult;
+
+        try {
+            if (integration.provider_name === 'Twilio') {
+                const secretData = await service.getDecryptedSecret('Twilio');
+                const secret = typeof secretData === 'object' ? secretData?.secret : secretData;
+                const apiKey = await service.getDecryptedApiKey('Twilio') || process.env.TWILIO_ACCOUNT_SID;
+                if (!apiKey || !secret) {
+                    throw new Error('Twilio Account SID or Auth Token is not configured');
+                }
+                if (!apiKey.startsWith('AC') && process.env.NODE_ENV === 'production') {
+                    throw new Error('Invalid Twilio Account SID format (must start with AC)');
+                }
+                testResult = {
+                    status: 'HEALTHY',
+                    message: 'Twilio credentials verified and ready for outbound SMS'
+                };
+            } else if (integration.provider_name === 'Stripe') {
+                const secretData = await service.getDecryptedSecret('Stripe');
+                const secret = typeof secretData === 'object' ? secretData?.secret : secretData;
+                if (!secret) {
+                    throw new Error('Stripe API Secret key is not configured');
+                }
+                if (!secret.startsWith('sk_') && !secret.startsWith('rk_') && process.env.NODE_ENV === 'production') {
+                    throw new Error('Invalid Stripe Secret Key format (must start with sk_ or rk_)');
+                }
+                testResult = {
+                    status: 'HEALTHY',
+                    message: 'Stripe payment gateway credentials verified and ready'
+                };
+            } else if (integration.provider_name === 'WhatsApp') {
+                const secretData = await service.getDecryptedSecret('WhatsApp');
+                const secret = typeof secretData === 'object' ? secretData?.secret : secretData;
+                const apiKey = await service.getDecryptedApiKey('WhatsApp') || process.env.TWILIO_ACCOUNT_SID;
+                if (!apiKey || !secret) {
+                    throw new Error('WhatsApp Twilio SID or Auth Token is not configured');
+                }
+                testResult = {
+                    status: 'HEALTHY',
+                    message: 'WhatsApp messaging credentials verified and ready'
+                };
+            } else if (integration.provider_name === 'PACS_Orthanc') {
+                const settingsResult = await db.query(
+                    "SELECT setting_value FROM system_settings WHERE setting_key = 'orthanc_api_url'"
+                );
+                const url = settingsResult.rows[0]?.setting_value;
+                if (!url) {
+                    throw new Error('Orthanc DICOM Server URL is not configured');
+                }
+                // eslint-disable-next-line no-new
+                new URL(url);
+                testResult = {
+                    status: 'HEALTHY',
+                    message: `PACS Orthanc endpoint validated: ${url}`
+                };
+            } else {
+                if (!integration.is_active) {
+                    throw new Error(`${integration.provider_name} integration is currently disabled`);
+                }
+                testResult = {
+                    status: 'HEALTHY',
+                    message: `Integration configuration verified for ${integration.provider_name}`
+                };
+            }
+        } catch (err) {
+            testResult = { status: 'UNHEALTHY', message: err.message };
+        }
 
         await db.query(
-            `INSERT INTO integration_logs (integration_id, event_type, status, response_body)
-             VALUES ($1, 'HEALTH_CHECK_TEST', 'SUCCESS', $2)`,
-            [id, JSON.stringify({ message: `Live connection dry-run test passed for ${integration.provider_name}`, timestamp: new Date().toISOString() })]
+            `INSERT INTO integration_logs (integration_id, event_type, status, error_message, provider_response)
+             VALUES ($1, 'HEALTH_CHECK_TEST', $2, $3, $4)`,
+            [
+                id,
+                testResult.status === 'HEALTHY' ? 'Success' : 'Failed',
+                testResult.status === 'HEALTHY' ? null : testResult.message,
+                JSON.stringify(testResult)
+            ]
         );
 
         res.json({
-            status: 'HEALTHY',
+            status: testResult.status,
             provider: integration.provider_name,
-            message: `Connection test successful for ${integration.provider_name}. Service is responsive.`
+            message: testResult.message
         });
     } catch (error) {
         next(error);
     }
 };
 
-// Expose a test endpoint to manually trigger a mock SMS for demo purposes
 const triggerTestSms = (db) => async (req, res, next) => {
     try {
         if (process.env.NODE_ENV === 'production') {
@@ -151,7 +253,6 @@ const exportAccounting = (db) => async (req, res, next) => {
         const { Parser } = require('json2csv');
         const { startDate, endDate } = req.query;
 
-        // Fallback export: Get finalized invoices for accounting
         let query = `
             SELECT i.invoice_id, i.total_amount, i.status, i.created_at,
                    p.first_name_enc, p.last_name_enc, m.name AS modality
@@ -189,13 +290,25 @@ const exportAccounting = (db) => async (req, res, next) => {
     }
 };
 
+const getDeadLetterEvents = (db) => async (req, res, next) => {
+    try {
+        const service = new IntegrationService(db);
+        const events = await service.getDeadLetterEvents(100, 0);
+        res.json(events);
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getIntegrations,
     updateIntegration,
     testIntegration,
     getLogs,
     retryEvent,
+    retryDeadLetter,
     seedIntegrations,
     triggerTestSms,
-    exportAccounting
+    exportAccounting,
+    getDeadLetterEvents
 };

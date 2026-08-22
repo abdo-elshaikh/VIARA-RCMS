@@ -12,6 +12,7 @@ import {
     Moon,
     Palette,
     RotateCcw,
+    SlidersHorizontal,
     Sparkles,
     Sun,
     Type,
@@ -24,6 +25,7 @@ import { useTranslation } from 'react-i18next';
 import { DEFAULT_PREFERENCES, selectPreferences, updateAllPreferences } from '../../store/preferencesSlice';
 import { useUpdatePreferencesMutation } from '../../store/api';
 import { getErrorMessage } from '../../utils/getErrorMessage';
+import { SEMANTIC_PALETTE_DEFAULTS } from '../../utils/themePalette';
 
 const DEFAULT_APPEARANCE = DEFAULT_PREFERENCES;
 
@@ -34,12 +36,12 @@ const THEMES = [
 ];
 
 const COLORS = [
-    { id: 'cyan', name: 'Clinical Cyan', value: '#0891b2', bg: 'bg-cyan-600', ring: 'ring-cyan-500', text: 'text-cyan-600 dark:text-cyan-400' },
-    { id: 'indigo', name: 'Deep Indigo', value: '#4f46e5', bg: 'bg-indigo-600', ring: 'ring-indigo-500', text: 'text-indigo-600 dark:text-indigo-400' },
-    { id: 'emerald', name: 'Medical Mint', value: '#059669', bg: 'bg-emerald-600', ring: 'ring-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
-    { id: 'rose', name: 'Diagnostic Rose', value: '#e11d48', bg: 'bg-rose-600', ring: 'ring-rose-500', text: 'text-rose-600 dark:text-rose-400' },
-    { id: 'amber', name: 'Radiology Amber', value: '#d97706', bg: 'bg-amber-600', ring: 'ring-amber-500', text: 'text-amber-600 dark:text-amber-400' },
-    { id: 'slate', name: 'Obsidian Slate', value: '#475569', bg: 'bg-slate-700', ring: 'ring-slate-600', text: 'text-slate-700 dark:text-slate-300' },
+    { id: 'emerald', name: 'VIARA Emerald', value: '#087F5B', bg: 'bg-emerald-700', ring: 'ring-emerald-600', text: 'text-emerald-700 dark:text-emerald-300' },
+    { id: 'cyan', name: 'VIARA Emerald Legacy', value: '#087F5B', bg: 'bg-emerald-700', ring: 'ring-emerald-600', text: 'text-emerald-700 dark:text-emerald-300' },
+    { id: 'indigo', name: 'Clinical Neutral', value: '#5F6F6B', bg: 'bg-slate-600', ring: 'ring-slate-500', text: 'text-slate-600 dark:text-slate-300' },
+    { id: 'rose', name: 'Critical Coral', value: '#D95757', bg: 'bg-rose-600', ring: 'ring-rose-500', text: 'text-rose-600 dark:text-rose-400' },
+    { id: 'amber', name: 'AI Amber', value: '#F4B942', bg: 'bg-amber-500', ring: 'ring-amber-400', text: 'text-amber-700 dark:text-amber-300' },
+    { id: 'slate', name: 'Clinical Charcoal', value: '#172326', bg: 'bg-slate-900', ring: 'ring-slate-700', text: 'text-slate-800 dark:text-slate-300' },
     { id: 'custom', name: 'Custom Hex', value: 'custom', bg: 'bg-slate-900', ring: 'ring-slate-800', text: 'text-slate-900 dark:text-slate-100' }
 ];
 
@@ -71,9 +73,27 @@ const DENSITIES = [
     { id: 'spacious', py: 'py-3 px-4', gap: 'gap-3' }
 ];
 
-const fieldPanel = 'rounded-2xl border border-slate-200/80 bg-white shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/50';
+const SEMANTIC_COLOR_OPTIONS = [
+    ['canvas', 'Canvas'],
+    ['surface', 'Surface'],
+    ['surfaceSecondary', 'Secondary surface'],
+    ['surfaceMuted', 'Muted surface'],
+    ['border', 'Border'],
+    ['borderStrong', 'Strong border'],
+    ['text', 'Primary text'],
+    ['textSecondary', 'Secondary text'],
+    ['textMuted', 'Muted text'],
+    ['success', 'Success'],
+    ['warning', 'Warning'],
+    ['danger', 'Danger'],
+    ['info', 'Information'],
+    ['viewerBackground', 'Viewer canvas'],
+    ['viewerPanel', 'Viewer panel'],
+];
 
-const safeHex = (value, fallback = '#0ea5e9') => (/^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback);
+const fieldPanel = 'rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90';
+
+const safeHex = (value, fallback = '#087F5B') => (/^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback);
 
 const AppearanceSettings = () => {
     const { t } = useTranslation('settings');
@@ -99,6 +119,7 @@ const AppearanceSettings = () => {
         theme: DEFAULT_APPEARANCE.theme,
         primaryColor: DEFAULT_APPEARANCE.primaryColor,
         customColor: DEFAULT_APPEARANCE.customColor,
+        colorOverrides: DEFAULT_APPEARANCE.colorOverrides,
         density: DEFAULT_APPEARANCE.density,
         fontScale: DEFAULT_APPEARANCE.fontScale,
         fontFamily: DEFAULT_APPEARANCE.fontFamily,
@@ -107,33 +128,58 @@ const AppearanceSettings = () => {
         motion: DEFAULT_APPEARANCE.motion,
         compactSidebar: DEFAULT_APPEARANCE.compactSidebar
     });
-    const selectedColor = preferences.primaryColor === 'custom' 
-        ? { ...COLORS.find(c => c.id === 'custom'), value: safeHex(preferences.customColor) } 
+
+    const selectedColor = preferences.primaryColor === 'custom'
+        ? { ...COLORS.find(c => c.id === 'custom'), value: safeHex(preferences.customColor) }
         : (COLORS.find(c => c.id === preferences.primaryColor) || COLORS[0]);
 
+    const updateSemanticColor = (mode, key, value) => persist({
+        colorOverrides: {
+            ...preferences.colorOverrides,
+            [mode]: {
+                ...(preferences.colorOverrides?.[mode] || {}),
+                [key]: safeHex(value, SEMANTIC_PALETTE_DEFAULTS[mode][key]),
+            },
+        },
+    });
+
+    const resetSemanticPalette = (mode) => persist({
+        colorOverrides: {
+            ...preferences.colorOverrides,
+            [mode]: {},
+        },
+    });
+
     return (
-        <div className="space-y-4">
+        <div className="space-y-6">
             {/* Overview Header & Live Interactive Specimen Preview */}
-            <section className={`${fieldPanel} overflow-hidden`}>
-                <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:p-5">
+            <section className={`${fieldPanel} relative overflow-hidden p-6 sm:p-8`}>
+                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
+                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
+
+                <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
                     <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-3">
-                            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
-                                <Palette size={18} aria-hidden="true" />
-                            </span>
+                        <div className="flex flex-wrap items-center gap-3.5">
+                            <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-sky-500/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
+                                <Palette size={26} aria-hidden="true" />
+                            </div>
                             <div>
-                                <h2 className="text-base font-black text-slate-950 dark:text-white">
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                                    <Sparkles size={11} />
+                                    <span>{t('settings.appearance.previewEyebrow', { defaultValue: 'Personalization engine' })}</span>
+                                </span>
+                                <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                     {t('settings.appearance.previewTitle', { defaultValue: 'Theme & Visual Styling Engine' })}
-                                </h2>
-                                <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                                </h1>
+                                <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
                                     {t('settings.appearance.previewDescription', { defaultValue: 'Customize UI themes, medical color palettes, display densities, typography sizes, and motion preferences.' })}
                                 </p>
                             </div>
                         </div>
 
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="mt-6 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
                             <Fact label={t('settings.themeMode', { defaultValue: 'Theme' })} value={t(`settings.appearance.themes.${preferences.theme}`, { defaultValue: preferences.theme })} />
-                            <Fact label={t('settings.primaryColor', { defaultValue: 'Accent Color' })} value={selectedColor.name} />
+                            <Fact label={t('settings.primaryColor', { defaultValue: 'Accent Color' })} value={t(`settings.appearance.colors.${selectedColor.id}`, { defaultValue: selectedColor.name })} />
                             <Fact label={t('settings.density', { defaultValue: 'Layout Density' })} value={t(`settings.appearance.densities.${preferences.density}.label`, { defaultValue: preferences.density })} />
                             <Fact label={t('settings.appearance.textSize', { defaultValue: 'Font Scale' })} value={preferences.fontScale} />
                         </div>
@@ -156,8 +202,8 @@ const AppearanceSettings = () => {
                 </div>
             </section>
 
-            <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_380px]">
-                <div className="space-y-4">
+            <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_380px]">
+                <div className="space-y-6">
                     {/* Theme Mode Selector */}
                     <Panel icon={Sun} title={t('settings.themeMode', { defaultValue: 'Interface Theme Mode' })} description={t('settings.appearance.themeDescription', { defaultValue: 'Switch between Light, Dark, or Automatic System Theme.' })}>
                         <div className="grid gap-3 sm:grid-cols-3">
@@ -196,18 +242,18 @@ const AppearanceSettings = () => {
                                     >
                                         <span 
                                             className="h-8 w-8 shrink-0 rounded-lg shadow-sm ring-1 ring-black/10 flex items-center justify-center overflow-hidden" 
-                                            style={{ backgroundColor: color.id === 'custom' ? (preferences.customColor || '#0ea5e9') : color.value }}
+                                            style={{ backgroundColor: color.id === 'custom' ? (preferences.customColor || '#087F5B') : color.value }}
                                         >
                                             {color.id === 'custom' && <Palette size={14} className="text-white drop-shadow-md" />}
                                         </span>
-                                        <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">{color.name}</span>
+                                        <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">{t(`settings.appearance.colors.${color.id}`, { defaultValue: color.name })}</span>
                                     </ChoiceButton>
                                 ))}
                             </div>
                             
                             {preferences.primaryColor === 'custom' && (
                                 <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
-                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Custom Hex Color:</label>
+                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">{t('settings.appearance.customColorLabel', { defaultValue: 'Custom hex color' })}</label>
                                     <div className="flex items-center gap-2">
                                         <input 
                                             type="color" 
@@ -217,7 +263,7 @@ const AppearanceSettings = () => {
                                         />
                                         <input 
                                             type="text"
-                                            value={preferences.customColor || '#0ea5e9'}
+                                            value={preferences.customColor || '#087F5B'}
                                             onBlur={(e) => persist({ customColor: safeHex(e.target.value) })}
                                             onChange={(e) => dispatch(updateAllPreferences({ ...preferences, customColor: e.target.value }))}
                                             className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-mono font-bold text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
@@ -225,6 +271,53 @@ const AppearanceSettings = () => {
                                     </div>
                                 </div>
                             )}
+                        </div>
+                    </Panel>
+
+                    <Panel
+                        icon={SlidersHorizontal}
+                        title={t('settings.appearance.semanticPalette.title', { defaultValue: 'Advanced semantic palette' })}
+                        description={t('settings.appearance.semanticPalette.description', { defaultValue: 'Customize every interface surface and state color independently for light and dark mode. Unchanged colors inherit the audited VIARA defaults.' })}
+                    >
+                        <div className="grid gap-4 xl:grid-cols-2">
+                            {['light', 'dark'].map((mode) => (
+                                <section key={mode} className="rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-4">
+                                    <div className="mb-3 flex items-center justify-between gap-3">
+                                        <h3 className="text-sm font-black text-[var(--VIARA-ink)]">
+                                            {t(`settings.appearance.semanticPalette.${mode}`, { defaultValue: mode === 'light' ? 'Light palette' : 'Dark palette' })}
+                                        </h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => resetSemanticPalette(mode)}
+                                            disabled={isLoading}
+                                            className="rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 py-1.5 text-[10px] font-bold text-[var(--VIARA-muted)] transition hover:border-[var(--VIARA-accent)] hover:text-[var(--VIARA-accent)] disabled:opacity-50"
+                                        >
+                                            {t('settings.appearance.semanticPalette.resetMode', { defaultValue: 'Restore mode' })}
+                                        </button>
+                                    </div>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                        {SEMANTIC_COLOR_OPTIONS.map(([key, fallbackLabel]) => {
+                                            const value = preferences.colorOverrides?.[mode]?.[key]
+                                                || SEMANTIC_PALETTE_DEFAULTS[mode][key];
+                                            return (
+                                                <label key={key} className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 py-2 text-[11px] font-bold text-[var(--VIARA-ink)]">
+                                                    <input
+                                                        type="color"
+                                                        value={value}
+                                                        onChange={(event) => updateSemanticColor(mode, key, event.target.value)}
+                                                        disabled={isLoading}
+                                                        className="h-7 w-9 shrink-0 cursor-pointer rounded-md border-0 bg-transparent p-0 disabled:cursor-wait"
+                                                        aria-label={t(`settings.appearance.semanticPalette.colors.${key}`, { defaultValue: fallbackLabel })}
+                                                    />
+                                                    <span className="min-w-0 truncate">
+                                                        {t(`settings.appearance.semanticPalette.colors.${key}`, { defaultValue: fallbackLabel })}
+                                                    </span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                </section>
+                            ))}
                         </div>
                     </Panel>
                 </div>
@@ -368,8 +461,8 @@ const AppearanceSettings = () => {
                         </div>
                     </Panel>
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 };
 
@@ -393,11 +486,10 @@ const ChoiceButton = ({ selected, disabled, onClick, compact, center, children }
         type="button"
         disabled={disabled}
         onClick={onClick}
-        className={`relative flex ${compact ? 'flex-row items-center gap-3' : 'flex-col'} ${center ? 'items-center text-center' : 'items-start text-start'} rounded-2xl border p-3.5 transition-all ${
-            selected
+        className={`relative flex ${compact ? 'flex-row items-center gap-3' : 'flex-col'} ${center ? 'items-center text-center' : 'items-start text-start'} rounded-2xl border p-3.5 transition-all ${selected
                 ? 'border-cyan-500 bg-cyan-50/50 shadow-md ring-2 ring-cyan-500/20 dark:border-cyan-500 dark:bg-cyan-950/40'
                 : 'border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/40 dark:hover:bg-slate-800/50'
-        } disabled:opacity-50`}
+            } disabled:opacity-50`}
     >
         {children}
         {selected && (
@@ -491,14 +583,12 @@ const Toggle = ({ label, checked, disabled, onChange }) => (
         aria-label={label}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-            checked ? 'bg-cyan-600' : 'bg-slate-200 dark:bg-slate-800'
-        } disabled:opacity-50`}
+        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${checked ? 'bg-cyan-600' : 'bg-slate-200 dark:bg-slate-800'
+            } disabled:opacity-50`}
     >
         <span
-            className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                checked ? 'translate-x-5' : 'translate-x-0'
-            }`}
+            className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${checked ? 'translate-x-5' : 'translate-x-0'
+                }`}
         />
     </button>
 );

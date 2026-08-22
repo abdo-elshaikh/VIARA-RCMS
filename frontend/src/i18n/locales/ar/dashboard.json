@@ -16,7 +16,20 @@
     "imagingStudy": "فحص تصوير",
     "noDistribution": "لا يوجد عبء حسب الأجهزة بعد",
     "noChartData": "لا توجد بيانات تشغيلية بعد",
-    "noChartDataDescription": "ستظهر البيانات تلقائياً عند تسجيل العمل داخل RCMS."
+    "noChartDataDescription": "ستظهر البيانات تلقائياً عند تسجيل العمل داخل VIARA."
+  },
+  "priorities": {
+    "title": "أولويات التشغيل",
+    "waitingRoom": "غرفة الانتظار",
+    "averageWait": "متوسط الانتظار {{duration}}",
+    "readyAppointments": "المواعيد الجاهزة",
+    "totalAppointments": "{{count}} موعداً اليوم",
+    "completedToday": "المكتمل اليوم",
+    "urgentWork": "عمل متأخر",
+    "oldestOpen": "الأقدم المفتوح",
+    "openWork": "عمل مفتوح",
+    "collections": "التحصيل",
+    "staffing": "التوظيف"
   },
   "roles": {
     "Developer": "مطوّر النظام",
@@ -130,7 +143,9 @@
     "financials": "الشؤون المالية",
     "financialsDescription": "تابع الفوترة والتحصيل.",
     "inventory": "المخزون",
-    "inventoryDescription": "تابع المخزون ومخاطر النقص."
+    "inventoryDescription": "تابع المخزون ومخاطر النقص.",
+    "noneAvailable": "لا توجد اختصارات معتمدة متاحة",
+    "noneAvailableDescription": "اطلب من مسؤول النظام الصلاحية المطلوبة قبل اتخاذ أي إجراء."
   },
   "activity": {
     "title": "أحدث الأنشطة السريرية",
@@ -141,7 +156,7 @@
   },
   "error": {
     "title": "بيانات لوحة التحكم غير متاحة",
-    "description": "تعذر على RCMS تحميل أحدث الإحصاءات التشغيلية.",
+    "description": "تعذر على VIARA تحميل أحدث الإحصاءات التشغيلية.",
     "retry": "المحاولة مرة أخرى"
   },
   "clinicalWorklist": {

@@ -19,7 +19,7 @@ const AccessibleChartData = ({
             </div>
             <p id={descriptionId} className="sr-only">{summary}</p>
             <details className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                <summary className="w-fit cursor-pointer rounded-lg font-bold text-cyan-700 outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 dark:text-cyan-300 dark:focus-visible:ring-offset-slate-900">
+                <summary className="w-fit cursor-pointer rounded-lg font-bold text-[var(--VIARA-accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--VIARA-accent)] focus-visible:ring-offset-2 dark:text-[var(--VIARA-accent-text)] dark:focus-visible:ring-offset-slate-900">
                     {disclosureLabel}
                 </summary>
                 <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">

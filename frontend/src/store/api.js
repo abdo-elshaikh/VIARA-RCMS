@@ -1,5 +1,6 @@
-import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+﻿import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { setAccessToken, logOut } from './authSlice';
+import { generateUUID } from '../utils/uuid';
 
 const getCsrfToken = () => {
     if (typeof document === 'undefined') return null;
@@ -19,11 +20,30 @@ const baseQuery = fetchBaseQuery({
     },
 });
 
+let csrfBootstrapPromise = null;
+
+const ensureCsrfToken = async (api, extraOptions) => {
+    const existingToken = getCsrfToken();
+    if (existingToken) return existingToken;
+
+    if (!csrfBootstrapPromise) {
+        csrfBootstrapPromise = baseQuery({
+            url: '/settings/public/home',
+            method: 'GET',
+        }, api, extraOptions).finally(() => {
+            csrfBootstrapPromise = null;
+        });
+    }
+
+    await csrfBootstrapPromise;
+    return getCsrfToken();
+};
+
 const baseQueryWithCsrf = async (args, api, extraOptions) => {
     const requestArgs = typeof args === 'string' ? { url: args } : { ...args };
     const method = String(requestArgs.method || 'GET').toUpperCase();
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-        const csrfToken = getCsrfToken();
+        const csrfToken = await ensureCsrfToken(api, extraOptions);
         if (csrfToken) {
             requestArgs.headers = {
                 ...(requestArgs.headers || {}),
@@ -63,7 +83,12 @@ const refreshAccessToken = (api, extraOptions) => {
 
 const baseQueryWithReauth = async (args, api, extraOptions) => {
     let result = await baseQueryWithCsrf(args, api, extraOptions);
-    if (result.error && result.error.status === 401 && !['/auth/login', '/auth/refresh'].includes(args.url)) {
+    if (result.error && result.error.status === 401 && ![
+        '/auth/login',
+        '/auth/refresh',
+        '/auth/passkeys/authenticate/options',
+        '/auth/passkeys/authenticate/verify'
+    ].includes(args.url)) {
         const token = await refreshAccessToken(api, extraOptions);
         if (token) {
             result = await baseQueryWithCsrf(args, api, extraOptions);
@@ -76,7 +101,7 @@ export const api = createApi({
     reducerPath: 'api',
     baseQuery: baseQueryWithReauth,
     tagTypes: [
-        'User', 'Profile', 'Sessions', 'Tokens', 'Patients', 'Appointments', 'ScheduleAvailability', 'WaitingList', 'PortalReviewRequests', 'ReferringDoctors', 'Machines', 'ExamTypes', 'Dashboard', 'Staff', 'StaffProfiles', 'Shifts', 'Attendance', 'LeaveRequests', 'Payroll', 'PayrollRuns', 'PayrollCompensation', 'PayrollRules', 'PayrollDeductions', 'PayrollPenalties', 'Inventory', 'PatientHistory', 'PatientDuplicates', 'OrderTimeline', 'Queue', 'CaseReports', 'Invoices', 'Refunds', 'PartialPaymentExceptions', 'Cashier', 'Insurance', 'Claims', 'ReportTemplates', 'ResultDelivery', 'AiReportDrafts', 'Notifications', 'NotificationTemplates', 'NotificationJobs', 'Audit', 'RBAC', 'Privacy', 'Analytics', 'Documents', 'Integrations', 'Settings', 'PublicSettings', 'PublicLanding', 'Backups', 'ClinicalSafety', 'Closures', 'Pacs', 'PacsQuarantine', 'PacsAudit', 'PacsAiAnalysis', 'FinancialReports', 'Commissions', 'ExpenseCategories', 'Expenses', 'Segments', 'Campaigns', 'Feedback', 'ChatMessages', 'StaffUsers', 'PatientConversations', 'DoctorConversations', 'ChatUnread'
+        'User', 'Profile', 'Sessions', 'Passkeys', 'Tokens', 'Patients', 'Appointments', 'ScheduleAvailability', 'WaitingList', 'PortalReviewRequests', 'ReferringDoctors', 'Machines', 'ExamTypes', 'Dashboard', 'Staff', 'StaffProfiles', 'Shifts', 'Attendance', 'LeaveRequests', 'Payroll', 'PayrollRuns', 'PayrollCompensation', 'PayrollRules', 'PayrollDeductions', 'PayrollPenalties', 'Inventory', 'PatientHistory', 'PatientDuplicates', 'OrderTimeline', 'Queue', 'CaseReports', 'Invoices', 'Refunds', 'PartialPaymentExceptions', 'Cashier', 'Insurance', 'Claims', 'ReportTemplates', 'ResultDelivery', 'AiReportDrafts', 'Notifications', 'NotificationTemplates', 'NotificationJobs', 'Audit', 'RBAC', 'Privacy', 'Analytics', 'Documents', 'Integrations', 'Settings', 'PublicSettings', 'PublicLanding', 'AdminTelemetry', 'Governance', 'Backups', 'ClinicalSafety', 'Closures', 'Pacs', 'PacsQuarantine', 'PacsAudit', 'PacsAiAnalysis', 'FinancialReports', 'Commissions', 'ExpenseCategories', 'Expenses', 'Segments', 'Campaigns', 'Feedback', 'ChatMessages', 'StaffUsers', 'PatientConversations', 'DoctorConversations', 'ChatUnread'
     ],
     endpoints: (builder) => ({
         login: builder.mutation({
@@ -85,6 +110,30 @@ export const api = createApi({
                 method: 'POST',
                 body: credentials,
             }),
+        }),
+        passkeyAuthenticationOptions: builder.mutation({
+            query: (data) => ({ url: '/auth/passkeys/authenticate/options', method: 'POST', body: data }),
+        }),
+        passkeyAuthenticationVerify: builder.mutation({
+            query: (data) => ({ url: '/auth/passkeys/authenticate/verify', method: 'POST', body: data }),
+        }),
+        getPasskeys: builder.query({
+            query: () => '/auth/passkeys', providesTags: ['Passkeys'],
+        }),
+        passkeyRegistrationOptions: builder.mutation({
+            query: (data) => ({ url: '/auth/passkeys/register/options', method: 'POST', body: data }),
+        }),
+        passkeyRegistrationVerify: builder.mutation({
+            query: (data) => ({ url: '/auth/passkeys/register/verify', method: 'POST', body: data }),
+            invalidatesTags: ['Passkeys'],
+        }),
+        renamePasskey: builder.mutation({
+            query: ({ id, label }) => ({ url: `/auth/passkeys/${id}`, method: 'PATCH', body: { label } }),
+            invalidatesTags: ['Passkeys'],
+        }),
+        revokePasskey: builder.mutation({
+            query: ({ id, currentPassword }) => ({ url: `/auth/passkeys/${id}`, method: 'DELETE', body: currentPassword ? { currentPassword } : {} }),
+            invalidatesTags: ['Passkeys'],
         }),
 
         refreshSession: builder.mutation({
@@ -131,7 +180,7 @@ export const api = createApi({
             query: () => ({ url: '/profile/export', method: 'GET' }),
         }),
         getMyAuditLogs: builder.query({
-            query: () => '/profile/audit',
+            query: (params = {}) => ({ url: '/profile/audit', params }),
             providesTags: ['Audit'],
         }),
         getProfileSessions: builder.query({
@@ -193,7 +242,7 @@ export const api = createApi({
                 body: data,
                 headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
             }),
-            invalidatesTags: ['Appointments', 'Queue'],
+            invalidatesTags: ['Appointments', 'Queue', 'WaitingList'],
         }),
         updateAppointment: builder.mutation({
             query: ({ id, ...data }) => ({
@@ -204,9 +253,10 @@ export const api = createApi({
             invalidatesTags: ['Appointments', 'Dashboard', 'OrderTimeline', 'Queue'],
         }),
         deleteAppointment: builder.mutation({
-            query: (id) => ({
-                url: `/appointments/${id}`,
+            query: (input) => ({
+                url: `/appointments/${typeof input === 'object' ? input.id : input}`,
                 method: 'DELETE',
+                body: typeof input === 'object' && input.reason ? { reason: input.reason } : undefined,
             }),
             invalidatesTags: ['Appointments', 'Dashboard', 'Queue'],
         }),
@@ -509,12 +559,16 @@ export const api = createApi({
             }),
             providesTags: ['Invoices'],
         }),
+        getInvoiceSummary: builder.query({
+            query: () => '/invoice-summary',
+            providesTags: ['Invoices'],
+        }),
         getInvoice: builder.query({
             query: (id) => `/invoices/${id}`,
             providesTags: (result, error, id) => [{ type: 'Invoices', id }],
         }),
         createInvoice: builder.mutation({
-            query: ({ idempotencyKey = crypto.randomUUID(), ...data }) => ({
+            query: ({ idempotencyKey = generateUUID(), ...data }) => ({
                 url: '/invoices',
                 method: 'POST',
                 body: data,
@@ -708,7 +762,7 @@ export const api = createApi({
             invalidatesTags: ['Claims', 'FinancialReports'],
         }),
         updateClaimStatus: builder.mutation({
-            query: ({ id, idempotencyKey = crypto.randomUUID(), ...data }) => ({
+            query: ({ id, idempotencyKey = generateUUID(), ...data }) => ({
                 url: `/claims/${id}/status`,
                 method: 'PUT',
                 body: data,
@@ -779,6 +833,10 @@ export const api = createApi({
             query: (data) => ({ url: '/hr/attendance/clock-out', method: 'POST', body: data }),
             invalidatesTags: ['Attendance'],
         }),
+        updateAttendance: builder.mutation({
+            query: ({ id, ...body }) => ({ url: `/hr/attendance/${id}`, method: 'PUT', body }),
+            invalidatesTags: ['Attendance'],
+        }),
         getLeaveRequests: builder.query({
             query: (params) => ({ url: '/hr/leave', params }),
             providesTags: ['LeaveRequests'],
@@ -788,7 +846,7 @@ export const api = createApi({
             invalidatesTags: ['LeaveRequests'],
         }),
         updateLeaveStatus: builder.mutation({
-            query: ({ id, status }) => ({ url: `/hr/leave/${id}/status`, method: 'PUT', body: { status } }),
+            query: ({ id, status, notes }) => ({ url: `/hr/leave/${id}/status`, method: 'PUT', body: { status, notes } }),
             invalidatesTags: ['LeaveRequests'],
         }),
         getProductivityReport: builder.query({
@@ -797,7 +855,7 @@ export const api = createApi({
 
         // Payroll
         getPayrollOverview: builder.query({
-            query: () => '/payroll/overview',
+            query: (params) => ({ url: '/payroll/overview', params }),
             providesTags: ['Payroll'],
         }),
         getPayrollPeriods: builder.query({
@@ -807,6 +865,10 @@ export const api = createApi({
         createPayrollPeriod: builder.mutation({
             query: (data) => ({ url: '/payroll/periods', method: 'POST', body: data }),
             invalidatesTags: ['Payroll'],
+        }),
+        cancelPayrollPeriod: builder.mutation({
+            query: ({ id, ...body }) => ({ url: `/payroll/periods/${id}/status`, method: 'PUT', body }),
+            invalidatesTags: ['Payroll', 'PayrollRuns'],
         }),
         getPayrollRun: builder.query({
             query: (periodId) => `/payroll/periods/${periodId}/run`,
@@ -828,8 +890,16 @@ export const api = createApi({
             query: (params) => ({ url: '/payroll/compensation', params }),
             providesTags: ['PayrollCompensation'],
         }),
+        getPayrollEmployees: builder.query({
+            query: () => '/payroll/employees',
+            providesTags: ['Payroll'],
+        }),
         createPayrollCompensation: builder.mutation({
             query: (data) => ({ url: '/payroll/compensation', method: 'POST', body: data }),
+            invalidatesTags: ['PayrollCompensation', 'Payroll'],
+        }),
+        updatePayrollCompensation: builder.mutation({
+            query: ({ id, ...body }) => ({ url: `/payroll/compensation/${id}`, method: 'PUT', body }),
             invalidatesTags: ['PayrollCompensation', 'Payroll'],
         }),
         getPayrollRules: builder.query({
@@ -954,10 +1024,10 @@ export const api = createApi({
             invalidatesTags: ['Inventory'],
         }),
         updateStock: builder.mutation({
-            query: ({ itemId, quantity }) => ({
+            query: ({ itemId, ...data }) => ({
                 url: `/inventory/${itemId}`,
                 method: 'PUT',
-                body: { quantity },
+                body: data,
             }),
             invalidatesTags: ['Inventory'],
         }),
@@ -1179,12 +1249,35 @@ export const api = createApi({
             invalidatesTags: ['Notifications'],
         }),
 
-        // ─── Audit Logs ──────────────────────────────────────────────────
-        getLegacyAuditLogs: builder.query({
-            query: (params) => ({ url: '/audit-logs', params }),
-            providesTags: ['Audit'],
+        // ─── Staff Notification Center ─────────────────────────────────────
+        getMyNotifications: builder.query({
+            query: (params) => ({ url: '/notifications/my-notifications', params }),
+            providesTags: ['Notifications'],
         }),
-
+        markMyNotificationRead: builder.mutation({
+            query: (id) => ({ url: `/notifications/my-notifications/${id}/read`, method: 'PUT' }),
+            invalidatesTags: ['Notifications'],
+        }),
+        markAllMyNotificationsRead: builder.mutation({
+            query: () => ({ url: '/notifications/my-notifications/mark-all-read', method: 'PUT' }),
+            invalidatesTags: ['Notifications'],
+        }),
+        getStaffPreferences: builder.query({
+            query: () => '/notifications/my-preferences',
+            providesTags: ['Notifications'],
+        }),
+        updateStaffPreferences: builder.mutation({
+            query: (data) => ({
+                url: '/notifications/my-preferences',
+                method: 'PUT',
+                body: data,
+            }),
+            invalidatesTags: ['Notifications'],
+        }),
+        getNotificationAnalytics: builder.query({
+            query: (params) => ({ url: '/notifications/analytics', params }),
+            providesTags: ['Notifications'],
+        }),
         // ─── Realtime Chat & Messaging ───────────────────────────────────
         getChatUsers: builder.query({
             query: () => '/chat/users',
@@ -1379,7 +1472,6 @@ export const api = createApi({
                 url: '/documents',
                 method: 'POST',
                 body: formData,
-                // Note: when passing FormData, RTK Query automatically sets Content-Type to multipart/form-data with the correct boundary
             }),
             invalidatesTags: ['Documents'],
         }),
@@ -1413,6 +1505,14 @@ export const api = createApi({
             query: (logId) => ({ url: `/integrations/logs/${logId}/retry`, method: 'POST' }),
             invalidatesTags: ['Integrations'],
         }),
+        retryDeadLetterEvent: builder.mutation({
+            query: (logId) => ({ url: `/integrations/logs/${logId}/retry-dead-letter`, method: 'POST' }),
+            invalidatesTags: ['Integrations'],
+        }),
+        getDeadLetterEvents: builder.query({
+            query: () => '/integrations/logs/dead-letter',
+            providesTags: ['Integrations'],
+        }),
 
         // ─── Phase 24: Administration Settings ─────────────────────────────
         getCenterSettings: builder.query({
@@ -1442,6 +1542,26 @@ export const api = createApi({
         }),
         testDatabaseSettings: builder.mutation({
             query: (data) => ({ url: '/settings/database/test', method: 'POST', body: data }),
+        }),
+        vacuumDatabase: builder.mutation({
+            query: () => ({ url: '/settings/admin/maintenance/vacuum', method: 'POST' }),
+            invalidatesTags: ['Settings', 'AdminTelemetry'],
+        }),
+        flushServerCache: builder.mutation({
+            query: () => ({ url: '/settings/admin/maintenance/clear-cache', method: 'POST' }),
+            invalidatesTags: ['Settings', 'PublicSettings', 'AdminTelemetry'],
+        }),
+        getAdminTelemetry: builder.query({
+            query: () => '/settings/admin/telemetry',
+            providesTags: ['AdminTelemetry'],
+        }),
+        getGovernancePolicies: builder.query({
+            query: () => '/settings/admin/governance',
+            providesTags: ['Governance'],
+        }),
+        updateGovernancePolicies: builder.mutation({
+            query: (body) => ({ url: '/settings/admin/governance', method: 'PUT', body }),
+            invalidatesTags: ['Governance', 'Settings'],
         }),
         getAiSettings: builder.query({
             query: () => '/settings/ai',
@@ -1596,7 +1716,7 @@ export const api = createApi({
             query: (params) => ({ url: '/machines/utilization', params }),
             providesTags: ['Machines', 'EquipmentDowntime'],
         }),
-        
+
         // Service Contracts
         getServiceContracts: builder.query({
             query: (params) => ({ url: '/equipment/contracts', params }),
@@ -1607,7 +1727,7 @@ export const api = createApi({
             invalidatesTags: ['ServiceContracts'],
         }),
         updateServiceContract: builder.mutation({
-            query: ({ id, ...data }) => ({ url: `/equipment/contracts/${id}`, method: 'PUT', body: data }),
+            query: ({ id, ...data }) => ({ url: '/equipment/contracts/${id}', method: 'PUT', body: data }),
             invalidatesTags: ['ServiceContracts'],
         }),
 
@@ -1784,7 +1904,7 @@ export const api = createApi({
             query: () => ({ url: '/v1/audit/verify' }),
         }),
     }),
-});
+})
 
 let sessionRehydrationPromise = null;
 
@@ -1806,6 +1926,14 @@ export const rehydrateSession = () => (dispatch) => {
 
 export const {
     useLoginMutation,
+    usePasskeyAuthenticationOptionsMutation,
+    usePasskeyAuthenticationVerifyMutation,
+    useGetPasskeysQuery,
+    usePasskeyRegistrationOptionsMutation,
+    usePasskeyRegistrationVerifyMutation,
+    useRenamePasskeyMutation,
+    useRevokePasskeyMutation,
+    useRefreshSessionMutation,
     useLogoutMutation,
     useGetProfileQuery,
     useUpdateProfileMutation,
@@ -1816,11 +1944,11 @@ export const {
     useGetMyAuditLogsQuery,
     useGetProfileSessionsQuery,
     useRevokeProfileSessionMutation,
-    useGetOrganizationStaffQuery,
-    useCreateOrganizationStaffMutation,
     useGetApiTokensQuery,
     useCreateApiTokenMutation,
     useRevokeApiTokenMutation,
+    useGetOrganizationStaffQuery,
+    useCreateOrganizationStaffMutation,
     useGetAppointmentsQuery,
     useGetAppointmentByIdQuery,
     useCreateAppointmentMutation,
@@ -1835,9 +1963,6 @@ export const {
     useGetWaitingListQuery,
     useCreateWaitingListEntryMutation,
     useUpdateWaitingListEntryMutation,
-    useGetPatientsQuery,
-    useGetPatientHistoryQuery,
-    useGetPatientDuplicatesQuery,
     useCreatePatientMutation,
     useGeneratePortalPasswordMutation,
     useGetPortalReviewRequestsQuery,
@@ -1845,7 +1970,10 @@ export const {
     useReviewPortalProfileUpdateRequestMutation,
     useUpdatePatientMutation,
     useDeletePatientMutation,
+    useGetPatientHistoryQuery,
+    useGetPatientDuplicatesQuery,
     useMergePatientsMutation,
+    useGetPatientsQuery,
     useGetReferringDoctorsQuery,
     useCreateReferringDoctorMutation,
     useUpdateReferringDoctorMutation,
@@ -1856,131 +1984,6 @@ export const {
     useGetRevenueReportQuery,
     useGetOutstandingClaimsQuery,
     useGetDoctorCommissionsQuery,
-    useGetInvoicesQuery,
-    useGetInvoiceQuery,
-    useCreateInvoiceMutation,
-    useUpdateInvoiceMutation,
-    useCollectInvoicePaymentMutation,
-    useRefundInvoiceMutation,
-    useGetRefundsQuery,
-    useReviewRefundMutation,
-    useGetPartialPaymentExceptionsQuery,
-    useRequestPartialPaymentExceptionMutation,
-    useReviewPartialPaymentExceptionMutation,
-    useLazyGetInvoicePdfQuery,
-    useOpenCashierShiftMutation,
-    useCloseCashierShiftMutation,
-    useGetCashierReconciliationQuery,
-    useReviewCashierClosureMutation,
-    useGetInsuranceProvidersQuery,
-    useCreateInsuranceProviderMutation,
-    useGetInsuranceContractsQuery,
-    useCreateInsuranceContractMutation,
-    useGetInsurancePoliciesQuery,
-    useCreateInsurancePolicyMutation,
-    useGetCoverageRulesQuery,
-    useCreateCoverageRuleMutation,
-    usePreviewCoverageQuery,
-    useGetInsuranceApprovalsQuery,
-    useCreateInsuranceApprovalMutation,
-    useUpdateInsuranceApprovalStatusMutation,
-    useGetClaimsQuery,
-    useCreateClaimMutation,
-    useUpdateClaimStatusMutation,
-    useGetWorklistQuery,
-    useGetCaseReportsQuery,
-    useLazyLookupCaseReportQuery,
-    useGetExamQuery,
-    useUpdateReportMutation,
-    useImproveReportFormatMutation,
-    useGeneratePreliminaryReportDraftMutation,
-    useGetAiReportDraftsQuery,
-    useMarkAiReportDraftAppliedMutation,
-    useGetReportTemplatesQuery,
-    useCreateReportTemplateMutation,
-    useUpdateReportTemplateMutation,
-    useDeleteReportTemplateMutation,
-    useAmendReportMutation,
-    useDeliverResultMutation,
-    useGetResultDeliveryHistoryQuery,
-    useGetStaffQuery,
-    useCreateStaffMutation,
-    useUpdateStaffMutation,
-    useDeleteStaffMutation,
-    useSendReminderMutation,
-    useGetInventoryQuery,
-    useAddItemMutation,
-    useUpdateStockMutation,
-    useGetExamTypesQuery,
-    useCreateExamTypeMutation,
-    useUpdateExamTypeMutation,
-    useDeleteExamTypeMutation,
-    useGetModalitiesQuery,
-    useGetDashboardStatsQuery,
-    useSetDoctorPortalPasswordMutation,
-    useGetNotificationsQuery,
-    useGetNotificationUnreadCountQuery,
-    useMarkAllNotificationsReadMutation,
-    useMarkNotificationReadMutation,
-    useSendManualNotificationMutation,
-    useGetNotificationTemplatesQuery,
-    useCreateNotificationTemplateMutation,
-    useUpdateNotificationTemplateMutation,
-    useDeleteNotificationTemplateMutation,
-    useGetNotificationJobsQuery,
-    useRetryNotificationJobMutation,
-    useProcessNotificationJobsMutation,
-    useGetNotificationPreferencesQuery,
-    useUpdateNotificationPreferencesMutation,
-    useSyncModalityDicomMutation,
-    useGetOrthancSystemQuery,
-    useGetPacsConfigQuery,
-    useGetPacsDiagnosticsQuery,
-    useUpdatePacsConfigMutation,
-    usePingModalityDicomMutation,
-    useGetPacsAuditQuery,
-    useGetPacsRequestsQuery,
-    useGetPacsWorklistPreviewQuery,
-    useRefreshPacsWorklistMutation,
-    useGetPacsStorageSummaryQuery,
-    useRunPacsTieringMutation,
-    useGetAuditLogsQuery,
-    useGetAuditAlertsQuery,
-    useReviewAuditAlertMutation,
-    useRunAuditDetectionsMutation,
-    useLazyVerifyAuditChainQuery,
-
-    // Phase 13 Exports
-    useGetSuppliersQuery,
-    useGetSupplierByIdQuery,
-    useCreateSupplierMutation,
-    useUpdateSupplierMutation,
-    useGetPurchaseOrdersQuery,
-    useGetPurchaseOrderByIdQuery,
-    useCreatePurchaseOrderMutation,
-    useUpdatePurchaseOrderStatusMutation,
-    useReceiveStockMutation,
-    useConsumeStockMutation,
-    useAdjustStockMutation,
-    useGetStockMovementsQuery,
-    useGetExpiryAlertsQuery,
-
-    // Phase 14 Exports
-    useGetMachineByIdQuery,
-    useUpdateMachineMutation,
-    useDeleteMachineMutation,
-    useGetUtilizationReportQuery,
-    useGetServiceContractsQuery,
-    useCreateServiceContractMutation,
-    useUpdateServiceContractMutation,
-    useGetEquipmentMaintenanceQuery,
-    useCreateEquipmentMaintenanceMutation,
-    useUpdateEquipmentMaintenanceMutation,
-    useGetEquipmentDowntimeQuery,
-    useCreateEquipmentDowntimeMutation,
-    useUpdateEquipmentDowntimeMutation,
-
-    // Phase 15 Exports
     useGetReceivablesAgingQuery,
     useGetTaxSummaryQuery,
     useGetProfitAndLossQuery,
@@ -2001,8 +2004,42 @@ export const {
     useGetFinancialClosuresQuery,
     useCreateFinancialClosureMutation,
     useFinalizeFinancialClosureMutation,
-
-    // Phase 16 Exports
+    useGetInvoicesQuery,
+    useGetInvoiceSummaryQuery,
+    useGetInvoiceQuery,
+    useCreateInvoiceMutation,
+    useUpdateInvoiceMutation,
+    useCollectInvoicePaymentMutation,
+    useRefundInvoiceMutation,
+    useGetRefundsQuery,
+    useReviewRefundMutation,
+    useGetPartialPaymentExceptionsQuery,
+    useRequestPartialPaymentExceptionMutation,
+    useReviewPartialPaymentExceptionMutation,
+    useGetInvoicePdfQuery,
+    useOpenCashierShiftMutation,
+    useCloseCashierShiftMutation,
+    useGetCashierReconciliationQuery,
+    useReviewCashierClosureMutation,
+    useGetInsuranceProvidersQuery,
+    useCreateInsuranceProviderMutation,
+    useGetInsuranceContractsQuery,
+    useCreateInsuranceContractMutation,
+    useGetInsurancePoliciesQuery,
+    useCreateInsurancePolicyMutation,
+    useGetCoverageRulesQuery,
+    useCreateCoverageRuleMutation,
+    usePreviewCoverageQuery,
+    useGetInsuranceApprovalsQuery,
+    useCreateInsuranceApprovalMutation,
+    useUpdateInsuranceApprovalStatusMutation,
+    useGetClaimsQuery,
+    useCreateClaimMutation,
+    useUpdateClaimStatusMutation,
+    useGetStaffQuery,
+    useCreateStaffMutation,
+    useUpdateStaffMutation,
+    useDeleteStaffMutation,
     useGetEmployeeProfilesQuery,
     useUpdateEmployeeProfileMutation,
     useGetShiftsQuery,
@@ -2011,6 +2048,7 @@ export const {
     useGetAttendanceQuery,
     useClockInMutation,
     useClockOutMutation,
+    useUpdateAttendanceMutation,
     useGetLeaveRequestsQuery,
     useCreateLeaveRequestMutation,
     useUpdateLeaveStatusMutation,
@@ -2018,11 +2056,14 @@ export const {
     useGetPayrollOverviewQuery,
     useGetPayrollPeriodsQuery,
     useCreatePayrollPeriodMutation,
+    useCancelPayrollPeriodMutation,
     useGetPayrollRunQuery,
     useCalculatePayrollRunMutation,
     useUpdatePayrollRunStatusMutation,
     useGetPayrollCompensationQuery,
+    useGetPayrollEmployeesQuery,
     useCreatePayrollCompensationMutation,
+    useUpdatePayrollCompensationMutation,
     useGetPayrollRulesQuery,
     useCreatePayrollRuleMutation,
     useUpdatePayrollRuleStatusMutation,
@@ -2032,8 +2073,6 @@ export const {
     useGetPayrollPenaltiesQuery,
     useCreatePayrollPenaltyMutation,
     useUpdatePayrollPenaltyStatusMutation,
-
-    // Phase 17 Exports
     useGetCrmActivitiesQuery,
     useCreateCrmActivityMutation,
     useUpdateCrmActivityMutation,
@@ -2046,8 +2085,63 @@ export const {
     useGetFeedbackQuery,
     useSubmitFeedbackMutation,
     useUpdateLoyaltyPointsMutation,
-
-    // RBAC Exports
+    useSendReminderMutation,
+    useGetInventoryQuery,
+    useAddItemMutation,
+    useUpdateStockMutation,
+    useGetModalitiesQuery,
+    useGetExamTypesQuery,
+    useCreateExamTypeMutation,
+    useUpdateExamTypeMutation,
+    useDeleteExamTypeMutation,
+    useGetWorklistQuery,
+    useGetCaseReportsQuery,
+    useLookupCaseReportQuery,
+    useGetExamQuery,
+    useUpdateReportMutation,
+    useImproveReportFormatMutation,
+    useGeneratePreliminaryReportDraftMutation,
+    useGetAiReportDraftsQuery,
+    useMarkAiReportDraftAppliedMutation,
+    useGetReportTemplatesQuery,
+    useCreateReportTemplateMutation,
+    useUpdateReportTemplateMutation,
+    useDeleteReportTemplateMutation,
+    useAmendReportMutation,
+    useDeliverResultMutation,
+    useGetResultDeliveryHistoryQuery,
+    useGetDashboardStatsQuery,
+    useSetDoctorPortalPasswordMutation,
+    useGetNotificationsQuery,
+    useGetNotificationUnreadCountQuery,
+    useMarkAllNotificationsReadMutation,
+    useMarkNotificationReadMutation,
+    useSendManualNotificationMutation,
+    useGetNotificationTemplatesQuery,
+    useCreateNotificationTemplateMutation,
+    useUpdateNotificationTemplateMutation,
+    useDeleteNotificationTemplateMutation,
+    useGetNotificationJobsQuery,
+    useRetryNotificationJobMutation,
+    useProcessNotificationJobsMutation,
+    useGetNotificationPreferencesQuery,
+    useUpdateNotificationPreferencesMutation,
+    useGetMyNotificationsQuery,
+    useMarkMyNotificationReadMutation,
+    useMarkAllMyNotificationsReadMutation,
+    useGetStaffPreferencesQuery,
+    useUpdateStaffPreferencesMutation,
+    useGetNotificationAnalyticsQuery,
+    useGetChatUsersQuery,
+    useGetChatMessagesQuery,
+    useSendChatMessageMutation,
+    useGetChatUnreadSummaryQuery,
+    useGetPatientConversationsQuery,
+    useGetPatientMessageHistoryQuery,
+    useSendPatientReplyMutation,
+    useGetDoctorConversationsQuery,
+    useGetDoctorMessageHistoryQuery,
+    useSendDoctorReplyMutation,
     useGetAllPermissionsQuery,
     useGetRolePermissionsQuery,
     useUpdateRolePermissionsMutation,
@@ -2055,8 +2149,6 @@ export const {
     useResetRolePermissionsMutation,
     useCloneRolePermissionsMutation,
     useGetRbacAuditLogsQuery,
-
-    // Privacy & 2FA Exports
     useSetup2FAMutation,
     useEnable2FAMutation,
     useVerify2FAMutation,
@@ -2067,27 +2159,20 @@ export const {
     useGetCurrentPatientConsentsQuery,
     useAddPatientConsentMutation,
     useRevokePatientConsentMutation,
-
-    // Analytics Exports
     useGetVolumeAnalyticsQuery,
     useGetRevenueAnalyticsQuery,
     useGetPerformanceAnalyticsQuery,
-    useGetReferralAnalyticsQuery,
-
-    // Document Management
     useGetPatientDocumentsQuery,
     useUploadDocumentMutation,
     useUpdateDocumentMutation,
     useDeleteDocumentMutation,
-
-    // Integrations
     useGetIntegrationsQuery,
     useUpdateIntegrationMutation,
     useTestIntegrationMutation,
     useGetIntegrationLogsQuery,
     useRetryIntegrationEventMutation,
-
-    // Settings & Backups
+    useRetryDeadLetterEventMutation,
+    useGetDeadLetterEventsQuery,
     useGetCenterSettingsQuery,
     useGetPublicCenterSettingsQuery,
     useGetPublicLandingOverviewQuery,
@@ -2095,6 +2180,11 @@ export const {
     useGetDatabaseSettingsQuery,
     useUpdateDatabaseSettingsMutation,
     useTestDatabaseSettingsMutation,
+    useVacuumDatabaseMutation,
+    useFlushServerCacheMutation,
+    useGetAdminTelemetryQuery,
+    useGetGovernancePoliciesQuery,
+    useUpdateGovernancePoliciesMutation,
     useGetAiSettingsQuery,
     useGetAiSettingsStatusQuery,
     useUpdateAiSettingsMutation,
@@ -2107,39 +2197,72 @@ export const {
     useGetBackupsQuery,
     useGenerateBackupMutation,
     useRestoreBackupMutation,
-
-    // Clinical Safety & Imports
     useGetSafetyTemplatesQuery,
     useSubmitSafetyResponseMutation,
     useGetExamSafetyResponsesQuery,
+    useGetReferralAnalyticsQuery,
     useImportPatientsMutation,
-
-    // PACS / Imaging
+    useGetSuppliersQuery,
+    useGetSupplierByIdQuery,
+    useCreateSupplierMutation,
+    useUpdateSupplierMutation,
+    useGetPurchaseOrdersQuery,
+    useGetPurchaseOrderByIdQuery,
+    useCreatePurchaseOrderMutation,
+    useUpdatePurchaseOrderStatusMutation,
+    useReceiveStockMutation,
+    useConsumeStockMutation,
+    useAdjustStockMutation,
+    useGetStockMovementsQuery,
+    useGetExpiryAlertsQuery,
+    useGetMachineByIdQuery,
+    useUpdateMachineMutation,
+    useDeleteMachineMutation,
+    useGetUtilizationReportQuery,
+    useGetServiceContractsQuery,
+    useCreateServiceContractMutation,
+    useUpdateServiceContractMutation,
+    useGetEquipmentMaintenanceQuery,
+    useCreateEquipmentMaintenanceMutation,
+    useUpdateEquipmentMaintenanceMutation,
+    useGetEquipmentDowntimeQuery,
+    useCreateEquipmentDowntimeMutation,
+    useUpdateEquipmentDowntimeMutation,
     useGetExamImagingStatusQuery,
     useGetPacsAiAnalysisJobsQuery,
     useGetPacsAiAnalysisQueueQuery,
     useRequestPacsAiAnalysisMutation,
     useProcessPacsAiAnalysisQueueMutation,
-    useGetPacsQuarantineQuery,
-    useLazySearchScheduledExamsQuery,
-    useReconcileQuarantineStudyMutation,
-    useDiscardQuarantineStudyMutation,
-    useUploadExamImagesMutation,
     useRetryPacsAiJobMutation,
     useCancelPacsAiJobMutation,
     useDeletePacsAiJobMutation,
     useRetryAllPacsAiJobsMutation,
     useCancelAllPacsAiJobsMutation,
-
-    // Realtime Chat & Messaging Hooks
-    useGetChatUsersQuery,
-    useGetChatMessagesQuery,
-    useSendChatMessageMutation,
-    useGetChatUnreadSummaryQuery,
-    useGetPatientConversationsQuery,
-    useGetPatientMessageHistoryQuery,
-    useSendPatientReplyMutation,
-    useGetDoctorConversationsQuery,
-    useGetDoctorMessageHistoryQuery,
-    useSendDoctorReplyMutation
+    useGetPacsQuarantineQuery,
+    useSearchScheduledExamsQuery,
+    useReconcileQuarantineStudyMutation,
+    useDiscardQuarantineStudyMutation,
+    useUploadExamImagesMutation,
+    useSyncModalityDicomMutation,
+    useGetOrthancSystemQuery,
+    useGetPacsConfigQuery,
+    useGetPacsDiagnosticsQuery,
+    useUpdatePacsConfigMutation,
+    usePingModalityDicomMutation,
+    useGetPacsAuditQuery,
+    useGetPacsRequestsQuery,
+    useGetPacsWorklistPreviewQuery,
+    useRefreshPacsWorklistMutation,
+    useGetPacsStorageSummaryQuery,
+    useRunPacsTieringMutation,
+    useGetAuditLogsQuery,
+    useGetAuditAlertsQuery,
+    useReviewAuditAlertMutation,
+    useRunAuditDetectionsMutation,
+    useVerifyAuditChainQuery,
+    useLazyGetInvoicesQuery,
+    useLazyGetInvoicePdfQuery,
+    useLazyLookupCaseReportQuery,
+    useLazySearchScheduledExamsQuery,
+    useLazyVerifyAuditChainQuery
 } = api;

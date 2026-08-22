@@ -8,6 +8,22 @@ import i18n from '../../i18n';
 import { useGetDashboardStatsQuery } from '../../store/api';
 import DashboardHome from '../DashboardHome';
 
+const DASHBOARD_PERMISSIONS = [
+    'CREATE_PATIENTS',
+    'VIEW_APPOINTMENTS',
+    'VIEW_PATIENTS',
+    'VIEW_REPORTS',
+    'WRITE_REPORTS',
+    'PERFORM_EXAMS',
+    'MANAGE_QUEUE',
+    'VIEW_ANALYTICS',
+    'VIEW_FINANCIALS',
+    'VIEW_STAFF',
+    'MANAGE_STAFF',
+    'VIEW_INVENTORY',
+    'CONSUME_INVENTORY',
+];
+
 vi.mock('../../store/api', () => ({
     useGetDashboardStatsQuery: vi.fn(),
 }));
@@ -31,12 +47,12 @@ vi.mock('recharts', () => {
     };
 });
 
-const renderDashboard = (role, stats) => {
+const renderDashboard = (role, stats, permissions = DASHBOARD_PERMISSIONS) => {
     const store = configureStore({
         reducer: { auth: authReducer },
         preloadedState: {
             auth: {
-                user: { user_id: 'user-1', name: 'Mona Ali', role, permissions: [] },
+                user: { user_id: 'user-1', name: 'Mona Ali', role, permissions },
                 token: 'test-token',
                 isAuthenticated: true,
             },
@@ -81,8 +97,9 @@ describe('DashboardHome', () => {
         });
 
         expect(screen.getByRole('heading', { name: 'Executive Operations Dashboard' })).toBeInTheDocument();
-        expect(screen.getByText(/12,500/)).toBeInTheDocument();
-        expect(screen.getByText('4')).toBeInTheDocument();
+        expect(screen.getAllByText(/12,500/).length).toBeGreaterThan(0);
+        expect(screen.getAllByText('4').length).toBeGreaterThan(0);
+        expect(screen.getByRole('region', { name: 'Operational priorities' })).toBeInTheDocument();
         expect(screen.getAllByText('No operational data yet').length).toBeGreaterThan(0);
         expect(screen.queryByText('99.2%')).not.toBeInTheDocument();
     });
@@ -131,7 +148,7 @@ describe('DashboardHome', () => {
         });
 
         expect(screen.getByRole('heading', { name: 'Front Desk Command Center' })).toBeInTheDocument();
-        expect(screen.getByText('Average wait 14 min')).toBeInTheDocument();
+        expect(screen.getAllByText('Average wait 14 min').length).toBeGreaterThan(0);
         expect(screen.getAllByRole('button', { name: /register patient/i })).toHaveLength(2);
     });
 
@@ -141,6 +158,23 @@ describe('DashboardHome', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
         expect(refetch).toHaveBeenCalledOnce();
+    });
+
+    it('keeps dashboard metrics visible but hides action shortcuts without permissions', () => {
+        renderDashboard('Receptionist', {
+            todayCheckIns: 7,
+            appointments: 10,
+            appointmentsPending: 2,
+            waitingRoom: 3,
+            averageWaitMinutes: 14,
+            completed: 5,
+            patientFlowData: [],
+        }, []);
+
+        expect(screen.getByRole('heading', { name: 'Front Desk Command Center' })).toBeInTheDocument();
+        expect(screen.getByText("Today's appointments")).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /register patient/i })).not.toBeInTheDocument();
+        expect(screen.getByText('No approved shortcuts available')).toBeInTheDocument();
     });
 
     it('shows measured clinical turnaround instead of a fabricated quality score', () => {

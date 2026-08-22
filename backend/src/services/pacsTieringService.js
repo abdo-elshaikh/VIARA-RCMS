@@ -10,7 +10,7 @@ const BATCH_SIZE = Number(process.env.PACS_TIERING_BATCH || 500);
 // one Orthanc-specific hook a deployment supplies; here we record the reference
 // so WADO can fetch-on-demand later. Keeping this string-based preserves the
 // swap-later contract (a native engine tiers the same rows the same way).
-const COLD_PREFIX = process.env.PACS_COLD_PREFIX || 's3://rcms-pacs-cold';
+const COLD_PREFIX = process.env.PACS_COLD_PREFIX || 's3://VIARA-pacs-cold';
 
 /**
  * Migrate a batch of aged 'hot' instances to the 'cold' tier.

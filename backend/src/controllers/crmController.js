@@ -181,9 +181,27 @@ const createCrmActivity = (db) => async (req, res, next) => {
 };
 
 const updateCrmActivity = (db) => async (req, res, next) => {
+    let client;
     try {
         const { id } = req.params;
         const data = updateCrmActivitySchema.parse(req.body);
+        client = await db.connect();
+        await client.query('BEGIN');
+        const existingResult = await client.query(
+            'SELECT * FROM crm_activities WHERE activity_id = $1 FOR UPDATE',
+            [id]
+        );
+        if (!existingResult.rows[0]) throw new AppError('Activity not found', 404);
+        const existing = existingResult.rows[0];
+        if (data.status && data.status !== existing.status) {
+            const allowedTransitions = { Pending: ['Completed', 'Cancelled'] };
+            if (!(allowedTransitions[existing.status] || []).includes(data.status)) {
+                throw new AppError(`Invalid CRM activity transition from ${existing.status} to ${data.status}`, 409);
+            }
+        }
+        if (data.dueDate && existing.status !== 'Pending') {
+            throw new AppError('Only pending activities can be rescheduled', 409);
+        }
 
         let query = 'UPDATE crm_activities SET updated_at = CURRENT_TIMESTAMP';
         const params = [];
@@ -206,12 +224,12 @@ const updateCrmActivity = (db) => async (req, res, next) => {
         query += ` WHERE activity_id = $${paramCount} RETURNING *`;
         params.push(id);
 
-        const result = await db.query(query, params);
+        const result = await client.query(query, params);
         if (result.rows.length === 0) return next(new AppError('Activity not found', 404));
         const activity = result.rows[0];
 
         if (data.status === 'Completed' || data.status === 'Cancelled') {
-            await db.query(`
+            await client.query(`
                 UPDATE notification_jobs
                 SET status = 'Cancelled', processed_at = NOW()
                 WHERE entity_type = 'CrmActivity'
@@ -220,7 +238,7 @@ const updateCrmActivity = (db) => async (req, res, next) => {
                   AND status = 'Pending'
             `, [activity.activity_id]);
         } else if (data.dueDate) {
-            await db.query(`
+            await client.query(`
                 UPDATE notification_jobs
                 SET scheduled_for = $1
                 WHERE entity_type = 'CrmActivity'
@@ -230,10 +248,14 @@ const updateCrmActivity = (db) => async (req, res, next) => {
             `, [data.dueDate, activity.activity_id]);
         }
 
+        await client.query('COMMIT');
         res.json(activity);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
@@ -357,8 +379,22 @@ const updateCampaignStatus = (db) => async (req, res, next) => {
             return res.json({ ...existing, audience_count: 0, scheduled_count: 0, duplicate_count: 0 });
         }
 
-        if (status === 'Active' && existing.status !== 'Draft') {
-            throw new AppError('Only draft campaigns can be activated', 400);
+        const allowedTransitions = {
+            Draft: ['Active', 'Cancelled'],
+            Active: ['Completed', 'Cancelled']
+        };
+        if (!(allowedTransitions[existing.status] || []).includes(status)) {
+            throw new AppError(`Invalid campaign transition from ${existing.status} to ${status}`, 409);
+        }
+
+        if (status === 'Completed') {
+            const queued = await client.query(`
+                SELECT 1
+                FROM marketing_campaign_recipients
+                WHERE campaign_id = $1 AND status = 'Queued'
+                LIMIT 1
+            `, [id]);
+            if (queued.rows.length) throw new AppError('A campaign with queued recipients cannot be completed', 409);
         }
 
         if (status === 'Active' && existing.end_date) {
@@ -379,7 +415,7 @@ const updateCampaignStatus = (db) => async (req, res, next) => {
 
             const scheduledFor = getCampaignScheduleDate(existing);
             const centerResult = await client.query('SELECT center_name FROM center_settings LIMIT 1');
-            const centerName = centerResult.rows[0]?.center_name || 'RCMS';
+            const centerName = centerResult.rows[0]?.center_name || 'VIARA';
 
             for (const member of members) {
                 const recipientResult = await client.query(`
@@ -500,10 +536,17 @@ const updateLoyaltyPoints = (db) => async (req, res, next) => {
         const result = await db.query(`
             UPDATE patients SET loyalty_points = loyalty_points + $1
             WHERE patient_id = $2
+              AND loyalty_points + $1 BETWEEN 0 AND 100000000
             RETURNING patient_id, first_name_enc, last_name_enc, phone_enc, loyalty_points
         `, [points, patientId]);
 
-        if (result.rows.length === 0) return next(new AppError('Patient not found', 404));
+        if (result.rows.length === 0) {
+            const patient = await db.query('SELECT 1 FROM patients WHERE patient_id = $1', [patientId]);
+            return next(new AppError(
+                patient.rows.length ? 'Loyalty adjustment would produce an invalid balance' : 'Patient not found',
+                patient.rows.length ? 409 : 404
+            ));
+        }
         res.json(mapPatientDetails({
             ...result.rows[0],
             patient_first_name_enc: result.rows[0].first_name_enc,

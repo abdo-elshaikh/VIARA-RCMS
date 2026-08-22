@@ -894,7 +894,7 @@ const DoctorModal = ({ visible, mode, title, form, setForm, onSave, onCancel, is
                         <span>
                             <span className="flex items-center gap-2 font-black"><KeyRound size={15} />{t('referringDoctors.portal.generateAfterSave', { defaultValue: 'Generate portal credentials after saving' })}</span>
                             <span className="mt-1 block text-xs font-semibold leading-5 text-blue-800 dark:text-blue-300">
-                                {t('referringDoctors.portal.generateAfterSaveHint', { defaultValue: 'After creation, RCMS opens the same credential handoff dialog used for patient portal passwords.' })}
+                                {t('referringDoctors.portal.generateAfterSaveHint', { defaultValue: 'After creation, VIARA opens the same credential handoff dialog used for patient portal passwords.' })}
                             </span>
                         </span>
                     </label>

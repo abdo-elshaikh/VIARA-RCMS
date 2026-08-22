@@ -20,6 +20,7 @@ describe('csrfProtection middleware', () => {
         '/api/portal/login',
         '/api/doctor-portal/login',
         '/api/public/case-status',
+        '/api/public/final-report',
     ])('allows public POST %s and seeds a CSRF cookie', async (path) => {
         const req = {
             method: 'POST',

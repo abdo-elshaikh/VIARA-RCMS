@@ -4,10 +4,10 @@ const { validateEnum, validateUUID, VALID_WAITING_LIST_STATUSES } = require('../
 
 const getWaitingList = (db) => async (req, res, next) => {
     try {
-        const { status, modalityId, date, limit = 100, offset = 0 } = req.query;
+        const { status, active, modalityId, date, limit = 100, offset = 0 } = req.query;
 
-        validateEnum(status, VALID_WAITING_LIST_STATUSES, 'status');
-        validateUUID(modalityId, 'modalityId');
+        if (status) validateEnum(status, VALID_WAITING_LIST_STATUSES, 'status');
+        if (modalityId) validateUUID(modalityId, 'modalityId');
 
         const values = [];
         let param = 1;
@@ -30,20 +30,16 @@ const getWaitingList = (db) => async (req, res, next) => {
         if (status) {
             query += ` AND wl.status = $${param++}`;
             values.push(status);
+        } else if (active === 'true') {
+            query += ` AND wl.status IN ('Waiting', 'Contacted')`;
+        } else if (active === 'false') {
+            query += ` AND wl.status IN ('Scheduled', 'Cancelled')`;
         }
 
         if (modalityId) {
             query += ` AND wl.modality_id = $${param++}`;
             values.push(modalityId);
         }
-
-        // Waitlist entries shouldn't be rigidly filtered by date.
-        // A Waitlisted patient wants an early slot, so they are always 
-        // eligible to be pulled in today regardless of their preferred future date.
-        // if (date) {
-        //     query += ` AND (wl.preferred_date IS NULL OR wl.preferred_date <= $${param++}::date)`;
-        //     values.push(date);
-        // }
 
         query += ` ORDER BY
             CASE wl.priority WHEN 'Emergency' THEN 1 WHEN 'Urgent' THEN 2 ELSE 3 END,
@@ -73,10 +69,63 @@ const getWaitingList = (db) => async (req, res, next) => {
 };
 
 const createWaitingListEntry = (db) => async (req, res, next) => {
+    let client;
     try {
         const data = req.body;
+        const modalityId = data.modalityId && data.modalityId.trim() !== '' ? data.modalityId.trim() : null;
+        const examTypeId = data.examTypeId && data.examTypeId.trim() !== '' ? data.examTypeId.trim() : null;
+        const preferredDate = data.preferredDate && data.preferredDate.trim() !== '' ? data.preferredDate.trim() : null;
+        const preferredStartTime = data.preferredStartTime && data.preferredStartTime.trim() !== '' ? data.preferredStartTime.trim() : null;
+        const preferredEndTime = data.preferredEndTime && data.preferredEndTime.trim() !== '' ? data.preferredEndTime.trim() : null;
 
-        const result = await db.query(`
+        if (preferredStartTime && preferredEndTime && preferredEndTime <= preferredStartTime) {
+            throw new AppError('Preferred end time must be after start time.', 400);
+        }
+
+        if (preferredDate) {
+            const today = new Date().toISOString().slice(0, 10);
+            if (preferredDate < today) {
+                throw new AppError('Preferred date cannot be in the past.', 400);
+            }
+        }
+
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const duplicateKey = [
+            data.patientId,
+            modalityId || '',
+            examTypeId || '',
+            preferredDate || '',
+            preferredStartTime || '',
+            preferredEndTime || ''
+        ].join('|');
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [duplicateKey]);
+
+        const duplicate = await client.query(`
+            SELECT waitlist_id
+            FROM waiting_list
+            WHERE patient_id = $1
+              AND modality_id IS NOT DISTINCT FROM $2::uuid
+              AND exam_type_id IS NOT DISTINCT FROM $3::uuid
+              AND preferred_date IS NOT DISTINCT FROM $4::date
+              AND preferred_start_time IS NOT DISTINCT FROM $5::time
+              AND preferred_end_time IS NOT DISTINCT FROM $6::time
+              AND status IN ('Waiting', 'Contacted')
+            LIMIT 1
+        `, [
+            data.patientId,
+            modalityId,
+            examTypeId,
+            preferredDate,
+            preferredStartTime,
+            preferredEndTime
+        ]);
+        if (duplicate.rows.length) {
+            throw new AppError('An active waiting list entry already exists for this patient and preference.', 409);
+        }
+
+        const result = await client.query(`
             INSERT INTO waiting_list (
                 patient_id, modality_id, exam_type_id, preferred_date, preferred_start_time,
                 preferred_end_time, priority, source, notes, created_by
@@ -85,41 +134,80 @@ const createWaitingListEntry = (db) => async (req, res, next) => {
             RETURNING *
         `, [
             data.patientId,
-            data.modalityId || null,
-            data.examTypeId || null,
-            data.preferredDate || null,
-            data.preferredStartTime || null,
-            data.preferredEndTime || null,
+            modalityId,
+            examTypeId,
+            preferredDate,
+            preferredStartTime,
+            preferredEndTime,
             data.priority || 'Routine',
             data.source || 'Walk-in',
             data.notes || null,
             req.user.user_id
         ]);
 
+        await client.query(
+            `INSERT INTO waiting_list_events
+             (waitlist_id, from_status, to_status, reason, changed_by)
+             VALUES ($1, NULL, 'Waiting', $2, $3)`,
+            [result.rows[0].waitlist_id, 'Added to waiting list', req.user.user_id]
+        );
+
+        await client.query('COMMIT');
+
         res.status(201).json(result.rows[0]);
     } catch (error) {
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (rollbackError) { /* ignore */ }
+        }
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
 const updateWaitingListEntry = (db) => async (req, res, next) => {
+    let client;
     try {
         const { id } = req.params;
         const data = req.body;
 
-        const existingResult = await db.query('SELECT * FROM waiting_list WHERE waitlist_id = $1', [id]);
+        if (data.status === 'Scheduled' || data.assignedAppointmentId !== undefined) {
+            throw new AppError('Schedule waiting list entries through appointment booking.', 409);
+        }
+
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const existingResult = await client.query('SELECT * FROM waiting_list WHERE waitlist_id = $1 FOR UPDATE', [id]);
         if (existingResult.rows.length === 0) {
-            return next(new AppError('Waiting list entry not found', 404));
+            throw new AppError('Waiting list entry not found', 404);
         }
 
         const existing = existingResult.rows[0];
+        if (['Scheduled', 'Cancelled'].includes(existing.status)) {
+            throw new AppError('Completed waiting list entries cannot be changed.', 409);
+        }
+        if (data.status && !['Waiting', 'Contacted', 'Cancelled'].includes(data.status)) {
+            throw new AppError(`Invalid waiting list transition from ${existing.status} to ${data.status}.`, 409);
+        }
+
+        const nextModalityId = data.modalityId !== undefined ? (data.modalityId && data.modalityId.trim() !== '' ? data.modalityId.trim() : null) : existing.modality_id;
+        const nextExamTypeId = data.examTypeId !== undefined ? (data.examTypeId && data.examTypeId.trim() !== '' ? data.examTypeId.trim() : null) : existing.exam_type_id;
+        const nextPreferredDate = data.preferredDate !== undefined ? (data.preferredDate && data.preferredDate.trim() !== '' ? data.preferredDate.trim() : null) : existing.preferred_date;
+        const nextPreferredStartTime = data.preferredStartTime !== undefined ? (data.preferredStartTime && data.preferredStartTime.trim() !== '' ? data.preferredStartTime.trim() : null) : existing.preferred_start_time;
+        const nextPreferredEndTime = data.preferredEndTime !== undefined ? (data.preferredEndTime && data.preferredEndTime.trim() !== '' ? data.preferredEndTime.trim() : null) : existing.preferred_end_time;
+
+        if (nextPreferredStartTime && nextPreferredEndTime && nextPreferredEndTime <= nextPreferredStartTime) {
+            throw new AppError('Preferred end time must be after start time.', 400);
+        }
+
         const nextEntry = {
             patient_id: data.patientId ?? existing.patient_id,
-            modality_id: data.modalityId !== undefined ? data.modalityId : existing.modality_id,
-            exam_type_id: data.examTypeId !== undefined ? data.examTypeId : existing.exam_type_id,
-            preferred_date: data.preferredDate !== undefined ? data.preferredDate : existing.preferred_date,
-            preferred_start_time: data.preferredStartTime !== undefined ? data.preferredStartTime : existing.preferred_start_time,
-            preferred_end_time: data.preferredEndTime !== undefined ? data.preferredEndTime : existing.preferred_end_time,
+            modality_id: nextModalityId,
+            exam_type_id: nextExamTypeId,
+            preferred_date: nextPreferredDate,
+            preferred_start_time: nextPreferredStartTime,
+            preferred_end_time: nextPreferredEndTime,
             priority: data.priority ?? existing.priority,
             source: data.source ?? existing.source,
             status: data.status ?? existing.status,
@@ -127,7 +215,7 @@ const updateWaitingListEntry = (db) => async (req, res, next) => {
             assigned_appointment_id: data.assignedAppointmentId !== undefined ? data.assignedAppointmentId : existing.assigned_appointment_id
         };
 
-        const result = await db.query(`
+        const result = await client.query(`
             UPDATE waiting_list
             SET patient_id = $1,
                 modality_id = $2,
@@ -158,9 +246,25 @@ const updateWaitingListEntry = (db) => async (req, res, next) => {
             id
         ]);
 
+        if (nextEntry.status !== existing.status) {
+            await client.query(
+                `INSERT INTO waiting_list_events
+                 (waitlist_id, from_status, to_status, reason, changed_by)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [id, existing.status, nextEntry.status, nextEntry.status === 'Cancelled' ? 'Cancelled by staff' : 'Status updated by staff', req.user.user_id]
+            );
+        }
+
+        await client.query('COMMIT');
+
         res.json(result.rows[0]);
     } catch (error) {
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (rollbackError) { /* ignore */ }
+        }
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 

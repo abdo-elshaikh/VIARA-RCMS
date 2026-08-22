@@ -11,6 +11,9 @@ const safeEqual = (actual, expected) => {
         && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 };
 
+const secretCache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
 /**
  * Middleware to verify incoming webhooks from external integration providers.
  * Requires the provider name to look up the correct API secret.
@@ -21,19 +24,35 @@ const safeEqual = (actual, expected) => {
  */
 const verifyWebhookSignature = (pool, providerName) => async (req, res, next) => {
     try {
-        const result = await pool.query(
-            'SELECT api_secret FROM integrations WHERE provider_name = $1 AND is_active = TRUE',
-            [providerName]
-        );
+        const cacheKey = `secret:${providerName}`;
+        let cached = secretCache.get(cacheKey);
 
-        if (result.rows.length === 0 || !result.rows[0].api_secret) {
-            return next(new AppError('Integration not configured or inactive', 400));
+        if (!cached || Date.now() > cached.expiresAt) {
+            const result = await pool.query(
+                `SELECT api_secret, secret_version, last_rotated_at
+                 FROM integrations
+                 WHERE provider_name = $1 AND is_active = TRUE`,
+                [providerName]
+            );
+
+            if (result.rows.length === 0 || !result.rows[0].api_secret) {
+                return next(new AppError('Integration not configured or inactive', 400));
+            }
+
+            const row = result.rows[0];
+            const storedSecret = row.api_secret;
+            const secret = storedSecret.startsWith('v2:') || /^[0-9a-f]+:[0-9a-f]+$/i.test(storedSecret)
+                ? decrypt(storedSecret)
+                : storedSecret;
+
+            cached = {
+                secret,
+                version: row.secret_version || 1,
+                lastRotatedAt: row.last_rotated_at,
+                expiresAt: Date.now() + CACHE_TTL_MS
+            };
+            secretCache.set(cacheKey, cached);
         }
-
-        const storedSecret = result.rows[0].api_secret;
-        const secret = storedSecret.startsWith('v2:') || /^[0-9a-f]+:[0-9a-f]+$/i.test(storedSecret)
-            ? decrypt(storedSecret)
-            : storedSecret;
 
         if (providerName === 'Stripe') {
             const signatureHeader = req.headers['stripe-signature'];
@@ -42,9 +61,9 @@ const verifyWebhookSignature = (pool, providerName) => async (req, res, next) =>
             const rawBody = req.rawBody;
             if (!rawBody) return next(new AppError('Raw body not captured for Stripe webhook verification', 500));
 
-            const stripeClient = stripe(secret);
+            const stripeClient = stripe(cached.secret);
             try {
-                stripeClient.webhooks.constructEvent(rawBody, signatureHeader, secret);
+                stripeClient.webhooks.constructEvent(rawBody, signatureHeader, cached.secret);
             } catch (sigErr) {
                 return next(new AppError(`Invalid Stripe signature: ${sigErr.message}`, 401));
             }
@@ -53,21 +72,21 @@ const verifyWebhookSignature = (pool, providerName) => async (req, res, next) =>
             const signatureHeader = req.headers['x-twilio-signature'];
             if (!signatureHeader) return next(new AppError('Missing Twilio signature', 401));
 
-            // Twilio validation requires the raw URL, method, and POST params.
-            // The raw body is URL-encoded form data; parse it for param extraction.
             const rawBody = req.rawBody;
             if (!rawBody) return next(new AppError('Raw body not captured for Twilio webhook verification', 500));
 
             const originalUrl = req.originalUrl;
             const params = new URLSearchParams(rawBody.toString());
 
-            if (!twilio.validateRequest(secret, originalUrl, params, signatureHeader)) {
+            if (!twilio.validateRequest(cached.secret, originalUrl, params, signatureHeader)) {
                 return next(new AppError('Invalid Twilio signature', 401));
             }
         } else {
             return next(new AppError('Unsupported provider for webhook verification', 400));
         }
 
+        req.integrationSecretVersion = cached.version;
+        req.integrationLastRotatedAt = cached.lastRotatedAt;
         next();
 
     } catch (error) {

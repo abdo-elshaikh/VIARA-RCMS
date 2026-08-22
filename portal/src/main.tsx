@@ -11,7 +11,7 @@ import { applyPortalTheme, getStoredTheme } from './utils/theme';
 // Resolve the saved appearance before React paints to prevent a bright flash
 // when a user opens the application in dark or system-dark mode.
 try {
-    const saved = JSON.parse(localStorage.getItem('rcms_preferences') || '{}');
+    const saved = JSON.parse(localStorage.getItem('VIARA_preferences') || '{}');
     const requestedTheme = saved.theme || getStoredTheme();
     const root = document.documentElement;
     applyPortalTheme(requestedTheme);
@@ -23,7 +23,7 @@ try {
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {
-    throw new Error('RCMS portal root element was not found.');
+    throw new Error('VIARA portal root element was not found.');
 }
 
 ReactDOM.createRoot(rootElement).render(

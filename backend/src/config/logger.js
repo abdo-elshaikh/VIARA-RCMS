@@ -40,7 +40,7 @@ const consoleFormat = winston.format.combine(
 const logger = winston.createLogger({
     level: process.env.LOG_LEVEL || 'info',
     format: logFormat,
-    defaultMeta: { service: 'rcms-backend' },
+    defaultMeta: { service: 'VIARA-backend' },
     transports: [
         // Error logs
         new winston.transports.File({

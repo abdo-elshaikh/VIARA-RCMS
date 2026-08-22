@@ -6,8 +6,17 @@ import { useGetEmployeeProfilesQuery, useUpdateEmployeeProfileMutation } from '.
 import { getErrorMessage } from '../../utils/getErrorMessage';
 import Modal from '../ui/Modal';
 
-const emptyForm = { employeeId: '', department: '', jobTitle: '', hireDate: '', employmentStatus: 'Full-Time', salary: '' };
+const emptyForm = { employeeId: '', department: '', jobTitle: '', hireDate: '', terminationDate: '', employmentStatus: 'Full-Time' };
 const inputClass = 'h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-indigo-500 dark:focus:ring-indigo-500/20';
+const asNullableText = value => {
+    const trimmed = value.trim();
+    return trimmed || null;
+};
+const formatDateOnly = (value, locale, fallback) => {
+    if (!value) return fallback;
+    const date = new Date(`${String(value).substring(0, 10)}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? fallback : date.toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
 const EmployeeDirectory = () => {
     const { t, i18n } = useTranslation('workspace');
@@ -43,8 +52,8 @@ const EmployeeDirectory = () => {
             department: employee.department || '',
             jobTitle: employee.job_title || '',
             hireDate: employee.hire_date ? employee.hire_date.substring(0, 10) : '',
-            employmentStatus: employee.employment_status || 'Full-Time',
-            salary: employee.salary ?? ''
+            terminationDate: employee.termination_date ? employee.termination_date.substring(0, 10) : '',
+            employmentStatus: employee.employment_status || 'Full-Time'
         });
     };
 
@@ -56,13 +65,13 @@ const EmployeeDirectory = () => {
         if (!editingEmployee) return;
         const payload = {
             id: editingEmployee.user_id,
-            employeeId: form.employeeId.trim(),
-            department: form.department.trim(),
-            jobTitle: form.jobTitle.trim(),
+            employeeId: asNullableText(form.employeeId),
+            department: asNullableText(form.department),
+            jobTitle: asNullableText(form.jobTitle),
+            hireDate: form.hireDate || null,
+            terminationDate: form.terminationDate || null,
             employmentStatus: form.employmentStatus
         };
-        if (form.hireDate) payload.hireDate = form.hireDate;
-        if (editingEmployee.salary !== undefined && form.salary !== '') payload.salary = Number(form.salary);
         try {
             await updateProfile(payload).unwrap();
             toast.success(copy('updateSuccess'));
@@ -72,8 +81,7 @@ const EmployeeDirectory = () => {
         }
     };
 
-    const formatDate = value => value ? new Date(value).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' }) : copy('unknown');
-    const money = value => new Intl.NumberFormat(locale, { style: 'currency', currency: 'EGP', minimumFractionDigits: 2 }).format(Number(value || 0));
+    const formatDate = value => formatDateOnly(value, locale, copy('unknown'));
 
     return (
         <div className="space-y-6">
@@ -129,7 +137,7 @@ const EmployeeDirectory = () => {
                 ) : (
                     <div className="grid gap-4 p-5 md:grid-cols-2 2xl:grid-cols-3">
                         {visibleProfiles.map(employee => (
-                            <EmployeeCard key={employee.user_id} employee={employee} copy={copy} formatDate={formatDate} money={money} onEdit={openEdit} />
+                            <EmployeeCard key={employee.user_id} employee={employee} copy={copy} formatDate={formatDate} onEdit={openEdit} />
                         ))}
                     </div>
                 )}
@@ -140,7 +148,7 @@ const EmployeeDirectory = () => {
                 <form onSubmit={handleSave} className="space-y-5">
                     <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/90 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
                         <p className="text-xs font-black text-indigo-950 dark:text-indigo-100">{editingEmployee?.full_name}</p>
-                        <p className="mt-0.5 text-xs font-medium text-indigo-700 dark:text-indigo-300">{editingEmployee?.role} · {editingEmployee?.email}</p>
+                        <p className="mt-0.5 text-xs font-medium text-indigo-700 dark:text-indigo-300">{editingEmployee?.role} - {editingEmployee?.email}</p>
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -161,14 +169,10 @@ const EmployeeDirectory = () => {
                         <Field label={copy('hireDate')}>
                             <input type="date" value={form.hireDate} onChange={event => setField('hireDate', event.target.value)} className={inputClass} />
                         </Field>
-                        {editingEmployee?.salary !== undefined && (
-                            <Field label={copy('salary')}>
-                                <input type="number" min="0" step="0.01" value={form.salary} onChange={event => setField('salary', event.target.value)} className={inputClass} />
-                            </Field>
-                        )}
+                        <Field label={copy('terminationDate', { defaultValue: 'Termination date' })}>
+                            <input type="date" min={form.hireDate || undefined} value={form.terminationDate} onChange={event => setField('terminationDate', event.target.value)} className={inputClass} />
+                        </Field>
                     </div>
-
-                    <p className="text-[11px] font-medium leading-5 text-slate-500 dark:text-slate-400">{copy('salaryHelp')}</p>
 
                     <div className="flex flex-col-reverse gap-2 border-t border-slate-100/80 pt-4 dark:border-white/5 sm:flex-row sm:justify-end">
                         <button type="button" onClick={closeEdit} disabled={isUpdating} className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-white/5">
@@ -205,7 +209,7 @@ const Detail = ({ label, children }) => (
     </div>
 );
 
-const EmployeeCard = ({ employee, copy, formatDate, money, onEdit }) => (
+const EmployeeCard = ({ employee, copy, formatDate, onEdit }) => (
     <article className="group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:border-white/10 dark:bg-slate-900/60">
         <div className="absolute inset-y-0 start-0 w-1 bg-indigo-500" />
         <div className="flex items-start justify-between gap-3">
@@ -245,16 +249,19 @@ const EmployeeCard = ({ employee, copy, formatDate, money, onEdit }) => (
                     {formatDate(employee.hire_date)}
                 </span>
             </Detail>
+            {employee.termination_date && (
+                <Detail label={copy('terminationDate', { defaultValue: 'Termination date' })}>
+                    <span className="inline-flex items-center gap-1">
+                        <Calendar size={13} />
+                        {formatDate(employee.termination_date)}
+                    </span>
+                </Detail>
+            )}
             <Detail label={copy('employmentStatus')}>
                 <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     {copy(`statuses.${employee.employment_status || 'Full-Time'}`)}
                 </span>
             </Detail>
-            {employee.salary !== undefined && (
-                <Detail label={copy('salary')}>
-                    <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">{money(employee.salary)}</span>
-                </Detail>
-            )}
         </dl>
     </article>
 );

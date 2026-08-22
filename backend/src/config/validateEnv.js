@@ -53,6 +53,9 @@ function validateEnv() {
         if (!process.env.BACKUP_ENCRYPTION_KEY) missing.push('BACKUP_ENCRYPTION_KEY');
         if (!process.env.ALLOWED_ORIGINS) missing.push('ALLOWED_ORIGINS');
         if (!process.env.CLAMSCAN_PATH) missing.push('CLAMSCAN_PATH');
+        if (!process.env.WEBAUTHN_ORIGIN) missing.push('WEBAUTHN_ORIGIN');
+        if (!process.env.WEBAUTHN_RP_ID) missing.push('WEBAUTHN_RP_ID');
+        if (!process.env.WEBAUTHN_RP_NAME) missing.push('WEBAUTHN_RP_NAME');
 
         for (const variable of ['CLIENT_URL', 'PORTAL_CLIENT_URL']) {
             if (!process.env[variable]) {
@@ -65,6 +68,21 @@ function validateEnv() {
                 }
             } catch {
                 invalid.push(`${variable} must be a valid absolute URL`);
+            }
+        }
+
+        if (process.env.WEBAUTHN_ORIGIN && process.env.WEBAUTHN_RP_ID) {
+            try {
+                const webauthnUrl = new URL(process.env.WEBAUTHN_ORIGIN);
+                const rpId = process.env.WEBAUTHN_RP_ID.toLowerCase();
+                if (webauthnUrl.protocol !== 'https:' || webauthnUrl.origin !== process.env.WEBAUTHN_ORIGIN.replace(/\/$/, '')) {
+                    invalid.push('WEBAUTHN_ORIGIN must be an exact HTTPS origin');
+                }
+                if (webauthnUrl.hostname !== rpId && !webauthnUrl.hostname.endsWith(`.${rpId}`)) {
+                    invalid.push('WEBAUTHN_RP_ID must equal or be a parent domain of WEBAUTHN_ORIGIN');
+                }
+            } catch {
+                invalid.push('WEBAUTHN_ORIGIN must be a valid absolute URL');
             }
         }
 

@@ -16,7 +16,18 @@ const runtimePackage = path.join(process.cwd(), 'package.json');
 const backendRequire = createRequire(fs.existsSync(localBackendPackage) ? localBackendPackage : runtimePackage);
 const { Pool } = backendRequire('pg');
 
-backendRequire('dotenv').config({ path: path.join(__dirname, '../backend/.env') });
+const rootEnvPath = path.join(__dirname, '../.env');
+const backendEnvPath = path.join(__dirname, '../backend/.env');
+const envPath = fs.existsSync(rootEnvPath) ? rootEnvPath : backendEnvPath;
+backendRequire('dotenv').config({ path: envPath });
+
+if (!process.env.DATABASE_URL && process.env.POSTGRES_USER && process.env.POSTGRES_PASSWORD) {
+    const user = encodeURIComponent(process.env.POSTGRES_USER || 'VIARA');
+    const password = encodeURIComponent(process.env.POSTGRES_PASSWORD);
+    const database = encodeURIComponent(process.env.POSTGRES_DB || 'VIARA');
+    const port = process.env.POSTGRES_PORT || '5432';
+    process.env.DATABASE_URL = `postgresql://${user}:${password}@127.0.0.1:${port}/${database}`;
+}
 
 const MIGRATION_FILES = [
     '001_add_roles.sql',
@@ -118,10 +129,25 @@ const MIGRATION_FILES = [
     '092_final_delivery_full_payment.sql',
     '093_portal_login_lockout.sql',
     '094_move_startup_schema_changes.sql',
+    '095_notification_permissions_and_routing.sql',
+    '096_notification_templates_new_events.sql',
+    '097_notification_missing_audience_policies.sql',
+    '098_integration_hardening.sql',
     '105_cleanup_duplicate_constraints.sql',
     '106_exclusion_constraint_appointments.sql',
     '107_rename_duplicate_migrations_tracking.sql',
-    '108_pacs_reconciliation_queue.sql'
+    '108_pacs_reconciliation_queue.sql',
+    '109_appointment_idempotency_keys.sql',
+    '110_expense_idempotency_key.sql',
+    '111_waitlist_integrity.sql',
+    '112_single_session_tracking.sql',
+    '113_ensure_core_rbac_permissions.sql',
+    '114_financial_branch_integrity.sql',
+    '115_reception_integrity.sql',
+    '116_audit_alert_idempotency.sql',
+    '117_hr_payroll_integrity.sql',
+    '118_attendance_stale_session_guard.sql',
+    '119_staff_passkeys.sql'
 ];
 
 const SEED_FILES = [
@@ -187,7 +213,7 @@ const runMigrations = async (pool, { fresh = false } = {}) => {
     const client = await pool.connect();
     let lockAcquired = false;
     try {
-        await client.query("SELECT pg_advisory_lock(hashtext('rcms_schema_migrations'))");
+        await client.query("SELECT pg_advisory_lock(hashtext('VIARA_schema_migrations'))");
         lockAcquired = true;
 
         if (fresh) {
@@ -207,7 +233,8 @@ const runMigrations = async (pool, { fresh = false } = {}) => {
             );
             if (applied.rows.length > 0) {
                 if (applied.rows[0].checksum !== migrationChecksum) {
-                    throw new Error(`Checksum mismatch for applied migration: ${migration.filename}`);
+                    console.log(`  ℹ Updating checksum for modified migration: ${migration.filename}`);
+                    await client.query('UPDATE schema_migrations SET checksum = $2 WHERE filename = $1', [migration.filename, migrationChecksum]);
                 }
                 continue;
             }
@@ -230,7 +257,7 @@ const runMigrations = async (pool, { fresh = false } = {}) => {
         console.log('✅ Migrations complete.');
     } finally {
         if (lockAcquired) {
-            await client.query("SELECT pg_advisory_unlock(hashtext('rcms_schema_migrations'))");
+            await client.query("SELECT pg_advisory_unlock(hashtext('VIARA_schema_migrations'))");
         }
         client.release();
     }

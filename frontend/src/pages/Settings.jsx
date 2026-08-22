@@ -9,8 +9,6 @@ import {
     ChevronRight,
     Database,
     FileText,
-    KeyRound,
-    LockKeyhole,
     Microscope,
     Monitor,
     Palette,
@@ -21,19 +19,16 @@ import {
     ShieldAlert,
     Sliders,
     Terminal,
-    UserCog,
     UserRound,
     Users,
     X
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { selectCurrentUser } from '../store/authSlice';
 import { selectPreferences } from '../store/preferencesSlice';
 
-import ProfileSettings from '../components/settings/ProfileSettings';
-import SecuritySettings from '../components/settings/SecuritySettings';
 import AppearanceSettings from '../components/settings/AppearanceSettings';
 import PreferencesSettings from '../components/settings/PreferencesSettings';
 import AdminSettings from '../components/settings/AdminSettings';
@@ -53,8 +48,6 @@ const BackupManagement = lazy(() => import('./BackupManagement'));
 const AuditLogs = lazy(() => import('./AuditLogs'));
 
 const SECTION_COMPONENTS = {
-    profile: ProfileSettings,
-    security: SecuritySettings,
     appearance: AppearanceSettings,
     preferences: PreferencesSettings,
     notifications: NotificationSettingsPanel,
@@ -120,11 +113,10 @@ const NavItem = ({ tab, selected, collapsed, groupName, onClick }) => {
                     onClick={() => onClick(tab.id)}
                     aria-current={selected ? 'page' : undefined}
                     aria-label={tab.label}
-                    className={`relative flex h-11 w-11 items-center justify-center rounded-2xl border transition-all duration-200 ${
-                        selected
+                    className={`relative flex h-11 w-11 items-center justify-center rounded-2xl border transition-all duration-200 ${selected
                             ? `${accent.activeIconBg} text-white ${accent.glow} ring-2 ${accent.ring}`
                             : 'border-transparent text-slate-500 hover:border-slate-200 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-800 dark:hover:bg-slate-800/80 dark:hover:text-slate-100'
-                    }`}
+                        }`}
                 >
                     <Icon size={18} aria-hidden="true" />
                     {selected && (
@@ -151,17 +143,15 @@ const NavItem = ({ tab, selected, collapsed, groupName, onClick }) => {
             type="button"
             onClick={() => onClick(tab.id)}
             aria-current={selected ? 'page' : undefined}
-            className={`group relative flex w-full items-start gap-3 rounded-2xl border px-3.5 py-2.5 text-start transition-all duration-200 ${
-                selected
+            className={`group relative flex w-full items-start gap-3 rounded-2xl border px-3.5 py-2.5 text-start transition-all duration-200 ${selected
                     ? `${accent.activeBorder} bg-gradient-to-r ${accent.activeGradient} shadow-sm ring-1 ${accent.ring}`
                     : 'border-transparent text-slate-600 hover:border-slate-200/80 hover:bg-white/80 hover:text-slate-950 dark:text-slate-400 dark:hover:border-slate-800/80 dark:hover:bg-slate-900/60 dark:hover:text-slate-100'
-            }`}
+                }`}
         >
-            <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all duration-200 ${
-                selected
+            <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all duration-200 ${selected
                     ? `${accent.activeIconBg} text-white shadow-md ${accent.glow}`
                     : 'bg-slate-100 text-slate-500 group-hover:bg-cyan-50 group-hover:text-cyan-700 dark:bg-slate-800 dark:text-slate-400 dark:group-hover:bg-cyan-950 dark:group-hover:text-cyan-300'
-            }`}>
+                }`}>
                 <Icon size={16} aria-hidden="true" />
             </span>
 
@@ -176,9 +166,8 @@ const NavItem = ({ tab, selected, collapsed, groupName, onClick }) => {
 
             <ChevronRight
                 size={14}
-                className={`mt-2 shrink-0 transition-transform group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 ${
-                    selected ? accent.activeText : 'text-slate-300 dark:text-slate-600'
-                }`}
+                className={`mt-2 shrink-0 transition-transform group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 ${selected ? accent.activeText : 'text-slate-300 dark:text-slate-600'
+                    }`}
                 aria-hidden="true"
             />
         </button>
@@ -208,17 +197,25 @@ const Settings = () => {
     const currentUser = useSelector(selectCurrentUser);
     const preferences = useSelector(selectPreferences);
     const [searchParams, setSearchParams] = useSearchParams();
-    
+    const navigate = useNavigate();
+
     // Collapsed sidebar navigation state (stored in localStorage)
     const [isNavCollapsed, setIsNavCollapsed] = useState(() => {
-        const saved = localStorage.getItem('rcms_settings_nav_collapsed');
+        const saved = localStorage.getItem('VIARA_settings_nav_collapsed');
         if (saved !== null) return saved === 'true';
         return Boolean(preferences?.compactSidebar);
     });
 
     const role = currentUser?.role || 'Staff';
+    const effectivePermissions = new Set([
+        ...(currentUser?.permissions || []),
+        ...(currentUser?.elevatedPermissions || [])
+    ]);
+    const canViewAuditLogs = ['Admin', 'Developer'].includes(role)
+        || effectivePermissions.has('VIEW_AUDIT_TRAILS')
+        || effectivePermissions.has('VIEW_AUDIT_LOGS');
     const mustChangePassword = Boolean(currentUser?.mustChangePassword);
-    const initialTab = mustChangePassword ? 'security' : (searchParams.get('tab') || 'profile');
+    const initialTab = searchParams.get('tab') || 'appearance';
     const [activeTab, setActiveTab] = useState(initialTab);
     const [query, setQuery] = useState('');
     const [animKey, setAnimKey] = useState(0);
@@ -227,17 +224,11 @@ const Settings = () => {
     const isRtl = i18n.dir() === 'rtl';
 
     useEffect(() => {
-        localStorage.setItem('rcms_settings_nav_collapsed', String(isNavCollapsed));
+        localStorage.setItem('VIARA_settings_nav_collapsed', String(isNavCollapsed));
     }, [isNavCollapsed]);
 
     const tabs = useMemo(() => {
-        if (mustChangePassword) {
-            return [{ id: 'security', group: 'personal', label: t('settings.tabs.security'), description: t('settings.tabDescriptions.security'), icon: KeyRound }];
-        }
-
         const available = [
-            { id: 'profile', group: 'personal', label: t('settings.tabs.profile'), description: t('settings.tabDescriptions.profile'), icon: UserCog },
-            { id: 'security', group: 'personal', label: t('settings.tabs.security'), description: t('settings.tabDescriptions.security'), icon: KeyRound },
             { id: 'appearance', group: 'personal', label: t('settings.tabs.appearance'), description: t('settings.tabDescriptions.appearance'), icon: Palette },
             { id: 'preferences', group: 'personal', label: t('settings.tabs.preferences'), description: t('settings.tabDescriptions.preferences'), icon: Sliders },
             { id: 'notifications', group: 'personal', label: t('settings.tabs.notifications'), description: t('settings.tabDescriptions.notifications'), icon: BellRing },
@@ -260,9 +251,12 @@ const Settings = () => {
                 { id: 'admin', group: 'organization', label: t('settings.tabs.system'), description: t('settings.tabDescriptions.system'), icon: SettingsIcon },
                 { id: 'roles', group: 'advanced', label: t('settings.tabs.roles'), description: t('settings.tabDescriptions.roles'), icon: ShieldAlert },
                 { id: 'privacy', group: 'advanced', label: t('settings.tabs.privacy'), description: t('settings.tabDescriptions.privacy'), icon: UserRound },
-                { id: 'auditLogs', group: 'advanced', label: t('settings.tabs.auditLogs'), description: t('settings.tabDescriptions.auditLogs'), icon: FileText },
                 { id: 'backups', group: 'advanced', label: t('settings.tabs.backups'), description: t('settings.tabDescriptions.backups'), icon: Database }
             );
+        }
+
+        if (canViewAuditLogs) {
+            available.push({ id: 'auditLogs', group: 'advanced', label: t('settings.tabs.auditLogs'), description: t('settings.tabDescriptions.auditLogs'), icon: FileText });
         }
 
         if (isDeveloper) {
@@ -273,7 +267,7 @@ const Settings = () => {
         }
 
         return available;
-    }, [mustChangePassword, role, t]);
+    }, [canViewAuditLogs, role, t]);
 
     const normalizedQuery = query.trim().toLocaleLowerCase(locale);
     const filteredTabs = normalizedQuery
@@ -294,11 +288,16 @@ const Settings = () => {
     };
 
     useEffect(() => {
-        if (!tabs.length) return;
-        if (mustChangePassword) {
-            if (activeTab !== 'security') setActiveTab('security');
-            return;
+        const legacyTab = searchParams.get('tab');
+        if (mustChangePassword || legacyTab === 'security') {
+            navigate('/profile?section=security', { replace: true });
+        } else if (legacyTab === 'profile') {
+            navigate('/profile', { replace: true });
         }
+    }, [mustChangePassword, navigate, searchParams]);
+
+    useEffect(() => {
+        if (!tabs.length) return;
 
         const param = searchParams.get('tab');
         if (param && tabs.some(tab => tab.id === param)) {
@@ -316,7 +315,7 @@ const Settings = () => {
             next.set('tab', fallback);
             setSearchParams(next, { replace: true });
         }
-    }, [activeTab, mustChangePassword, searchParams, setSearchParams, tabs]);
+    }, [activeTab, searchParams, setSearchParams, tabs]);
 
     useEffect(() => {
         const activePill = mobileNavRef.current?.querySelector('[aria-current="page"]');
@@ -362,22 +361,11 @@ const Settings = () => {
                     </div>
                 </header>
 
-                {mustChangePassword && (
-                    <div role="alert" className="mb-5 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-                        <LockKeyhole size={19} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300" aria-hidden="true" />
-                        <div>
-                            <p className="text-sm font-bold">{t('settings.passwordRequired.title')}</p>
-                            <p className="mt-1 text-xs leading-5 text-amber-800 dark:text-amber-200">{t('settings.passwordRequired.description')}</p>
-                        </div>
-                    </div>
-                )}
-
                 {/*  settings navigation with Minimizable & Resizable Sidebar */}
                 <div className={`grid items-start gap-5 transition-all duration-300 ${isNavCollapsed ? 'lg:grid-cols-[76px_minmax(0,1fr)]' : 'lg:grid-cols-[280px_minmax(0,1fr)]'}`}>
                     <aside
-                        className={`hidden rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-sm backdrop-blur-xl transition-all duration-300 dark:border-slate-800/80 dark:bg-slate-900/60 lg:sticky lg:top-5 lg:block ${
-                            isNavCollapsed ? 'w-[76px]' : 'w-[280px]'
-                        }`}
+                        className={`hidden rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-sm backdrop-blur-xl transition-all duration-300 dark:border-slate-800/80 dark:bg-slate-900/60 lg:sticky lg:top-5 lg:block ${isNavCollapsed ? 'w-[76px]' : 'w-[280px]'
+                            }`}
                         aria-label={t('settings.navigationLabel')}
                     >
                         {/* Sidebar Header & Collapse Toggle */}
@@ -391,9 +379,8 @@ const Settings = () => {
                                 type="button"
                                 onClick={() => setIsNavCollapsed(prev => !prev)}
                                 title={isNavCollapsed ? t('common.expand', { defaultValue: 'Expand Navigation' }) : t('common.minimize', { defaultValue: 'Minimize Navigation' })}
-                                className={`flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white ${
-                                    isNavCollapsed ? 'mx-auto' : ''
-                                }`}
+                                className={`flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white ${isNavCollapsed ? 'mx-auto' : ''
+                                    }`}
                             >
                                 {isNavCollapsed ? (
                                     <PanelLeftOpen size={16} className="rtl:rotate-180" />
@@ -530,7 +517,7 @@ const Settings = () => {
                                         <div className="h-6 w-6 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
                                     </div>
                                 }>
-                                    {ActiveComponent ? <ActiveComponent /> : null}
+                                    {ActiveComponent ? <ActiveComponent embedded={true} /> : null}
                                 </Suspense>
                             </div>
                         </section>

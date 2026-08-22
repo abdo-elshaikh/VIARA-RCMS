@@ -13,7 +13,6 @@ import {
     Edit3,
     Eye,
     FilterX,
-    GitMerge,
     Mail,
     MapPin,
     Phone,
@@ -29,7 +28,14 @@ import {
     Shield,
     HeartPulse,
     PhoneCall,
-    CheckCircle2
+    CheckCircle2,
+    Copy,
+    Sparkles,
+    LayoutGrid,
+    List,
+    UserCheck,
+    UserX,
+    Calendar
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -44,9 +50,7 @@ import { getErrorMessage } from '../utils/getErrorMessage';
 import { hasDeveloperOrAdminRole } from '../utils/roles';
 import PatientImportModal from '../components/patient/PatientImportModal';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
-import { PageHeader, MetricCard } from '../components/ui';
 import { selectCurrentUser } from '../store/authSlice';
-import { inputClass, secondaryBtn } from '../utils/designTokens';
 
 const emptyPatientForm = {
     firstName: '',
@@ -91,7 +95,7 @@ const TABLE_COLUMNS = [
 const FILTER_PILLS = ['all', 'recent', 'missingContact', 'missingEmail'];
 const GENDER_OPTIONS = ['Male', 'Female', 'Other'];
 const STATUS_OPTIONS = ['Active', 'Inactive', 'Deceased', 'Merged', 'Restricted'];
-const PAGE_SIZES = [25, 50, 100];
+const PAGE_SIZES = [10, 25, 50, 100];
 
 const cleanPayload = form => Object.fromEntries(Object.entries(form).map(([key, value]) => [
     key,
@@ -118,6 +122,27 @@ const toPatientForm = p => ({
     patientStatus: p.patient_status || 'Active',
 });
 
+const initials = (name = '') => name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase() || '-';
+
+const calculateAge = (dob) => {
+    if (!dob) return null;
+    const birthDate = new Date(dob);
+    if (isNaN(birthDate.getTime())) return null;
+    const diff = Date.now() - birthDate.getTime();
+    const ageDate = new Date(diff);
+    return Math.abs(ageDate.getUTCFullYear() - 1970);
+};
+
+const copyText = async (value, successMsg) => {
+    if (!value) return;
+    try {
+        await navigator.clipboard?.writeText(value);
+        toast.success(successMsg || 'Copied to clipboard');
+    } catch {
+        toast.error('Copy failed');
+    }
+};
+
 const SortTh = ({ columnKey, sortConfig, onSort, children }) => {
     const active = sortConfig.key === columnKey;
     return (
@@ -125,184 +150,161 @@ const SortTh = ({ columnKey, sortConfig, onSort, children }) => {
             <button
                 type="button"
                 onClick={() => onSort(columnKey)}
-                className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest transition-colors ${active ? 'text-teal-700 dark:text-teal-400' : 'text-slate-400 hover:text-slate-700 dark:hover:text-white'}`}
+                className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider transition-colors ${
+                    active ? 'text-teal-700 dark:text-teal-300' : 'text-slate-400 hover:text-slate-700 dark:hover:text-white'
+                }`}
             >
-                {children}
+                <span>{children}</span>
                 <ChevronDown size={12} className={`transition-transform ${active && sortConfig.direction === 'asc' ? 'rotate-180' : ''}`} />
             </button>
         </th>
     );
 };
 
-const RowActions = ({ editing, isSaving, onView, onEdit, onSave, onCancel, onDelete }) => {
-    const { t } = useTranslation('patients');
-    return (
-        <div className="flex items-center justify-end gap-1">
-            {editing ? (
-                <>
-                    <ActionBtn variant="success" onClick={onSave} disabled={isSaving} icon={<Save size={12} />} label={t('rowActions.save')} />
-                    <ActionBtn variant="ghost" onClick={onCancel} icon={<X size={12} />} label={t('rowActions.cancel')} />
-                </>
-            ) : (
-                <>
-                    <ActionBtn variant="blue" onClick={onView} icon={<Eye size={12} />} label={t('rowActions.view')} />
-                    <ActionBtn variant="violet" onClick={onEdit} icon={<Edit3 size={12} />} label={t('rowActions.edit')} />
-                    {onDelete && <ActionBtn variant="red" onClick={onDelete} icon={<Trash2 size={12} />} label={t('rowActions.delete')} iconOnly />}
-                </>
-            )}
-        </div>
-    );
-};
-
-const ACTION_VARIANTS = {
-    success: 'bg-emerald-50/80 border-emerald-200 text-emerald-700 hover:bg-emerald-100/80 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-300',
-    ghost: 'bg-slate-50/80 border-slate-200 text-slate-600 hover:bg-slate-100/80 dark:bg-slate-800/80 dark:border-slate-700 dark:text-slate-350',
-    blue: 'bg-blue-50/80 border-blue-200 text-blue-700 hover:bg-blue-100/80 dark:bg-blue-500/10 dark:border-blue-500/20 dark:text-blue-300',
-    violet: 'bg-indigo-50/80 border-indigo-200 text-indigo-700 hover:bg-indigo-100/80 dark:bg-indigo-500/10 dark:border-indigo-500/20 dark:text-indigo-300',
-    red: 'bg-rose-50/80 border-rose-200 text-rose-700 hover:bg-rose-100/80 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-300',
-};
-
-const ActionBtn = ({ variant, onClick, disabled, icon, label, iconOnly = false }) => (
-    <button
-        type="button"
-        onClick={onClick}
-        disabled={disabled}
-        title={label}
-        className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-medium transition-all hover:-translate-y-0.5 disabled:opacity-50 ${ACTION_VARIANTS[variant]}`}
-    >
-        {icon}{!iconOnly && label}
-    </button>
-);
-
-const editableColumnKeys = ['name', 'phone', 'email', 'gender', 'date_of_birth', 'address'];
-
 const CellValue = ({ row, columnKey }) => {
     const { t } = useTranslation('patients');
-    const na = <span className="text-slate-400">{t('fallback.na')}</span>;
-    if (columnKey === 'name') return (
-        <div className="min-w-[160px]">
-            <p className="font-medium text-slate-900 dark:text-white">{row.name || t('fallback.unnamed')}</p>
-            {row.address && (
-                <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400 max-w-[160px] truncate">
-                    <MapPin size={9} className="shrink-0 text-teal-500" />{row.address}
-                </p>
-            )}
-        </div>
-    );
-    if (columnKey === 'created_at') return <span className="whitespace-nowrap text-slate-500 text-xs">{new Date(row.created_at).toLocaleDateString()}</span>;
-    if (columnKey === 'date_of_birth') return <span className="whitespace-nowrap text-xs">{row.date_of_birth || na}</span>;
-    if (columnKey === 'email') return <span className="block max-w-[175px] truncate text-xs text-slate-600 dark:text-slate-300">{row.email || na}</span>;
-    if (columnKey === 'phone') return <span className="whitespace-nowrap text-xs font-mono text-slate-700 dark:text-slate-300">{row.phone || na}</span>;
-    if (columnKey === 'gender') return <span className="text-xs text-slate-600 dark:text-slate-300">{row.gender ? t(`gender.${row.gender}`) : na}</span>;
+    const na = <span className="text-slate-400 dark:text-slate-600">-</span>;
+    
+    if (columnKey === 'name') {
+        const age = calculateAge(row.date_of_birth);
+        return (
+            <div className="flex min-w-0 items-center gap-3">
+                <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-black border ${
+                    row.gender === 'Female'
+                        ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                        : 'bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-500/30'
+                }`}>
+                    {initials(row.name)}
+                </span>
+                <div className="min-w-0">
+                    <p className="truncate font-black text-slate-900 transition group-hover:text-teal-600 dark:text-white dark:group-hover:text-teal-400">
+                        {row.name || t('card.unnamed')}
+                    </p>
+                    <p className="flex items-center gap-2 text-[11px] font-semibold text-slate-400">
+                        <span>{t(`gender.${row.gender || 'Male'}`)}</span>
+                        {age !== null && <span>• {age} {t('yearsOld', { defaultValue: 'yrs' })}</span>}
+                    </p>
+                </div>
+            </div>
+        );
+    }
+    if (columnKey === 'phone') {
+        return row.phone ? (
+            <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
+                <Phone size={11} className="text-teal-600 dark:text-teal-400" />
+                {row.phone}
+            </span>
+        ) : na;
+    }
+    if (columnKey === 'email') {
+        return row.email ? (
+            <span className="inline-flex items-center gap-1.5 truncate text-xs font-semibold text-slate-600 dark:text-slate-400 max-w-[170px]">
+                <Mail size={11} className="shrink-0 text-slate-400" />
+                <span className="truncate">{row.email}</span>
+            </span>
+        ) : na;
+    }
     if (columnKey === 'patient_status') {
         const st = row.patient_status || 'Active';
-        const stClass = st === 'Active' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
-        return <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${stClass}`}>{t(`status.${st}`)}</span>;
+        const stClass = {
+            Active: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
+            Inactive: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700',
+            Restricted: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30',
+            Merged: 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30',
+            Deceased: 'bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/30'
+        }[st] || 'bg-slate-100 text-slate-700 border-slate-200';
+        return (
+            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10.5px] font-black ${stClass}`}>
+                {st === 'Active' ? <CheckCircle2 size={11} /> : <UserX size={11} />}
+                {t(`status.${st}`)}
+            </span>
+        );
     }
-    if (columnKey === 'mrn') return <span className="font-mono text-xs font-bold text-teal-700 dark:text-teal-400">{row.mrn}</span>;
+    if (columnKey === 'mrn') {
+        return (
+            <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); copyText(row.mrn, t('mrnCopied', { defaultValue: 'MRN copied' })); }}
+                className="inline-flex items-center gap-1.5 font-mono text-xs font-black text-teal-700 dark:text-teal-400 hover:underline group/mrn"
+                title={t('clickToCopy', { defaultValue: 'Click to copy' })}
+            >
+                <span>{row.mrn}</span>
+                <Copy size={11} className="opacity-0 group-hover/mrn:opacity-100 transition-opacity" />
+            </button>
+        );
+    }
+    if (columnKey === 'date_of_birth') {
+        return (
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400">
+                <Calendar size={11} className="text-slate-400" />
+                {row.date_of_birth || na}
+            </span>
+        );
+    }
+    if (columnKey === 'created_at') {
+        return <span className="text-xs font-semibold text-slate-400">{row.created_at ? String(row.created_at).slice(0, 10) : na}</span>;
+    }
     return <span className="text-xs text-slate-600 dark:text-slate-300">{row[columnKey] || na}</span>;
 };
 
-const InlineEditor = ({ columnKey, form, setForm }) => {
-    const { t } = useTranslation('patients');
-    const patch = updates => setForm(prev => ({ ...prev, ...updates }));
-
-    if (columnKey === 'name') return (
-        <div className="grid grid-cols-2 gap-1 min-w-[210px]">
-            <input value={form.firstName} onChange={e => patch({ firstName: e.target.value })} className={inputClass} placeholder={t('modal.fields.firstName')} />
-            <input value={form.lastName} onChange={e => patch({ lastName: e.target.value })} className={inputClass} placeholder={t('modal.fields.lastName')} />
-        </div>
-    );
-    if (columnKey === 'gender') return (
-        <select value={form.gender} onChange={e => patch({ gender: e.target.value })} className={inputClass}>
-            {GENDER_OPTIONS.map(g => <option key={g} value={g}>{t(`gender.${g}`)}</option>)}
-        </select>
-    );
-    const fieldMap = { phone: 'phone', email: 'email', date_of_birth: 'dateOfBirth', address: 'address' };
-    return (
-        <input
-            type={columnKey === 'date_of_birth' ? 'date' : columnKey === 'email' ? 'email' : 'text'}
-            value={form[fieldMap[columnKey]] || ''}
-            onChange={e => patch({ [fieldMap[columnKey]]: e.target.value })}
-            className={inputClass}
-        />
-    );
-};
-
-const MobilePatientCard = ({ patient, selected, active, onSelect, onView, onEdit, onDelete }) => {
-    const { t } = useTranslation('patients');
-    return (
-        <article className={`relative p-4 transition-colors ${active ? 'bg-teal-50/40 dark:bg-teal-500/5' : 'hover:bg-white/60 dark:hover:bg-slate-800/40'}`}>
-            <div className="flex items-start gap-3 ps-2">
-                <input type="checkbox" checked={selected} onChange={e => onSelect(e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-slate-350 bg-white/80 dark:bg-slate-900 text-teal-600 focus:ring-teal-500" />
-                <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                        <div>
-                            <p className="font-black text-slate-900 dark:text-white">{patient.name || t('card.unnamed')}</p>
-                            <div className="mt-1 flex items-center gap-2">
-                                <span className="font-mono text-[10px] font-bold text-teal-600 dark:text-teal-400">{patient.mrn}</span>
-                                <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-400">{t(`status.${patient.patient_status || 'Active'}`)}</span>
-                            </div>
-                        </div>
-                        <div className="flex shrink-0 gap-1 opacity-60 transition-opacity hover:opacity-100">
-                            <button type="button" onClick={onEdit} className="flex h-8 w-8 items-center justify-center rounded-lg text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 hover:text-indigo-700 dark:hover:text-indigo-300 transition"><Edit3 size={14} /></button>
-                            {onDelete && <button type="button" onClick={onDelete} className="flex h-8 w-8 items-center justify-center rounded-lg text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 hover:text-rose-700 dark:hover:text-rose-300 transition"><Trash2 size={14} /></button>}
-                        </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                        {patient.phone && <span className="flex items-center gap-1.5"><Phone size={11} />{patient.phone}</span>}
-                        {patient.email && <span className="flex items-center gap-1.5 max-w-[180px] truncate"><Mail size={11} />{patient.email}</span>}
-                    </div>
-                </div>
-            </div>
-            <div className="mt-3 flex justify-end ps-2">
-                <button type="button" onClick={onView}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 text-[11px] font-bold text-slate-700 dark:text-slate-300 transition active:scale-95">
-                    <Eye size={14} /> {t('card.view')}
-                </button>
-            </div>
-        </article>
-    );
-};
-
-const PatientField = ({ label, value, onChange, type = 'text', placeholder = '' }) => (
+const PatientField = ({ label, value, onChange, type = 'text', placeholder = '', error = '' }) => (
     <div>
         <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">{label}</label>
-        <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className={inputClass} />
+        <input
+            type={type}
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-800 outline-hidden transition focus:border-teal-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+        />
+        {error && <p className="mt-1 text-[11px] font-bold text-rose-500">{error}</p>}
     </div>
 );
 
 const ConsentCheckbox = ({ label, checked, onChange }) => (
-    <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1426] px-3.5 py-2.5 text-xs font-medium text-slate-700 dark:text-slate-300 transition hover:border-teal-300 hover:bg-teal-50/40 dark:hover:bg-teal-900/20">
-        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all ${checked ? 'border-teal-600 bg-teal-600' : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0b1426]'}`}>
-            {checked && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-        </span>
-        <input type="checkbox" checked={Boolean(checked)} onChange={e => onChange(e.target.checked)} className="sr-only" />
-        {label}
+    <label className="flex cursor-pointer items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-white p-3 text-xs font-bold text-slate-700 shadow-2xs transition hover:border-teal-500/40 hover:bg-teal-50/20 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+        <input
+            type="checkbox"
+            checked={Boolean(checked)}
+            onChange={e => onChange(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+        />
+        <span>{label}</span>
     </label>
 );
 
 const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSaving, duplicatePatients = [] }) => {
-    const { t } = useTranslation('patients');
-    const [activeTab, setActiveTab] = useState('demographics'); // 'demographics' | 'medical' | 'emergency' | 'communication'
+    const { t, i18n } = useTranslation('patients');
+    const isArabic = i18n.language === 'ar';
+    const [activeTab, setActiveTab] = useState('demographics');
     const patch = updates => setForm(prev => ({ ...prev, ...updates }));
 
     if (!visible) return null;
     return createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-md animate-in fade-in duration-200">
-            <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white dark:bg-[#0b1426] shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900 animate-in zoom-in-95 duration-200">
                 {/* Header */}
-                <div className="flex shrink-0 items-center justify-between border-b border-slate-100/80 dark:border-slate-800 px-6 py-4">
+                <div className="flex shrink-0 items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
                     <div className="flex items-center gap-3">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-md shadow-teal-500/20"><User size={18} /></span>
-                        <h2 className="text-base font-extrabold text-slate-900 dark:text-white">{title}</h2>
+                        <span className="grid h-10 w-10 place-items-center rounded-2xl bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/30">
+                            <User size={19} />
+                        </span>
+                        <div>
+                            <h2 className="text-base font-black text-slate-900 dark:text-white">{title}</h2>
+                            <p className="text-xs font-semibold text-slate-400">{isArabic ? 'إدارة السجل الطبي الشامل والبيانات السريرية' : 'Comprehensive Medical Record & Demographics'}</p>
+                        </div>
                     </div>
-                    <button type="button" onClick={onCancel} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 transition active:scale-95"><X size={17} /></button>
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 transition"
+                    >
+                        <X size={17} />
+                    </button>
                 </div>
 
-                {/* Tab Navigation */}
-                <div className="grid grid-cols-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-[#08101e] px-4 pt-2">
+                {/* Sub-Tabs Strip */}
+                <div className="grid grid-cols-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 px-3 pt-2">
                     {[
                         { key: 'demographics', icon: User, label: t('modal.sections.identity', 'Demographics') },
                         { key: 'medical', icon: HeartPulse, label: t('modal.sections.medical', 'Medical History') },
@@ -313,30 +315,30 @@ const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSavin
                             key={key}
                             type="button"
                             onClick={() => setActiveTab(key)}
-                            className={`flex flex-col sm:flex-row items-center justify-center gap-2 border-b-2 py-3 px-2 text-xs font-extrabold transition-all ${
+                            className={`flex items-center justify-center gap-2 border-b-2 py-3 px-2 text-xs font-black transition-all ${
                                 activeTab === key
-                                    ? 'border-teal-500 text-teal-600 dark:text-teal-400 bg-white dark:bg-[#0b1426] rounded-t-xl shadow-xs'
+                                    ? 'border-teal-500 text-teal-700 dark:text-teal-300 bg-white dark:bg-slate-900 rounded-t-2xl shadow-xs'
                                     : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                             }`}
                         >
-                            <Icon size={15} />
-                            <span>{label}</span>
+                            <Icon size={14} />
+                            <span className="truncate">{label}</span>
                         </button>
                     ))}
                 </div>
 
-                {/* Tab Body */}
-                <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5 scrollbar-thin">
+                {/* Modal Body */}
+                <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
                     {duplicatePatients.length > 0 && (
-                        <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30 p-4 text-xs text-amber-900 dark:text-amber-200">
+                        <div className="flex gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-800 dark:text-amber-300">
                             <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-500" />
                             <div>
-                                <p className="font-extrabold">{t('modal.duplicatesFound', 'Matching existing patients found:')}</p>
-                                <div className="mt-1 space-y-0.5">
+                                <p className="font-black">{t('modal.duplicatesFound', 'Matching existing patients found:')}</p>
+                                <div className="mt-1 space-y-1">
                                     {duplicatePatients.slice(0, 3).map(p => (
-                                        <p key={p.patient_id} className="flex flex-wrap items-center gap-1.5 font-semibold">
-                                            <span className="font-mono text-teal-600 dark:text-teal-400">{p.mrn}</span>
-                                            <span>• {p.first_name} {p.last_name} • {p.phone || t('fallback.na')}</span>
+                                        <p key={p.patient_id} className="flex flex-wrap items-center gap-1.5 font-bold">
+                                            <span className="font-mono text-teal-700 dark:text-teal-400">{p.mrn}</span>
+                                            <span>• {p.first_name} {p.last_name} • {p.phone || '-'}</span>
                                         </p>
                                     ))}
                                 </div>
@@ -347,25 +349,33 @@ const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSavin
                     {/* TAB 1: DEMOGRAPHICS */}
                     {activeTab === 'demographics' && (
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <PatientField label={t('modal.fields.firstName')} value={form.firstName} onChange={v => patch({ firstName: v })} />
-                            <PatientField label={t('modal.fields.lastName')} value={form.lastName} onChange={v => patch({ lastName: v })} />
+                            <PatientField label={t('modal.fields.firstName')} value={form.firstName} onChange={v => patch({ firstName: v })} placeholder="e.g. Sarah" />
+                            <PatientField label={t('modal.fields.lastName')} value={form.lastName} onChange={v => patch({ lastName: v })} placeholder="e.g. Miller" />
                             <PatientField label={t('modal.fields.dateOfBirth')} value={form.dateOfBirth} onChange={v => patch({ dateOfBirth: v })} type="date" />
                             <div>
                                 <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">{t('modal.fields.gender')}</label>
-                                <select value={form.gender} onChange={e => patch({ gender: e.target.value })} className={inputClass}>
+                                <select
+                                    value={form.gender}
+                                    onChange={e => patch({ gender: e.target.value })}
+                                    className="h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-800 outline-hidden focus:border-teal-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                                >
                                     {GENDER_OPTIONS.map(g => <option key={g} value={g}>{t(`gender.${g}`)}</option>)}
                                 </select>
                             </div>
-                            <PatientField label={t('modal.fields.nationalId')} value={form.nationalId} onChange={v => patch({ nationalId: v })} />
-                            <PatientField label={t('modal.fields.passportNumber')} value={form.passportNumber} onChange={v => patch({ passportNumber: v })} />
-                            <PatientField label={t('modal.fields.phone')} value={form.phone} onChange={v => patch({ phone: v })} />
-                            <PatientField label={t('modal.fields.email')} value={form.email} onChange={v => patch({ email: v })} type="email" />
+                            <PatientField label={t('modal.fields.nationalId')} value={form.nationalId} onChange={v => patch({ nationalId: v })} placeholder="National ID / Civil No" />
+                            <PatientField label={t('modal.fields.passportNumber')} value={form.passportNumber} onChange={v => patch({ passportNumber: v })} placeholder="Passport Number" />
+                            <PatientField label={t('modal.fields.phone')} value={form.phone} onChange={v => patch({ phone: v })} placeholder="+20 100 000 0000" />
+                            <PatientField label={t('modal.fields.email')} value={form.email} onChange={v => patch({ email: v })} type="email" placeholder="patient@example.com" />
                             <div className="sm:col-span-2">
-                                <PatientField label={t('modal.fields.address')} value={form.address} onChange={v => patch({ address: v })} />
+                                <PatientField label={t('modal.fields.address')} value={form.address} onChange={v => patch({ address: v })} placeholder="Street address, City, Country" />
                             </div>
                             <div>
                                 <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">{t('modal.fields.patientStatus')}</label>
-                                <select value={form.patientStatus} onChange={e => patch({ patientStatus: e.target.value })} className={inputClass}>
+                                <select
+                                    value={form.patientStatus}
+                                    onChange={e => patch({ patientStatus: e.target.value })}
+                                    className="h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-800 outline-hidden focus:border-teal-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                                >
                                     {STATUS_OPTIONS.map(s => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
                                 </select>
                             </div>
@@ -375,29 +385,33 @@ const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSavin
                     {/* TAB 2: MEDICAL HISTORY */}
                     {activeTab === 'medical' && (
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <PatientField label={t('modal.fields.allergies')} value={form.allergies} onChange={v => patch({ allergies: v })} placeholder="e.g. Penicillin, Iodine" />
-                            <PatientField label={t('modal.fields.chronicDiseases')} value={form.chronicDiseases} onChange={v => patch({ chronicDiseases: v })} placeholder="e.g. Hypertension, Diabetes" />
-                            <PatientField label={t('modal.fields.priorSurgeries')} value={form.priorSurgeries} onChange={v => patch({ priorSurgeries: v })} />
+                            <PatientField label={t('modal.fields.allergies')} value={form.allergies} onChange={v => patch({ allergies: v })} placeholder="e.g. Penicillin, Iodine Contrast" />
+                            <PatientField label={t('modal.fields.chronicDiseases')} value={form.chronicDiseases} onChange={v => patch({ chronicDiseases: v })} placeholder="e.g. Hypertension, Diabetes Type 2" />
+                            <PatientField label={t('modal.fields.priorSurgeries')} value={form.priorSurgeries} onChange={v => patch({ priorSurgeries: v })} placeholder="e.g. Appendectomy 2018" />
                             <div>
                                 <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">{t('modal.fields.pregnancyStatus')}</label>
-                                <select value={form.pregnancyStatus} onChange={e => patch({ pregnancyStatus: e.target.value })} className={inputClass}>
+                                <select
+                                    value={form.pregnancyStatus}
+                                    onChange={e => patch({ pregnancyStatus: e.target.value })}
+                                    className="h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-800 outline-hidden focus:border-teal-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                                >
                                     {['Unknown', 'Not Pregnant', 'Pregnant', 'Possibly Pregnant', 'Not Applicable'].map(s => (
                                         <option key={s} value={s}>{t(`pregnancy.${s}`)}</option>
                                     ))}
                                 </select>
                             </div>
-                            <PatientField label={t('modal.fields.implantsDevices')} value={form.implantsDevices} onChange={v => patch({ implantsDevices: v })} placeholder="e.g. Pacemaker, Stent" />
-                            <PatientField label={t('modal.fields.renalFunctionNotes')} value={form.renalFunctionNotes} onChange={v => patch({ renalFunctionNotes: v })} placeholder="e.g. GFR, Creatinine level" />
+                            <PatientField label={t('modal.fields.implantsDevices')} value={form.implantsDevices} onChange={v => patch({ implantsDevices: v })} placeholder="e.g. Pacemaker, Cochlear Implant, Metal Clip" />
+                            <PatientField label={t('modal.fields.renalFunctionNotes')} value={form.renalFunctionNotes} onChange={v => patch({ renalFunctionNotes: v })} placeholder="e.g. Serum Creatinine 0.9, eGFR 95" />
                         </div>
                     )}
 
                     {/* TAB 3: EMERGENCY CONTACT */}
                     {activeTab === 'emergency' && (
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <PatientField label={t('modal.fields.name')} value={form.emergencyContactName} onChange={v => patch({ emergencyContactName: v })} />
-                            <PatientField label={t('modal.fields.phone')} value={form.emergencyContactPhone} onChange={v => patch({ emergencyContactPhone: v })} />
-                            <PatientField label={t('modal.fields.relationship')} value={form.emergencyContactRelationship} onChange={v => patch({ emergencyContactRelationship: v })} placeholder="e.g. Spouse, Parent, Child" />
-                            <PatientField label={t('modal.fields.address')} value={form.emergencyContactAddress} onChange={v => patch({ emergencyContactAddress: v })} />
+                            <PatientField label={t('modal.fields.name')} value={form.emergencyContactName} onChange={v => patch({ emergencyContactName: v })} placeholder="Full Name" />
+                            <PatientField label={t('modal.fields.phone')} value={form.emergencyContactPhone} onChange={v => patch({ emergencyContactPhone: v })} placeholder="+20 100 000 0000" />
+                            <PatientField label={t('modal.fields.relationship')} value={form.emergencyContactRelationship} onChange={v => patch({ emergencyContactRelationship: v })} placeholder="e.g. Spouse, Parent, Sibling" />
+                            <PatientField label={t('modal.fields.address')} value={form.emergencyContactAddress} onChange={v => patch({ emergencyContactAddress: v })} placeholder="Emergency Contact Address" />
                         </div>
                     )}
 
@@ -405,16 +419,20 @@ const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSavin
                     {activeTab === 'communication' && (
                         <div className="space-y-4">
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                <PatientField label={t('modal.fields.preferredLanguage')} value={form.preferredLanguage} onChange={v => patch({ preferredLanguage: v })} />
+                                <PatientField label={t('modal.fields.preferredLanguage')} value={form.preferredLanguage} onChange={v => patch({ preferredLanguage: v })} placeholder="Arabic / English" />
                                 <div>
                                     <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">{t('modal.fields.communicationPreference')}</label>
-                                    <select value={form.communicationPreference} onChange={e => patch({ communicationPreference: e.target.value })} className={inputClass}>
+                                    <select
+                                        value={form.communicationPreference}
+                                        onChange={e => patch({ communicationPreference: e.target.value })}
+                                        className="h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-800 outline-hidden focus:border-teal-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                                    >
                                         {['Phone', 'Email', 'SMS', 'WhatsApp'].map(p => <option key={p} value={p}>{t(`commPreference.${p}`)}</option>)}
                                     </select>
                                 </div>
                             </div>
                             <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
-                                <h4 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-slate-400">Communication Consents</h4>
+                                <h4 className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">Communication Consents</h4>
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                     <ConsentCheckbox label={t('modal.consent.sms', 'SMS Notifications')} checked={form.consentSms} onChange={v => patch({ consentSms: v })} />
                                     <ConsentCheckbox label={t('modal.consent.email', 'Email Portal Messages')} checked={form.consentEmail} onChange={v => patch({ consentEmail: v })} />
@@ -427,11 +445,22 @@ const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSavin
                 </div>
 
                 {/* Footer */}
-                <div className="flex shrink-0 justify-end gap-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-[#08101e] px-6 py-4">
-                    <button type="button" onClick={onCancel} className={secondaryBtn}>{t('modal.cancel')}</button>
-                    <button type="button" onClick={onSave} disabled={isSaving}
-                        className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 px-6 py-2.5 text-xs font-black text-white shadow-lg shadow-teal-600/20 transition hover:-translate-y-0.5 disabled:opacity-50 active:scale-95">
-                        <Save size={16} /> {isSaving ? t('modal.saving') : t('modal.save')}
+                <div className="flex shrink-0 justify-end gap-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 px-6 py-4">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="rounded-xl border border-slate-200/80 bg-white px-4 py-2 text-xs font-black text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                    >
+                        {t('modal.cancel')}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onSave}
+                        disabled={isSaving}
+                        className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-6 py-2 text-xs font-black text-white shadow-sm transition hover:bg-teal-500 disabled:opacity-50 active:scale-95"
+                    >
+                        <Save size={15} />
+                        <span>{isSaving ? t('modal.saving') : t('modal.save')}</span>
                     </button>
                 </div>
             </div>
@@ -441,7 +470,8 @@ const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSavin
 };
 
 const Patients = () => {
-    const { t } = useTranslation('patients');
+    const { t, i18n } = useTranslation('patients');
+    const isArabic = i18n.language === 'ar';
     const navigate = useNavigate();
     const currentUser = useSelector(selectCurrentUser);
     const canRestrictPatient = hasDeveloperOrAdminRole(currentUser?.role);
@@ -456,9 +486,9 @@ const Patients = () => {
     const [createPatient, { isLoading: isCreating }] = useCreatePatientMutation();
     const [updatePatient, { isLoading: isUpdating }] = useUpdatePatientMutation();
     const [deletePatient, { isLoading: isDeleting }] = useDeletePatientMutation();
-    const [mergePatients, { isLoading: isMerging }] = useMergePatientsMutation();
 
     const [searchTerm, setSearchTerm] = useState(initialSearch);
+    const [viewMode, setViewMode] = useState('table'); // 'table' | 'grid'
     const [activeFilter, setActiveFilter] = useState('all');
     const [genderFilter, setGenderFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState('all');
@@ -466,13 +496,10 @@ const Patients = () => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [selectedIds, setSelectedIds] = useState([]);
-    const [editingId, setEditingId] = useState(null);
-    const [editingForm, setEditingForm] = useState(emptyPatientForm);
+    const [editingPatient, setEditingPatient] = useState(null);
     const [showCreate, setShowCreate] = useState(false);
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [createForm, setCreateForm] = useState(emptyPatientForm);
-    const [mergeDraft, setMergeDraft] = useState(null);
-    const [mergeReason, setMergeReason] = useState('');
     const [deleteDraft, setDeleteDraft] = useState(null);
 
     const patients = useMemo(() => patientsResponse?.data || [], [patientsResponse?.data]);
@@ -568,17 +595,30 @@ const Patients = () => {
         setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
     };
 
-    const startEdit = p => { setEditingId(p.patient_id); setEditingForm(toPatientForm(p)); };
-    const cancelEdit = () => { setEditingId(null); setEditingForm(emptyPatientForm); };
+    const startEdit = p => {
+        setEditingPatient(p);
+    };
 
-    const saveEdit = async id => {
-        try { await updatePatient({ id, ...cleanPayload(editingForm) }).unwrap(); toast.success(t('toast.updated')); cancelEdit(); }
-        catch (e) { toast.error(getErrorMessage(e, t('toast.updateFailed'))); }
+    const saveEdit = async () => {
+        if (!editingPatient) return;
+        try {
+            await updatePatient({ id: editingPatient.patient_id, ...cleanPayload(editingPatient) }).unwrap();
+            toast.success(t('toast.updated'));
+            setEditingPatient(null);
+        } catch (e) {
+            toast.error(getErrorMessage(e, t('toast.updateFailed')));
+        }
     };
 
     const saveNewPatient = async () => {
-        try { await createPatient(cleanPayload(createForm)).unwrap(); toast.success(t('toast.created')); setShowCreate(false); setCreateForm(emptyPatientForm); }
-        catch (e) { toast.error(getErrorMessage(e, t('toast.createFailed'))); }
+        try {
+            await createPatient(cleanPayload(createForm)).unwrap();
+            toast.success(t('toast.created'));
+            setShowCreate(false);
+            setCreateForm(emptyPatientForm);
+        } catch (e) {
+            toast.error(getErrorMessage(e, t('toast.createFailed')));
+        }
     };
 
     const removePatient = p => setDeleteDraft({ kind: 'single', patients: [p] });
@@ -621,211 +661,336 @@ const Patients = () => {
     };
 
     return (
-        <div className="space-y-5">
-            <PageHeader
-                icon={UsersRound}
-                eyebrowIcon={Activity}
-                eyebrow={t('overview.eyebrow', 'Health System Registry')}
-                title={t('title', 'Patient Directory & Master Index')}
-                description={t('subtitle', 'Manage registered patients, medical alerts, emergency contacts, and portal communication preferences.')}
-                actions={
-                    <div className="flex flex-wrap items-center gap-2">
+        <main className="mx-auto max-w-[1600px] space-y-6 pb-12">
+            {/* Top Hero Command Deck */}
+            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8">
+                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
+                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
+
+                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-start gap-4 sm:items-center">
+                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-teal-600/30 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
+                            <UsersRound size={26} />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                                    <Sparkles size={11} />
+                                    <span>{t('overview.eyebrow', 'Health System Master Index')}</span>
+                                </span>
+                            </div>
+                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                                {t('title', 'Patient Directory & Master Index')}
+                            </h1>
+                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                                {t('subtitle', 'Manage registered patients, medical alerts, emergency contacts, and portal communication preferences.')}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2.5">
                         <button
                             type="button"
                             onClick={() => setIsImportOpen(true)}
-                            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-4 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-800"
+                            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-4 text-xs font-black text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                         >
-                            <Upload size={15} /> {t('bulkImport', 'Bulk CSV Import')}
+                            <Upload size={15} />
+                            <span>{t('bulkImport', 'Bulk CSV Import')}</span>
                         </button>
                         <button
                             type="button"
                             onClick={() => setShowCreate(true)}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 px-5 text-xs font-extrabold text-white shadow-md shadow-teal-600/20 transition hover:scale-[1.02] active:scale-95"
+                            className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-5 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95"
                         >
-                            <Plus size={16} /> {t('addPatient', 'Register Patient')}
+                            <Plus size={15} />
+                            <span>{t('addPatient', 'Register Patient')}</span>
                         </button>
                     </div>
-                }
-            />
+                </div>
+            </div>
 
-            {/* Summary Metrics Cards */}
-            <section className="grid grid-cols-2 gap-3.5 md:grid-cols-5">
-                <MetricCard tone="cyan" label={t('overview.total', 'Total Patients')} value={stats.total} detail={t('overview.totalDetail', 'Master registry count')} />
-                <MetricCard tone="emerald" label={t('overview.active', 'Active Patients')} value={stats.active} detail={t('overview.activeDetail', 'Active portal records')} />
-                <MetricCard tone="blue" label={t('overview.recent', 'Recent (14 days)')} value={stats.recent} detail={t('overview.recentDetail', 'Newly registered')} />
-                <MetricCard tone="violet" label={t('overview.completeness', 'Data Quality')} value={`${stats.completeness}%`} detail={t('overview.completenessDetail', 'Profile field completeness')} />
-                <MetricCard tone="rose" label={t('overview.attention', 'Attention Needed')} value={stats.missing + stats.restricted} detail={t('overview.attentionDetail', 'Missing contact/restricted')} />
+            {/* Metrics Telemetry Strip */}
+            <section className="grid grid-cols-2 gap-3 sm:grid-cols-5" aria-label="Patient Statistics">
+                {[
+                    { label: t('overview.total', 'Total Patients'), value: stats.total, icon: UsersRound, tone: 'teal', detail: t('overview.totalDetail', 'Master registry count') },
+                    { label: t('overview.active', 'Active Patients'), value: stats.active, icon: UserCheck, tone: 'emerald', detail: t('overview.activeDetail', 'Active portal records') },
+                    { label: t('overview.recent', 'Recent (14 days)'), value: stats.recent, icon: Calendar, tone: 'sky', detail: t('overview.recentDetail', 'Newly registered') },
+                    { label: t('overview.completeness', 'Data Quality'), value: `${stats.completeness}%`, icon: Shield, tone: 'purple', detail: t('overview.completenessDetail', 'Profile field completeness') },
+                    { label: t('overview.attention', 'Attention Needed'), value: stats.missing + stats.restricted, icon: AlertTriangle, tone: 'rose', detail: t('overview.attentionDetail', 'Missing contact/restricted') },
+                ].map(m => {
+                    const Icon = m.icon;
+                    return (
+                        <div key={m.label} className="rounded-3xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+                            <div className="flex items-start justify-between gap-2">
+                                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 truncate">{m.label}</p>
+                                <span className="grid h-8 w-8 place-items-center rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/30">
+                                    <Icon size={16} />
+                                </span>
+                            </div>
+                            <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white tabular-nums">{m.value}</p>
+                            <p className="mt-0.5 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{m.detail}</p>
+                        </div>
+                    );
+                })}
             </section>
 
-            {/* Filters Bar */}
-            <section className="sticky top-4 z-20 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-2xl dark:border-slate-800/80 dark:bg-[#070e1a]">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800/80 px-5 py-3.5">
+            {/* Filter & Search Deck */}
+            <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500/10 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400">
+                        <span className="grid h-9 w-9 place-items-center rounded-2xl bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/30">
                             <SlidersHorizontal size={17} />
                         </span>
                         <div>
-                            <p className="text-sm font-extrabold text-slate-900 dark:text-white">{t('filters.title', 'Search & Filters')}</p>
-                            <p className="mt-0.5 text-[11px] font-semibold text-slate-400">{t('filters.description', 'Filter patient records by demographics and status')}</p>
+                            <h2 className="text-sm font-black text-slate-900 dark:text-white">{t('filters.title', 'Search & Filters')}</h2>
+                            <p className="text-xs font-semibold text-slate-400">{t('filters.description', 'Filter patient records by demographics and status')}</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-1 text-[11px] font-extrabold text-slate-600 dark:text-slate-300">
+
+                    <div className="flex items-center gap-2">
+                        {/* View Switcher */}
+                        <div className="flex items-center rounded-xl border border-slate-200/80 bg-slate-100/80 p-0.5 dark:border-slate-800 dark:bg-slate-950">
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('table')}
+                                className={`grid h-8 w-8 place-items-center rounded-lg transition ${viewMode === 'table' ? 'bg-white text-teal-700 shadow-2xs dark:bg-slate-900 dark:text-teal-300' : 'text-slate-400 hover:text-slate-600'}`}
+                                title="Table View"
+                            >
+                                <List size={16} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('grid')}
+                                className={`grid h-8 w-8 place-items-center rounded-lg transition ${viewMode === 'grid' ? 'bg-white text-teal-700 shadow-2xs dark:bg-slate-900 dark:text-teal-300' : 'text-slate-400 hover:text-slate-600'}`}
+                                title="Grid View"
+                            >
+                                <LayoutGrid size={16} />
+                            </button>
+                        </div>
+
+                        <span className="rounded-full bg-teal-500/10 px-3 py-1 text-xs font-bold text-teal-800 dark:text-teal-300">
                             {t('overview.results', { shown: stats.shown, total: stats.total, defaultValue: `${stats.shown} of ${stats.total} patients` })}
                         </span>
                         {hasActiveFilters && (
                             <button
                                 type="button"
                                 onClick={clearFilters}
-                                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-extrabold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition active:scale-95"
+                                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
                             >
-                                <FilterX size={14} />{t('filters.reset', 'Reset filters')}
+                                <FilterX size={14} />
+                                <span>{t('filters.reset', 'Reset')}</span>
                             </button>
                         )}
                     </div>
                 </div>
-                <div className="space-y-3.5 px-5 py-3.5">
-                    <div className="flex flex-wrap gap-2">
-                        {FILTER_PILLS.map(v => (
-                            <button
-                                key={v}
-                                type="button"
-                                onClick={() => setActiveFilter(v)}
-                                className={`rounded-xl px-4 py-2 text-[11px] font-extrabold tracking-wide transition-all active:scale-95 ${
-                                    activeFilter === v
-                                        ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-xs'
-                                        : 'bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200'
-                                }`}
-                            >
-                                {t(`filters.${v}`, v)}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto]">
-                        <div className="relative">
-                            <Search className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                            <input
-                                value={searchTerm}
-                                onChange={e => changeSearch(e.target.value)}
-                                placeholder={t('searchPlaceholder', 'Search by name, MRN, National ID, phone, email...')}
-                                className="h-10 w-full rounded-xl border border-slate-200 bg-white/80 ps-10 pe-8 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-[#0b1426] dark:text-slate-100"
-                            />
-                            {searchTerm && (
-                                <button type="button" onClick={() => changeSearch('')} className="absolute end-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:text-slate-700 transition">
-                                    <X size={14} />
-                                </button>
-                            )}
-                        </div>
-                        <select
-                            value={genderFilter}
-                            onChange={e => setGenderFilter(e.target.value)}
-                            className="h-10 rounded-xl border border-slate-200 bg-white/80 px-3.5 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-800 dark:bg-[#0b1426] dark:text-slate-300 min-w-[120px]"
-                        >
-                            <option value="all">{t('genderFilter.all', 'All Genders')}</option>
-                            {GENDER_OPTIONS.map(g => <option key={g} value={g}>{t(`gender.${g}`, g)}</option>)}
-                        </select>
-                        <select
-                            value={statusFilter}
-                            onChange={e => setStatusFilter(e.target.value)}
-                            className="h-10 rounded-xl border border-slate-200 bg-white/80 px-3.5 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-800 dark:bg-[#0b1426] dark:text-slate-300 min-w-[130px]"
-                        >
-                            <option value="all">{t('statusFilter.all', 'All Statuses')}</option>
-                            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{t(`status.${s}`, s)}</option>)}
-                        </select>
+
+                {/* Filter Pills */}
+                <div className="flex flex-wrap gap-1.5">
+                    {FILTER_PILLS.map(v => (
                         <button
+                            key={v}
                             type="button"
-                            onClick={exportCsv}
-                            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-4 text-xs font-bold text-slate-700 shadow-2xs transition hover:bg-slate-50 dark:border-slate-800 dark:bg-[#0b1426] dark:text-slate-300 hover:text-teal-600 whitespace-nowrap"
+                            onClick={() => setActiveFilter(v)}
+                            className={`rounded-xl px-3.5 py-1.5 text-xs font-black transition ${
+                                activeFilter === v
+                                    ? 'bg-teal-600 text-white shadow-xs'
+                                    : 'border border-slate-200/80 bg-slate-50/80 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400'
+                            }`}
                         >
-                            <Download size={15} /> {t('export', 'Export CSV')}
+                            {t(`filters.${v}`, v)}
                         </button>
-                    </div>
+                    ))}
                 </div>
+
+                {/* Search & Dropdowns Grid */}
+                <div className="grid gap-3 lg:grid-cols-[1fr_160px_160px_auto]">
+                    <div className="relative">
+                        <Search className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                            value={searchTerm}
+                            onChange={e => changeSearch(e.target.value)}
+                            placeholder={t('searchPlaceholder', 'Search by name, MRN, National ID, phone, email...')}
+                            className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/50 ps-10 pe-8 text-xs font-bold text-slate-800 outline-hidden transition focus:border-teal-500 focus:bg-white dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-200"
+                        />
+                        {searchTerm && (
+                            <button
+                                type="button"
+                                onClick={() => changeSearch('')}
+                                className="absolute end-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:text-slate-700 transition"
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
+                    </div>
+                    <select
+                        value={genderFilter}
+                        onChange={e => setGenderFilter(e.target.value)}
+                        className="h-10 rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-hidden focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                    >
+                        <option value="all">{t('genderFilter.all', 'All Genders')}</option>
+                        {GENDER_OPTIONS.map(g => <option key={g} value={g}>{t(`gender.${g}`, g)}</option>)}
+                    </select>
+                    <select
+                        value={statusFilter}
+                        onChange={e => setStatusFilter(e.target.value)}
+                        className="h-10 rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-hidden focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                    >
+                        <option value="all">{t('statusFilter.all', 'All Statuses')}</option>
+                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{t(`status.${s}`, s)}</option>)}
+                    </select>
+                    <button
+                        type="button"
+                        onClick={exportCsv}
+                        className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-4 text-xs font-black text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                    >
+                        <Download size={15} />
+                        <span>{t('export', 'Export CSV')}</span>
+                    </button>
+                </div>
+
+                {/* Bulk Action Bar */}
                 {selectedIds.length > 0 && (
-                    <div className="flex flex-col gap-3 border-t border-teal-100 bg-teal-50/50 px-5 py-3 dark:border-teal-900/30 dark:bg-teal-950/20 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-3 rounded-2xl border border-teal-500/30 bg-teal-500/10 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-2">
-                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal-600 text-[11px] font-extrabold text-white">{selectedIds.length}</span>
-                            <span className="text-xs font-bold text-teal-900 dark:text-teal-300">{t('selectedCount', { count: selectedIds.length, defaultValue: `${selectedIds.length} patients selected` })}</span>
+                            <span className="grid h-6 w-6 place-items-center rounded-full bg-teal-600 text-[11px] font-black text-white">{selectedIds.length}</span>
+                            <span className="text-xs font-bold text-teal-900 dark:text-teal-200">{t('selectedCount', { count: selectedIds.length, defaultValue: `${selectedIds.length} patients selected` })}</span>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                            {canRestrictPatient && (
-                                <button type="button" onClick={deleteSelected} disabled={isDeleting} className={secondaryBtn}>
-                                    <Trash2 size={14} /> {t('deleteSelected', 'Delete Selected')}
-                                </button>
-                            )}
-                        </div>
+                        {canRestrictPatient && (
+                            <button
+                                type="button"
+                                onClick={deleteSelected}
+                                disabled={isDeleting}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-500/30 bg-white px-3 py-1.5 text-xs font-black text-rose-700 shadow-2xs hover:bg-rose-50 dark:bg-slate-900 dark:text-rose-400"
+                            >
+                                <Trash2 size={13} />
+                                <span>{t('deleteSelected', 'Delete Selected')}</span>
+                            </button>
+                        )}
                     </div>
                 )}
             </section>
 
-            {/* Patients Table Section */}
-            <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-2xl dark:border-slate-800/80 dark:bg-[#070e1a]">
-                <div className="flex items-center justify-between border-b border-slate-100/80 dark:border-slate-800 px-5 py-3.5">
-                    <div>
-                        <p className="text-sm font-extrabold text-slate-900 dark:text-white">{t('records.title', 'Patient Master Registry')}</p>
-                        <p className="text-[11px] font-semibold text-slate-400">{t('records.description', 'List of registered health records and patient demographics')}</p>
+            {/* Content Display (Table or Grid View) */}
+            <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+                {isLoading ? (
+                    <div className="p-8 text-center text-xs font-bold text-slate-400">{t('loadingRecords', 'Loading patient records...')}</div>
+                ) : paginatedRows.length === 0 ? (
+                    <div className="flex flex-col items-center gap-3 p-12 text-center">
+                        <span className="grid h-14 w-14 place-items-center rounded-2xl bg-teal-500/10 text-teal-700 dark:text-teal-300">
+                            <UsersRound size={24} />
+                        </span>
+                        <p className="text-sm font-black text-slate-800 dark:text-slate-200">{t('noRecordsFilters', 'No patient records match the selected filters')}</p>
+                        {hasActiveFilters && (
+                            <button type="button" onClick={clearFilters} className="rounded-xl bg-teal-50 px-4 py-2 text-xs font-bold text-teal-700 hover:bg-teal-100">
+                                {t('filters.reset', 'Reset filters')}
+                            </button>
+                        )}
                     </div>
-                    <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-1 text-[11px] font-extrabold text-slate-600 dark:text-slate-300">{stats.shown}</span>
-                </div>
-                <div className="hidden overflow-x-auto lg:block pb-1">
-                    <table className="min-w-full text-left text-sm border-collapse">
-                        <thead className="sticky top-0 z-10 bg-slate-50/80 dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-800">
-                            <tr>
-                                <th className="w-10 px-5 py-4 text-start">
-                                    <input
-                                        type="checkbox"
-                                        checked={allVisibleSelected}
-                                        onChange={e => {
-                                            if (e.target.checked) setSelectedIds(prev => Array.from(new Set([...prev, ...paginatedRows.map(r => r.patient_id)])));
-                                            else setSelectedIds(prev => prev.filter(id => !paginatedRows.some(r => r.patient_id === id)));
-                                        }}
-                                        className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 transition"
-                                    />
-                                </th>
-                                <th className="w-11 px-2 py-4" />
-                                {TABLE_COLUMNS.map(col => (
-                                    col.sortable
-                                        ? <SortTh key={col.key} columnKey={col.key} sortConfig={sortConfig} onSort={toggleSort}>{t(`columns.${col.key}`, col.key)}</SortTh>
-                                        : <th key={col.key} className="px-4 py-4 text-start text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{t(`columns.${col.key}`, col.key)}</th>
-                                ))}
-                                <th className="w-32 px-4 py-4 text-end text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{t('actions', 'Actions')}</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-[#070e1a]">
-                            {isLoading ? (
-                                Array.from({ length: 7 }).map((_, i) => (
-                                    <tr key={i} className="animate-pulse">
-                                        <td className="px-5 py-3.5"><div className="h-4 w-4 rounded bg-slate-100" /></td>
-                                        <td className="px-2 py-3.5"><div className="h-9 w-9 rounded-xl bg-slate-100" /></td>
-                                        {TABLE_COLUMNS.map(c => (
-                                            <td key={c.key} className="px-4 py-3.5">
-                                                <div className={`h-3 rounded bg-slate-100 ${c.key === 'name' ? 'w-36' : 'w-20'}`} />
-                                            </td>
-                                        ))}
-                                        <td className="px-4 py-3.5"><div className="ms-auto h-3 w-20 rounded bg-slate-100" /></td>
-                                    </tr>
-                                ))
-                            ) : paginatedRows.length === 0 ? (
-                                <tr>
-                                    <td colSpan={TABLE_COLUMNS.length + 3} className="px-4 py-16 text-center">
-                                        <div className="flex flex-col items-center gap-3">
-                                            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400"><UsersRound size={22} /></span>
-                                            <p className="text-sm font-semibold text-slate-500">{t('noRecordsFilters', 'No patient records match the selected filters')}</p>
-                                            {hasActiveFilters && (
-                                                <button type="button" onClick={clearFilters} className="rounded-lg bg-teal-50 px-4 py-2 text-xs font-bold text-teal-700 hover:bg-teal-100">
-                                                    {t('filters.reset', 'Reset filters')}
-                                                </button>
-                                            )}
+                ) : viewMode === 'grid' ? (
+                    /* Grid Cards View */
+                    <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
+                        {paginatedRows.map(row => (
+                            <article
+                                key={row.patient_id}
+                                onClick={() => navigate(`/patients/${row.patient_id}`)}
+                                className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white p-5 shadow-2xs transition hover:border-teal-500/40 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/60 cursor-pointer"
+                            >
+                                <div>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="flex items-center gap-3">
+                                            <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-xs font-black border ${
+                                                row.gender === 'Female'
+                                                    ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                                                    : 'bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-500/30'
+                                            }`}>
+                                                {initials(row.name)}
+                                            </span>
+                                            <div className="min-w-0">
+                                                <h3 className="truncate text-sm font-black text-slate-900 group-hover:text-teal-600 dark:text-white dark:group-hover:text-teal-400">
+                                                    {row.name}
+                                                </h3>
+                                                <span className="font-mono text-xs font-bold text-teal-600 dark:text-teal-400">{row.mrn}</span>
+                                            </div>
                                         </div>
-                                    </td>
+                                        <CellValue row={row} columnKey="patient_status" />
+                                    </div>
+
+                                    <div className="mt-4 space-y-1.5 text-xs font-bold text-slate-600 dark:text-slate-400">
+                                        {row.phone && (
+                                            <p className="flex items-center gap-2">
+                                                <Phone size={13} className="text-slate-400" />
+                                                <span>{row.phone}</span>
+                                            </p>
+                                        )}
+                                        {row.email && (
+                                            <p className="flex items-center gap-2 truncate">
+                                                <Mail size={13} className="text-slate-400 shrink-0" />
+                                                <span className="truncate">{row.email}</span>
+                                            </p>
+                                        )}
+                                        {row.date_of_birth && (
+                                            <p className="flex items-center gap-2">
+                                                <Calendar size={13} className="text-slate-400" />
+                                                <span>{row.date_of_birth} ({calculateAge(row.date_of_birth)} yrs)</span>
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="mt-4 flex items-center justify-end gap-1.5 border-t border-slate-100 pt-3 dark:border-slate-800">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); startEdit(toPatientForm(row)); }}
+                                        className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+                                        title={t('rowActions.edit')}
+                                    >
+                                        <Edit3 size={14} />
+                                    </button>
+                                    {canRestrictPatient && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); removePatient(row); }}
+                                            className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/40"
+                                            title={t('rowActions.delete')}
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    )}
+                                </div>
+                            </article>
+                        ))}
+                    </div>
+                ) : (
+                    /* Table View */
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full text-start text-xs font-bold border-collapse">
+                            <thead className="border-b border-slate-100 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40">
+                                <tr>
+                                    <th className="w-10 px-5 py-3.5 text-start">
+                                        <input
+                                            type="checkbox"
+                                            checked={allVisibleSelected}
+                                            onChange={e => {
+                                                if (e.target.checked) setSelectedIds(prev => Array.from(new Set([...prev, ...paginatedRows.map(r => r.patient_id)])));
+                                                else setSelectedIds(prev => prev.filter(id => !paginatedRows.some(r => r.patient_id === id)));
+                                            }}
+                                            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 transition"
+                                        />
+                                    </th>
+                                    {TABLE_COLUMNS.map(col => (
+                                        col.sortable
+                                            ? <SortTh key={col.key} columnKey={col.key} sortConfig={sortConfig} onSort={toggleSort}>{t(`columns.${col.key}`, col.key)}</SortTh>
+                                            : <th key={col.key} className="px-4 py-3.5 text-start text-[10px] font-black uppercase tracking-wider text-slate-400">{t(`columns.${col.key}`, col.key)}</th>
+                                    ))}
+                                    <th className="w-28 px-4 py-3.5 text-end text-[10px] font-black uppercase tracking-wider text-slate-400">{t('actions', 'Actions')}</th>
                                 </tr>
-                            ) : paginatedRows.map((row, i) => {
-                                const isZebra = i % 2 !== 0;
-                                return (
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                {paginatedRows.map(row => (
                                     <tr
                                         key={row.patient_id}
                                         onClick={() => navigate(`/patients/${row.patient_id}`)}
-                                        className={`group cursor-pointer transition-colors ${isZebra ? 'bg-slate-50/40 dark:bg-slate-900/20 hover:bg-slate-100/60 dark:hover:bg-slate-800/60' : 'bg-white dark:bg-[#070e1a] hover:bg-slate-100/60 dark:hover:bg-slate-800/60'}`}
+                                        className="group cursor-pointer transition hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                                     >
                                         <td className="px-5 py-3.5" onClick={e => e.stopPropagation()}>
                                             <input
@@ -835,91 +1000,86 @@ const Patients = () => {
                                                 className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 transition"
                                             />
                                         </td>
-                                        <td className="px-2 py-3.5" />
                                         {TABLE_COLUMNS.map(col => (
                                             <td key={col.key} className="px-4 py-3.5">
-                                                {editingId === row.patient_id && editableColumnKeys.includes(col.key)
-                                                    ? <InlineEditor columnKey={col.key} form={editingForm} setForm={setEditingForm} />
-                                                    : <CellValue row={row} columnKey={col.key} />}
+                                                <CellValue row={row} columnKey={col.key} />
                                             </td>
                                         ))}
                                         <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
-                                            <div className="opacity-0 transition-opacity group-hover:opacity-100">
-                                                <RowActions
-                                                    editing={editingId === row.patient_id}
-                                                    isSaving={isUpdating}
-                                                    onView={() => navigate(`/patients/${row.patient_id}`)}
-                                                    onEdit={() => startEdit(row)}
-                                                    onSave={() => saveEdit(row.patient_id)}
-                                                    onCancel={cancelEdit}
-                                                    onDelete={canRestrictPatient ? () => removePatient(row) : undefined}
-                                                />
+                                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => navigate(`/patients/${row.patient_id}`)}
+                                                    className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-teal-500/10 hover:text-teal-700 dark:hover:text-teal-300"
+                                                    title={t('rowActions.view')}
+                                                >
+                                                    <Eye size={15} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => startEdit(toPatientForm(row))}
+                                                    className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+                                                    title={t('rowActions.edit')}
+                                                >
+                                                    <Edit3 size={15} />
+                                                </button>
+                                                {canRestrictPatient && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removePatient(row)}
+                                                        className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-rose-500/10 hover:text-rose-700"
+                                                        title={t('rowActions.delete')}
+                                                    >
+                                                        <Trash2 size={15} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Mobile View */}
-                <div className="divide-y divide-slate-100 lg:hidden">
-                    {isLoading ? (
-                        <p className="p-6 text-center text-sm text-slate-400">{t('loadingRecords', 'Loading patient records...')}</p>
-                    ) : paginatedRows.length === 0 ? (
-                        <div className="flex flex-col items-center gap-3 p-10 text-center">
-                            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400"><UsersRound size={20} /></span>
-                            <p className="text-xs text-slate-400">{t('noRecordsMobile', 'No patient records found')}</p>
-                        </div>
-                    ) : paginatedRows.map(row => (
-                        <MobilePatientCard
-                            key={row.patient_id}
-                            patient={row}
-                            selected={selectedIds.includes(row.patient_id)}
-                            onSelect={checked => setSelectedIds(prev => checked ? [...prev, row.patient_id] : prev.filter(id => id !== row.patient_id))}
-                            onView={() => navigate(`/patients/${row.patient_id}`)}
-                            onEdit={() => startEdit(row)}
-                            onDelete={canRestrictPatient ? () => removePatient(row) : undefined}
-                        />
-                    ))}
-                </div>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
 
                 {/* Pagination Controls */}
                 {sortedRows.length > 0 && (
-                    <div className="flex flex-col gap-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-[#08101e] px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-[11px] font-bold text-slate-400">
-                            {t('records.pagination.range', { start: pageStart + 1, end: Math.min(pageStart + pageSize, sortedRows.length), total: sortedRows.length, defaultValue: `Showing ${pageStart + 1} to ${Math.min(pageStart + pageSize, sortedRows.length)} of ${sortedRows.length} records` })}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <label className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
-                                {t('records.pagination.rowsPerPage', 'Rows per page')}
-                                <select
-                                    value={pageSize}
-                                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                                    className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1426] px-2 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-300 outline-none focus:border-teal-500"
-                                >
-                                    {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
-                                </select>
-                            </label>
-                            <span className="min-w-16 text-center text-[11px] font-bold text-slate-500">
-                                {t('records.pagination.page', { page: currentPage, pages: pageCount, defaultValue: `Page ${currentPage} of ${pageCount}` })}
+                    <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 text-xs font-bold text-slate-500 dark:border-slate-800 sm:flex-row">
+                        <div className="flex items-center gap-2">
+                            <span>{isArabic ? 'عرض' : 'Showing'}</span>
+                            <select
+                                value={pageSize}
+                                onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                                className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            >
+                                {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                            <span>
+                                {isArabic
+                                    ? `من ${pageStart + 1} إلى ${Math.min(pageStart + pageSize, sortedRows.length)} من إجمالي ${sortedRows.length} سجل`
+                                    : `of ${sortedRows.length} records`}
                             </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
                             <button
                                 type="button"
                                 onClick={() => setPage(p => Math.max(1, p - 1))}
                                 disabled={currentPage === 1}
-                                className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1426] text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                                <ChevronLeft size={14} />
+                                <ChevronLeft size={14} className={isArabic ? 'rotate-180' : ''} />
                             </button>
+                            <span className="px-2 text-xs font-black text-slate-800 dark:text-slate-200">
+                                {currentPage} / {pageCount}
+                            </span>
                             <button
                                 type="button"
                                 onClick={() => setPage(p => Math.min(pageCount, p + 1))}
                                 disabled={currentPage === pageCount}
-                                className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1426] text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                                <ChevronRight size={14} />
+                                <ChevronRight size={14} className={isArabic ? 'rotate-180' : ''} />
                             </button>
                         </div>
                     </div>
@@ -938,7 +1098,19 @@ const Patients = () => {
                 duplicatePatients={duplicatePatients}
             />
 
-            {/* CSV Import & Delete Modals */}
+            {/* Patient Edit Modal */}
+            <PatientModal
+                visible={Boolean(editingPatient)}
+                title={t('modal.editTitle', 'Edit Patient Record')}
+                form={editingPatient || emptyPatientForm}
+                setForm={setEditingPatient}
+                isSaving={isUpdating}
+                onCancel={() => setEditingPatient(null)}
+                onSave={saveEdit}
+                duplicatePatients={[]}
+            />
+
+            {/* CSV Import & Delete Confirmation Modals */}
             <PatientImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} />
             <ConfirmDialog
                 isOpen={Boolean(deleteDraft)}
@@ -953,7 +1125,7 @@ const Patients = () => {
                 isLoading={isDeleting}
                 variant="danger"
             />
-        </div>
+        </main>
     );
 };
 

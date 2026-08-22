@@ -17,6 +17,7 @@ const ConfirmDialog = ({
     cancelLabel = 'Cancel',
     variant = 'danger', // 'danger', 'warning', 'info'
     isLoading = false,
+    children,
 }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const submittingRef = useRef(false);
@@ -50,8 +51,8 @@ const ConfirmDialog = ({
         },
         info: {
             icon: AlertTriangle,
-            iconBg: 'bg-blue-100',
-            iconColor: 'text-blue-600',
+            iconBg: 'bg-[var(--VIARA-accent-soft)]',
+            iconColor: 'text-[var(--VIARA-accent)]',
             confirmVariant: 'primary',
         },
     };
@@ -93,9 +94,10 @@ const ConfirmDialog = ({
 
                 {/* Message */}
                 <div className="flex-1">
-                    <p className="text-slate-700 leading-relaxed">
+                    <p className="text-slate-700 leading-relaxed dark:text-slate-200">
                         {message}
                     </p>
+                    {children && <div className="mt-4">{children}</div>}
                 </div>
             </div>
         </Modal>

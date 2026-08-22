@@ -1,7 +1,7 @@
 // Presentational, prop-driven UI primitives for the report editor. Each is memoized
 // and free of business logic, so they can be reused across the editor and tested in
 // isolation. Extracted from ReportEditorPage.jsx.
-import React, { memo, useState, useRef, useEffect } from 'react';
+import React, { memo, useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useSelector } from 'react-redux';
 import { selectCurrentUser } from '../../store/authSlice';
@@ -91,6 +91,86 @@ const useClickOutside = (onOutside) => {
     return ref;
 };
 
+const useFloatingMenu = ({ open, onClose, width = 240, align = 'end', maxHeight = 288 }) => {
+    const triggerRef = useRef(null);
+    const menuRef = useRef(null);
+    const [style, setStyle] = useState(null);
+
+    useEffect(() => {
+        if (!open) return undefined;
+
+        const updatePosition = () => {
+            const trigger = triggerRef.current;
+            if (!trigger) return;
+
+            const rect = trigger.getBoundingClientRect();
+            const margin = 12;
+            const gap = 8;
+            const direction = window.getComputedStyle(trigger).direction;
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const preferredLeft = align === 'start'
+                ? (direction === 'rtl' ? rect.right - width : rect.left)
+                : (direction === 'rtl' ? rect.left : rect.right - width);
+            const left = Math.min(
+                Math.max(margin, preferredLeft),
+                Math.max(margin, viewportWidth - width - margin)
+            );
+            const availableBelow = viewportHeight - rect.bottom - margin - gap;
+            const availableAbove = rect.top - margin - gap;
+            const placeAbove = availableBelow < Math.min(maxHeight, 180) && availableAbove > availableBelow;
+            const availableHeight = Math.max(120, Math.min(maxHeight, placeAbove ? availableAbove : availableBelow));
+            const top = placeAbove
+                ? Math.max(margin, rect.top - availableHeight - gap)
+                : Math.min(rect.bottom + gap, viewportHeight - availableHeight - margin);
+
+            setStyle({
+                position: 'fixed',
+                left: `${left}px`,
+                top: `${top}px`,
+                width: `${Math.min(width, viewportWidth - margin * 2)}px`,
+                maxHeight: `${availableHeight}px`
+            });
+        };
+
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
+    }, [align, maxHeight, open, width]);
+
+    useEffect(() => {
+        if (!open) return undefined;
+
+        const handlePointerDown = (event) => {
+            const target = event.target;
+            if (
+                triggerRef.current?.contains(target) ||
+                menuRef.current?.contains(target)
+            ) {
+                return;
+            }
+            onClose();
+        };
+
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') onClose();
+        };
+
+        document.addEventListener('mousedown', handlePointerDown);
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('mousedown', handlePointerDown);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [onClose, open]);
+
+    return { triggerRef, menuRef, style };
+};
+
 export const MetaChip = memo(({ icon: Icon, label, value, tone = 'slate' }) => (
     <span
         className={`inline-flex min-h-9 min-w-0 items-center gap-2 rounded-md px-3 text-[11px] font-bold ring-1 ${getToneClasses(
@@ -130,10 +210,16 @@ ActionButton.displayName = 'ActionButton';
    toolbar reads as a few clear choices instead of many. */
 export const OverflowMenu = memo(({ label, items }) => {
     const [open, setOpen] = useState(false);
-    const containerRef = useClickOutside(() => setOpen(false));
+    const closeMenu = React.useCallback(() => setOpen(false), []);
+    const { triggerRef, menuRef, style } = useFloatingMenu({
+        open,
+        onClose: closeMenu,
+        width: 240,
+        align: 'end'
+    });
 
     return (
-        <div ref={containerRef} className="relative">
+        <div ref={triggerRef} className="relative inline-flex">
             <button
                 type="button"
                 onClick={() => setOpen((current) => !current)}
@@ -145,10 +231,12 @@ export const OverflowMenu = memo(({ label, items }) => {
             >
                 <MoreHorizontal size={15} aria-hidden="true" />
             </button>
-            {open && (
+            {open && style && createPortal((
                 <div
+                    ref={menuRef}
                     role="menu"
-                    className="absolute end-0 z-40 mt-2 w-60 overflow-hidden rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl animate-fade-in dark:border-slate-700 dark:bg-slate-900"
+                    style={style}
+                    className="z-[100] overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl animate-fade-in dark:border-slate-700 dark:bg-slate-900"
                 >
                     {items.map(({ key, icon: Icon, label: itemLabel, onSelect, disabled, active }) => (
                         <button
@@ -170,7 +258,7 @@ export const OverflowMenu = memo(({ label, items }) => {
                         </button>
                     ))}
                 </div>
-            )}
+            ), document.body)}
         </div>
     );
 });
@@ -179,23 +267,23 @@ OverflowMenu.displayName = 'OverflowMenu';
 /* Reusable accordion shell used for both the Study Tools stack and the optional
    report sections, so long pages collapse to scannable headers. */
 export const CollapsibleSection = memo(
-    ({ icon: Icon, title, subtitle, badge, badgeTone = 'slate', defaultOpen = false, children }) => {
+    ({ icon: Icon, title, subtitle, badge, badgeTone = 'slate', defaultOpen = false, compact = false, children }) => {
         const [open, setOpen] = useState(defaultOpen);
 
         return (
-            <section className={`${PANEL} overflow-hidden`}>
+            <section className={`${compact ? 'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/95' : PANEL} overflow-hidden`}>
                 <button
                     type="button"
                     onClick={() => setOpen((current) => !current)}
                     aria-expanded={open}
-                    className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-start transition-all duration-200 hover:bg-slate-50/60 dark:hover:bg-slate-800/30"
+                    className={`flex w-full items-center justify-between gap-3 text-start transition-all duration-200 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 ${compact ? 'px-3 py-2.5' : 'px-5 py-3.5'}`}
                 >
-                    <span className="flex min-w-0 items-center gap-3">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal-50 text-teal-700 ring-1 ring-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:ring-teal-900">
-                            <Icon size={16} aria-hidden="true" />
+                    <span className={`flex min-w-0 items-center ${compact ? 'gap-2' : 'gap-3'}`}>
+                        <span className={`flex shrink-0 items-center justify-center rounded-md bg-teal-50 text-teal-700 ring-1 ring-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:ring-teal-900 ${compact ? 'h-7 w-7' : 'h-8 w-8'}`}>
+                            <Icon size={compact ? 14 : 16} aria-hidden="true" />
                         </span>
                         <span className="min-w-0">
-                            <span className="block truncate text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                            <span className={`block font-bold uppercase text-slate-700 dark:text-slate-200 ${compact ? 'whitespace-normal break-words text-[10px] leading-3 tracking-[.04em]' : 'truncate text-[11px] tracking-wider'}`}>
                                 {title}
                             </span>
                             {subtitle && (
@@ -216,13 +304,13 @@ export const CollapsibleSection = memo(
                             </span>
                         )}
                         <ChevronDown
-                            size={16}
+                            size={compact ? 14 : 16}
                             className={`text-slate-400 transition-transform duration-300 ${open ? 'rotate-180' : ''}`}
                             aria-hidden="true"
                         />
                     </span>
                 </button>
-                {open && <div className="border-t border-slate-100 p-4 dark:border-slate-800">{children}</div>}
+                {open && <div className={`border-t border-slate-100 dark:border-slate-800 ${compact ? 'p-2.5' : 'p-4'}`}>{children}</div>}
             </section>
         );
     }
@@ -337,12 +425,12 @@ ProgressBar.displayName = 'ProgressBar';
 export const SectionQuickNav = memo(
     ({ sections, activeSection, completion, onSelect, t }) => (
         <nav
-            className={`${PANEL} sticky top-2 z-20 overflow-hidden print:static xl:top-[9.25rem]`}
+            className="sticky top-2 z-20 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm backdrop-blur print:static dark:border-slate-800 dark:bg-slate-900 xl:top-3"
             aria-label={t('editor.sections')}
         >
-            <div className="flex items-center gap-2 overflow-x-auto p-2.5">
-                <span className="hidden shrink-0 items-center gap-2 px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 sm:flex">
-                    <PenLine size={13} className="opacity-70" />
+            <div className="flex items-center gap-1.5 overflow-x-auto p-1.5">
+                <span className="hidden min-h-8 shrink-0 items-center gap-1.5 rounded-lg bg-slate-50 px-2 text-[9px] font-black uppercase tracking-[.08em] text-slate-400 ring-1 ring-inset ring-slate-100 dark:bg-slate-950/40 dark:text-slate-500 dark:ring-slate-800 sm:flex">
+                    <PenLine size={12} className="opacity-70" />
                     {t('editor.sections')}
                 </span>
 
@@ -357,16 +445,16 @@ export const SectionQuickNav = memo(
                             type="button"
                             onClick={() => onSelect(key)}
                             aria-current={active ? 'location' : undefined}
-                            className={`inline-flex min-h-9 shrink-0 items-center gap-2 rounded-md px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 ${active
+                            className={`inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-black transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 ${active
                                     ? 'bg-teal-700 text-white shadow-sm dark:bg-teal-600'
-                                    : 'bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-white hover:text-teal-700 dark:bg-slate-800/70 dark:text-slate-300 dark:ring-slate-700 dark:hover:text-teal-300'
+                                    : 'bg-transparent text-slate-600 hover:bg-slate-50 hover:text-teal-700 dark:text-slate-300 dark:hover:bg-slate-800/70 dark:hover:text-teal-300'
                                 }`}
                         >
-                            {complete ? <Check size={13} /> : <Icon size={13} />}
-                            {t(`sections.${key}`)}
+                            {complete ? <Check size={12} /> : <Icon size={12} />}
+                            <span className="max-w-[9.5rem] truncate">{t(`sections.${key}`)}</span>
                             {required && !complete && (
                                 <span
-                                    className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-white shadow-sm shadow-white/50' : 'bg-rose-500 shadow-sm shadow-rose-500/30'
+                                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? 'bg-white shadow-sm shadow-white/50' : 'bg-rose-500 shadow-sm shadow-rose-500/30'
                                         }`}
                                     title={t('editor.required')}
                                 />
@@ -375,7 +463,7 @@ export const SectionQuickNav = memo(
                     );
                 })}
 
-                <span className="ms-auto inline-flex min-h-9 shrink-0 items-center rounded-md bg-slate-900 px-3 text-[10px] font-bold tabular-nums text-white dark:bg-slate-100 dark:text-slate-900">
+                <span className="ms-auto inline-flex min-h-8 shrink-0 items-center rounded-lg bg-slate-900 px-2.5 text-[10px] font-black tabular-nums text-white dark:bg-slate-100 dark:text-slate-900">
                     {completion}%
                 </span>
             </div>
@@ -533,28 +621,44 @@ Notice.displayName = 'Notice';
 
 export const MobileWorkspaceTabs = memo(({ activeTab, onChange, showSidebar = false, t }) => {
     const tabs = [
-        { key: 'editor', label: t('editor.tabs.editor', 'Editor'), icon: FileText },
-        showSidebar && { key: 'tools', label: t('editor.tabs.sidebar', 'Study tools'), icon: ServerCog },
-        { key: 'preview', label: t('editor.tabs.preview', 'Preview'), icon: Eye }
+        {
+            key: 'editor',
+            label: t('editor.tabs.editor', 'Editor'),
+            icon: FileText,
+            activeClass: 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/60 dark:bg-teal-950/30 dark:text-teal-300'
+        },
+        showSidebar && {
+            key: 'tools',
+            label: t('editor.tabs.sidebar', 'Study tools'),
+            icon: ServerCog,
+            activeClass: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/30 dark:text-violet-300'
+        },
+        {
+            key: 'preview',
+            label: t('editor.tabs.preview', 'Preview'),
+            icon: Eye,
+            activeClass: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300'
+        }
     ].filter(Boolean);
 
     return (
-        <div className="sticky top-2 z-20 flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900 xl:hidden">
+        <div className="sticky top-2 z-20 flex rounded-2xl border border-slate-200/80 bg-white/95 p-1 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900 xl:hidden">
             {tabs.map(tab => {
                 const Icon = tab.icon;
+                const active = activeTab === tab.key;
                 return (
                     <button
                         key={tab.key}
                         type="button"
                         onClick={() => onChange(tab.key)}
-                        className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md px-2 transition-colors ${
-                            activeTab === tab.key
-                                ? 'text-teal-600 bg-teal-50/60 dark:text-teal-400 dark:bg-teal-950/20'
-                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                        className={`flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border px-2 transition-colors ${
+                            active
+                                ? tab.activeClass
+                                : 'border-transparent text-slate-400 hover:bg-slate-50 hover:text-slate-600 dark:hover:bg-slate-800/70 dark:hover:text-slate-200'
                         }`}
                     >
-                        <Icon size={16} />
-                        <span className="text-[10px] font-bold uppercase">{tab.label}</span>
+                        <Icon size={14} />
+                        <span className="truncate text-[10px] font-black uppercase">{tab.label}</span>
                     </button>
                 );
             })}
@@ -563,15 +667,64 @@ export const MobileWorkspaceTabs = memo(({ activeTab, onChange, showSidebar = fa
 });
 MobileWorkspaceTabs.displayName = 'MobileWorkspaceTabs';
 
-export const TemplateBar = memo(({ templates = [], onApply, onSaveTemplate, editable = false, isSavingTemplate = false, t }) => {
+const normalizeTemplateType = (value) => String(value || '').trim().toUpperCase();
+
+export const TemplateBar = memo(({
+    templates = [],
+    onApply,
+    onSaveTemplate,
+    editable = false,
+    isSavingTemplate = false,
+    currentExamTypeId,
+    currentModalityType,
+    currentStudyTypeLabel,
+    t
+}) => {
     const [isOpen, setIsOpen] = useState(false);
+    const closeMenu = React.useCallback(() => setIsOpen(false), []);
+    const currentModality = normalizeTemplateType(currentModalityType);
+    const currentStudyType = normalizeTemplateType(currentStudyTypeLabel);
+    const typeLabel = currentModalityType || currentStudyTypeLabel || t('editor.templates.reportType', 'study type');
+    const organizedTemplates = useMemo(() => {
+        const hasTypeContext = Boolean(currentExamTypeId || currentModality || currentStudyType);
+        const scoreTemplate = (tpl) => {
+            const tplModality = normalizeTemplateType(tpl.modality_type || tpl.modality_name);
+            const tplExamTypeId = tpl.exam_type_id || tpl.examTypeId;
+            const tplStudyType = normalizeTemplateType(tpl.exam_type_name || tpl.exam_type || tpl.study_type || tpl.name);
+            const matchesExamType = currentExamTypeId && String(tplExamTypeId || '') === String(currentExamTypeId);
+            const matchesModality = currentModality && tplModality === currentModality;
+            const matchesStudyType = currentStudyType && tplStudyType.includes(currentStudyType);
+            const isGeneral = !tplModality && !tplExamTypeId;
+
+            if (matchesExamType || matchesModality || matchesStudyType) return 0;
+            if (isGeneral || !hasTypeContext) return 1;
+            return 2;
+        };
+
+        return [...templates]
+            .map((tpl, index) => ({ tpl, index, score: scoreTemplate(tpl) }))
+            .sort((a, b) => a.score - b.score || a.index - b.index)
+            .map(({ tpl, score }) => ({ ...tpl, matchScore: score }));
+    }, [currentExamTypeId, currentModality, currentStudyType, templates]);
+    const { triggerRef, menuRef, style } = useFloatingMenu({
+        open: isOpen,
+        onClose: closeMenu,
+        width: 320,
+        align: 'start',
+        maxHeight: 340
+    });
 
     return (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex items-center gap-2.5">
-                <LayoutTemplate size={14} className="text-slate-400 dark:text-slate-500" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/95 px-3 py-2 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-teal-50 text-teal-700 ring-1 ring-teal-100 dark:bg-teal-950/35 dark:text-teal-300 dark:ring-teal-900/60">
+                    <LayoutTemplate size={14} />
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     {t('editor.templates.title', 'Templates')}
+                </span>
+                <span className="max-w-[180px] truncate rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600 ring-1 ring-slate-200/70 dark:bg-slate-950/50 dark:text-slate-300 dark:ring-slate-800">
+                    {typeLabel}
                 </span>
                 
                 {templates.length === 0 ? (
@@ -579,35 +732,57 @@ export const TemplateBar = memo(({ templates = [], onApply, onSaveTemplate, edit
                         {t('editor.templates.none', 'No templates available')}
                     </span>
                 ) : (
-                    <div className="relative">
+                    <div ref={triggerRef} className="relative inline-flex">
                         <button
                             type="button"
                             onClick={() => setIsOpen(!isOpen)}
-                            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-bold text-teal-600 transition-all duration-200 hover:bg-teal-50/60 hover:text-teal-700 dark:text-teal-400 dark:hover:bg-teal-950/20 dark:hover:text-teal-300"
+                            className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1 text-[10px] font-black text-teal-700 shadow-sm transition-all duration-200 hover:bg-teal-100 dark:border-teal-900/60 dark:bg-teal-950/30 dark:text-teal-300 dark:hover:bg-teal-950/50"
                         >
-                            {t('editor.templates.select', 'Select template')}
+                            {t('editor.templates.selectForType', {
+                                defaultValue: 'Select {{type}} template',
+                                type: typeLabel
+                            })}
                             <ChevronDown size={12} className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
                         </button>
-                        {isOpen && (
-                            <>
-                                <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
-                                <div className="absolute start-0 z-20 mt-1.5 max-h-72 w-64 overflow-y-auto rounded-lg bg-white p-1.5 shadow-xl ring-1 ring-slate-200 animate-fade-in dark:bg-slate-900 dark:ring-slate-700">
-                                    {templates.map(tpl => (
-                                        <button
-                                            key={tpl.template_id || tpl.name}
-                                            type="button"
-                                            onClick={() => {
-                                                onApply(tpl.template_id);
-                                                setIsOpen(false);
-                                            }}
-                                            className="w-full truncate rounded-md px-3 py-2 text-start text-xs font-semibold text-slate-700 transition-colors hover:bg-teal-50 hover:text-teal-700 dark:text-slate-300 dark:hover:bg-teal-950/30 dark:hover:text-teal-300"
-                                        >
-                                            {tpl.name}
-                                        </button>
-                                    ))}
-                                </div>
-                            </>
-                        )}
+                        {isOpen && style && createPortal((
+                            <div
+                                ref={menuRef}
+                                role="menu"
+                                style={style}
+                                className="z-[100] overflow-y-auto rounded-xl bg-white p-1.5 shadow-2xl ring-1 ring-slate-200 animate-fade-in dark:bg-slate-900 dark:ring-slate-700"
+                            >
+                                {organizedTemplates.map(tpl => (
+                                    <button
+                                        key={tpl.template_id || tpl.name}
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                            onApply(tpl.template_id);
+                                            setIsOpen(false);
+                                        }}
+                                        className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-start transition-colors ${
+                                            tpl.matchScore === 0
+                                                ? 'bg-teal-50/80 text-teal-800 hover:bg-teal-100 dark:bg-teal-950/30 dark:text-teal-200 dark:hover:bg-teal-950/50'
+                                                : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800/70 dark:hover:text-white'
+                                        }`}
+                                    >
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block truncate text-xs font-black">{tpl.name}</span>
+                                            <span className="mt-0.5 block truncate text-[9px] font-bold opacity-65">
+                                                {tpl.matchScore === 0
+                                                    ? t('editor.templates.matchedType', 'Matched to this study')
+                                                    : tpl.matchScore === 1
+                                                        ? t('editor.templates.generalType', 'General template')
+                                                        : t('editor.templates.otherType', 'Other type')}
+                                                {tpl.modality_type ? ` · ${tpl.modality_type}` : ''}
+                                                {tpl.is_builtin ? ` · ${t('editor.templates.builtin', 'Built-in')}` : ''}
+                                            </span>
+                                        </span>
+                                        {tpl.matchScore === 0 ? <CheckCircle2 size={14} className="shrink-0" /> : null}
+                                    </button>
+                                ))}
+                            </div>
+                        ), document.body)}
                     </div>
                 )}
             </div>
@@ -628,7 +803,7 @@ export const TemplateBar = memo(({ templates = [], onApply, onSaveTemplate, edit
 });
 TemplateBar.displayName = 'TemplateBar';
 
-export const ReportSectionCard = memo(({ config, value = '', editable = false, active = false, collapsed = false, onToggleCollapse, onFocus, onChange, canImprove = false, isImproving = false, onImprove, locale = 'en-US', t }) => {
+export const ReportSectionCard = memo(({ config, value = '', editable = false, active = false, collapsed = false, onToggleCollapse, onFocus, onChange, canImprove = false, isImproving = false, onImprove, canUndoImprove = false, onUndoImprove, locale = 'en-US', t }) => {
     const IconComponent = IconMap[config.icon] || FileText;
     const isCollapsible = config.collapsible;
     const textareaRef = useRef(null);
@@ -685,9 +860,9 @@ export const ReportSectionCard = memo(({ config, value = '', editable = false, a
             }`}
         >
             {/* ── Header ── */}
-            <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
-                <div className="flex items-center gap-3 min-w-0">
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors ${
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5 sm:px-4">
+                <div className="flex min-w-0 items-center gap-2.5">
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
                         active
                             ? 'bg-teal-100 text-teal-700 ring-1 ring-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:ring-teal-900'
                             : 'bg-slate-100/80 text-slate-500 dark:bg-slate-800/40 dark:text-slate-400'
@@ -697,13 +872,13 @@ export const ReportSectionCard = memo(({ config, value = '', editable = false, a
 
                     <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                            <span className="block truncate text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                            <span className="block truncate text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">
                                 {t(`sections.${config.key}`)}
                                 {config.required && <span className="ms-1 text-rose-500">*</span>}
                             </span>
                             {/* Fill-state badge — shown when not collapsed */}
                             {!collapsed && (
-                                <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide transition-all duration-200 ${fillBadge.cls}`}>
+                                <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[9px] font-black uppercase tracking-wide transition-all duration-200 ${fillBadge.cls}`}>
                                     {fillBadge.label}
                                 </span>
                             )}
@@ -719,6 +894,21 @@ export const ReportSectionCard = memo(({ config, value = '', editable = false, a
                 </div>
 
                 <div className="flex items-center gap-1.5">
+                    {canUndoImprove && editable && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onUndoImprove?.(config.key);
+                            }}
+                            title={t('editor.undoImproveTooltip', 'Restore the text before the last improvement')}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[10px] font-bold text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
+                        >
+                            <RotateCcw size={11} />
+                            {t('actions.undo', 'Undo')}
+                        </button>
+                    )}
+
                     {/* AI Improve button */}
                     {canImprove && editable && value?.trim() && (
                         <button
@@ -775,7 +965,7 @@ export const ReportSectionCard = memo(({ config, value = '', editable = false, a
 
             {/* ── Textarea ── */}
             {!collapsed && (
-                <div className="px-4 pb-4 sm:px-5 sm:pb-5">
+                <div className="px-3 pb-3 sm:px-4 sm:pb-4">
                     <div className={`relative rounded-md transition-shadow ${
                         active
                             ? 'ring-2 ring-teal-500/15 shadow-sm shadow-teal-500/5'
@@ -795,9 +985,9 @@ export const ReportSectionCard = memo(({ config, value = '', editable = false, a
                             dir="ltr"
                             lang="en"
                             style={{ resize: 'none', overflow: 'hidden' }}
-                            className={`w-full rounded-md border bg-white p-3.5 text-left text-sm leading-6 text-slate-800 outline-none placeholder:text-left placeholder:text-slate-300 transition-colors dark:bg-slate-950/40 dark:text-slate-200 dark:placeholder:text-slate-600 sm:p-4 ${
+                            className={`w-full rounded-xl border bg-white p-3 text-left text-[13px] leading-6 text-slate-800 outline-none placeholder:text-left placeholder:text-slate-300 transition-colors dark:bg-slate-950/40 dark:text-slate-200 dark:placeholder:text-slate-600 sm:p-3.5 ${
                                 editable
-                                    ? 'border-slate-200/70 focus:border-teal-400/50 focus:shadow-[0_0_0_3px_rgba(20,184,166,0.06)] dark:border-slate-700/50 dark:focus:border-teal-600/40 dark:focus:shadow-[0_0_0_3px_rgba(20,184,166,0.08)]'
+                                    ? 'border-slate-200/70 focus:border-teal-400/50 focus:shadow-[0_0_0_3px_rgba(var(--viara-primary-rgb),0.06)] dark:border-slate-700/50 dark:focus:border-teal-600/40 dark:focus:shadow-[0_0_0_3px_rgba(var(--viara-primary-rgb),0.08)]'
                                     : 'cursor-not-allowed border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30'
                             }`}
                         />
@@ -2267,6 +2457,8 @@ const AiImageAnalysisPanel = memo(
 AiImageAnalysisPanel.displayName = 'AiImageAnalysisPanel';
 
 export const StudyToolsPanel = memo(({
+    activeTool = null,
+    compact = false,
     exam,
     imaging,
     imagesReady,
@@ -2308,35 +2500,22 @@ export const StudyToolsPanel = memo(({
     const aiJobFailed = latestAiJob?.status === 'Failed';
     const aiJobBadge = aiJobUnsupported
         ? t('editor.aiImage.unsupported', { defaultValue: 'Not supported' })
-        : (latestAiJob?.status || t('editor.aiImage.notRequestedShort', { defaultValue: 'Not requested' }));
+        : (latestAiJob?.status
+            ? t(`statuses.${latestAiJob.status}`, { defaultValue: latestAiJob.status })
+            : t('editor.aiImage.notRequestedShort', { defaultValue: 'Not requested' }));
     const aiJobBadgeTone = aiJobFailed
         ? 'rose'
         : (aiJobUnsupported ? 'slate' : (aiJobActive ? 'amber' : (latestAiJob ? 'emerald' : 'slate')));
-
-    return (
-        <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3 px-1">
-                <div className="flex items-center gap-2.5">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-50 ring-1 ring-teal-100 dark:bg-teal-950/40 dark:ring-teal-900">
-                        <ServerCog size={15} className="text-teal-700 dark:text-teal-400" />
-                    </span>
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                        {t('editor.studyTools', { defaultValue: 'Study tools' })}
-                    </h2>
-                </div>
-                <span className="rounded-full bg-slate-100/80 px-2.5 py-1 text-[10px] font-bold text-slate-500 ring-1 ring-slate-200/60 backdrop-blur-sm dark:bg-slate-800/40 dark:text-slate-300 dark:ring-slate-700/50">
-                    {imagesReady ? t('editor.imagesReadyShort', { defaultValue: 'Images ready' }) : t('editor.pendingImagesShort', { defaultValue: 'Images pending' })}
-                </span>
-            </div>
-
-            <CollapsibleSection
-                icon={FileImage}
-                title={t('editor.imaging.orderTitle', { defaultValue: 'Order imaging' })}
-                subtitle={exam?.order_number || exam?.exam_id}
-                badge={imagesReady ? t('editor.imagesReadyShort', { defaultValue: 'Ready' }) : t('editor.pendingImagesShort', { defaultValue: 'Pending' })}
-                badgeTone={imagesReady ? 'emerald' : 'amber'}
-                defaultOpen={!imagesReady}
-            >
+    const toolSections = [
+        {
+            key: 'imaging',
+            icon: FileImage,
+            title: t('editor.imaging.orderTitle', { defaultValue: 'Order imaging' }),
+            subtitle: exam?.order_number || exam?.exam_id,
+            badge: imagesReady ? t('editor.imagesReadyShort', { defaultValue: 'Ready' }) : t('editor.pendingImagesShort', { defaultValue: 'Pending' }),
+            badgeTone: imagesReady ? 'emerald' : 'amber',
+            defaultOpen: !imagesReady || activeTool === 'imaging',
+            content: (
                 <OrderImagingPanel
                     exam={exam}
                     imaging={imaging}
@@ -2347,15 +2526,16 @@ export const StudyToolsPanel = memo(({
                     onUpload={onUploadImages}
                     t={t}
                 />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-                icon={BrainCircuit}
-                title={t('editor.aiImage.title', { defaultValue: 'AI image analysis' })}
-                badge={aiJobBadge}
-                badgeTone={aiJobBadgeTone}
-                defaultOpen={false}
-            >
+            )
+        },
+        {
+            key: 'aiImage',
+            icon: BrainCircuit,
+            title: t('editor.aiImage.title', { defaultValue: 'AI image analysis' }),
+            badge: aiJobBadge,
+            badgeTone: aiJobBadgeTone,
+            defaultOpen: activeTool === 'aiImage',
+            content: (
                 <AiImageAnalysisPanel
                     jobs={aiAnalysisJobs}
                     imagesReady={imagesReady}
@@ -2372,15 +2552,16 @@ export const StudyToolsPanel = memo(({
                     onConfigure={onConfigureAi}
                     t={t}
                 />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-                icon={Sparkles}
-                title={t('editor.aiDraft.title', { defaultValue: 'AI report assistant' })}
-                badge={aiDraft ? t('editor.aiDraft.badgeReady', { defaultValue: 'Ready' }) : null}
-                badgeTone="emerald"
-                defaultOpen={reportAiConfigured && !locked}
-            >
+            )
+        },
+        {
+            key: 'aiDraft',
+            icon: Sparkles,
+            title: t('editor.aiDraft.title', { defaultValue: 'AI report assistant' }),
+            badge: aiDraft ? t('editor.aiDraft.badgeReady', { defaultValue: 'Ready' }) : null,
+            badgeTone: 'emerald',
+            defaultOpen: activeTool === 'aiDraft' || (reportAiConfigured && !locked),
+            content: (
                 <AiPreliminaryDraftPanel
                     draft={aiDraft}
                     history={aiDraftHistory}
@@ -2397,19 +2578,58 @@ export const StudyToolsPanel = memo(({
                     locale={locale}
                     t={t}
                 />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-                icon={FileCheck2}
-                title={t('editor.document.title', { defaultValue: 'Export settings' })}
-                defaultOpen={false}
-            >
+            )
+        },
+        {
+            key: 'document',
+            icon: FileCheck2,
+            title: t('editor.document.title', { defaultValue: 'Export settings' }),
+            defaultOpen: activeTool === 'document',
+            content: (
                 <ReportDocumentPanel
                     settings={reportDocument}
                     onChange={onReportDocumentChange}
                     t={t}
                 />
-            </CollapsibleSection>
+            )
+        }
+    ];
+    const visibleToolSections = activeTool
+        ? toolSections.filter((section) => section.key === activeTool)
+        : toolSections;
+
+    return (
+        <div className={compact ? 'space-y-2' : 'space-y-3'}>
+            {!compact && (
+            <div className="flex items-center justify-between gap-3 px-1">
+                <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-50 ring-1 ring-teal-100 dark:bg-teal-950/40 dark:ring-teal-900">
+                        <ServerCog size={15} className="text-teal-700 dark:text-teal-400" />
+                    </span>
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                        {t('editor.studyTools', { defaultValue: 'Study tools' })}
+                    </h2>
+                </div>
+                <span className="rounded-full bg-slate-100/80 px-2.5 py-1 text-[10px] font-bold text-slate-500 ring-1 ring-slate-200/60 backdrop-blur-sm dark:bg-slate-800/40 dark:text-slate-300 dark:ring-slate-700/50">
+                    {imagesReady ? t('editor.imagesReadyShort', { defaultValue: 'Images ready' }) : t('editor.pendingImagesShort', { defaultValue: 'Images pending' })}
+                </span>
+            </div>
+            )}
+
+            {visibleToolSections.map(({ key, icon, title, subtitle, badge, badgeTone, defaultOpen, content }) => (
+                <CollapsibleSection
+                    key={key}
+                    icon={icon}
+                    title={title}
+                    subtitle={subtitle}
+                    badge={badge}
+                    badgeTone={badgeTone}
+                    defaultOpen={defaultOpen}
+                    compact={compact}
+                >
+                    {content}
+                </CollapsibleSection>
+            ))}
         </div>
     );
 });

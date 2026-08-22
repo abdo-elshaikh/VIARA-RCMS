@@ -36,7 +36,7 @@ import { getErrorMessage } from '../../utils/getErrorMessage';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 
 const ACCESS_LEVELS = [
-    { id: 'read', labelKey: 'readOnly', badge: 'GET', pill: 'border-cyan-200 bg-cyan-50 text-cyan-700', active: 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/20' },
+    { id: 'read', labelKey: 'readOnly', badge: 'GET', pill: 'border-[rgba(var(--VIARA-accent-rgb),0.28)] bg-[var(--VIARA-accent-soft)] text-[var(--VIARA-accent)]', active: 'border-[var(--VIARA-accent)] bg-[var(--VIARA-accent-soft)] dark:bg-[rgba(var(--VIARA-accent-rgb),0.16)]' },
     { id: 'read_write', labelKey: 'readWrite', badge: 'FULL', pill: 'border-amber-200 bg-amber-50 text-amber-700', active: 'border-amber-500 bg-amber-50 dark:bg-amber-950/20' },
 ];
 
@@ -53,10 +53,10 @@ const EMPTY_DB_FORM = {
     idleTimeoutMs: 30000
 };
 
-const buttonBase = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50';
-const primaryButton = `${buttonBase} bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white`;
-const secondaryButton = `${buttonBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800`;
-const dangerButton = `${buttonBase} border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300`;
+const buttonBase = 'inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl px-4 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50';
+const primaryButton = `${buttonBase} bg-teal-600 text-white shadow-sm hover:bg-teal-500`;
+const secondaryButton = `${buttonBase} border border-slate-200/80 bg-white/90 text-slate-700 shadow-2xs backdrop-blur-md hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800`;
+const dangerButton = `${buttonBase} border border-rose-500/20 bg-rose-500/10 text-rose-700 hover:bg-rose-500/20 dark:border-rose-500/30 dark:text-rose-300`;
 
 const CODE_SNIPPET = `const res = await fetch('/api/v1/patients', {
   headers: { Authorization: 'Bearer <YOUR_TOKEN>' },
@@ -173,26 +173,75 @@ const DeveloperSettings = () => {
     };
 
     return (
-        <div className="space-y-5">
-            <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                    <div className="flex min-w-0 items-start gap-3">
-                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                            <Terminal size={20} aria-hidden="true" />
-                        </span>
-                        <div>
-                            <h2 className="text-base font-semibold text-slate-900 dark:text-white">{copy('title')}</h2>
-                            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">{copy('description')}</p>
+        <div className="space-y-6 max-w-7xl mx-auto pb-10">
+            {/* VIARA Hero Command Deck */}
+            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8 space-y-6">
+                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
+                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
+
+                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-start gap-4 sm:items-center min-w-0">
+                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-sky-500/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
+                            <Terminal size={26} strokeWidth={2} />
+                        </div>
+                        <div className="min-w-0">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                                <Key size={11} />
+                                <span>API Engine & Database Architecture</span>
+                            </span>
+                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                                {copy('title', { defaultValue: 'Developer Operations & Database Infrastructure' })}
+                            </h1>
+                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                                {copy('description', { defaultValue: 'Manage PostgreSQL database connection pools, test cluster health, issue scoped Bearer API tokens, and monitor runtime telemetry.' })}
+                            </p>
                         </div>
                     </div>
-                    <div className="grid gap-2 sm:grid-cols-4 xl:min-w-[34rem]">
-                        <Metric label={copy('activeDatabase')} value={activeDb ? activeDb.database : '--'} icon={Database} />
-                        <Metric label={copy('poolInUse')} value={`${pool.total ?? 0}/${pool.idle ?? 0}`} icon={Activity} />
-                        <Metric label={copy('activeTokens')} value={tokens.length} icon={Key} />
-                        <Metric label={copy('writeTokens')} value={readWriteCount} icon={ShieldCheck} tone={readWriteCount ? 'warning' : 'neutral'} />
+                </div>
+
+                {/* Telemetry Facts HUD */}
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-slate-100/80 px-4 py-3 shadow-2xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <Database size={16} className="text-teal-600 dark:text-teal-400" />
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy('activeDatabase', { defaultValue: 'Active Database' })}</p>
+                            <p className="font-mono text-base font-black text-slate-900 dark:text-white truncate">{activeDb ? activeDb.database : '--'}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-emerald-800 dark:text-emerald-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <Activity size={16} className="text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">{copy('poolInUse', { defaultValue: 'Connection Pool' })}</p>
+                            <p className="font-mono text-base font-black text-emerald-900 dark:text-white">{`${pool.total ?? 0}/${pool.idle ?? 0}`}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-sky-800 dark:text-sky-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <Key size={16} className="text-sky-600 dark:text-sky-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">{copy('activeTokens', { defaultValue: 'Active API Tokens' })}</p>
+                            <p className="font-mono text-base font-black text-sky-900 dark:text-white">{tokens.length}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-amber-800 dark:text-amber-300">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
+                            <ShieldCheck size={16} className="text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">{copy('writeTokens', { defaultValue: 'Full Access' })}</p>
+                            <p className="font-mono text-base font-black text-amber-900 dark:text-white">{readWriteCount}</p>
+                        </div>
                     </div>
                 </div>
-            </section>
+            </div>
 
             <DatabaseConfigPanel
                 copy={copy}
@@ -258,8 +307,8 @@ const DeveloperSettings = () => {
                         )}
                     />
                     {showSnippet && (
-                        <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-950 dark:border-slate-800">
-                            <div className="border-b border-slate-800 px-4 py-2 text-xs font-semibold text-slate-400">{copy('apiExample')}</div>
+                        <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-950 dark:border-slate-800 shadow-sm">
+                            <div className="border-b border-slate-800 px-4 py-2.5 text-xs font-bold text-slate-400">{copy('apiExample')}</div>
                             <pre className="overflow-x-auto p-4 font-mono text-xs leading-6 text-slate-200">{CODE_SNIPPET}</pre>
                         </div>
                     )}
@@ -296,14 +345,14 @@ const DatabaseConfigPanel = ({
     onReload,
     dbSummary
 }) => (
-    <section className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-col gap-3 border-b border-slate-200 p-5 dark:border-slate-800 lg:flex-row lg:items-start lg:justify-between">
+    <section className="rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-slate-200/80 p-6 dark:border-slate-800 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex min-w-0 items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
                     <Database size={18} aria-hidden="true" />
                 </span>
                 <div>
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{copy('dbTitle')}</h3>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">{copy('dbTitle')}</h3>
                     <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">{copy('dbDescription')}</p>
                 </div>
             </div>
@@ -319,11 +368,11 @@ const DatabaseConfigPanel = ({
             </div>
         </div>
 
-        <div className="grid gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="grid gap-5 p-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
             <form onSubmit={onSave} className="space-y-4">
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-5 text-amber-900 dark:text-amber-200">
                     <div className="flex gap-2">
-                        <Lock size={15} className="mt-0.5 shrink-0" />
+                        <Lock size={15} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
                         <p>{copy('dbRestartNotice')}</p>
                     </div>
                 </div>
@@ -331,8 +380,7 @@ const DatabaseConfigPanel = ({
                 <div className="grid gap-4 md:grid-cols-2">
                     <TextField label={copy('host')} value={dbForm.host} onChange={value => onFieldChange('host', value)} placeholder="localhost" required />
                     <TextField label={copy('port')} value={dbForm.port} onChange={value => onFieldChange('port', value)} type="number" min="1" max="65535" required />
-                    <TextField label={copy('databaseName')} value={dbForm.database} onChange={value => onFieldChange('database', value)} placeholder="rcms" required />
-                    <TextField label={copy('username')} value={dbForm.username} onChange={value => onFieldChange('username', value)} placeholder="rcms" required />
+                    <TextField label={copy('username')} value={dbForm.username} onChange={value => onFieldChange('username', value)} placeholder="VIARA" required />
                     <div>
                         <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{copy('password')}</label>
                         <div className="mt-2 flex rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950">
@@ -378,7 +426,7 @@ const DatabaseConfigPanel = ({
                     <TextField label={copy('idleTimeout')} value={dbForm.idleTimeoutMs} onChange={value => onFieldChange('idleTimeoutMs', value)} type="number" min="1000" />
                 </div>
 
-                <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+                <div className="flex flex-wrap gap-2 border-t border-slate-200/80 pt-4 dark:border-slate-800">
                     <button type="button" onClick={() => onTest('custom')} disabled={isTesting} className={secondaryButton}>
                         <Zap size={16} className={isTesting ? 'animate-pulse' : ''} />
                         {copy('testDraft')}
@@ -404,11 +452,11 @@ const DatabaseConfigPanel = ({
                     [copy('password'), savedDb?.passwordConfigured ? copy('configured') : copy('notConfigured')]
                 ]} />
                 {dbResult && (
-                    <div className={`rounded-lg border p-4 ${dbResult.success ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100' : 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-100'}`}>
+                    <div className={`rounded-2xl border p-4 ${dbResult.success ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-950/20 dark:text-emerald-100' : 'border-rose-500/30 bg-rose-500/10 text-rose-900 dark:border-rose-500/30 dark:bg-rose-950/20 dark:text-rose-100'}`}>
                         <div className="flex items-start gap-2">
-                            {dbResult.success ? <CheckCircle2 size={17} className="mt-0.5 shrink-0" /> : <AlertCircle size={17} className="mt-0.5 shrink-0" />}
+                            {dbResult.success ? <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" /> : <AlertCircle size={17} className="mt-0.5 shrink-0 text-rose-600 dark:text-rose-400" />}
                             <div>
-                                <p className="text-sm font-semibold">{dbResult.success ? copy('dbTestPassed') : copy('dbTestFailed')}</p>
+                                <p className="text-sm font-bold">{dbResult.success ? copy('dbTestPassed') : copy('dbTestFailed')}</p>
                                 <p className="mt-1 text-xs leading-5">{dbResult.message || `${dbResult.database || ''} ${dbResult.latencyMs ? `(${dbResult.latencyMs} ms)` : ''}`}</p>
                             </div>
                         </div>
@@ -420,14 +468,14 @@ const DatabaseConfigPanel = ({
 );
 
 const TokenPanel = ({ copy, tokens, isLoading, isError, isFetching, isGenerating, showCreate, newToken, onCreateOpen, onCreateClose, onGenerate, onDismissToken, onRevoke, onRefresh }) => (
-    <section className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-col gap-3 border-b border-slate-200 p-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+    <section className="rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-slate-200/80 p-6 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
                     <Key size={18} aria-hidden="true" />
                 </span>
                 <div>
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{copy('tokensTitle')}</h3>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">{copy('tokensTitle')}</h3>
                     <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{copy('tokensDescription')}</p>
                 </div>
             </div>
@@ -442,13 +490,13 @@ const TokenPanel = ({ copy, tokens, isLoading, isError, isFetching, isGenerating
                 </button>
             </div>
         </div>
-        <div className="space-y-4 p-5">
+        <div className="space-y-4 p-6">
             {showCreate && !newToken && <CreateForm copy={copy} onSubmit={onGenerate} onCancel={onCreateClose} isGenerating={isGenerating} />}
             {newToken && <TokenReveal copy={copy} token={newToken} onDismiss={onDismissToken} />}
             {isLoading && <SkeletonList />}
             {!isLoading && isError && <EmptyError copy={copy} onRefresh={onRefresh} isFetching={isFetching} />}
             {!isLoading && !isError && tokens.length === 0 && (
-                <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center dark:border-slate-700">
+                <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700">
                     <Key size={28} className="mx-auto text-slate-400" aria-hidden="true" />
                     <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">{copy('empty')}</p>
                     <button type="button" onClick={onCreateOpen} className={`${primaryButton} mt-4`}>
@@ -477,7 +525,6 @@ const TokenRow = ({ copy, token, onRevoke }) => {
             toast.error(copy('copyFailed'));
         }
     };
-
     return (
         <article className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -622,25 +669,25 @@ const StatusBox = ({ title, value, details }) => (
 );
 
 const ToolCard = ({ icon: Icon, title, description, rows, action }) => (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+    <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 space-y-4">
         <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
                 <Icon size={18} />
             </span>
             <div>
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{title}</h3>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">{title}</h3>
                 <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</p>
             </div>
         </div>
-        <div className="mt-4 space-y-2">
+        <div className="space-y-2 rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/30">
             {rows.map(([label, value]) => (
                 <div key={label} className="flex justify-between gap-3 text-xs">
-                    <span className="text-slate-500 dark:text-slate-400">{label}</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-100">{value}</span>
+                    <span className="font-medium text-slate-500 dark:text-slate-400">{label}</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100">{value}</span>
                 </div>
             ))}
         </div>
-        {action && <div className="mt-4">{action}</div>}
+        {action && <div>{action}</div>}
     </section>
 );
 

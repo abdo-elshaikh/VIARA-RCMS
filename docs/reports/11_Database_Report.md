@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The RCMS database is a well-designed PostgreSQL 15 schema with **40+ tables**, **105 sequential migrations**, proper constraint enforcement (FK, CHECK, EXCLUDE, UNIQUE), and comprehensive indexing. The migration runner uses advisory locking, SHA-256 checksums for idempotency, and supports `--fresh` re-creation. Financial integrity is enforced through database-level constraints and journal entry patterns.
+The VIARA database is a well-designed PostgreSQL 15 schema with **40+ tables**, **105 sequential migrations**, proper constraint enforcement (FK, CHECK, EXCLUDE, UNIQUE), and comprehensive indexing. The migration runner uses advisory locking, SHA-256 checksums for idempotency, and supports `--fresh` re-creation. Financial integrity is enforced through database-level constraints and journal entry patterns.
 
 **Database Health Score: 85/100**
 

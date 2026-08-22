@@ -6,8 +6,9 @@ import { useGetAppointmentByIdQuery, useGetCenterSettingsQuery, useUpdateCenterS
 import { QRCodeSVG } from 'qrcode.react';
 import { CheckCircle2, Loader2, Save, Settings2, Printer, Layout } from 'lucide-react';
 import LanguageToggle from '../../components/ui/LanguageToggle';
-import { normalizeCenterSettings } from '../../utils/centerSettings';
+import { normalizeCenterSettings, resolveDocumentIdentity } from '../../utils/centerSettings';
 import { getErrorMessage } from '../../utils/getErrorMessage';
+import { VIARA_BRAND } from '../../config/brand';
 
 const STICKER_COPY = {
     en: {
@@ -249,7 +250,7 @@ const PrintSticker = () => {
     const [showExamDetails, setShowExamDetails] = useState(true);
 
     // Advanced print settings states
-    const [themeColor, setThemeColor] = useState('#0f766e');
+    const [themeColor, setThemeColor] = useState('#087F5B');
     const [fontFamily, setFontFamily] = useState('Inter');
     const [paddingSize, setPaddingSize] = useState('normal'); // compact, normal, cozy
     const [textSize, setTextSize] = useState('normal'); // small, normal, large
@@ -333,17 +334,18 @@ const PrintSticker = () => {
     const uiLanguage = isArabic ? 'ar' : 'en';
     const ui = (key) => STICKER_COPY[uiLanguage][key] || STICKER_COPY.en[key] || key;
     const label = (key) => getStickerText(activeStickerLanguage, key);
-    const centerName = centerSettings.center_name;
-    const branchName = centerSettings.branch_name;
-    const logoUrl = centerSettings.logo_url;
-    const brandInitials = String(centerName || 'RCMS').trim().slice(0, 4).toUpperCase();
+    const documentIdentity = resolveDocumentIdentity(centerSettings, appointment, { language: activeStickerLanguage, kind: 'sticker' });
+    const centerName = documentIdentity.centerName;
+    const branchName = documentIdentity.branchName;
+    const logoUrl = documentIdentity.logoUrl;
+    const brandInitials = String(centerName || VIARA_BRAND.name).trim().slice(0, 4).toUpperCase();
     const fontStack = fontFamily === 'Outfit' ? "'Outfit', sans-serif" : fontFamily === 'Space Mono' ? "'Space Mono', monospace" : fontFamily === 'Arial' ? "'Arial', sans-serif" : "'Inter', sans-serif";
     const qrValueMap = {
         order: appointment.order_number || appointment.exam_id || appointment.appointment_id,
         appointment: appointment.appointment_id || appointment.exam_id || appointment.order_number,
         patient: appointment.mrn || appointment.patient_id || appointment.order_number
     };
-    const qrValue = String(qrValueMap[qrPayload] || appointment.order_number || appointment.appointment_id || appointment.mrn || 'RCMS');
+    const qrValue = String(qrValueMap[qrPayload] || appointment.order_number || appointment.appointment_id || appointment.mrn || VIARA_BRAND.name);
     const qrCaption = qrPayload === 'patient'
         ? (appointment.mrn || label('patient'))
         : qrPayload === 'appointment'
@@ -721,10 +723,10 @@ const PrintSticker = () => {
                     <section className="rounded-xl border border-slate-200 bg-white p-3 space-y-3">
                         <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400">{ui('theme')}</label>
                         <select value={themeColor} onChange={e => setThemeColor(e.target.value)} className="w-full text-xs font-bold border border-slate-200 rounded-lg p-2 bg-white">
-                            <option value="#0f766e">Teal Green</option>
-                            <option value="#1e3a8a">Navy Blue</option>
-                            <option value="#3b82f6">Sky Blue</option>
-                            <option value="#dc2626">Modality Crimson</option>
+                            <option value="#087F5B">VIARA Emerald</option>
+                            <option value="#327C92">Clinical Info</option>
+                            <option value="#F4B942">Attention Amber</option>
+                            <option value="#D95757">Critical Coral</option>
                         </select>
 
                         <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400">{ui('font')}</label>

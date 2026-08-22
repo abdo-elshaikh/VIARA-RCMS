@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { pipeline } = require('stream/promises');
 
-const MAGIC = Buffer.from('RCMSBKP2');
+const MAGIC = Buffer.from('VIARABKP2');
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 const HEADER_LENGTH = MAGIC.length + IV_LENGTH;

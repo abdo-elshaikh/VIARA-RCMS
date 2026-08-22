@@ -67,7 +67,7 @@ const PortalPasswordChange = () => {
         <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900">
             <div className="w-full max-w-md bg-white dark:bg-slate-800 rounded-xl shadow-lg p-8">
                 <div className="flex items-center justify-center mb-6">
-                    <LockKeyhole className="h-8 w-8 text-blue-600" />
+                    <LockKeyhole className="h-8 w-8 text-emerald-700" />
                 </div>
                 <h1 className="text-2xl font-bold text-center text-gray-900 dark:text-white mb-2">
                     {t('changePasswordTitle', 'Change Your Password')}
@@ -99,7 +99,7 @@ const PortalPasswordChange = () => {
                                 value={formData.currentPassword}
                                 onChange={handleChange}
                                 required
-                                className="w-full px-3 py-2 pe-10 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-white"
+                                className="w-full px-3 py-2 pe-10 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent dark:bg-slate-700 dark:text-white"
                             />
                             <button
                                 type="button"
@@ -124,7 +124,7 @@ const PortalPasswordChange = () => {
                                 onChange={handleChange}
                                 required
                                 minLength={8}
-                                className="w-full px-3 py-2 pe-10 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-white"
+                                className="w-full px-3 py-2 pe-10 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent dark:bg-slate-700 dark:text-white"
                             />
                             <button
                                 type="button"
@@ -148,14 +148,14 @@ const PortalPasswordChange = () => {
                             onChange={handleChange}
                             required
                             minLength={8}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-white"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent dark:bg-slate-700 dark:text-white"
                         />
                     </div>
 
                     <button
                         type="submit"
                         disabled={isSubmitting}
-                        className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                        className="w-full py-2 px-4 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed transition"
                     >
                         {isSubmitting ? t('changing', 'Changing...') : t('changePassword', 'Change Password')}
                     </button>

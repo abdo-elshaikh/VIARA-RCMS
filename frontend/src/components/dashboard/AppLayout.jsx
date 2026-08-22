@@ -130,7 +130,7 @@ const AppLayout = ({ children, role }) => {
             <aside
                 ref={drawerRef}
                 className={`
-                    fixed inset-y-0 start-0 z-50 border-e border-slate-200 bg-white text-slate-900 shadow-2xl ease-in-out dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface)] dark:text-[var(--rcms-ink)]
+                    fixed inset-y-0 start-0 z-50 border-e border-white/10 bg-[var(--viara-primary-dark)] text-white shadow-2xl ease-in-out dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-canvas)]
                     ${isResizing ? '' : 'transition-all duration-300'}
                     ${isSidebarOpen ? 'translate-x-0' : (isRtl ? 'translate-x-full' : '-translate-x-full')}
                     lg:static lg:translate-x-0
@@ -151,8 +151,8 @@ const AppLayout = ({ children, role }) => {
                 {/* Drag Handle */}
                 {!isCollapsed && (
                     <div
-                        className={`absolute inset-y-0 end-0 w-1.5 cursor-col-resize z-[60] transition-colors hidden lg:block hover:bg-cyan-500/50
-                            ${isResizing ? 'bg-cyan-500/80' : ''}
+                        className={`absolute inset-y-0 end-0 w-1.5 cursor-col-resize z-[60] transition-colors hidden lg:block hover:bg-[rgba(var(--viara-primary-rgb),0.5)]
+                            ${isResizing ? 'bg-[rgba(var(--viara-primary-rgb),0.8)]' : ''}
                         `}
                         onMouseDown={startResizing}
                     />

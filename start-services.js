@@ -4,6 +4,25 @@ const fs = require('fs');
 
 const isWindows = process.platform === 'win32';
 
+const rootEnvPath = path.join(__dirname, '.env');
+try {
+  require(path.join(__dirname, 'backend', 'node_modules', 'dotenv')).config({ path: rootEnvPath });
+} catch (error) {
+  if (fs.existsSync(rootEnvPath)) {
+    console.warn('[launcher] Could not load the root .env file. Run npm install in backend/.');
+  }
+}
+
+const localBackendEnv = {};
+if (!process.env.DATABASE_URL && process.env.POSTGRES_PASSWORD) {
+  const user = encodeURIComponent(process.env.POSTGRES_USER || 'rcms');
+  const password = encodeURIComponent(process.env.POSTGRES_PASSWORD);
+  const database = encodeURIComponent(process.env.POSTGRES_DB || 'rcms');
+  const port = process.env.POSTGRES_PORT || '5432';
+  localBackendEnv.DATABASE_URL = `postgresql://${user}:${password}@127.0.0.1:${port}/${database}`;
+}
+localBackendEnv.PORT = process.env.PORT || '3000';
+
 const colors = {
   reset: '\x1b[0m',
   bright: '\x1b[1m',
@@ -23,6 +42,7 @@ const noDocker = args.includes('--no-docker') || process.env.NO_DOCKER === 'true
 const dockerAll = args.includes('--docker-all') || args.includes('--all');
 const dockerOnly = args.includes('--docker-only');
 const stopDockerOnExit = !args.includes('--no-stop-docker') || args.includes('--stop-docker') || args.includes('--down');
+const noMigrate = args.includes('--no-migrate') || args.includes('--skip-migrate') || process.env.NO_MIGRATE === 'true';
 
 let customDockerServices = null;
 const servicesArg = args.find(arg => arg.startsWith('--services='));
@@ -33,7 +53,7 @@ if (servicesArg) {
 if (helpRequested) {
   console.log(`
 ${colors.bright}${colors.cyan}==================================================${colors.reset}
-${colors.bright}   🚀 RCMS Service Launcher Options${colors.reset}
+${colors.bright}   🚀 VIARA Service Launcher Options${colors.reset}
 ${colors.bright}${colors.cyan}==================================================${colors.reset}
 
 Usage: node start-services.js [options]
@@ -43,6 +63,7 @@ Options:
   --docker-all     Start all Docker containers defined in docker-compose.yml
   --docker-only    Start Docker containers only and attach to logs (no local Node processes)
   --no-docker      Skip Docker container startup and run Node services only
+  --no-migrate     Skip automatic database migrations check
   --stop-docker    Stop Docker containers automatically when exiting (default)
   --no-stop-docker Keep Docker containers running after exit
   --services=a,b   Specify custom Docker services to start (e.g. --services=postgres,orthanc)
@@ -50,13 +71,14 @@ Options:
 
 Environment Variables:
   NO_DOCKER=true            Disable automatic Docker startup
+  NO_MIGRATE=true           Disable automatic database migration check
   DOCKER_INFRA_SERVICES     Override default infra services (default: "postgres orthanc ohif")
   COMPOSE_PROJECT_NAME      Override docker compose project name (default: directory name)
 `);
   process.exit(0);
 }
 
-const composeProject = process.env.COMPOSE_PROJECT_NAME || path.basename(__dirname);
+const composeProject = process.env.COMPOSE_PROJECT_NAME || path.basename(__dirname).toLowerCase().replace(/[^a-z0-9_-]/g, '');
 const composeFile = path.join(__dirname, 'docker-compose.yml');
 
 function dockerCmd() {
@@ -131,7 +153,11 @@ function getServiceStatus(serviceName) {
       stdio: ['ignore', 'pipe', 'ignore'],
       shell: true
     });
-    const entries = JSON.parse(output.trim());
+    const normalizedOutput = output.trim();
+    if (!normalizedOutput) return null;
+    const entries = normalizedOutput.startsWith('[')
+      ? JSON.parse(normalizedOutput)
+      : normalizedOutput.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
     if (!entries || entries.length === 0) return null;
     const entry = entries[0];
     return {
@@ -152,7 +178,11 @@ function getAllServicesStatus() {
       stdio: ['ignore', 'pipe', 'ignore'],
       shell: true
     });
-    return JSON.parse(output.trim());
+    const normalizedOutput = output.trim();
+    if (!normalizedOutput) return [];
+    return normalizedOutput.startsWith('[')
+      ? JSON.parse(normalizedOutput)
+      : normalizedOutput.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
   } catch (err) {
     return [];
   }
@@ -163,8 +193,8 @@ function isUsableService(service) {
   return service.running && service.health !== 'unhealthy';
 }
 
-function registerDockerManagedApps() {
-  ['backend', 'frontend', 'portal'].forEach(serviceName => {
+function registerDockerManagedApps(serviceNames = ['backend', 'frontend', 'portal']) {
+  serviceNames.filter(serviceName => ['backend', 'frontend', 'portal'].includes(serviceName)).forEach(serviceName => {
     const status = getServiceStatus(serviceName);
     if (isUsableService(status)) {
       dockerManagedLocalServices.add(serviceName);
@@ -173,38 +203,26 @@ function registerDockerManagedApps() {
 }
 
 function reuseExistingStack(infraServices) {
-  const requested = infraServices.filter(s => {
-    const status = getServiceStatus(s);
-    return status !== null;
+  const statuses = new Map(infraServices.map(serviceName => [serviceName, getServiceStatus(serviceName)]));
+  const allRunning = infraServices.every(s => {
+    const status = statuses.get(s);
+    return status && status.running;
   });
 
-  if (requested.length === 0) return false;
-
-  const allStatuses = getAllServicesStatus();
-  const projects = [...new Set(allStatuses.map(s => s.Project || 'unknown'))];
-
-  const missing = requested.filter(s => {
-    const status = getServiceStatus(s);
-    return !status || !status.running;
-  });
-
-  const unhealthy = requested.filter(s => {
-    const status = getServiceStatus(s);
-    return status && status.health === 'unhealthy';
-  });
-
-  if (missing.length > 0) {
-    console.error(`${colors.red}[docker] Existing RCMS containers belong to Compose project(s) ${projects.join(', ')}, but required services are not running: ${missing.join(', ')}.${colors.reset}`);
-    console.error(`${colors.yellow}[docker] Stop that stack or run this checkout with isolated container names and ports.${colors.reset}\n`);
-    dockerStartupFatal = true;
+  if (!allRunning) {
     return false;
   }
 
-  console.log(`${colors.yellow}[docker] RCMS infrastructure is already running under Compose project "${composeProject}". Reusing it without recreation.${colors.reset}`);
+  const unhealthy = infraServices.filter(s => {
+    const status = statuses.get(s);
+    return status && status.health === 'unhealthy';
+  });
+
+  console.log(`${colors.yellow}[docker] VIARA infrastructure is already running under Compose project "${composeProject}". Reusing it without recreation.${colors.reset}`);
   if (unhealthy.length > 0) {
     console.log(`${colors.yellow}[docker] Health warning: ${unhealthy.join(', ')} reported unhealthy; inspect with docker compose ps and docker logs.${colors.reset}`);
   }
-  registerDockerManagedApps();
+  registerDockerManagedApps(infraServices);
   return true;
 }
 
@@ -336,7 +354,7 @@ function handleDockerStartup() {
   }
 
   const infraServices = customDockerServices ||
-    (process.env.DOCKER_INFRA_SERVICES ? process.env.DOCKER_INFRA_SERVICES.split(' ') : ['postgres', 'orthanc', 'ohif', 'backend']);
+    (process.env.DOCKER_INFRA_SERVICES ? process.env.DOCKER_INFRA_SERVICES.split(' ') : ['postgres', 'orthanc', 'ohif']);
 
   if (!dockerAll && reuseExistingStack(infraServices)) {
     return true;
@@ -352,12 +370,14 @@ function handleDockerStartup() {
     console.log(`${colors.green}[docker] ✅ Docker infrastructure services started successfully.${colors.reset}\n`);
 
     if (!dockerAll && infraServices.includes('postgres')) {
-      waitForService('postgres', 'pg_isready -U rcms -d rcms', dockerCmd);
+      const pgUser = process.env.POSTGRES_USER || 'rcms';
+      const pgDb = process.env.POSTGRES_DB || 'rcms';
+      waitForService('postgres', `pg_isready -U ${pgUser} -d ${pgDb}`, dockerCmd);
     }
     if (!dockerAll && infraServices.includes('backend')) {
       waitForService('backend', 'wget --quiet --spider http://127.0.0.1:3000/health/ready', dockerCmd);
     }
-    registerDockerManagedApps();
+    registerDockerManagedApps(infraServices);
     return true;
   } catch (err) {
     console.error(`${colors.red}[docker] ❌ Failed to start Docker services: ${err.message}${colors.reset}\n`);
@@ -393,9 +413,28 @@ function waitForService(serviceName, healthCheckCmd, dockerCmd, maxWaitSec = 30)
   return false;
 }
 
+function runDatabaseMigrations() {
+  console.log(`${colors.bright}${colors.blue}[database] 🔄 Checking and applying pending database migrations...${colors.reset}`);
+  try {
+    const migrateScript = path.join(__dirname, 'database', 'migrate.js');
+    execSync(`"${process.execPath}" "${migrateScript}"`, {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        ...localBackendEnv
+      }
+    });
+    console.log(`${colors.green}[database] ✅ Database schema is up to date.${colors.reset}\n`);
+    return true;
+  } catch (err) {
+    console.error(`${colors.red}[database] ❌ Database migration failed: ${err.message}${colors.reset}\n`);
+    return false;
+  }
+}
+
 function main() {
   console.log(`${colors.bright}${colors.cyan}==================================================${colors.reset}`);
-  console.log(`${colors.bright}   🚀 Launching RCMS Services (Backend, Frontend, Portal)${colors.reset}`);
+  console.log(`${colors.bright}   🚀 Launching VIARA Services (Backend, Frontend, Portal)${colors.reset}`);
   console.log(`${colors.bright}${colors.cyan}==================================================${colors.reset}`);
 
   const dockerStarted = handleDockerStartup();
@@ -405,16 +444,20 @@ function main() {
     return;
   }
 
-   if (dockerStarted) {
-     const infraServices = customDockerServices ||
-       (process.env.DOCKER_INFRA_SERVICES ? process.env.DOCKER_INFRA_SERVICES.split(' ') : ['postgres', 'orthanc', 'ohif', 'backend']);
-     const dockerStopNote = stopDockerOnExit ? ' (stopped on exit)' : '';
-     console.log(`  * ${colors.blue}${'docker'.padEnd(12)}${colors.reset} -> ${colors.yellow}infra: ${infraServices.join(', ')}${dockerStopNote}${colors.reset}`);
+  if (dockerStarted) {
+    const infraServices = customDockerServices ||
+      (process.env.DOCKER_INFRA_SERVICES ? process.env.DOCKER_INFRA_SERVICES.split(' ') : ['postgres', 'orthanc', 'ohif']);
+    const dockerStopNote = stopDockerOnExit ? ' (stopped on exit)' : '';
+    console.log(`  * ${colors.blue}${'docker'.padEnd(12)}${colors.reset} -> ${colors.yellow}infra: ${infraServices.join(', ')}${dockerStopNote}${colors.reset}`);
   }
   services.forEach(s => {
     console.log(`  * ${s.color}${s.name.padEnd(12)}${colors.reset} -> ${colors.yellow}${s.url}${colors.reset}`);
   });
   console.log(`${colors.bright}${colors.cyan}==================================================${colors.reset}\n`);
+
+  if (!noMigrate && !dockerManagedLocalServices.has('backend')) {
+    runDatabaseMigrations();
+  }
 
   services.forEach(service => {
     if (dockerStarted && dockerManagedLocalServices.has(service.name)) {
@@ -427,7 +470,11 @@ function main() {
     const child = spawn(service.command, service.args, {
       cwd: service.dir,
       shell: true,
-      env: { ...process.env, FORCE_COLOR: 'true' }
+      env: {
+        ...process.env,
+        ...(service.name === 'backend' ? localBackendEnv : {}),
+        FORCE_COLOR: 'true'
+      }
     });
 
     children.push({ child, service });

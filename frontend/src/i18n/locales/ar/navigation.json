@@ -6,8 +6,11 @@
     "system": "النظام والإعدادات"
   },
   "items": {
+    "profile": "ملفي الشخصي",
+    "accountSecurity": "أمان الحساب",
     "approvals": "صندوق الموافقات",
     "dashboard": "لوحة التحكم",
+    "leave": "إجازاتي",
     "reception": "الاستقبال والطوارئ",
     "communications": "صندوق الرسائل والدردشة",
     "notifications": "الإشعارات",

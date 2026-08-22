@@ -61,13 +61,6 @@ export const usePatientRegistration = ({ navigate, selectedDate }) => {
         setValue('age', age);
     }, [setValue]);
 
-    const onAgeChange = useCallback((e) => {
-        const age = e.target.value;
-        if (!age) return;
-        const year = new Date().getFullYear() - parseInt(age, 10);
-        setValue('dob', `${year}-01-01`);
-    }, [setValue]);
-
     const onSubmit = useCallback(async (data) => {
         try {
             const payload = buildPatientRegistrationPayload(data);
@@ -97,7 +90,6 @@ export const usePatientRegistration = ({ navigate, selectedDate }) => {
         errors,
         isLoading,
         isOpen,
-        onAgeChange,
         onClose: close,
         onDobChange,
         onInvalid,
@@ -119,7 +111,6 @@ export const usePatientRegistration = ({ navigate, selectedDate }) => {
         onSubmit,
         onInvalid,
         onDobChange,
-        onAgeChange,
         reset,
         registrationModalProps,
     };

@@ -48,7 +48,7 @@ class Settings:
         return cls(
             worker_api_key=os.getenv("PACS_AI_WORKER_API_KEY", "").strip(),
             orthanc_url=os.getenv("ORTHANC_URL", "http://orthanc:8042").rstrip("/"),
-            orthanc_username=os.getenv("ORTHANC_USERNAME", "rcms"),
+            orthanc_username=os.getenv("ORTHANC_USERNAME", "VIARA"),
             orthanc_password=os.getenv("ORTHANC_PASSWORD", ""),
             model_backend=os.getenv("MODEL_BACKEND", "torchxrayvision").strip().lower(),
             model_id=os.getenv("MODEL_ID", "densenet121-res224-all").strip(),

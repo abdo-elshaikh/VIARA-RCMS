@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-RCMS manages three npm workspaces plus a Python AI worker. CI enforces `npm audit --omit=dev --audit-level=high` and Trivy container scanning. Dependencies are modern and well-maintained. No known critical vulnerabilities detected in static review.
+VIARA manages three npm workspaces plus a Python AI worker. CI enforces `npm audit --omit=dev --audit-level=high` and Trivy container scanning. Dependencies are modern and well-maintained. No known critical vulnerabilities detected in static review.
 
 > **Note:** `npm audit` could not be executed during this review due to environment restrictions. Results below are based on static dependency manifest review and CI pipeline verification.
 

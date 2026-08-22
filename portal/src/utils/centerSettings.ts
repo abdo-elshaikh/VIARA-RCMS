@@ -65,7 +65,7 @@ export interface CenterSettings {
 }
 
 const DEFAULT_CENTER_SETTINGS: CenterSettings = {
-    center_name: 'RCMS Radiology Center',
+    center_name: 'Radiology Center',
     branch_name: '',
     logo_url: '',
     contact_person: '',
@@ -85,7 +85,7 @@ const DEFAULT_CENTER_SETTINGS: CenterSettings = {
         receiptHeader: '',
         receiptFooter: '',
         showQR: true,
-        themeColor: '#0f766e',
+        themeColor: '#087F5B',
         fontFamily: 'Inter',
         invoiceTerms: '',
         showWatermark: true,

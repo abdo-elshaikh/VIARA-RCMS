@@ -1,4 +1,4 @@
-{
+﻿{
   "common": {
     "teamMember": "Team member",
     "welcome": "Welcome back, {{name}}",
@@ -16,7 +16,20 @@
     "imagingStudy": "Imaging study",
     "noDistribution": "No modality workload yet",
     "noChartData": "No operational data yet",
-    "noChartDataDescription": "This panel will populate automatically as work is recorded in RCMS."
+    "noChartDataDescription": "This panel will populate automatically as work is recorded in VIARA."
+  },
+  "priorities": {
+    "title": "Operational priorities",
+    "waitingRoom": "Waiting room",
+    "averageWait": "Average wait {{duration}}",
+    "readyAppointments": "Ready appointments",
+    "totalAppointments": "{{count}} scheduled today",
+    "completedToday": "Completed today",
+    "urgentWork": "Aged work",
+    "oldestOpen": "Oldest open",
+    "openWork": "Open work",
+    "collections": "Collections",
+    "staffing": "Staffing"
   },
   "roles": {
     "Developer": "System Developer",
@@ -130,7 +143,9 @@
     "financials": "Financials",
     "financialsDescription": "Monitor billing and collections.",
     "inventory": "Inventory",
-    "inventoryDescription": "Track stock and supply risk."
+    "inventoryDescription": "Track stock and supply risk.",
+    "noneAvailable": "No approved shortcuts available",
+    "noneAvailableDescription": "Ask an administrator for the permission needed before taking action."
   },
   "activity": {
     "title": "Recent clinical activity",
@@ -141,7 +156,7 @@
   },
   "error": {
     "title": "Dashboard data is unavailable",
-    "description": "RCMS could not load the latest operational statistics.",
+    "description": "VIARA could not load the latest operational statistics.",
     "retry": "Try again"
   },
   "clinicalWorklist": {

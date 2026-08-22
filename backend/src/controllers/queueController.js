@@ -3,6 +3,7 @@ const { logAction } = require('../services/auditService');
 const { assertInvoiceFullyPaid, assertInvoiceTransactionAllowed } = require('../services/partialPaymentExceptionService');
 const { validateEnum, validateUUID, VALID_QUEUE_STAGES, VALID_STATIONS, VALID_PRIORITIES } = require('../utils/queryValidator');
 const { decrypt } = require('../utils/crypto');
+const { getPagination } = require('../utils/pagination');
 
 const QUEUE_STAGES = [
     'Registered',
@@ -33,11 +34,12 @@ const VALID_TRANSITIONS = {
 };
 
 const ROLE_STAGE_PERMISSIONS = {
+    Developer: QUEUE_STAGES,
     Admin: QUEUE_STAGES,
-    Receptionist: ['Registered', 'Scheduled', 'Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam', 'Delivered', 'Cancelled'],
-    Accountant: ['Payment Pending', 'Prep Pending', 'Ready for Exam'],
-    Nurse: ['Arrived', 'Prep Pending', 'Ready for Exam', 'Cancelled'],
-    Technician: ['In Exam', 'Reporting', 'Cancelled'],
+    Receptionist: ['Registered', 'Scheduled', 'Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam', 'Cancelled'],
+    Accountant: ['Payment Pending', 'Prep Pending', 'Ready for Exam', 'Cancelled'],
+    Nurse: ['Prep Pending', 'Ready for Exam'],
+    Technician: ['In Exam', 'Reporting'],
     Radiologist: ['Reporting', 'Finalized']
 };
 
@@ -100,6 +102,7 @@ const timestampAssignments = (stage) => {
 };
 
 const canRoleTransition = (role, toStage) => {
+    if (role === 'Developer' || role === 'Admin') return true;
     const allowed = ROLE_STAGE_PERMISSIONS[role] || [];
     return allowed.includes(toStage);
 };
@@ -111,10 +114,9 @@ const getQueue = (db) => async (req, res, next) => {
             station,
             priority,
             date,
-            includeDelivered = 'false',
-            limit = 200,
-            offset = 0
+            includeDelivered = 'false'
         } = req.query;
+        const { limit, offset } = getPagination(req.query, 200);
 
         // Input validation to prevent SQL injection
         validateEnum(stage, VALID_QUEUE_STAGES, 'stage');
@@ -129,6 +131,8 @@ const getQueue = (db) => async (req, res, next) => {
                     exam_id,
                     created_at as last_event_at
                 FROM queue_events
+                WHERE event_type = 'Transition'
+                  AND from_stage IS DISTINCT FROM to_stage
                 ORDER BY exam_id, created_at DESC
             )
             SELECT e.exam_id, e.appointment_id, e.status, e.queue_stage, e.current_station,
@@ -148,7 +152,10 @@ const getQueue = (db) => async (req, res, next) => {
                    nurse.full_name as nurse_name,
                    rad.full_name as radiologist_name,
                    COALESCE(le.last_event_at, e.arrived_at, e.created_at) as stage_started_at,
-                   ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(le.last_event_at, e.arrived_at, e.created_at))) / 60) as waiting_minutes,
+                   CASE
+                       WHEN e.queue_stage IN ('Delivered', 'Cancelled') THEN 0
+                       ELSE ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(le.last_event_at, e.arrived_at, e.created_at))) / 60)
+                   END as waiting_minutes,
                    ROUND(EXTRACT(EPOCH FROM (COALESCE(e.delivered_at, e.report_finalized_at, NOW()) - e.created_at)) / 60) as turnaround_minutes,
                    prior_e.order_number AS prior_order_number,
                    prior_e.report_status AS prior_report_status,
@@ -172,6 +179,8 @@ const getQueue = (db) => async (req, res, next) => {
         if (stage) {
             query += ` AND e.queue_stage = $${param++}`;
             values.push(stage);
+        } else {
+            query += ` AND a.status != 'Cancelled' AND e.queue_stage != 'Cancelled'`;
         }
 
         if (station) {
@@ -208,6 +217,46 @@ const getQueue = (db) => async (req, res, next) => {
             param++;
         }
 
+        const filteredQuery = query;
+        const filterValues = [...values];
+        const kpiQuery = `
+            WITH filtered_queue AS (
+                ${filteredQuery}
+            ),
+            stage_counts AS (
+                SELECT queue_stage, COUNT(*)::integer AS stage_count
+                FROM filtered_queue
+                GROUP BY queue_stage
+            )
+            SELECT
+                COUNT(*)::integer AS total,
+                COUNT(*) FILTER (WHERE is_on_hold)::integer AS on_hold,
+                COUNT(*) FILTER (
+                    WHERE queue_stage NOT IN ('Delivered', 'Cancelled')
+                      AND COALESCE(waiting_minutes, 0) > CASE queue_stage
+                        WHEN 'Registered' THEN 15
+                        WHEN 'Scheduled' THEN 60
+                        WHEN 'Arrived' THEN 20
+                        WHEN 'Payment Pending' THEN 15
+                        WHEN 'Prep Pending' THEN 30
+                        WHEN 'Ready for Exam' THEN 20
+                        WHEN 'In Exam' THEN 60
+                        WHEN 'Reporting' THEN 120
+                        WHEN 'Finalized' THEN 60
+                        ELSE 60
+                    END
+                )::integer AS overdue,
+                COALESCE(ROUND(AVG(COALESCE(waiting_minutes, 0)) FILTER (
+                    WHERE queue_stage NOT IN ('Delivered', 'Cancelled')
+                )), 0)::integer AS average_waiting_minutes,
+                COALESCE(ROUND(AVG(COALESCE(turnaround_minutes, 0))), 0)::integer AS average_turnaround_minutes,
+                COALESCE(
+                    (SELECT jsonb_object_agg(queue_stage, stage_count) FROM stage_counts),
+                    '{}'::jsonb
+                ) AS by_stage
+            FROM filtered_queue
+        `;
+
         query += `
             ORDER BY
                 CASE e.priority WHEN 'Emergency' THEN 1 WHEN 'Urgent' THEN 2 ELSE 3 END,
@@ -217,11 +266,15 @@ const getQueue = (db) => async (req, res, next) => {
         `;
         values.push(limit, offset);
 
-        const result = await db.query(query, values);
+        const [result, kpiResult] = await Promise.all([
+            db.query(query, values),
+            db.query(kpiQuery, filterValues)
+        ]);
         const rows = result.rows.map(row => {
             const mapped = {
                 ...row,
-                is_overdue: Number(row.waiting_minutes || 0) > (OVERDUE_MINUTES[row.queue_stage] || 60)
+                is_overdue: !['Delivered', 'Cancelled'].includes(row.queue_stage)
+                    && Number(row.waiting_minutes || 0) > (OVERDUE_MINUTES[row.queue_stage] ?? 60)
             };
             if (row.first_name_enc || row.last_name_enc) {
                 mapped.patient_name = [decrypt(row.first_name_enc), decrypt(row.last_name_enc)]
@@ -233,20 +286,15 @@ const getQueue = (db) => async (req, res, next) => {
             return mapped;
         });
 
-        const kpis = rows.reduce((acc, row) => {
-            acc.total += 1;
-            acc.onHold += row.is_on_hold ? 1 : 0;
-            acc.overdue += row.is_overdue ? 1 : 0;
-            acc.averageWaitingMinutes += Number(row.waiting_minutes || 0);
-            acc.averageTurnaroundMinutes += Number(row.turnaround_minutes || 0);
-            acc.byStage[row.queue_stage] = (acc.byStage[row.queue_stage] || 0) + 1;
-            return acc;
-        }, { total: 0, onHold: 0, overdue: 0, averageWaitingMinutes: 0, averageTurnaroundMinutes: 0, byStage: {} });
-
-        if (kpis.total > 0) {
-            kpis.averageWaitingMinutes = Math.round(kpis.averageWaitingMinutes / kpis.total);
-            kpis.averageTurnaroundMinutes = Math.round(kpis.averageTurnaroundMinutes / kpis.total);
-        }
+        const aggregate = kpiResult.rows[0] || {};
+        const kpis = {
+            total: Number(aggregate.total || 0),
+            onHold: Number(aggregate.on_hold || 0),
+            overdue: Number(aggregate.overdue || 0),
+            averageWaitingMinutes: Number(aggregate.average_waiting_minutes || 0),
+            averageTurnaroundMinutes: Number(aggregate.average_turnaround_minutes || 0),
+            byStage: aggregate.by_stage || {}
+        };
 
         res.json({ data: rows, kpis });
     } catch (error) {
@@ -283,6 +331,19 @@ const transitionQueue = (db) => async (req, res, next) => {
         }
 
         const existing = existingResult.rows[0];
+
+        // Apply the worklist's row-level assignment rule to mutations too.
+        const assignedToAnotherUser = (
+            (req.user.role === 'Nurse' && existing.nurse_id && existing.nurse_id !== req.user.user_id)
+            || (req.user.role === 'Technician' && existing.technician_id && existing.technician_id !== req.user.user_id)
+            || (req.user.role === 'Radiologist'
+                && existing.performing_radiologist_id
+                && existing.performing_radiologist_id !== req.user.user_id)
+        );
+        if (assignedToAnotherUser) {
+            await client.query('ROLLBACK');
+            return next(new AppError('Queue item not found or assigned to another user', 404));
+        }
 
         if (action === 'update_complaint') {
             if (!['Developer', 'Admin', 'Nurse', 'Radiologist', 'Technician'].includes(req.user.role)) {
@@ -411,9 +472,9 @@ const transitionQueue = (db) => async (req, res, next) => {
             const result = await client.query(`
                 UPDATE examinations
                 SET is_on_hold = $1,
-                    hold_started_at = CASE WHEN $1 = true THEN NOW() ELSE hold_started_at END,
-                    hold_released_at = CASE WHEN $1 = false THEN NOW() ELSE hold_released_at END,
-                    hold_reason = CASE WHEN $1 = true THEN $2 ELSE hold_reason END
+                    hold_started_at = CASE WHEN $1::boolean = true THEN NOW() ELSE hold_started_at END,
+                    hold_released_at = CASE WHEN $1::boolean = false THEN NOW() ELSE hold_released_at END,
+                    hold_reason = CASE WHEN $1::boolean = true THEN $2 ELSE hold_reason END
                 WHERE exam_id = $3
                 RETURNING *
             `, [isHold, reason || null, examId]);
@@ -512,11 +573,61 @@ const transitionQueue = (db) => async (req, res, next) => {
                 await assertInvoiceTransactionAllowed(client, {
                     invoiceId: invoice.invoice_id,
                     transactionType: 'ClinicalQueueTransition',
+                    targetStage: toStage,
                     transactionLabel: 'moving this exam forward'
                 });
             } catch (error) {
                 await client.query('ROLLBACK');
                 return next(error);
+            }
+        }
+
+        // Safety checklist check when entering exam.  A missing/Unknown value
+        // is not a clearance; each domain must be explicitly resolved.
+        if (toStage === 'In Exam' && existing.priority !== 'Emergency') {
+            const blockedSafetyDomains = [
+                ['pregnancy', existing.pregnancy_safety_status],
+                ['implant', existing.implant_safety_status],
+                ['renal', existing.renal_safety_status]
+            ].filter(([, value]) => !['Cleared', 'Not Applicable'].includes(value));
+
+            if (blockedSafetyDomains.length > 0) {
+                await client.query('ROLLBACK');
+                const domains = blockedSafetyDomains.map(([name]) => name).join(', ');
+                return next(new AppError(`Complete and clear the following safety checks before starting the exam: ${domains}`, 409));
+            }
+        }
+
+        if (toStage === 'Cancelled') {
+            await client.query('ROLLBACK');
+            return next(new AppError('Use the dedicated appointment cancellation workflow', 409));
+        }
+
+        // Backward-compatible explicit pregnancy guard (the comprehensive
+        // check above handles this path first).
+        if (toStage === 'In Exam' && existing.pregnancy_safety_status === 'At Risk' && existing.priority !== 'Emergency') {
+            await client.query('ROLLBACK');
+            return next(new AppError('تحذير أمان: لا يمكن بدء الفحص وحالة أمان الحمل (At Risk) لم يتم اعتمادها أو فحصها سريرياً.', 409));
+        }
+
+        // Mandatory contrast check before reporting or finalizing contrast exams
+        if (['Reporting', 'Finalized'].includes(toStage) && existing.contrast_required) {
+            const contrastLogged = await client.query(`
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM stock_movements sm
+                    JOIN inventory_items inventory_item ON inventory_item.item_id = sm.item_id
+                    WHERE sm.reference_type = 'Exam'
+                      AND sm.reference_id = $1
+                      AND sm.movement_type = 'Consume'
+                      AND sm.quantity_change < 0
+                      AND inventory_item.is_contrast_agent = true
+                ) AS has_verified_contrast
+            `, [examId]);
+
+            if (contrastLogged.rows.length > 0 && !contrastLogged.rows[0].has_verified_contrast) {
+                await client.query('ROLLBACK');
+                return next(new AppError('هذا الفحص يتطلب صبغة وريدية. يجب تسجيل وصرف صبغة ومستلزمات الفحص قبل إنهاء الفحص وكتابة التقرير.', 400));
             }
         }
 
@@ -578,9 +689,12 @@ const transitionQueue = (db) => async (req, res, next) => {
         } else if (toStage === 'Cancelled') {
             await client.query(`
                 UPDATE appointments
-                SET status = 'Cancelled'
+                SET status = 'Cancelled',
+                    cancellation_reason = COALESCE($2, cancellation_reason, 'Cancelled from queue'),
+                    cancelled_by = $3,
+                    cancelled_at = NOW()
                 WHERE appointment_id = $1
-            `, [existing.appointment_id]);
+            `, [existing.appointment_id, reason || notes || null, req.user.user_id]);
         }
 
         await client.query(`
@@ -636,7 +750,9 @@ const transitionQueue = (db) => async (req, res, next) => {
 
         res.json(updateResult.rows[0]);
     } catch (error) {
-        if (client) await client.query('ROLLBACK');
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (rbErr) { /* ignore */ }
+        }
         next(error);
     } finally {
         if (client) client.release();

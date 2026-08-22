@@ -20,7 +20,7 @@ const Select = forwardRef(({
     return (
         <div className="w-full">
             {label && (
-                <label htmlFor={selectId} className="mb-1.5 ms-1 block text-sm font-semibold text-slate-700 dark:text-[var(--rcms-ink)]">
+                <label htmlFor={selectId} className="mb-1.5 ms-1 block text-sm font-semibold text-slate-700 dark:text-[var(--VIARA-ink)]">
                     {label}{required && <span className="ms-1 text-red-500">*</span>}
                 </label>
             )}
@@ -33,13 +33,13 @@ const Select = forwardRef(({
                     aria-errormessage={error ? errorId : undefined}
                     aria-describedby={error ? errorId : helperText ? helperId : undefined}
                     className={`
-                        w-full px-4 py-2.5 bg-white dark:bg-[var(--rcms-field)] border rounded-xl appearance-none
-                        text-slate-700 dark:text-[var(--rcms-ink)] text-sm font-medium
-                        focus:outline-none focus:ring-4 focus:ring-cyan-500/10 transition-all duration-200
-                        disabled:bg-slate-50 dark:disabled:bg-[var(--rcms-surface)] disabled:text-slate-400 disabled:cursor-not-allowed
+                        w-full px-4 py-2.5 bg-white dark:bg-[var(--VIARA-field)] border rounded-xl appearance-none
+                        text-slate-700 dark:text-[var(--VIARA-ink)] text-sm font-medium
+                        focus:outline-none focus:ring-4 focus:ring-[rgba(var(--VIARA-accent-rgb),0.12)] transition-all duration-200
+                        disabled:bg-slate-50 dark:disabled:bg-[var(--VIARA-surface)] disabled:text-slate-400 disabled:cursor-not-allowed
                         ${error
                             ? 'border-red-300 focus:border-red-500 focus:ring-red-100'
-                            : 'border-slate-200 dark:border-[var(--rcms-line)] focus:border-cyan-600 hover:border-slate-300 dark:hover:border-[var(--rcms-line-strong)]'
+                            : 'border-slate-200 dark:border-[var(--VIARA-line)] focus:border-[var(--VIARA-accent)] hover:border-slate-300 dark:hover:border-[var(--VIARA-line-strong)]'
                         }
                         ${className}
                     `}

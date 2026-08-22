@@ -35,15 +35,19 @@ const Offline = () => {
         }, 350);
     };
 
-    const notice = <div role="status" className={`mx-auto mt-6 max-w-md rounded-xl border px-4 py-3 text-sm font-semibold ${isOnline ? 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400' : 'border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400'}`}>{isOnline ? t('states.offline.online') : t('states.offline.disconnected')}</div>;
+    const notice = <div role="status" className={`mx-auto mt-6 max-w-md rounded-xl border px-4 py-3 text-sm font-semibold ${isOnline ? 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400' : 'border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400'}`}>{isOnline ? t('states.offline.online') : t('states.offline.disconnected')}</div>;
+
+    const actionBase = 'inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(var(--VIARA-accent-rgb),0.18)] sm:w-auto';
+    const secondaryAction = `${actionBase} border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-ink)] hover:bg-[var(--VIARA-surface-hover)] dark:hover:bg-slate-800/50`;
+    const primaryAction = `${actionBase} bg-[var(--VIARA-accent)] text-white shadow-sm hover:brightness-110 disabled:opacity-60`;
 
     return (
         <SystemState icon={WifiOff} tone="slate" eyebrow={t('states.offline.eyebrow')} title={t('states.offline.title')} description={t('states.offline.description')} notice={notice}>
-            <button type="button" onClick={() => navigate(-1)} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-transparent px-5 text-sm font-bold text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800/50 sm:w-auto"><BackIcon size={17} />{t('states.back')}</button>
-            <button type="button" onClick={handleRetry} disabled={isChecking} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-cyan-700 dark:bg-cyan-600 px-5 text-sm font-bold text-white transition hover:bg-cyan-800 dark:hover:bg-cyan-700 disabled:opacity-60 sm:w-auto"><RefreshCw size={17} className={isChecking ? 'animate-spin' : ''} />{isChecking ? t('states.offline.checking') : t('states.offline.retry')}</button>
+            <button type="button" onClick={() => navigate(-1)} className={secondaryAction}><BackIcon size={17} />{t('states.back')}</button>
+            <button type="button" onClick={handleRetry} disabled={isChecking} className={primaryAction}><RefreshCw size={17} className={isChecking ? 'animate-spin' : ''} />{isChecking ? t('states.offline.checking') : t('states.offline.retry')}</button>
             {homePath.startsWith('http')
-                ? <a href={homePath} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-transparent px-5 text-sm font-bold text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800/50 sm:w-auto"><Home size={17} />{t('states.home')}</a>
-                : <Link to={homePath} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-transparent px-5 text-sm font-bold text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-800/50 sm:w-auto"><Home size={17} />{t('states.home')}</Link>}
+                ? <a href={homePath} className={secondaryAction}><Home size={17} />{t('states.home')}</a>
+                : <Link to={homePath} className={secondaryAction}><Home size={17} />{t('states.home')}</Link>}
         </SystemState>
     );
 };

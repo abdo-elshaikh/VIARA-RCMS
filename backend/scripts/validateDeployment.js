@@ -48,8 +48,8 @@ const main = async () => {
 
     const adminLogin = await request(app)
         .post('/api/auth/login')
-        .set('User-Agent', 'RCMS-Validation-Primary/1.0')
-        .send({ email: 'admin@rcms.com', password: process.env.TEST_USER_PASSWORD });
+        .set('User-Agent', 'VIARA-Validation-Primary/1.0')
+        .send({ email: 'admin@VIARA.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(adminLogin.status, 200, JSON.stringify(adminLogin.body));
     const adminToken = adminLogin.body.token;
     const adminCookie = adminLogin.headers['set-cookie'][0].split(';')[0];
@@ -60,15 +60,15 @@ const main = async () => {
 
     const secondaryAdminLogin = await request(app)
         .post('/api/auth/login')
-        .set('User-Agent', 'RCMS-Validation-Secondary/1.0')
-        .send({ email: 'admin@rcms.com', password: process.env.TEST_USER_PASSWORD });
+        .set('User-Agent', 'VIARA-Validation-Secondary/1.0')
+        .send({ email: 'admin@VIARA.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(secondaryAdminLogin.status, 200, JSON.stringify(secondaryAdminLogin.body));
     const sessions = await request(app)
         .get('/api/auth/sessions')
         .set(bearer(adminToken))
         .set('Cookie', adminCookie);
     const currentSessions = sessions.body.sessions?.filter(session => session.isCurrent) || [];
-    const secondarySession = sessions.body.sessions?.find(session => session.userAgent === 'RCMS-Validation-Secondary/1.0');
+    const secondarySession = sessions.body.sessions?.find(session => session.userAgent === 'VIARA-Validation-Secondary/1.0');
     check('real session inventory', sessions.status === 200 && currentSessions.length === 1 && Boolean(secondarySession));
     const revokedSession = await request(app)
         .delete(`/api/auth/sessions/${secondarySession.id}`)
@@ -135,7 +135,7 @@ const main = async () => {
 
     const technicianLogin = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'tech@rcms.com', password: process.env.TEST_USER_PASSWORD });
+        .send({ email: 'tech@VIARA.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(technicianLogin.status, 200, JSON.stringify(technicianLogin.body));
     const reportWrite = await request(app)
         .put('/api/exams/report')
@@ -191,12 +191,12 @@ const main = async () => {
 
     const accountantLogin = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'accountant@rcms.com', password: process.env.TEST_USER_PASSWORD });
+        .send({ email: 'accountant@VIARA.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(accountantLogin.status, 200, JSON.stringify(accountantLogin.body));
     const accountantToken = accountantLogin.body.token;
     const receptionLogin = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'reception@rcms.com', password: process.env.TEST_USER_PASSWORD });
+        .send({ email: 'reception@VIARA.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(receptionLogin.status, 200, JSON.stringify(receptionLogin.body));
 
     const cashierTemporaryPassword = 'CashierTemporary123!';
@@ -323,8 +323,8 @@ const main = async () => {
     check(
         'concurrency-safe refund cap',
         concurrentStatuses[0] === 201
-            && concurrentStatuses[1] === 409
-            && Number(refundTotal.rows[0].total) === 45
+        && concurrentStatuses[1] === 409
+        && Number(refundTotal.rows[0].total) === 45
     );
     const concurrentRefund = concurrentRefunds.find(response => response.status === 201).body.refund;
     const concurrentApproval = await request(app)
@@ -472,6 +472,6 @@ main()
     })
     .catch(async error => {
         console.error(`Deployment validation failed: ${error.stack || error.message}`);
-        await db.end().catch(() => {});
+        await db.end().catch(() => { });
         process.exit(1);
     });

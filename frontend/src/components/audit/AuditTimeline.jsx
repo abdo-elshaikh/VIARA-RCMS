@@ -1,14 +1,24 @@
 import React from 'react';
 import { useGetAuditLogsQuery } from '../../store/api';
-import { Clock, User, Shield, Info } from 'lucide-react';
+import { AlertCircle, Clock, User, Shield, Info } from 'lucide-react';
 
 const AuditTimeline = ({ resourceId, resourceTable }) => {
     // Poll infrequently or just fetch once for the timeline
-    const { data, isLoading } = useGetAuditLogsQuery({ resourceId });
+    const { data, isLoading, isError, refetch } = useGetAuditLogsQuery({ resourceId, targetType: resourceTable, limit: 100 });
     const logs = data?.logs || [];
+    const total = Number(data?.total || 0);
 
     if (isLoading) {
         return <div className="text-center text-sm text-slate-500 py-6 border border-dashed border-slate-200 rounded-lg">Loading history...</div>;
+    }
+
+    if (isError) {
+        return (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                <span className="flex items-center gap-2"><AlertCircle size={16} />Unable to load audit history.</span>
+                <button type="button" onClick={refetch} className="font-bold underline">Retry</button>
+            </div>
+        );
     }
 
     if (logs.length === 0) {
@@ -16,7 +26,9 @@ const AuditTimeline = ({ resourceId, resourceTable }) => {
     }
 
     return (
-        <div className="relative ms-3 space-y-6 border-s-2 border-slate-200 py-2 ps-5">
+        <div>
+            {total > logs.length ? <p className="mb-3 text-xs font-semibold text-amber-700">Showing the latest {logs.length} of {total} audit entries.</p> : null}
+            <div className="relative ms-3 space-y-6 border-s-2 border-slate-200 py-2 ps-5">
             {logs.map(log => (
                 <div key={log.log_id} className="relative">
                     <div className="absolute -start-[27px] top-1 h-3 w-3 rounded-full border-2 border-blue-500 bg-white"></div>
@@ -44,6 +56,7 @@ const AuditTimeline = ({ resourceId, resourceTable }) => {
                     )}
                 </div>
             ))}
+            </div>
         </div>
     );
 };

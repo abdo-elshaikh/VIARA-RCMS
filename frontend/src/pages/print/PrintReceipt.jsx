@@ -5,7 +5,7 @@ import { useGetAppointmentByIdQuery, useGetCenterSettingsQuery } from '../../sto
 import { QRCodeSVG } from 'qrcode.react';
 import { AlignCenter, AlignLeft, AlignRight, KeyRound, Layout, Loader2, Printer, Settings2, ShieldCheck } from 'lucide-react';
 import LanguageToggle from '../../components/ui/LanguageToggle';
-import { buildReceiptFooter, buildReceiptHeader, normalizeCenterSettings } from '../../utils/centerSettings';
+import { buildReceiptFooter, buildReceiptHeader, normalizeCenterSettings, resolveDocumentIdentity } from '../../utils/centerSettings';
 import { getPatientPortalLoginUrl } from '../../utils/portalUrls';
 
 const RECEIPT_COPY = {
@@ -184,7 +184,7 @@ const PrintReceipt = () => {
     const appliedPrintDefaults = useRef(false);
 
     // Advanced print settings states
-    const [themeColor, setThemeColor] = useState('#0f766e');
+    const [themeColor, setThemeColor] = useState('#087F5B');
     const [fontFamily, setFontFamily] = useState('Inter');
     const [showDob, setShowDob] = useState(true);
     const [showModality, setShowModality] = useState(true);
@@ -238,9 +238,10 @@ const PrintReceipt = () => {
         ? `${getPatientPortalLoginUrl()}?mrn=${encodeURIComponent(portalLoginId)}`
         : getPatientPortalLoginUrl();
     
-    const logoUrl = centerSettings.logo_url;
-    const headerLines = buildReceiptHeader(centerSettings).split('\n');
-    const footerText = buildReceiptFooter(centerSettings);
+    const documentIdentity = resolveDocumentIdentity(centerSettings, appointment, { language: activeReceiptLanguage, kind: 'receipt' });
+    const logoUrl = documentIdentity.logoUrl;
+    const headerLines = buildReceiptHeader(documentIdentity).split('\n');
+    const footerText = buildReceiptFooter(documentIdentity);
 
     const getPageDimensions = () => {
         if (paperSize === '80mm') return { width: '80mm', minHeight: 'auto' };
@@ -351,7 +352,7 @@ const PrintReceipt = () => {
                     <div>
                         <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2">{receiptCopy.theme}</label>
                         <select value={themeColor} onChange={e => setThemeColor(e.target.value)} className="w-full text-xs font-bold border border-slate-200 rounded-lg p-2 bg-white">
-                            <option value="#0f766e">Radiology Teal</option>
+                            <option value="#087F5B">Clinical Emerald</option>
                             <option value="#1e3a8a">Classic Navy</option>
                             <option value="#111827">Minimalist Black</option>
                             <option value="#374151">Cool Charcoal</option>

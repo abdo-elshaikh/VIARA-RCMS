@@ -109,7 +109,7 @@ const GlobalSearch = () => {
 
     return (
         <div ref={rootRef} className="relative">
-            <button type="button" onClick={focusSearch} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-raised)] dark:text-[var(--rcms-muted)] md:hidden" aria-label={t('topbar.search.open')}>
+            <button type="button" onClick={focusSearch} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-muted)] md:hidden" aria-label={t('topbar.search.open')}>
                 <Search size={18} />
             </button>
 
@@ -128,26 +128,26 @@ const GlobalSearch = () => {
                         onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
                         onKeyDown={handleKeyDown}
                         placeholder={t('common.search_placeholder')}
-                        className="h-11 w-full rounded-xl border border-slate-200 bg-white ps-10 pe-20 text-sm text-slate-700 shadow-lg outline-none transition-all placeholder:text-slate-400 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-field)] dark:text-[var(--rcms-ink)] dark:placeholder:text-slate-500 md:h-10 md:bg-slate-50/80 md:shadow-none md:focus:bg-white md:dark:bg-[var(--rcms-surface-raised)] md:dark:focus:bg-[var(--rcms-field)]"
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-white ps-10 pe-20 text-sm text-slate-700 shadow-lg outline-none transition-all placeholder:text-slate-400 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:placeholder:text-slate-500 md:h-10 md:bg-slate-50/80 md:shadow-none md:focus:bg-white md:dark:bg-[var(--VIARA-surface-raised)] md:dark:focus:bg-[var(--VIARA-field)]"
                     />
                     {query ? (
-                        <button type="button" onClick={() => setQuery('')} className="absolute end-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-[var(--rcms-surface-hover)]" aria-label={t('topbar.search.clear')}><X size={15} /></button>
+                        <button type="button" onClick={() => setQuery('')} className="absolute end-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-[var(--VIARA-surface-hover)]" aria-label={t('topbar.search.clear')}><X size={15} /></button>
                     ) : (
-                        <kbd className="absolute end-3 top-1/2 hidden -translate-y-1/2 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-400 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface)] dark:text-[var(--rcms-muted)] lg:block">Ctrl K</kbd>
+                        <kbd className="absolute end-3 top-1/2 hidden -translate-y-1/2 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-400 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-[var(--VIARA-muted)] lg:block">Ctrl K</kbd>
                     )}
                 </div>
             </div>
 
             {showResults && (
-                <div id="global-search-results" role="listbox" className="fixed inset-x-4 top-[8.25rem] z-50 max-h-[min(70vh,30rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white/95 backdrop-blur-xl p-2 shadow-[0_24px_70px_-20px_rgba(15,23,42,.35)] dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-raised)]/95 md:absolute md:inset-x-0 md:top-14 md:w-full">
+                <div id="global-search-results" role="listbox" className="fixed inset-x-4 top-[8.25rem] z-50 max-h-[min(70vh,30rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white/95 backdrop-blur-xl p-2 shadow-[0_24px_70px_-20px_rgba(15,23,42,.35)] dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)]/95 md:absolute md:inset-x-0 md:top-14 md:w-full">
                     {isFetching && <p className="px-3 py-2 text-xs font-semibold text-slate-400">{t('topbar.search.searching')}</p>}
                     {!isFetching && results.length === 0 && <p className="px-4 py-8 text-center text-sm text-slate-500">{t('common.noResults')}</p>}
                     {results.map((result, index) => {
                         const Icon = result.type === 'patient' ? UserRound : Activity;
                         return (
-                            <button type="button" role="option" aria-selected={index === activeIndex} key={result.id} onMouseEnter={() => setActiveIndex(index)} onClick={() => selectResult(result)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-start transition ${index === activeIndex ? 'bg-cyan-50 text-cyan-950 dark:bg-cyan-400/12 dark:text-cyan-50' : 'text-slate-700 hover:bg-slate-50 dark:text-[var(--rcms-ink)] dark:hover:bg-[var(--rcms-surface-hover)]'}`}>
+                            <button type="button" role="option" aria-selected={index === activeIndex} key={result.id} onMouseEnter={() => setActiveIndex(index)} onClick={() => selectResult(result)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-start transition ${index === activeIndex ? 'bg-cyan-50 text-cyan-950 dark:bg-cyan-400/12 dark:text-cyan-50' : 'text-slate-700 hover:bg-slate-50 dark:text-[var(--VIARA-ink)] dark:hover:bg-[var(--VIARA-surface-hover)]'}`}>
                                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-cyan-700 shadow-sm ring-1 ring-slate-100 dark:bg-cyan-400/12 dark:text-cyan-200 dark:ring-cyan-300/20"><Icon size={17} /></span>
-                                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{result.label}</span><span className="block truncate text-[11px] text-slate-400 dark:text-[var(--rcms-muted)] ltr-embed">{result.meta}</span></span>
+                                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{result.label}</span><span className="block truncate text-[11px] text-slate-400 dark:text-[var(--VIARA-muted)] ltr-embed">{result.meta}</span></span>
                                 <ArrowUpRight size={15} className="text-slate-300" />
                             </button>
                         );

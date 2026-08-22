@@ -45,6 +45,9 @@ describe('PatientDetailPage', () => {
         expect(screen.getByRole('heading', { name: 'Alice Hassan' })).toBeInTheDocument();
         expect(screen.getAllByText('PAT-1001')).not.toHaveLength(0);
         expect(screen.getByRole('button', { name: /Book new appointment/i })).toBeInTheDocument();
+        expect(screen.getByText('Portal login details')).toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: 'Activate portal access' }).length).toBeGreaterThanOrEqual(1);
+        expect(screen.getByRole('link', { name: 'Open portal' })).toHaveAttribute('href');
         expect(screen.getByRole('navigation', { name: /Patient record sections/i })).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Insurance' }));

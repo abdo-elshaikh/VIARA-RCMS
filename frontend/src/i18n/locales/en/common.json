@@ -1,9 +1,9 @@
 {
   "app": {
-    "name": "RCMS",
-    "tagline": "Health OS",
-    "fullName": "RCMS Enterprise",
-    "copyright": "Copyright {{year}} RCMS Medical Systems. All rights reserved."
+    "name": "VIARA",
+    "tagline": "A Better Way to Care.",
+    "fullName": "VIARA Healthcare Technology",
+    "copyright": "Copyright {{year}} VIARA Healthcare Technology. All rights reserved."
   },
   "actions": {
     "save": "Save",
@@ -46,11 +46,28 @@
     "user": "User",
     "guest": "Guest",
     "staff": "Staff",
+    "myProfile": "My Profile",
+    "settings": "Settings",
     "search_placeholder": "Search patients or open a module...",
     "notifications": "Notifications",
     "noResults": "No results found"
   },
+  "roles": {
+    "admin": "Administrator",
+    "administrator": "Administrator",
+    "developer": "Developer",
+    "radiologist": "Radiologist",
+    "doctor": "Doctor",
+    "physician": "Physician",
+    "technician": "Technician",
+    "nurse": "Nurse",
+    "receptionist": "Receptionist",
+    "hr": "HR",
+    "marketing": "Marketing",
+    "guest": "Guest"
+  },
   "topbar": {
+    "clockIn": "Clock In",
     "clockedIn": "Clocked In",
     "clockOut": "Clock Out",
     "clockInHint": "Click to Clock In",

@@ -26,10 +26,10 @@ describe('Login Component', () => {
                 </BrowserRouter>
             </Provider>
         );
-        
-        expect(screen.getByPlaceholderText(/user@rcms\.com/i)).toBeInTheDocument();
+
+        expect(screen.getByPlaceholderText(/doctor@VIARA\.com/i)).toBeInTheDocument();
         expect(screen.getByPlaceholderText(/••••••••/i)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /sign in to clinical console/i })).toBeInTheDocument();
     });
 
     it('shows validation errors when submitting empty form', async () => {
@@ -40,10 +40,12 @@ describe('Login Component', () => {
                 </BrowserRouter>
             </Provider>
         );
-        
-        const submitButton = screen.getByRole('button', { name: /sign in/i });
+
+        fireEvent.change(screen.getByLabelText(/institutional email/i), { target: { value: '' } });
+        fireEvent.change(document.getElementById('staff-password'), { target: { value: '' } });
+        const submitButton = screen.getByRole('button', { name: /sign in to clinical console/i });
         fireEvent.click(submitButton);
-        
+
         // Wait for validation errors
         expect(await screen.findByText(/email is required/i)).toBeInTheDocument();
         expect(await screen.findByText(/password is required/i)).toBeInTheDocument();

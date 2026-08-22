@@ -2,10 +2,11 @@ import { useEffect, lazy, Suspense, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from './store/store';
 import { Toaster } from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 
-import { rehydrateUser, selectCurrentUser, selectIsAuthenticated } from './store/authSlice';
+import { rehydrateUser, selectCurrentUser, selectIsAuthenticated, type PortalRole } from './store/authSlice';
 import { selectTheme } from './store/preferencesSlice';
-import { applyPortalTheme, resolveTheme } from './utils/theme';
+import { applyPortalTheme } from './utils/theme';
 
 const PatientLogin = lazy(() => import('./pages/PatientLogin'));
 const PatientPortal = lazy(() => import('./pages/PatientPortal'));
@@ -14,11 +15,11 @@ const DoctorPortal = lazy(() => import('./pages/DoctorPortal'));
 const PortalLanding = lazy(() => import('./pages/PortalLanding'));
 const PortalPasswordChange = lazy(() => import('./pages/PortalPasswordChange'));
 
-const PATIENT_ROLES = ['Patient'] as const;
-const DOCTOR_ROLES = ['Doctor'] as const;
+const PATIENT_ROLES = ['Patient'] satisfies readonly PortalRole[];
+const DOCTOR_ROLES = ['Doctor'] satisfies readonly PortalRole[];
 
 interface RequireRoleProps {
-    roles: readonly string[];
+    roles: readonly PortalRole[];
     redirectTo: string;
     children: ReactNode;
 }
@@ -28,8 +29,8 @@ const RequireRole = ({ roles, redirectTo, children }: RequireRoleProps) => {
     const user = useAppSelector(selectCurrentUser);
 
     if (!isAuthenticated) return <Navigate to={redirectTo} replace />;
-    if (isAuthenticated && (user as any)?.mustChangePassword) return <Navigate to="/portal/change-password" replace />;
-    if (!user?.role || !roles.includes(user.role)) return <Navigate to={redirectTo} replace />;
+    if (isAuthenticated && user?.mustChangePassword) return <Navigate to="/portal/change-password" replace />;
+    if (!user?.role || !roles.includes(user.role as PortalRole)) return <Navigate to={redirectTo} replace />;
     return children;
 };
 
@@ -38,7 +39,7 @@ const RequirePortalAccount = ({ children }: { children: ReactNode }) => {
     const user = useAppSelector(selectCurrentUser);
 
     if (!isAuthenticated || !user?.role) return <Navigate to="/" replace />;
-    if (![...PATIENT_ROLES, ...DOCTOR_ROLES].includes(user.role as 'Patient' | 'Doctor')) {
+    if (!(PATIENT_ROLES as readonly string[]).concat(DOCTOR_ROLES).includes(user.role)) {
         return <Navigate to="/" replace />;
     }
     return children;
@@ -49,7 +50,7 @@ const App = () => {
     const isAuthenticated = useAppSelector(selectIsAuthenticated);
     const user = useAppSelector(selectCurrentUser);
     const theme = useAppSelector(selectTheme);
-    const isDark = resolveTheme(theme) === 'dark';
+    const { t } = useTranslation('common');
 
     useEffect(() => {
         dispatch(rehydrateUser());
@@ -70,21 +71,21 @@ const App = () => {
     const isDoctor = isAuthenticated && DOCTOR_ROLES.some((role) => role === user?.role);
 
     return (
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BrowserRouter>
             <Toaster
                 position="top-center"
                 toastOptions={{
                     duration: 4000,
                     style: {
-                        border: `1px solid ${isDark ? '#263c53' : '#dce9f5'}`,
+                        border: '1px solid var(--VIARA-line)',
                         borderRadius: '14px',
-                        background: isDark ? '#0d2030' : '#ffffff',
-                        color: isDark ? '#edf5ff' : '#0b2245',
+                        background: 'var(--VIARA-surface)',
+                        color: 'var(--VIARA-ink)',
                         boxShadow: '0 20px 48px -30px rgba(8,39,97,.42)',
                     },
                 }}
             />
-            <Suspense fallback={<div role="status" aria-live="polite" className="flex h-screen w-full flex-col items-center justify-center gap-3 bg-background text-sm font-semibold text-muted-foreground"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" /><span>Loading portal…</span></div>}>
+            <Suspense fallback={<div role="status" aria-live="polite" className="flex h-screen w-full flex-col items-center justify-center gap-3 bg-background text-sm font-semibold text-muted-foreground"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" /><span>{t('status.loading')}</span></div>}>
             <Routes>
                 {/* Default route opens the public portal landing page. */}
                 <Route path="/" element={<PortalLanding />} />

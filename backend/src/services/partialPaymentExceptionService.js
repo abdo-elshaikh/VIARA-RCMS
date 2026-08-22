@@ -44,17 +44,19 @@ const getInvoicePaymentPosition = async (db, invoiceId) => {
     };
 };
 
-const getApprovedPartialPaymentException = async (db, invoiceId, transactionType) => {
+const getApprovedPartialPaymentException = async (db, invoiceId, transactionType, targetStage) => {
     const result = await db.query(`
         SELECT *
         FROM partial_payment_exceptions
         WHERE invoice_id = $1
           AND transaction_type = $2
+          AND metadata->>'targetStage' = $3
           AND status = 'Approved'
           AND (expires_at IS NULL OR expires_at > NOW())
         ORDER BY reviewed_at DESC NULLS LAST, requested_at DESC
         LIMIT 1
-    `, [invoiceId, transactionType]);
+        FOR UPDATE SKIP LOCKED
+    `, [invoiceId, transactionType, targetStage]);
 
     return result.rows[0] || null;
 };
@@ -62,6 +64,7 @@ const getApprovedPartialPaymentException = async (db, invoiceId, transactionType
 const assertInvoiceTransactionAllowed = async (db, {
     invoiceId,
     transactionType,
+    targetStage,
     transactionLabel = 'this transaction'
 }) => {
     if (!Object.values(RESTRICTED_PARTIAL_PAYMENT_TRANSACTIONS).includes(transactionType)) {
@@ -88,8 +91,14 @@ const assertInvoiceTransactionAllowed = async (db, {
         throw error;
     }
 
-    const exception = await getApprovedPartialPaymentException(db, invoiceId, transactionType);
+    const exception = await getApprovedPartialPaymentException(db, invoiceId, transactionType, targetStage);
     if (exception) {
+        await db.query(`
+            UPDATE partial_payment_exceptions
+            SET status = 'Used',
+                metadata = metadata || jsonb_build_object('usedAt', NOW(), 'usedForStage', $2::text)
+            WHERE exception_id = $1 AND status = 'Approved'
+        `, [exception.exception_id, targetStage]);
         return { allowed: true, position, exception };
     }
 
@@ -98,6 +107,7 @@ const assertInvoiceTransactionAllowed = async (db, {
         code: 'PARTIAL_PAYMENT_EXCEPTION_REQUIRED',
         invoiceId,
         transactionType,
+        targetStage,
         invoiceNumber: position.invoice_number,
         netPaidAmount: position.net_paid_amount,
         balanceAmount: position.balance_amount

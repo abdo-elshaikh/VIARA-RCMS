@@ -14,10 +14,20 @@ const orthancIdForName = (name) => String(name || 'modality')
     .toLowerCase();
 
 const getOrthancConnection = async () => {
+    let username = await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'VIARA');
+    let password = await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD);
+
+    if (username === 'orthanc' || !username) {
+        username = process.env.ORTHANC_USERNAME || 'VIARA';
+    }
+    if (password === 'orthanc' || !password) {
+        password = process.env.ORTHANC_PASSWORD || 'VIARA_secure_password_2024';
+    }
+
     const config = {
         url: String(await settingsService.get('orthanc_api_url', process.env.ORTHANC_API_URL || process.env.ORTHANC_URL || 'http://orthanc:8042')).replace(/\/+$/, ''),
-        username: await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'rcms'),
-        password: await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD)
+        username,
+        password
     };
     if (!config.password) {
         throw new Error('ORTHANC_PASSWORD is required but not set in environment or system_settings');

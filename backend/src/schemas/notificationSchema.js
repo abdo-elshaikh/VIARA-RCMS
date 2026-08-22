@@ -8,6 +8,7 @@ const getNotificationsQuerySchema = z.object({
     patientId: z.string().uuid().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    view: z.enum(['all', 'unread', 'failed']).default('all'),
     limit: z.coerce.number().int().min(1).max(200).default(50),
     offset: z.coerce.number().int().min(0).default(0)
 }).refine(({ startDate, endDate }) => !startDate || !endDate || startDate <= endDate, {
@@ -58,6 +59,7 @@ const updatePreferencesSchema = z.object({
     emailEnabled: z.boolean().optional(),
     smsEnabled: z.boolean().optional(),
     whatsappEnabled: z.boolean().optional(),
+    inappEnabled: z.boolean().optional(),
     notifyAppointmentCreated: z.boolean().optional(),
     notifyAppointmentReminder: z.boolean().optional(),
     notifyAppointmentRescheduled: z.boolean().optional(),
@@ -67,8 +69,48 @@ const updatePreferencesSchema = z.object({
     notifyReportReady: z.boolean().optional(),
     notifyResultDelivered: z.boolean().optional(),
     notifyFollowupReminder: z.boolean().optional(),
-    notifyMarketing: z.boolean().optional()
+    notifyMarketing: z.boolean().optional(),
+    notifySecurityEvent: z.boolean().optional(),
+    notifyStaffLifecycle: z.boolean().optional(),
+    notifyOrderEvents: z.boolean().optional(),
+    notifyQueueChange: z.boolean().optional(),
+    notifyPacsAlert: z.boolean().optional(),
+    notifyBackupStatus: z.boolean().optional(),
+    notifyPrivacyRequest: z.boolean().optional(),
+    notifyChatMessage: z.boolean().optional(),
+    notifyInventoryExpiry: z.boolean().optional(),
+    notifyClaimUpdate: z.boolean().optional(),
+    notifyPaymentUpdate: z.boolean().optional(),
+    quietHoursEnabled: z.boolean().optional(),
+    quietHoursStart: z.number().int().min(0).max(23).optional(),
+    quietHoursEnd: z.number().int().min(0).max(23).optional()
 }).refine(d => Object.keys(d).length > 0, { message: 'At least one field required' });
+
+const staffHourSchema = z.union([
+    z.number().int().min(0).max(23),
+    z.string().regex(/^([01]\d|2[0-3]):00$/, 'Quiet-hour time must use whole hours')
+]).transform(value => typeof value === 'number' ? value : Number(value.slice(0, 2)));
+
+const updateStaffPreferencesSchema = z.object({
+    email_enabled: z.boolean().optional(),
+    sms_enabled: z.boolean().optional(),
+    whatsapp_enabled: z.boolean().optional(),
+    inapp_enabled: z.boolean().optional(),
+    notify_security_event: z.boolean().optional(),
+    notify_staff_lifecycle: z.boolean().optional(),
+    notify_order_events: z.boolean().optional(),
+    notify_queue_change: z.boolean().optional(),
+    notify_pacs_alert: z.boolean().optional(),
+    notify_backup_status: z.boolean().optional(),
+    notify_privacy_request: z.boolean().optional(),
+    notify_chat_message: z.boolean().optional(),
+    notify_inventory_expiry: z.boolean().optional(),
+    notify_claim_update: z.boolean().optional(),
+    notify_payment_update: z.boolean().optional(),
+    quiet_hours_enabled: z.boolean().optional(),
+    quiet_hours_start: staffHourSchema.optional(),
+    quiet_hours_end: staffHourSchema.optional()
+}).strict().refine(d => Object.keys(d).length > 0, { message: 'At least one field required' });
 
 const notificationPreferencesQuerySchema = z.object({
     patientId: z.string().uuid().optional(),
@@ -98,6 +140,7 @@ module.exports = {
     updateNotificationTemplateSchema,
     manualSendSchema,
     updatePreferencesSchema,
+    updateStaffPreferencesSchema,
     notificationPreferencesQuerySchema,
     reminderSchema,
     unsubscribeSchema

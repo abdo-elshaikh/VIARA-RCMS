@@ -3,6 +3,7 @@ const { decrypt } = require('../utils/crypto');
 const bcrypt = require('bcrypt');
 const { AppError } = require('../middleware/errorHandler');
 const { generateTokens } = require('./authController');
+const { triggerEventForRole } = require('../services/notificationJobService');
 
 const decryptOptional = (value) => value ? decrypt(value) : '';
 const INVALID_LOGIN_ERROR = 'Invalid credentials';
@@ -127,13 +128,27 @@ const getMyRecords = (db) => async (req, res, next) => {
                 e.exam_id,
                 e.status as exam_status,
                 e.report_status,
-                e.report_content,
+                e.report_locked,
+                e.report_finalized_at,
+                CASE WHEN (
+                    e.status = 'Finalized'
+                    OR e.report_status IN ('Finalized', 'Amended')
+                    OR COALESCE(e.report_locked, FALSE) = TRUE
+                ) THEN e.report_content ELSE NULL END AS report_content,
                 e.clinical_indication as exam_clinical_indication,
                 e.provisional_diagnosis as exam_provisional_diagnosis,
                 e.body_part as exam_body_part,
                 e.contrast_required as exam_contrast_required,
-                e.report_sections,
-                u.full_name as radiologist_name
+                CASE WHEN (
+                    e.status = 'Finalized'
+                    OR e.report_status IN ('Finalized', 'Amended')
+                    OR COALESCE(e.report_locked, FALSE) = TRUE
+                ) THEN e.report_sections ELSE NULL END AS report_sections,
+                CASE WHEN (
+                    e.status = 'Finalized'
+                    OR e.report_status IN ('Finalized', 'Amended')
+                    OR COALESCE(e.report_locked, FALSE) = TRUE
+                ) THEN u.full_name ELSE NULL END AS radiologist_name
             FROM appointments a
             LEFT JOIN modalities m ON a.modality_id = m.modality_id
             LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
@@ -240,6 +255,15 @@ const downloadMyDocument = (db) => async (req, res, next) => {
             details: { title: result.rows[0].title, documentType: result.rows[0].document_type }
         });
 
+        triggerEventForRole(db, 'DocumentDownloaded', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                document_title: result.rows[0].title,
+                patient_id: req.user.userId,
+                downloaded_by: req.user?.email || 'Unknown'
+            }
+        }).catch(() => {});
+
         res.json(result.rows[0]);
     } catch (error) {
         next(error);
@@ -290,6 +314,15 @@ const createAppointmentRequest = (db) => async (req, res, next) => {
             details: { preferredDate: data.preferredDate, modalityType: data.modalityType }
         });
 
+        triggerEventForRole(db, 'AppointmentRequested', 'Receptionist', {
+            priority: 'Normal',
+            variables: {
+                patient_id: req.user.userId,
+                preferred_date: data.preferredDate || '',
+                exam_type: data.modalityType || ''
+            }
+        }).catch(() => {});
+
         res.status(201).json(result.rows[0]);
     } catch (error) {
         next(error);
@@ -310,6 +343,14 @@ const createProfileUpdateRequest = (db) => async (req, res, next) => {
             resourceId: result.rows[0].update_request_id,
             details: { fields: Object.keys(req.body) }
         });
+
+        triggerEventForRole(db, 'ProfileUpdateRequested', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                patient_id: req.user.userId,
+                fields: Object.keys(req.body).join(', ')
+            }
+        }).catch(() => {});
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
@@ -403,6 +444,20 @@ const reviewPortalAppointmentRequest = (db) => async (req, res, next) => {
         ]);
 
         await client.query('COMMIT');
+
+        triggerEvent(db, 'AppointmentRequestReviewed', {
+            patientId: existing.rows[0].patient_id,
+            entityType: 'AppointmentRequest',
+            entityId: req.params.requestId,
+            channels: ['Email'],
+            priority: 'Normal',
+            variables: {
+                patient_name: '',
+                status: req.body.status,
+                staff_notes: req.body.staffNotes || ''
+            }
+        }).catch(() => {});
+
         res.json(updated.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');

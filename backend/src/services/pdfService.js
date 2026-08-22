@@ -1,3 +1,5 @@
+const { resolveDocumentIdentity } = require('./documentIdentityService');
+
 const escapeHtml = (value = '') => String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -19,7 +21,7 @@ const safeArray = (val, fallback = []) => Array.isArray(val) ? val : fallback;
 
 const safeObject = (val, fallback = {}) => (val && typeof val === 'object' && !Array.isArray(val)) ? val : fallback;
 
-const normalizeCenterSettings = (settings = {}) => {
+const normalizeCenterSettings = (settings = {}, entity = {}) => {
     const print = parseJSONSafe(settings.print_settings) || settings.print_settings || {};
     let enabled = settings.enabledFields || print.enabledFields;
     if (typeof enabled === 'string') {
@@ -29,16 +31,23 @@ const normalizeCenterSettings = (settings = {}) => {
     if (typeof visibleSections === 'string') {
         visibleSections = visibleSections.split(',').map(s => s.trim()).filter(Boolean);
     }
+    const identity = resolveDocumentIdentity(settings, entity);
     return {
-        center_name: settings.center_name || settings['center.name'] || 'RCMS Radiology Center',
-        branch_name: settings.branch_name || settings['center.branch'] || '',
-        logo_url: settings.logo_url || settings['center.logo_url'] || '',
-        phone: settings.phone || settings['center.phone'] || '',
-        email: settings.email || settings['center.email'] || '',
-        address: settings.address || settings['center.address'] || '',
+        ...settings,
+        center_name: identity.centerName,
+        branch_name: identity.branchName,
+        logo_url: identity.logoUrl,
+        phone: identity.phone,
+        email: identity.email,
+        address: identity.address,
+        hotline: identity.hotline,
+        website: identity.website,
+        tax_id: identity.taxNumber,
+        commercial_registration: identity.commercialRegistration,
+        medical_license: identity.medicalLicense,
         report_header: settings.report_header || settings['center.report_header'] || '',
         report_footer: settings.report_footer || settings['center.report_footer'] || '',
-        themeColor: settings.themeColor || print.themeColor || '#0ea5e9',
+        themeColor: settings.themeColor || print.themeColor || identity.primaryColor,
         fontFamily: settings.fontFamily || print.fontFamily || 'Inter',
         templateStyle: settings.templateStyle || print.templateStyle || 'modern',
         enabledFields: safeArray(enabled, ['patient_name', 'mrn', 'study_date', 'referring_doctor']),
@@ -56,14 +65,58 @@ const normalizeCenterSettings = (settings = {}) => {
     };
 };
 
-const reportHeaderText = (center) => center.report_header || [
+const cleanTemplateText = (value = '') => String(value)
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+const renderCenterTemplate = (template, center) => {
+    const values = {
+        center_name: center.center_name,
+        branch_name: center.branch_name,
+        phone: center.phone,
+        hotline: center.hotline,
+        email: center.email,
+        website: center.website,
+        address: center.address,
+        tax_id: center.tax_id,
+        commercial_registration: center.commercial_registration,
+        medical_license: center.medical_license,
+    };
+
+    return cleanTemplateText(String(template || '')
+        .replace(/\{\{?\s*([a-z0-9_.]+)\s*\}?\}/gi, (_match, key) => values[key] || '')
+        .replace(/\{[^{}]+\}/g, ''));
+};
+
+const stripHeaderIdentity = (value, center) => {
+    const names = [
+        [center.center_name, center.branch_name].filter(Boolean).join(' - '),
+        center.center_name,
+    ].filter(Boolean).sort((a, b) => b.length - a.length);
+
+    return cleanTemplateText(String(value || '').split('\n').map((line) => {
+        const trimmed = line.trim();
+        const match = names.find((name) => trimmed.toLowerCase().startsWith(String(name).toLowerCase()));
+        return match ? trimmed.slice(String(match).length).replace(/^[\s|,;:-]+/, '').trim() : trimmed;
+    }).filter(Boolean).join('\n'));
+};
+
+const defaultHeaderText = (center) => [
     center.address,
     center.phone && `Tel: ${center.phone}`,
     center.email && `Email: ${center.email}`
 ].filter(Boolean).join('\n');
 
-const reportFooterText = (center) => center.report_footer
-    || `${center.center_name} • Diagnostic Medical Imaging Report • Confidential`;
+const reportHeaderText = (center) => {
+    const configured = stripHeaderIdentity(renderCenterTemplate(center.report_header, center), center);
+    return configured || defaultHeaderText(center);
+};
+
+const reportFooterText = (center) => renderCenterTemplate(center.report_footer, center)
+    || [center.website, center.address].filter(Boolean).join(' | ')
+    || `${center.center_name} | Confidential diagnostic imaging report`;
 
 const reportSections = (report) => {
     const sections = report.report_sections || {};
@@ -89,6 +142,39 @@ const reportSections = (report) => {
         });
     }
     return { standard, customSections };
+};
+
+const BODY_REGION_TERMS = [
+    { key: 'spine', label: 'spine', terms: ['spine', 'spinal', 'lumbar', 'thoracic', 'cervical', 'vertebra'] },
+    { key: 'knee', label: 'knee', terms: ['knee', 'patella', 'tibiofemoral'] },
+    { key: 'chest', label: 'chest', terms: ['chest', 'lung', 'pulmonary', 'pleural'] },
+    { key: 'brain', label: 'brain/head', terms: ['brain', 'cranial', 'intracranial', 'head'] },
+    { key: 'shoulder', label: 'shoulder', terms: ['shoulder', 'glenohumeral'] },
+    { key: 'hip', label: 'hip/pelvis', terms: ['hip', 'pelvis', 'acetabul'] },
+    { key: 'ankle', label: 'ankle', terms: ['ankle', 'tibiotalar'] },
+    { key: 'wrist', label: 'wrist', terms: ['wrist', 'carpal'] },
+];
+
+const countTermMatches = (text, terms) => terms.reduce((total, term) => {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return total + ((text.match(new RegExp(`\\b${escaped}`, 'gi')) || []).length);
+}, 0);
+
+const detectClinicalContentMismatch = (examTitle, sections) => {
+    const title = String(examTitle || '').toLowerCase();
+    const expected = BODY_REGION_TERMS.find((region) => countTermMatches(title, region.terms) > 0);
+    if (!expected) return null;
+
+    const narrative = Object.values(sections || {}).filter(Boolean).join(' ').toLowerCase();
+    if (!narrative || countTermMatches(narrative, expected.terms) > 0) return null;
+
+    const unexpected = BODY_REGION_TERMS
+        .filter((region) => region.key !== expected.key)
+        .map((region) => ({ ...region, score: countTermMatches(narrative, region.terms) }))
+        .sort((a, b) => b.score - a.score)[0];
+
+    if (!unexpected || unexpected.score < 2) return null;
+    return `The study is labeled ${examTitle}, while the report narrative repeatedly references the ${unexpected.label}. Clinical review is required before relying on this document.`;
 };
 
 const formatDate = (value) => {
@@ -140,17 +226,17 @@ const SECTION_CATALOG = [
 const THEMES = {
     modern: {
         name: 'Modern Executive', group: 'light',
-        primary: '#0ea5e9', primaryDark: '#0284c7', border: '#e2e8f0',
-        cardBg: '#f8fafc', impressionBg: '#f0f9ff', impressionBorder: '#0ea5e9',
-        metaBg: '#ffffff', accentSoft: 'rgba(14, 165, 233, 0.08)',
+        primary: '#087F5B', primaryDark: '#064E3B', border: '#DCE7E3',
+        cardBg: '#F7FAF9', impressionBg: '#DDF4EA', impressionBorder: '#087F5B',
+        metaBg: '#ffffff', accentSoft: 'rgba(8, 127, 91, 0.08)',
         font: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         radius: '12px', headerStyle: 'underline'
     },
     teal: {
-        name: 'Teal Clinical', group: 'light',
-        primary: '#0d9488', primaryDark: '#0f766e', border: '#99f6e4',
-        cardBg: '#f0fdfa', impressionBg: '#ccfbf1', impressionBorder: '#0d9488',
-        metaBg: '#ffffff', accentSoft: 'rgba(13, 148, 136, 0.08)',
+        name: 'Clinical Emerald', group: 'light',
+        primary: '#087F5B', primaryDark: '#064E3B', border: '#9CDCC1',
+        cardBg: '#F7FAF9', impressionBg: '#DDF4EA', impressionBorder: '#087F5B',
+        metaBg: '#ffffff', accentSoft: 'rgba(8, 127, 91, 0.08)',
         font: "'Inter', system-ui, sans-serif",
         radius: '10px', headerStyle: 'underline'
     },
@@ -281,13 +367,13 @@ const computeChecksum = (value = '') => {
 
 /**
  * Build a stable verification payload for QR + hash display.
- * Format: RCMS1|<hash>|E:<exam>|O:<order>|MRN:<mrn>|TS:<iso>|C:<checksum>
+ * Format: VIARA1|<hash>|E:<exam>|O:<order>|MRN:<mrn>|TS:<iso>|C:<checksum>
  * Checksum covers everything before the C: segment for offline integrity checks.
  */
 const buildVerificationPayload = (report, verificationHash) => {
     const ts = new Date().toISOString().slice(0, 19) + 'Z';
     const body = [
-        'RCMS1',
+        'VIARA1',
         String(verificationHash || ''),
         report.exam_id ? `E:${report.exam_id}` : '',
         (report.order_number || report.accession_number)
@@ -310,8 +396,8 @@ const parseVerificationPayload = (payload = '') => {
         return { valid: false, errors: ['Empty payload'] };
     }
     const parts = raw.split('|');
-    if (parts[0] !== 'RCMS1' && parts[0] !== 'RCMS-VERIFY') {
-        errors.push('Unknown payload prefix (expected RCMS1)');
+    if (parts[0] !== 'VIARA1' && parts[0] !== 'VIARA-VERIFY') {
+        errors.push('Unknown payload prefix (expected VIARA1)');
     }
     const result = {
         valid: false,
@@ -324,7 +410,7 @@ const parseVerificationPayload = (payload = '') => {
         checksum: '',
         errors
     };
-    if (parts[0] === 'RCMS1') {
+    if (parts[0] === 'VIARA1') {
         result.hash = parts[1] || '';
         parts.slice(2).forEach(p => {
             if (p.startsWith('E:')) result.examId = p.slice(2);
@@ -340,7 +426,7 @@ const parseVerificationPayload = (payload = '') => {
             errors.push('Checksum mismatch — payload may be altered');
         }
         if (!result.hash) errors.push('Missing verification hash');
-    } else if (parts[0] === 'RCMS-VERIFY') {
+    } else if (parts[0] === 'VIARA-VERIFY') {
         // Legacy format without checksum
         result.hash = parts[1] || '';
         parts.slice(2).forEach(p => {
@@ -377,23 +463,26 @@ const validateVerificationPayload = (payload, expected = {}) => {
 };
 
 const buildReportHtml = (report, centerSettings = {}) => {
-    const center = normalizeCenterSettings(centerSettings);
+    const center = normalizeCenterSettings(centerSettings, report);
     const { standard: sections, customSections } = reportSections(report);
     const styleKey = (center.templateStyle || report.template_style || 'modern').toLowerCase();
     const theme = THEMES[styleKey] || THEMES.modern;
     const primaryColor = /^#[0-9a-f]{6}$/i.test(center.themeColor) ? center.themeColor : theme.primary;
-    const facilityName = [center.center_name, center.branch_name].filter(Boolean).join(' — ');
-    const logoText = String(center.center_name || 'RCMS').trim().slice(0, 4).toUpperCase();
+    const facilityName = [center.center_name, center.branch_name].filter(Boolean).join(' - ');
+    const logoText = String(center.center_name || 'Center').trim().slice(0, 4).toUpperCase();
     const finalized = ['Finalized', 'Amended', 'Signed'].includes(report.report_status)
         || report.report_locked
         || report.status === 'Finalized';
     const verificationHash = report.digital_signature_hash || (finalized
-        ? `RCMS-VERIFIED-${String(report.exam_id || report.order_number || '').slice(0, 10).toUpperCase()}`
+        ? `VIARA-VERIFIED-${String(report.exam_id || report.order_number || '').slice(0, 10).toUpperCase()}`
         : 'Pending Signature');
     const verifyPayload = buildVerificationPayload(report, verificationHash);
     const statusLabel = report.report_status || report.status || (finalized ? 'Finalized' : 'Draft');
     const examTitle = report.exam_type_name || report.modality_name || 'Radiology Study';
     const generatedAt = formatDate(new Date());
+    const headerText = reportHeaderText(center);
+    const footerText = reportFooterText(center);
+    const clinicalContentWarning = detectClinicalContentMismatch(examTitle, sections);
 
     const rawCatalog = METADATA_CATALOG.map(f => ({
         id: f.id,
@@ -511,7 +600,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
         [contenteditable="true"]:focus-visible { outline: none; }
 
         /* ── Toast ──────────────────────────────────────────────────────── */
-        .rcms-toast {
+        .VIARA-toast {
             position: fixed; left: 50%; bottom: 26px; z-index: 10001;
             transform: translate(-50%, 16px); opacity: 0;
             background: rgba(15, 23, 42, 0.96); color: #f8fafc;
@@ -522,8 +611,8 @@ const buildReportHtml = (report, centerSettings = {}) => {
             transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease;
             pointer-events: none; max-width: 90vw; text-align: center;
         }
-        .rcms-toast.tone-error { background: rgba(153, 27, 27, 0.96); }
-        .rcms-toast.show { transform: translate(-50%, 0); opacity: 1; }
+        .VIARA-toast.tone-error { background: rgba(153, 27, 27, 0.96); }
+        .VIARA-toast.show { transform: translate(-50%, 0); opacity: 1; }
 
         /* ── Customizer ─────────────────────────────────────────────────── */
         .customize-panel {
@@ -785,9 +874,29 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
         /* Zone 3: Clinical */
         .zone-clinical {
-            margin-top: var(--space-5); flex: 1;
+            margin-top: var(--space-5); flex: 0 0 auto;
             display: flex; flex-direction: column; min-height: 0;
         }
+        .clinical-consistency-alert {
+            margin-top: var(--space-4);
+            padding: 10px 12px;
+            border: 1px solid #f59e0b;
+            border-inline-start: 4px solid #d97706;
+            border-radius: calc(var(--radius) - 2px);
+            background: #fffbeb;
+            color: #78350f;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .clinical-consistency-alert strong {
+            display: block;
+            margin-bottom: 2px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .clinical-consistency-alert span { font-size: 11px; line-height: 1.5; font-weight: 600; }
         .report-section {
             margin-top: var(--space-4);
             page-break-inside: avoid; break-inside: avoid;
@@ -822,6 +931,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
         }
 
         /* Zone 4: Signature + Digital Verification with QR */
+        .signature-block { flex-shrink: 0; }
         .zone-signature {
             margin-top: var(--space-6);
             padding-top: var(--space-5);
@@ -958,7 +1068,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
         /* Zone 5: Footer */
         .zone-footer {
-            margin-top: var(--space-5); padding-top: var(--space-3);
+            margin-top: auto; padding-top: var(--space-3);
             border-top: 1px solid var(--border);
             display: flex; justify-content: space-between; align-items: center;
             gap: var(--space-3); color: var(--text-soft);
@@ -1025,8 +1135,10 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 print-color-adjust: exact !important;
                 border-top: 4px solid var(--primary);
             }
-            .customize-panel, .rcms-toast { display: none !important; }
+            .customize-panel, .VIARA-toast { display: none !important; }
+            .v-copy-btn { display: none !important; }
             .section-body { background: #fff !important; }
+            .clinical-consistency-alert { background: #fffbeb !important; }
             .important-section .section-body { background: #f8fafc !important; }
             .verify-card { background: #f8fafc !important; box-shadow: none !important; }
             a { color: inherit; text-decoration: none; }
@@ -1167,7 +1279,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
             }
                         <div class="brand-details">
                             <h1 id="brandTitle">${escapeHtml(facilityName)}</h1>
-                            <p id="brandSubtitle">${lineBreaks(reportHeaderText(center))}</p>
+                            ${headerText ? `<p id="brandSubtitle">${lineBreaks(headerText)}</p>` : ''}
                         </div>
                     </div>
                     <div class="doc-meta">
@@ -1188,6 +1300,13 @@ const buildReportHtml = (report, centerSettings = {}) => {
                         `).join('')}
                     </div>
                 </div>
+
+                ${clinicalContentWarning ? `
+                <aside class="clinical-consistency-alert" role="alert">
+                    <strong>Clinical consistency review required</strong>
+                    <span>${escapeHtml(clinicalContentWarning)}</span>
+                </aside>
+                ` : ''}
 
                 <main class="zone-clinical" id="zoneClinical">
                     ${sectionDefs.map(s => sectionBlock(
@@ -1223,14 +1342,14 @@ const buildReportHtml = (report, centerSettings = {}) => {
                                 <div class="v-meta">
                                     <span>Generated <strong>${escapeHtml(generatedAt)}</strong></span>
                                     ${report.order_number || report.exam_id
-                    ? `<span>Ref <strong>${escapeHtml(report.order_number || report.exam_id)}</strong></span>`
-                    : ''}
+                ? `<span>Ref <strong>${escapeHtml(report.order_number || report.exam_id)}</strong></span>`
+                : ''}
                                 </div>
                                 <div class="verify-offline-status ${offlineValidation.valid ? 'ok' : 'fail'}" id="verifyOfflineStatus" role="status" aria-live="polite" title="${escapeHtml((offlineValidation.errors || []).join('; '))}">
                                     <span class="dot" aria-hidden="true"></span>
                                     <span id="verifyOfflineLabel">${offlineValidation.valid
-                    ? 'Offline integrity OK'
-                    : 'Integrity check failed'}</span>
+                ? 'Offline integrity OK'
+                : 'Integrity check failed'}</span>
                                 </div>
                             </div>
                         </div>
@@ -1240,7 +1359,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
                 ${center.includeFooter ? `
                 <footer class="zone-footer" id="zoneFooter">
-                    <div id="footerText">${escapeHtml(reportFooterText(center))}</div>
+                    <div id="footerText">${escapeHtml(footerText)}</div>
                     <div>Order #${escapeHtml(report.order_number || report.exam_id || '—')}</div>
                 </footer>
                 ` : ''}
@@ -1276,11 +1395,11 @@ const buildReportHtml = (report, centerSettings = {}) => {
         /* ── Toast ─────────────────────────────────────────────────────── */
         window.showToast = function (message, opts) {
             opts = opts || {};
-            var existing = document.getElementById('rcmsToast');
+            var existing = document.getElementById('VIARAToast');
             if (existing) existing.remove();
             var toast = document.createElement('div');
-            toast.id = 'rcmsToast';
-            toast.className = 'rcms-toast' + (opts.tone === 'error' ? ' tone-error' : '');
+            toast.id = 'VIARAToast';
+            toast.className = 'VIARA-toast' + (opts.tone === 'error' ? ' tone-error' : '');
             toast.setAttribute('role', 'status');
             toast.setAttribute('aria-live', 'polite');
             toast.textContent = message;
@@ -1337,10 +1456,10 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 valid: false, version: parts[0] || '', hash: '', examId: '',
                 order: '', mrn: '', timestamp: '', checksum: '', errors: errors
             };
-            if (parts[0] !== 'RCMS1' && parts[0] !== 'RCMS-VERIFY') {
-                errors.push('Unknown payload prefix (expected RCMS1)');
+            if (parts[0] !== 'VIARA1' && parts[0] !== 'VIARA-VERIFY') {
+                errors.push('Unknown payload prefix (expected VIARA1)');
             }
-            if (parts[0] === 'RCMS1') {
+            if (parts[0] === 'VIARA1') {
                 result.hash = parts[1] || '';
                 for (var i = 2; i < parts.length; i++) {
                     var p = parts[i];
@@ -1350,14 +1469,14 @@ const buildReportHtml = (report, centerSettings = {}) => {
                     else if (p.indexOf('TS:') === 0) result.timestamp = p.slice(3);
                     else if (p.indexOf('C:') === 0) result.checksum = p.slice(2);
                 }
-                var body = raw.replace(/\|C:[A-F0-9]+$/i, '');
+                var body = raw.replace(/\\|C:[A-F0-9]+$/i, '');
                 var expected = window.computeChecksum(body);
                 if (!result.checksum) errors.push('Missing checksum');
                 else if (result.checksum.toUpperCase() !== expected) {
                     errors.push('Checksum mismatch — payload may be altered');
                 }
                 if (!result.hash) errors.push('Missing verification hash');
-            } else if (parts[0] === 'RCMS-VERIFY') {
+            } else if (parts[0] === 'VIARA-VERIFY') {
                 result.hash = parts[1] || '';
                 for (var j = 2; j < parts.length; j++) {
                     var q = parts[j];
@@ -1408,9 +1527,9 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
         /* ── Offline QR code generator (pure JS, no network) ───────────────
            Compact QR encoder supporting byte mode, ECC level M, versions 1–10.
-           Sufficient for RCMS verification payloads (~80–150 chars).
+           Sufficient for VIARA verification payloads (~80–150 chars).
         ──────────────────────────────────────────────────────────────────── */
-        window.RCMS_QR = (function () {
+        window.VIARA_QR = (function () {
             // GF(256) tables for Reed-Solomon
             var EXP = new Array(512), LOG = new Array(256);
             (function () {
@@ -1742,7 +1861,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
             if (!canvas || !window.VERIFY_PAYLOAD) return;
             var ok = false;
             try {
-                ok = window.RCMS_QR.renderToCanvas(window.VERIFY_PAYLOAD, canvas, {
+                ok = window.VIARA_QR.renderToCanvas(window.VERIFY_PAYLOAD, canvas, {
                     size: 80,
                     margin: 2
                 });
@@ -2012,7 +2131,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
             window.renderMetaGridDOM();
             window.refreshFirstVisibleSection();
 
-            try { localStorage.removeItem('rcms_report_preset'); } catch (e) { /* ignore */ }
+            try { localStorage.removeItem('VIARA_report_preset'); } catch (e) { /* ignore */ }
             window.showToast('Reset to default appearance');
         };
 
@@ -2027,7 +2146,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 fontSize: document.getElementById('fontSizeVal').textContent
             };
             try {
-                localStorage.setItem('rcms_report_preset', JSON.stringify(preset));
+                localStorage.setItem('VIARA_report_preset', JSON.stringify(preset));
                 window.showToast('Preset saved');
             } catch (e) {
                 window.showToast('Could not save preset — storage unavailable', { tone: 'error' });
@@ -2036,7 +2155,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
         function applySavedPreset() {
             try {
-                var raw = localStorage.getItem('rcms_report_preset');
+                var raw = localStorage.getItem('VIARA_report_preset');
                 if (!raw) return;
                 var preset = JSON.parse(raw);
                 if (preset.activeEnabledIds) window.activeEnabledIds = preset.activeEnabledIds;
@@ -2106,6 +2225,9 @@ const pdfService = {
     reportSections,
     formatDate,
     formatDateOnly,
+    reportHeaderText,
+    reportFooterText,
+    detectClinicalContentMismatch,
     buildVerificationPayload,
     parseVerificationPayload,
     validateVerificationPayload,

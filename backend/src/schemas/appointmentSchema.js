@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { calendarDateSchema } = require('../utils/dateValidation');
 
 /**
  * Appointment validation schemas
@@ -9,6 +10,11 @@ const preparationStatusSchema = z.enum(['Not Required', 'Pending', 'Completed', 
 const waitlistStatusSchema = z.enum(['Waiting', 'Contacted', 'Scheduled', 'Cancelled']);
 const prioritySchema = z.enum(['Routine', 'Urgent', 'Emergency']);
 const safetyStatusSchema = z.enum(['Unknown', 'Cleared', 'At Risk', 'Not Applicable']);
+const strictBooleanSchema = z.preprocess((value) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+}, z.boolean());
 const optionalTrimmedText = (max, label) => z.string()
     .trim()
     .max(max, `${label} must be less than ${max} characters`)
@@ -43,11 +49,23 @@ const createAppointmentSchema = z.object({
         .uuid('Invalid exam type ID format')
         .optional(),
 
-    startTime: z.string()
-        .datetime('Invalid start time format'),
+    startTime: z.preprocess(
+        (val) => {
+            if (!val || typeof val !== 'string') return val;
+            const d = new Date(val);
+            return isNaN(d.getTime()) ? val : d.toISOString();
+        },
+        z.string().datetime('Invalid start time format')
+    ),
 
-    endTime: z.string()
-        .datetime('Invalid end time format'),
+    endTime: z.preprocess(
+        (val) => {
+            if (!val || typeof val !== 'string') return val;
+            const d = new Date(val);
+            return isNaN(d.getTime()) ? val : d.toISOString();
+        },
+        z.string().datetime('Invalid end time format')
+    ),
 
     notes: z.string()
         .max(1000, 'Notes must be less than 1000 characters')
@@ -63,7 +81,7 @@ const createAppointmentSchema = z.object({
     provisionalDiagnosis: optionalTrimmedText(500, 'Provisional diagnosis'),
     icdCode: z.string().trim().max(30, 'ICD code must be less than 30 characters').optional(),
     bodyPart: z.string().trim().max(100, 'Body part must be less than 100 characters').optional(),
-    contrastRequired: z.coerce.boolean().optional(),
+    contrastRequired: strictBooleanSchema.optional(),
     pregnancySafetyStatus: safetyStatusSchema.optional(),
     implantSafetyStatus: safetyStatusSchema.optional(),
     renalSafetyStatus: safetyStatusSchema.optional(),
@@ -77,7 +95,9 @@ const createAppointmentSchema = z.object({
 
     paymentMethod: z.enum(['Cash', 'Credit Card', 'Insurance', 'Card', 'Wallet', 'Bank Transfer', 'Installment', 'Corporate']).optional(),
     paymentAmount: z.coerce.number().min(0, 'Payment amount cannot be negative').optional(),
-    arrived: z.coerce.boolean().optional(),
+    arrived: strictBooleanSchema.optional(),
+    waitlistId: optionalNullableUuid('waiting list'),
+    idempotencyKey: z.string().optional(),
 }).refine((data) => {
     const start = new Date(data.startTime);
     const end = new Date(data.endTime);
@@ -89,9 +109,10 @@ const createAppointmentSchema = z.object({
     if (data.arrived) return true;
     const start = new Date(data.startTime);
     const now = new Date();
-    return start.getTime() > now.getTime() - 5 * 60 * 1000;
+    // Allow same-day appointments up to 24 hours in past for walk-in / quick booking
+    return start.getTime() > now.getTime() - 24 * 60 * 60 * 1000;
 }, {
-    message: 'Start time must be in the future',
+    message: 'Start time must be valid',
     path: ['startTime']
 }).refine((data) => !data.isFollowUp || Boolean(data.priorExamId), {
     message: 'Select the prior examination for this follow-up',
@@ -105,7 +126,7 @@ const updateAppointmentSchema = z.object({
     examTypeId: z.string().uuid('Invalid exam type ID format').optional(),
     startTime: z.string().datetime().optional(),
     endTime: z.string().datetime().optional(),
-    status: z.enum(['Confirmed', 'Cancelled', 'No-Show', 'Completed', 'Arrived', 'Checked-in']).optional(),
+    status: z.enum(['Scheduled', 'Confirmed', 'Arrived', 'Checked-in']).optional(),
     notes: z.string().max(1000).optional(),
     referringDoctor: optionalNullableTrimmedText(255, 'Referring doctor'),
     referringDoctorId: optionalNullableUuid('referring doctor'),
@@ -116,14 +137,13 @@ const updateAppointmentSchema = z.object({
     provisionalDiagnosis: optionalTrimmedText(500, 'Provisional diagnosis'),
     icdCode: z.string().trim().max(30, 'ICD code must be less than 30 characters').nullable().optional(),
     bodyPart: z.string().trim().max(100, 'Body part must be less than 100 characters').nullable().optional(),
-    contrastRequired: z.coerce.boolean().optional(),
+    contrastRequired: strictBooleanSchema.optional(),
     pregnancySafetyStatus: safetyStatusSchema.optional(),
     implantSafetyStatus: safetyStatusSchema.optional(),
     renalSafetyStatus: safetyStatusSchema.optional(),
     isFollowUp: z.boolean().optional(),
     priorExamId: z.string().uuid('Invalid prior exam ID format').nullable().optional(),
     followUpReason: z.string().trim().max(1000, 'Follow-up reason must be less than 1000 characters').nullable().optional(),
-    cancellationReason: z.string().max(1000).optional(),
     technicianId: optionalNullableUuid('technician'),
     nurseId: optionalNullableUuid('nurse'),
     radiologistId: optionalNullableUuid('radiologist'),
@@ -145,23 +165,22 @@ const updateAppointmentSchema = z.object({
 const getAppointmentsQuerySchema = z.object({
     patientId: z.string().uuid().optional(),
     modalityId: z.string().uuid().optional(),
-    // #23 — 'Scheduled' added to allow filtering by that status without a 400 error
     status: z.enum(['Scheduled', 'Confirmed', 'Cancelled', 'No-Show', 'Completed', 'Arrived', 'Checked-in']).optional(),
     appointmentSource: appointmentSourceSchema.optional(),
     preparationStatus: preparationStatusSchema.optional(),
     priority: prioritySchema.optional(),
     assignedStaffId: z.string().uuid().optional(),
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    date: calendarDateSchema().optional(),
+    startDate: calendarDateSchema().optional(),
+    endDate: calendarDateSchema().optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
     offset: z.string().regex(/^\d+$/).transform(Number).optional()
 });
 
 const availabilityQuerySchema = z.object({
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    date: calendarDateSchema().optional(),
+    startDate: calendarDateSchema().optional(),
+    endDate: calendarDateSchema().optional()
 });
 
 const noShowAppointmentSchema = z.object({
@@ -183,36 +202,62 @@ const rescheduleAppointmentSchema = z.object({
 
 const createWaitingListSchema = z.object({
     patientId: z.string().uuid('Invalid patient ID format'),
-    modalityId: z.string().uuid('Invalid modality ID format').optional(),
-    examTypeId: z.string().uuid('Invalid exam type ID format').optional(),
-    preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    modalityId: optionalNullableUuid('modality'),
+    examTypeId: optionalNullableUuid('exam type'),
+    preferredDate: calendarDateSchema().optional(),
     preferredStartTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
     preferredEndTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
     priority: prioritySchema.optional(),
     source: appointmentSourceSchema.optional(),
     notes: z.string().max(1000).trim().optional()
+}).refine((data) => {
+    if (data.preferredStartTime && data.preferredEndTime) {
+        return data.preferredEndTime > data.preferredStartTime;
+    }
+    return true;
+}, {
+    message: 'Preferred end time must be after start time',
+    path: ['preferredEndTime']
+}).refine((data) => {
+    if (data.preferredDate) {
+        const today = new Date().toISOString().slice(0, 10);
+        return data.preferredDate >= today;
+    }
+    return true;
+}, {
+    message: 'Preferred date cannot be in the past',
+    path: ['preferredDate']
 });
 
 const updateWaitingListSchema = z.object({
     patientId: z.string().uuid('Invalid patient ID format').optional(),
-    modalityId: z.string().uuid('Invalid modality ID format').nullable().optional(),
-    examTypeId: z.string().uuid('Invalid exam type ID format').nullable().optional(),
-    preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    modalityId: optionalNullableUuid('modality'),
+    examTypeId: optionalNullableUuid('exam type'),
+    preferredDate: calendarDateSchema().nullable().optional(),
     preferredStartTime: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
     preferredEndTime: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
     priority: prioritySchema.optional(),
     source: appointmentSourceSchema.optional(),
     status: waitlistStatusSchema.optional(),
     notes: z.string().max(1000).trim().nullable().optional(),
-    assignedAppointmentId: z.string().uuid('Invalid appointment ID format').nullable().optional()
+    assignedAppointmentId: optionalNullableUuid('appointment')
 }).refine((data) => Object.keys(data).length > 0, {
     message: 'At least one field must be provided for update'
+}).refine((data) => {
+    if (data.preferredStartTime && data.preferredEndTime) {
+        return data.preferredEndTime > data.preferredStartTime;
+    }
+    return true;
+}, {
+    message: 'Preferred end time must be after start time',
+    path: ['preferredEndTime']
 });
 
 const getWaitingListQuerySchema = z.object({
     status: waitlistStatusSchema.optional(),
-    modalityId: z.string().uuid().optional(),
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    active: z.enum(['true', 'false']).optional(),
+    modalityId: optionalNullableUuid('modality'),
+    date: calendarDateSchema().optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
     offset: z.string().regex(/^\d+$/).transform(Number).optional()
 });

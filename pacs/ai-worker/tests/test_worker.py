@@ -17,7 +17,7 @@ def settings(**overrides):
     values = {
         "worker_api_key": API_KEY,
         "orthanc_url": "http://orthanc:8042",
-        "orthanc_username": "rcms",
+        "orthanc_username": "VIARA",
         "orthanc_password": "secret",
         "model_backend": "safe-placeholder",
         "model_id": "test-model",

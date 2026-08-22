@@ -1,8 +1,8 @@
 {
-  "name": "rcms-root",
+  "name": "VIARA-root",
   "version": "1.0.0",
   "private": true,
-  "description": "RCMS Monorepo Service Orchestrator",
+  "description": "VIARA Monorepo Service Orchestrator",
   "scripts": {
     "start": "node start-services.js",
     "dev": "node start-services.js",
@@ -13,6 +13,11 @@
     "docker:down": "docker compose down",
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend",
-    "dev:portal": "npm run dev --prefix portal"
+    "dev:portal": "npm run dev --prefix portal",
+    "check:locales": "node scripts/check-locales.mjs",
+    "logs": "node scripts/logs.js",
+    "seed": "node scripts/seed.js",
+    "test": "npm test --prefix backend",
+    "build": "npm run build --prefix frontend && npm run build --prefix portal"
   }
 }

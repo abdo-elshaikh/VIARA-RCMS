@@ -1,4 +1,4 @@
-# RCMS Deployment TODO Checklist
+# VIARA Deployment TODO Checklist
 
 - [ ] Confirm release commit or tag.
 - [ ] Verify target environment is staging or production.

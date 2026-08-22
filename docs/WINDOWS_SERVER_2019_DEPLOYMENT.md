@@ -1,13 +1,13 @@
-# RCMS on Windows Server 2019 Deployment Guide
+# VIARA on Windows Server 2019 Deployment Guide
 
-RCMS is built around Linux containers and should not be deployed as native Windows containers on Windows Server 2019.
+VIARA is built around Linux containers and should not be deployed as native Windows containers on Windows Server 2019.
 
 ## Recommended Architecture
 
 - Host: Windows Server 2019
 - Runtime: Hyper-V Linux VM or a separate Linux VM on the same network
 - Container runtime: Docker Engine on the Linux VM
-- Deployment method: `docker compose` using the RCMS repository
+- Deployment method: `docker compose` using the VIARA repository
 
 This keeps the application aligned with its current Dockerfiles, `docker-compose.yml`, and service expectations.
 
@@ -20,7 +20,7 @@ This keeps the application aligned with its current Dockerfiles, `docker-compose
 ## Prerequisites
 
 - Windows Server 2019 with Hyper-V enabled.
-- An Ubuntu Server or Debian VM for RCMS.
+- An Ubuntu Server or Debian VM for VIARA.
 - Docker Engine and Docker Compose installed in that VM.
 - DNS or static IP for the VM.
 - TLS certificate and reverse proxy if this will be exposed outside a private network.
@@ -36,9 +36,9 @@ This keeps the application aligned with its current Dockerfiles, `docker-compose
 - Open only the required ports on the VM firewall.
 - Make sure the VM has enough RAM and disk for Postgres, Orthanc, uploads, and backups.
 
-### 2. Copy the RCMS repository
+### 2. Copy the VIARA repository
 
-- Clone the RCMS repository into the Linux VM.
+- Clone the VIARA repository into the Linux VM.
 - Keep the repo on a persistent disk.
 - Do not store secrets in the repository.
 
@@ -122,7 +122,7 @@ If the deployment fails:
 
 ## What Not to Do
 
-- Do not run RCMS as Windows containers on Server 2019.
+- Do not run VIARA as Windows containers on Server 2019.
 - Do not rely on Docker Desktop on a Windows Server production host.
 - Do not expose the database or Orthanc REST ports publicly.
 - Do not keep production secrets in a committed `.env` file.
@@ -135,4 +135,4 @@ Only do this for development or a temporary proof of concept:
 - Run `start-services.ps1` or `start-services.bat` for local service orchestration.
 - Use `--no-docker` only if you are intentionally skipping the container stack.
 
-That path is not the recommended production deployment model for RCMS.
+That path is not the recommended production deployment model for VIARA.

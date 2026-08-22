@@ -16,7 +16,7 @@ if (!seedPassword) {
 const { encrypt } = require('./src/utils/crypto');
 
 // Database connection
-const connectionString = process.env.DATABASE_URL || 'postgresql://***REMOVED***/rcms';
+const connectionString = process.env.DATABASE_URL || 'postgresql://***REMOVED***/VIARA';
 const pool = new Pool({ connectionString });
 
 // Egyptian names database
@@ -145,22 +145,22 @@ async function seedUsers() {
     const password = await bcrypt.hash(seedPassword, 10);
 
     const users = [
-        { name: 'Dr. Administrator', email: 'admin@rcms.com', role: 'Admin' },
-        { name: 'John Accountant', email: 'accountant@rcms.com', role: 'Accountant' },
-        { name: 'Mona Cashier', email: 'cashier@rcms.com', role: 'Cashier' },
-        { name: 'Sarah Receptionist', email: 'reception@rcms.com', role: 'Receptionist' },
-        { name: 'HR Manager', email: 'hr@rcms.com', role: 'HR' },
-        { name: 'Salma Insurance', email: 'insurance@rcms.com', role: 'Insurance_Staff' },
-        { name: 'Dr. Ahmed Hassan', email: 'ahmed.hassan@rcms.com', role: 'Radiologist' },
-        { name: 'Dr. Mona Ibrahim', email: 'mona.ibrahim@rcms.com', role: 'Radiologist' },
-        { name: 'Dr. Omar Khalil', email: 'omar.khalil@rcms.com', role: 'Radiologist' },
-        { name: 'Dr. Fatma Saad', email: 'fatma.saad@rcms.com', role: 'Radiologist' },
-        { name: 'Tech. Mohamed Ali', email: 'mohamed.tech@rcms.com', role: 'Technician' },
-        { name: 'Tech. Sara Mahmoud', email: 'sara.tech@rcms.com', role: 'Technician' },
-        { name: 'Nurse Heba Fouad', email: 'heba.nurse@rcms.com', role: 'Nurse' },
-        { name: 'Nurse Dina Kamal', email: 'dina.nurse@rcms.com', role: 'Nurse' },
-        { name: 'Dr. Hossam Referring', email: 'hossam.ref@rcms.com', role: 'Referring_Doctor' },
-        { name: 'Marketing Lead', email: 'marketing@rcms.com', role: 'Marketing' },
+        { name: 'Dr. Administrator', email: 'admin@VIARA.com', role: 'Admin' },
+        { name: 'John Accountant', email: 'accountant@VIARA.com', role: 'Accountant' },
+        { name: 'Mona Cashier', email: 'cashier@VIARA.com', role: 'Cashier' },
+        { name: 'Sarah Receptionist', email: 'reception@VIARA.com', role: 'Receptionist' },
+        { name: 'HR Manager', email: 'hr@VIARA.com', role: 'HR' },
+        { name: 'Salma Insurance', email: 'insurance@VIARA.com', role: 'Insurance_Staff' },
+        { name: 'Dr. Ahmed Hassan', email: 'ahmed.hassan@VIARA.com', role: 'Radiologist' },
+        { name: 'Dr. Mona Ibrahim', email: 'mona.ibrahim@VIARA.com', role: 'Radiologist' },
+        { name: 'Dr. Omar Khalil', email: 'omar.khalil@VIARA.com', role: 'Radiologist' },
+        { name: 'Dr. Fatma Saad', email: 'fatma.saad@VIARA.com', role: 'Radiologist' },
+        { name: 'Tech. Mohamed Ali', email: 'mohamed.tech@VIARA.com', role: 'Technician' },
+        { name: 'Tech. Sara Mahmoud', email: 'sara.tech@VIARA.com', role: 'Technician' },
+        { name: 'Nurse Heba Fouad', email: 'heba.nurse@VIARA.com', role: 'Nurse' },
+        { name: 'Nurse Dina Kamal', email: 'dina.nurse@VIARA.com', role: 'Nurse' },
+        { name: 'Dr. Hossam Referring', email: 'hossam.ref@VIARA.com', role: 'Referring_Doctor' },
+        { name: 'Marketing Lead', email: 'marketing@VIARA.com', role: 'Marketing' },
     ];
 
     const userIds = [];
@@ -179,27 +179,27 @@ async function seedUsers() {
 async function seedModalities() {
     console.log('\n🏥 Seeding Modalities...');
     const modalities = [
-        { name: 'MRI-01 Siemens Skyra', type: 'MRI', room: 'Room 101', status: 'Active', serial: 'MRI-SKY-001', manufacturer: 'Siemens Healthineers', model: 'MAGNETOM Skyra 3T', installationDate: '2021-02-10', location: 'Imaging Wing A', aet: 'RCMS_MRI_01', ipAddress: '127.0.0.11', port: 11112, dicomSynced: true },
-        { name: 'MRI-02 GE Signa', type: 'MRI', room: 'Room 102', status: 'Active', serial: 'MRI-GE-002', manufacturer: 'GE HealthCare', model: 'SIGNA Architect', installationDate: '2022-01-18', location: 'Imaging Wing A', aet: 'RCMS_MRI_02', ipAddress: '127.0.0.12', port: 11113, dicomSynced: true },
-        { name: 'CT-01 Philips iCT', type: 'CT', room: 'Room 201', status: 'Active', serial: 'CT-PH-001', manufacturer: 'Philips', model: 'iCT 256', installationDate: '2021-09-01', location: 'Imaging Wing B', aet: 'RCMS_CT_01', ipAddress: '127.0.0.21', port: 11114, dicomSynced: true },
-        { name: 'CT-02 GE Revolution', type: 'CT', room: 'Room 202', status: 'Active', serial: 'CT-GE-002', manufacturer: 'GE HealthCare', model: 'Revolution EVO', installationDate: '2022-04-20', location: 'Imaging Wing B', aet: 'RCMS_CT_02', ipAddress: '127.0.0.22', port: 11115, dicomSynced: true },
-        { name: 'X-Ray-01 Main', type: 'X-Ray', room: 'Room 301', status: 'Active', serial: 'XR-MAIN-001', manufacturer: 'Carestream', model: 'DRX-Evolution', installationDate: '2020-07-12', location: 'Radiography Hall', aet: 'RCMS_XRAY_01', ipAddress: '127.0.0.31', port: 11116, dicomSynced: true },
-        { name: 'X-Ray-02 Portable', type: 'X-Ray', room: 'Room 302', status: 'Active', serial: 'XR-PORT-002', manufacturer: 'Shimadzu', model: 'MobileDaRt Evolution', installationDate: '2023-03-11', location: 'Radiography Hall', aet: 'RCMS_XRAY_02', ipAddress: '127.0.0.32', port: 11117, dicomSynced: true },
-        { name: 'US-01 GE Voluson', type: 'Ultrasound', room: 'Room 401', status: 'Active', serial: 'US-GE-001', manufacturer: 'GE HealthCare', model: 'Voluson E10', installationDate: '2021-05-22', location: 'Ultrasound Suite', aet: 'RCMS_US_01', ipAddress: '127.0.0.41', port: 11118, dicomSynced: true },
-        { name: 'US-02 Philips EPIQ', type: 'Ultrasound', room: 'Room 402', status: 'Active', serial: 'US-PH-002', manufacturer: 'Philips', model: 'EPIQ Elite', installationDate: '2022-08-09', location: 'Ultrasound Suite', aet: 'RCMS_US_02', ipAddress: '127.0.0.42', port: 11119, dicomSynced: true },
-        { name: 'PET-CT-01 Siemens', type: 'PET-CT', room: 'Room 501', status: 'Active', serial: 'PET-001', manufacturer: 'Siemens Healthineers', model: 'Biograph Vision', installationDate: '2023-06-15', location: 'Nuclear Medicine', aet: 'RCMS_PET_01', ipAddress: '127.0.0.51', port: 11120, dicomSynced: true },
-        { name: 'Mammo-01 Hologic', type: 'Mammography', room: 'Room 601', status: 'Active', serial: 'MAMMO-001', manufacturer: 'Hologic', model: 'Selenia Dimensions', installationDate: '2020-11-05', location: 'Breast Imaging', aet: 'RCMS_MAMMO_01', ipAddress: '127.0.0.61', port: 11121, dicomSynced: true },
-        { name: 'Cath Lab-01', type: 'Cath Lab', room: 'Room 701', status: 'Active', serial: 'CATH-001', manufacturer: 'Philips', model: 'Azurion 7', installationDate: '2023-01-10', location: 'Cardiac Suite', aet: 'RCMS_CATH_01', ipAddress: '127.0.0.71', port: 11122, dicomSynced: true },
-        { name: 'Fluoro-01', type: 'Fluoroscopy', room: 'Room 801', status: 'Active', serial: 'FLUO-001', manufacturer: 'Siemens Healthineers', model: 'Luminos Agile', installationDate: '2021-12-07', location: 'Procedures Room', aet: 'RCMS_FLUO_01', ipAddress: '127.0.0.81', port: 11123, dicomSynced: true },
-        { name: 'DEXA-01', type: 'DEXA', room: 'Room 901', status: 'Active', serial: 'DEXA-001', manufacturer: 'Hologic', model: 'Horizon W', installationDate: '2022-10-24', location: 'Bone Density', aet: 'RCMS_DEXA_01', ipAddress: '127.0.0.91', port: 11124, dicomSynced: true },
-        { name: 'Panoramic-01', type: 'Panoramic X-Ray', room: 'Room 1001', status: 'Active', serial: 'PANO-001', manufacturer: 'Carestream', model: 'CS 8100 3D', installationDate: '2024-02-19', location: 'Dental Imaging', aet: 'RCMS_PANO_01', ipAddress: '127.0.0.101', port: 11125, dicomSynced: true },
-        { name: 'CT-03 Siemens SOMATOM', type: 'CT', room: 'Room 203', status: 'Active', serial: 'CT-SI-003', manufacturer: 'Siemens Healthineers', model: 'SOMATOM Edge', installationDate: '2023-08-14', location: 'Imaging Wing B', aet: 'RCMS_CT_03', ipAddress: '127.0.0.23', port: 11126, dicomSynced: true },
-        { name: 'MRI-03 Canon Vidor', type: 'MRI', room: 'Room 103', status: 'Active', serial: 'MRI-CA-003', manufacturer: 'Canon Medical', model: 'Vantage Oria 1.5T', installationDate: '2022-11-30', location: 'Imaging Wing A', aet: 'RCMS_MRI_03', ipAddress: '127.0.0.13', port: 11127, dicomSynced: true },
-        { name: 'X-Ray-03 Digital', type: 'X-Ray', room: 'Room 303', status: 'Active', serial: 'XR-DIG-003', manufacturer: 'Fujifilm', model: 'CR IR Comfort', installationDate: '2021-06-18', location: 'Radiography Hall', aet: 'RCMS_XRAY_03', ipAddress: '127.0.0.33', port: 11128, dicomSynced: true },
-        { name: 'US-03 Point of Care', type: 'Ultrasound', room: 'Room 403', status: 'Active', serial: 'US-POC-003', manufacturer: 'Philips', model: 'Lumify', installationDate: '2023-05-22', location: 'Ultrasound Suite', aet: 'RCMS_US_03', ipAddress: '127.0.0.43', port: 11129, dicomSynced: true },
-        { name: 'PET-CT-02 GE', type: 'PET-CT', room: 'Room 502', status: 'Active', serial: 'PET-GE-002', manufacturer: 'GE HealthCare', model: 'Discovery MI DR', installationDate: '2024-03-10', location: 'Nuclear Medicine', aet: 'RCMS_PET_02', ipAddress: '127.0.0.52', port: 11130, dicomSynced: true },
-        { name: 'Mammo-02 Siemens', type: 'Mammography', room: 'Room 602', status: 'Active', serial: 'MAMMO-002', manufacturer: 'Siemens Healthineers', model: 'MAMMOMTOmat DBT', installationDate: '2022-09-15', location: 'Breast Imaging', aet: 'RCMS_MAMMO_02', ipAddress: '127.0.0.62', port: 11131, dicomSynced: true },
-        { name: 'DEXA-02', type: 'DEXA', room: 'Room 902', status: 'Under Maintenance', serial: 'DEXA-002', manufacturer: 'GE Healthcare', model: 'Lunar iDXA', installationDate: '2021-04-08', location: 'Bone Density', aet: 'RCMS_DEXA_02', ipAddress: '127.0.0.92', port: 11132, dicomSynced: false },
+        { name: 'MRI-01 Siemens Skyra', type: 'MRI', room: 'Room 101', status: 'Active', serial: 'MRI-SKY-001', manufacturer: 'Siemens Healthineers', model: 'MAGNETOM Skyra 3T', installationDate: '2021-02-10', location: 'Imaging Wing A', aet: 'VIARA_MRI_01', ipAddress: '127.0.0.11', port: 11112, dicomSynced: true },
+        { name: 'MRI-02 GE Signa', type: 'MRI', room: 'Room 102', status: 'Active', serial: 'MRI-GE-002', manufacturer: 'GE HealthCare', model: 'SIGNA Architect', installationDate: '2022-01-18', location: 'Imaging Wing A', aet: 'VIARA_MRI_02', ipAddress: '127.0.0.12', port: 11113, dicomSynced: true },
+        { name: 'CT-01 Philips iCT', type: 'CT', room: 'Room 201', status: 'Active', serial: 'CT-PH-001', manufacturer: 'Philips', model: 'iCT 256', installationDate: '2021-09-01', location: 'Imaging Wing B', aet: 'VIARA_CT_01', ipAddress: '127.0.0.21', port: 11114, dicomSynced: true },
+        { name: 'CT-02 GE Revolution', type: 'CT', room: 'Room 202', status: 'Active', serial: 'CT-GE-002', manufacturer: 'GE HealthCare', model: 'Revolution EVO', installationDate: '2022-04-20', location: 'Imaging Wing B', aet: 'VIARA_CT_02', ipAddress: '127.0.0.22', port: 11115, dicomSynced: true },
+        { name: 'X-Ray-01 Main', type: 'X-Ray', room: 'Room 301', status: 'Active', serial: 'XR-MAIN-001', manufacturer: 'Carestream', model: 'DRX-Evolution', installationDate: '2020-07-12', location: 'Radiography Hall', aet: 'VIARA_XRAY_01', ipAddress: '127.0.0.31', port: 11116, dicomSynced: true },
+        { name: 'X-Ray-02 Portable', type: 'X-Ray', room: 'Room 302', status: 'Active', serial: 'XR-PORT-002', manufacturer: 'Shimadzu', model: 'MobileDaRt Evolution', installationDate: '2023-03-11', location: 'Radiography Hall', aet: 'VIARA_XRAY_02', ipAddress: '127.0.0.32', port: 11117, dicomSynced: true },
+        { name: 'US-01 GE Voluson', type: 'Ultrasound', room: 'Room 401', status: 'Active', serial: 'US-GE-001', manufacturer: 'GE HealthCare', model: 'Voluson E10', installationDate: '2021-05-22', location: 'Ultrasound Suite', aet: 'VIARA_US_01', ipAddress: '127.0.0.41', port: 11118, dicomSynced: true },
+        { name: 'US-02 Philips EPIQ', type: 'Ultrasound', room: 'Room 402', status: 'Active', serial: 'US-PH-002', manufacturer: 'Philips', model: 'EPIQ Elite', installationDate: '2022-08-09', location: 'Ultrasound Suite', aet: 'VIARA_US_02', ipAddress: '127.0.0.42', port: 11119, dicomSynced: true },
+        { name: 'PET-CT-01 Siemens', type: 'PET-CT', room: 'Room 501', status: 'Active', serial: 'PET-001', manufacturer: 'Siemens Healthineers', model: 'Biograph Vision', installationDate: '2023-06-15', location: 'Nuclear Medicine', aet: 'VIARA_PET_01', ipAddress: '127.0.0.51', port: 11120, dicomSynced: true },
+        { name: 'Mammo-01 Hologic', type: 'Mammography', room: 'Room 601', status: 'Active', serial: 'MAMMO-001', manufacturer: 'Hologic', model: 'Selenia Dimensions', installationDate: '2020-11-05', location: 'Breast Imaging', aet: 'VIARA_MAMMO_01', ipAddress: '127.0.0.61', port: 11121, dicomSynced: true },
+        { name: 'Cath Lab-01', type: 'Cath Lab', room: 'Room 701', status: 'Active', serial: 'CATH-001', manufacturer: 'Philips', model: 'Azurion 7', installationDate: '2023-01-10', location: 'Cardiac Suite', aet: 'VIARA_CATH_01', ipAddress: '127.0.0.71', port: 11122, dicomSynced: true },
+        { name: 'Fluoro-01', type: 'Fluoroscopy', room: 'Room 801', status: 'Active', serial: 'FLUO-001', manufacturer: 'Siemens Healthineers', model: 'Luminos Agile', installationDate: '2021-12-07', location: 'Procedures Room', aet: 'VIARA_FLUO_01', ipAddress: '127.0.0.81', port: 11123, dicomSynced: true },
+        { name: 'DEXA-01', type: 'DEXA', room: 'Room 901', status: 'Active', serial: 'DEXA-001', manufacturer: 'Hologic', model: 'Horizon W', installationDate: '2022-10-24', location: 'Bone Density', aet: 'VIARA_DEXA_01', ipAddress: '127.0.0.91', port: 11124, dicomSynced: true },
+        { name: 'Panoramic-01', type: 'Panoramic X-Ray', room: 'Room 1001', status: 'Active', serial: 'PANO-001', manufacturer: 'Carestream', model: 'CS 8100 3D', installationDate: '2024-02-19', location: 'Dental Imaging', aet: 'VIARA_PANO_01', ipAddress: '127.0.0.101', port: 11125, dicomSynced: true },
+        { name: 'CT-03 Siemens SOMATOM', type: 'CT', room: 'Room 203', status: 'Active', serial: 'CT-SI-003', manufacturer: 'Siemens Healthineers', model: 'SOMATOM Edge', installationDate: '2023-08-14', location: 'Imaging Wing B', aet: 'VIARA_CT_03', ipAddress: '127.0.0.23', port: 11126, dicomSynced: true },
+        { name: 'MRI-03 Canon Vidor', type: 'MRI', room: 'Room 103', status: 'Active', serial: 'MRI-CA-003', manufacturer: 'Canon Medical', model: 'Vantage Oria 1.5T', installationDate: '2022-11-30', location: 'Imaging Wing A', aet: 'VIARA_MRI_03', ipAddress: '127.0.0.13', port: 11127, dicomSynced: true },
+        { name: 'X-Ray-03 Digital', type: 'X-Ray', room: 'Room 303', status: 'Active', serial: 'XR-DIG-003', manufacturer: 'Fujifilm', model: 'CR IR Comfort', installationDate: '2021-06-18', location: 'Radiography Hall', aet: 'VIARA_XRAY_03', ipAddress: '127.0.0.33', port: 11128, dicomSynced: true },
+        { name: 'US-03 Point of Care', type: 'Ultrasound', room: 'Room 403', status: 'Active', serial: 'US-POC-003', manufacturer: 'Philips', model: 'Lumify', installationDate: '2023-05-22', location: 'Ultrasound Suite', aet: 'VIARA_US_03', ipAddress: '127.0.0.43', port: 11129, dicomSynced: true },
+        { name: 'PET-CT-02 GE', type: 'PET-CT', room: 'Room 502', status: 'Active', serial: 'PET-GE-002', manufacturer: 'GE HealthCare', model: 'Discovery MI DR', installationDate: '2024-03-10', location: 'Nuclear Medicine', aet: 'VIARA_PET_02', ipAddress: '127.0.0.52', port: 11130, dicomSynced: true },
+        { name: 'Mammo-02 Siemens', type: 'Mammography', room: 'Room 602', status: 'Active', serial: 'MAMMO-002', manufacturer: 'Siemens Healthineers', model: 'MAMMOMTOmat DBT', installationDate: '2022-09-15', location: 'Breast Imaging', aet: 'VIARA_MAMMO_02', ipAddress: '127.0.0.62', port: 11131, dicomSynced: true },
+        { name: 'DEXA-02', type: 'DEXA', room: 'Room 902', status: 'Under Maintenance', serial: 'DEXA-002', manufacturer: 'GE Healthcare', model: 'Lunar iDXA', installationDate: '2021-04-08', location: 'Bone Density', aet: 'VIARA_DEXA_02', ipAddress: '127.0.0.92', port: 11132, dicomSynced: false },
     ];
 
     const modalityIds = [];
@@ -987,7 +987,7 @@ async function seedStaff(userIds) {
 }
 
 async function main() {
-    console.log('🚀 Starting RCMS Database Seeding...\n');
+    console.log('🚀 Starting VIARA Database Seeding...\n');
     console.log('⚙️  Database:', connectionString.split('@')[1]);
 
     try {

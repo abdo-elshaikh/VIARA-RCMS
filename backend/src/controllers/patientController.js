@@ -270,7 +270,7 @@ const createPatient = (db) => async (req, res, next) => {
 
 const getPatients = (db) => async (req, res, next) => {
     try {
-        const { page = 1, status } = req.query;
+        const { page = 1, status, gender, sortBy = 'createdAt', sortDirection = 'desc' } = req.query;
         const search = req.query.search || req.query.q;
         const { getPagination } = require('../utils/pagination');
         const { limit, offset: resolvedOffset } = getPagination(req.query);
@@ -293,17 +293,22 @@ const getPatients = (db) => async (req, res, next) => {
                 where.push(`(p.mrn ILIKE $${values.length + 1})`);
                 values.push(`%${search}%`);
             } else {
-                // Search by hash (exact match on blind index)
-                const searchHash = hash(search);
-                where.push(`(
-                    p.first_name_hash = $${values.length + 1}
-                    OR p.last_name_hash = $${values.length + 1}
-                    OR p.phone_hash = $${values.length + 1}
-                    OR p.national_id_hash = $${values.length + 1}
-                    OR p.passport_number_hash = $${values.length + 1}
-                    OR p.email_hash = $${values.length + 1}
-                )`);
-                values.push(searchHash);
+                // Encrypted fields use blind indexes. Tokenize full names so
+                // "first last" can match both exact component hashes without
+                // exposing plaintext or falling back to a truncated client list.
+                const searchTokens = String(search).trim().split(/\s+/).filter(Boolean).slice(0, 5);
+                searchTokens.forEach((token) => {
+                    const parameter = `$${values.length + 1}`;
+                    where.push(`(
+                        p.first_name_hash = ${parameter}
+                        OR p.last_name_hash = ${parameter}
+                        OR p.phone_hash = ${parameter}
+                        OR p.national_id_hash = ${parameter}
+                        OR p.passport_number_hash = ${parameter}
+                        OR p.email_hash = ${parameter}
+                    )`);
+                    values.push(hash(token));
+                });
             }
         }
 
@@ -311,17 +316,41 @@ const getPatients = (db) => async (req, res, next) => {
             where.push(`p.patient_status = $${values.length + 1}`);
             values.push(status);
         }
+        if (gender) {
+            where.push(`p.gender = $${values.length + 1}`);
+            values.push(gender);
+        }
 
         if (where.length > 0) {
             query += ` WHERE ${where.join(' AND ')}`;
         }
 
-        query += ` ORDER BY p.created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+        const sortColumns = {
+            mrn: 'p.mrn',
+            gender: 'p.gender',
+            dateOfBirth: 'p.date_of_birth',
+            createdAt: 'p.created_at'
+        };
+        query += ` ORDER BY ${sortColumns[sortBy] || sortColumns.createdAt} ${sortDirection === 'asc' ? 'ASC' : 'DESC'} NULLS LAST, p.patient_id ASC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
         values.push(limit, resolvedOffset);
 
         const result = await db.query(query, values);
 
         let decryptedPatients = result.rows.map(decryptPatientRow);
+        if (req.user.role === 'Marketing') {
+            const marketingFields = [
+                'patient_id', 'mrn', 'first_name', 'last_name', 'name', 'patient_name',
+                'email', 'phone', 'preferred_language', 'communication_preference',
+                'consent_sms', 'consent_email', 'consent_whatsapp', 'consent_marketing',
+                'patient_status', 'assigned_manager_id', 'assigned_manager_name',
+                'lead_status', 'planned_activity', 'loyalty_points', 'last_visit_date', 'created_at'
+            ];
+            decryptedPatients = decryptedPatients.map(patient => Object.fromEntries(
+                marketingFields
+                    .filter(field => patient[field] !== undefined)
+                    .map(field => [field, patient[field]])
+            ));
+        }
 
         // Also fetch total count for pagination metadata
         let countQuery = `SELECT COUNT(*) FROM patients p`;
@@ -337,27 +366,45 @@ const getPatients = (db) => async (req, res, next) => {
                  countWhere.push(`(mrn ILIKE $${countValues.length + 1})`);
                  countValues.push(`%${search}%`);
              } else {
-                 const searchHash = hash(search);
-                 countWhere.push(`(
-                    first_name_hash = $${countValues.length + 1}
-                    OR last_name_hash = $${countValues.length + 1}
-                    OR phone_hash = $${countValues.length + 1}
-                    OR national_id_hash = $${countValues.length + 1}
-                    OR passport_number_hash = $${countValues.length + 1}
-                    OR email_hash = $${countValues.length + 1}
-                 )`);
-                 countValues.push(searchHash);
+                  const searchTokens = String(search).trim().split(/\s+/).filter(Boolean).slice(0, 5);
+                  searchTokens.forEach((token) => {
+                      const parameter = `$${countValues.length + 1}`;
+                      countWhere.push(`(
+                        first_name_hash = ${parameter}
+                        OR last_name_hash = ${parameter}
+                        OR phone_hash = ${parameter}
+                        OR national_id_hash = ${parameter}
+                        OR passport_number_hash = ${parameter}
+                        OR email_hash = ${parameter}
+                      )`);
+                      countValues.push(hash(token));
+                  });
              }
         }
         if (status) {
             countWhere.push(`patient_status = $${countValues.length + 1}`);
             countValues.push(status);
         }
+        const statisticsWhere = [...countWhere];
+        const statisticsValues = [...countValues];
+        if (gender) {
+            countWhere.push(`p.gender = $${countValues.length + 1}`);
+            countValues.push(gender);
+        }
         if (countWhere.length > 0) {
             countQuery += ` WHERE ${countWhere.join(' AND ')}`;
         }
         const countResult = await db.query(countQuery, countValues);
         const total = parseInt(countResult.rows[0].count, 10);
+        const statisticsResult = await db.query(`
+            SELECT COUNT(*)::integer AS all_count,
+                   COUNT(*) FILTER (WHERE p.gender = 'Male')::integer AS male_count,
+                   COUNT(*) FILTER (WHERE p.gender = 'Female')::integer AS female_count,
+                   COUNT(*) FILTER (WHERE p.gender NOT IN ('Male', 'Female') OR p.gender IS NULL)::integer AS other_count
+            FROM patients p
+            ${statisticsWhere.length ? `WHERE ${statisticsWhere.join(' AND ')}` : ''}
+        `, statisticsValues);
+        const genderCounts = statisticsResult.rows[0] || {};
 
         res.json({
             data: decryptedPatients,
@@ -365,7 +412,13 @@ const getPatients = (db) => async (req, res, next) => {
                 total,
                 page: parseInt(page, 10) || 1,
                 limit,
-                totalPages: Math.ceil(total / limit)
+                totalPages: Math.ceil(total / limit),
+                genderCounts: {
+                    All: Number(genderCounts.all_count || 0),
+                    Male: Number(genderCounts.male_count || 0),
+                    Female: Number(genderCounts.female_count || 0),
+                    Other: Number(genderCounts.other_count || 0)
+                }
             }
         });
     } catch (error) {
@@ -399,7 +452,10 @@ const getPatientHistory = (db) => async (req, res, next) => {
         }
 
         const p = patientResult.rows[0];
-        const decryptedPatient = decryptPatientRow(p);
+        const decryptedPatient = {
+            ...decryptPatientRow(p),
+            portal_enabled: Boolean(p.password_hash)
+        };
 
         // 2. Fetch Appointments & Exams
         const apptQuery = `
@@ -449,11 +505,16 @@ const getPatientHistory = (db) => async (req, res, next) => {
         // Audit Log for sensitive patient view
         await logAction(db, {
             userId: req.user?.user_id,
-            action: 'RECORD_VIEW',
+            action: 'PATIENT.VIEWED',
+            eventCode: 'PATIENT.VIEWED',
+            category: 'PHI_ACCESS',
             resourceId: id,
             resourceTable: 'patients',
+            patientId: id,
             ipAddress: req.ip,
-            details: { reason: 'Viewed patient history' }
+            httpMethod: req.method,
+            requestPath: req.originalUrl?.split('?')[0],
+            details: { summary: 'Patient history viewed' }
         });
 
         res.json(response);
@@ -807,7 +868,8 @@ const generatePortalPassword = (db) => async (req, res, next) => {
         res.json({
             message: 'Portal password generated successfully',
             portalPassword: generatedPassword,
-            mrn: result.rows[0].mrn
+            mrn: result.rows[0].mrn,
+            portalEnabled: true
         });
     } catch (error) {
         next(error);

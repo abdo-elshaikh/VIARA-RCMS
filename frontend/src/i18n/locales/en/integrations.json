@@ -25,7 +25,13 @@
   "emptyTitle": "No outbound events yet",
   "emptyDescription": "Integration logs will appear here when an event is triggered.",
   "table": { "date": "Date and time", "provider": "Provider", "event": "Event type", "status": "Status", "details": "Details", "actions": "Actions" },
-  "statuses": { "Success": "Success", "Failed": "Failed", "Retried": "Retried", "Pending": "Pending" },
+  "statuses": { "Success": "Success", "Failed": "Failed", "Retried": "Retried", "Pending": "Pending", "DeadLetter": "Dead-letter" },
   "retry": "Retry",
-  "retryTitle": "Retry event"
+  "retryTitle": "Retry event",
+  "deadLetterTitle": "Dead-letter queue",
+  "deadLetterDescription": "Events that exhausted all retry attempts. Review and manually retry if needed.",
+  "requeue": "Requeue",
+  "requeueTitle": "Move back to pending queue",
+  "requeueSuccess": "Event requeued successfully",
+  "requeueError": "Failed to requeue event"
 }

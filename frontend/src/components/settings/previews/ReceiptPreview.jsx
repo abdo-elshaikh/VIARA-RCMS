@@ -1,8 +1,8 @@
 import React from 'react';
 import { QrCode } from 'lucide-react';
 
-const ReceiptPreview = ({ width, header, footer, showQR, themeColor = '#0f766e', fontFamily = 'Inter', data }) => {
-    const defaultHeader = `${data.centerName || 'RCMS Radiology'}\n${data.branchName || 'Main Branch'}\n123 Health Ave\n(555) 123-4567`;
+const ReceiptPreview = ({ width, header, footer, showQR, themeColor = '#087F5B', fontFamily = 'Inter', data }) => {
+    const defaultHeader = `${data.centerName || 'VIARA'}\n${data.branchName || 'Main Branch'}\n123 Health Ave\n(555) 123-4567`;
     const fontStack = fontFamily === 'Outfit' ? "'Outfit', sans-serif" : fontFamily === 'Space Mono' ? "'Space Mono', monospace" : "'Inter', sans-serif";
 
     return (

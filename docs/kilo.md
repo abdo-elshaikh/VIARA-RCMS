@@ -1,6 +1,6 @@
-# RCMS Security & Quality Remediation Plan
+# VIARA Security & Quality Remediation Plan
 
-**Goal:** Fix all 41 findings from the comprehensive security/audit review across the RCMS codebase (backend, frontend, portal, CI/CD, infrastructure).
+**Goal:** Fix all 41 findings from the comprehensive security/audit review across the VIARA codebase (backend, frontend, portal, CI/CD, infrastructure).
 
 **Scope:** All source files in `backend/`, `frontend/`, `portal/`, `database/`, `docker-compose.yml`, `.github/workflows/`, and root config files.
 
@@ -39,7 +39,7 @@
 ### Task 1.2: Remove hardcoded DB URL fallback (T-SEC-03)
 **Files:** `backend/src/server.js:442`, `backend/database/migrate.js:255`
 
-1. `server.js:442`: Replace `process.env.DATABASE_URL || 'postgresql://***REMOVED***/rcms'` with:
+1. `server.js:442`: Replace `process.env.DATABASE_URL || 'postgresql://***REMOVED***/VIARA'` with:
 ```js
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
 const connectionString = process.env.DATABASE_URL;
@@ -72,7 +72,7 @@ const connectionString = process.env.DATABASE_URL;
 ### Task 1.4: Remove localStorage token fallback in portal (T-SEC-08)
 **Files:** `portal/src/lib/api.ts:18-28`, `portal/src/store/authSlice.ts:24-35,56,64,83`
 
-1. `portal/src/lib/api.ts:20`: Remove `localStorage.getItem("rcms_token")` from `getAuthToken()`. Use only `sessionStorage.getItem("token")`.
+1. `portal/src/lib/api.ts:20`: Remove `localStorage.getItem("VIARA_token")` from `getAuthToken()`. Use only `sessionStorage.getItem("token")`.
 2. `portal/src/store/authSlice.ts`:
    - Line 27: Change `getStoredUser` to read from `sessionStorage` instead of `localStorage`
    - Line 56: Remove `localStorage.setItem('user', ...)` — or change to `sessionStorage.setItem('user', ...)`
@@ -531,7 +531,7 @@ await logAction(db, {
 1. The CI already runs `npm run lint` for frontend (line 136) and `npm run test:ci` for frontend (line 140). **No change needed** — frontend type-checking is NOT applicable since it's plain JS, not TypeScript.
 
 ### Task 7.4: Remove sudo from start-services.js (T-SEC-16)
-**File:** `D:\RCMS\start-services.js:178` (root level, not backend/)
+**File:** `D:\VIARA\start-services.js:178` (root level, not backend/)
 
 1. Remove the `execSync('sudo systemctl start docker', ...)` call.
 2. Replace with a check that detects Docker availability and shows a clear error message:

@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-RCMS has a multi-tier testing strategy with **227 backend Jest tests** (all passing), **136 frontend Vitest tests** (all passing), portal typecheck passing, and a **44-check live API deployment validation harness**. The CI pipeline (`quality-gates.yml`) executes all tests, linting, type-checking, builds, security scans, and database migration validation.
+VIARA has a multi-tier testing strategy with **227 backend Jest tests** (all passing), **136 frontend Vitest tests** (all passing), portal typecheck passing, and a **44-check live API deployment validation harness**. The CI pipeline (`quality-gates.yml`) executes all tests, linting, type-checking, builds, security scans, and database migration validation.
 
 > **Re-validation Update (2026-08-05):** All post-update findings have been validated through automated tests. Backend tests: 229/229 PASS (37 suites). Frontend tests: 136/136 PASS (41 files). Portal typecheck: PASS. Frontend lint: PASS (0 warnings). Public case-status privacy tests: 5/5 PASS. Offsite backup replication tests: 2/2 PASS. CI workflow YAML: validated.
 

@@ -1,5 +1,5 @@
 -- Creates a dedicated database for the Orthanc PACS index, isolated from the
--- RCMS application schema. Runs once on first container init (before schema.sql
+-- VIARA application schema. Runs once on first container init (before schema.sql
 -- and migrations) because docker-entrypoint-initdb.d executes files in name order.
 -- The Orthanc PostgreSQL plugin auto-creates its own tables inside this database.
 SELECT 'CREATE DATABASE orthanc'

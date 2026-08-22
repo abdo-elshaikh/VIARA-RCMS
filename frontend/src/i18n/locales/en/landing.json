@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "RCMS — Radiology operations, connected",
-    "description": "RCMS connects scheduling, clinical worklists, reporting, billing, and patient access for modern radiology centers."
+    "title": "VIARA - Radiology operations, connected",
+    "description": "VIARA connects scheduling, clinical worklists, reporting, billing, and patient access for modern radiology centers."
   },
   "nav": {
     "overview": "Overview",
@@ -15,19 +15,20 @@
     "staffSignIn": "Staff sign in",
     "skipContent": "Skip to content",
     "primaryLabel": "Primary navigation",
-    "homeLabel": "RCMS home",
+    "homeLabel": "VIARA home",
     "openMenu": "Open navigation",
     "closeMenu": "Close navigation",
     "changeLanguage": "Switch to Arabic",
     "lightMode": "Switch to light mode",
-    "darkMode": "Switch to dark mode"
+    "darkMode": "Switch to dark mode",
+    "changeToEnglish": "Switch to English"
   },
   "hero": {
     "eyebrow": "Radiology operations, finally in sync",
     "title": "One calm workspace for every imaging workflow.",
     "titleLead": "The operating system for",
     "titleAccent": "connected radiology.",
-    "description": "One live operational record connects scheduling, clinical delivery, reporting, revenue, and patient access—from referral to final result.",
+    "description": "One live operational record connects scheduling, clinical delivery, reporting, revenue, and patient access - from referral to final result.",
     "primary": "Enter your workspace",
     "secondary": "See the workflow",
     "trust": [
@@ -86,7 +87,7 @@
         "label": "secure patient access"
       },
       {
-        "value": "360°",
+        "value": "360 deg",
         "label": "operational visibility"
       },
       {
@@ -129,7 +130,7 @@
   "architecture": {
     "eyebrow": "Interoperability without silos",
     "title": "A shared operational layer for the whole center.",
-    "description": "RCMS keeps source information, daily workflows, and authorized destinations connected while each role stays focused on its own work.",
+    "description": "VIARA keeps source information, daily workflows, and authorized destinations connected while each role stays focused on its own work.",
     "standards": [
       "DICOM-ready",
       "HL7 workflows",
@@ -147,7 +148,7 @@
         ]
       },
       {
-        "title": "RCMS operations",
+        "title": "VIARA operations",
         "description": "Coordinate every handoff against one governed record.",
         "items": [
           "Scheduling and queues",
@@ -242,7 +243,7 @@
   },
   "workflow": {
     "eyebrow": "One continuous workflow",
-    "title": "From referral to result—without losing the thread.",
+    "title": "From referral to result - without losing the thread.",
     "description": "Each step hands clean context to the next team, while permissions keep sensitive information where it belongs.",
     "steps": [
       {
@@ -270,7 +271,7 @@
   "security": {
     "eyebrow": "Security by design",
     "title": "Patient trust is part of the architecture.",
-    "description": "Granular access, traceable actions, secure sessions, and privacy controls are built into daily work—not bolted on afterward.",
+    "description": "Granular access, traceable actions, secure sessions, and privacy controls are built into daily work - not bolted on afterward.",
     "items": [
       "Role and permission controls",
       "Comprehensive audit history",
@@ -279,8 +280,8 @@
     ]
   },
   "quote": {
-    "text": "A radiology system should make the next safe action obvious. RCMS is designed around that simple idea.",
-    "author": "The RCMS product principle",
+    "text": "A radiology system should make the next safe action obvious. VIARA is designed around that simple idea.",
+    "author": "The VIARA product principle",
     "role": "Clarity at every handoff"
   },
   "faq": {
@@ -288,7 +289,7 @@
     "title": "A clearer path to a connected center.",
     "items": [
       {
-        "question": "Can RCMS support multiple staff roles?",
+        "question": "Can VIARA support multiple staff roles?",
         "answer": "Yes. Workspaces and actions are permission-aware for administrators, receptionists, radiologists, technicians, nurses, accountants, HR teams, and other configured roles."
       },
       {
@@ -301,7 +302,7 @@
       },
       {
         "question": "Will the platform fit an existing imaging workflow?",
-        "answer": "RCMS is organized around configurable exam types, resources, roles, and integrations, so teams can adapt it to their operating model."
+        "answer": "VIARA is organized around configurable exam types, resources, roles, and integrations, so teams can adapt it to their operating model."
       }
     ]
   },
@@ -342,7 +343,7 @@
     },
     "servicesEyebrow": "Diagnostic services",
     "servicesTitle": "Imaging services designed around clarity and comfort.",
-    "servicesDescription": "A professional public front door for patients and referring doctors, connected to the secure RCMS workflow behind the scenes.",
+    "servicesDescription": "A professional public front door for patients and referring doctors, connected to the secure VIARA workflow behind the scenes.",
     "accessEyebrow": "Secure access",
     "accessTitle": "Separate portals for patients, doctors, and staff.",
     "accessDescription": "Each audience gets a focused entry point while reports, requests, and communication stay protected by role-based access.",
@@ -362,33 +363,36 @@
     "product": "Platform",
     "access": "Secure access",
     "privacy": "Privacy-led",
-    "copyright": "© {{year}} RCMS Medical Systems. All rights reserved.",
+    "copyright": "Copyright {{year}} VIARA Healthcare Technology. All rights reserved.",
     "backToTop": "Back to top"
   },
   "managementLanding": {
-    "metaTitle": "Radiology management system",
+    "metaTitle": "VIARA Radiology Management Platform",
     "metaDescription": "A professional command center for radiology reception, PACS worklists, reporting, billing, settings, analytics, and governance.",
-    "homeLabel": "RCMS home",
-    "brandLine": "Radiology management system",
+    "homeLabel": "VIARA home",
+    "brandLine": "Healthcare technology platform",
     "signIn": "Staff sign in",
     "nav": {
       "overview": "Overview",
       "modules": "Command center",
       "command-center": "Command center",
+      "intelligence": "Intelligence",
       "workflow": "Workflows",
       "workflows": "Workflows",
       "governance": "Governance"
     },
-    "eyebrow": "Management system only",
-    "heroTitleLead": "Operate the entire radiology center",
-    "heroTitleAccent": "from one command system.",
-    "heroDescription": "RCMS brings reception, scheduling, PACS worklists, reporting, billing, settings, printing, analytics, and governance into a focused internal workspace for radiology teams.",
+    "eyebrow": "Live radiology command center",
+    "heroTitleLead": "Run every imaging workflow",
+    "heroTitleAccent": "from one clear system.",
+    "heroDescription": "Coordinate reception, scheduling, PACS queues, reporting, billing, printing, analytics, and governance in one focused workspace built for daily radiology operations.",
+    "intelligenceTitle": "Where clinical data turns signals into decisions",
     "openWorkspace": "Open staff workspace",
     "viewModules": "Explore modules",
+    "trustLabel": "Operational strengths",
     "trust": {
-      "roleAccess": "Role-based staff access",
-      "bilingual": "Arabic and English UI",
-      "printReady": "Print-ready reports"
+      "roleAccess": "Permission-aware workspaces",
+      "bilingual": "Arabic and English ready",
+      "printReady": "Reports, printing, and delivery aligned"
     },
     "quickAccess": {
       "dashboard": {
@@ -516,6 +520,55 @@
       }
     },
     "backToTop": "Back to overview",
-    "footer": "RCMS management system for internal radiology operations."
+    "footer": "VIARA management system for internal radiology operations.",
+    "mobileTabsLabel": "Landing page sections",
+    "commandAria": "Radiology center command dashboard",
+    "operationsAria": "Daily operations",
+    "overviewAria": "VIARA overview",
+    "footerCopyright": "All rights reserved - {{year}} VIARA",
+    "metricsAria": "Center metrics today",
+    "metricsUnavailable": "Live metrics could not be loaded",
+    "modulesTitleShort": "Service command center",
+    "modulesDescriptionShort": "Open workspaces and monitor current operations.",
+    "refreshLiveData": "Refresh live data",
+    "serviceCategory": "Service category",
+    "searchServicesPlaceholder": "Search services...",
+    "searchServices": "Search services",
+    "clearSearch": "Clear search",
+    "noMatchingServices": "No matching services",
+    "noMatchingServicesHelp": "Try another search term or category.",
+    "showAllServices": "Show all services",
+    "radiologyResultsToday": "Radiology results today",
+    "securityBadge": "Secure radiology operations",
+    "portalsAria": "System portals",
+    "workflowWindowDays": "{{count}}-day completed-case averages",
+    "workflowWindowDefault": "30-day completed-case averages",
+    "workflowAria": "Integrated radiology workflow",
+    "workflowIntroTitle": "Integrated imaging workflow",
+    "status": {
+      "connecting": "Connecting",
+      "connected": "Connected to system data",
+      "liveData": "Live data",
+      "refreshing": "Refreshing",
+      "refresh": "Refresh"
+    },
+    "workflowDurations": {
+      "reception": "No completed cycle",
+      "imaging": "18 min average",
+      "reporting": "1.1 days average",
+      "delivery": "30-day completed-case averages"
+    },
+    "workflowStepsCompact": {
+      "path": "Integrated imaging path",
+      "reception": "Referral and registration",
+      "imaging": "Imaging and PACS link",
+      "reporting": "Reporting and approval",
+      "delivery": "Delivery and billing"
+    },
+    "portalLabels": {
+      "staff": "Staff workspace",
+      "patient": "Patient access",
+      "doctor": "Doctor access"
+    }
   }
 }

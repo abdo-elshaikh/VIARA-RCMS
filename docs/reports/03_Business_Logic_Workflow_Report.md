@@ -1,14 +1,14 @@
 # 03 — Business Logic & Workflow Report
 
 **Review date:** 2026-08-04  
-**Scope:** All RCMS business workflows, state transitions, and business rules  
+**Scope:** All VIARA business workflows, state transitions, and business rules  
 **Methodology:** Static analysis of controllers, services, database constraints, and schema  
 
 ---
 
 ## Executive Summary
 
-RCMS implements **20+ discrete business workflows** with well-defined state machines, database-enforced constraints, and role-based access control. The most critical workflows (authentication, payment, clinical queue, reporting) demonstrate mature implementation with proper validation, audit logging, and failure handling. Two workflow defects exist in the cashier subsystem (frontend-only).
+VIARA implements **20+ discrete business workflows** with well-defined state machines, database-enforced constraints, and role-based access control. The most critical workflows (authentication, payment, clinical queue, reporting) demonstrate mature implementation with proper validation, audit logging, and failure handling. Two workflow defects exist in the cashier subsystem (frontend-only).
 
 ---
 

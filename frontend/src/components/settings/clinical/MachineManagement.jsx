@@ -1,13 +1,17 @@
 /* eslint-disable react-refresh/only-export-components -- form defaults and catalog are intentionally co-located */
 import React from 'react';
 import { Edit3, Server, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import Modal from '../../ui/Modal';
 import { Status, Field, Select, Actions } from './SharedComponents';
 
 export const machineTypes = ['MRI', 'CT', 'X-Ray', 'Ultrasound', 'Mammography', 'Cath Lab', 'Panoramic X-Ray', 'PET-CT', 'Fluoroscopy', 'DEXA'];
 export const emptyMachine = { name: '', type: 'MRI', roomNumber: '', serialNumber: '', manufacturer: '', model: '', installationDate: '', location: '', status: 'Active' };
 
-export const MachineCatalog = ({ records, t, onEdit, onDelete }) => {
+export const MachineCatalog = ({ records, t: propT, onEdit, onDelete }) => {
+    const { t: hookT } = useTranslation('settings');
+    const t = typeof propT === 'function' ? propT : hookT;
+
     return (
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {records.map(machine => {
@@ -68,85 +72,90 @@ const InlineDetail = ({ label, value }) => value ? (
     <span><span className="font-bold text-slate-600 dark:text-slate-300">{label}:</span> {value}</span>
 ) : null;
 
-export const MachineDialog = ({ open, editing, form, setForm, onClose, onSave, busy, t }) => (
-    <Modal
-        isOpen={open}
-        onClose={onClose}
-        title={t(editing ? 'settings.clinical.machines.editTitle' : 'settings.clinical.machines.createTitle', {
-            defaultValue: editing ? 'Edit Machine Specifications' : 'Register New Machine'
-        })}
-        size="wide"
-        width="max-w-2xl"
-    >
-        <form onSubmit={onSave} className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2">
-                <Field
-                    label={t('settings.clinical.machines.name', { defaultValue: 'Machine Name' })}
-                    required
-                    placeholder={t('settings.clinical.machines.placeholders.name', { defaultValue: 'e.g. MRI 3T Bay 1' })}
-                    value={form.name}
-                    onChange={value => setForm({ ...form, name: value })}
-                />
-                <Select
-                    label={t('settings.clinical.machines.type', { defaultValue: 'Modality Class' })}
-                    required
-                    value={form.type}
-                    onChange={value => setForm({ ...form, type: value })}
-                    options={machineTypes}
-                />
-                <Field
-                    label={t('settings.clinical.machines.room', { defaultValue: 'Room Number' })}
-                    placeholder={t('settings.clinical.machines.placeholders.room', { defaultValue: 'e.g. Room 102' })}
-                    value={form.roomNumber}
-                    onChange={value => setForm({ ...form, roomNumber: value })}
-                />
-                <Field
-                    label={t('settings.clinical.machines.location', { defaultValue: 'Facility Location' })}
-                    placeholder={t('settings.clinical.machines.placeholders.location', { defaultValue: 'e.g. Ground Floor, East Wing' })}
-                    value={form.location}
-                    onChange={value => setForm({ ...form, location: value })}
-                />
-                <Select
-                    label={t('settings.clinical.machines.status', { defaultValue: 'Operational Status' })}
-                    value={form.status}
-                    onChange={value => setForm({ ...form, status: value })}
-                    options={['Active', 'Under Maintenance', 'Out of Service']}
-                    render={value => t(`settings.clinical.statuses.${value}`, { defaultValue: value })}
-                />
-            </div>
+export const MachineDialog = ({ open, editing, form, setForm, onClose, onSave, busy, t: propT }) => {
+    const { t: hookT } = useTranslation('settings');
+    const t = typeof propT === 'function' ? propT : hookT;
 
-            <div className="border-t border-slate-200 pt-4">
-                <h4 className="mb-3 text-sm font-semibold text-slate-950">
-                    {t('settings.clinical.machines.deviceDetails', { defaultValue: 'Device details' })}
-                </h4>
+    return (
+        <Modal
+            isOpen={open}
+            onClose={onClose}
+            title={t(editing ? 'settings.clinical.machines.editTitle' : 'settings.clinical.machines.createTitle', {
+                defaultValue: editing ? 'Edit Machine Specifications' : 'Register New Machine'
+            })}
+            size="wide"
+            width="max-w-2xl"
+        >
+            <form onSubmit={onSave} className="space-y-5">
                 <div className="grid gap-4 sm:grid-cols-2">
                     <Field
-                        label={t('settings.clinical.machines.manufacturer', { defaultValue: 'Manufacturer' })}
-                        placeholder={t('settings.clinical.machines.placeholders.manufacturer', { defaultValue: 'e.g. Siemens Healthcare' })}
-                        value={form.manufacturer}
-                        onChange={value => setForm({ ...form, manufacturer: value })}
+                        label={t('settings.clinical.machines.name', { defaultValue: 'Machine Name' })}
+                        required
+                        placeholder={t('settings.clinical.machines.placeholders.name', { defaultValue: 'e.g. MRI 3T Bay 1' })}
+                        value={form.name}
+                        onChange={value => setForm({ ...form, name: value })}
+                    />
+                    <Select
+                        label={t('settings.clinical.machines.type', { defaultValue: 'Modality Class' })}
+                        required
+                        value={form.type}
+                        onChange={value => setForm({ ...form, type: value })}
+                        options={machineTypes}
                     />
                     <Field
-                        label={t('settings.clinical.machines.model', { defaultValue: 'Model' })}
-                        placeholder={t('settings.clinical.machines.placeholders.model', { defaultValue: 'e.g. Magnetom Vida' })}
-                        value={form.model}
-                        onChange={value => setForm({ ...form, model: value })}
+                        label={t('settings.clinical.machines.room', { defaultValue: 'Room Number' })}
+                        placeholder={t('settings.clinical.machines.placeholders.room', { defaultValue: 'e.g. Room 102' })}
+                        value={form.roomNumber}
+                        onChange={value => setForm({ ...form, roomNumber: value })}
                     />
                     <Field
-                        label={t('settings.clinical.machines.serial', { defaultValue: 'Serial Number' })}
-                        placeholder={t('settings.clinical.machines.placeholders.serial', { defaultValue: 'e.g. SN-928374-X' })}
-                        value={form.serialNumber}
-                        onChange={value => setForm({ ...form, serialNumber: value })}
+                        label={t('settings.clinical.machines.location', { defaultValue: 'Facility Location' })}
+                        placeholder={t('settings.clinical.machines.placeholders.location', { defaultValue: 'e.g. Ground Floor, East Wing' })}
+                        value={form.location}
+                        onChange={value => setForm({ ...form, location: value })}
                     />
-                    <Field
-                        label={t('settings.clinical.machines.installationDate', { defaultValue: 'Installation Date' })}
-                        type="date"
-                        value={form.installationDate}
-                        onChange={value => setForm({ ...form, installationDate: value })}
+                    <Select
+                        label={t('settings.clinical.machines.status', { defaultValue: 'Operational Status' })}
+                        value={form.status}
+                        onChange={value => setForm({ ...form, status: value })}
+                        options={['Active', 'Under Maintenance', 'Out of Service']}
+                        render={value => t(`settings.clinical.statuses.${value}`, { defaultValue: value })}
                     />
                 </div>
-            </div>
-            <Actions busy={busy} onClose={onClose} t={t} />
-        </form>
-    </Modal>
-);
+
+                <div className="border-t border-slate-200 pt-4">
+                    <h4 className="mb-3 text-sm font-semibold text-slate-950">
+                        {t('settings.clinical.machines.deviceDetails', { defaultValue: 'Device details' })}
+                    </h4>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Field
+                            label={t('settings.clinical.machines.manufacturer', { defaultValue: 'Manufacturer' })}
+                            placeholder={t('settings.clinical.machines.placeholders.manufacturer', { defaultValue: 'e.g. Siemens Healthcare' })}
+                            value={form.manufacturer}
+                            onChange={value => setForm({ ...form, manufacturer: value })}
+                        />
+                        <Field
+                            label={t('settings.clinical.machines.model', { defaultValue: 'Model' })}
+                            placeholder={t('settings.clinical.machines.placeholders.model', { defaultValue: 'e.g. Magnetom Vida' })}
+                            value={form.model}
+                            onChange={value => setForm({ ...form, model: value })}
+                        />
+                        <Field
+                            label={t('settings.clinical.machines.serial', { defaultValue: 'Serial Number' })}
+                            placeholder={t('settings.clinical.machines.placeholders.serial', { defaultValue: 'e.g. SN-928374-X' })}
+                            value={form.serialNumber}
+                            onChange={value => setForm({ ...form, serialNumber: value })}
+                        />
+                        <Field
+                            label={t('settings.clinical.machines.installationDate', { defaultValue: 'Installation Date' })}
+                            type="date"
+                            value={form.installationDate}
+                            onChange={value => setForm({ ...form, installationDate: value })}
+                        />
+                    </div>
+                </div>
+                <Actions busy={busy} onClose={onClose} t={t} />
+            </form>
+        </Modal>
+    );
+};

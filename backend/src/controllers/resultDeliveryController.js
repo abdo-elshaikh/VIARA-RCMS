@@ -31,20 +31,28 @@ const getExamForDelivery = async (db, examId) => {
 };
 
 const deliverResult = (db) => async (req, res, next) => {
+    let client;
+    let transactionStarted = false;
+    let committed = false;
+
     try {
         const { examId } = req.params;
         const data = req.body;
-        const exam = await getExamForDelivery(db, examId);
+        client = await db.connect();
+        await client.query('BEGIN');
+        transactionStarted = true;
+
+        const exam = await getExamForDelivery(client, examId);
 
         if (!exam) {
-            return next(new AppError('Exam not found', 404));
+            throw new AppError('Exam not found', 404);
         }
 
         if (exam.status !== 'Finalized' && exam.report_status !== 'Finalized' && exam.report_status !== 'Amended') {
-            return next(new AppError('Only finalized reports can be delivered', 400));
+            throw new AppError('Only finalized reports can be delivered', 400);
         }
 
-        const invoiceResult = await db.query(`
+        const invoiceResult = await client.query(`
             SELECT invoice_id
             FROM invoices
             WHERE invoice_status <> 'Voided'
@@ -54,9 +62,9 @@ const deliverResult = (db) => async (req, res, next) => {
         `, [exam.exam_id, exam.appointment_id]);
 
         if (invoiceResult.rows.length === 0) {
-            return next(new AppError('Create and settle an invoice before final result delivery', 409));
+            throw new AppError('Create and settle an invoice before final result delivery', 409);
         }
-        await assertInvoiceFullyPaid(db, {
+        await assertInvoiceFullyPaid(client, {
             invoiceId: invoiceResult.rows[0].invoice_id,
             transactionType: 'ResultDelivery',
             transactionLabel: 'delivering this result'
@@ -68,7 +76,7 @@ const deliverResult = (db) => async (req, res, next) => {
             ? Math.max(Number(data.printCopyCount || 1), 1)
             : Number(data.printCopyCount || 0);
 
-        const result = await db.query(`
+        const result = await client.query(`
             INSERT INTO result_deliveries (
                 exam_id, appointment_id, patient_id, referring_doctor_id,
                 delivery_method, recipient_name, recipient_contact, delivery_status,
@@ -97,7 +105,7 @@ const deliverResult = (db) => async (req, res, next) => {
         ]);
 
         if (['Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged'].includes(status)) {
-            await db.query(`
+            await client.query(`
                 UPDATE examinations
                 SET delivered_at = COALESCE(delivered_at, NOW()),
                     queue_stage = CASE WHEN queue_stage = 'Finalized' THEN 'Delivered' ELSE queue_stage END,
@@ -106,7 +114,7 @@ const deliverResult = (db) => async (req, res, next) => {
             `, [exam.exam_id]);
 
             if (exam.queue_stage === 'Finalized') {
-                await db.query(`
+                await client.query(`
                     INSERT INTO queue_events (
                         exam_id, appointment_id, from_stage, to_stage, from_station, to_station,
                         event_type, reason, changed_by
@@ -114,7 +122,7 @@ const deliverResult = (db) => async (req, res, next) => {
                     VALUES ($1, $2, $3, 'Delivered', $4, 'Delivery', 'Transition', 'Result Delivered', $5)
                 `, [exam.exam_id, exam.appointment_id, exam.queue_stage, exam.current_station, req.user.user_id || null]);
                 
-                await db.query(`
+                await client.query(`
                     INSERT INTO order_status_history (
                         appointment_id, exam_id, old_status, new_status, event_type, notes, changed_by
                     )
@@ -123,7 +131,10 @@ const deliverResult = (db) => async (req, res, next) => {
             }
         }
 
-        // Fire ResultDelivered notification
+        await client.query('COMMIT');
+        committed = true;
+
+        // Notifications are deliberately outside the transaction.
         if (['Email', 'SMS Link', 'WhatsApp Link', 'Patient Portal'].includes(data.deliveryMethod)) {
             const channel = {
                 Email: 'Email',
@@ -145,7 +156,16 @@ const deliverResult = (db) => async (req, res, next) => {
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
+        if (client && transactionStarted && !committed) {
+            try {
+                await client.query('ROLLBACK');
+            } catch (_) {
+                // Preserve the original delivery error.
+            }
+        }
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 

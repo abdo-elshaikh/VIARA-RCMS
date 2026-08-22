@@ -1,6 +1,6 @@
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
-const { lockFinancialBusinessDate } = require('../services/financialPostingService');
+const { DEFAULT_BRANCH_ID, lockFinancialBusinessDate } = require('../services/financialPostingService');
 
 const getVarianceThreshold = () => {
     const value = Number(process.env.CASH_VARIANCE_THRESHOLD ?? 5);
@@ -12,13 +12,16 @@ const openShift = (db) => async (req, res, next) => {
     try {
         client = await db.connect();
         await client.query('BEGIN');
-        const postingDate = await lockFinancialBusinessDate(client);
+        const requestedBranchId = req.body.branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
+        const postingDate = await lockFinancialBusinessDate(client, {
+            branchId: requestedBranchId
+        });
         const existing = await client.query(`
             SELECT shift_id
             FROM cashier_shifts
-            WHERE cashier_id = $1 AND status = 'Open'
+            WHERE cashier_id = $1 AND branch_id = $2 AND status = 'Open'
             LIMIT 1
-        `, [req.user.user_id]);
+        `, [req.user.user_id, postingDate.branchId]);
 
         if (existing.rows.length > 0) {
             await client.query('ROLLBACK');
@@ -27,11 +30,13 @@ const openShift = (db) => async (req, res, next) => {
 
         const pendingReview = await client.query(`
             SELECT c.closure_id
-            FROM cashier_shift_closures c
+            FROM cashier_closures c
             JOIN cashier_shifts s ON s.shift_id = c.shift_id
-            WHERE s.cashier_id = $1 AND c.review_status = 'Requires Review'
+            WHERE s.cashier_id = $1
+              AND s.branch_id = $2
+              AND c.review_status = 'Requires Review'
             LIMIT 1
-        `, [req.user.user_id]);
+        `, [req.user.user_id, postingDate.branchId]);
 
         if (pendingReview.rows.length > 0) {
             await client.query('ROLLBACK');
@@ -65,7 +70,9 @@ const openShift = (db) => async (req, res, next) => {
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
-        if (client) await client.query('ROLLBACK');
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (rbErr) { /* ignore */ }
+        }
         if (error.code === '23505') {
             return next(new AppError('You already have an open cashier shift', 409));
         }
@@ -106,6 +113,11 @@ const closeShift = (db) => async (req, res, next) => {
         if (!['Developer', 'Admin'].includes(req.user.role) && shift.cashier_id !== req.user.user_id) {
             await client.query('ROLLBACK');
             return next(new AppError('You cannot close another cashier shift', 403));
+        }
+        const userBranchId = req.user.branch_id || req.user.branchId;
+        if (userBranchId && shift.branch_id !== userBranchId) {
+            await client.query('ROLLBACK');
+            return next(new AppError('You cannot close a cashier shift from another branch', 403));
         }
         await lockFinancialBusinessDate(client, {
             businessDate: shift.business_date,
@@ -190,7 +202,9 @@ const closeShift = (db) => async (req, res, next) => {
             closure: closureResult.rows[0]
         });
     } catch (error) {
-        if (client) await client.query('ROLLBACK');
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (rbErr) { /* ignore */ }
+        }
         next(error);
     } finally {
         if (client) client.release();
@@ -211,8 +225,12 @@ const reviewCashierClosure = (db) => async (req, res, next) => {
         `, [req.params.id]);
         if (!result.rows.length) throw new AppError('Cashier closure not found', 404);
         const closure = result.rows[0];
+        const userBranchId = req.user.branch_id || req.user.branchId;
+        if (userBranchId && closure.branch_id !== userBranchId && req.user.role !== 'Developer') {
+            throw new AppError('You cannot review a cashier closure from another branch', 403);
+        }
         if (closure.review_status !== 'Requires Review') throw new AppError('This cashier closure does not require review', 409);
-        if (closure.cashier_id === req.user.user_id) throw new AppError('Cashier cannot approve their own variance', 403);
+        if (closure.cashier_id === req.user.user_id && req.user.role !== 'Developer') throw new AppError('Cashier cannot approve their own variance', 403);
 
         const updated = await client.query(`
             UPDATE cashier_closures
@@ -232,7 +250,9 @@ const reviewCashierClosure = (db) => async (req, res, next) => {
         await client.query('COMMIT');
         res.json(updated.rows[0]);
     } catch (error) {
-        if (client) await client.query('ROLLBACK');
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (rbErr) { /* ignore */ }
+        }
         next(error);
     } finally {
         if (client) client.release();
@@ -242,11 +262,13 @@ const reviewCashierClosure = (db) => async (req, res, next) => {
 const getReconciliation = (db) => async (req, res, next) => {
     try {
         const { startDate, endDate } = req.query;
+        const branchId = req.query.branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
         const cashierId = req.user.role === 'Cashier' ? req.user.user_id : req.query.cashierId;
         const values = [];
         let param = 1;
 
-        let shiftWhere = 'WHERE 1=1';
+        let shiftWhere = `WHERE s.branch_id = $${param++}::uuid`;
+        values.push(branchId);
         if (startDate) {
             shiftWhere += ` AND s.business_date >= $${param++}::date`;
             values.push(startDate);

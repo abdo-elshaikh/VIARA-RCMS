@@ -4,7 +4,6 @@ import toast from 'react-hot-toast';
 import {
     useGetAppointmentsQuery,
     useGetQueueQuery,
-    useGetPatientsQuery,
     useGetInvoicesQuery,
     useTransitionQueueMutation,
     useUpdateAppointmentMutation,
@@ -53,24 +52,26 @@ export const useReceptionData = ({ selectedDate }) => {
     const {
         data: appointments,
         isLoading: appLoading,
+        isFetching: isAppointmentsFetching,
+        isError: isAppointmentsError,
+        error: appointmentsError,
         refetch: refetchAppointments,
     } = useGetAppointmentsQuery({ date: selectedDate }, { pollingInterval: 30_000 });
 
     const {
         data: queueResponse,
+        isFetching: isQueueFetching,
+        isError: isQueueError,
+        error: queueError,
         refetch: refetchQueue,
-    } = useGetQueueQuery({ date: selectedDate, includeDelivered: 'true', limit: 200 }, { pollingInterval: 15_000 });
-
-    const {
-        data: patientList,
-        isLoading: isPatListLoading,
-        refetch: refetchPatients,
-    } = useGetPatientsQuery({ limit: 500 }, { pollingInterval: 60_000 });
+    } = useGetQueueQuery({ date: selectedDate, includeDelivered: 'true', limit: 500 }, { pollingInterval: 15_000 });
 
     const {
         data: rawInvoices,
+        isError: isInvoicesError,
+        error: invoicesError,
         refetch: refetchInvoices,
-    } = useGetInvoicesQuery(undefined, { pollingInterval: 30_000 });
+    } = useGetInvoicesQuery({ appointmentDate: selectedDate, limit: 500 }, { pollingInterval: 30_000 });
     // Mutations
     const [transitionQueue] = useTransitionQueueMutation();
     const [updateAppointment] = useUpdateAppointmentMutation();
@@ -82,8 +83,12 @@ export const useReceptionData = ({ selectedDate }) => {
     const queueKpis = useMemo(() => queueResponse?.kpis || {}, [queueResponse?.kpis]);
     const cashierPending = useMemo(
         () => queueItems.filter((item) => {
-            if (item.queue_stage === 'Payment Pending') return true;
+            const stage = item.queue_stage || item.queueStage;
+            if (!['Arrived', 'Payment Pending'].includes(stage)) return false;
             const invoice = invoices.find(inv => inv.exam_id === item.exam_id || inv.appointment_id === item.appointment_id);
+            if (stage === 'Payment Pending') {
+                return !invoice || (invoice.invoice_status !== 'Voided' && Number(invoice.balance_amount || 0) > 0);
+            }
             return invoice && invoice.invoice_status !== 'Voided' && Number(invoice.balance_amount || 0) > 0;
         }),
         [queueItems, invoices]
@@ -92,6 +97,14 @@ export const useReceptionData = ({ selectedDate }) => {
         () => buildScheduleSummary(appointments || [], queueItems),
         [appointments, queueItems]
     );
+    const dataErrors = useMemo(() => [
+        isAppointmentsError && { source: 'appointments', error: appointmentsError },
+        isQueueError && { source: 'queue', error: queueError },
+        isInvoicesError && { source: 'invoices', error: invoicesError },
+    ].filter(Boolean), [
+        appointmentsError, invoicesError, isAppointmentsError, isInvoicesError,
+        isQueueError, queueError,
+    ]);
     // Handlers
     const refreshWorkspace = useCallback(async () => {
         setIsRefreshing(true);
@@ -99,7 +112,6 @@ export const useReceptionData = ({ selectedDate }) => {
             const results = await Promise.all([
                 refetchAppointments(),
                 refetchQueue(),
-                refetchPatients(),
                 refetchInvoices(),
             ]);
             const failed = results.some((result) => result.error);
@@ -108,7 +120,7 @@ export const useReceptionData = ({ selectedDate }) => {
         } finally {
             setIsRefreshing(false);
         }
-    }, [refetchAppointments, refetchInvoices, refetchPatients, refetchQueue, t]);
+    }, [refetchAppointments, refetchInvoices, refetchQueue, t]);
 
     const moveQueue = useCallback(async (item, toStage, reason) => {
         const examId = item?.exam_id || item?.examId;
@@ -150,6 +162,9 @@ export const useReceptionData = ({ selectedDate }) => {
             toast.success(t('toast.queueMoved', { stage: t(`queue.stages.${toStage}`, { defaultValue: toStage }) }));
         } catch (error) {
             toast.error(getErrorMessage(error, t('toast.queueFailed')));
+            // The action may have failed because another receptionist already
+            // changed this case. Refresh so the operator sees the real state.
+            await Promise.all([refetchAppointments(), refetchQueue()]).catch(() => undefined);
         }
     }, [refetchAppointments, refetchQueue, t, transitionQueue, updateAppointment]);
 
@@ -186,13 +201,14 @@ export const useReceptionData = ({ selectedDate }) => {
         appointments,
         queueItems,
         queueKpis,
-        patientList,
         invoices,
         cashierPending,
         scheduleSummary,
+        dataErrors,
+        hasDataError: dataErrors.length > 0,
         // Loading
         appLoading,
-        isPatListLoading,
+        isWorkspaceFetching: isAppointmentsFetching || isQueueFetching,
         isRefreshing,
         isDeliveringResult,
     // Handlers

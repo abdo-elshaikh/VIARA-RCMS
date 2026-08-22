@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-The recent design work materially improved the RCMS experience. The staff application now has stronger session-expiry handling, accessible modal and mobile-navigation behavior, centralized route metadata, better Arabic parity and RTL behavior, chart alternatives, consistent money formatting, and corrected cashier reconciliation. The portal has a coherent visual identity, responsive patient and doctor areas, accessible route-loading feedback, dark-mode support, and clearer public service presentation.
+The recent design work materially improved the VIARA experience. The staff application now has stronger session-expiry handling, accessible modal and mobile-navigation behavior, centralized route metadata, better Arabic parity and RTL behavior, chart alternatives, consistent money formatting, and corrected cashier reconciliation. The portal has a coherent visual identity, responsive patient and doctor areas, accessible route-loading feedback, dark-mode support, and clearer public service presentation.
 
 The post-update review found **four release-blocking defects** which have all been **remediated and validated**. The unauthenticated public case-status endpoint previously returned complete finalized diagnostic report narratives and signer details when supplied only an MRN or order number. This has been corrected to a status-only response. The staff appointment form non-atomic two-step submission has been corrected with explicit partial-success reporting and idempotency protection. Document actions now match backend authorization. Portal password-change is properly route-guarded and role-correct.
 
@@ -117,7 +117,7 @@ The remediation of UX-01 through UX-15, UX-17, and UX-20 remains supported by co
 
 - **UX-19:** SSE failure feedback was implemented with localized disconnect/reconnect notification; runtime degradation testing remains.
 - **UX-21:** Dormant `Doctor.jsx` was archived and the active worklist route retained.
-- **UX-16:** Wide-table behavior improved with responsive overflow helper classes (`rcms-table-wrapper`, `rcms-overflow-x-auto`, `rcms-table-sticky-header`) added to `index.css`; real breakpoint and zoom testing remains.
+- **UX-16:** Wide-table behavior improved with responsive overflow helper classes (`VIARA-table-wrapper`, `VIARA-overflow-x-auto`, `VIARA-table-sticky-header`) added to `index.css`; real breakpoint and zoom testing remains.
 - **UX-18:** Design-system tokens documented in `index.css` header comment; consolidation remains ongoing.
 
 ## Release Priorities

@@ -27,9 +27,30 @@ yarn-error.log*
 logs/
 *.log
 
+# Test, coverage, and tooling output
+coverage/
+test-results/
+.playwright-mcp/
+.vite/
+.vite-temp/
+.pytest_cache/
+.mypy_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
 # Database backups may contain PHI
 backend/backups/
 *.dump
 
 *.playwright-mcp
 *.kilo
+
+# Local archives and editor/OS artifacts
+*.bak
+*.tmp
+*.rar
+*.zip
+*.7z
+desktop.ini

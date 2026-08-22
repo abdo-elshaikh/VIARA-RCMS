@@ -1,3 +1,0 @@
-@echo off
-echo Viewing RCMS live logs...
-node "%~dp0logs.js" %*

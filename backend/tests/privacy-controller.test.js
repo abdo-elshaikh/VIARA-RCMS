@@ -28,7 +28,7 @@ describe('privacy controller workflow hardening', () => {
     let encrypt;
 
     beforeAll(async () => {
-        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rcms-privacy-'));
+        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'VIARA-privacy-'));
         process.env.ENCRYPTION_KEY = TEST_KEY;
         process.env.BLIND_INDEX_KEY = TEST_KEY;
         process.env.PRIVACY_EXPORT_DIR = tempDir;
@@ -146,6 +146,9 @@ describe('privacy controller workflow hardening', () => {
                 if (text.includes('UPDATE data_privacy_requests')) {
                     return { rows: [{ request_id: REQUEST_ID, status: 'Completed', export_id: 'export-1' }] };
                 }
+                if (text.includes('INSERT INTO system_logs')) {
+                    return { rows: [{ log_id: 'audit-export' }] };
+                }
                 return { rows: [] };
             }),
             release: jest.fn()
@@ -178,6 +181,9 @@ describe('privacy controller workflow hardening', () => {
                 if (text.includes('SELECT patient_id, patient_status FROM patients')) {
                     return { rows: [{ patient_id: PATIENT_ID, patient_status: 'Active' }] };
                 }
+                if (text.includes('INSERT INTO system_logs')) {
+                    return { rows: [{ log_id: 'audit-anonymize' }] };
+                }
                 return { rows: [] };
             }),
             release: jest.fn()
@@ -200,7 +206,10 @@ describe('privacy controller workflow hardening', () => {
         expect(statements).toContain("UPDATE patient_consents");
         expect(client.query.mock.calls.some(([, params]) => Array.isArray(params) && params.includes('PATIENT_ANONYMIZED'))).toBe(true);
         expect(client.query).toHaveBeenCalledWith('COMMIT');
-        expect(res.json).toHaveBeenCalledWith({ message: 'Patient anonymized' });
+        expect(res.json).toHaveBeenCalledWith({
+            message: 'Direct identifiers removed; manual review of free-text and document content is required before completion',
+            status: 'InReview'
+        });
         expect(next).not.toHaveBeenCalled();
     });
 });

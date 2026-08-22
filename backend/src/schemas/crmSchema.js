@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { calendarDateSchema } = require('../utils/dateValidation');
 
 // ─── CRM Activities ───────────────────────────────────────────────────────────
 
@@ -44,8 +45,8 @@ const createCampaignSchema = z.object({
     targetSegment: z.string().uuid().optional().nullable(),
     channel: z.enum(['SMS', 'Email', 'WhatsApp']),
     budget: z.number().min(0).optional(),
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    startDate: calendarDateSchema().optional(),
+    endDate: calendarDateSchema().optional()
 }).superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate < data.startDate) {
         ctx.addIssue({
@@ -57,7 +58,7 @@ const createCampaignSchema = z.object({
 });
 
 const updateCampaignStatusSchema = z.object({
-    status: z.enum(['Draft', 'Active', 'Completed', 'Cancelled'])
+    status: z.enum(['Active', 'Completed', 'Cancelled'])
 });
 
 // ─── Feedback & Loyalty ───────────────────────────────────────────────────────
@@ -70,7 +71,7 @@ const submitFeedbackSchema = z.object({
 });
 
 const updateLoyaltySchema = z.object({
-    points: z.number().int()
+    points: z.number().int().min(-100000).max(100000).refine(value => value !== 0, 'Points adjustment cannot be zero')
 });
 
 module.exports = {

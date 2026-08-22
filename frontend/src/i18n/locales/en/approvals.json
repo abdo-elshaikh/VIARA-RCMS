@@ -34,6 +34,9 @@
     "high": "Priority",
     "routine": "Routine"
   },
+  "status": {
+    "pendingApproval": "Pending approval"
+  },
   "filters": {
     "search": "Search requests",
     "searchPlaceholder": "Search person, reference, requester, or reason",
@@ -102,6 +105,9 @@
     "value": "Value",
     "effectiveFrom": "Effective from",
     "source": "Source",
+    "requestSource": "Request source",
+    "sourceStatus": "Source status",
+    "approvalStatus": "Approval status",
     "period": "Payroll period",
     "employees": "Employees",
     "netPay": "Net payroll",

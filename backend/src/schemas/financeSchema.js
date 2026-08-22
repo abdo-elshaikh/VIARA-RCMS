@@ -43,7 +43,7 @@ const validateExpenseTax = (data, context) => {
 };
 
 const createExpenseSchema = expenseBaseSchema
-    .extend({ idempotencyKey: z.string().uuid().optional() })
+    .extend({ idempotencyKey: z.string().uuid(), branchId })
     .superRefine(validateExpenseTax);
 
 const updateExpenseSchema = expenseBaseSchema.partial().superRefine(validateExpenseTax);
@@ -60,7 +60,8 @@ const payCommissionSchema = z.object({
     amount: z.coerce.number().positive(),
     transactionRef: z.string().max(100).optional(),
     paidDate: z.string().datetime().optional(),
-    idempotencyKey: z.string().uuid()
+    idempotencyKey: z.string().uuid(),
+    branchId
 });
 
 const reverseExpenseSchema = z.object({
@@ -68,7 +69,8 @@ const reverseExpenseSchema = z.object({
 });
 
 const createClosureSchema = z.object({
-    closureDate: dateString
+    closureDate: dateString,
+    branchId
 });
 
 const finalizeClosureSchema = z.object({
@@ -78,7 +80,8 @@ const finalizeClosureSchema = z.object({
 const getFinancialClosuresQuerySchema = validateDateRange(z.object({
     status: z.enum(['Draft', 'Finalized']).optional(),
     startDate: dateString.optional(),
-    endDate: dateString.optional()
+    endDate: dateString.optional(),
+    branchId
 }));
 
 const financialReportQuerySchema = validateDateRange(z.object({

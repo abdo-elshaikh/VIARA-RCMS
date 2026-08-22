@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-RCMS implements document-level language/direction switching with English and Arabic locale resources. The system uses i18next with browser language detection. RTL support includes logical CSS properties and an Arabic-specific font (Tajawal). **All localization gaps have been remediated**: 8 missing Arabic keys added, hard-coded English strings in active workflows removed, credential handoff localized, currency formatting centralized, and physical CSS directions replaced with logical properties.
+VIARA implements document-level language/direction switching with English and Arabic locale resources. The system uses i18next with browser language detection. RTL support includes logical CSS properties and an Arabic-specific font (Tajawal). **All localization gaps have been remediated**: 8 missing Arabic keys added, hard-coded English strings in active workflows removed, credential handoff localized, currency formatting centralized, and physical CSS directions replaced with logical properties.
 
 **Remaining:** Native-speaker clinical terminology review still recommended.
 

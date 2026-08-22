@@ -10,7 +10,7 @@ const html = String.raw`<!doctype html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>RCMS PACS Viewer</title>
+  <title>VIARA PACS Viewer</title>
   <style>
     :root {
       color-scheme: dark;
@@ -331,7 +331,7 @@ const html = String.raw`<!doctype html>
       <div class="brand">
         <span class="brandMark" aria-hidden="true">RV</span>
         <div class="brandText">
-          <h1>RCMS Diagnostic Viewer</h1>
+          <h1>VIARA Diagnostic Viewer</h1>
           <div class="subtitle" id="studyUidLabel"></div>
         </div>
       </div>
@@ -449,20 +449,20 @@ const html = String.raw`<!doctype html>
   <script>
     const params = new URLSearchParams(location.search);
     const studyUid = params.get('StudyInstanceUIDs') || params.get('study') || '';
-    const RCMS_TOKEN = params.get('rcms_token') || '';
+    const VIARA_TOKEN = params.get('VIARA_token') || '';
     // Remove token from URL bar immediately so it's not visible in history
-    if (RCMS_TOKEN) { params.delete('rcms_token'); history.replaceState(null, '', location.pathname + '?' + params.toString()); }
+    if (VIARA_TOKEN) { params.delete('VIARA_token'); history.replaceState(null, '', location.pathname + '?' + params.toString()); }
     const shouldPromptFullscreen = params.get('fullscreen') === '1';
     const translations = {
       en: {
-        title: 'RCMS Diagnostic Viewer', series: 'Series', inspector: 'Inspector', summary: 'Summary', tags: 'Tags', actions: 'Actions',
+        title: 'VIARA Diagnostic Viewer', series: 'Series', inspector: 'Inspector', summary: 'Summary', tags: 'Tags', actions: 'Actions',
         filterSeries: 'Filter series', searchTags: 'Search DICOM tags', noMatchingTags: 'No matching tags',
         pan: 'Pan', measure: 'Measure', crosshair: 'Crosshair', play: 'Play', pause: 'Pause', fit: 'Fit', invert: 'Inv', reset: 'Reset', fullscreen: 'Full',
         previous: 'Previous instance', next: 'Next instance', rotateLeft: 'Rotate left', rotateRight: 'Rotate right', flipH: 'Flip horizontal', flipV: 'Flip vertical',
         preset: 'Window preset', default: 'Default', lung: 'Lung', bone: 'Bone', brain: 'Brain', soft: 'Soft tissue',
         layout: 'Layout', layoutDefault: 'Default', layoutReview: 'Review', layoutFocus: 'Focus', language: 'Language',
         loading: 'Loading...', initializing: 'Initializing', noStudyUid: 'No study UID', noStudyTitle: 'No study selected',
-        noStudyHelp: 'Open images from a linked examination in RCMS.', noStudyLinked: 'Open the viewer from an exam with linked DICOM images.',
+        noStudyHelp: 'Open images from a linked examination in VIARA.', noStudyLinked: 'Open the viewer from an exam with linked DICOM images.',
         loadingMetadata: 'Loading DICOM metadata', renderedLoaded: 'Rendered image loaded', metadataOnly: 'Metadata-only mode',
         renderUnavailableTitle: 'Pixel rendering unavailable',
         renderUnavailableHelp: 'Metadata is loaded, but Orthanc did not return a rendered image for this instance. Install the official OHIF image or enable DICOMweb rendered retrieval for full diagnostic pixels.',
@@ -476,14 +476,14 @@ const html = String.raw`<!doctype html>
         instancesShort: 'inst', ser: 'Ser', img: 'Img', zoom: 'Zoom', rot: 'Rot', window: 'W'
       },
       ar: {
-        title: 'عارض RCMS التشخيصي', series: 'السلاسل', inspector: 'الفاحص', summary: 'ملخص', tags: 'الوسوم', actions: 'إجراءات',
+        title: 'عارض VIARA التشخيصي', series: 'السلاسل', inspector: 'الفاحص', summary: 'ملخص', tags: 'الوسوم', actions: 'إجراءات',
         filterSeries: 'تصفية السلاسل', searchTags: 'بحث في وسوم DICOM', noMatchingTags: 'لا توجد وسوم مطابقة',
         pan: 'تحريك', measure: 'قياس', crosshair: 'مؤشر', play: 'تشغيل', pause: 'إيقاف', fit: 'ملاءمة', invert: 'عكس', reset: 'إعادة', fullscreen: 'ملء',
         previous: 'الصورة السابقة', next: 'الصورة التالية', rotateLeft: 'تدوير لليسار', rotateRight: 'تدوير لليمين', flipH: 'قلب أفقي', flipV: 'قلب رأسي',
         preset: 'إعداد النافذة', default: 'افتراضي', lung: 'رئة', bone: 'عظام', brain: 'دماغ', soft: 'أنسجة رخوة',
         layout: 'التخطيط', layoutDefault: 'افتراضي', layoutReview: 'مراجعة', layoutFocus: 'تركيز', language: 'اللغة',
         loading: 'جاري التحميل...', initializing: 'بدء التشغيل', noStudyUid: 'لا يوجد معرف دراسة', noStudyTitle: 'لم يتم اختيار دراسة',
-        noStudyHelp: 'افتح الصور من فحص مرتبط داخل RCMS.', noStudyLinked: 'افتح العارض من فحص يحتوي على صور DICOM مرتبطة.',
+        noStudyHelp: 'افتح الصور من فحص مرتبط داخل VIARA.', noStudyLinked: 'افتح العارض من فحص يحتوي على صور DICOM مرتبطة.',
         loadingMetadata: 'جاري تحميل بيانات DICOM', renderedLoaded: 'تم تحميل الصورة', metadataOnly: 'وضع البيانات فقط',
         renderUnavailableTitle: 'تعذر عرض البكسلات',
         renderUnavailableHelp: 'تم تحميل البيانات الوصفية، لكن Orthanc لم يرجع صورة معروضة لهذه اللقطة. ثبّت عارض OHIF الرسمي أو فعّل استرجاع DICOMweb rendered لعرض البكسلات.',
@@ -658,8 +658,8 @@ const html = String.raw`<!doctype html>
       // Load cover thumbnails with Authorization header when token available
       $('seriesList').querySelectorAll('img[data-wado]').forEach(img => {
         const url = img.dataset.wado;
-        if (RCMS_TOKEN) {
-          fetch(url, { headers: { 'Authorization': 'Bearer ' + RCMS_TOKEN } })
+        if (VIARA_TOKEN) {
+          fetch(url, { headers: { 'Authorization': 'Bearer ' + VIARA_TOKEN } })
             .then(r => r.ok ? r.blob() : Promise.reject())
             .then(blob => { img.src = URL.createObjectURL(blob); })
             .catch(() => { img.alt = 'Series'; });
@@ -715,9 +715,9 @@ const html = String.raw`<!doctype html>
         setStatus(t('metadataOnly'), 'warn');
       };
 
-      if (RCMS_TOKEN) {
+      if (VIARA_TOKEN) {
         // Fetch image with Authorization header, display via blob URL
-        fetch(url, { headers: { 'Authorization': 'Bearer ' + RCMS_TOKEN } })
+        fetch(url, { headers: { 'Authorization': 'Bearer ' + VIARA_TOKEN } })
           .then(r => r.ok ? r.blob() : Promise.reject(r.status))
           .then(blob => {
             const blobUrl = URL.createObjectURL(blob);
@@ -836,8 +836,8 @@ const html = String.raw`<!doctype html>
       }
       try {
         setStatus(t('loadingMetadata'));
-        const fetchOpts = RCMS_TOKEN
-          ? { headers: { 'Authorization': 'Bearer ' + RCMS_TOKEN }, cache: 'no-store' }
+        const fetchOpts = VIARA_TOKEN
+          ? { headers: { 'Authorization': 'Bearer ' + VIARA_TOKEN }, cache: 'no-store' }
           : { credentials: 'include', cache: 'no-store' };
         const res = await fetch('/api/pacs/dicom-web/studies/' + encodeURIComponent(studyUid) + '/metadata', fetchOpts);
         if (!res.ok) throw new Error(await res.text() || ('HTTP ' + res.status));
@@ -987,33 +987,33 @@ const html = String.raw`<!doctype html>
 </html>`;
 
 const proxyApi = (req, res) => {
-    const target = new URL(req.url, BACKEND_URL);
-    const headers = { ...req.headers, host: target.host };
-    delete headers.origin;
-    delete headers.referer;
-    // Forward Authorization header if present (Bearer token from rcms_token param injected by viewer)
-    const upstream = http.request(target, { method: req.method, headers }, (upstreamRes) => {
-        res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
-        upstreamRes.pipe(res);
-    });
-    upstream.on('error', (error) => {
-        res.writeHead(502, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ success: false, message: `Backend proxy failed: ${error.message}` }));
-    });
-    req.pipe(upstream);
+  const target = new URL(req.url, BACKEND_URL);
+  const headers = { ...req.headers, host: target.host };
+  delete headers.origin;
+  delete headers.referer;
+  // Forward Authorization header if present (Bearer token from VIARA_token param injected by viewer)
+  const upstream = http.request(target, { method: req.method, headers }, (upstreamRes) => {
+    res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
+    upstreamRes.pipe(res);
+  });
+  upstream.on('error', (error) => {
+    res.writeHead(502, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ success: false, message: `Backend proxy failed: ${error.message}` }));
+  });
+  req.pipe(upstream);
 };
 
 http.createServer((req, res) => {
-    if (req.url.startsWith('/api/')) {
-        proxyApi(req, res);
-        return;
-    }
-    res.writeHead(200, {
-        'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
-        'content-security-policy': "frame-ancestors http://localhost:5173"
-    });
-    res.end(html);
+  if (req.url.startsWith('/api/')) {
+    proxyApi(req, res);
+    return;
+  }
+  res.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-security-policy': "frame-ancestors http://localhost:5173"
+  });
+  res.end(html);
 }).listen(PORT, HOST, () => {
-    console.log(`RCMS PACS fallback viewer listening on http://${HOST}:${PORT}`);
+  console.log(`VIARA PACS fallback viewer listening on http://${HOST}:${PORT}`);
 });

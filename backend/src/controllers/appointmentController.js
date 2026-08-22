@@ -172,8 +172,6 @@ const createAppointment = (db) => async (req, res, next) => {
         await client.query('BEGIN');
 
         try {
-            await assertSchedulingRules(client, data.modalityId, data.startTime, data.endTime);
-
             const idempotencyKey = req.get('Idempotency-Key');
             if (idempotencyKey) {
                 if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
@@ -182,7 +180,7 @@ const createAppointment = (db) => async (req, res, next) => {
                 }
 
                 const existing = await client.query(
-                    `SELECT appointment_id FROM appointment_idempotency_keys
+                    `SELECT resource_id AS appointment_id FROM appointment_idempotency_keys
                      WHERE idempotency_key = $1 AND actor_id = $2 AND operation_type = 'CREATE_APPOINTMENT'`,
                     [idempotencyKey, userId]
                 );
@@ -196,11 +194,40 @@ const createAppointment = (db) => async (req, res, next) => {
                 }
             }
 
+            let waitlistEntry = null;
+            if (data.waitlistId) {
+                const waitlistResult = await client.query(
+                    `SELECT waitlist_id, patient_id, modality_id, exam_type_id, status
+                     FROM waiting_list
+                     WHERE waitlist_id = $1
+                     FOR UPDATE`,
+                    [data.waitlistId]
+                );
+                if (!waitlistResult.rows.length) {
+                    throw new AppError('Waiting list entry not found.', 404);
+                }
+                waitlistEntry = waitlistResult.rows[0];
+                if (!['Waiting', 'Contacted'].includes(waitlistEntry.status)) {
+                    throw new AppError('This waiting list entry is no longer available for booking.', 409);
+                }
+                if (waitlistEntry.patient_id !== data.patientId) {
+                    throw new AppError('The waiting list entry belongs to a different patient.', 409);
+                }
+                if (waitlistEntry.modality_id && waitlistEntry.modality_id !== data.modalityId) {
+                    throw new AppError('The selected machine does not match the waiting list entry.', 409);
+                }
+                if (waitlistEntry.exam_type_id && waitlistEntry.exam_type_id !== data.examTypeId) {
+                    throw new AppError('The selected examination does not match the waiting list entry.', 409);
+                }
+            }
+
+            await assertSchedulingRules(client, data.modalityId, data.startTime, data.endTime);
+
             const conflictQuery = `
               SELECT appointment_id FROM appointments
               WHERE modality_id = $1
               AND status != 'Cancelled'
-              AND tstzrange(start_time, end_time) && tstzrange($2, $3)
+              AND start_time < $3::timestamptz AND end_time > $2::timestamptz
               FOR UPDATE
             `;
 
@@ -219,8 +246,8 @@ const createAppointment = (db) => async (req, res, next) => {
               SELECT appointment_id FROM appointments
               WHERE patient_id = $1
               AND status != 'Cancelled'
-              AND appointment_id != $4
-              AND tstzrange(start_time, end_time) && tstzrange($2, $3)
+              AND ($4::uuid IS NULL OR appointment_id != $4)
+              AND start_time < $3::timestamptz AND end_time > $2::timestamptz
               FOR UPDATE
             `;
 
@@ -352,6 +379,24 @@ const createAppointment = (db) => async (req, res, next) => {
                 appointment.follow_up_reason
             ]);
 
+            if (waitlistEntry) {
+                const waitlistUpdate = await client.query(
+                    `UPDATE waiting_list
+                     SET status = 'Scheduled', assigned_appointment_id = $1, updated_at = NOW()
+                     WHERE waitlist_id = $2 AND status IN ('Waiting', 'Contacted')`,
+                    [appointment.appointment_id, waitlistEntry.waitlist_id]
+                );
+                if (waitlistUpdate.rowCount !== 1) {
+                    throw new AppError('This waiting list entry was changed by another user.', 409);
+                }
+                await client.query(
+                    `INSERT INTO waiting_list_events
+                     (waitlist_id, from_status, to_status, appointment_id, reason, changed_by)
+                     VALUES ($1, $2, 'Scheduled', $3, $4, $5)`,
+                    [waitlistEntry.waitlist_id, waitlistEntry.status, appointment.appointment_id, 'Appointment booked from waiting list', userId]
+                );
+            }
+
             await insertOrderHistory(client, {
                 appointmentId: appointment.appointment_id,
                 examId: examResult.rows[0].exam_id,
@@ -403,6 +448,48 @@ const createAppointment = (db) => async (req, res, next) => {
                 }
             });
 
+            triggerEvent(db, 'OrderCreated', {
+                patientId: appointment.patient_id,
+                entityType: 'Appointment',
+                entityId: appointment.appointment_id,
+                channels: ['InApp'],
+                priority: 'Normal',
+                variables: {
+                    order_number: appointment.order_number,
+                    patient_name: patientName,
+                    exam_type: data.examTypeId || '',
+                    priority: appointment.priority || 'Normal'
+                }
+            });
+
+            triggerEvent(db, 'ExamCreated', {
+                patientId: appointment.patient_id,
+                entityType: 'Exam',
+                entityId: examResult.rows[0].exam_id,
+                channels: ['InApp'],
+                priority: 'Normal',
+                variables: {
+                    order_number: appointment.order_number,
+                    patient_name: patientName,
+                    exam_id: examResult.rows[0].exam_id,
+                    status: examStatus
+                }
+            });
+
+            triggerEvent(db, 'ExamScheduled', {
+                patientId: appointment.patient_id,
+                entityType: 'Exam',
+                entityId: examResult.rows[0].exam_id,
+                channels: ['InApp'],
+                priority: 'Normal',
+                variables: {
+                    order_number: appointment.order_number,
+                    patient_name: patientName,
+                    exam_id: examResult.rows[0].exam_id,
+                    exam_time: apptTime
+                }
+            });
+
             // Fire PrepInstructions notification if preparation is required
             if (appointment.preparation_status && appointment.preparation_status !== 'Not Required') {
                 // Fetch exam type preparation instructions if available
@@ -432,7 +519,7 @@ const createAppointment = (db) => async (req, res, next) => {
 
             res.status(201).json(appointment);
         } catch (error) {
-            await client.query('ROLLBACK');
+            try { await client.query('ROLLBACK'); } catch (rbErr) { /* ignore */ }
             throw error;
         }
 
@@ -600,7 +687,7 @@ const updateAppointment = (db) => async (req, res, next) => {
         await client.query('BEGIN');
 
         const existingResult = await client.query(
-            'SELECT * FROM appointments WHERE appointment_id = $1',
+            'SELECT * FROM appointments WHERE appointment_id = $1 FOR UPDATE',
             [id]
         );
 
@@ -610,6 +697,27 @@ const updateAppointment = (db) => async (req, res, next) => {
         }
 
         const existing = existingResult.rows[0];
+        if (['Cancelled', 'No-Show', 'Completed'].includes(existing.status)) {
+            await client.query('ROLLBACK');
+            return next(new AppError(`A ${existing.status} appointment cannot be edited`, 409));
+        }
+        if (data.status) {
+            if (['Cancelled', 'No-Show', 'Completed'].includes(data.status)) {
+                await client.query('ROLLBACK');
+                return next(new AppError('Use the dedicated cancellation, no-show, or clinical completion workflow', 409));
+            }
+            const editableStatusTransitions = {
+                Scheduled: ['Scheduled', 'Confirmed', 'Arrived', 'Checked-in'],
+                Confirmed: ['Confirmed', 'Arrived', 'Checked-in'],
+                Arrived: ['Arrived', 'Checked-in'],
+                'Checked-in': ['Checked-in']
+            };
+            const allowed = editableStatusTransitions[existing.status] || [existing.status];
+            if (!allowed.includes(data.status)) {
+                await client.query('ROLLBACK');
+                return next(new AppError(`Invalid appointment transition from ${existing.status} to ${data.status}`, 409));
+            }
+        }
         const nextModalityId = data.modalityId ?? existing.modality_id;
         const nextExamTypeId = data.examTypeId ?? existing.exam_type_id;
         const examDefaults = await getExamDefaults(
@@ -646,7 +754,7 @@ const updateAppointment = (db) => async (req, res, next) => {
             payment_amount: data.paymentAmount ?? existing.payment_amount,
             appointment_source: data.appointmentSource ?? existing.appointment_source,
             preparation_status: data.preparationStatus ?? existing.preparation_status,
-            cancellation_reason: data.cancellationReason ?? existing.cancellation_reason,
+            cancellation_reason: existing.cancellation_reason,
             is_follow_up: followUp.is_follow_up,
             prior_exam_id: followUp.prior_exam_id,
             follow_up_reason: followUp.is_follow_up
@@ -801,6 +909,16 @@ const updateAppointment = (db) => async (req, res, next) => {
             id
         ]);
 
+        if (['Arrived', 'Checked-in'].includes(nextAppointment.status)) {
+            await client.query(`
+                UPDATE examinations
+                SET status = 'Checked-in',
+                    queue_stage = CASE WHEN queue_stage = 'Scheduled' THEN 'Arrived' ELSE queue_stage END,
+                    arrived_at = COALESCE(arrived_at, NOW())
+                WHERE appointment_id = $1
+            `, [id]);
+        }
+
         if (updatedExamResult.rowCount === 0 && nextAppointment.status !== 'Cancelled') {
             const examStatus = ['Arrived', 'Checked-in'].includes(nextAppointment.status) ? 'Checked-in' : 'Scheduled';
             const queueStage = ['Arrived', 'Checked-in'].includes(nextAppointment.status) ? 'Arrived' : 'Scheduled';
@@ -913,7 +1031,9 @@ const updateAppointment = (db) => async (req, res, next) => {
 
         res.json(result.rows[0]);
     } catch (error) {
-        if (client) await client.query('ROLLBACK');
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (rbErr) { /* ignore */ }
+        }
         if (error.code === '23P01') {
             return next(new AppError('Time slot occupied.', 409));
         }
@@ -933,15 +1053,28 @@ const markNoShow = (db) => async (req, res, next) => {
         client = await db.connect();
         await client.query('BEGIN');
 
+        const existingResult = await client.query(
+            'SELECT * FROM appointments WHERE appointment_id = $1 FOR UPDATE',
+            [id]
+        );
+        if (!existingResult.rows[0]) throw new AppError('Appointment not found', 404);
+        const existing = existingResult.rows[0];
+        if (!['Scheduled', 'Confirmed'].includes(existing.status)) {
+            throw new AppError(`A ${existing.status} appointment cannot be marked as no-show`, 409);
+        }
+        if (new Date(existing.start_time) > new Date()) {
+            throw new AppError('An appointment cannot be marked as no-show before its scheduled start time', 409);
+        }
+
         const result = await client.query(`
             UPDATE appointments a
             SET status = 'No-Show',
                 no_show_reason = $1,
                 no_show_at = NOW()
-            FROM (SELECT status FROM appointments WHERE appointment_id = $2) previous
+            FROM (SELECT $3::varchar AS status) previous
             WHERE a.appointment_id = $2
             RETURNING a.*, previous.status as old_status
-        `, [reason || null, id]);
+        `, [reason || null, id, existing.status]);
 
         if (result.rows.length === 0) {
             await client.query('ROLLBACK');
@@ -959,9 +1092,25 @@ const markNoShow = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+
+        triggerEvent(db, 'AppointmentNoShow', {
+            patientId: result.rows[0].patient_id,
+            entityType: 'Appointment',
+            entityId: id,
+            channels: ['InApp', 'Email'],
+            priority: 'Warning',
+            variables: {
+                order_number: result.rows[0].order_number || '',
+                appointment_time: new Date(result.rows[0].start_time).toLocaleString(),
+                reason: reason || 'N/A'
+            }
+        });
+
         res.json(result.rows[0]);
     } catch (error) {
-        if (client) await client.query('ROLLBACK');
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (rbErr) { /* ignore */ }
+        }
         next(error);
     } finally {
         if (client) client.release();
@@ -1053,6 +1202,9 @@ const rescheduleAppointment = (db) => async (req, res, next) => {
             patientId: result.rows[0].patient_id,
             entityType: 'Appointment',
             entityId: id,
+            occurrenceKey: result.rows[0].start_time
+                ? new Date(result.rows[0].start_time).toISOString()
+                : undefined,
             channels: ['Email', 'SMS'],
             variables: {
                 order_number: result.rows[0].order_number,
@@ -1062,7 +1214,9 @@ const rescheduleAppointment = (db) => async (req, res, next) => {
         });
         res.json(result.rows[0]);
     } catch (error) {
-        if (client) await client.query('ROLLBACK');
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (rbErr) { /* ignore */ }
+        }
         if (error.code === '23P01') {
             return next(new AppError('Time slot occupied.', 409));
         }
@@ -1206,6 +1360,15 @@ const cancelAppointment = (db) => async (req, res, next) => {
         client = await db.connect();
         await client.query('BEGIN');
 
+        const appointment = await client.query(
+            'SELECT status FROM appointments WHERE appointment_id = $1 FOR UPDATE',
+            [id]
+        );
+        if (!appointment.rows[0]) throw new AppError('Appointment not found', 404);
+        if (['Cancelled', 'No-Show', 'Completed'].includes(appointment.rows[0].status)) {
+            throw new AppError(`A ${appointment.rows[0].status} appointment cannot be cancelled`, 409);
+        }
+
         // #14 — Guard: prevent deletion if there are associated payments/invoices
         const invoiceCheck = await client.query(`
             SELECT i.invoice_id, i.invoice_status
@@ -1256,6 +1419,12 @@ const cancelAppointment = (db) => async (req, res, next) => {
             return next(new AppError('Appointment not found', 404));
         }
 
+        await client.query(`
+            UPDATE examinations
+            SET queue_stage = 'Cancelled'
+            WHERE appointment_id = $1 AND queue_stage NOT IN ('Finalized', 'Delivered')
+        `, [id]);
+
         await logAction(client, {
             userId: req.user.user_id,
             action: 'APPOINTMENT_CANCELLED',
@@ -1274,7 +1443,9 @@ const cancelAppointment = (db) => async (req, res, next) => {
         });
         res.json({ message: 'Appointment cancelled; its history was preserved' });
     } catch (error) {
-        if (client) await client.query('ROLLBACK');
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (rbErr) { /* ignore */ }
+        }
         next(error);
     } finally {
         if (client) client.release();

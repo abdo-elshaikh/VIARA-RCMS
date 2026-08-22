@@ -1,7 +1,9 @@
 const { z } = require('zod');
+const { calendarDateSchema } = require('../utils/dateValidation');
 
 const emptyToUndefined = (value) => value === '' ? undefined : value;
-const optionalDate = z.preprocess(emptyToUndefined, z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional());
+const dateSchema = calendarDateSchema();
+const optionalDate = z.preprocess(emptyToUndefined, dateSchema.optional());
 const optionalEmail = z.preprocess(emptyToUndefined, z.string().email().max(150).optional());
 const optionalUrl = z.preprocess(emptyToUndefined, z.string().url().optional());
 
@@ -82,29 +84,12 @@ const approvalSchema = z.object({
     appointmentId: z.string().uuid().optional(),
     examId: z.string().uuid().optional(),
     examTypeId: z.string().uuid().optional(),
-    status: z.enum(['Not Required', 'Pending', 'Approved', 'Rejected', 'Expired']).optional(),
+    status: z.enum(['Not Required', 'Pending']).optional(),
     approvalNumber: z.string().trim().max(100).optional(),
     requestedAmount: z.coerce.number().min(0).optional(),
-    approvedAmount: z.coerce.number().min(0).optional(),
     documentUrl: optionalUrl,
-    rejectionReason: z.string().trim().max(1000).optional(),
     expiresAt: optionalDate
-}).superRefine((data, context) => {
-    if (data.status === 'Approved') {
-        if (!data.approvalNumber?.trim()) {
-            context.addIssue({ code: z.ZodIssueCode.custom, path: ['approvalNumber'], message: 'Approved authorizations require an approval number' });
-        }
-        if (data.approvedAmount !== undefined && data.approvedAmount > 0 && data.requestedAmount === undefined) {
-            context.addIssue({ code: z.ZodIssueCode.custom, path: ['requestedAmount'], message: 'Requested amount is required when an approved amount is entered' });
-        }
-        if (data.approvedAmount !== undefined && data.requestedAmount !== undefined && data.approvedAmount > data.requestedAmount) {
-            context.addIssue({ code: z.ZodIssueCode.custom, path: ['approvedAmount'], message: 'Approved amount cannot exceed requested amount' });
-        }
-    }
-    if (data.status === 'Rejected' && !data.rejectionReason?.trim()) {
-        context.addIssue({ code: z.ZodIssueCode.custom, path: ['rejectionReason'], message: 'Rejected authorizations require a rejection reason' });
-    }
-});
+}).strict();
 
 const updateApprovalStatusSchema = z.object({
     status: z.enum(['Approved', 'Rejected']),
@@ -130,9 +115,12 @@ const updateApprovalStatusSchema = z.object({
 
 const coverageQuerySchema = z.object({
     providerId: z.string().uuid(),
+    contractId: z.string().uuid().optional(),
+    policyId: z.string().uuid().optional(),
     examTypeId: z.string().uuid().optional(),
     modalityType: z.string().optional(),
-    amount: z.string().regex(/^\d+(\.\d+)?$/).transform(Number)
+    serviceDate: dateSchema.optional(),
+    amount: z.string().regex(/^\d+(\.\d{1,2})?$/).transform(Number)
 });
 
 module.exports = {

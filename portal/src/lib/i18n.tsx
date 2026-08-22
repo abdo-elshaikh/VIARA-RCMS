@@ -45,8 +45,8 @@ const dict: Record<string, { en: string; ar: string }> = {
   "hero.title.b": { en: "calm visits", ar: "زيارات هادئة" },
   "hero.title.c": { en: ", secure results.", ar: "، ونتائج آمنة." },
   "hero.subtitle": {
-    en: "RCMS brings MRI, CT, X-ray, ultrasound, reporting, billing, and portal access into one refined diagnostic experience.",
-    ar: "يجمع RCMS بين الرنين المغناطيسي والمقطعية والأشعة السينية والموجات فوق الصوتية والتقارير والفوترة والوصول للبوابة في تجربة تشخيصية موحّدة.",
+    en: "VIARA brings MRI, CT, X-ray, ultrasound, reporting, billing, and portal access into one refined diagnostic experience.",
+    ar: "يجمع VIARA بين الرنين المغناطيسي والمقطعية والأشعة السينية والموجات فوق الصوتية والتقارير والفوترة والوصول للبوابة في تجربة تشخيصية موحّدة.",
   },
   "hero.chip.consultant": { en: "Consultant radiologists", ar: "استشاريو الأشعة" },
   "hero.chip.digital": { en: "Digital reports", ar: "تقارير رقمية" },
@@ -187,7 +187,7 @@ const dict: Record<string, { en: string; ar: string }> = {
   "login.signingIn": { en: "Signing in…", ar: "جاري تسجيل الدخول…" },
   "login.notPatient": { en: "Not a patient here?", ar: "لست مريضاً بالمركز؟" },
   "login.doctorLink": { en: "Doctor sign in", ar: "دخول الأطباء المُحيلين" },
-  "login.backToRCMS": { en: "Back to RCMS", ar: "العودة للموقع الرئيسي" },
+  "login.backToVIARA": { en: "Back to VIARA", ar: "العودة للموقع الرئيسي" },
   "login.backToPatient": { en: "Back to patient portal", ar: "العودة لبوابة المريض" },
   "login.backToDoctor": { en: "Back to doctor portal", ar: "العودة لبوابة الطبيب" },
   "login.encrypted": { en: "End-to-end encrypted", ar: "تشفير تام للبيانات" },
@@ -285,7 +285,7 @@ const dict: Record<string, { en: string; ar: string }> = {
   "portal.downloadPdf": { en: "Download PDF", ar: "تحميل PDF" },
   "portal.viewDicom": { en: "View DICOM", ar: "عرض DICOM" },
   "portal.dicomPreview": { en: "DICOM Preview (Sample)", ar: "معاينة DICOM (نموذج)" },
-  "portal.dicomWorkstation": { en: "RCMS DICOM Workstation", ar: "محطة عمل DICOM - RCMS" },
+  "portal.dicomWorkstation": { en: "VIARA DICOM Workstation", ar: "محطة عمل DICOM - VIARA" },
   "portal.launchDicomViewer": { en: "Click to Launch DICOM Preview (Sample)", ar: "انقر لتشغيل معاينة DICOM (نموذج)" },
   "portal.launchViewer": { en: "Launch Viewer", ar: "تشغيل العارض" },
   "portal.viewReport": { en: "View signed report", ar: "عرض التقرير المعتمد" },
@@ -309,7 +309,7 @@ const dict: Record<string, { en: string; ar: string }> = {
   "portal.encryptionNote": { en: "HIPAA Grade Encryption: Personal health details and access logs are protected end-to-end.", ar: "تشفير بمعايير HIPAA: البيانات الصحية محمية بالكامل." },
 
   // Loyalty / rewards
-  "portal.careRewards": { en: "RCMS Care Rewards", ar: "مكافآت رعاية RCMS" },
+  "portal.careRewards": { en: "VIARA Care Rewards", ar: "مكافآت رعاية VIARA" },
   "portal.tierPlatinum": { en: "Platinum", ar: "بلاتيني" },
   "portal.tierGold": { en: "Gold", ar: "ذهبي" },
   "portal.tierSilver": { en: "Silver", ar: "فضي" },
@@ -365,7 +365,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("rcms-lang");
+      const stored = localStorage.getItem("VIARA-lang");
       if (stored === "ar" || stored === "en") setLang(stored);
     } catch { }
     const id = setTimeout(() => {
@@ -381,7 +381,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     document.documentElement.setAttribute("dir", dir);
     if (!hydrated.current) return;
     try {
-      localStorage.setItem("rcms-lang", lang);
+      localStorage.setItem("VIARA-lang", lang);
     } catch { }
   }, [lang]);
 

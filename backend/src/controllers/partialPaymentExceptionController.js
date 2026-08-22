@@ -1,6 +1,7 @@
 const { AppError } = require('../middleware/errorHandler');
 const { decrypt } = require('../utils/crypto');
 const { getInvoicePaymentPosition } = require('../services/partialPaymentExceptionService');
+const { triggerEventForRole } = require('../services/notificationJobService');
 
 const getUserId = (req) => req.user?.user_id || req.user?.userId || null;
 
@@ -104,11 +105,31 @@ const requestPartialPaymentException = (db) => async (req, res, next) => {
             req.body.responsiblePartyId || null,
             getUserId(req),
             req.body.expiresAt || null,
-            JSON.stringify(req.body.metadata || {})
+            JSON.stringify({ ...(req.body.metadata || {}), targetStage: req.body.targetStage })
         ]);
 
         await client.query('COMMIT');
         res.status(201).json(result.rows[0]);
+
+        triggerEventForRole(db, 'PartialPaymentException', 'Accountant', {
+            priority: 'Warning',
+            variables: {
+                invoice_number: position.invoice_number || '',
+                patient_name: '',
+                amount: position.balance_amount || 0,
+                reason: req.body.reason || ''
+            }
+        }).catch(() => {});
+
+        triggerEventForRole(db, 'PartialPaymentException', 'Admin', {
+            priority: 'Warning',
+            variables: {
+                invoice_number: position.invoice_number || '',
+                patient_name: '',
+                amount: position.balance_amount || 0,
+                reason: req.body.reason || ''
+            }
+        }).catch(() => {});
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         if (error.code === '23505') {
@@ -148,12 +169,12 @@ const reviewPartialPaymentException = (db) => async (req, res, next) => {
 
         const result = await client.query(`
             UPDATE partial_payment_exceptions
-            SET status = $1,
+            SET status = $1::varchar(20),
                 reviewed_by = $2,
                 reviewed_at = NOW(),
                 review_notes = $3,
                 expires_at = CASE
-                    WHEN $1 = 'Approved' THEN COALESCE($4::timestamptz, expires_at, NOW() + INTERVAL '24 hours')
+                    WHEN $1::varchar(20) = 'Approved' THEN COALESCE($4::timestamptz, expires_at, NOW() + INTERVAL '24 hours')
                     ELSE expires_at
                 END
             WHERE exception_id = $5
@@ -168,6 +189,26 @@ const reviewPartialPaymentException = (db) => async (req, res, next) => {
 
         await client.query('COMMIT');
         res.json(result.rows[0]);
+
+        triggerEventForRole(db, 'PartialPaymentException', 'Accountant', {
+            priority: 'Warning',
+            variables: {
+                invoice_number: request.invoice_id || '',
+                patient_name: '',
+                amount: request.requested_balance_amount || 0,
+                reason: `Status changed to ${req.body.status}: ${req.body.reviewNotes || ''}`
+            }
+        }).catch(() => {});
+
+        triggerEventForRole(db, 'PartialPaymentException', 'Admin', {
+            priority: 'Warning',
+            variables: {
+                invoice_number: request.invoice_id || '',
+                patient_name: '',
+                amount: request.requested_balance_amount || 0,
+                reason: `Status changed to ${req.body.status}: ${req.body.reviewNotes || ''}`
+            }
+        }).catch(() => {});
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         next(error);

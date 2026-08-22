@@ -18,7 +18,7 @@ END $$;
 -- Seed new users
 INSERT INTO users (full_name, email, password_hash, role, is_active)
 VALUES
-('Human Resources', 'hr@rcms.com', '***REMOVED***', 'HR', TRUE),
-('Tech Tom', 'tech@rcms.com', '***REMOVED***', 'Technician', TRUE),
-('Nurse Nancy', 'nurse@rcms.com', '***REMOVED***', 'Nurse', TRUE)
+('Human Resources', 'hr@VIARA.com', '***REMOVED***', 'HR', TRUE),
+('Tech Tom', 'tech@VIARA.com', '***REMOVED***', 'Technician', TRUE),
+('Nurse Nancy', 'nurse@VIARA.com', '***REMOVED***', 'Nurse', TRUE)
 ON CONFLICT (email) DO NOTHING;

@@ -168,9 +168,14 @@ const getPatientDocuments = (db) => async (req, res, next) => {
         await logAction(db, {
             userId: req.user.user_id,
             action: 'DOCUMENT_LIST_VIEWED',
+            eventCode: 'DOCUMENT.LIST_VIEWED',
+            category: 'PHI_ACCESS',
             resourceId: id,
             resourceTable: 'patients',
+            patientId: id,
             ipAddress: req.ip,
+            httpMethod: req.method,
+            requestPath: req.originalUrl?.split('?')[0],
             details: { documentCount: result.rows.length }
         });
         res.json(result.rows);

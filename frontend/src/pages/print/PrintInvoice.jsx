@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useGetInvoiceQuery, useGetCenterSettingsQuery } from '../../store/api';
 import { Loader2, Building2, Printer, Settings2, Layout } from 'lucide-react';
 import LanguageToggle from '../../components/ui/LanguageToggle';
-import { normalizeCenterSettings } from '../../utils/centerSettings';
+import { normalizeCenterSettings, resolveDocumentIdentity } from '../../utils/centerSettings';
 
 const PrintInvoice = () => {
     const { id } = useParams();
@@ -20,7 +20,7 @@ const PrintInvoice = () => {
     const [invoiceDisplayNumber, setInvoiceDisplayNumber] = useState('');
     
     // Advanced print settings states
-    const [themeColor, setThemeColor] = useState('#0f766e');
+    const [themeColor, setThemeColor] = useState('#087F5B');
     const [fontFamily, setFontFamily] = useState('Inter');
     const [headerLayout, setHeaderLayout] = useState('classic');
     const [showWatermark, setShowWatermark] = useState(true);
@@ -51,15 +51,16 @@ const PrintInvoice = () => {
     if (invError || !invoice) return <div className="p-8 text-center font-bold text-red-500">{t('errors.loadFailed', { defaultValue: 'Failed to load details' })}</div>;
 
     const centerSettings = normalizeCenterSettings(settings);
-    const centerName = centerSettings.center_name;
-    const branchName = centerSettings.branch_name;
-    const logoUrl = centerSettings.logo_url;
+    const documentIdentity = resolveDocumentIdentity(centerSettings, invoice, { language: i18n.language, kind: 'invoice' });
+    const centerName = documentIdentity.centerName;
+    const branchName = documentIdentity.branchName;
+    const logoUrl = documentIdentity.logoUrl;
     const contactPerson = centerSettings.contact_person;
     const otherDetails = centerSettings.other_details;
-    const address = centerSettings.address;
-    const phone = centerSettings.phone;
-    const email = centerSettings.email;
-    const taxId = centerSettings.tax_id;
+    const address = documentIdentity.address;
+    const phone = documentIdentity.phone;
+    const email = documentIdentity.email;
+    const taxId = documentIdentity.taxNumber;
 
     const getPageDimensions = () => {
         if (paperSize === 'A4') return orientation === 'portrait' ? { width: '210mm', minHeight: '297mm' } : { width: '297mm', minHeight: '210mm' };
@@ -175,12 +176,11 @@ const PrintInvoice = () => {
                     <div>
                         <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2">Color Theme</label>
                         <select value={themeColor} onChange={e => setThemeColor(e.target.value)} className="w-full text-xs font-bold border border-slate-200 rounded-lg p-2 bg-white">
-                            <option value="#0f766e">Teal Accent</option>
-                            <option value="#1e3a8a">Navy Blue</option>
-                            <option value="#334155">Charcoal Slate</option>
-                            <option value="#881337">Crimson Burgundy</option>
-                            <option value="#4f46e5">Indigo Violet</option>
-                            <option value="#0284c7">Sky Azure</option>
+                            <option value="#087F5B">VIARA Emerald</option>
+                            <option value="#327C92">Clinical Info</option>
+                            <option value="#F4B942">Attention Amber</option>
+                            <option value="#D95757">Critical Coral</option>
+                            <option value="#172326">Clinical Charcoal</option>
                         </select>
                     </div>
 
@@ -421,7 +421,8 @@ const PrintInvoice = () => {
                     {/* Footer */}
                     <div className="mt-14 border-t border-slate-200 pt-6 text-center text-[10px] font-bold text-slate-400 tracking-wide uppercase">
                         <p>{t('billing.thankYou', { defaultValue: 'Thank you for choosing' })} {centerName}.</p>
-                        <p className="mt-1 text-[9px] text-slate-400/80 font-semibold lowercase tracking-normal">{t('billing.questions', { defaultValue: 'For any questions regarding this invoice, please contact' })} {email} {t('common.or', { defaultValue: 'or' })} {phone}.</p>
+                        <p className="mt-1 text-[9px] text-slate-400/80 font-semibold lowercase tracking-normal">{t('billing.questions', { defaultValue: 'For any questions regarding this invoice, please contact' })} {[email, phone].filter(Boolean).join(` ${t('common.or', { defaultValue: 'or' })} `)}.</p>
+                        {documentIdentity.poweredBy && <p className="mt-2 text-[8px] font-semibold normal-case tracking-normal text-slate-300">{documentIdentity.poweredBy}</p>}
                     </div>
                 </div>
             </main>

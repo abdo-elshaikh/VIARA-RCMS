@@ -6,6 +6,7 @@ import {
     CheckCircle2,
     Clock,
     KeyRound,
+    Fingerprint,
     LogOut,
     Monitor,
     QrCode,
@@ -23,14 +24,20 @@ import {
     useGetProfileSessionsQuery,
     useRevokeProfileSessionMutation,
     useSetup2FAMutation
+    , useGetPasskeysQuery
+    , usePasskeyRegistrationOptionsMutation
+    , usePasskeyRegistrationVerifyMutation
+    , useRenamePasskeyMutation
+    , useRevokePasskeyMutation
 } from '../../store/api';
 import { logOut } from '../../store/authSlice';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 import { formatRelativeTime } from '../../utils/dateFormat';
+import { getPasskeyErrorKind, getPasskeySupport, registerPasskey } from '../../utils/passkeys';
 
 const emptyPwd = { currentPassword: '', newPassword: '', confirmPassword: '' };
 const panel = 'rounded-2xl border border-slate-200/80 bg-white shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/50';
-const input = 'w-full rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-900 outline-none transition-all focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950/50 dark:text-white dark:focus:border-cyan-500 dark:focus:ring-cyan-500/10';
+const input = 'w-full rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-900 outline-none transition-all focus:border-[var(--VIARA-accent)] focus:ring-4 focus:ring-[rgba(var(--VIARA-accent-rgb),0.12)] disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950/50 dark:text-white dark:focus:border-[var(--VIARA-accent)] dark:focus:ring-[rgba(var(--VIARA-accent-rgb),0.16)]';
 
 const SecuritySettings = () => {
     const { t } = useTranslation(['settings', 'common']);
@@ -42,6 +49,11 @@ const SecuritySettings = () => {
     const [revokeSession] = useRevokeProfileSessionMutation();
     const [setup2FA] = useSetup2FAMutation();
     const [enable2FA] = useEnable2FAMutation();
+    const { data: passkeyData, isLoading: passkeysLoading } = useGetPasskeysQuery();
+    const [getRegistrationOptions] = usePasskeyRegistrationOptionsMutation();
+    const [verifyRegistration] = usePasskeyRegistrationVerifyMutation();
+    const [renamePasskey] = useRenamePasskeyMutation();
+    const [revokePasskey] = useRevokePasskeyMutation();
 
     const [pwdForm, setPwdForm] = useState(emptyPwd);
     const [revokingId, setRevokingId] = useState(null);
@@ -50,8 +62,12 @@ const SecuritySettings = () => {
     const [otp, setOtp] = useState('');
     const [show2FA, setShow2FA] = useState(false);
     const [isProc2FA, setIsProc2FA] = useState(false);
+    const [passkeyForm, setPasskeyForm] = useState({ label: '', currentPassword: '' });
+    const [isPasskeyBusy, setIsPasskeyBusy] = useState(false);
 
     const sessions = sessionData?.sessions || [];
+    const passkeys = passkeyData?.passkeys || [];
+    const passkeySupport = getPasskeySupport();
     const is2FAEnabled = profile?.is2FAEnabled || false;
     const pwdFilled = pwdForm.currentPassword && pwdForm.newPassword && pwdForm.confirmPassword;
     const strength = strengthOf(pwdForm.newPassword);
@@ -131,6 +147,48 @@ const SecuritySettings = () => {
         }
     };
 
+    const handleRegisterPasskey = async () => {
+        if (!passkeySupport.supported) {
+            toast.error(passkeySupport.reason === 'insecure' ? 'Passkeys require HTTPS.' : 'Passkeys are not supported on this device.');
+            return;
+        }
+        if (!passkeyForm.label.trim() || !passkeyForm.currentPassword) {
+            toast.error('Enter a device label and your current password.');
+            return;
+        }
+        setIsPasskeyBusy(true);
+        try {
+            const ceremony = await getRegistrationOptions({ currentPassword: passkeyForm.currentPassword }).unwrap();
+            const response = await registerPasskey(ceremony.options);
+            await verifyRegistration({ ceremonyId: ceremony.ceremonyId, label: passkeyForm.label.trim(), response }).unwrap();
+            setPasskeyForm({ label: '', currentPassword: '' });
+            toast.success('Passkey registered.');
+        } catch (error) {
+            if (getPasskeyErrorKind(error) !== 'cancelled') toast.error(getErrorMessage(error, 'Passkey registration failed.'));
+        } finally {
+            setIsPasskeyBusy(false);
+        }
+    };
+
+    const handleRenamePasskey = async passkey => {
+        const label = window.prompt('Passkey name', passkey.label);
+        if (!label?.trim() || label.trim() === passkey.label) return;
+        try {
+            await renamePasskey({ id: passkey.id, label: label.trim() }).unwrap();
+            toast.success('Passkey renamed.');
+        } catch (error) { toast.error(getErrorMessage(error, 'Could not rename passkey.')); }
+    };
+
+    const handleRevokePasskey = async passkey => {
+        if (!window.confirm(`Remove “${passkey.label}”?`)) return;
+        const currentPassword = passkeys.length === 1 ? window.prompt('Enter your current password to remove your final passkey') : '';
+        if (passkeys.length === 1 && !currentPassword) return;
+        try {
+            await revokePasskey({ id: passkey.id, currentPassword }).unwrap();
+            toast.success('Passkey removed.');
+        } catch (error) { toast.error(getErrorMessage(error, 'Could not remove passkey.')); }
+    };
+
     return (
         <div className="space-y-4">
             <section className={`${panel} p-4 sm:p-5`}>
@@ -171,6 +229,23 @@ const SecuritySettings = () => {
                         <button type="button" onClick={handleSavePwd} disabled={!pwdFilled || isSavingPwd} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-teal-700 px-5 text-sm font-bold text-white transition-colors hover:bg-teal-800 disabled:opacity-40 dark:bg-teal-600 dark:hover:bg-teal-500">
                             {isSavingPwd ? t('common:saving', 'Saving...') : t('settings.changePasswordBtn', 'Change password')}
                         </button>
+                    </div>
+                </div>
+            </section>
+
+            <section className={`${panel} overflow-hidden`}>
+                <PanelHead icon={Fingerprint} title="Passkeys" description="Sign in with your fingerprint, face, device PIN, or security key. Biometric data stays on your device." />
+                <div className="space-y-4 p-4 sm:p-5">
+                    {!passkeySupport.supported ? <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{passkeySupport.reason === 'insecure' ? 'Passkey management requires HTTPS.' : 'This browser does not support passkeys.'}</p> : null}
+                    <div className="grid gap-3 md:grid-cols-2">
+                        <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">Device label</span><input value={passkeyForm.label} maxLength={80} onChange={event => setPasskeyForm(previous => ({ ...previous, label: event.target.value }))} placeholder="e.g. Windows Hello workstation" className={input} /></label>
+                        <PasswordField label="Current password" value={passkeyForm.currentPassword} onChange={value => setPasskeyForm(previous => ({ ...previous, currentPassword: value }))} disabled={isPasskeyBusy} />
+                    </div>
+                    <div className="flex justify-end"><button type="button" onClick={handleRegisterPasskey} disabled={isPasskeyBusy || !passkeySupport.supported} className="min-h-10 rounded-lg bg-teal-700 px-5 text-sm font-bold text-white disabled:opacity-40 dark:bg-teal-600">{isPasskeyBusy ? 'Waiting for device...' : 'Add passkey'}</button></div>
+                    <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                        {passkeysLoading ? <SessionSkeleton /> : null}
+                        {!passkeysLoading && passkeys.length === 0 ? <p className="p-5 text-center text-sm text-slate-500">No passkeys registered.</p> : null}
+                        {passkeys.map(passkey => <div key={passkey.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-bold text-slate-950 dark:text-white">{passkey.label}</p><p className="mt-1 text-xs text-slate-500">{passkey.backedUp ? 'Synced passkey' : 'Device-bound passkey'} · Added {formatRelativeTime(passkey.createdAt)}{passkey.lastUsedAt ? ` · Used ${formatRelativeTime(passkey.lastUsedAt)}` : ''}</p></div><div className="flex gap-2"><button type="button" onClick={() => handleRenamePasskey(passkey)} className="min-h-9 rounded-lg border border-slate-200 px-3 text-xs font-bold dark:border-slate-700">Rename</button><button type="button" onClick={() => handleRevokePasskey(passkey)} className="min-h-9 rounded-lg border border-rose-200 px-3 text-xs font-bold text-rose-600 dark:border-rose-900">Remove</button></div></div>)}
                     </div>
                 </div>
             </section>
@@ -362,7 +437,7 @@ const STRENGTH_META = [
     { label: 'Empty', color: 'bg-slate-300', width: 'w-0' },
     { label: 'Weak', color: 'bg-rose-500', width: 'w-1/4' },
     { label: 'Fair', color: 'bg-amber-500', width: 'w-2/4' },
-    { label: 'Good', color: 'bg-blue-500', width: 'w-3/4' },
+    { label: 'Good', color: 'bg-teal-500', width: 'w-3/4' },
     { label: 'Strong', color: 'bg-emerald-500', width: 'w-full' }
 ];
 

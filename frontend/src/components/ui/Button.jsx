@@ -13,15 +13,15 @@ const Button = ({
     type = 'button',
     ...props
 }) => {
-    const baseStyles = 'inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-200 focus:outline-none focus-visible:ring-4 focus-visible:ring-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none';
+    const baseStyles = 'inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-200 focus:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(var(--VIARA-accent-rgb),0.20)] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none';
 
     const variants = {
-        primary: 'bg-cyan-700 text-white shadow-sm hover:bg-cyan-800 hover:shadow-md hover:-translate-y-0.5',
-        secondary: 'border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-muted)] dark:text-[var(--rcms-ink)] dark:hover:bg-[var(--rcms-surface-hover)]',
+        primary: 'bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)] shadow-sm hover:bg-[var(--VIARA-accent-dark)] hover:shadow-md hover:-translate-y-0.5',
+        secondary: 'border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-muted)] dark:text-[var(--VIARA-ink)] dark:hover:bg-[var(--VIARA-surface-hover)]',
         success: 'bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 hover:-translate-y-0.5',
         danger: 'bg-red-700 text-white shadow-sm hover:bg-red-800 hover:-translate-y-0.5',
-        outline: 'border border-cyan-700 bg-white text-cyan-700 hover:bg-cyan-50 dark:border-cyan-300/35 dark:bg-transparent dark:text-cyan-200 dark:hover:bg-cyan-400/10',
-        ghost: 'text-slate-700 hover:bg-slate-100 dark:text-[var(--rcms-ink)] dark:hover:bg-[var(--rcms-surface-hover)]',
+        outline: 'border border-[rgba(var(--VIARA-accent-rgb),0.45)] bg-white text-[var(--VIARA-accent)] hover:bg-[var(--VIARA-accent-soft)] dark:border-[rgba(var(--VIARA-accent-rgb),0.45)] dark:bg-transparent dark:text-[var(--VIARA-accent-text)] dark:hover:bg-[rgba(var(--VIARA-accent-rgb),0.12)]',
+        ghost: 'text-slate-700 hover:bg-slate-100 dark:text-[var(--VIARA-ink)] dark:hover:bg-[var(--VIARA-surface-hover)]',
     };
 
     const sizes = {

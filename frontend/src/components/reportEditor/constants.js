@@ -430,14 +430,14 @@ export const BUILT_IN_REPORT_TEMPLATES = [
 // Presentational design tokens (kept here so both the page and the extracted UI
 // components share one source of truth).
 export const PANEL =
-    'rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-raised)]';
+    'rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)]';
 export const PANEL_HEADER =
-    'flex items-center justify-between gap-3 border-b border-slate-100/80 px-5 py-3.5 dark:border-[var(--rcms-line)]';
+    'flex items-center justify-between gap-3 border-b border-slate-100/80 px-5 py-3.5 dark:border-[var(--VIARA-line)]';
 export const PANEL_TITLE =
     'text-[11px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300';
 export const SOFT_BUTTON =
-    'inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-raised)] dark:text-slate-300 dark:hover:bg-[var(--rcms-surface-hover)] dark:hover:text-teal-300';
+    'inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-300 dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-teal-300';
 export const PRIMARY_BUTTON =
-    'inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-teal-600 dark:hover:bg-teal-500 dark:focus-visible:ring-offset-[var(--rcms-canvas)]';
+    'inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-teal-600 dark:hover:bg-teal-500 dark:focus-visible:ring-offset-[var(--VIARA-canvas)]';
 export const FLOATING_FOOTER =
-    'fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-3 py-2.5 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface)]/95 sm:inset-x-4 sm:bottom-4 sm:rounded-2xl sm:border lg:inset-x-6 print:hidden';
+    'fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-3 py-2.5 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]/95 sm:inset-x-4 sm:bottom-4 sm:rounded-2xl sm:border lg:inset-x-6 print:hidden';

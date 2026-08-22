@@ -17,12 +17,12 @@ describe('Help knowledge center', () => {
     it('shows role-relevant guidance and performs a real article search', () => {
         render(<MemoryRouter><Help /></MemoryRouter>);
 
-        expect(screen.getAllByText('Create and finalize a diagnostic report').length).toBeGreaterThan(0);
-        expect(screen.queryByText('Govern roles and permissions')).not.toBeInTheDocument();
+        expect(screen.getAllByText('Radiology Diagnostic Report Editor').length).toBeGreaterThan(0);
+        expect(screen.queryByText('Role-Based Access Control (RBAC) & Security Governance')).not.toBeInTheDocument();
 
-        fireEvent.change(screen.getByLabelText('Search help guides'), { target: { value: 'Word' } });
-        expect(screen.getAllByText('Create and finalize a diagnostic report').length).toBeGreaterThan(0);
-        expect(screen.getByRole('button', { name: /Create and finalize a diagnostic report/ })).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: /Book and coordinate appointments/ })).not.toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText('Search help guides'), { target: { value: 'electronic signature' } });
+        expect(screen.getAllByText('Radiology Diagnostic Report Editor').length).toBeGreaterThan(0);
+        expect(screen.getByRole('button', { name: /Radiology Diagnostic Report Editor/ })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Multi-Room Appointment Scheduler/ })).not.toBeInTheDocument();
     });
 });

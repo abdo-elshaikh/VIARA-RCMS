@@ -32,7 +32,7 @@ const encryptBackup = async (sourcePath, destinationPath) => {
     }
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(configuredKey, 'hex'), iv);
-    await fsp.writeFile(destinationPath, Buffer.concat([Buffer.from('RCMSBKP2'), iv]), { mode: 0o600 });
+    await fsp.writeFile(destinationPath, Buffer.concat([Buffer.from('VIARABKP2'), iv]), { mode: 0o600 });
     await pipeline(
         fs.createReadStream(sourcePath),
         cipher,
@@ -150,9 +150,9 @@ const cleanupBackups = async () => {
 const createPostgresBackup = async () => {
     const backupDir = await ensureBackupDir();
     const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
-    const filename = `rcms_pg_${timestamp}.dump.enc`;
+    const filename = `VIARA_pg_${timestamp}.dump.enc`;
     const filepath = path.join(backupDir, filename);
-    const temporaryPath = path.join(backupDir, `rcms_pg_${timestamp}.dump.tmp`);
+    const temporaryPath = path.join(backupDir, `VIARA_pg_${timestamp}.dump.tmp`);
     const encryptedTemporaryPath = `${filepath}.tmp`;
     const environment = buildPgEnvironment();
     const pgDump = process.env.PG_DUMP_PATH || 'pg_dump';

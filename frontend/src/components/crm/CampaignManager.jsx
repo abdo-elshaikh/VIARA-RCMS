@@ -11,7 +11,6 @@ import {
 } from '../../store/api';
 import { selectCurrentUser } from '../../store/authSlice';
 import { getErrorMessage } from '../../utils/getErrorMessage';
-import { hasDeveloperOrAdminRole } from '../../utils/roles';
 import { useTranslation } from 'react-i18next';
 
 const emptyCampaign = { name: '', messageSubject: '', messageBody: '', targetSegment: '', channel: 'SMS', budget: '', startDate: '', endDate: '' };
@@ -23,7 +22,8 @@ const CampaignManager = () => {
     const copy = (key, options) => t(`marketing.campaigns.${key}`, options);
     const locale = i18n.language?.startsWith('ar') ? 'ar-EG' : 'en-EG';
     const user = useSelector(selectCurrentUser);
-    const canManage = hasDeveloperOrAdminRole(user?.role) || user?.role === 'Marketing';
+    const effectivePermissions = new Set([...(user?.permissions || []), ...(user?.elevatedPermissions || [])]);
+    const canManage = ['Developer', 'Admin'].includes(user?.role) || effectivePermissions.has('MANAGE_CRM');
     const { data: campaigns = [], isLoading, isError, refetch, isFetching } = useGetCampaignsQuery();
     const { data: segments = [], isLoading: segmentsLoading } = useGetSegmentsQuery();
     const [createCampaign, { isLoading: isCreating }] = useCreateCampaignMutation();

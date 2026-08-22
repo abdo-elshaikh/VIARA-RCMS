@@ -3,6 +3,7 @@ import { Copy, Eye, EyeOff, FileText, Printer, ShieldCheck, X } from 'lucide-rea
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { Modal } from './ui';
+import { VIARA_BRAND } from '../config/brand';
 import { useGetCenterSettingsQuery } from '../store/api';
 import { normalizeCenterSettings } from '../utils/centerSettings';
 
@@ -22,7 +23,7 @@ const CredentialHandoffDialog = ({ isOpen, onClose, credentials }) => {
     const centerSettings = normalizeCenterSettings(rawCenterSettings || {});
     const centerName = [centerSettings.center_name, centerSettings.branch_name].filter(Boolean).join(' - ') || centerSettings.center_name;
     const logoUrl = centerSettings.logo_url;
-    const centerInitials = String(centerSettings.center_name || 'RCMS').trim().slice(0, 4).toUpperCase();
+    const centerInitials = String(centerSettings.center_name || VIARA_BRAND.name).trim().slice(0, 4).toUpperCase();
     const language = i18n.resolvedLanguage?.split('-')[0] || i18n.language?.split('-')[0] || 'en';
     const direction = language === 'ar' ? 'rtl' : 'ltr';
     const payload = useMemo(() => {
@@ -61,7 +62,7 @@ const CredentialHandoffDialog = ({ isOpen, onClose, credentials }) => {
     .sheet { border: 1px solid #cbd5e1; border-radius: 12px; padding: 28px; }
     .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
     .logo { max-width: 64px; max-height: 44px; object-fit: contain; }
-    .mark { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 10px; background: #0e7490; color: white; font-size: 11px; font-weight: 800; }
+    .mark { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 10px; background: #087F5B; color: white; font-size: 11px; font-weight: 800; }
     .center { margin: 0; color: #0f172a; font-size: 16px; font-weight: 800; }
     h1 { margin: 0 0 8px; font-size: 22px; }
     p { margin: 6px 0; color: #475569; }

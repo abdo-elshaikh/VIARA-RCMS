@@ -77,7 +77,7 @@ describe('notification realtime routing', () => {
         expect(realtimeService.sendToDoctor).toHaveBeenCalledWith('doctor-1', 'NEW_NOTIFICATION', expect.objectContaining({ notification_id: 'n-doctor' }));
     });
 
-    test('broadcasts non-in-app notification log updates to staff', async () => {
+    test('broadcasts only non-sensitive metadata for external notification log updates', async () => {
         await notifyClients(buildDb({
             notification_id: 'n-sms',
             channel: 'SMS',
@@ -85,9 +85,12 @@ describe('notification realtime routing', () => {
             content: 'v2:Sent'
         }), 'n-sms');
 
+        const [, payload] = realtimeService.broadcastToStaff.mock.calls[0];
         expect(realtimeService.broadcastToStaff).toHaveBeenCalledWith('NOTIFICATION_LOG_UPDATE', expect.objectContaining({
-            recipient: '+201000000000',
-            content: 'Sent'
+            notification_id: 'n-sms',
+            channel: 'SMS'
         }));
+        expect(payload).not.toHaveProperty('recipient');
+        expect(payload).not.toHaveProperty('content');
     });
 });

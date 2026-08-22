@@ -81,6 +81,8 @@ const persistAuditAlerts = async (db, entry, logId) => {
                 audit_log_id, alert_type, severity, actor_user_id, patient_id,
                 target_type, target_id, reason, evidence
             ) VALUES ${sqlParts.join(', ')}
+            ON CONFLICT (audit_log_id, alert_type) WHERE audit_log_id IS NOT NULL
+            DO NOTHING
         `, values);
     } catch (err) {
         if (err.code !== '42P01' && err.code !== '42703') {
@@ -158,6 +160,7 @@ const runAuditPatternDetections = async (db, {
               AND COALESCE(a.evidence->>'ipAddress', '') = COALESCE(b.ip_address, '')
               AND a.created_at >= NOW() - INTERVAL '30 minutes'
         )
+        ON CONFLICT (audit_log_id, alert_type) WHERE audit_log_id IS NOT NULL DO NOTHING
     `, [failedAuthThreshold]));
 
     rules.push(await runRule(db, 'DENIED_ACCESS_BURST', `
@@ -201,6 +204,7 @@ const runAuditPatternDetections = async (db, {
               AND COALESCE(a.evidence->>'ipAddress', '') = COALESCE(b.ip_address, '')
               AND a.created_at >= NOW() - INTERVAL '30 minutes'
         )
+        ON CONFLICT (audit_log_id, alert_type) WHERE audit_log_id IS NOT NULL DO NOTHING
     `, [deniedThreshold]));
 
     rules.push(await runRule(db, 'MASS_PHI_ACCESS', `
@@ -246,6 +250,7 @@ const runAuditPatternDetections = async (db, {
               AND existing.actor_user_id = a.actor_user_id
               AND existing.created_at >= NOW() - INTERVAL '2 hours'
         )
+        ON CONFLICT (audit_log_id, alert_type) WHERE audit_log_id IS NOT NULL DO NOTHING
     `, [phiAccessCountThreshold, phiPatientThreshold]));
 
     rules.push(await runRule(db, 'SYSTEM_FAILURE', `
@@ -285,6 +290,7 @@ const runAuditPatternDetections = async (db, {
             WHERE a.alert_type = 'SYSTEM_FAILURE'
               AND a.audit_log_id = f.audit_log_id
         )
+        ON CONFLICT (audit_log_id, alert_type) WHERE audit_log_id IS NOT NULL DO NOTHING
     `));
 
     const totalCreated = rules.reduce((sum, rule) => sum + Number(rule.created || 0), 0);

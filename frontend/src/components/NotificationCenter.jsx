@@ -25,7 +25,8 @@ import {
     Search,
     Send,
     Smartphone,
-    X
+    X,
+    ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -81,7 +82,7 @@ const EMPTY_MANUAL_FORM = {
 
 const cx = (...classes) => classes.filter(Boolean).join(' ');
 
-const fieldClass = 'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-field)] dark:text-[var(--rcms-ink)] dark:focus:ring-cyan-500/15';
+const fieldClass = 'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:focus:ring-cyan-500/15';
 
 const getStatusStyle = (status) => STATUS_STYLES[status] || STATUS_STYLES.default;
 
@@ -143,7 +144,7 @@ const IconButton = forwardRef(({ label, children, className, ...props }, ref) =>
         className={cx(
             'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition',
             'hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2',
-            'disabled:cursor-not-allowed disabled:opacity-50 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-raised)] dark:text-[var(--rcms-muted)] dark:hover:bg-[var(--rcms-surface-hover)] dark:hover:text-[var(--rcms-ink)] dark:focus-visible:ring-offset-[var(--rcms-canvas)]',
+            'disabled:cursor-not-allowed disabled:opacity-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-[var(--VIARA-ink)] dark:focus-visible:ring-offset-[var(--VIARA-canvas)]',
             className
         )}
         {...props}
@@ -182,14 +183,14 @@ const NotificationItem = ({
     return (
         <article
             className={cx(
-                'group rounded-lg border bg-white p-3 transition dark:bg-[var(--rcms-surface-raised)]',
+                'group rounded-lg border bg-white p-3 transition dark:bg-[var(--VIARA-surface-raised)]',
                 notification.is_read
-                    ? 'border-slate-200 hover:border-slate-300 dark:border-[var(--rcms-line)] dark:hover:border-[var(--rcms-line-strong)]'
+                    ? 'border-slate-200 hover:border-slate-300 dark:border-[var(--VIARA-line)] dark:hover:border-[var(--VIARA-line-strong)]'
                     : 'border-slate-300 ring-1 ring-slate-200 dark:border-cyan-300/25 dark:ring-cyan-300/15'
             )}
         >
             <div className="flex items-start gap-3">
-                <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-[var(--rcms-surface-muted)] dark:text-[var(--rcms-muted)]">
+                <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-[var(--VIARA-surface-muted)] dark:text-[var(--VIARA-muted)]">
                     <ChannelIcon size={16} aria-hidden="true" />
                 </span>
 
@@ -206,7 +207,7 @@ const NotificationItem = ({
                                 <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-slate-900 dark:bg-white" aria-label={t('notifications.unread', { defaultValue: 'Unread' })} />
                             )}
                             <span className="min-w-0 flex-1">
-                                <span className={cx('block truncate text-sm text-slate-900 dark:text-[var(--rcms-ink)]', notification.is_read ? 'font-semibold' : 'font-bold')}>
+                                <span className={cx('block truncate text-sm text-slate-900 dark:text-[var(--VIARA-ink)]', notification.is_read ? 'font-semibold' : 'font-bold')}>
                                     {title}
                                 </span>
                                 <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
@@ -231,10 +232,20 @@ const NotificationItem = ({
                     )}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {notification.action_url && (
+                            <a
+                                href={notification.action_url}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 text-[10px] font-bold text-teal-700 transition hover:bg-teal-500/20 dark:text-teal-300"
+                            >
+                                <ExternalLink size={12} />
+                                <span>{t('notifications.openResource', { defaultValue: 'Open Record' })}</span>
+                            </a>
+                        )}
+
                         <button
                             type="button"
                             onClick={() => onCopy(notification)}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-[var(--rcms-line)] dark:text-[var(--rcms-muted)] dark:hover:bg-[var(--rcms-surface-hover)]"
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface-hover)]"
                         >
                             <Copy size={13} />
                             {t('notifications.copy', { defaultValue: 'Copy' })}
@@ -258,7 +269,7 @@ const NotificationItem = ({
             {expanded && (
                 <div
                     id={contentId}
-                    className="mt-3 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-xs leading-5 text-slate-600 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface)] dark:text-[var(--rcms-muted)] sm:ms-11"
+                    className="mt-3 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-xs leading-5 text-slate-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-[var(--VIARA-muted)] sm:ms-11"
                 >
                     {notification.content && <p className="whitespace-pre-wrap font-medium">{notification.content}</p>}
 
@@ -546,16 +557,16 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={titleId}
-                className="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-white dark:bg-[var(--rcms-surface)] sm:inset-y-3 sm:end-3 sm:start-auto sm:w-[min(520px,calc(100vw-24px))] sm:rounded-lg sm:border sm:border-slate-200 sm:shadow-md dark:sm:border-[var(--rcms-line)]"
+                className="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-white dark:bg-[var(--VIARA-surface)] sm:inset-y-3 sm:end-3 sm:start-auto sm:w-[min(520px,calc(100vw-24px))] sm:rounded-lg sm:border sm:border-slate-200 sm:shadow-md dark:sm:border-[var(--VIARA-line)]"
             >
-                <header className="shrink-0 border-b border-slate-200 bg-white px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface)] sm:px-5 sm:pt-5">
+                <header className="shrink-0 border-b border-slate-200 bg-white px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] sm:px-5 sm:pt-5">
                     <div className="flex items-start justify-between gap-4">
                         <div className="flex min-w-0 items-center gap-3">
                             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 dark:bg-cyan-400/12 dark:text-cyan-100 dark:ring-1 dark:ring-cyan-300/20">
                                 <Bell size={20} />
                             </span>
                             <div className="min-w-0">
-                                <h2 id={titleId} className="truncate text-base font-semibold text-slate-950 dark:text-[var(--rcms-ink)]">
+                                <h2 id={titleId} className="truncate text-base font-semibold text-slate-950 dark:text-[var(--VIARA-ink)]">
                                     {t('notifications.title', { defaultValue: 'Notification center' })}
                                 </h2>
                                 <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -621,11 +632,11 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                 {canSendManual && showManualSend && (
                     <form
                         onSubmit={handleManualSend}
-                        className="shrink-0 space-y-3 border-b border-slate-200 bg-slate-50 p-4 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-muted)]/70 sm:px-5"
+                        className="shrink-0 space-y-3 border-b border-slate-200 bg-slate-50 p-4 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-muted)]/70 sm:px-5"
                     >
                         <div className="flex items-center justify-between gap-3">
                             <div>
-                                <h3 className="text-sm font-semibold text-slate-900 dark:text-[var(--rcms-ink)]">
+                                <h3 className="text-sm font-semibold text-slate-900 dark:text-[var(--VIARA-ink)]">
                                     {t('notifications.composeTitle', { defaultValue: 'New notification' })}
                                 </h3>
                                 <p className="mt-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
@@ -635,7 +646,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                             <button
                                 type="button"
                                 onClick={() => setShowManualSend(false)}
-                                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-[var(--rcms-surface-hover)] dark:hover:text-[var(--rcms-ink)]"
+                                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-[var(--VIARA-ink)]"
                                 aria-label={t('notifications.closeComposer', { defaultValue: 'Close composer' })}
                             >
                                 <X size={15} />
@@ -650,7 +661,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                                 type={manualForm.channel === 'Email' ? 'email' : 'tel'}
                                 autoComplete={manualForm.channel === 'Email' ? 'email' : 'tel'}
                                 required
-                                className="h-11 min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-field)] dark:text-[var(--rcms-ink)] dark:focus:ring-cyan-500/15"
+                                className="h-11 min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:focus:ring-cyan-500/15"
                             />
                             <select
                                 value={manualForm.channel}
@@ -659,7 +670,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                                     channel: event.target.value,
                                     subject: event.target.value === 'Email' ? current.subject : ''
                                 }))}
-                                className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-field)] dark:text-[var(--rcms-ink)] dark:focus:ring-cyan-500/15"
+                                className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:focus:ring-cyan-500/15"
                             >
                                 {SEND_CHANNELS.map((channel) => <option key={channel}>{channel}</option>)}
                             </select>
@@ -670,7 +681,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                                 value={manualForm.subject}
                                 onChange={(event) => setManualForm((current) => ({ ...current, subject: event.target.value }))}
                                 placeholder={t('notifications.subject', { defaultValue: 'Subject' })}
-                                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-field)] dark:text-[var(--rcms-ink)] dark:focus:ring-cyan-500/15"
+                                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:focus:ring-cyan-500/15"
                             />
                         )}
 
@@ -682,7 +693,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                                 required
                                 maxLength={2000}
                                 rows={3}
-                                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 pb-7 pt-2.5 text-xs font-medium leading-5 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-field)] dark:text-[var(--rcms-ink)] dark:focus:ring-cyan-500/15"
+                                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 pb-7 pt-2.5 text-xs font-medium leading-5 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:focus:ring-cyan-500/15"
                             />
                             <span className="pointer-events-none absolute bottom-2 end-3 text-[10px] font-bold text-slate-400">
                                 {manualForm.body.length}/2000
@@ -692,7 +703,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                         <button
                             type="submit"
                             disabled={isSending || !manualForm.recipient.trim() || !manualForm.body.trim()}
-                            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-xs font-semibold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200 dark:focus-visible:ring-offset-[var(--rcms-canvas)]"
+                            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-xs font-semibold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200 dark:focus-visible:ring-offset-[var(--VIARA-canvas)]"
                         >
                             {isSending ? <RefreshCw size={15} className="animate-spin" /> : <Send size={15} />}
                             {isSending
@@ -702,7 +713,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                     </form>
                 )}
 
-                <div className="shrink-0 space-y-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface)] sm:px-5">
+                <div className="shrink-0 space-y-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] sm:px-5">
                     <div className="flex items-center gap-2">
                         <label className="relative min-w-0 flex-1">
                             <span className="sr-only">{t('notifications.search', { defaultValue: 'Search notifications' })}</span>
@@ -711,7 +722,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                                 value={searchTerm}
                                 onChange={(event) => setSearchTerm(event.target.value)}
                                 placeholder={t('notifications.search', { defaultValue: 'Search notifications' })}
-                                className="h-11 w-full rounded-lg border border-slate-200 bg-white ps-10 pe-9 text-xs font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-field)] dark:text-[var(--rcms-ink)] dark:focus:ring-cyan-500/15"
+                                className="h-11 w-full rounded-lg border border-slate-200 bg-white ps-10 pe-9 text-xs font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:focus:ring-cyan-500/15"
                             />
                             {searchTerm && (
                                 <button
@@ -733,7 +744,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                                 'relative inline-flex h-11 shrink-0 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400',
                                 showFilters || activeFilterCount
                                     ? 'border-slate-900 bg-slate-900 text-white dark:border-cyan-300/30 dark:bg-cyan-300/15 dark:text-cyan-50'
-                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-raised)] dark:text-[var(--rcms-muted)] dark:hover:bg-[var(--rcms-surface-hover)]'
+                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface-hover)]'
                             )}
                         >
                             <Filter size={15} />
@@ -746,7 +757,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-3 rounded-lg bg-slate-100 p-1 dark:bg-[var(--rcms-surface-muted)]" role="tablist">
+                    <div className="grid grid-cols-3 rounded-lg bg-slate-100 p-1 dark:bg-[var(--VIARA-surface-muted)]" role="tablist">
                         {TABS.map((tab) => (
                             <button
                                 type="button"
@@ -757,8 +768,8 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                                 className={cx(
                                     'rounded-lg px-2 py-2 text-[11px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400',
                                     activeTab === tab
-                                        ? 'bg-white text-slate-950 dark:bg-[var(--rcms-surface-raised)] dark:text-[var(--rcms-ink)]'
-                                        : 'text-slate-500 hover:text-slate-800 dark:text-[var(--rcms-muted)] dark:hover:text-[var(--rcms-ink)]'
+                                        ? 'bg-white text-slate-950 dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-ink)]'
+                                        : 'text-slate-500 hover:text-slate-800 dark:text-[var(--VIARA-muted)] dark:hover:text-[var(--VIARA-ink)]'
                                 )}
                             >
                                 {t(`notifications.tabs.${tab}`, { defaultValue: tab.charAt(0).toUpperCase() + tab.slice(1) })}
@@ -768,7 +779,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                     </div>
 
                     {showFilters && (
-                        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-muted)]/70">
+                        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-muted)]/70">
                             <div className="flex items-center justify-between gap-3">
                                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                                     {t('notifications.filters.advanced', { defaultValue: 'Advanced filters' })}
@@ -817,10 +828,10 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                     )}
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50 px-3 py-3 dark:bg-[var(--rcms-canvas)] sm:px-4">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50 px-3 py-3 dark:bg-[var(--VIARA-canvas)] sm:px-4">
                     {isLoading && (
                         <div className="flex min-h-[280px] flex-col items-center justify-center text-slate-400">
-                            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-white dark:bg-[var(--rcms-surface-raised)]">
+                            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-white dark:bg-[var(--VIARA-surface-raised)]">
                                 <RefreshCw size={21} className="animate-spin" />
                             </span>
                             <p className="mt-3 text-sm font-bold">
@@ -831,10 +842,10 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
 
                     {!isLoading && filteredNotifications.length === 0 && (
                         <div className="flex min-h-[280px] flex-col items-center justify-center px-6 text-center">
-                            <span className="flex h-14 w-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-raised)] dark:text-[var(--rcms-muted)]">
+                            <span className="flex h-14 w-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-muted)]">
                                 <Bell size={23} />
                             </span>
-                            <p className="mt-4 text-sm font-semibold text-slate-800 dark:text-[var(--rcms-ink)]">
+                            <p className="mt-4 text-sm font-semibold text-slate-800 dark:text-[var(--VIARA-ink)]">
                                 {t('notifications.emptyTitle', { defaultValue: 'Nothing here yet' })}
                             </p>
                             <p className="mt-1 max-w-xs text-xs font-medium leading-5 text-slate-500 dark:text-slate-400">
@@ -847,7 +858,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                                         setSearchTerm('');
                                         resetFilters();
                                     }}
-                                    className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-raised)] dark:text-[var(--rcms-ink)] dark:hover:bg-[var(--rcms-surface-hover)]"
+                                    className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-ink)] dark:hover:bg-[var(--VIARA-surface-hover)]"
                                 >
                                     {t('notifications.clearFilters', { defaultValue: 'Clear search and filters' })}
                                 </button>
@@ -857,12 +868,12 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
 
                     {!isLoading && groupedNotifications.map(([groupKey, items]) => (
                         <section key={groupKey} className="mb-4 last:mb-0">
-                            <div className="sticky top-0 z-10 -mx-1 mb-2 flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:bg-[var(--rcms-canvas)] dark:text-[var(--rcms-muted)]">
+                            <div className="sticky top-0 z-10 -mx-1 mb-2 flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:bg-[var(--VIARA-canvas)] dark:text-[var(--VIARA-muted)]">
                                 <Clock3 size={12} />
                                 {t(`notifications.groups.${groupKey}`, {
                                     defaultValue: groupKey.charAt(0).toUpperCase() + groupKey.slice(1)
                                 })}
-                                <span className="ms-auto rounded-full bg-slate-200 px-2 py-0.5 text-[9px] text-slate-500 dark:bg-[var(--rcms-surface-muted)] dark:text-[var(--rcms-muted)]">
+                                <span className="ms-auto rounded-full bg-slate-200 px-2 py-0.5 text-[9px] text-slate-500 dark:bg-[var(--VIARA-surface-muted)] dark:text-[var(--VIARA-muted)]">
                                     {items.length}
                                 </span>
                             </div>
@@ -888,7 +899,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                     ))}
                 </div>
 
-                <footer className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-white px-4 py-2.5 text-[10px] font-semibold text-slate-400 dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface)] sm:px-5">
+                <footer className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-white px-4 py-2.5 text-[10px] font-semibold text-slate-400 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] sm:px-5">
                     <span>
                         {t('notifications.resultsCount', {
                             count: filteredNotifications.length,

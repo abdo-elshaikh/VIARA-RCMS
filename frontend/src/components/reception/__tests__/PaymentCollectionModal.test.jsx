@@ -106,6 +106,22 @@ describe('PaymentCollectionModal', () => {
         expect(onMethodChange).toHaveBeenCalledWith('Card');
     });
 
+    it('does not auto-attest insurance verification requirements', () => {
+        const { container } = render(<PaymentCollectionModal
+            {...baseProps}
+            invoice={{
+                ...baseProps.invoice,
+                insurance_covered_amount: 80,
+                patient_payable_amount: 40,
+                provider_name: 'Health Plan',
+                policy_number: 'POL-1',
+                member_number: 'MEM-1'
+            }}
+        />);
+
+        expect(JSON.parse(container.querySelector('input[name="verificationChecklist"]').value)).toEqual({});
+    });
+
     it('closes when cancel is clicked', () => {
         const onClose = vi.fn();
         render(<PaymentCollectionModal {...baseProps} onClose={onClose} />);
@@ -113,5 +129,19 @@ describe('PaymentCollectionModal', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
         expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not render when isOpen is false', () => {
+        render(<PaymentCollectionModal {...baseProps} isOpen={false} />);
+
+        expect(screen.queryByText('INV-1')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Confirm Payment' })).not.toBeInTheDocument();
+    });
+
+    it('does not render when invoice is null', () => {
+        render(<PaymentCollectionModal {...baseProps} invoice={null} isOpen={false} />);
+
+        expect(screen.queryByText('INV-1')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Confirm Payment' })).not.toBeInTheDocument();
     });
 });

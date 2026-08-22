@@ -89,7 +89,7 @@ describe('CaseReports dialogs', () => {
 
         renderPage();
         fireEvent.click(screen.getByRole('button', { name: 'Scan receipt QR' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Use camera' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Use Camera' }));
         await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce());
         fireEvent.keyDown(document, { key: 'Escape' });
 
@@ -100,12 +100,12 @@ describe('CaseReports dialogs', () => {
 
     it('keeps delivery fields and submits through the Modal footer action', async () => {
         renderPage();
-        fireEvent.click(screen.getByRole('button', { name: 'Send to patient' }));
-        const dialog = screen.getByRole('dialog', { name: 'Send report to patient' });
+        fireEvent.click(screen.getByRole('button', { name: 'Deliver Report to Patient' }));
+        const dialog = screen.getByRole('dialog', { name: 'Deliver Case Report' });
 
-        fireEvent.change(within(dialog).getByLabelText('Delivery method'), { target: { value: 'Email' } });
-        fireEvent.change(within(dialog).getByLabelText('Notes'), { target: { value: 'Patient requested email' } });
-        fireEvent.click(within(dialog).getByRole('button', { name: 'Send' }));
+        fireEvent.change(within(dialog).getByLabelText('Delivery Method'), { target: { value: 'Email' } });
+        fireEvent.change(within(dialog).getByLabelText('Delivery Notes'), { target: { value: 'Patient requested email' } });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Record Delivery' }));
 
         await waitFor(() => expect(mocks.deliver).toHaveBeenCalledWith(expect.objectContaining({
             examId: 'exam-1',
@@ -113,13 +113,13 @@ describe('CaseReports dialogs', () => {
             recipientContact: 'sam@example.com',
             notes: 'Patient requested email',
         })));
-        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Send report to patient' })).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Deliver Case Report' })).not.toBeInTheDocument());
     });
 
     it('keeps improve generation and footer actions in the shared Modal', async () => {
         renderPage();
-        fireEvent.click(screen.getByRole('button', { name: 'Improve format (AI)' }));
-        const dialog = screen.getByRole('dialog', { name: 'Improve report format (AI)' });
+        fireEvent.click(screen.getByRole('button', { name: 'AI Format & Polish Report' }));
+        const dialog = screen.getByRole('dialog', { name: 'AI Clinical Report Polishing' });
 
         await waitFor(() => expect(mocks.improve).toHaveBeenCalledWith(expect.objectContaining({
             examId: 'exam-1',
@@ -127,6 +127,6 @@ describe('CaseReports dialogs', () => {
         })));
         await waitFor(() => expect(within(dialog).getByRole('textbox')).toHaveValue('Improved report text'));
         expect(within(dialog).getByRole('button', { name: 'Regenerate' })).toBeEnabled();
-        expect(within(dialog).getByRole('button', { name: 'Apply to report' })).toBeEnabled();
+        expect(within(dialog).getByRole('button', { name: 'Copy & Apply' })).toBeEnabled();
     });
 });

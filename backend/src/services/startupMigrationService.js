@@ -8,7 +8,7 @@ const applyTrackedMigration = async (pool, { version, filePath, verifyApplied })
 
     try {
         await client.query('BEGIN');
-        await client.query("SELECT pg_advisory_xact_lock(hashtext('rcms_schema_migrations'))");
+        await client.query("SELECT pg_advisory_xact_lock(hashtext('VIARA_schema_migrations'))");
         await client.query(`
             CREATE TABLE IF NOT EXISTS tracked_schema_migrations (
                 version VARCHAR(80) PRIMARY KEY,

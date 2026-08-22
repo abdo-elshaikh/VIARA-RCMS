@@ -81,7 +81,7 @@ const ShiftActionModal = ({
                 </button>
                 <button
                     type="submit"
-                    disabled={isBusy || (action === 'close' && (!countedCash || shiftNotes.trim().length < 3))}
+                    disabled={isBusy || (action === 'close' && (countedCash === '' || shiftNotes.trim().length < 3))}
                     className="flex-1 rounded-none bg-gradient-to-b from-slate-800 to-slate-950 py-3 font-bold text-white shadow-sm transition hover:from-slate-900 hover:to-black disabled:opacity-50 dark:from-slate-100 dark:to-slate-200 dark:text-slate-900 dark:hover:from-white dark:hover:to-slate-100"
                 >
                     {isBusy ? t('billing.processing', { defaultValue: 'Processing...' }) : t('common.confirm', { defaultValue: 'Confirm' })}

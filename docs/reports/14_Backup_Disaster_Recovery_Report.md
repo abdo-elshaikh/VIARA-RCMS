@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-RCMS includes a robust automated backup system built into the Node.js backend (`postgresBackupService.js`). It performs encrypted daily PostgreSQL backups, retains them according to configurable policies, and tracks backup status in the database. Offsite replication to S3-compatible storage is now available via the `backupOffsiteReplicator.js` service. PACS disaster recovery is supported through DICOM synchronization and storage configuration.
+VIARA includes a robust automated backup system built into the Node.js backend (`postgresBackupService.js`). It performs encrypted daily PostgreSQL backups, retains them according to configurable policies, and tracks backup status in the database. Offsite replication to S3-compatible storage is now available via the `backupOffsiteReplicator.js` service. PACS disaster recovery is supported through DICOM synchronization and storage configuration.
 
 **Backup & DR Score: 90/100**
 
@@ -53,7 +53,7 @@ The `BACKUP_ENCRYPTION_KEY` MUST be securely stored in an offline password manag
   5. Restart application
 
 ### Scenario 2: PACS Volume Failure
-- **RPO:** Depends on volume snapshot frequency (external to RCMS)
+- **RPO:** Depends on volume snapshot frequency (external to VIARA)
 - **RTO:** ~4-8 hours
 - **Procedure:** 
   1. Restore Orthanc storage volume from block-storage snapshots (e.g., AWS EBS snapshots)

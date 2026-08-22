@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, MinusCircle, Package, Plus, PlusCircle, Search, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, DollarSign, MinusCircle, Package, Plus, PlusCircle, Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { useAddItemMutation, useAdjustStockMutation, useGetInventoryQuery } from '../../store/api';
+import { useAddItemMutation, useAdjustStockMutation, useGetInventoryQuery, useUpdateStockMutation } from '../../store/api';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 import Modal from '../ui/Modal';
 
-const emptyItem = { name: '', category: '', quantity: 0, unit: '', minLevel: 10, unitPrice: '0' };
+const emptyItem = { name: '', category: '', quantity: 0, unit: '', minLevel: 10, unitPrice: '0', isContrastAgent: false };
 const inputClass = 'h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-cyan-500 dark:focus:ring-cyan-500/20';
 
 const InventoryCatalog = () => {
@@ -17,6 +17,7 @@ const InventoryCatalog = () => {
     const { data: inventory = [], isLoading, isError, refetch } = useGetInventoryQuery();
     const [addItem, { isLoading: isAdding }] = useAddItemMutation();
     const [adjustStock, { isLoading: isAdjusting }] = useAdjustStockMutation();
+    const [updateStock, { isLoading: isUpdatingPrice }] = useUpdateStockMutation();
 
     const [showAdd, setShowAdd] = useState(false);
     const [newItem, setNewItem] = useState(emptyItem);
@@ -24,6 +25,8 @@ const InventoryCatalog = () => {
     const [lowOnly, setLowOnly] = useState(false);
     const [adjustment, setAdjustment] = useState(null);
     const [adjustmentForm, setAdjustmentForm] = useState({ quantity: '', reason: '', batchId: '' });
+    const [priceItem, setPriceItem] = useState(null);
+    const [unitPrice, setUnitPrice] = useState('');
 
     const visibleItems = useMemo(() => {
         const query = search.trim().toLowerCase();
@@ -95,6 +98,29 @@ const InventoryCatalog = () => {
         }
     };
 
+    const openPriceEditor = item => {
+        setPriceItem(item);
+        setUnitPrice(String(item.unit_price ?? 0));
+    };
+
+    const closePriceEditor = () => {
+        if (!isUpdatingPrice) {
+            setPriceItem(null);
+            setUnitPrice('');
+        }
+    };
+
+    const handlePriceUpdate = async event => {
+        event.preventDefault();
+        try {
+            await updateStock({ itemId: priceItem.item_id, unitPrice: Number(unitPrice) }).unwrap();
+            toast.success(copy('priceUpdateSuccess'));
+            closePriceEditor();
+        } catch (error) {
+            toast.error(getErrorMessage(error, copy('priceUpdateError')));
+        }
+    };
+
     const formatDate = value => value ? new Date(value).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' }) : copy('noExpiry');
 
     return (
@@ -159,7 +185,7 @@ const InventoryCatalog = () => {
 
                 {/* Add New Item Form Overlay */}
                 {showAdd && (
-                    <form onSubmit={handleCreate} className="grid gap-4 border-b border-slate-200/80 bg-cyan-50/40 p-5 backdrop-blur-md dark:border-white/5 dark:bg-cyan-950/20 sm:grid-cols-2 xl:grid-cols-5">
+                    <form onSubmit={handleCreate} className="grid gap-4 border-b border-slate-200/80 bg-cyan-50/40 p-5 backdrop-blur-md dark:border-white/5 dark:bg-cyan-950/20 sm:grid-cols-2 xl:grid-cols-6">
                         <Field label={copy('itemName')} className="xl:col-span-2">
                             <input required value={newItem.name} onChange={event => setNewItem(current => ({ ...current, name: event.target.value }))} className={inputClass} />
                         </Field>
@@ -172,8 +198,19 @@ const InventoryCatalog = () => {
                         <Field label={copy('minLevel')}>
                             <input type="number" min="0" required value={newItem.minLevel} onChange={event => setNewItem(current => ({ ...current, minLevel: event.target.value }))} className={inputClass} />
                         </Field>
+                        <Field label={copy('unitPrice')}>
+                            <input type="number" min="0" step="0.01" required value={newItem.unitPrice} onChange={event => setNewItem(current => ({ ...current, unitPrice: event.target.value }))} className={inputClass} />
+                        </Field>
+                        <label className="flex items-center gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-bold text-cyan-900 dark:border-cyan-900/50 dark:bg-slate-900 dark:text-cyan-200 xl:col-span-2">
+                            <input
+                                type="checkbox"
+                                checked={newItem.isContrastAgent}
+                                onChange={event => setNewItem(current => ({ ...current, isContrastAgent: event.target.checked }))}
+                            />
+                            {copy('contrastAgent', { defaultValue: 'Contrast agent (required for contrast workflow)' })}
+                        </label>
 
-                        <div className="flex flex-col-reverse gap-2 sm:col-span-2 sm:flex-row sm:justify-end xl:col-span-5">
+                        <div className="flex flex-col-reverse gap-2 sm:col-span-2 sm:flex-row sm:justify-end xl:col-span-6">
                             <button
                                 type="button"
                                 onClick={() => { setShowAdd(false); setNewItem(emptyItem); }}
@@ -204,14 +241,14 @@ const InventoryCatalog = () => {
                     <>
                         <div className="grid gap-4 p-5 md:hidden">
                             {visibleItems.map(item => (
-                                <ItemCard key={item.item_id} item={item} copy={copy} formatDate={formatDate} onAdjust={openAdjustment} adjusting={isAdjusting} />
+                                <ItemCard key={item.item_id} item={item} copy={copy} formatDate={formatDate} onAdjust={openAdjustment} onEditPrice={openPriceEditor} adjusting={isAdjusting || isUpdatingPrice} />
                             ))}
                         </div>
                         <div className="hidden overflow-x-auto md:block">
                             <table className="w-full min-w-[850px] text-xs">
                                 <thead className="border-b border-slate-200/80 bg-slate-50/70 text-slate-500 dark:border-white/5 dark:bg-white/5 dark:text-slate-400">
                                     <tr>
-                                        {['item', 'stock', 'batches', 'adjust'].map(key => (
+                                        {['item', 'stock', 'unitPrice', 'batches', 'adjust'].map(key => (
                                             <th key={key} className={`px-4 py-3.5 text-xs font-black uppercase tracking-wider ${key === 'adjust' ? 'text-end' : 'text-start'}`}>
                                                 {copy(key)}
                                             </th>
@@ -220,7 +257,7 @@ const InventoryCatalog = () => {
                                 </thead>
                                 <tbody className="divide-y divide-slate-100/80 dark:divide-white/5">
                                     {visibleItems.map(item => (
-                                        <ItemRow key={item.item_id} item={item} copy={copy} formatDate={formatDate} onAdjust={openAdjustment} adjusting={isAdjusting} />
+                                        <ItemRow key={item.item_id} item={item} copy={copy} formatDate={formatDate} onAdjust={openAdjustment} onEditPrice={openPriceEditor} adjusting={isAdjusting || isUpdatingPrice} />
                                     ))}
                                 </tbody>
                             </table>
@@ -299,6 +336,22 @@ const InventoryCatalog = () => {
                     </div>
                 </form>
             </Modal>
+
+            <Modal isOpen={Boolean(priceItem)} onClose={closePriceEditor} title={copy('priceTitle', { item: priceItem?.name || '' })} size="sm">
+                <form onSubmit={handlePriceUpdate} className="space-y-4">
+                    <Field label={copy('unitPrice')}>
+                        <input autoFocus type="number" min="0" step="0.01" required value={unitPrice} onChange={event => setUnitPrice(event.target.value)} className={inputClass} />
+                    </Field>
+                    <div className="flex flex-col-reverse gap-2 border-t border-slate-100/80 pt-4 dark:border-white/5 sm:flex-row sm:justify-end">
+                        <button type="button" onClick={closePriceEditor} disabled={isUpdatingPrice} className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5">
+                            {copy('cancel')}
+                        </button>
+                        <button type="submit" disabled={isUpdatingPrice} className="rounded-xl bg-cyan-700 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-cyan-800 disabled:opacity-50">
+                            {isUpdatingPrice ? copy('saving') : copy('savePrice')}
+                        </button>
+                    </div>
+                </form>
+            </Modal>
         </div>
     );
 };
@@ -321,8 +374,17 @@ const Field = ({ label, className = '', children }) => (
     </label>
 );
 
-const AdjustButtons = ({ item, copy, onAdjust, adjusting }) => (
+const AdjustButtons = ({ item, copy, onAdjust, onEditPrice, adjusting }) => (
     <div className="flex justify-end gap-1.5">
+        <button
+            type="button"
+            disabled={adjusting}
+            onClick={() => onEditPrice(item)}
+            aria-label={copy('editPriceFor', { item: item.name })}
+            className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-100 text-cyan-700 hover:bg-cyan-200 disabled:opacity-50 dark:bg-cyan-500/20 dark:text-cyan-300"
+        >
+            <DollarSign size={16} />
+        </button>
         <button
             type="button"
             disabled={adjusting}
@@ -362,7 +424,7 @@ const BatchList = ({ item, copy, formatDate }) => (
     )
 );
 
-const ItemCard = ({ item, copy, formatDate, onAdjust, adjusting }) => {
+const ItemCard = ({ item, copy, formatDate, onAdjust, onEditPrice, adjusting }) => {
     const low = Number(item.quantity) <= Number(item.min_level);
     return (
         <article className={`rounded-3xl border p-5 transition-all ${
@@ -387,17 +449,18 @@ const ItemCard = ({ item, copy, formatDate, onAdjust, adjusting }) => {
             <div className="my-4 rounded-2xl border border-slate-100/80 bg-slate-50/70 p-3.5 text-center shadow-inner dark:border-white/5 dark:bg-white/5">
                 <p className={`font-mono text-2xl font-black ${low ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>{item.quantity}</p>
                 <p className="text-[10px] font-bold text-slate-400">{item.unit || copy('units')}</p>
+                <p className="mt-2 font-mono text-xs font-black text-cyan-700 dark:text-cyan-300">{Number(item.unit_price || 0).toFixed(2)} EGP / {item.unit || copy('units')}</p>
             </div>
 
             <BatchList item={item} copy={copy} formatDate={formatDate} />
             <div className="mt-4">
-                <AdjustButtons item={item} copy={copy} onAdjust={onAdjust} adjusting={adjusting} />
+                <AdjustButtons item={item} copy={copy} onAdjust={onAdjust} onEditPrice={onEditPrice} adjusting={adjusting} />
             </div>
         </article>
     );
 };
 
-const ItemRow = ({ item, copy, formatDate, onAdjust, adjusting }) => {
+const ItemRow = ({ item, copy, formatDate, onAdjust, onEditPrice, adjusting }) => {
     const low = Number(item.quantity) <= Number(item.min_level);
     return (
         <tr className={`transition-colors ${low ? 'bg-rose-50/40 dark:bg-rose-950/20' : 'hover:bg-slate-50/50 dark:hover:bg-white/[0.02]'}`}>
@@ -415,11 +478,14 @@ const ItemRow = ({ item, copy, formatDate, onAdjust, adjusting }) => {
                 <p className={`font-mono text-lg font-black ${low ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>{item.quantity}</p>
                 <p className="text-xs font-semibold text-slate-400">{item.unit || copy('units')} · {copy('minimum', { value: item.min_level })}</p>
             </td>
+            <td className="px-4 py-4 font-mono font-black text-cyan-700 dark:text-cyan-300">
+                {Number(item.unit_price || 0).toFixed(2)} EGP
+            </td>
             <td className="max-w-md px-4 py-4">
                 <BatchList item={item} copy={copy} formatDate={formatDate} />
             </td>
             <td className="px-4 py-4">
-                <AdjustButtons item={item} copy={copy} onAdjust={onAdjust} adjusting={adjusting} />
+                <AdjustButtons item={item} copy={copy} onAdjust={onAdjust} onEditPrice={onEditPrice} adjusting={adjusting} />
             </td>
         </tr>
     );

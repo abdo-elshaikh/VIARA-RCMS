@@ -2,16 +2,24 @@
   "header": {
     "eyebrow": "Facility configuration",
     "title": "Facility settings",
-    "description": "Maintain the organization identity, operating window, financial identifiers, report documents, public homepage, and printing defaults used across RCMS.",
+    "description": "Maintain the healthcare organization, branch identity, document branding, public portal content, and print defaults used across VIARA.",
     "signals": {
-      "identity": "Facility identity",
+      "identity": "Organization",
       "operations": "Operating hours",
-      "documents": "Document content",
-      "printing": "Printing"
+      "documents": "Documents",
+      "printing": "Printing",
+      "branding": "Branding",
+      "branches": "Branches"
     }
   },
   "navigation": {
     "label": "Facility settings sections",
+    "organization": "Organization",
+    "branding": "Branding",
+    "contact": "Contact",
+    "legal": "Legal and billing",
+    "branches": "Branches",
+    "portal": "Portal",
     "profile": "Profile and contact",
     "homepage": "Public homepage",
     "hours": "Operating hours",
@@ -25,6 +33,32 @@
     "unsaved": "Unsaved changes",
     "unsavedHelp": "Review and save before leaving this page."
   },
+  "organization": {
+    "title": "Organization identity",
+    "description": "The healthcare provider identity inherited by reports, invoices, receipts, stickers, labels, and portals."
+  },
+  "branding": {
+    "title": "Branding",
+    "description": "Logo variants and colors used by the identity resolver, print templates, and portal surfaces."
+  },
+  "contact": {
+    "title": "Contact information",
+    "description": "Public and document-safe contact details inherited by branches when no override exists."
+  },
+  "legal": {
+    "title": "Legal and billing",
+    "description": "Identifiers used by invoices, receipts, report footers, and regulated documents."
+  },
+  "branches": {
+    "title": "Primary branch override",
+    "description": "This branch identity overrides organization values where documents originate from this location. Dedicated branch records can use the same resolver fields."
+  },
+  "portal": {
+    "title": "Portal identity",
+    "description": "Portal shell uses organization identity; individual appointments and studies can still show originating branch identity.",
+    "welcomeMessage": "Portal welcome message",
+    "welcomeMessageAr": "Portal welcome message Arabic"
+  },
   "profile": {
     "title": "Facility profile",
     "description": "Identity and contact details used across administrative, patient-facing, reporting, billing, and printing documents.",
@@ -34,10 +68,23 @@
   "fields": {
     "centerName": "Center name",
     "centerNameHint": "Required organization name displayed throughout the system.",
+    "centerNameAr": "Center name Arabic",
+    "legalName": "Legal name",
+    "legalNameAr": "Legal name Arabic",
+    "branchId": "Branch ID",
+    "branchCode": "Branch code",
     "branchName": "Branch name",
     "branchNameHint": "Specific branch or location name.",
-    "logoUrl": "Logo URL",
-    "logoUrlHint": "Direct logo image URL used in printouts and public pages.",
+    "branchNameAr": "Branch name Arabic",
+    "branchDisplayName": "Branch display name",
+    "branchDisplayNameAr": "Branch display name Arabic",
+    "logoUrl": "Logo",
+    "logoUrlHint": "Main logo used in printouts and public pages.",
+    "logoLightUrl": "Light logo",
+    "logoLightHint": "Preferred on dark document headers.",
+    "logoDarkUrl": "Dark logo",
+    "logoDarkHint": "Preferred on light document headers.",
+    "faviconUrl": "Favicon",
     "logoPreview": "Logo preview",
     "contactPerson": "Contact person",
     "contactPersonHint": "Primary operational contact for this branch.",
@@ -45,11 +92,33 @@
     "otherDetailsHint": "Accreditation, registration, floor, or branch-specific notes.",
     "taxId": "Tax ID / registration number",
     "taxIdHint": "Official identifier, up to 50 characters.",
+    "taxNumber": "Tax number override",
+    "commercialRegistration": "Commercial registration",
+    "medicalLicense": "Medical license",
     "invoicePrefix": "Invoice prefix",
     "invoicePrefixHint": "Short prefix placed before generated invoice numbers.",
     "phone": "Phone number",
+    "alternativePhone": "Alternative phone",
+    "hotline": "Hotline",
+    "whatsapp": "WhatsApp",
     "email": "Email address",
-    "address": "Physical address"
+    "supportEmail": "Support email",
+    "website": "Website",
+    "address": "Physical address",
+    "addressAr": "Address Arabic",
+    "country": "Country",
+    "governorate": "Governorate / state",
+    "city": "City",
+    "postalCode": "Postal code",
+    "primaryColor": "Primary color",
+    "secondaryColor": "Secondary color",
+    "accentColor": "Accent color",
+    "defaultLanguage": "Default language",
+    "timezone": "Timezone",
+    "currency": "Currency",
+    "vatRate": "VAT / tax rate",
+    "vatEnabled": "Enable VAT / tax settings on financial documents",
+    "showPoweredByViara": "Show Powered by VIARA where licensing allows"
   },
   "homepage": {
     "title": "Public homepage",
@@ -98,7 +167,11 @@
     "preview": "Content preview",
     "safePreview": "Plain-text safety preview",
     "emptyHeader": "Report header content will appear here.",
-    "emptyFooter": "Report footer content will appear here."
+    "emptyFooter": "Report footer content will appear here.",
+    "reportDisclaimer": "Report disclaimer",
+    "reportDisclaimerAr": "Report disclaimer Arabic",
+    "invoiceFooter": "Invoice footer",
+    "receiptFooter": "Receipt footer"
   },
   "printing": {
     "title": "Printing preferences",
@@ -122,7 +195,7 @@
     "invoiceTerms": "Invoice terms and conditions",
     "invoiceTermsPlaceholder": "Terms of payment, refund policy, etc...",
     "colors": {
-      "teal": "Teal accent (default)",
+      "teal": "Clinical emerald",
       "navy": "Navy professional",
       "slate": "Slate charcoal",
       "burgundy": "Burgundy crimson",
@@ -156,6 +229,10 @@
   },
   "messages": {
     "saved": "Facility settings updated successfully",
-    "saveFailed": "Facility settings could not be updated"
+    "saveFailed": "Facility settings could not be updated",
+    "logoImageOnly": "Use PNG, JPG, SVG, or WebP for logos.",
+    "logoTooLarge": "Logo image must be smaller than 800 KB.",
+    "logoInvalid": "The selected file does not look like a supported image.",
+    "logoReadFailed": "Logo image could not be read."
   }
 }

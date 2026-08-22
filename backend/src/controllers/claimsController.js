@@ -7,11 +7,12 @@ const {
     postJournalBatch,
     recordClaimReceipt
 } = require('../services/financialPostingService');
+const { triggerEventForRole } = require('../services/notificationJobService');
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const CLAIM_TRANSITIONS = {
-    Draft: new Set(['Pending Approval', 'Submitted', 'Written Off']),
+    Draft: new Set(['Pending Approval', 'Written Off']),
     'Pending Approval': new Set(['Approved', 'Rejected', 'Written Off']),
     Approved: new Set(['Submitted', 'Written Off']),
     Submitted: new Set(['Paid', 'Partially Paid', 'Rejected']),
@@ -81,6 +82,7 @@ const createClaim = (db) => async (req, res, next) => {
         let expectedAmount = moneyNumber(data.expectedAmount);
         let invoice = null;
         let patientId = data.patientId;
+        let policyId = data.policyId || null;
         if (data.invoiceId) {
             const invoiceResult = await client.query(
                 'SELECT * FROM invoices WHERE invoice_id = $1 FOR UPDATE',
@@ -98,15 +100,19 @@ const createClaim = (db) => async (req, res, next) => {
             if (expectedAmount > moneyNumber(invoice.insurance_covered_amount) + 0.005) {
                 throw new AppError('Expected claim amount exceeds the invoice insurance coverage', 409);
             }
+            if (invoice.insurance_policy_id && policyId && policyId !== invoice.insurance_policy_id) {
+                throw new AppError('Claim policy must match the policy recorded on the invoice', 409);
+            }
+            policyId = invoice.insurance_policy_id || policyId;
         }
         if (expectedAmount <= 0) throw new AppError('Expected claim amount must be greater than zero', 400);
 
-        if (data.policyId) {
+        if (policyId) {
             const policyResult = await client.query(`
                 SELECT patient_id, provider_id, valid_to
                 FROM patient_insurance_policies
                 WHERE policy_id = $1
-            `, [data.policyId]);
+            `, [policyId]);
             const policy = policyResult.rows[0];
             if (!policy) throw new AppError('Insurance policy not found', 404);
             if (policy.patient_id !== patientId) {
@@ -134,7 +140,7 @@ const createClaim = (db) => async (req, res, next) => {
             if (approval.provider_id && approval.provider_id !== data.providerId) {
                 throw new AppError('Claim provider must match the selected approval provider', 409);
             }
-            if (data.policyId && approval.policy_id && approval.policy_id !== data.policyId) {
+            if (policyId && approval.policy_id && approval.policy_id !== policyId) {
                 throw new AppError('Claim approval must match the selected policy', 409);
             }
             if (approval.status !== 'Approved') {
@@ -164,7 +170,7 @@ const createClaim = (db) => async (req, res, next) => {
             data.invoiceId || null,
             patientId,
             data.providerId,
-            data.policyId || null,
+            policyId,
             data.approvalId || null,
             data.claimReferenceNumber || null,
             expectedAmount,
@@ -184,12 +190,13 @@ const createClaim = (db) => async (req, res, next) => {
                 invoiceId: data.invoiceId || null,
                 patientId,
                 providerId: data.providerId,
-                policyId: data.policyId || null,
+                policyId,
                 approvalId: data.approvalId || null,
                 expectedAmount,
                 branchId: invoice?.branch_id || DEFAULT_BRANCH_ID
             }
         });
+
         res.status(201).json(result.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -221,6 +228,14 @@ const updateClaimStatus = (db) => async (req, res, next) => {
         const claim = existing.rows[0];
         if (data.status !== claim.status && !CLAIM_TRANSITIONS[claim.status]?.has(data.status)) {
             throw new AppError(`Claim cannot move from ${claim.status} to ${data.status}`, 409);
+        }
+        if (
+            claim.status === 'Pending Approval'
+            && ['Approved', 'Rejected'].includes(data.status)
+            && req.user?.role !== 'Developer'
+            && claim.created_by === req.user?.user_id
+        ) {
+            throw new AppError('The claim creator cannot approve or reject their own request', 403);
         }
 
         const receivedAmount = data.receivedAmount !== undefined
@@ -322,6 +337,81 @@ const updateClaimStatus = (db) => async (req, res, next) => {
                 resubmissionNotes: data.resubmissionNotes || null
             }
         });
+
+        if (data.status === 'Approved') {
+            triggerEventForRole(db, 'ClaimApproved', 'Accountant', {
+                priority: 'Normal',
+                variables: {
+                    claim_id: existing.rows[0].claim_id,
+                    patient_id: claim.patient_id,
+                    approved_amount: expectedAmount
+                }
+            }).catch(() => {});
+
+            triggerEventForRole(db, 'ClaimApproved', 'Admin', {
+                priority: 'Normal',
+                variables: {
+                    claim_id: existing.rows[0].claim_id,
+                    patient_id: claim.patient_id,
+                    approved_amount: expectedAmount
+                }
+            }).catch(() => {});
+        }
+
+        if (['Submitted', 'Resubmitted'].includes(data.status)) {
+            for (const role of ['Accountant', 'Admin']) {
+                triggerEventForRole(db, 'ClaimSubmitted', role, {
+                    priority: 'Normal',
+                    variables: {
+                        claim_id: existing.rows[0].claim_id,
+                        patient_id: claim.patient_id,
+                        provider_name: claim.provider_id || '',
+                        amount: expectedAmount
+                    }
+                }).catch(() => {});
+            }
+        }
+
+        if (data.status === 'Rejected') {
+            triggerEventForRole(db, 'ClaimRejected', 'Accountant', {
+                priority: 'Action',
+                variables: {
+                    claim_id: existing.rows[0].claim_id,
+                    patient_id: claim.patient_id,
+                    rejection_reason: data.rejectionReason || ''
+                }
+            }).catch(() => {});
+
+            triggerEventForRole(db, 'ClaimRejected', 'Admin', {
+                priority: 'Action',
+                variables: {
+                    claim_id: existing.rows[0].claim_id,
+                    patient_id: claim.patient_id,
+                    rejection_reason: data.rejectionReason || ''
+                }
+            }).catch(() => {});
+        }
+
+        if (data.status === 'Paid') {
+            triggerEventForRole(db, 'ClaimPaid', 'Accountant', {
+                priority: 'Normal',
+                variables: {
+                    claim_id: existing.rows[0].claim_id,
+                    patient_id: claim.patient_id,
+                    paid_amount: receivedAmount
+                }
+            }).catch(() => {});
+
+            triggerEventForRole(db, 'ClaimPaid', 'Admin', {
+                priority: 'Normal',
+                variables: {
+                    claim_id: existing.rows[0].claim_id,
+                    patient_id: claim.patient_id,
+                    paid_amount: receivedAmount
+                }
+            }).catch(() => {});
+        }
+
         res.json({ ...result.rows[0], claim_receipt: claimReceipt });
     } catch (error) {
         if (client) await client.query('ROLLBACK');

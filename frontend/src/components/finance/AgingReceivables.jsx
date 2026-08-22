@@ -45,11 +45,11 @@ const AgingReceivables = () => {
     });
 
     return (
-        <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
+        <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
             {/* Header */}
-            <div className="flex items-start gap-4 border-b border-slate-100/80 bg-slate-50/50 p-5 dark:border-white/5 dark:bg-white/5 sm:p-6">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300 dark:ring-indigo-500/30 shadow-md">
-                    <ShieldCheck size={22} />
+            <div className="flex items-start gap-4 border-b border-slate-100 p-5 sm:p-6 dark:border-slate-800 dark:bg-slate-950/30">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-700 dark:text-indigo-300">
+                    <ShieldCheck size={20} />
                 </span>
                 <div>
                     <h2 className="text-lg font-black tracking-tight text-slate-900 dark:text-white sm:text-xl">

@@ -10,14 +10,15 @@ import ConfirmDialog from '../ui/ConfirmDialog';
 
 const emptyForm = { startDate: '', endDate: '', leaveType: 'Sick', reason: '' };
 const inputClass = 'h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-amber-500 dark:focus:ring-amber-500/20';
+const parseDateOnly = value => new Date(`${String(value).substring(0, 10)}T00:00:00`);
 
-const LeaveManager = () => {
+const LeaveManager = ({ selfServiceOnly = false }) => {
     const { t, i18n } = useTranslation('workspace');
     const copy = (key, options) => t(`hr.leave.${key}`, options);
     const locale = i18n.language.startsWith('ar') ? 'ar-EG' : 'en-EG';
 
     const { user } = useSelector(state => state.auth);
-    const isReviewer = hasDeveloperOrAdminRole(user?.role) || user?.role === 'HR';
+    const isReviewer = !selfServiceOnly && (hasDeveloperOrAdminRole(user?.role) || user?.role === 'HR');
 
     const { data: leaves = [], isLoading, isError, isFetching, refetch } = useGetLeaveRequestsQuery(isReviewer ? {} : { userId: user?.user_id }, { skip: !user });
     const [createLeave, { isLoading: isCreating }] = useCreateLeaveRequestMutation();
@@ -28,6 +29,7 @@ const LeaveManager = () => {
     const [statusFilter, setStatusFilter] = useState('all');
     const [form, setForm] = useState(emptyForm);
     const [reviewTarget, setReviewTarget] = useState(null);
+    const [reviewNotes, setReviewNotes] = useState('');
 
     const visibleLeaves = useMemo(() => {
         const query = search.trim().toLowerCase();
@@ -65,7 +67,11 @@ const LeaveManager = () => {
     const confirmReview = async () => {
         if (!reviewTarget) return false;
         try {
-            await updateStatus({ id: reviewTarget.leave.request_id, status: reviewTarget.status }).unwrap();
+            await updateStatus({
+                id: reviewTarget.leave.request_id,
+                status: reviewTarget.status,
+                notes: reviewNotes.trim() || undefined
+            }).unwrap();
             toast.success(copy(reviewTarget.status === 'Approved' ? 'approveSuccess' : 'rejectSuccess'));
             return true;
         } catch (error) {
@@ -74,7 +80,16 @@ const LeaveManager = () => {
         }
     };
 
-    const formatDate = value => value ? new Date(value).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const startReview = target => {
+        setReviewNotes('');
+        setReviewTarget(target);
+    };
+
+    const formatDate = value => {
+        if (!value) return copy('notAvailable');
+        const date = parseDateOnly(value);
+        return Number.isNaN(date.getTime()) ? copy('notAvailable') : date.toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
+    };
 
     return (
         <div className="space-y-6">
@@ -170,7 +185,7 @@ const LeaveManager = () => {
                     <>
                         <div className="grid gap-4 p-5 md:hidden">
                             {visibleLeaves.map(leave => (
-                                <LeaveCard key={leave.request_id} leave={leave} copy={copy} formatDate={formatDate} reviewer={isReviewer} onReview={setReviewTarget} reviewing={isReviewing} />
+                                <LeaveCard key={leave.request_id} leave={leave} copy={copy} formatDate={formatDate} reviewer={isReviewer} currentUserId={user?.user_id} onReview={startReview} reviewing={isReviewing} />
                             ))}
                         </div>
                         <div className="hidden overflow-x-auto md:block">
@@ -185,7 +200,7 @@ const LeaveManager = () => {
                                 </thead>
                                 <tbody className="divide-y divide-slate-100/80 dark:divide-white/5">
                                     {visibleLeaves.map(leave => (
-                                        <LeaveRow key={leave.request_id} leave={leave} copy={copy} formatDate={formatDate} reviewer={isReviewer} onReview={setReviewTarget} reviewing={isReviewing} />
+                                        <LeaveRow key={leave.request_id} leave={leave} copy={copy} formatDate={formatDate} reviewer={isReviewer} currentUserId={user?.user_id} onReview={startReview} reviewing={isReviewing} />
                                     ))}
                                 </tbody>
                             </table>
@@ -194,12 +209,37 @@ const LeaveManager = () => {
                 )}
             </section>
 
-            <ConfirmDialog isOpen={Boolean(reviewTarget)} onClose={() => setReviewTarget(null)} onConfirm={confirmReview} title={copy(reviewTarget?.status === 'Approved' ? 'approveTitle' : 'rejectTitle')} message={copy(reviewTarget?.status === 'Approved' ? 'approveMessage' : 'rejectMessage', { employee: reviewTarget?.leave?.employee_name || '', dates: reviewTarget?.leave ? `${formatDate(reviewTarget.leave.start_date)} – ${formatDate(reviewTarget.leave.end_date)}` : '' })} confirmLabel={copy(reviewTarget?.status === 'Approved' ? 'approveAction' : 'rejectAction')} cancelLabel={copy('cancel')} isLoading={isReviewing} variant={reviewTarget?.status === 'Approved' ? 'info' : 'warning'} />
+            <ConfirmDialog
+                isOpen={Boolean(reviewTarget)}
+                onClose={() => { setReviewTarget(null); setReviewNotes(''); }}
+                onConfirm={confirmReview}
+                title={copy(reviewTarget?.status === 'Approved' ? 'approveTitle' : 'rejectTitle')}
+                message={copy(reviewTarget?.status === 'Approved' ? 'approveMessage' : 'rejectMessage', {
+                    employee: reviewTarget?.leave?.employee_name || '',
+                    dates: reviewTarget?.leave ? `${formatDate(reviewTarget.leave.start_date)} - ${formatDate(reviewTarget.leave.end_date)}` : ''
+                })}
+                confirmLabel={copy(reviewTarget?.status === 'Approved' ? 'approveAction' : 'rejectAction')}
+                cancelLabel={copy('cancel')}
+                isLoading={isReviewing}
+                variant={reviewTarget?.status === 'Approved' ? 'info' : 'warning'}
+            >
+                <label className="block">
+                    <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy('reviewNotes')}</span>
+                    <textarea
+                        value={reviewNotes}
+                        onChange={event => setReviewNotes(event.target.value)}
+                        maxLength={500}
+                        rows={3}
+                        className="w-full resize-none rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-amber-500 dark:focus:ring-amber-500/20"
+                        placeholder={copy('reviewNotesPlaceholder')}
+                    />
+                </label>
+            </ConfirmDialog>
         </div>
     );
 };
 
-const daysBetween = (start, end) => Math.max(1, Math.round((new Date(end) - new Date(start)) / 86400000) + 1);
+const daysBetween = (start, end) => Math.max(1, Math.round((parseDateOnly(end) - parseDateOnly(start)) / 86400000) + 1);
 
 const toneClasses = {
     amber: 'text-amber-600 dark:text-amber-400',
@@ -240,8 +280,12 @@ const Status = ({ leave, copy }) => {
     );
 };
 
-const ReviewActions = ({ leave, copy, onReview, reviewing }) => (
-    leave.status === 'Pending' ? (
+const ReviewActions = ({ leave, copy, currentUserId, onReview, reviewing }) => {
+    if (leave.status !== 'Pending') return null;
+    if (String(leave.user_id) === String(currentUserId)) {
+        return <p className="text-end text-[11px] font-bold text-slate-400">{copy('ownRequest')}</p>;
+    }
+    return (
         <div className="flex flex-wrap justify-end gap-1.5">
             <button type="button" disabled={reviewing} onClick={() => onReview({ leave, status: 'Approved' })} className="min-h-8 rounded-xl bg-emerald-100 px-3 text-xs font-bold text-emerald-800 hover:bg-emerald-200 disabled:opacity-50 dark:bg-emerald-500/20 dark:text-emerald-300">
                 {copy('approve')}
@@ -250,41 +294,41 @@ const ReviewActions = ({ leave, copy, onReview, reviewing }) => (
                 {copy('reject')}
             </button>
         </div>
-    ) : null
-);
+    );
+};
 
-const LeaveCard = ({ leave, copy, formatDate, reviewer, onReview, reviewing }) => (
+const LeaveCard = ({ leave, copy, formatDate, reviewer, currentUserId, onReview, reviewing }) => (
     <article className="rounded-3xl border border-slate-200/80 bg-white/80 p-5 shadow-sm transition-all dark:border-white/10 dark:bg-slate-900/60">
         <div className="flex items-start justify-between gap-3">
             <div>
                 <h3 className="font-black text-slate-900 dark:text-white text-sm">{leave.employee_name}</h3>
                 <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                    {copy(`types.${leave.leave_type}`)} · {copy('daysValue', { count: daysBetween(leave.start_date, leave.end_date) })}
+                    {copy(`types.${leave.leave_type}`)} - {copy('daysValue', { count: daysBetween(leave.start_date, leave.end_date) })}
                 </p>
             </div>
             <Status leave={leave} copy={copy} />
         </div>
         <p className="mt-4 rounded-2xl border border-slate-100/80 bg-slate-50/70 p-3 text-xs font-bold text-slate-800 dark:border-white/5 dark:bg-white/5 dark:text-slate-200">
-            {formatDate(leave.start_date)} – {formatDate(leave.end_date)}
+            {formatDate(leave.start_date)} - {formatDate(leave.end_date)}
         </p>
         {leave.reason && <p className="mt-2.5 text-xs text-slate-600 dark:text-slate-400">{leave.reason}</p>}
-        {reviewer && <div className="mt-4"><ReviewActions leave={leave} copy={copy} onReview={onReview} reviewing={reviewing} /></div>}
+        {reviewer && <div className="mt-4"><ReviewActions leave={leave} copy={copy} currentUserId={currentUserId} onReview={onReview} reviewing={reviewing} /></div>}
     </article>
 );
 
-const LeaveRow = ({ leave, copy, formatDate, reviewer, onReview, reviewing }) => (
+const LeaveRow = ({ leave, copy, formatDate, reviewer, currentUserId, onReview, reviewing }) => (
     <tr className="transition-colors hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
         <td className="px-4 py-4 font-bold text-slate-900 dark:text-white">{leave.employee_name}</td>
         <td className="px-4 py-4 font-medium text-slate-600 dark:text-slate-400">
-            <p>{formatDate(leave.start_date)} – {formatDate(leave.end_date)}</p>
+            <p>{formatDate(leave.start_date)} - {formatDate(leave.end_date)}</p>
             <p className="mt-0.5 text-[11px] font-semibold text-slate-400">{copy('daysValue', { count: daysBetween(leave.start_date, leave.end_date) })}</p>
         </td>
         <td className="px-4 py-4">
             <p className="font-bold text-slate-800 dark:text-slate-200">{copy(`types.${leave.leave_type}`)}</p>
-            <p className="mt-0.5 max-w-xs truncate text-xs text-slate-500 dark:text-slate-400">{leave.reason || '—'}</p>
+            <p className="mt-0.5 max-w-xs truncate text-xs text-slate-500 dark:text-slate-400">{leave.reason || copy('notAvailable')}</p>
         </td>
         <td className="px-4 py-4"><Status leave={leave} copy={copy} /></td>
-        {reviewer && <td className="px-4 py-4"><ReviewActions leave={leave} copy={copy} onReview={onReview} reviewing={reviewing} /></td>}
+        {reviewer && <td className="px-4 py-4"><ReviewActions leave={leave} copy={copy} currentUserId={currentUserId} onReview={onReview} reviewing={reviewing} /></td>}
     </tr>
 );
 

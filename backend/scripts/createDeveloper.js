@@ -11,7 +11,7 @@ const {
 } = require('../src/services/developerSeedService');
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://***REMOVED***/rcms'
+    connectionString: process.env.DATABASE_URL || 'postgresql://***REMOVED***/VIARA'
 });
 
 const readArg = (name) => {
@@ -32,7 +32,7 @@ const runInsideDockerBackend = ({ email, fullName, password, mustChangePassword 
         execFileSync('docker', [
             'exec',
             '-e', `DEVELOPER_FORCE_PASSWORD_CHANGE=${mustChangePassword ? 'true' : 'false'}`,
-            'rcms_backend',
+            'VIARA_backend',
             'node',
             'scripts/createDeveloper.js',
             formatArg('email', email),
@@ -51,7 +51,7 @@ const runInsideDockerBackend = ({ email, fullName, password, mustChangePassword 
 };
 
 async function createDeveloper() {
-    const email = String(readArg('email') || process.env.DEVELOPER_EMAIL || 'developer@rcms.com').trim().toLowerCase();
+    const email = String(readArg('email') || process.env.DEVELOPER_EMAIL || 'developer@VIARA.com').trim().toLowerCase();
     const fullName = String(readArg('name') || process.env.DEVELOPER_FULL_NAME || 'System Developer').trim();
     const providedPassword = String(readArg('password') || process.env.DEVELOPER_PASSWORD || '');
     const password = providedPassword || generatePassword();

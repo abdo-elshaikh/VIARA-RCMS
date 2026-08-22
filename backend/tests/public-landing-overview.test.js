@@ -1,4 +1,4 @@
-const { getPublicLandingOverview, lookupPublicCaseStatus } = require('../src/controllers/publicLandingController');
+const { getPublicLandingOverview, lookupPublicCaseStatus, authorizePublicFinalReport } = require('../src/controllers/publicLandingController');
 
 const createResponse = () => {
     const response = { set: jest.fn(), json: jest.fn(), status: jest.fn() };
@@ -15,7 +15,11 @@ describe('public landing overview', () => {
                         studies_today: 25,
                         pending_reports: 7,
                         waiting_today: 3,
+                        imaging_queue: 4,
+                        reporting_queue: 6,
+                        priority_today: 2,
                         completed_today: 20,
+                        delayed_reports: 1,
                         studies_this_week: 110,
                         registration_minutes: 4,
                         imaging_minutes: 18,
@@ -25,7 +29,8 @@ describe('public landing overview', () => {
                     }],
                 })
                 .mockResolvedValueOnce({ rows: [{ open_claims: 9 }] })
-                .mockResolvedValueOnce({ rows: [{ delivered_today: 14 }] }),
+                .mockResolvedValueOnce({ rows: [{ delivered_today: 14 }] })
+                .mockResolvedValueOnce({ rows: [{ label: 'CT', count: 12 }, { label: 'MRI', count: 8 }] }),
         };
         const res = createResponse();
         const next = jest.fn();
@@ -45,6 +50,10 @@ describe('public landing overview', () => {
                 waitingToday: 3,
                 openClaims: 9,
                 deliveredToday: 14,
+                imagingQueue: 4,
+                reportingQueue: 6,
+                priorityToday: 2,
+                delayedReports: 1,
             }),
             workflow: {
                 registrationMinutes: 4,
@@ -55,6 +64,18 @@ describe('public landing overview', () => {
         }));
 
         const payload = res.json.mock.calls[0][0];
+        expect(payload.pipeline).toEqual([
+            { code: 'waiting', count: 3 },
+            { code: 'imaging', count: 4 },
+            { code: 'reporting', count: 6 },
+            { code: 'delivered', count: 14 },
+        ]);
+        expect(payload.modalityMix).toEqual([{ label: 'CT', count: 12 }, { label: 'MRI', count: 8 }]);
+        expect(payload.workload).toEqual(expect.objectContaining({
+            priorityToday: 2,
+            delayedReports: 1,
+            pressureScore: 24,
+        }));
         expect(JSON.stringify(payload)).not.toMatch(/patient|staff|revenue|name|mrn/i);
     });
 
@@ -99,8 +120,30 @@ describe('public last-case lookup', () => {
         expect(res.set).toHaveBeenCalledWith('Cache-Control', 'no-store, private');
         const payload = res.json.mock.calls[0][0];
         expect(payload).toEqual(expect.objectContaining({ found: true, completed: true }));
-        expect(payload).not.toHaveProperty('report');
+        expect(payload.case.status).toEqual(expect.objectContaining({ code: 'completed', progress: 100 }));
+        expect(payload.case.workflow.at(-1)).toEqual(expect.objectContaining({ code: 'completed', state: 'current' }));
+        expect(payload.report).toEqual(expect.objectContaining({
+            available: true,
+            access: 'public_token',
+            accessToken: expect.any(String),
+            expiresInSeconds: 600,
+        }));
+        expect(payload.report.accessToken).not.toContain('exam-private-id');
         expect(JSON.stringify(payload)).not.toMatch(/PAT-000001|exam-private-id|patient_name|phone|date_of_birth|acute abnormality|normal study|reporting radiologist|consultant radiologist/i);
+
+        const accessRequest = { body: { accessToken: payload.report.accessToken }, params: {} };
+        const accessResponse = createResponse();
+        const accessNext = jest.fn();
+        authorizePublicFinalReport(accessRequest, accessResponse, accessNext);
+        expect(accessNext).toHaveBeenCalled();
+        expect(accessRequest.params.id).toBe('exam-private-id');
+        expect(accessRequest.user).toEqual({ role: 'PublicReport' });
+
+        const sharedRequest = { body: {}, params: { accessToken: payload.report.accessToken } };
+        const sharedNext = jest.fn();
+        authorizePublicFinalReport(sharedRequest, createResponse(), sharedNext);
+        expect(sharedNext).toHaveBeenCalled();
+        expect(sharedRequest.params.id).toBe('exam-private-id');
     });
 
     test('returns a historical turnaround estimate for an unfinished report', async () => {
@@ -122,8 +165,55 @@ describe('public last-case lookup', () => {
         const payload = res.json.mock.calls[0][0];
         expect(payload).toEqual(expect.objectContaining({ found: true, completed: false }));
         expect(payload.case.status).toEqual(expect.objectContaining({ code: 'reporting', progress: 72 }));
+        expect(payload.case.workflow.find((step) => step.code === 'reporting')).toEqual(expect.objectContaining({ state: 'current' }));
         expect(payload.estimate.basedOn).toBe('recent_modality_turnaround');
+        expect(payload.estimate.remainingMinutes).toBeGreaterThan(0);
         expect(new Date(payload.estimate.estimatedCompletionAt).getTime()).toBe(completedAt.getTime() + 7200 * 1000);
+    });
+
+    test('uses the real report workflow state and includes imaging time in early estimates', async () => {
+        const examStartedAt = new Date(Date.now() - 5 * 60 * 1000);
+        const db = { query: jest.fn().mockResolvedValue({ rows: [{
+            status: 'Scanning',
+            report_status: 'Draft',
+            queue_stage: 'In Exam',
+            exam_started_at: examStartedAt,
+            modality_name: 'MRI',
+            average_exam_seconds: 1800,
+            average_report_seconds: 3600,
+            exam_sample_count: 8,
+            report_sample_count: 12,
+        }] }) };
+        const res = createResponse();
+
+        await lookupPublicCaseStatus(db)({ body: { mrn: 'PAT-000003' } }, res, jest.fn());
+
+        const payload = res.json.mock.calls[0][0];
+        expect(payload.case.status).toEqual(expect.objectContaining({ code: 'imaging', phase: 'imaging', progress: 46 }));
+        expect(payload.report.available).toBe(false);
+        expect(payload.estimate.confidence).toBe('high');
+        expect(new Date(payload.estimate.estimatedCompletionAt).getTime()).toBe(examStartedAt.getTime() + 5400 * 1000);
+    });
+
+    test('distinguishes typed, reviewed, and approved report states', async () => {
+        const expected = [
+            ['Typed', 'typing', 80],
+            ['Reviewed', 'review', 88],
+            ['Approved', 'approval', 94],
+        ];
+
+        for (const [reportStatus, code, progress] of expected) {
+            const db = { query: jest.fn().mockResolvedValue({ rows: [{
+                status: 'Reporting',
+                report_status: reportStatus,
+                queue_stage: 'Reporting',
+                exam_completed_at: new Date(),
+                reporting_started_at: new Date(),
+            }] }) };
+            const res = createResponse();
+            await lookupPublicCaseStatus(db)({ body: { mrn: 'PAT-000004' } }, res, jest.fn());
+            expect(res.json.mock.calls[0][0].case.status).toEqual(expect.objectContaining({ code, progress }));
+        }
     });
 
     test('uses a generic not-found response and rejects malformed MRNs', async () => {

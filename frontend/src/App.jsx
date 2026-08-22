@@ -17,6 +17,8 @@ import {
     getPatientPortalHomeUrl,
     getPatientPortalLoginUrl,
 } from './utils/portalUrls';
+import { VIARA_BRAND } from './config/brand';
+import { applyThemePalette, resolveBrandColor } from './utils/themePalette';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -62,6 +64,7 @@ const Equipment = lazy(() => import('./pages/Equipment'));
 const Unauthorized = lazy(() => import('./pages/Unauthorized'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 const Settings = lazy(() => import('./pages/Settings'));
+const Profile = lazy(() => import('./pages/Profile'));
 const Notifications = lazy(() => import('./pages/Notifications'));
 const PendingRequests = lazy(() => import('./pages/PendingRequests'));
 const Offline = lazy(() => import('./pages/Offline'));
@@ -78,7 +81,7 @@ const PrintInvoice = lazy(() => import('./pages/print/PrintInvoice'));
 const PageLoader = () => {
     const { t } = useTranslation('common');
     return (
-        <div className="min-h-screen flex items-center justify-center bg-[var(--rcms-canvas)]">
+        <div className="min-h-screen flex items-center justify-center bg-[var(--VIARA-canvas)]">
             <div className="text-center">
                 <div className="inline-block h-10 w-10 animate-spin rounded-full border-[3px] border-solid border-cyan-700 border-e-transparent"></div>
                 <p className="mt-4 text-sm font-medium text-slate-500">{t('status.loading')}</p>
@@ -143,8 +146,8 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     }
 
     // Force password change on first login
-    if (user?.mustChangePassword && location.pathname !== '/settings') {
-        return <Navigate to="/settings?tab=security" replace />;
+    if (user?.mustChangePassword && location.pathname !== '/profile') {
+        return <Navigate to="/profile?section=security" replace />;
     }
 
     // Check role permission if allowedRoles is specified
@@ -241,7 +244,7 @@ const SessionTimeout = ({ t }) => {
         };
         const expire = async () => {
             const from = `${location.pathname}${location.search}${location.hash}`;
-            sessionStorage.setItem('rcms-return-path', from);
+            sessionStorage.setItem('VIARA-return-path', from);
             try {
                 await dispatch(api.endpoints.logout.initiate()).unwrap();
             } catch {
@@ -298,25 +301,9 @@ const SessionTimeout = ({ t }) => {
     );
 };
 
-const COLOR_MAP = {
-    cyan: '#0891b2',
-    indigo: '#4f46e5',
-    rose: '#e11d48',
-    emerald: '#059669',
-    amber: '#d97706',
-    slate: '#475569'
-};
-
-const hexToRgb = (hex) => {
-    const normalized = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex : COLOR_MAP.cyan;
-    const value = Number.parseInt(normalized.slice(1), 16);
-    return `${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}`;
-};
-
-
 const App = () => {
     const dispatch = useDispatch();
-    const { t } = useTranslation('common');
+    const { t, i18n } = useTranslation('common');
     const isAuthenticated = useSelector(selectIsAuthenticated);
     const preferences = useSelector((state) => state.preferences);
     const [isRehydrated, setIsRehydrated] = useState(false);
@@ -332,15 +319,16 @@ const App = () => {
             const dark = mergedPreferences.theme === 'dark' || (mergedPreferences.theme === 'system' && systemTheme.matches);
             root.classList.toggle('dark', dark);
             root.dataset.resolvedTheme = dark ? 'dark' : 'light';
+            root.dataset.theme = dark ? 'dark' : 'light';
             root.style.colorScheme = dark ? 'dark' : 'light';
+            applyThemePalette(root, {
+                brandColor: resolveBrandColor(mergedPreferences),
+                mode: dark ? 'dark' : 'light',
+                colorOverrides: mergedPreferences.colorOverrides,
+            });
         };
         applyTheme();
         systemTheme.addEventListener?.('change', applyTheme);
-
-        const rawSelectedColor = mergedPreferences.primaryColor === 'custom'
-            ? mergedPreferences.customColor
-            : COLOR_MAP[mergedPreferences.primaryColor] || COLOR_MAP.cyan;
-        const selectedColor = /^#[0-9a-f]{6}$/i.test(rawSelectedColor || '') ? rawSelectedColor : COLOR_MAP.cyan;
 
         root.classList.toggle('density-compact', mergedPreferences.density === 'compact');
         root.classList.toggle('density-spacious', mergedPreferences.density === 'spacious');
@@ -352,11 +340,17 @@ const App = () => {
         root.dataset.fontFamily = mergedPreferences.fontFamily;
         root.dataset.borderRadius = mergedPreferences.borderRadius;
         root.setAttribute('data-primary-color', mergedPreferences.primaryColor);
-        root.style.setProperty('--rcms-accent', selectedColor);
-        root.style.setProperty('--rcms-accent-dark', selectedColor);
-        root.style.setProperty('--rcms-accent-rgb', hexToRgb(selectedColor));
         return () => systemTheme.removeEventListener?.('change', applyTheme);
     }, [preferences]);
+
+    useEffect(() => {
+        const language = preferences?.language;
+        if (!language) return;
+        const activeLanguage = (i18n.resolvedLanguage || i18n.language || 'en').split('-')[0];
+        if (language !== activeLanguage) {
+            i18n.changeLanguage(language);
+        }
+    }, [i18n, preferences?.language]);
 
     // Rehydrate the in-memory access token from the HttpOnly refresh cookie.
     useEffect(() => {
@@ -453,110 +447,117 @@ const App = () => {
                 if (isCancelled || !sseSession?.token) return;
                 eventSource = new EventSource(`${API_BASE_URL}/realtime/stream?token=${encodeURIComponent(sseSession.token)}`);
 
-        eventSource.onmessage = (event) => {
-            try {
-                const parsed = JSON.parse(event.data);
-                
-                if (parsed.type === 'PING' || parsed.type === 'CONNECTED') return;
+                eventSource.onmessage = (event) => {
+                    try {
+                        const parsed = JSON.parse(event.data);
 
-                const { event: sseEvent, data } = parsed;
-                const notificationPreferences = preferencesRef.current || {};
-                const activeUserId = currentUserIdRef.current;
+                        if (parsed.type === 'PING' || parsed.type === 'CONNECTED') return;
 
-                if (sseEvent === 'NEW_NOTIFICATION') {
-                    // Incrementally patch caches instead of invalidating (avoids a refetch).
-                    // Bump the always-subscribed unread badge count.
-                    dispatch(api.util.updateQueryData('getNotificationUnreadCount', undefined, (draft) => {
-                        if (draft && typeof draft.unreadCount === 'number' && !data.is_read) {
-                            draft.unreadCount += 1;
+                        const { event: sseEvent, data } = parsed;
+                        const notificationPreferences = preferencesRef.current || {};
+                        const activeUserId = currentUserIdRef.current;
+
+                        if (sseEvent === 'FORCE_LOGOUT') {
+                            dispatch(logOut());
+                            toast.error(data?.message || t('auth.forceLogout', 'You have been logged out because your account was accessed from another device.'), { duration: 6000 });
+                            return;
                         }
-                    }));
-                    // Prepend into the notification-center list cache when it exists
-                    // (NotificationCenter subscribes with { limit: 120 }; no-op when closed).
-                    dispatch(api.util.updateQueryData('getNotifications', { limit: 120 }, (draft) => {
-                        if (!draft || !Array.isArray(draft.items)) return;
-                        if (draft.items.some((n) => n.notification_id === data.notification_id)) return;
-                        draft.items.unshift(data);
-                        if (typeof draft.total === 'number') draft.total += 1;
-                        if (draft.counts) {
-                            draft.counts.all = (draft.counts.all || 0) + 1;
-                            if (!data.is_read) draft.counts.unread = (draft.counts.unread || 0) + 1;
-                            if (data.status === 'Failed') draft.counts.failed = (draft.counts.failed || 0) + 1;
-                            if (data.status === 'Pending') draft.counts.pending = (draft.counts.pending || 0) + 1;
-                            if (data.status === 'Sent' || data.status === 'Delivered') draft.counts.sent = (draft.counts.sent || 0) + 1;
-                        }
-                    }));
-                    dispatch(api.util.invalidateTags(['Notifications']));
-                    toast.success(data.content || 'New system notification received!', {
-                        icon: '🔔',
-                        duration: 5000
-                    });
-                    if (notificationPreferences?.desktopSystemNotifications !== false) {
-                        const critical = data.status === 'Failed' || /critical|urgent|failed|safety/i.test(`${data.event_type || ''} ${data.subject || ''}`);
-                        showDesktopNotification({
-                            title: data.subject || 'RCMS notification',
-                            body: notificationPreferences?.desktopNotificationPreview
-                                ? (data.content || data.event_type || 'New system notification received')
-                                : 'New system notification received',
-                            tag: `rcms-notification-${data.notification_id || Date.now()}`,
-                            preferences: notificationPreferences,
-                            critical
-                        });
-                    }
-                } else if (sseEvent === 'NOTIFICATION_LOG_UPDATE') {
-                    dispatch(api.util.invalidateTags(['Notifications', 'NotificationJobs']));
-                } else if (
-                    sseEvent === 'NEW_STAFF_MESSAGE' ||
-                    sseEvent === 'NEW_PATIENT_MESSAGE_ALERT' ||
-                    sseEvent === 'NEW_PATIENT_MESSAGE_UPDATE' ||
-                    sseEvent === 'NEW_DOCTOR_MESSAGE_ALERT' ||
-                    sseEvent === 'NEW_DOCTOR_MESSAGE_UPDATE'
-                ) {
-                    dispatch(api.util.invalidateTags([
-                        'ChatMessages', 'StaffUsers', 'PatientConversations', 'DoctorConversations', 'ChatUnread'
-                    ]));
-                    
-                    window.dispatchEvent(new CustomEvent('SSE_REALTIME_MESSAGE', { detail: { event: sseEvent, data } }));
 
-                    const isIncoming = sseEvent === 'NEW_PATIENT_MESSAGE_ALERT' || 
-                                     sseEvent === 'NEW_DOCTOR_MESSAGE_ALERT' ||
-                                     (sseEvent === 'NEW_STAFF_MESSAGE' && data.sender_id !== activeUserId);
-
-                    if (isIncoming) {
-                        toast(data.body || 'New message received', {
-                            icon: '💬',
-                            duration: 4000
-                        });
-                        if (notificationPreferences?.desktopMessageNotifications !== false) {
-                            const title = sseEvent.includes('PATIENT')
-                                ? 'New patient message'
-                                : sseEvent.includes('DOCTOR')
-                                    ? 'New doctor inquiry'
-                                    : data.sender_name || 'New staff message';
-                            showDesktopNotification({
-                                title,
-                                body: notificationPreferences?.desktopNotificationPreview
-                                    ? (data.body || 'New message received')
-                                    : 'New message received',
-                                tag: `rcms-message-${data.message_id || Date.now()}`,
-                                preferences: notificationPreferences
+                        if (sseEvent === 'NEW_NOTIFICATION') {
+                            // Incrementally patch caches instead of invalidating (avoids a refetch).
+                            // Bump the always-subscribed unread badge count.
+                            dispatch(api.util.updateQueryData('getNotificationUnreadCount', undefined, (draft) => {
+                                if (draft && typeof draft.unreadCount === 'number' && !data.is_read) {
+                                    draft.unreadCount += 1;
+                                }
+                            }));
+                            // Prepend into the notification-center list cache when it exists
+                            // (NotificationCenter subscribes with { limit: 120 }; no-op when closed).
+                            dispatch(api.util.updateQueryData('getNotifications', { limit: 120 }, (draft) => {
+                                if (!draft || !Array.isArray(draft.items)) return;
+                                if (draft.items.some((n) => n.notification_id === data.notification_id)) return;
+                                draft.items.unshift(data);
+                                if (typeof draft.total === 'number') draft.total += 1;
+                                if (draft.counts) {
+                                    draft.counts.all = (draft.counts.all || 0) + 1;
+                                    if (!data.is_read) draft.counts.unread = (draft.counts.unread || 0) + 1;
+                                    if (data.status === 'Failed') draft.counts.failed = (draft.counts.failed || 0) + 1;
+                                    if (data.status === 'Pending') draft.counts.pending = (draft.counts.pending || 0) + 1;
+                                    if (data.status === 'Sent') draft.counts.sent = (draft.counts.sent || 0) + 1;
+                                    if (data.status === 'Delivered') draft.counts.delivered = (draft.counts.delivered || 0) + 1;
+                                }
+                            }));
+                            dispatch(api.util.invalidateTags(['Notifications']));
+                            toast.success(data.content || 'New system notification received!', {
+                                icon: '🔔',
+                                duration: 5000
                             });
-                        }
-                    }
-                }
-            } catch (err) {
-                console.error('Failed to parse SSE payload', err);
-            }
-        };
+                            if (notificationPreferences?.desktopSystemNotifications !== false) {
+                                const critical = data.status === 'Failed' || /critical|urgent|failed|safety/i.test(`${data.event_type || ''} ${data.subject || ''}`);
+                                showDesktopNotification({
+                                    title: data.subject || `${VIARA_BRAND.name} notification`,
+                                    body: notificationPreferences?.desktopNotificationPreview
+                                        ? (data.content || data.event_type || 'New system notification received')
+                                        : 'New system notification received',
+                                    tag: `VIARA-notification-${data.notification_id || Date.now()}`,
+                                    preferences: notificationPreferences,
+                                    critical
+                                });
+                            }
+                        } else if (sseEvent === 'NOTIFICATION_LOG_UPDATE') {
+                            dispatch(api.util.invalidateTags(['Notifications', 'NotificationJobs']));
+                        } else if (
+                            sseEvent === 'NEW_STAFF_MESSAGE' ||
+                            sseEvent === 'NEW_PATIENT_MESSAGE_ALERT' ||
+                            sseEvent === 'NEW_PATIENT_MESSAGE_UPDATE' ||
+                            sseEvent === 'NEW_DOCTOR_MESSAGE_ALERT' ||
+                            sseEvent === 'NEW_DOCTOR_MESSAGE_UPDATE'
+                        ) {
+                            dispatch(api.util.invalidateTags([
+                                'ChatMessages', 'StaffUsers', 'PatientConversations', 'DoctorConversations', 'ChatUnread'
+                            ]));
 
-         eventSource.onerror = (error) => {
-            console.error('SSE connection error:', error);
-            if (isCancelled) return;
-            eventSource.close();
-            toast.error(t('sse.disconnected', 'Live updates disconnected. Attempting to reconnect...'), {
-                id: 'sse-disconnected',
-            });
-        };
+                            window.dispatchEvent(new CustomEvent('SSE_REALTIME_MESSAGE', { detail: { event: sseEvent, data } }));
+
+                            const isIncoming = sseEvent === 'NEW_PATIENT_MESSAGE_ALERT' ||
+                                sseEvent === 'NEW_DOCTOR_MESSAGE_ALERT' ||
+                                (sseEvent === 'NEW_STAFF_MESSAGE' && data.sender_id !== activeUserId);
+
+                            if (isIncoming) {
+                                toast(data.body || 'New message received', {
+                                    icon: '💬',
+                                    duration: 4000
+                                });
+                                if (notificationPreferences?.desktopMessageNotifications !== false) {
+                                    const title = sseEvent.includes('PATIENT')
+                                        ? 'New patient message'
+                                        : sseEvent.includes('DOCTOR')
+                                            ? 'New doctor inquiry'
+                                            : data.sender_name || 'New staff message';
+                                    showDesktopNotification({
+                                        title,
+                                        body: notificationPreferences?.desktopNotificationPreview
+                                            ? (data.body || 'New message received')
+                                            : 'New message received',
+                                        tag: `VIARA-message-${data.message_id || Date.now()}`,
+                                        preferences: notificationPreferences
+                                    });
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Failed to parse SSE payload', err);
+                    }
+                };
+
+                eventSource.onerror = (error) => {
+                    console.error('SSE connection error:', error);
+                    if (isCancelled) return;
+                    eventSource.close();
+                    toast.error(t('sse.disconnected', 'Live updates disconnected. Attempting to reconnect...'), {
+                        id: 'sse-disconnected',
+                    });
+                };
             })
             .catch(err => {
                 console.error('Failed to establish SSE session', err);
@@ -583,9 +584,9 @@ const App = () => {
                     toastOptions={{
                         duration: 4000,
                         style: {
-                            background: 'var(--rcms-surface)',
-                            color: 'var(--rcms-ink)',
-                            border: '1px solid var(--rcms-line)',
+                            background: 'var(--VIARA-surface)',
+                            color: 'var(--VIARA-ink)',
+                            border: '1px solid var(--VIARA-line)',
                             boxShadow: '0 18px 45px -16px rgba(15, 23, 42, 0.28)',
                             borderRadius: '12px',
                             padding: '16px',
@@ -706,6 +707,14 @@ const App = () => {
                             <ProtectedRoute allowedRoles={getRouteRoles('/settings')}>
                                 <AppLayout role="Staff">
                                     <Settings />
+                                </AppLayout>
+                            </ProtectedRoute>
+                        } />
+
+                        <Route path="/profile" element={
+                            <ProtectedRoute allowedRoles={getRouteRoles('/profile')}>
+                                <AppLayout role="Staff">
+                                    <Profile />
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -848,6 +857,9 @@ const App = () => {
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
+
+                        {/* /leave is now inside the Profile page — redirect for bookmarks/old links */}
+                        <Route path="/leave" element={<Navigate to="/profile?section=leave" replace />} />
 
                         <Route path="/marketing" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/marketing')}>

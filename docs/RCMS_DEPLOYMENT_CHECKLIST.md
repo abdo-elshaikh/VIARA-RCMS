@@ -1,6 +1,6 @@
-# RCMS Deployment Checklist
+# VIARA Deployment Checklist
 
-Use this checklist for staging and production releases of RCMS.
+Use this checklist for staging and production releases of VIARA.
 
 ## 1. Release Inputs
 

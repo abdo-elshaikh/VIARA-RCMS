@@ -4,7 +4,8 @@ const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const openShiftSchema = z.object({
     openingBalance: z.coerce.number().min(0).optional(),
-    notes: z.string().trim().max(1000).optional()
+    notes: z.string().trim().max(1000).optional(),
+    branchId: z.string().uuid().optional()
 });
 
 const closeShiftSchema = z.object({
@@ -20,7 +21,8 @@ const reviewClosureSchema = z.object({
 const reconciliationQuerySchema = z.object({
     startDate: dateString.optional(),
     endDate: dateString.optional(),
-    cashierId: z.string().uuid().optional()
+    cashierId: z.string().uuid().optional(),
+    branchId: z.string().uuid().optional()
 }).superRefine((data, context) => {
     if (data.startDate && data.endDate && data.startDate > data.endDate) {
         context.addIssue({

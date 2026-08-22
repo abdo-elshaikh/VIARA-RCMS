@@ -192,7 +192,7 @@ export const exportReportToWord = async ({
     const includeSignature = documentSettings.includeSignature !== false;
     const statusTone = STATUS_TONES[reportStatus] || STATUS_TONES.Draft;
     const logoRun = includeHeader ? await loadLogoRun(center.logo_url) : null;
-    const logoText = String(center.center_name || 'RCMS').trim().slice(0, 4).toUpperCase();
+    const logoText = String(center.center_name || 'RC').trim().slice(0, 4).toUpperCase();
     const tr = (key: string, fallback: string) => typeof t === 'function'
         ? t(key, { defaultValue: fallback })
         : fallback;

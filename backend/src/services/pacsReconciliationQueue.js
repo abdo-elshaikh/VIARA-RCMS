@@ -8,8 +8,8 @@ const logger = require('../config/logger');
 const { reconcileInstance } = require('./pacsReconcileService');
 
 const QUEUE_TABLE = 'pacs_reconciliation_queue';
-const DEFAULT_INTERVAL_MS = Number(process.env.PACS_AI_QUEUE_INTERVAL_MS || 30000);
-const DEFAULT_BATCH_SIZE = Number(process.env.PACS_AI_QUEUE_BATCH_SIZE || 1);
+const DEFAULT_INTERVAL_MS = Number(process.env.PACS_RECON_QUEUE_INTERVAL_MS || 3000);
+const DEFAULT_BATCH_SIZE = Number(process.env.PACS_RECON_QUEUE_BATCH_SIZE || 5);
 
 /**
  * Enqueue a PACS webhook payload for asynchronous reconciliation.

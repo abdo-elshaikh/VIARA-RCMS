@@ -8,7 +8,7 @@ class AnalyticsService {
     normalizeRange(startDate, endDate) {
         return {
             end: endDate || new Date().toISOString().split('T')[0],
-            start: startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+            start: startDate || new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
         };
     }
 
@@ -23,18 +23,18 @@ class AnalyticsService {
 
         if (groupBy === 'date') {
             query = `
-                SELECT DATE(start_time) as label, COUNT(*) as value
-                FROM appointments
-                WHERE start_time >= $1::date AND start_time < ($2::date + INTERVAL '1 day') AND status != 'Cancelled'
-                GROUP BY DATE(start_time)
-                ORDER BY DATE(start_time) ASC
+                SELECT DATE(e.exam_started_at) as label, COUNT(*) as value
+                FROM examinations e
+                WHERE e.exam_started_at >= $1::date AND e.exam_started_at < ($2::date + INTERVAL '1 day')
+                GROUP BY DATE(e.exam_started_at)
+                ORDER BY DATE(e.exam_started_at) ASC
             `;
         } else if (groupBy === 'modality') {
             query = `
-                SELECT m.name as label, COUNT(a.appointment_id) as value
-                FROM appointments a
-                JOIN modalities m ON a.modality_id = m.modality_id
-                WHERE a.start_time >= $1::date AND a.start_time < ($2::date + INTERVAL '1 day') AND a.status != 'Cancelled'
+                SELECT m.name as label, COUNT(e.exam_id) as value
+                FROM examinations e
+                JOIN modalities m ON e.modality_id = m.modality_id
+                WHERE e.exam_started_at >= $1::date AND e.exam_started_at < ($2::date + INTERVAL '1 day')
                 GROUP BY m.name
                 ORDER BY value DESC
             `;
@@ -44,22 +44,22 @@ class AnalyticsService {
                 FROM examinations e
                 JOIN appointments a ON e.appointment_id = a.appointment_id
                 JOIN users u ON e.performing_radiologist_id = u.user_id
-                WHERE a.start_time >= $1::date AND a.start_time < ($2::date + INTERVAL '1 day') AND a.status != 'Cancelled'
+                WHERE e.exam_started_at >= $1::date AND e.exam_started_at < ($2::date + INTERVAL '1 day')
                 GROUP BY u.full_name
                 ORDER BY value DESC
             `;
         } else if (groupBy === 'payer') {
             query = `
-                SELECT COALESCE(p.name, 'Self Pay') AS label, COUNT(DISTINCT a.appointment_id)::int AS value
-                FROM appointments a
-                LEFT JOIN examinations e ON e.appointment_id = a.appointment_id
+                SELECT COALESCE(p.name, 'Self Pay') AS label, COUNT(DISTINCT e.exam_id)::int AS value
+                FROM examinations e
+                JOIN appointments a ON a.appointment_id = e.appointment_id
                 LEFT JOIN invoices i ON i.exam_id = e.exam_id AND i.invoice_status <> 'Voided'
                 LEFT JOIN LATERAL (
                     SELECT ic.provider_id FROM insurance_claims ic
                     WHERE ic.invoice_id = i.invoice_id ORDER BY ic.created_at DESC LIMIT 1
                 ) claim ON TRUE
                 LEFT JOIN insurance_providers p ON p.provider_id = claim.provider_id
-                WHERE a.start_time >= $1::date AND a.start_time < ($2::date + INTERVAL '1 day') AND a.status != 'Cancelled'
+                WHERE e.exam_started_at >= $1::date AND e.exam_started_at < ($2::date + INTERVAL '1 day')
                 GROUP BY COALESCE(p.name, 'Self Pay')
                 ORDER BY value DESC
             `;
@@ -195,10 +195,11 @@ class AnalyticsService {
 
         // 1. Volume by Appointment Source (Walk-in, Phone, etc.)
         const sourceQuery = `
-            SELECT appointment_source as label, COUNT(*) as value
-            FROM appointments
-            WHERE start_time >= $1::date AND start_time < ($2::date + INTERVAL '1 day') AND status != 'Cancelled'
-            GROUP BY appointment_source
+            SELECT a.appointment_source as label, COUNT(e.exam_id) as value
+            FROM examinations e
+            JOIN appointments a ON a.appointment_id = e.appointment_id
+            WHERE e.exam_started_at >= $1::date AND e.exam_started_at < ($2::date + INTERVAL '1 day')
+            GROUP BY a.appointment_source
             ORDER BY value DESC
         `;
 
@@ -211,8 +212,7 @@ class AnalyticsService {
                 FROM referring_doctors d
                 JOIN appointments a ON a.referring_doctor_id = d.doctor_id
                 LEFT JOIN examinations e ON e.appointment_id = a.appointment_id
-                WHERE a.start_time >= $1::date AND a.start_time < ($2::date + INTERVAL '1 day')
-                  AND a.status <> 'Cancelled'
+                WHERE e.exam_started_at >= $1::date AND e.exam_started_at < ($2::date + INTERVAL '1 day')
                 GROUP BY d.doctor_id, d.full_name, d.clinic_hospital
             ), activity AS (
                 SELECT a.referring_doctor_id AS doctor_id,
@@ -220,14 +220,16 @@ class AnalyticsService {
                 FROM invoices i
                 JOIN examinations e ON e.exam_id = i.exam_id
                 JOIN appointments a ON a.appointment_id = e.appointment_id
-                WHERE i.invoice_status <> 'Voided' AND i.business_date BETWEEN $1::date AND $2::date
+                WHERE i.invoice_status <> 'Voided'
+                  AND e.exam_started_at >= $1::date AND e.exam_started_at < ($2::date + INTERVAL '1 day')
                 UNION ALL
                 SELECT a.referring_doctor_id, -c.net_amount
                 FROM credit_notes c
                 JOIN invoices i ON i.invoice_id = c.invoice_id
                 JOIN examinations e ON e.exam_id = i.exam_id
                 JOIN appointments a ON a.appointment_id = e.appointment_id
-                WHERE c.reversed_at IS NULL AND c.business_date BETWEEN $1::date AND $2::date
+                WHERE c.reversed_at IS NULL
+                  AND e.exam_started_at >= $1::date AND e.exam_started_at < ($2::date + INTERVAL '1 day')
             ), revenue AS (
                 SELECT doctor_id, SUM(amount) AS total_revenue FROM activity GROUP BY doctor_id
             )

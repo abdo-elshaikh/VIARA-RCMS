@@ -7,39 +7,24 @@ const {
     createMaintenanceSchema, updateMaintenanceSchema,
     createDowntimeSchema, updateDowntimeSchema
 } = require('../schemas/equipmentSchema');
-
-let modalityDicomSchemaPromise = null;
-const ensureModalityDicomSchema = async (db) => {
-    if (!modalityDicomSchemaPromise) {
-        modalityDicomSchemaPromise = db.query(`
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS aet VARCHAR(50);
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS ip_address VARCHAR(255);
-            ALTER TABLE modalities ALTER COLUMN ip_address TYPE VARCHAR(255);
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS port INTEGER;
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS dicom_synced BOOLEAN DEFAULT FALSE;
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS dicom_role VARCHAR(30) DEFAULT 'mwl_client';
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES users(user_id) ON DELETE SET NULL;
-            ALTER TABLE examination_types ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-            ALTER TABLE examination_types ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES users(user_id) ON DELETE SET NULL;
-            ALTER TABLE examination_types DROP CONSTRAINT IF EXISTS examination_types_modality_id_name_key;
-            CREATE INDEX IF NOT EXISTS idx_modalities_not_deleted
-                ON modalities (status, type, name)
-                WHERE deleted_at IS NULL;
-        `).catch((error) => {
-            modalityDicomSchemaPromise = null;
-            throw error;
-        });
-    }
-    return modalityDicomSchemaPromise;
-};
+const { getWorkingHours } = require('../services/schedulingService');
 
 // ─── Modalities (Registry) ───────────────────────────────────────────────────
 
 const getMachines = (db) => async (req, res, next) => {
     try {
-        await ensureModalityDicomSchema(db);
-        const result = await db.query('SELECT * FROM modalities WHERE deleted_at IS NULL ORDER BY name');
+        const includeInfrastructure = ['Developer', 'Admin', 'Technician'].includes(req.user.role);
+        const infrastructureFields = includeInfrastructure
+            ? ', serial_number, aet, ip_address, port, dicom_role'
+            : '';
+        const result = await db.query(`
+            SELECT modality_id, name, type, room_number, manufacturer, model,
+                   installation_date, location, status, dicom_synced, created_at, updated_at
+                   ${infrastructureFields}
+            FROM modalities
+            WHERE deleted_at IS NULL
+            ORDER BY name
+        `);
         res.json(result.rows);
     } catch (error) {
         next(error);
@@ -48,9 +33,18 @@ const getMachines = (db) => async (req, res, next) => {
 
 const getMachineById = (db) => async (req, res, next) => {
     try {
-        await ensureModalityDicomSchema(db);
         const { id } = req.params;
-        const result = await db.query('SELECT * FROM modalities WHERE modality_id = $1 AND deleted_at IS NULL', [id]);
+        const includeInfrastructure = ['Developer', 'Admin', 'Technician'].includes(req.user.role);
+        const infrastructureFields = includeInfrastructure
+            ? ', serial_number, aet, ip_address, port, dicom_role'
+            : '';
+        const result = await db.query(`
+            SELECT modality_id, name, type, room_number, manufacturer, model,
+                   installation_date, location, status, dicom_synced, created_at, updated_at
+                   ${infrastructureFields}
+            FROM modalities
+            WHERE modality_id = $1 AND deleted_at IS NULL
+        `, [id]);
         if (result.rows.length === 0) return next(new AppError('Machine not found', 404));
         res.json(result.rows[0]);
     } catch (error) {
@@ -61,7 +55,6 @@ const getMachineById = (db) => async (req, res, next) => {
 const createMachine = (db) => async (req, res, next) => {
     let client;
     try {
-        await ensureModalityDicomSchema(db);
         const data = createMachineSchema.parse(req.body);
         client = await db.connect();
         await client.query('BEGIN');
@@ -102,7 +95,6 @@ const createMachine = (db) => async (req, res, next) => {
 const updateMachine = (db) => async (req, res, next) => {
     let client;
     try {
-        await ensureModalityDicomSchema(db);
         const { id } = req.params;
         const data = updateMachineSchema.parse(req.body);
         client = await db.connect();
@@ -222,6 +214,13 @@ const updateServiceContract = (db) => async (req, res, next) => {
     try {
         const { id } = req.params;
         const data = updateServiceContractSchema.parse(req.body);
+        const existing = await db.query('SELECT * FROM service_contracts WHERE contract_id = $1', [id]);
+        if (!existing.rows[0]) return next(new AppError('Service contract not found', 404));
+        const nextStartDate = data.startDate ?? existing.rows[0].start_date;
+        const nextEndDate = data.endDate ?? existing.rows[0].end_date;
+        if (nextEndDate < nextStartDate) {
+            return next(new AppError('Contract end date must be on or after start date', 400));
+        }
         
         // Build dynamic update query
         const keys = Object.keys(data);
@@ -281,6 +280,17 @@ const updateMaintenance = (db) => async (req, res, next) => {
     try {
         const { id } = req.params;
         const data = updateMaintenanceSchema.parse(req.body);
+        const existing = await db.query('SELECT * FROM equipment_maintenance WHERE maintenance_id = $1', [id]);
+        if (!existing.rows[0]) return next(new AppError('Maintenance record not found', 404));
+        const nextScheduledDate = data.scheduledDate ?? existing.rows[0].scheduled_date;
+        const nextCompletedDate = data.completedDate !== undefined ? data.completedDate : existing.rows[0].completed_date;
+        const nextStatus = data.status ?? existing.rows[0].status;
+        if (nextCompletedDate && nextCompletedDate < nextScheduledDate) {
+            return next(new AppError('Completion date cannot be before the scheduled date', 400));
+        }
+        if (nextStatus === 'Completed' && !nextCompletedDate) {
+            return next(new AppError('Completed maintenance requires a completion date', 400));
+        }
         
         const keys = Object.keys(data);
         if (keys.length === 0) return res.status(400).json({ message: 'No data provided' });
@@ -323,37 +333,72 @@ const getDowntimeRecords = (db) => async (req, res, next) => {
 };
 
 const createDowntime = (db) => async (req, res, next) => {
+    let client;
     try {
         const data = createDowntimeSchema.parse(req.body);
         const userId = req.user.user_id;
-        
-        const result = await db.query(`
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const overlap = await client.query(`
+            SELECT downtime_id
+            FROM equipment_downtime
+            WHERE modality_id = $1
+              AND status <> 'Resolved'
+              AND tstzrange(start_time, end_time, '[)') && tstzrange($2::timestamptz, $3::timestamptz, '[)')
+            FOR UPDATE
+        `, [data.modalityId, data.startTime, data.endTime]);
+        if (overlap.rows.length) throw new AppError('This downtime window overlaps an existing unresolved record', 409);
+
+        const result = await client.query(`
             INSERT INTO equipment_downtime (modality_id, start_time, end_time, reason, status, resolution_notes, created_by)
             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
         `, [data.modalityId, data.startTime, data.endTime, data.reason, data.status, data.resolutionNotes, userId]);
-        
-        // Optionally update machine status to 'Under Maintenance' if downtime is currently active
-        await db.query(`
-            UPDATE modalities 
-            SET status = 'Under Maintenance' 
-            WHERE modality_id = $1 
-              AND status = 'Active' 
-              AND CURRENT_TIMESTAMP >= $2::timestamp 
-              AND CURRENT_TIMESTAMP <= $3::timestamp
-        `, [data.modalityId, data.startTime, data.endTime]);
-        
+        await client.query('COMMIT');
         res.status(201).json(result.rows[0]);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
 const updateDowntime = (db) => async (req, res, next) => {
+    let client;
     try {
         const { id } = req.params;
         const data = updateDowntimeSchema.parse(req.body);
-        
+        client = await db.connect();
+        await client.query('BEGIN');
+        const existingResult = await client.query(
+            'SELECT * FROM equipment_downtime WHERE downtime_id = $1 FOR UPDATE',
+            [id]
+        );
+        if (!existingResult.rows[0]) throw new AppError('Downtime record not found', 404);
+        const existing = existingResult.rows[0];
+        if (existing.status === 'Resolved') throw new AppError('Resolved downtime records are immutable', 409);
+
+        const nextModalityId = data.modalityId ?? existing.modality_id;
+        const nextStartTime = data.startTime ?? existing.start_time;
+        const nextEndTime = data.endTime ?? existing.end_time;
+        if (new Date(nextEndTime) <= new Date(nextStartTime)) {
+            throw new AppError('Downtime end time must be after start time', 400);
+        }
+        if (data.status !== 'Resolved') {
+            const overlap = await client.query(`
+                SELECT downtime_id
+                FROM equipment_downtime
+                WHERE modality_id = $1
+                  AND downtime_id <> $2
+                  AND status <> 'Resolved'
+                  AND tstzrange(start_time, end_time, '[)') && tstzrange($3::timestamptz, $4::timestamptz, '[)')
+                FOR UPDATE
+            `, [nextModalityId, id, nextStartTime, nextEndTime]);
+            if (overlap.rows.length) throw new AppError('This downtime window overlaps an existing unresolved record', 409);
+        }
+
         const keys = Object.keys(data);
         if (keys.length === 0) return res.status(400).json({ message: 'No data provided' });
         
@@ -364,66 +409,75 @@ const updateDowntime = (db) => async (req, res, next) => {
         const values = Object.values(data);
         values.push(id);
         
-        const result = await db.query(`
+        const result = await client.query(`
             UPDATE equipment_downtime 
             SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
             WHERE downtime_id = $${values.length} RETURNING *
         `, values);
-        if (!result.rows[0]) return next(new AppError('Downtime record not found', 404));
-        
-        // Reactivate only when no other current outage still blocks this machine.
-        if (data.status === 'Resolved') {
-            await db.query(`
-                UPDATE modalities m
-                SET status = 'Active'
-                WHERE m.modality_id = $1
-                  AND m.status = 'Under Maintenance'
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM equipment_downtime ed
-                      WHERE ed.modality_id = m.modality_id
-                        AND ed.status <> 'Resolved'
-                        AND ed.start_time <= CURRENT_TIMESTAMP
-                        AND ed.end_time >= CURRENT_TIMESTAMP
-                  )
-            `, [result.rows[0].modality_id]);
-        }
-        
+        await client.query('COMMIT');
         res.json(result.rows[0]);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
 const getUtilizationReport = (db) => async (req, res, next) => {
     try {
         const { startDate, endDate } = req.query;
-        // Basic utilization: For each machine, compare total available hours vs scheduled exam hours
-        // Simplification: We assume a 10-hour workday (e.g., 8am-6pm)
-        // This calculates scheduled time from appointments.
-        
+        const parseDate = (value, label) => {
+            const parsed = new Date(`${value}T00:00:00.000Z`);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '') || Number.isNaN(parsed.getTime())
+                || parsed.toISOString().slice(0, 10) !== value) {
+                throw new AppError(`Invalid ${label}`, 400);
+            }
+            return parsed;
+        };
+
+        const today = new Date();
+        const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+        const inclusiveEnd = endDate ? parseDate(endDate, 'endDate') : todayUtc;
+        const rangeEnd = new Date(inclusiveEnd);
+        rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1);
+        const rangeStart = startDate ? parseDate(startDate, 'startDate') : new Date(rangeEnd.getTime() - 30 * 86400000);
+        if (rangeStart >= rangeEnd) throw new AppError('startDate must be on or before endDate', 400);
+
+        const workingHours = await getWorkingHours(db);
+        const hoursPerDay = Math.max(0, Math.min(24, Number(workingHours.end) - Number(workingHours.start)));
+        const holidaySet = new Set(workingHours.holidays || []);
+        const workingDays = new Set(workingHours.workingDays || [0, 1, 2, 3, 4, 5, 6]);
+        let availableDays = 0;
+        for (let day = new Date(rangeStart); day < rangeEnd; day.setUTCDate(day.getUTCDate() + 1)) {
+            if (workingDays.has(day.getUTCDay()) && !holidaySet.has(day.toISOString().slice(0, 10))) {
+                availableDays += 1;
+            }
+        }
+        const totalAvailableHours = availableDays * hoursPerDay;
+
         const query = `
             WITH available AS (
                 SELECT modality_id, name,
-                       (EXTRACT(EPOCH FROM ($2::timestamp - $1::timestamp))/3600 * (10.0/24.0)) as total_available_hours
+                       $3::numeric as total_available_hours
                 FROM modalities
                 WHERE status != 'Out of Service'
                   AND deleted_at IS NULL
             ),
             scheduled AS (
                 SELECT modality_id,
-                       SUM(EXTRACT(EPOCH FROM (end_time - start_time))/3600) as scheduled_hours
+                       SUM(EXTRACT(EPOCH FROM (LEAST(end_time, $2) - GREATEST(start_time, $1)))/3600) as scheduled_hours
                 FROM appointments
-                WHERE status != 'Cancelled' 
-                  AND start_time >= $1 AND end_time <= $2
+                WHERE status NOT IN ('Cancelled', 'No-Show')
+                  AND start_time < $2 AND end_time > $1
                 GROUP BY modality_id
             ),
             downtime AS (
                 SELECT modality_id,
-                       SUM(EXTRACT(EPOCH FROM (end_time - start_time))/3600) as downtime_hours
+                       SUM(EXTRACT(EPOCH FROM (LEAST(end_time, $2) - GREATEST(start_time, $1)))/3600) as downtime_hours
                 FROM equipment_downtime
-                WHERE start_time >= $1 AND end_time <= $2
+                WHERE start_time < $2 AND end_time > $1
                 GROUP BY modality_id
             )
             SELECT a.modality_id, a.name, a.total_available_hours,
@@ -433,13 +487,8 @@ const getUtilizationReport = (db) => async (req, res, next) => {
             LEFT JOIN scheduled s ON a.modality_id = s.modality_id
             LEFT JOIN downtime d ON a.modality_id = d.modality_id
         `;
-        
-        // Defaults: last 30 days
-        const end = endDate ? new Date(endDate) : new Date();
-        const start = startDate ? new Date(startDate) : new Date();
-        if (!startDate) start.setDate(end.getDate() - 30);
-        
-        const result = await db.query(query, [start.toISOString(), end.toISOString()]);
+
+        const result = await db.query(query, [rangeStart.toISOString(), rangeEnd.toISOString(), totalAvailableHours]);
         res.json(result.rows);
     } catch (error) {
         next(error);
@@ -449,7 +498,6 @@ const getUtilizationReport = (db) => async (req, res, next) => {
 const deleteMachine = (db) => async (req, res, next) => {
     let client;
     try {
-        await ensureModalityDicomSchema(db);
         const { id } = req.params;
         client = await db.connect();
         await client.query('BEGIN');

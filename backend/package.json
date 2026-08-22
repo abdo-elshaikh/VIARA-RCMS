@@ -1,5 +1,5 @@
 {
-  "name": "rcms-backend",
+  "name": "VIARA-backend",
   "version": "1.0.0",
   "description": "Radiology Center Management System API",
   "main": "src/server.js",
@@ -13,12 +13,14 @@
     "backup:decrypt": "node scripts/decryptBackup.js",
     "create:developer": "node scripts/createDeveloper.js",
     "rotate-encryption": "node scripts/reencryptData.js",
-    "validate-deployment": "node scripts/validateDeployment.js"
+    "validate-deployment": "node scripts/validateDeployment.js",
+    "reset-demo-accounts": "node scripts/resetDemoAccounts.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
-    "cors": "^2.8.5",
+    "@simplewebauthn/server": "^13.2.2",
     "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
     "csv-parser": "^3.2.1",
     "dcmjs": "^0.44.1",
     "decimal.js": "^10.6.0",
@@ -33,8 +35,9 @@
     "nodemailer": "^9.0.1",
     "opossum": "^9.0.0",
     "otplib": "^12.0.1",
-    "pg": "^8.11.3",
     "p-limit": "^3.1.0",
+    "pdfkit": "^0.17.2",
+    "pg": "^8.11.3",
     "qrcode": "^1.5.3",
     "stripe": "^12.18.0",
     "twilio": "^6.0.2",

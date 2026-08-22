@@ -1,364 +1,257 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, Phone, ArrowUpRight, ArrowRight, ShieldCheck, Clock, MapPin, CalendarCheck, UserRound, Stethoscope, ScanLine } from 'lucide-react';
-
+import { Menu, X, CalendarCheck, FileText, LockKeyhole, Sparkles, LogIn } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import LanguageToggle from '../../ui/LanguageToggle';
 import ThemeToggle from '../../ui/ThemeToggle';
+import { PortalBrand } from '../ui/PortalBrand';
 
 interface PortalHeaderProps {
   navLinks?: Array<{ label: string; href: string }>;
-  portalType?: string;
-  center?: Record<string, any> | null;
-  text?: Record<string, any>;
   isRtl?: boolean;
   onBook?: () => void;
+  onCheckResults?: () => void;
+  onLogin?: () => void;
 }
 
-export const PortalHeader = ({ navLinks = [], portalType = 'public', center, text, isRtl = false, onBook }: PortalHeaderProps) => {
+export const PortalHeader = ({ navLinks = [], isRtl = false, onBook, onCheckResults, onLogin }: PortalHeaderProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const [activeHref, setActiveHref] = useState(navLinks[0]?.href || '#main-content');
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
-  const scrollFrameRef = useRef<number | null>(null);
+  const [activeHref, setActiveHref] = useState('#main-content');
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
-    const updateScrollState = () => {
-      const scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-      setScrolled(window.scrollY > 12);
-      setScrollProgress(Math.min(100, Math.max(0, (window.scrollY / scrollable) * 100)));
-      scrollFrameRef.current = null;
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 96);
     };
-    const onScroll = () => {
-      if (scrollFrameRef.current === null) scrollFrameRef.current = window.requestAnimationFrame(updateScrollState);
-    };
-    updateScrollState();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll);
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
-      if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
-    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   useEffect(() => {
-    const sectionLinks = navLinks
-      .filter(({ href }) => href?.startsWith('#'))
-      .map(({ href }) => ({ href, element: document.querySelector<HTMLElement>(href) }))
-      .filter((item): item is { href: string; element: HTMLElement } => Boolean(item.element))
-      .sort((a, b) => a.element.getBoundingClientRect().top - b.element.getBoundingClientRect().top);
-    if (!sectionLinks.length) return undefined;
+    let animationFrame = 0;
+    const sections = ['#main-content', '#services-section', '#why-viara', '#locations', '#faq'];
 
     const updateActiveSection = () => {
-      const marker = window.scrollY + 170;
-      let current = sectionLinks[0].href;
-      sectionLinks.forEach(({ href, element }) => {
-        if (element.getBoundingClientRect().top + window.scrollY <= marker) current = href;
+      const marker = Math.min(220, window.innerHeight * 0.28);
+      let current = sections[0];
+      sections.forEach((href) => {
+        const section = document.querySelector(href);
+        if (section && section.getBoundingClientRect().top <= marker) current = href;
       });
       setActiveHref(current);
     };
 
+    const handleScroll = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(updateActiveSection);
+    };
+
     updateActiveSection();
-    window.addEventListener('scroll', updateActiveSection, { passive: true });
-    window.addEventListener('resize', updateActiveSection);
+    const initialHash = window.location.hash;
+    if (sections.includes(initialHash)) {
+      animationFrame = window.requestAnimationFrame(() => {
+        const target = document.querySelector(initialHash);
+        if (target) {
+          const top = target.getBoundingClientRect().top + window.scrollY - 92;
+          window.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
+          updateActiveSection();
+        }
+      });
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
-      window.removeEventListener('scroll', updateActiveSection);
-      window.removeEventListener('resize', updateActiveSection);
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener('scroll', handleScroll);
     };
-  }, [navLinks]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const getFocusable = () => Array.from(menuRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') || []);
-    getFocusable()[0]?.focus();
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setMenuOpen(false);
-        return;
-      }
-      if (e.key !== 'Tab') return;
-      const focusable = getFocusable();
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    const previousOverflow = document.body.style.overflow;
-    window.addEventListener('keydown', handleKey);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', handleKey);
-      document.body.style.overflow = previousOverflow;
-      menuButtonRef.current?.focus();
-    };
-  }, [menuOpen]);
-
-  useEffect(() => {
-    const desktop = window.matchMedia('(min-width: 1024px)');
-    const closeOnDesktop = (event: MediaQueryListEvent) => { if (event.matches) setMenuOpen(false); };
-    desktop.addEventListener('change', closeOnDesktop);
-    return () => desktop.removeEventListener('change', closeOnDesktop);
   }, []);
 
-  const centerName = [center?.center_name, center?.branch_name].filter(Boolean).join(' · ') || center?.name || 'RCMS Radiology';
-  const initials = String(center?.center_name || center?.initials || 'RCMS').trim().slice(0, 4).toUpperCase();
-  const logo = center?.logo_url || center?.logoUrl;
-  const hotline = center?.phone || '19144';
-  const address = center?.address || '';
-  const configuredStart = Number(center?.working_hours?.start);
-  const configuredEnd = Number(center?.working_hours?.end);
-  const hoursStart = Number.isFinite(configuredStart) ? configuredStart : 6;
-  const hoursEnd = Number.isFinite(configuredEnd) ? configuredEnd : 22;
-  const workingHours = `${String(hoursStart).padStart(2, '0')}:00–${String(hoursEnd).padStart(2, '0')}:00`;
-  const isPublic = portalType === 'public';
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [menuOpen]);
 
-  const openBooking = () => {
+  const navigateToSection = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (!href.startsWith('#')) return;
+    const target = document.querySelector(href);
+    if (!target) return;
+    event.preventDefault();
     setMenuOpen(false);
-    if (onBook) onBook();
-    else document.querySelector('#book')?.scrollIntoView({ behavior: 'smooth' });
+    setActiveHref(href);
+    window.history.pushState(null, '', href);
+    const top = target.getBoundingClientRect().top + window.scrollY - 92;
+    window.scrollTo({ top: Math.max(0, top), behavior: reduceMotion ? 'auto' : 'smooth' });
   };
 
+  const defaultLinks = [
+    { label: isRtl ? 'الرئيسية' : 'Home', href: '#main-content' },
+    { label: isRtl ? 'خدماتنا' : 'Services', href: '#services-section' },
+    { label: isRtl ? 'عن المركز' : 'About', href: '#why-viara' },
+    { label: isRtl ? 'الفروع' : 'Branches', href: '#locations' },
+    { label: isRtl ? 'الأسئلة الشائعة' : 'FAQ', href: '#faq' },
+  ];
+
+  const links = navLinks.length ? navLinks : defaultLinks;
+
   return (
-    <header className="portal-site-header fixed inset-x-0 top-0 z-50 font-sans transition-all duration-300" dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Utility bar — collapses on scroll */}
-      <div className={`portal-header-utility overflow-hidden border-b px-4 text-xs transition-all duration-300 sm:px-6 lg:px-8 ${scrolled ? 'max-h-0 border-transparent py-0 opacity-0' : 'max-h-12 py-2 opacity-100'}`}>
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-4 sm:gap-6">
-            <a href={`tel:${hotline}`} className="portal-header-hotline group flex min-w-0 items-center gap-2 font-bold transition-colors">
-              <span className="portal-header-hotline-label flex h-5 shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-wider shadow-sm">
-                <Phone className="h-3 w-3" />
-                {isRtl ? 'الخط الساخن' : 'Hotline'}
-              </span>
-              <span className="portal-header-hotline-number truncate font-mono text-sm tracking-wider" dir="ltr">{hotline}</span>
-            </a>
-            <span className="portal-header-meta hidden items-center gap-2 text-[10px] font-semibold md:flex">
-              <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-60 motion-reduce:animate-none" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" /></span>
-              <Clock className="h-3.5 w-3.5" />
-              <span>{isRtl ? 'مفتوح يومياً' : 'Open daily'}</span><b dir="ltr" className="font-bold text-white">{workingHours}</b>
-            </span>
-          </div>
-
-          <div className="portal-header-controls flex shrink-0 items-center gap-2 sm:gap-3">
-            <a href={address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : '/#locations'} target={address ? '_blank' : undefined} rel={address ? 'noreferrer' : undefined} className="portal-header-meta hidden items-center gap-1.5 text-[10px] font-semibold transition hover:text-white lg:flex">
-              <MapPin className="h-3.5 w-3.5" />
-              <span className="max-w-52 truncate">{address || (isRtl ? 'اعثر على أقرب مركز' : 'Find your nearest center')}</span>
-            </a>
-            <div className="portal-header-divider hidden h-4 w-px sm:block" />
-            <ThemeToggle variant="dark" className="portal-header-theme-toggle !h-8 !w-8 !rounded-lg" />
-            <LanguageToggle variant="dark" className="portal-header-language-toggle !h-8 !rounded-lg !px-2.5" />
-          </div>
-        </div>
-      </div>
-
-      {/* Main navigation bar */}
-      <nav
-        className={`portal-header-nav border-b transition-all duration-300 ${scrolled
-          ? 'portal-header-nav--scrolled shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:shadow-slate-950/40'
-          : 'backdrop-blur-md'
-          }`}
-        aria-label={text?.primaryNav || 'Primary navigation'}
-      >
-        <div className={`mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 transition-[height] duration-300 sm:px-6 lg:px-8 ${scrolled ? 'h-14' : 'h-16'}`}>
-          {/* Brand */}
-          <Link to="/" className="group flex min-w-0 items-center gap-3">
-            <span className={`portal-header-brand-mark relative flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-blue-50/60 shadow-[0_4px_16px_-4px_rgba(7,92,183,0.2)] transition-all duration-300 group-hover:-translate-y-0.5 group-hover:scale-105 group-hover:border-[#075cb7]/40 group-hover:shadow-[0_8px_24px_-6px_rgba(7,92,183,0.35)] dark:border-white/15 dark:from-slate-900 dark:via-slate-900/90 dark:to-slate-800 ${scrolled ? 'h-9 w-9' : 'h-11 w-11'} ${logo ? 'is-has-logo' : ''}`}>
-              <span className="absolute inset-0 bg-gradient-to-tr from-[#075cb7]/10 via-transparent to-sky-400/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-              {logo ? (
-                <img src={logo} alt="" className="relative z-10 h-full w-full object-contain p-0.5" />
-              ) : (
-                <div className="relative z-10 flex items-center justify-center gap-1 font-black text-[#082761] dark:text-sky-300">
-                  <ScanLine className="h-4 w-4 text-[#075cb7] transition-transform duration-300 group-hover:rotate-12 dark:text-sky-400" />
-                  <span className="text-[11px] tracking-tight">{initials}</span>
-                </div>
-              )}
-            </span>
-            <span className="min-w-0 text-left rtl:text-right">
-              <bdi className="portal-header-brand-name block max-w-52 truncate font-sans text-sm font-black tracking-tight text-[#071d43] transition-colors group-hover:text-[#075cb7] dark:text-white dark:group-hover:text-sky-300 xl:max-w-60">{centerName}</bdi>
-              <span className="portal-header-brand-subtitle mt-0.5 flex items-center gap-1.5 text-[9.5px] font-bold uppercase tracking-wider text-[#075cb7] dark:text-sky-400">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75 motion-reduce:animate-none" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                </span>
-                <ShieldCheck className="h-3 w-3" />
-                {text?.brandSuffix || (isRtl ? 'مراكز الأشعة والتشخيص المعتمدة' : 'Diagnostic Centers')}
-              </span>
-            </span>
-          </Link>
-
-          {/* Desktop Nav Links */}
-          <div className="hidden items-center gap-0.5 lg:flex">
-            {navLinks.map((link) => {
-              const active = activeHref === link.href;
-              return (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  aria-current={active ? 'location' : undefined}
-                  className={`portal-header-nav-link group relative rounded-lg px-2 py-2 text-[10.5px] font-extrabold transition-all xl:px-2.5 xl:text-[11px] ${active ? 'is-active' : ''}`}
-                >
-                  <span>{link.label}</span>
-                  <span className={`absolute inset-x-2 -bottom-1.5 mx-auto h-0.5 rounded-full transition-all duration-300 ${active ? 'w-[calc(100%-1rem)] bg-gradient-to-r from-[#075cb7] to-[#19a78c] opacity-100' : 'w-0 bg-[#075cb7] opacity-0 group-hover:w-4 group-hover:opacity-100'}`} aria-hidden="true" />
-                </a>
-              );
-            })}
-          </div>
-
-          {/* Desktop actions */}
-          <div className="hidden items-center gap-2 lg:flex">
-            {isPublic && <button type="button" onClick={openBooking} aria-label={isRtl ? 'احجز موعداً' : 'Book appointment'} className="portal-header-book group inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-[10.5px] font-extrabold text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg xl:px-4"><CalendarCheck className="h-4 w-4 transition-transform group-hover:scale-110" /><span className="hidden xl:inline">{isRtl ? 'احجز موعداً' : 'Book appointment'}</span></button>}
-            <div className="portal-header-portal-group flex items-center gap-0.5 rounded-xl border p-1">
-              <Link
-                to="/patient/login"
-                aria-label={text?.patientPortal || 'Patient Portal'}
-                title={text?.patientPortal || (isRtl ? 'بوابة المرضى' : 'Patient Portal')}
-                className="portal-header-portal-link group inline-flex min-h-8 items-center gap-2 rounded-lg px-2.5 text-[10px] font-extrabold transition-all hover:scale-[1.02] xl:px-3"
-              >
-                <UserRound className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
-                <span className="hidden xl:inline">{text?.patientPortal || (isRtl ? 'المرضى' : 'Patients')}</span>
-              </Link>
-              {isPublic && <span className="h-5 w-px bg-slate-200 dark:bg-slate-700" aria-hidden="true" />}
-              {isPublic && (
-                <Link
-                  to="/doctor/login"
-                  aria-label={text?.doctorPortal || 'Doctor Portal'}
-                  title={text?.doctorPortal || (isRtl ? 'بوابة الأطباء' : 'Doctor Portal')}
-                  className="portal-header-portal-link group inline-flex min-h-8 items-center gap-2 rounded-lg px-2.5 text-[10px] font-extrabold transition-all hover:scale-[1.02] xl:px-3"
-                >
-                  <Stethoscope className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
-                  <span className="hidden xl:inline">{text?.doctorPortal || (isRtl ? 'الأطباء' : 'Doctors')}</span>
-                </Link>
-              )}
-            </div>
-          </div>
-
-          {/* Mobile menu button */}
-          <div className="flex items-center gap-2 lg:hidden">
-            <button
-              ref={menuButtonRef}
-              type="button"
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-expanded={menuOpen}
-              aria-controls="portal-mobile-menu"
-              aria-label={menuOpen ? (text?.menu?.close || 'Close menu') : (text?.menu?.open || 'Open menu')}
-              className="portal-header-menu-button flex h-10 w-10 items-center justify-center rounded-xl border shadow-sm transition-all hover:scale-105"
-            >
-              {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </button>
-          </div>
-        </div>
-      </nav>
-
-      {/* Scroll progress bar */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[2px] overflow-hidden bg-transparent" aria-hidden="true">
-        <span className="block h-full bg-gradient-to-r from-[#075cb7] via-[#28a7d8] to-[#19a78c] transition-[width] duration-150" style={{ width: `${scrollProgress}%` }} />
-      </div>
-
-      {/* Mobile menu drawer */}
-      {menuOpen && (
-        <>
+    <header className="pointer-events-none fixed inset-x-0 top-0 z-50 py-3 transition-all duration-300 sm:py-4">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className={`pointer-events-auto relative flex items-center justify-between gap-3 rounded-2xl border bg-white/92 px-3 backdrop-blur-2xl transition-all duration-300 dark:bg-surface/92 sm:gap-4 sm:px-5 ${
+          scrolled
+            ? 'h-[3.25rem] border-border/80 shadow-[0_14px_40px_rgba(11,35,72,0.13)] sm:h-14'
+            : 'h-14 border-white/75 shadow-[0_10px_34px_rgba(11,35,72,0.10)] sm:h-16'
+        }`}>
           <button
             type="button"
-            aria-label={text?.menu?.close || 'Close menu'}
-            className="portal-header-backdrop fixed inset-0 z-[60] lg:hidden"
-            onClick={() => setMenuOpen(false)}
-          />
-          <div id="portal-mobile-menu" ref={menuRef} role="dialog" aria-modal="true" aria-label={text?.primaryNav || 'Primary navigation'} className="portal-header-mobile-menu portal-header-drawer fixed inset-y-0 end-0 z-[70] flex w-[min(90vw,23rem)] flex-col overflow-y-auto border-s px-5 py-5 shadow-2xl lg:hidden">
-            {/* Drawer header */}
-            <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-4 dark:border-slate-700">
-              <Link to="/" onClick={() => setMenuOpen(false)} className="group flex min-w-0 items-center gap-3">
-                <span className={`portal-header-brand-mark relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50 to-blue-50/60 shadow-md dark:border-white/15 dark:from-slate-900 dark:to-slate-800 ${logo ? 'is-has-logo' : ''}`}>
-                  {logo ? (
-                    <img src={logo} alt="" className="h-full w-full object-contain p-0.5" />
-                  ) : (
-                    <div className="flex items-center justify-center gap-1 font-black text-[#082761] dark:text-sky-300">
-                      <ScanLine className="h-4 w-4 text-[#075cb7] dark:text-sky-400" />
-                      <span className="text-xs tracking-tight">{initials}</span>
-                    </div>
-                  )}
-                </span>
-                <span className="min-w-0">
-                  <bdi className="portal-header-brand-name block max-w-48 truncate text-sm font-black text-[#071d43] dark:text-white">{centerName}</bdi>
-                  <small className="portal-header-brand-subtitle mt-0.5 flex items-center gap-1 text-[8.5px] font-extrabold uppercase tracking-wider text-[#075cb7] dark:text-sky-400">
-                    <ShieldCheck className="h-2.5 w-2.5" />
-                    {isRtl ? 'مركز الأشعة التشخيصية' : 'Diagnostic Imaging Center'}
-                  </small>
-                </span>
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface text-foreground lg:hidden"
+            aria-label={isRtl ? 'فتح قائمة التنقل' : 'Toggle navigation menu'}
+            aria-expanded={menuOpen}
+          >
+            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+
+          {/* Brand Logo */}
+          <Link
+            to="/"
+            className="absolute left-1/2 max-w-[calc(100%-7rem)] shrink-0 -translate-x-1/2 outline-none lg:static lg:max-w-[15rem] lg:translate-x-0"
+          >
+            <PortalBrand
+              isRtl={isRtl}
+              logoClassName="h-9 w-9 text-base sm:h-10 sm:w-10"
+              textClassName="max-w-[6.5rem] sm:max-w-[9rem] lg:max-w-[11rem]"
+              nameClassName="text-[11px] sm:text-xs lg:text-sm"
+              subtitleClassName="hidden text-[9px] lg:block"
+            />
+          </Link>
+
+          {/* Center Navigation Links (Desktop) */}
+          <nav className="hidden lg:flex items-center gap-0.5 xl:gap-1">
+            {links.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                onClick={(event) => navigateToSection(event, link.href)}
+                aria-current={activeHref === link.href ? 'page' : undefined}
+                className={`relative rounded-xl px-3.5 py-2 text-xs font-bold transition-all cursor-pointer ${
+                  activeHref === link.href
+                    ? 'bg-primary-soft/70 text-primary'
+                    : 'text-foreground/80 hover:bg-primary-soft/40 hover:text-primary'
+                }`}
+              >
+                {link.label}
+                <span className={`absolute inset-x-4 -bottom-0.5 h-0.5 rounded-full bg-primary transition-transform duration-300 ${activeHref === link.href ? 'scale-x-100' : 'scale-x-0'}`} />
+              </a>
+            ))}
+          </nav>
+
+          {/* Right Action Utilities */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="hidden xl:flex items-center gap-1.5">
+              <LanguageToggle />
+              <ThemeToggle />
+            </div>
+
+            <button
+              type="button"
+              onClick={onCheckResults}
+              className="hidden md:inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 py-2 text-xs font-bold text-foreground transition hover:border-primary/40 hover:text-primary"
+            >
+              <FileText className="h-3.5 w-3.5 text-primary" />
+              <span>{isRtl ? 'النتائج' : 'Results'}</span>
+            </button>
+
+            {/* Primary Login CTA */}
+            {onLogin ? (
+              <button
+                type="button"
+                onClick={onLogin}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-primary p-0 text-xs font-bold text-white shadow-md shadow-primary/20 transition hover:bg-primary-700 hover:shadow-lg hover:shadow-primary/30 active:scale-[0.98] sm:h-auto sm:w-auto sm:px-5 sm:py-2.5 sm:text-sm cursor-pointer"
+                aria-label={isRtl ? 'تسجيل الدخول' : 'Login'}
+              >
+                <LogIn className="h-4 w-4" />
+                <span className="hidden sm:inline">{isRtl ? 'تسجيل الدخول' : 'Login'}</span>
+              </button>
+            ) : (
+              <Link
+                to="/patient/login"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-primary p-0 text-xs font-bold text-white shadow-md shadow-primary/20 transition hover:bg-primary-700 hover:shadow-lg hover:shadow-primary/30 active:scale-[0.98] sm:h-auto sm:w-auto sm:px-5 sm:py-2.5 sm:text-sm cursor-pointer"
+                aria-label={isRtl ? 'تسجيل الدخول' : 'Login'}
+              >
+                <LogIn className="h-4 w-4" />
+                <span className="hidden sm:inline">{isRtl ? 'تسجيل الدخول' : 'Login'}</span>
               </Link>
-              <button type="button" onClick={() => setMenuOpen(false)} aria-label={text?.menu?.close || 'Close menu'} className="portal-header-menu-button flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-transform hover:scale-105"><X className="h-5 w-5" /></button>
-            </div>
+            )}
 
-            {/* Drawer body */}
-            <div className="mt-5 flex flex-1 flex-col">
-              <p className="px-2 text-[9px] font-black uppercase tracking-[.14em] text-slate-400">{isRtl ? 'تصفح الموقع' : 'Explore'}</p>
-              <nav className="mt-2 flex flex-col gap-1.5" aria-label={text?.primaryNav || 'Primary navigation'}>
-                {navLinks.map((link, index) => {
-                  const active = activeHref === link.href;
-                  return (
-                    <a
-                      key={link.href}
-                      href={link.href}
-                      onClick={() => setMenuOpen(false)}
-                      aria-current={active ? 'location' : undefined}
-                      className={`portal-header-mobile-link portal-drawer-stagger group flex min-h-12 items-center justify-between rounded-xl px-4 py-3 text-sm font-extrabold transition-all ${active ? 'is-active' : ''}`}
-                      style={{ animationDelay: `${0.06 + index * 0.04}s` }}
-                    >
-                      <span className="flex items-center gap-3"><span className={`h-1.5 w-1.5 rounded-full transition ${active ? 'bg-[#075cb7]' : 'bg-slate-300 group-hover:bg-[#075cb7] dark:bg-slate-600'}`} />{link.label}</span>
-                      <ArrowRight className={`h-4 w-4 transition-transform rtl:rotate-180 ${active ? '' : 'opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5'}`} />
-                    </a>
-                  );
-                })}
-              </nav>
-              {isPublic && (
-                <button
-                  type="button"
-                  onClick={openBooking}
-                  className="portal-header-book portal-drawer-stagger mt-5 flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 text-sm font-extrabold text-white shadow-lg"
-                  style={{ animationDelay: `${0.06 + navLinks.length * 0.04 + 0.04}s` }}
-                >
-                  <CalendarCheck className="h-4 w-4" />
-                  {isRtl ? 'احجز موعداً' : 'Book appointment'}
-                </button>
-              )}
-              <div className="portal-drawer-stagger mt-3 grid grid-cols-2 gap-2" style={{ animationDelay: `${0.06 + navLinks.length * 0.04 + 0.08}s` }}>
-                <Link
-                  to="/patient/login"
-                  onClick={() => setMenuOpen(false)}
-                  className="portal-header-secondary group flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 text-center text-xs font-extrabold transition-all hover:scale-[1.02]"
-                >
-                  <UserRound className="h-4 w-4" />
-                  {text?.patientPortal || (isRtl ? 'نتائج المرضى' : 'Patient Portal')}
-                </Link>
-                <Link
-                  to="/doctor/login"
-                  onClick={() => setMenuOpen(false)}
-                  className="portal-header-secondary group flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 text-center text-xs font-extrabold transition-all hover:scale-[1.02]"
-                >
-                  <Stethoscope className="h-4 w-4" />
-                  {text?.doctorPortal || (isRtl ? 'بوابة الأطباء' : 'Doctor Portal')}
-                </Link>
-              </div>
-
-              {/* Drawer footer */}
-              <div className="portal-drawer-stagger mt-auto pt-6" style={{ animationDelay: `${0.06 + navLinks.length * 0.04 + 0.12}s` }}>
-                <div className="rounded-2xl border border-[#d8e6f1] bg-[#f5f9fd] p-4 dark:border-slate-700 dark:bg-slate-800/70">
-                  <a href={`tel:${hotline}`} className="portal-header-mobile-hotline flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs font-bold transition-all hover:shadow-md"><span className="flex items-center gap-2"><Phone className="h-4 w-4" />{isRtl ? 'الخط الساخن' : 'Hotline'}</span><b className="font-mono text-sm" dir="ltr">{hotline}</b></a>
-                  <p className="portal-header-meta mt-3 flex items-center gap-2 text-[10px] font-semibold"><Clock className="h-3.5 w-3.5" /><span>{isRtl ? 'مفتوح يومياً' : 'Open daily'}</span><b dir="ltr">{workingHours}</b></p>
-                  <a href="/#locations" onClick={() => setMenuOpen(false)} className="portal-header-meta mt-2 flex items-center gap-2 text-[10px] font-semibold transition-colors hover:text-[#075cb7]"><MapPin className="h-3.5 w-3.5" />{isRtl ? 'الفروع والاتجاهات' : 'Locations and directions'}<ArrowUpRight className="ms-auto h-3.5 w-3.5 rtl:-scale-x-100" /></a>
-                </div>
-              </div>
-            </div>
           </div>
+        </div>
+      </div>
+
+      {/* Mobile Drawer */}
+      <AnimatePresence>
+      {menuOpen && (
+        <>
+        <motion.button
+          type="button"
+          aria-label={isRtl ? 'إغلاق القائمة' : 'Close navigation'}
+          onClick={() => setMenuOpen(false)}
+          initial={reduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={reduceMotion ? undefined : { opacity: 0 }}
+          className="pointer-events-auto fixed inset-0 z-40 bg-[#0B2348]/18 backdrop-blur-[2px] lg:hidden"
+        />
+        <motion.div
+          initial={reduceMotion ? false : { opacity: 0, y: -12, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={reduceMotion ? undefined : { opacity: 0, y: -8, scale: 0.985 }}
+          transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+          className="pointer-events-auto lg:hidden fixed inset-x-4 top-20 z-50 rounded-2xl bg-surface/96 backdrop-blur-2xl border border-border p-5 shadow-2xl space-y-4"
+        >
+          <nav className="flex flex-col gap-2">
+            {links.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                onClick={(event) => navigateToSection(event, link.href)}
+                aria-current={activeHref === link.href ? 'page' : undefined}
+                className={`rounded-xl px-4 py-3 text-sm font-bold transition ${activeHref === link.href ? 'bg-primary-soft text-primary' : 'text-foreground hover:bg-primary-soft/60'}`}
+              >
+                {link.label}
+              </a>
+            ))}
+          </nav>
+          <div className="pt-4 border-t border-border flex flex-col gap-2.5">
+            <div className="flex items-center justify-center gap-2 pb-1">
+              <LanguageToggle />
+              <ThemeToggle />
+            </div>
+            <Link
+              to="/patient/login"
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-bold text-foreground"
+            >
+              <LockKeyhole className="h-4 w-4 text-primary" />
+              <span>{isRtl ? 'بوابة المريض' : 'Patient Portal'}</span>
+            </Link>
+            <Link
+              to="/doctor/login"
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-bold text-foreground"
+            >
+              <Sparkles className="h-4 w-4 text-primary" />
+              <span>{isRtl ? 'بوابة الطبيب' : 'Doctor Portal'}</span>
+            </Link>
+          </div>
+        </motion.div>
         </>
       )}
+      </AnimatePresence>
     </header>
   );
 };
+
+export default PortalHeader;

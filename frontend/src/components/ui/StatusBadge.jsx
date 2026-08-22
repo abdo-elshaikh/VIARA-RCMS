@@ -6,7 +6,7 @@ const statusConfig = {
     Scheduled: 'bg-teal-50 text-teal-700 border-teal-100',
     Cancelled: 'bg-rose-50 text-rose-700 border-rose-100',
     Pending: 'bg-amber-50 text-amber-700 border-amber-100',
-    Completed: 'bg-blue-50 text-blue-700 border-blue-100',
+    Completed: 'bg-teal-50 text-teal-700 border-teal-100',
     'No-Show': 'bg-orange-50 text-orange-700 border-orange-100',
     'Checked-in': 'bg-indigo-50 text-indigo-700 border-indigo-100',
     Arrived: 'bg-indigo-50 text-indigo-700 border-indigo-100',

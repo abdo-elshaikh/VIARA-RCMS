@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, CircleDollarSign, Clock, PackageSearch, Plus, RefreshCw, Search, Trash2, Truck, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
+import { useSelector } from 'react-redux';
 import {
     useCreatePurchaseOrderMutation,
     useGetInventoryQuery,
@@ -10,6 +11,7 @@ import {
     useGetSuppliersQuery,
     useReceiveStockMutation,
 } from '../../store/api';
+import { selectCurrentUser } from '../../store/authSlice';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 import Modal from '../ui/Modal';
 
@@ -21,6 +23,11 @@ const PurchaseOrderManager = () => {
     const { t, i18n } = useTranslation('workspace');
     const copy = (key, options) => t(`inventory.purchaseOrders.${key}`, options);
     const locale = i18n.language.startsWith('ar') ? 'ar-EG' : 'en-EG';
+    const user = useSelector(selectCurrentUser);
+    const effectivePermissions = new Set([...(user?.permissions || []), ...(user?.elevatedPermissions || [])]);
+    const elevated = ['Developer', 'Admin'].includes(user?.role);
+    const canManagePurchaseOrders = elevated || effectivePermissions.has('MANAGE_PURCHASE_ORDERS');
+    const canReceiveStock = canManagePurchaseOrders || effectivePermissions.has('MANAGE_INVENTORY');
 
     const { data: pos = [], isLoading, isError, isFetching, refetch } = useGetPurchaseOrdersQuery();
     const { data: suppliers = [] } = useGetSuppliersQuery();
@@ -78,6 +85,7 @@ const PurchaseOrderManager = () => {
 
     const handleCreate = async event => {
         event.preventDefault();
+        if (!canManagePurchaseOrders) return;
         const itemIds = poForm.items.map(item => item.itemId);
         if (new Set(itemIds).size !== itemIds.length) {
             toast.error(copy('duplicateItems'));
@@ -101,6 +109,7 @@ const PurchaseOrderManager = () => {
 
     const handleReceive = async event => {
         event.preventDefault();
+        if (!canReceiveStock) return;
         const lines = receiveForm.map((item, index) => ({ item, detail: receiveDetails?.items?.[index] })).filter(({ item }) => Number(item.receivedQuantity) > 0);
         if (!lines.length) {
             toast.error(copy('receiveAtLeastOne'));
@@ -176,10 +185,12 @@ const PurchaseOrderManager = () => {
                             {copy('refresh')}
                         </button>
 
-                        <button type="button" onClick={() => setShowAdd(value => !value)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-xs font-bold text-white shadow-md transition hover:bg-emerald-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200">
-                            {showAdd ? <X size={16} /> : <Plus size={16} />}
-                            {showAdd ? copy('closeForm') : copy('create')}
-                        </button>
+                        {canManagePurchaseOrders && (
+                            <button type="button" onClick={() => setShowAdd(value => !value)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-xs font-bold text-white shadow-md transition hover:bg-emerald-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200">
+                                {showAdd ? <X size={16} /> : <Plus size={16} />}
+                                {showAdd ? copy('closeForm') : copy('create')}
+                            </button>
+                        )}
                     </div>
                 </header>
 
@@ -259,7 +270,7 @@ const PurchaseOrderManager = () => {
                     <>
                         <div className="grid gap-4 p-5 md:hidden">
                             {visibleOrders.map(po => (
-                                <OrderCard key={po.po_id} po={po} copy={copy} formatDate={formatDate} money={money} onReceive={setReceiveId} />
+                                <OrderCard key={po.po_id} po={po} copy={copy} formatDate={formatDate} money={money} onReceive={setReceiveId} canReceive={canReceiveStock} />
                             ))}
                         </div>
                         <div className="hidden overflow-x-auto md:block">
@@ -274,7 +285,7 @@ const PurchaseOrderManager = () => {
                                 </thead>
                                 <tbody className="divide-y divide-slate-100/80 dark:divide-white/5">
                                     {visibleOrders.map(po => (
-                                        <OrderRow key={po.po_id} po={po} copy={copy} formatDate={formatDate} money={money} onReceive={setReceiveId} />
+                                        <OrderRow key={po.po_id} po={po} copy={copy} formatDate={formatDate} money={money} onReceive={setReceiveId} canReceive={canReceiveStock} />
                                     ))}
                                 </tbody>
                             </table>
@@ -406,8 +417,8 @@ const Status = ({ value, copy }) => {
     );
 };
 
-const ReceiveButton = ({ po, copy, onReceive }) => (
-    ['Sent', 'Partially Received'].includes(po.status) ? (
+const ReceiveButton = ({ po, copy, onReceive, canReceive }) => (
+    canReceive && ['Sent', 'Partially Received'].includes(po.status) ? (
         <button
             type="button"
             onClick={() => onReceive(po.po_id)}
@@ -419,7 +430,7 @@ const ReceiveButton = ({ po, copy, onReceive }) => (
     ) : null
 );
 
-const OrderCard = ({ po, copy, formatDate, money, onReceive }) => (
+const OrderCard = ({ po, copy, formatDate, money, onReceive, canReceive }) => (
     <article className="rounded-3xl border border-slate-200/80 bg-white/80 p-5 shadow-sm transition-all dark:border-white/10 dark:bg-slate-900/60">
         <div className="flex items-start justify-between gap-3">
             <div>
@@ -433,12 +444,12 @@ const OrderCard = ({ po, copy, formatDate, money, onReceive }) => (
             <p className="mt-1 font-mono text-base font-black text-emerald-700 dark:text-emerald-400">{money(po.total_amount)}</p>
         </div>
         <div className="mt-3 text-end">
-            <ReceiveButton po={po} copy={copy} onReceive={onReceive} />
+            <ReceiveButton po={po} copy={copy} onReceive={onReceive} canReceive={canReceive} />
         </div>
     </article>
 );
 
-const OrderRow = ({ po, copy, formatDate, money, onReceive }) => (
+const OrderRow = ({ po, copy, formatDate, money, onReceive, canReceive }) => (
     <tr className="transition-colors hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
         <td className="px-4 py-4">
             <p className="font-mono font-black text-slate-900 dark:text-white">{po.po_number}</p>
@@ -447,7 +458,7 @@ const OrderRow = ({ po, copy, formatDate, money, onReceive }) => (
         <td className="px-4 py-4 font-bold text-slate-800 dark:text-slate-200">{po.supplier_name}</td>
         <td className="px-4 py-4 font-mono font-black text-slate-900 dark:text-white">{money(po.total_amount)}</td>
         <td className="px-4 py-4"><Status value={po.status} copy={copy} /></td>
-        <td className="px-4 py-4 text-end"><ReceiveButton po={po} copy={copy} onReceive={onReceive} /></td>
+        <td className="px-4 py-4 text-end"><ReceiveButton po={po} copy={copy} onReceive={onReceive} canReceive={canReceive} /></td>
     </tr>
 );
 

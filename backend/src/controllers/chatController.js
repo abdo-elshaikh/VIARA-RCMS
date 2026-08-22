@@ -1,6 +1,7 @@
 const realtimeService = require('../services/realtimeService');
 const { AppError } = require('../middleware/errorHandler');
 const { cleanupUploadedFiles, parseAttachments } = require('../utils/chatAttachmentUpload');
+const { triggerEventForRole } = require('../services/notificationJobService');
 
 const allowedMessageKinds = new Set(['text', 'sticker', 'attachment']);
 
@@ -174,6 +175,14 @@ const sendChatMessage = (db) => async (req, res, next) => {
             realtimeService.broadcastToStaff('NEW_STAFF_MESSAGE', payload);
         }
 
+        triggerEventForRole(db, 'ChatMessageReceived', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                sender_name: senderInfo.rows[0]?.sender_name || 'Unknown',
+                message_preview: body.length > 100 ? body.slice(0, 97) + '...' : body
+            }
+        }).catch(() => {});
+
         res.status(201).json(payload);
     } catch (error) {
         next(error);
@@ -322,6 +331,14 @@ const replyToPatient = (db) => async (req, res, next) => {
         realtimeService.sendToPatient(patientId, 'NEW_PORTAL_MESSAGE', payload);
         realtimeService.broadcastToStaff('NEW_PATIENT_MESSAGE_UPDATE', payload);
 
+        triggerEventForRole(db, 'ChatMessageReceived', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                sender_name: staffInfo.rows[0]?.staff_name || 'Staff',
+                message_preview: body.length > 100 ? body.slice(0, 97) + '...' : body
+            }
+        }).catch(() => {});
+
         res.status(201).json(payload);
     } catch (error) {
         cleanupUploadedFiles(req.files);
@@ -410,6 +427,14 @@ const replyToDoctor = (db) => async (req, res, next) => {
         // Push real-time event to Referring Doctor and all connected Staff
         realtimeService.sendToDoctor(doctorId, 'NEW_DOCTOR_PORTAL_MESSAGE', payload);
         realtimeService.broadcastToStaff('NEW_DOCTOR_MESSAGE_UPDATE', payload);
+
+        triggerEventForRole(db, 'ChatMessageReceived', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                sender_name: staffInfo.rows[0]?.staff_name || 'Staff',
+                message_preview: body.length > 100 ? body.slice(0, 97) + '...' : body
+            }
+        }).catch(() => {});
 
         res.status(201).json(payload);
     } catch (error) {

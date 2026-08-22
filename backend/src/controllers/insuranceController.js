@@ -265,7 +265,7 @@ const createApproval = (db) => async (req, res, next) => {
         let providerId = data.providerId || null;
         if (data.policyId) {
             const policy = await db.query(`
-                SELECT patient_id, provider_id, valid_to
+                SELECT patient_id, provider_id, valid_from, valid_to
                 FROM patient_insurance_policies
                 WHERE policy_id = $1
             `, [data.policyId]);
@@ -277,17 +277,20 @@ const createApproval = (db) => async (req, res, next) => {
                 throw new AppError('Approval provider must match the selected policy provider', 409);
             }
             providerId = policy.rows[0].provider_id;
-            if (policy.rows[0].valid_to && new Date(policy.rows[0].valid_to) < new Date(new Date().toDateString())) {
-                throw new AppError('Cannot create an approval for an expired policy', 409);
+            const today = new Date().toISOString().slice(0, 10);
+            const validFrom = policy.rows[0].valid_from
+                ? new Date(policy.rows[0].valid_from).toISOString().slice(0, 10)
+                : null;
+            const validTo = policy.rows[0].valid_to
+                ? new Date(policy.rows[0].valid_to).toISOString().slice(0, 10)
+                : null;
+            if ((validFrom && validFrom > today) || (validTo && validTo < today)) {
+                throw new AppError('Cannot create an approval for a policy that is not currently valid', 409);
             }
         }
         if (!providerId && data.status !== 'Not Required') {
             throw new AppError('Provider or policy is required for insurance approval', 400);
         }
-        if (data.status === 'Approved' && money(data.requestedAmount) > 0 && money(data.approvedAmount) <= 0) {
-            throw new AppError('Approved authorizations require an approved amount', 400);
-        }
-
         const result = await db.query(`
             INSERT INTO insurance_approvals (
                 patient_id, policy_id, provider_id, appointment_id, exam_id, exam_type_id,
@@ -295,9 +298,8 @@ const createApproval = (db) => async (req, res, next) => {
                 rejection_reason, expires_at, requested_by, decided_by, decided_at
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6, $7::varchar(30), $8, $9, $10, $11, $12, $13, $14,
-                CASE WHEN $7::varchar(30) IN ('Approved', 'Rejected', 'Expired') THEN $14::uuid ELSE NULL END,
-                CASE WHEN $7::varchar(30) IN ('Approved', 'Rejected', 'Expired') THEN NOW() ELSE NULL END
+                $1, $2, $3, $4, $5, $6, $7::varchar(30), $8, $9, 0, $10, NULL, $11, $12,
+                NULL, NULL
             )
             RETURNING *
         `, [
@@ -310,9 +312,7 @@ const createApproval = (db) => async (req, res, next) => {
             data.status || 'Pending',
             data.approvalNumber || null,
             data.requestedAmount || 0,
-            data.approvedAmount || 0,
             data.documentUrl || null,
-            data.rejectionReason || null,
             data.expiresAt || null,
             req.user.user_id
         ]);

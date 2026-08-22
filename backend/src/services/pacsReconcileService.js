@@ -186,7 +186,7 @@ const writeAudit = async (client, {
  * feed populates). StudyInstanceUID is a secondary match for studies created
  * outside the worklist. Returns the examinations row or null.
  */
-const findMatchingExam = async (client, { accessionNumber, studyInstanceUid }) => {
+const findMatchingExam = async (client, { accessionNumber, studyInstanceUid, patientId }) => {
     if (accessionNumber) {
         const byAccession = await client.query(
             `SELECT e.exam_id, e.patient_id, e.study_instance_uid, e.status, p.mrn
@@ -197,6 +197,20 @@ const findMatchingExam = async (client, { accessionNumber, studyInstanceUid }) =
             [accessionNumber]
         );
         if (byAccession.rows.length) return { ...byAccession.rows[0], match_type: 'accession' };
+
+        // Normalized Accession matching (ignoring hyphens, spaces, symbols)
+        const normalized = String(accessionNumber).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        if (normalized.length >= 3) {
+            const byNormalized = await client.query(
+                `SELECT e.exam_id, e.patient_id, e.study_instance_uid, e.status, p.mrn
+                 FROM examinations e
+                 JOIN patients p ON p.patient_id = e.patient_id
+                 WHERE UPPER(REGEXP_REPLACE(e.order_number, '[^a-zA-Z0-9]', '', 'g')) = $1
+                 LIMIT 1`,
+                [normalized]
+            );
+            if (byNormalized.rows.length) return { ...byNormalized.rows[0], match_type: 'accession_normalized' };
+        }
     }
 
     if (studyInstanceUid) {
@@ -209,6 +223,23 @@ const findMatchingExam = async (client, { accessionNumber, studyInstanceUid }) =
             [studyInstanceUid]
         );
         if (byStudy.rows.length) return { ...byStudy.rows[0], match_type: 'study' };
+    }
+
+    // Patient MRN + Active Scheduled Exam fallback
+    const targetMrn = clean(patientId);
+    if (targetMrn) {
+        const byMrn = await client.query(
+            `SELECT e.exam_id, e.patient_id, e.study_instance_uid, e.status, p.mrn
+             FROM examinations e
+             JOIN patients p ON p.patient_id = e.patient_id
+             WHERE p.mrn = $1
+               AND e.status::text IN ('Scheduled', 'Checked-in', 'Scanning')
+               AND e.study_instance_uid IS NULL
+             ORDER BY COALESCE(e.arrived_at, e.created_at) DESC
+             LIMIT 1`,
+            [targetMrn]
+        );
+        if (byMrn.rows.length) return { ...byMrn.rows[0], match_type: 'patient_mrn' };
     }
 
     return null;
@@ -369,7 +400,7 @@ const reconcileInstance = async (pool, payload, { remoteIp = null } = {}) => {
             return { status: 'ignored', reason: QUARANTINE_REASONS.NO_ACCESSION };
         }
 
-        const exam = await findMatchingExam(client, { accessionNumber, studyInstanceUid });
+        const exam = await findMatchingExam(client, { accessionNumber, studyInstanceUid, patientId });
 
         if (!exam) {
             const reason = accessionNumber
@@ -586,7 +617,7 @@ const reconcileQuarantine = async (pool, { quarantineId, examId, actorUserId = n
                  first_image_received_at = COALESCE(first_image_received_at, CURRENT_TIMESTAMP),
                  status = CASE WHEN status IN ('Scheduled', 'Checked-in') THEN 'Scanning'::exam_status ELSE status END
              WHERE exam_id = $1`,
-            [exam.exam_id, q.study_instance_uid, q.orthanc_study_id]
+            [exam.exam_id, q.study_instance_uid]
         );
 
         await client.query(

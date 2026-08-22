@@ -12,7 +12,7 @@ import {
     Settings,
     ShieldAlert,
     Sun,
-    User as UserIcon
+    User as UserIcon,
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -35,7 +35,7 @@ import GlobalSearch from './GlobalSearch';
 
 const NOTIFICATION_ROLES = new Set(['Developer', 'Admin', 'Receptionist', 'HR', 'Marketing']);
 const MANUAL_NOTIFICATION_ROLES = new Set(['Developer', 'Admin', 'Receptionist', 'Marketing']);
-const ATTENDANCE_ROLES = new Set(['Developer', 'Admin', 'Receptionist', 'HR', 'Radiologist', 'Technician', 'Nurse']);
+const ATTENDANCE_ROLES = new Set(['Admin', 'Receptionist', 'HR', 'Radiologist', 'Technician', 'Nurse', 'Cashier', 'Accountant', 'Insurance_Staff', 'Marketing']);
 const BREAK_GLASS_ROLES = new Set(['Radiologist', 'Technician', 'Nurse']);
 
 const cx = (...classes) => classes.filter(Boolean).join(' ');
@@ -107,6 +107,7 @@ const getInitials = (name) => {
 };
 
 const UserAvatar = ({ user, initials, size = 'md', label }) => {
+    const [imgFailed, setImgFailed] = useState(false);
     const sizeClass = size === 'lg' ? 'h-10 w-10 text-sm' : 'h-9 w-9 text-xs';
 
     return (
@@ -114,8 +115,13 @@ const UserAvatar = ({ user, initials, size = 'md', label }) => {
             'relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-tr from-cyan-600 via-teal-600 to-emerald-500 font-extrabold text-white shadow-xs ring-2 ring-white/80 dark:ring-slate-800',
             sizeClass
         )}>
-            {user?.avatarUrl ? (
-                <img src={user.avatarUrl} alt={label || ''} className="h-full w-full object-cover" />
+            {user?.avatarUrl && !imgFailed ? (
+                <img
+                    src={user.avatarUrl}
+                    alt={label || ''}
+                    className="h-full w-full object-cover"
+                    onError={() => setImgFailed(true)}
+                />
             ) : initials ? (
                 <span aria-hidden="true">{initials}</span>
             ) : (
@@ -198,8 +204,8 @@ const ProfileMenu = ({
         role="menu"
         dir={isRtl ? 'rtl' : 'ltr'}
         className={cx(
-            'absolute top-full mt-2 w-[min(300px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 p-1.5 shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-150 dark:border-slate-800 dark:bg-slate-900/95',
-            isRtl ? 'start-0 origin-top-left' : 'end-0 origin-top-right'
+            'absolute top-full mt-2 w-[min(300px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 p-1.5 shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-150 dark:border-slate-800 dark:bg-slate-900/95 z-50',
+            'end-0 rtl:origin-top-left ltr:origin-top-right'
         )}
     >
         <div className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/70 p-3 dark:from-slate-950 dark:to-slate-900/80">
@@ -210,7 +216,7 @@ const ProfileMenu = ({
                         {user?.name || t('common.user', { defaultValue: 'User' })}
                     </p>
                     <p className="mt-0.5 truncate text-[10px] font-extrabold uppercase tracking-wider text-teal-600 dark:text-teal-400">
-                        {role || t('common.guest', { defaultValue: 'Guest' })}
+                        {role ? t(`roles.${String(role).toLowerCase()}`, { defaultValue: role }) : t('common.guest', { defaultValue: 'Guest' })}
                     </p>
                 </div>
             </div>
@@ -221,12 +227,12 @@ const ProfileMenu = ({
                 {isAttendanceUpdating
                     ? t('status.updating', { defaultValue: 'Updating...' })
                     : isClockedIn
-                        ? t('topbar.clockOutHint', { defaultValue: 'Clock out' })
-                        : t('topbar.clockInHint', { defaultValue: 'Clock in' })}
+                        ? t('topbar.clockOut', { defaultValue: 'Clock out' })
+                        : t('topbar.clockIn', { defaultValue: 'Clock in' })}
             </ProfileMenuItem>
         )}
 
-        <ProfileMenuItem icon={UserIcon} onClick={() => onGoTo('/settings?tab=profile')} className="mt-1">
+        <ProfileMenuItem icon={UserIcon} onClick={() => onGoTo('/profile')} className="mt-1">
             {t('common.myProfile', { defaultValue: 'My profile' })}
         </ProfileMenuItem>
         <ProfileMenuItem icon={Settings} onClick={() => onGoTo('/settings')}>
@@ -280,7 +286,7 @@ const Topbar = ({ onMobileMenuClick, menuButtonRef }) => {
     const unreadCount = Math.max(0, Number(unreadData?.unreadCount) || 0);
 
     const { data: attendanceData } = useGetAttendanceQuery(
-        { userId: currentUserId },
+        { userId: currentUserId, activeOnly: true, limit: 1 },
         {
             skip: !canTrackAttendance || !currentUserId,
             refetchOnFocus: true
@@ -518,7 +524,7 @@ const Topbar = ({ onMobileMenuClick, menuButtonRef }) => {
                                     {user?.name || t('common.user', { defaultValue: 'User' })}
                                 </span>
                                 <span className="mt-0.5 block max-w-36 truncate text-[9px] font-extrabold uppercase tracking-wider text-teal-600 dark:text-teal-400">
-                                    {role || t('common.guest', { defaultValue: 'Guest' })}
+                                    {role ? t(`roles.${String(role).toLowerCase()}`, { defaultValue: role }) : t('common.guest', { defaultValue: 'Guest' })}
                                 </span>
                             </span>
 

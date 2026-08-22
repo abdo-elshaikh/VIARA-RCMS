@@ -30,7 +30,7 @@ const PLDashboard = () => {
     const tax = taxQuery.data;
     const grossRevenue = Number(pl?.gross_revenue || 0);
     const expenses = Number(pl?.total_expenses || 0);
-    const commissions = Number(pl?.commission_paid || 0);
+    const commissions = Number(pl?.commission_expense || 0);
     const netProfit = Number(pl?.net_profit || 0);
     const margin = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
     const taxCollected = Number(tax?.tax_collected || 0);
@@ -48,11 +48,11 @@ const PLDashboard = () => {
     }
 
     return (
-        <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white/70 shadow-xl shadow-slate-200/40 backdrop-blur-xl transition-all dark:border-white/10 dark:bg-[#07111f]/70 dark:shadow-none">
-            <div className="flex flex-col gap-5 border-b border-slate-100/80 bg-slate-50/50 p-5 dark:border-white/5 dark:bg-white/5 sm:p-6 xl:flex-row xl:items-center xl:justify-between">
+        <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+            <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6 dark:border-slate-800 dark:bg-slate-950/30">
                 <div className="flex items-start gap-4">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-500/30">
-                        <Calculator size={22} />
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                        <Calculator size={20} />
                     </span>
                     <div className="pt-0.5">
                         <h2 className="text-lg font-black tracking-tight text-slate-900 dark:text-white sm:text-xl">
@@ -105,9 +105,9 @@ const PLDashboard = () => {
                             />
                             <FinanceCard 
                                 icon={CircleDollarSign} 
-                                label={t('finance.pl.commissionsPaid')} 
+                                label={t('finance.reports.metrics.commissionExpense', { defaultValue: 'Commission expense (accrued)' })}
                                 value={money(commissions)} 
-                                note={t('finance.pl.commissionsPaidNote')} 
+                                note={t('finance.reports.notes.commissionRatio', { defaultValue: 'Accrued commission included in net profit.' })}
                                 tone="cyan" 
                             />
                             <FinanceCard 

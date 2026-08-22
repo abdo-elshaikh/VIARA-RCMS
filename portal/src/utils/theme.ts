@@ -1,4 +1,4 @@
-export const THEME_STORAGE_KEY = 'rcms_preferences';
+export const THEME_STORAGE_KEY = 'VIARA_preferences';
 
 export type ThemeMode = 'system' | 'dark' | 'light';
 

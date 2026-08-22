@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-RCMS has a **solid design system foundation** with semantic color variables, shared UI primitives, and theme support. However, adoption is inconsistent — multiple pages define inline variants for components that already exist as shared primitives.
+VIARA has a **solid design system foundation** with semantic color variables, shared UI primitives, and theme support. However, adoption is inconsistent — multiple pages define inline variants for components that already exist as shared primitives.
 
 ---
 

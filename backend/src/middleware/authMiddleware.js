@@ -14,10 +14,10 @@ const enforcePasswordChange = (req, res, next) => {
     const checkPath = String(req.originalUrl || req.path || req.url || '').split('?')[0];
     const whitelistedPaths = new Set(['/api/profile', '/api/profile/password', '/api/auth/logout', '/api/auth/refresh', '/api/auth/change-password']);
     const whitelistedPrefixes = ['/api/auth/sessions'];
-    
+
     const isWhitelisted = whitelistedPaths.has(checkPath)
         || whitelistedPrefixes.some(path => checkPath === path || checkPath.startsWith(`${path}/`));
-    
+
     if (req.user.must_change_password && !isWhitelisted) {
         return res.status(403).json({ error: 'Password change required', code: 'PASSWORD_CHANGE_REQUIRED' });
     }
@@ -67,7 +67,7 @@ const authenticateToken = async (req, res, next) => {
         return res.status(401).json({ error: 'Access Denied: No Token Provided' });
     }
 
-    if (token.startsWith('rcms_live_')) {
+    if (token.startsWith('VIARA_live_')) {
         try {
             return await authenticatePersonalAccessToken(req, res, next, token);
         } catch (error) {
@@ -83,6 +83,35 @@ const authenticateToken = async (req, res, next) => {
         if (user.scope === 'pacs-viewer') {
             return res.status(401).json({ error: 'Invalid Token', code: 'INVALID_ACCESS_TOKEN' });
         }
+
+        // Single Active Session Verification
+        if (user.session_id && authDatabase) {
+            let tableName, idColumn, idValue;
+            if (user.user_id) {
+                tableName = 'users';
+                idColumn = 'user_id';
+                idValue = user.user_id;
+            } else if (user.patientId || user.patient_id) {
+                tableName = 'patients';
+                idColumn = 'patient_id';
+                idValue = user.patientId || user.patient_id;
+            } else if (user.doctorId || user.doctor_id) {
+                tableName = 'referring_doctors';
+                idColumn = 'doctor_id';
+                idValue = user.doctorId || user.doctor_id;
+            }
+
+            if (tableName) {
+                const sessionRes = await authDatabase.query(
+                    `SELECT current_session_id FROM ${tableName} WHERE ${idColumn} = $1`,
+                    [idValue]
+                );
+                if (sessionRes.rows.length > 0 && sessionRes.rows[0].current_session_id !== user.session_id) {
+                    return res.status(401).json({ error: 'Logged out. Account accessed from another device.', code: 'CONCURRENT_LOGIN' });
+                }
+            }
+        }
+
         req.user = user;
         req.authType = 'jwt';
         return enforcePasswordChange(req, res, next);

@@ -1,11 +1,11 @@
 import React, { useId } from 'react';
 
-const PageHeader = ({ 
-    icon: Icon, 
+const PageHeader = ({
+    icon: Icon,
     eyebrowIcon: EyebrowIcon,
-    eyebrow, 
-    title, 
-    description, 
+    eyebrow,
+    title,
+    description,
     actions,
     children,
     meta,
@@ -21,7 +21,7 @@ const PageHeader = ({
 
     return (
         <section
-            className={`rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-sm dark:border-[var(--rcms-line)] dark:bg-[var(--rcms-surface-raised)] dark:text-[var(--rcms-ink)] ${paddingClass} ${className}`}
+            className={`rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-sm dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-ink)] ${paddingClass} ${className}`}
             aria-labelledby={title ? headingId : undefined}
             aria-label={!title ? ariaLabel : undefined}
         >
@@ -40,12 +40,12 @@ const PageHeader = ({
                             </div>
                         )}
                         {title && (
-                            <h1 id={headingId} className="break-words text-2xl font-black leading-tight tracking-tight text-slate-950 dark:text-[var(--rcms-ink)] sm:text-3xl">
+                            <h1 id={headingId} className="break-words text-2xl font-black leading-tight tracking-tight text-slate-950 dark:text-[var(--VIARA-ink)] sm:text-3xl">
                                 {title}
                             </h1>
                         )}
                         {description && (
-                            <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500 dark:text-[var(--rcms-muted)]">
+                            <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500 dark:text-[var(--VIARA-muted)]">
                                 {description}
                             </p>
                         )}

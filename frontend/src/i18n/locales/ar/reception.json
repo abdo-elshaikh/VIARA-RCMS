@@ -58,6 +58,7 @@
     "actions": "إجراءات",
     "noExamType": "لا يوجد نوع فحص",
     "createInvoice": "إنشاء فاتورة",
+    "noInvoice": "بدون فاتورة",
     "prep": "التحضير",
     "patientFallback": "مريض",
     "followUp": "متابعة",
@@ -69,28 +70,37 @@
   },
   "waitlist": {
     "title": "قائمة الانتظار لليوم المحدد",
+    "entries": "حالة",
     "activeRequests": "{{count}} طلبات نشطة",
     "pickPatient": "اختر مريضًا للحجز",
     "noEntries": "لا توجد إدخالات في قائمة الانتظار لهذا التاريخ.",
+    "emptySubtitle": "لا يوجد مرضى في قائمة الانتظار لهذا اليوم.",
     "anyRoom": "أي غرفة",
     "anyExam": "أي فحص",
     "contacted": "تم التواصل",
     "cancel": "إلغاء",
+    "bookNow": "حجز",
     "statuses": {
+      "Waiting": "في الانتظار",
       "Contacted": "تم التواصل",
+      "Scheduled": "مجدول",
       "Cancelled": "ملغى"
     }
   },
   "queue": {
-    "search": "البحث في الطابور",
-    "searchPlaceholder": "ابحث عن المريض أو الرقم الطبي أو الفحص",
+    "search": "البحث في العمليات",
+    "searchPlaceholder": "ابحث عن المريض أو الرقم الطبي أو الفحص...",
     "print": "طباعة المستندات",
     "title": "طابور المرضى المباشر",
+    "unifiedSummary": "{{count}} موعد وحالة نشطة في مساحة عمل واحدة",
     "total": "الإجمالي",
     "overdue": "متأخر",
+    "transitionTo": "الانتقال إلى:",
     "avgWait": "متوسط الانتظار {{avg}} دقيقة",
     "summary": "{{total}} نشط، {{overdue}} متأخر، متوسط الانتظار {{avg}} دقيقة",
     "noItems": "لا توجد عناصر نشطة في الطابور لهذا اليوم.",
+    "empty": "لا توجد عمليات مطابقة",
+    "emptySearch": "جرّب عبارة بحث أخرى.",
     "waitingMin": "في الانتظار {{count}} دقيقة",
     "onHold": " - معلّق: {{reason}}",
     "noReason": "بدون سبب",
@@ -98,11 +108,16 @@
     "cashier": "توجيه للخزينة",
     "prep": "التحضير",
     "pickup": "تسليم النتائج",
+    "sticker": "ملصق باركود",
+    "receipt": "إيصال",
+    "readOnly": "للقراءة فقط",
     "columns": {
       "waitingRoom": "غرفة الانتظار",
       "financial": "المالية والدفع",
       "clinical": "التحضير والفحص",
-      "completed": "المكتملة"
+      "completed": "المكتملة",
+      "priority": "الأولوية",
+      "wait": "الانتظار"
     },
     "emptyColumn": "لا يوجد مرضى في هذه المرحلة",
     "changeStage": "تغيير المرحلة",
@@ -119,6 +134,28 @@
       "Finalized": "مكتمل نهائيًا",
       "Delivered": "تم التسليم"
     }
+  },
+  "filters": {
+    "all": "الكل",
+    "allPriorities": "كل الأولويات",
+    "overdue": "المتأخر",
+    "urgent": "عاجل وطارئ",
+    "stage": "المرحلة"
+  },
+  "focus": {
+    "overdue": "المتأخر",
+    "ready": "جاهز"
+  },
+  "pagination": {
+    "showing": "عرض {{from}}–{{to}} من إجمالي {{total}}",
+    "perPage": "الصفوف:",
+    "selectPageSize": "عدد الصفوف لكل صفحة"
+  },
+  "sort": {
+    "urgency": "الترتيب: حسب الأولوية",
+    "wait": "الترتيب: الأطول انتظارًا",
+    "balance": "الترتيب: الأعلى رصيدًا",
+    "name": "الترتيب: اسم المريض"
   },
   "priority": {
     "Routine": "روتيني",
@@ -388,6 +425,8 @@
     }
   },
   "billing": {
+    "title": "الفوترة والفواتير",
+    "subtitle": "إدارة فواتير المرضى وتحصيل المدفوعات وطباعة الإيصالات",
     "searchPlaceholder": "ابحث برقم الفاتورة أو اسم المريض أو الرقم الطبي...",
     "filterStatus": "تصفية حسب حالة الفاتورة",
     "allStatuses": "كل الحالات",
@@ -406,11 +445,6 @@
       "en": "الإنجليزية فقط",
       "ar": "العربية فقط"
     },
-    "paymentHistory": "الدفعات السابقة",
-    "loadingHistory": "جارٍ تحميل سجل الدفعات...",
-    "noPaymentHistory": "لا توجد دفعات سابقة لهذه الفاتورة.",
-    "title": "الفوترة والفواتير",
-    "subtitle": "إدارة فواتير المرضى وتحصيل المدفوعات وطباعة الإيصالات",
     "invoiceNo": "رقم الفاتورة",
     "patient": "المريض",
     "date": "التاريخ",
@@ -420,6 +454,7 @@
     "status": "الحالة",
     "actions": "الإجراءات",
     "collectPayment": "تحصيل دفعة",
+    "payRemainingBalance": "سداد الرصيد",
     "managePayments": "إدارة",
     "printPdf": "طباعة PDF",
     "paymentTitle": "تحصيل دفعة",
@@ -432,6 +467,9 @@
     "noInvoices": "لا توجد فواتير.",
     "downloadingPdf": "جارٍ تنزيل PDF...",
     "unnamedPatient": "مريض دون اسم",
+    "paymentHistory": "الدفعات السابقة",
+    "loadingHistory": "جارٍ تحميل سجل الدفعات...",
+    "noPaymentHistory": "لا توجد دفعات سابقة لهذه الفاتورة.",
     "currentBalance": "الرصيد الحالي",
     "adjustedBalance": "بعد الخصم",
     "remaining": "المتبقي",

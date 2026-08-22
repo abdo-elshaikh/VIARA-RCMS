@@ -75,7 +75,7 @@ const upload = multer({
 
 const cleanupPacsFiles = (files = []) => files.forEach((file) => {
     if (!file?.path) return;
-    fs.unlink(file.path, () => {});
+    fs.unlink(file.path, () => { });
 });
 
 const uploadPacsFiles = (req, res, next) => {
@@ -103,9 +103,9 @@ const uploadPacsFiles = (req, res, next) => {
 /**
  * PACS/imaging routes.
  *
- * The webhook is machine-to-machine (Orthanc -> RCMS) and authenticates with a
+ * The webhook is machine-to-machine (Orthanc -> VIARA) and authenticates with a
  * shared secret, so it is mounted BEFORE the JWT guard. Everything else is a
- * normal authenticated RCMS API guarded by PACS permissions.
+ * normal authenticated VIARA API guarded by PACS permissions.
  */
 module.exports = (pool, authenticateToken, authorizeRole) => {
     const router = express.Router();
@@ -127,7 +127,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
         dicomWebProxy(pool)
     );
 
-    // --- Authenticated RCMS API ---
+    // --- Authenticated VIARA API ---
     router.use(authenticateToken);
 
     // Mint the short-lived viewer cookie for the OHIF iframe. Guarded like the

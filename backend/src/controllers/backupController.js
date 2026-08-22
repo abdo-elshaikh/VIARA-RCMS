@@ -13,6 +13,7 @@ const {
     resolveBackupPath
 } = require('../services/postgresBackupService');
 const { replicateBackup, isConfigured } = require('../services/backupOffsiteReplicator');
+const { triggerEventForRole } = require('../services/notificationJobService');
 
 const BACKUP_DIR = getBackupDir();
 const DEFAULT_JSON_RESTORE_MAX_BYTES = 50 * 1024 * 1024;
@@ -61,7 +62,7 @@ const createJsonBackupSnapshot = async (db, user) => {
         .map(row => row.table_name)
         .filter(name => ALLOWED_BACKUP_TABLES.includes(name));
 
-    const filename = `rcms_backup_${Date.now()}.json`;
+    const filename = `VIARA_backup_${Date.now()}.json`;
     const filepath = path.join(BACKUP_DIR, filename);
     const stream = fs.createWriteStream(filepath, { encoding: 'utf-8', mode: 0o600 });
     const tableCounts = {};
@@ -160,6 +161,25 @@ const generateBackup = (db) => async (req, res, next) => {
                     offsiteReplicated: replicationResult.replicated,
                 }
             });
+
+            triggerEventForRole(db, 'BackupCompleted', 'Admin', {
+                priority: 'Normal',
+                variables: {
+                    backup_file: backup.filename,
+                    backup_size: backup.size_bytes,
+                    duration: backup.duration || 'N/A'
+                }
+            }).catch(() => { });
+
+            triggerEventForRole(db, 'BackupCompleted', 'Accountant', {
+                priority: 'Normal',
+                variables: {
+                    backup_file: backup.filename,
+                    backup_size: backup.size_bytes,
+                    duration: backup.duration || 'N/A'
+                }
+            }).catch(() => { });
+
             return res.json({
                 message: 'Verified PostgreSQL backup generated successfully',
                 filename: backup.filename,
@@ -180,9 +200,43 @@ const generateBackup = (db) => async (req, res, next) => {
             ipAddress: req.ip, details: { filename: backup.filename, size_bytes: backup.size_bytes, type: 'JSON' }
         });
 
+        triggerEventForRole(db, 'BackupCompleted', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                backup_file: backup.filename,
+                backup_size: backup.size_bytes,
+                duration: 'N/A'
+            }
+        }).catch(() => { });
+
+        triggerEventForRole(db, 'BackupCompleted', 'Accountant', {
+            priority: 'Normal',
+            variables: {
+                backup_file: backup.filename,
+                backup_size: backup.size_bytes,
+                duration: 'N/A'
+            }
+        }).catch(() => { });
+
         res.json({ message: 'Backup generated successfully', filename: backup.filename, type: 'JSON' });
 
     } catch (error) {
+        triggerEventForRole(db, 'BackupFailed', 'Admin', {
+            priority: 'Critical',
+            variables: {
+                error: error.message,
+                backup_file: 'N/A'
+            }
+        }).catch(() => { });
+
+        triggerEventForRole(db, 'BackupFailed', 'Accountant', {
+            priority: 'Critical',
+            variables: {
+                error: error.message,
+                backup_file: 'N/A'
+            }
+        }).catch(() => { });
+
         next(error);
     }
 };

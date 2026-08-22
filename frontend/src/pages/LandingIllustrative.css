@@ -1,0 +1,2303 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Readex+Pro:wght@400;500;600;700&family=Cairo:wght@400;500;600;700;800;900&display=swap');
+
+/* ═════════════════════════════════════════════════════════════════════
+   VIARA DESIGN SYSTEM — WARM EDITORIAL TWO-TONE CLINICAL OS
+   Inspired by contemporary Scandinavian editorial illustration:
+   Two-tone split canvas (Crisp Cream & Warm Clay Taupe),
+   Terracotta / Rust Orange accents, Espresso / Mocha typography,
+   Pill UI capsules, and bespoke vector clinical workstation artwork.
+   ═════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Warm Reference Palette */
+  --viara-terracotta: #087F5B;
+  --viara-terracotta-hover: #066A4C;
+  --viara-terracotta-light: rgba(8, 127, 91, 0.11);
+  --viara-terracotta-glow: rgba(8, 127, 91, 0.24);
+
+  --viara-espresso: #172326;
+  --viara-mocha: #334944;
+  --viara-taupe-muted: #61736E;
+  --viara-taupe-border: #DCE7E3;
+
+  --viara-mint: #24C7A1;
+  --viara-mint-light: rgba(36, 199, 161, 0.14);
+  --viara-mint-dark: #087F5B;
+
+  --viara-emerald-500: #10b981;
+  --viara-cyan-500: #06b6d4;
+  --viara-amber-500: #f59e0b;
+  --viara-rose-500: #f43f5e;
+
+  --radius-full: 9999px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Light Mode Tokens ─── */
+.viara-landing-slide-os.is-light {
+  --bg-page-outer: #E8F1EE;
+  --bg-canvas-left: #FFFFFF;
+  --bg-canvas-right: #EAF5F1;
+  --bg-surface-card: #FFFFFF;
+  --bg-surface-elevated: #F3F8F6;
+  --bg-surface-hover: #E9F1EE;
+  --bg-pill-input: #F0F5F3;
+  --border-pill: #D5E2DE;
+  --border-subtle: #E0EAE7;
+  --border-active: #087F5B;
+
+  --text-headline: #172326;
+  --text-kicker: #4D625C;
+  --text-body: #5F6F6B;
+  --text-muted: #84938F;
+  --text-inverse: #FFFFFF;
+
+  --shadow-warm-sm: 0 2px 8px rgba(23, 35, 38, 0.05);
+  --shadow-warm-md: 0 8px 24px -4px rgba(23, 35, 38, 0.09);
+  --shadow-warm-lg: 0 20px 48px -12px rgba(23, 35, 38, 0.14);
+  --shadow-terracotta: 0 10px 24px -6px rgba(8, 127, 91, 0.32);
+
+  --hud-glass-bg: #FFFFFF;
+  --hud-glass-border: #E0EAE7;
+  --illustration-halo: rgba(8, 127, 91, 0.12);
+  --illustration-halo-secondary: rgba(244, 185, 66, 0.1);
+  --illustration-line: rgba(8, 127, 91, 0.2);
+  --illustration-shadow: rgba(23, 35, 38, 0.14);
+}
+
+/* ─── Dark Mode Tokens ─── */
+.viara-landing-slide-os.is-dark {
+  --bg-page-outer: #06110E;
+  --bg-canvas-left: #0B1714;
+  --bg-canvas-right: #0E1E1A;
+  --bg-surface-card: #111F1B;
+  --bg-surface-elevated: #152722;
+  --bg-surface-hover: #1B312B;
+  --bg-pill-input: #13231E;
+  --border-pill: #29423A;
+  --border-subtle: #20372F;
+  --border-active: #24C7A1;
+
+  --text-headline: #FAF4EE;
+  --text-kicker: #A5CCC0;
+  --text-body: #B8CBC5;
+  --text-muted: #78938B;
+  --text-inverse: #FFFFFF;
+
+  --shadow-warm-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-warm-md: 0 8px 24px -4px rgba(0, 0, 0, 0.6);
+  --shadow-warm-lg: 0 20px 48px -12px rgba(0, 0, 0, 0.85);
+  --shadow-terracotta: 0 10px 24px -6px rgba(222, 107, 72, 0.45);
+
+  --hud-glass-bg: #201C18;
+  --hud-glass-border: rgba(255, 255, 255, 0.1);
+  --illustration-halo: rgba(36, 199, 161, 0.2);
+  --illustration-halo-secondary: rgba(244, 185, 66, 0.12);
+  --illustration-line: rgba(126, 231, 205, 0.22);
+  --illustration-shadow: rgba(0, 0, 0, 0.52);
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   BASE VIEWPORT & PAGE SHELL
+   ═════════════════════════════════════════════════════════════ */
+.viara-landing-slide-os {
+  position: relative;
+  width: 100%;
+  height: 100svh;
+  max-height: 100svh;
+  background-color: var(--bg-page-outer);
+  color: var(--text-headline);
+  font-family: 'Plus Jakarta Sans', 'Outfit', 'Cairo', system-ui, -apple-system, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.viara-landing-slide-os[lang='ar'],
+.viara-landing-slide-os[dir='rtl'] {
+  font-family: 'Cairo', 'Readex Pro', 'Outfit', sans-serif;
+}
+
+/* Main Master Frame */
+.viara-slide-master-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-canvas-left);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   MINIMAL COMPACT MOTION-DRIVEN HEADER & NAVBAR
+   ═════════════════════════════════════════════════════════════ */
+.viara-editorial-navbar {
+  position: relative;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 40px 6px;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+/* Brand Logo Lockup - Minimal & Compact */
+.viara-editorial-logo-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  color: var(--text-headline);
+  flex-shrink: 0;
+}
+
+.viara-header-logo-shell {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-surface-elevated) 82%, transparent);
+  border: 1px solid var(--border-pill);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  cursor: pointer;
+}
+
+.viara-header-logo-img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.viara-logo-text-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0px;
+}
+
+.viara-logo-name {
+  font-family: 'Outfit', 'Cairo', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--text-headline);
+  line-height: 1;
+}
+
+.viara-logo-tagline {
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  line-height: 1.1;
+}
+
+/* Minimal Compact Floating Scene Navigation Island (Center) */
+.viara-editorial-nav-island {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px;
+  height: 38px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--bg-surface-elevated) 74%, transparent);
+  border: 1px solid var(--border-pill);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
+}
+
+.viara-editorial-nav-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: var(--radius-full);
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.81rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  z-index: 1;
+  outline: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.viara-editorial-nav-item:hover {
+  color: var(--text-headline);
+}
+
+.viara-editorial-nav-item.is-active {
+  color: #FFFFFF !important;
+  font-weight: 800;
+}
+
+.viara-nav-item-icon {
+  display: grid;
+  place-items: center;
+  opacity: 0.88;
+}
+
+.viara-nav-item-label {
+  white-space: nowrap;
+}
+
+.viara-nav-active-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--viara-terracotta), #0a946b);
+  box-shadow: 0 3px 12px rgba(8, 127, 91, 0.38);
+  z-index: -1;
+}
+
+/* Right Navigation Action Hub - Minimal */
+.viara-editorial-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Compact Utility Buttons */
+.viara-util-circle-btn {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--bg-surface-elevated) 74%, transparent);
+  border: 1px solid var(--border-pill);
+  color: var(--text-body);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 0.73rem;
+  font-weight: 750;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  outline: none;
+  user-select: none;
+}
+
+.viara-util-btn-lang-code {
+  font-family: 'Outfit', 'Cairo', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.viara-util-circle-btn:hover {
+  border-color: var(--viara-terracotta);
+  color: var(--viara-terracotta);
+  background: var(--bg-surface-card);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.04);
+}
+
+/* Compact Sign In CTA Pill */
+.viara-pill-signin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, var(--viara-terracotta), #0a946b);
+  color: #FFFFFF !important;
+  border-radius: var(--radius-full);
+  padding: 0 18px;
+  height: 34px;
+  font-size: 0.82rem;
+  font-weight: 750;
+  text-decoration: none;
+  box-shadow: var(--shadow-terracotta);
+  border: 1px solid transparent;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.viara-pill-signin-btn:hover {
+  background: linear-gradient(135deg, #066a4c, #087f5b);
+  box-shadow: 0 6px 18px rgba(8, 127, 91, 0.4);
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   UNIFIED HERO WORKSPACE
+   Narrative and illustration share one continuous ambient canvas.
+   ═════════════════════════════════════════════════════════════════════ */
+.viara-split-hero-container {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.08fr 0.92fr;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 54% 48%, rgba(36, 199, 161, 0.14), transparent 28%),
+    radial-gradient(circle at 88% 16%, rgba(244, 185, 66, 0.12), transparent 22%),
+    radial-gradient(circle at 78% 86%, rgba(217, 87, 87, 0.07), transparent 24%),
+    linear-gradient(112deg,
+      var(--bg-canvas-left) 0%,
+      var(--bg-canvas-left) 38%,
+      color-mix(in srgb, var(--bg-canvas-left) 88%, var(--bg-canvas-right)) 58%,
+      var(--bg-canvas-right) 100%);
+}
+
+.viara-split-hero-container::before,
+.viara-split-hero-container::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.viara-split-hero-container::before {
+  width: clamp(280px, 38vw, 620px);
+  aspect-ratio: 1.45;
+  inset: 50% auto auto 54%;
+  border: 1px solid color-mix(in srgb, var(--viara-mint) 22%, transparent);
+  border-radius: 50%;
+  translate: -50% -50%;
+  rotate: -12deg;
+  opacity: 0.72;
+}
+
+.viara-split-hero-container::after {
+  width: clamp(190px, 24vw, 390px);
+  height: 1px;
+  inset: auto auto 16% 49%;
+  background: linear-gradient(90deg, transparent, rgba(8, 127, 91, 0.28), rgba(36, 199, 161, 0.42), transparent);
+  translate: -50% 0;
+  rotate: -7deg;
+}
+
+[dir='rtl'] .viara-split-hero-container {
+  background:
+    radial-gradient(circle at 46% 48%, rgba(36, 199, 161, 0.14), transparent 28%),
+    radial-gradient(circle at 12% 16%, rgba(244, 185, 66, 0.12), transparent 22%),
+    radial-gradient(circle at 22% 86%, rgba(217, 87, 87, 0.07), transparent 24%),
+    linear-gradient(248deg,
+      var(--bg-canvas-left) 0%,
+      var(--bg-canvas-left) 38%,
+      color-mix(in srgb, var(--bg-canvas-left) 88%, var(--bg-canvas-right)) 58%,
+      var(--bg-canvas-right) 100%);
+}
+
+[dir='rtl'] .viara-split-hero-container::before {
+  inset: 50% 54% auto auto;
+  translate: 50% -50%;
+  rotate: 12deg;
+}
+
+[dir='rtl'] .viara-split-hero-container::after {
+  inset: auto 49% 16% auto;
+  translate: 50% 0;
+  rotate: 7deg;
+}
+
+/* Motion-style page curtains scoped to the slide workspace. */
+.viara-curtain-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  overflow: hidden;
+  pointer-events: auto;
+  contain: paint;
+}
+
+.viara-curtain-panel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  will-change: transform, opacity;
+  isolation: isolate;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   MOTION-STYLE PAGE CURTAIN (SOFT, HARMONIOUS & LUXURIOUS)
+   ═════════════════════════════════════════════════════════════════════ */
+.viara-curtain-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  overflow: hidden;
+  pointer-events: auto;
+  contain: paint;
+}
+
+.viara-curtain-panel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-headline);
+  will-change: transform, opacity;
+  isolation: isolate;
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+}
+
+/* Light Mode: Soft Clinical Sage & Mint Glass */
+.viara-landing-slide-os.is-light .viara-curtain-panel {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(36, 199, 161, 0.22), transparent 42%),
+    radial-gradient(circle at 80% 80%, rgba(8, 127, 91, 0.14), transparent 42%),
+    linear-gradient(135deg, rgba(243, 251, 248, 0.96) 0%, rgba(228, 246, 241, 0.97) 100%);
+  box-shadow: 0 0 60px rgba(8, 127, 91, 0.12);
+  border-inline: 1px solid rgba(8, 127, 91, 0.12);
+}
+
+/* Dark Mode: Deep Frosted Emerald Slate Glass */
+.viara-landing-slide-os.is-dark .viara-curtain-panel {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(36, 199, 161, 0.2), transparent 40%),
+    radial-gradient(circle at 80% 80%, rgba(10, 80, 62, 0.28), transparent 40%),
+    linear-gradient(135deg, rgba(6, 26, 21, 0.96) 0%, rgba(10, 40, 33, 0.97) 100%);
+  box-shadow: 0 0 70px rgba(0, 0, 0, 0.45);
+  border-inline: 1px solid rgba(36, 199, 161, 0.15);
+}
+
+/* Soft Leading Accent Line (5px Soft Emerald/Mint) */
+.viara-curtain-panel::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  z-index: 4;
+  width: 5px;
+  background: linear-gradient(180deg, rgba(36, 199, 161, 0.4), rgba(8, 127, 91, 0.9) 50%, rgba(36, 199, 161, 0.4));
+  box-shadow: 0 0 20px rgba(36, 199, 161, 0.4);
+}
+
+.viara-landing-slide-os.is-dark .viara-curtain-panel::before {
+  background: linear-gradient(180deg, rgba(36, 199, 161, 0.5), rgba(94, 250, 208, 0.9) 50%, rgba(36, 199, 161, 0.5));
+  box-shadow: 0 0 22px rgba(36, 199, 161, 0.45);
+}
+
+.viara-curtain-panel[data-direction='forward']::before {
+  right: 0;
+}
+
+.viara-curtain-panel[data-direction='backward']::before {
+  left: 0;
+}
+
+.viara-curtain-panel__glow-orb {
+  position: absolute;
+  inset: 20% 25%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(36, 199, 161, 0.18), transparent 70%);
+  filter: blur(50px);
+  pointer-events: none;
+}
+
+.viara-curtain-panel__grid {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.08;
+  background-image:
+    linear-gradient(currentColor 1px, transparent 1px),
+    linear-gradient(90deg, currentColor 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(circle at center, #000, transparent 72%);
+  -webkit-mask-image: radial-gradient(circle at center, #000, transparent 72%);
+}
+
+.viara-curtain-identity {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  z-index: 3;
+  width: min(460px, calc(100% - 40px));
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  color: var(--text-headline);
+  translate: -50% -50%;
+  pointer-events: none;
+}
+
+.viara-curtain-identity__index {
+  color: color-mix(in srgb, var(--viara-terracotta) 22%, transparent);
+  font: 900 clamp(3.8rem, 8vw, 7rem)/0.8 'Outfit', 'Cairo', sans-serif;
+  letter-spacing: -0.08em;
+}
+
+.viara-landing-slide-os.is-dark .viara-curtain-identity__index {
+  color: rgba(255, 255, 255, 0.15);
+  text-shadow: 0 0 24px rgba(36, 199, 161, 0.25);
+}
+
+.viara-curtain-identity__logo {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-pill);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-surface-card) 92%, transparent);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(12px);
+}
+
+.viara-landing-slide-os.is-dark .viara-curtain-identity__logo {
+  background: rgba(14, 46, 38, 0.9);
+  border-color: rgba(36, 199, 161, 0.3);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.viara-curtain-identity__logo img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.viara-curtain-identity__copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.viara-curtain-identity__copy small {
+  color: var(--text-muted);
+  font: 800 0.68rem/1 'Outfit', 'Cairo', sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.viara-curtain-identity__copy strong {
+  overflow: hidden;
+  color: var(--text-headline);
+  font-size: clamp(1.15rem, 2.2vw, 1.5rem);
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viara-landing-slide-os.is-dark .viara-curtain-identity__copy strong {
+  color: #FFFFFF;
+}
+
+.viara-curtain-identity__copy i {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 3px;
+  margin-top: 8px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--border-subtle) 80%, transparent);
+}
+
+.viara-curtain-identity__copy i b {
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--viara-terracotta), var(--viara-mint));
+  transform-origin: left center;
+  animation: viara-curtain-progress 2.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+[dir='rtl'] .viara-curtain-identity__copy i b {
+  transform-origin: right center;
+}
+
+@keyframes viara-curtain-progress {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ─── Column 1: Left Narrative & Simple HUD Section ─── */
+.viara-split-left-pane {
+  background: transparent;
+  padding: 24px 32px 26px 56px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow-y: auto;
+  position: relative;
+  z-index: 10;
+  isolation: isolate;
+}
+
+.viara-slide-narrative {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 640px);
+}
+
+.viara-slide-narrative,
+.viara-slide-illustration {
+  will-change: transform, opacity;
+}
+
+[dir='rtl'] .viara-split-left-pane {
+  padding: 24px 56px 26px 32px;
+}
+
+/* Eyebrow & Slide Badge */
+.viara-eyebrow-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 630px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.viara-eyebrow-left-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.viara-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  background: var(--viara-terracotta-light);
+  color: var(--viara-terracotta);
+  font-size: 0.78rem;
+  font-weight: 750;
+  border: 1px solid color-mix(in srgb, var(--viara-terracotta) 28%, transparent);
+  box-shadow: 0 2px 6px rgba(8, 127, 91, 0.08);
+}
+
+.viara-live-pulse-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--bg-surface-elevated) 85%, transparent);
+  border: 1px solid var(--border-pill);
+  color: var(--text-body);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.viara-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--viara-emerald-500);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  animation: viara-pulse-ring 2s infinite ease-in-out;
+}
+
+@keyframes viara-pulse-ring {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.3);
+    opacity: 0.7;
+  }
+}
+
+.viara-scene-quick-ctrls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.viara-autoplay-toggle-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-pill);
+  background: var(--bg-pill-input);
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.2s var(--ease);
+}
+
+.viara-autoplay-toggle-btn:hover {
+  background: var(--viara-terracotta-light);
+  border-color: var(--viara-terracotta);
+  color: var(--viara-terracotta);
+  transform: scale(1.06);
+}
+
+.viara-scene-mini-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.viara-mini-dot {
+  width: 8px;
+  height: 6px;
+  border-radius: 4px;
+  border: 0;
+  padding: 0;
+  background: var(--border-pill);
+  cursor: pointer;
+  transition: all 0.25s var(--ease);
+}
+
+.viara-mini-dot:hover {
+  background: var(--text-muted);
+  transform: scale(1.2);
+}
+
+.viara-mini-dot.is-active {
+  width: 20px;
+  background: var(--viara-terracotta);
+  box-shadow: 0 0 8px rgba(8, 127, 91, 0.4);
+}
+
+.viara-slide-counter-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+
+/* Main Display Title */
+.viara-editorial-hero-title {
+  font-family: 'Outfit', 'Cairo', sans-serif;
+  font-size: clamp(2.1rem, 3.2vw, 3.1rem);
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--text-headline);
+  letter-spacing: -0.028em;
+  max-width: 640px;
+  margin-bottom: 12px;
+  text-wrap: balance;
+}
+
+.viara-editorial-hero-title>span {
+  display: block;
+}
+
+.viara-editorial-hero-title-accent {
+  display: inline-block;
+  background: linear-gradient(135deg, var(--viara-terracotta) 0%, #17a37f 50%, #24c7a1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-style: normal;
+  font-weight: 900;
+  margin-top: 2px;
+}
+
+.viara-landing-slide-os.is-dark .viara-editorial-hero-title-accent {
+  background: linear-gradient(135deg, #24c7a1 0%, #44ecc4 50%, #7ee7cd 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Tracked Uppercase Kicker */
+.viara-tracked-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-kicker);
+  margin-bottom: 12px;
+}
+
+.viara-kicker-bar {
+  display: block;
+  width: 22px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--viara-terracotta), var(--viara-mint));
+  flex-shrink: 0;
+}
+
+/* Descriptive Paragraph */
+.viara-editorial-hero-desc {
+  max-width: 58ch;
+  margin-bottom: 15px;
+  padding-inline-start: 14px;
+  border-inline-start: 2.5px solid color-mix(in srgb, var(--viara-terracotta) 55%, transparent);
+  color: var(--text-body);
+  font-size: 0.94rem;
+  line-height: 1.7;
+}
+
+/* Feature Highlight Pills Cluster */
+.viara-feature-pills-cluster {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 630px;
+  margin-bottom: 18px;
+}
+
+.viara-feature-pill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-surface-elevated) 88%, transparent);
+  border: 1px solid var(--border-pill);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s var(--ease);
+}
+
+.viara-feature-pill-chip:hover {
+  border-color: color-mix(in srgb, var(--viara-terracotta) 50%, var(--border-pill));
+  background: color-mix(in srgb, var(--viara-terracotta-light) 40%, var(--bg-surface-elevated));
+  transform: translateY(-1px);
+}
+
+.viara-feature-pill-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--viara-terracotta-light);
+  color: var(--viara-terracotta);
+  flex-shrink: 0;
+}
+
+.viara-feature-pill-label {
+  font-size: 0.77rem;
+  font-weight: 700;
+  color: var(--text-headline);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* Dual Pill Action Cluster */
+.viara-pill-cta-cluster {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.viara-cta-pill-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #087f5b, #0a946b);
+  color: #FFFFFF !important;
+  border-radius: 12px;
+  padding: 11px 23px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: var(--shadow-terracotta);
+  transition: all 0.22s var(--ease);
+  border: 2px solid transparent;
+}
+
+.viara-cta-pill-primary:hover {
+  background: linear-gradient(135deg, #066a4c, #087f5b);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px -4px rgba(8, 127, 91, 0.45);
+}
+
+.viara-cta-pill-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--bg-surface-card) 72%, transparent);
+  color: var(--text-body);
+  border: 1px solid var(--border-pill);
+  border-radius: 12px;
+  padding: 11px 20px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.22s var(--ease);
+}
+
+.viara-cta-pill-outline:hover {
+  background: var(--viara-terracotta-light);
+  border-color: color-mix(in srgb, var(--viara-terracotta) 48%, var(--border-pill));
+  color: var(--viara-terracotta);
+  transform: translateY(-2px);
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   ENHANCED LIVE CLINICAL TELEMETRY HUD STRIP
+   ═════════════════════════════════════════════════════════════════════ */
+.viara-number-counter-strip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-width: 640px;
+  margin: 18px 0 0;
+  padding: 16px 0 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.viara-counter-progress-rail {
+  position: absolute;
+  inset: -1px 0 auto;
+  height: 2.5px;
+  background: var(--border-subtle);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.viara-counter-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--viara-terracotta), var(--viara-mint));
+  box-shadow: 0 0 10px rgba(36, 199, 161, 0.5);
+  transition: width 60ms linear;
+}
+
+[dir='rtl'] .viara-counter-progress-fill {
+  margin-inline-start: auto;
+}
+
+.viara-number-counter-items {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.viara-number-counter {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-surface-elevated) 82%, transparent);
+  border: 1px solid var(--border-pill);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s var(--ease);
+}
+
+.viara-number-counter:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--viara-terracotta) 40%, var(--border-pill));
+  background: color-mix(in srgb, var(--viara-terracotta-light) 25%, var(--bg-surface-elevated));
+}
+
+.viara-number-counter dt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.67rem;
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.viara-dt-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.viara-dt-dot.is-emerald {
+  background: var(--viara-emerald-500);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+}
+
+.viara-dt-dot.is-amber {
+  background: var(--viara-amber-500);
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+}
+
+.viara-dt-dot.is-mint {
+  background: var(--viara-mint);
+  box-shadow: 0 0 6px rgba(36, 199, 161, 0.5);
+}
+
+.viara-dt-dot.is-cyan {
+  background: var(--viara-cyan-500);
+  box-shadow: 0 0 6px rgba(6, 182, 212, 0.5);
+}
+
+.viara-number-counter dd {
+  margin: 0;
+  color: var(--text-headline);
+  font: 850 clamp(1.35rem, 2.1vw, 1.85rem)/1 'Outfit', 'Cairo', sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.viara-number-counter dd.is-terracotta {
+  color: var(--viara-terracotta);
+}
+
+.viara-number-counter dd.is-mint {
+  color: var(--viara-mint-dark);
+}
+
+.viara-landing-slide-os.is-dark .viara-number-counter dd.is-mint {
+  color: var(--viara-mint);
+}
+
+.viara-number-counter dd.is-cyan {
+  color: #0284c7;
+}
+
+.viara-landing-slide-os.is-dark .viara-number-counter dd.is-cyan {
+  color: #38bdf8;
+}
+
+.viara-left-compact-hud {
+  position: relative;
+  background: transparent;
+  border: 0;
+  border-block: 1px solid color-mix(in srgb, var(--viara-terracotta) 24%, var(--border-subtle));
+  border-radius: 0;
+  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  box-shadow: none;
+  max-width: 560px;
+  backdrop-filter: none;
+}
+
+.viara-left-compact-hud::before,
+.viara-left-compact-hud::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 9px;
+  pointer-events: none;
+}
+
+.viara-left-compact-hud::before {
+  inset: -1px auto auto 0;
+  border-top: 2px solid var(--viara-terracotta);
+  border-left: 2px solid var(--viara-terracotta);
+}
+
+.viara-left-compact-hud::after {
+  inset: auto 0 -1px auto;
+  border-right: 2px solid var(--viara-mint);
+  border-bottom: 2px solid var(--viara-mint);
+}
+
+[dir='rtl'] .viara-left-compact-hud::before {
+  inset: -1px 0 auto auto;
+  border-right: 2px solid var(--viara-terracotta);
+  border-left: 0;
+}
+
+[dir='rtl'] .viara-left-compact-hud::after {
+  inset: auto auto -1px 0;
+  border-right: 0;
+  border-left: 2px solid var(--viara-mint);
+}
+
+.viara-hud-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 12px 8px;
+  border-bottom: 0;
+}
+
+.viara-hud-header-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--viara-terracotta);
+  background: var(--viara-terracotta-light);
+}
+
+.viara-hud-header-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.viara-hud-header-copy small {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.viara-hud-header-copy strong {
+  overflow: hidden;
+  color: var(--text-headline);
+  font-size: 0.79rem;
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viara-hud-live-state {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  font-weight: 750;
+}
+
+.viara-hud-live-state i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--viara-emerald-500);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+}
+
+/* Minimalist Telemetry Grid */
+.viara-hud-telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  padding: 9px 8px;
+  border-block: 1px solid var(--border-subtle);
+}
+
+.viara-hud-stat-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-inline: 11px;
+  border-inline-end: 1px solid var(--border-subtle);
+}
+
+.viara-hud-stat-box:first-child {
+  padding-inline-start: 4px;
+}
+
+.viara-hud-stat-box:last-child {
+  border-inline-end: 0;
+}
+
+.viara-hud-stat-label {
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.viara-hud-stat-val {
+  font-family: 'Outfit', monospace;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text-headline);
+}
+
+.viara-hud-workspace {
+  display: grid;
+  gap: 7px;
+  min-height: 56px;
+  padding: 8px 12px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.viara-hud-stat-val.is-terracotta {
+  color: var(--viara-terracotta);
+}
+
+.viara-hud-stat-val.is-mint {
+  color: var(--viara-mint-dark);
+}
+
+.viara-hud-stat-val.is-amber {
+  color: var(--viara-amber-500);
+}
+
+/* Compact Modality Pills */
+.viara-hud-modality-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 0 6px;
+  overflow-x: auto;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  scrollbar-width: none;
+}
+
+.viara-hud-modality-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.viara-hud-modality-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+.viara-hud-modality-pill.is-active {
+  background: var(--viara-terracotta-light);
+  color: var(--viara-terracotta);
+  box-shadow: inset 0 -2px 0 var(--viara-terracotta);
+}
+
+/* Modality Action Box */
+.viara-hud-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 1px 2px;
+}
+
+.viara-hud-action-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viara-hud-meta-title {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--text-headline);
+}
+
+.viara-hud-meta-sub {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.viara-hud-status-word {
+  flex: 0 0 auto;
+  color: var(--viara-terracotta);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.viara-hud-scan-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--viara-terracotta);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 10px;
+  padding: 6px 14px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+}
+
+.viara-hud-scan-btn:hover {
+  background: var(--viara-terracotta-hover);
+}
+
+/* Workflow Pipeline */
+.viara-pipeline-stepper-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.viara-pipeline-step-pill {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 5px 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.viara-pipeline-step-pill.is-active {
+  background: transparent;
+  color: var(--viara-terracotta);
+  border-color: var(--viara-terracotta);
+}
+
+/* Role Quick Launchers */
+.viara-role-launch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.viara-role-launch-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 6px 12px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-body);
+  text-decoration: none;
+  transition: all 0.18s ease;
+}
+
+.viara-role-launch-btn:hover {
+  background: var(--viara-terracotta-light);
+  border-color: var(--viara-terracotta);
+  color: var(--viara-terracotta);
+}
+
+.viara-role-launch-btn.is-primary {
+  background: var(--viara-terracotta-light);
+  color: var(--viara-terracotta) !important;
+  border-color: var(--viara-terracotta);
+}
+
+/* Illustration side remains a layout region, not a separate visual panel. */
+.viara-split-right-pane {
+  background: transparent;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 36px 24px 0;
+  overflow: visible;
+  z-index: 2;
+}
+
+[dir='rtl'] .viara-split-right-pane {
+  padding: 24px 0 24px 36px;
+}
+
+.viara-workstation-scene-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-width: 680px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  isolation: isolate;
+}
+
+.viara-workstation-scene-stage::before {
+  content: none;
+}
+
+.viara-slide-illustration {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.viara-slide-illustration__canvas {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  aspect-ratio: auto;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  padding: clamp(4px, 1vw, 14px);
+}
+
+.viara-slide-illustration__canvas::before,
+.viara-slide-illustration__canvas::after {
+  content: '';
+  position: absolute;
+  inset: 8% 4% 10%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.viara-slide-illustration__wash {
+  position: absolute;
+  inset: 5% 2% 7%;
+  z-index: 0;
+  display: block;
+  border-radius: 46% 54% 48% 52% / 56% 45% 55% 44%;
+  background:
+    radial-gradient(circle at 28% 28%, var(--illustration-halo-secondary), transparent 28%),
+    radial-gradient(circle at 55% 56%, var(--illustration-halo), transparent 65%);
+  filter: blur(18px);
+  opacity: 0.92;
+  transform: rotate(-4deg);
+  pointer-events: none;
+}
+
+.viara-slide-illustration__canvas::before {
+  border: 1px solid var(--illustration-line);
+  border-radius: 50%;
+  transform: rotate(-8deg);
+  mask-image: linear-gradient(105deg, transparent 5%, #000 30%, #000 72%, transparent 96%);
+  opacity: 0.74;
+}
+
+.viara-slide-illustration__canvas::after {
+  inset: auto 10% 7%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--illustration-line) 18%, var(--illustration-line) 82%, transparent);
+}
+
+.viara-slide-illustration__orbit {
+  position: absolute;
+  inset: 16% 9% 18%;
+  z-index: 1;
+  border: 1px solid color-mix(in srgb, var(--illustration-line) 72%, transparent);
+  border-radius: 50%;
+  opacity: 0.42;
+  transform: rotate(11deg);
+  mask-image: linear-gradient(75deg, transparent 8%, #000 34%, #000 67%, transparent 94%);
+  pointer-events: none;
+}
+
+.viara-slide-illustration__image {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 640px);
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  filter: drop-shadow(0 24px 24px var(--illustration-shadow));
+  transform: scale(1.045);
+}
+
+.viara-slide-illustration[data-scene='workflow'] .viara-slide-illustration__image {
+  transform: scale(1.075);
+}
+
+.viara-slide-illustration[data-scene='gateway'] .viara-slide-illustration__image {
+  transform: scale(1.055);
+}
+
+.viara-landing-slide-os.is-light .viara-slide-illustration__image {
+  filter:
+    drop-shadow(0 22px 22px var(--illustration-shadow)) drop-shadow(0 0 0.7px rgba(8, 66, 53, 0.34));
+}
+
+.viara-landing-slide-os.is-dark .viara-slide-illustration__image {
+  filter:
+    drop-shadow(0 30px 34px var(--illustration-shadow)) drop-shadow(0 0 1px rgba(232, 255, 248, 0.3));
+}
+
+.viara-slide-illustration__caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: calc(100% - 24px);
+  margin-inline: auto;
+  padding: 10px 8px 0;
+  border-top: 1px solid color-mix(in srgb, var(--viara-terracotta) 20%, var(--border-subtle));
+  flex: 0 0 auto;
+}
+
+.viara-slide-illustration__brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.viara-slide-illustration__logo-shell {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--bg-surface-card) 90%, transparent);
+  box-shadow: var(--shadow-warm-sm);
+}
+
+.viara-slide-illustration__logo-shell img {
+  width: 31px;
+  height: 31px;
+  object-fit: contain;
+}
+
+.viara-slide-illustration__brand>span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.viara-slide-illustration__brand small {
+  color: var(--viara-terracotta);
+  font-size: 0.67rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.viara-slide-illustration__brand strong {
+  overflow: hidden;
+  color: var(--text-headline);
+  font-size: clamp(0.86rem, 1.4vw, 1rem);
+  font-weight: 750;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viara-slide-illustration__counter {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-muted);
+  font: 800 0.72rem/1 'Outfit', 'Cairo', sans-serif;
+  letter-spacing: 0.08em;
+}
+
+.viara-slide-illustration__counter i {
+  width: 28px;
+  height: 1px;
+  background: color-mix(in srgb, var(--viara-terracotta) 55%, transparent);
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   SEAMLESS INTEGRATED FOOTER CONTROL DOCK
+   ═════════════════════════════════════════════════════════════════════ */
+.viara-editorial-bottom-dock {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 10px 48px 14px;
+  background: transparent;
+  flex-shrink: 0;
+  border-top: 0;
+}
+
+.viara-dock-left-group,
+.viara-dock-right-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.viara-dock-brand-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--bg-surface-elevated) 72%, transparent);
+  border: 1px solid var(--border-pill);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.viara-dock-copyright-note {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+}
+
+.viara-dock-sep {
+  color: var(--border-pill);
+  font-size: 0.8rem;
+}
+
+.viara-dock-edition-badge {
+  font-size: 0.72rem;
+  font-weight: 750;
+  color: var(--viara-terracotta);
+}
+
+/* Center Scene Breadcrumb & Mini Progress */
+.viara-dock-center-scene-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--bg-surface-elevated) 78%, transparent);
+  border: 1px solid var(--border-pill);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+}
+
+.viara-dock-scene-counter {
+  font-family: 'Outfit', 'Cairo', sans-serif;
+  font-size: 0.73rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+
+.viara-dock-scene-name {
+  font-size: 0.76rem;
+  font-weight: 750;
+  color: var(--text-headline);
+  white-space: nowrap;
+}
+
+.viara-dock-progress-track {
+  width: 44px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-subtle);
+  overflow: hidden;
+}
+
+.viara-dock-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--viara-terracotta), var(--viara-mint));
+  box-shadow: 0 0 8px rgba(36, 199, 161, 0.5);
+  transition: width 60ms linear;
+}
+
+[dir='rtl'] .viara-dock-progress-bar {
+  margin-inline-start: auto;
+}
+
+/* Right Status Pill */
+.viara-dock-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--bg-surface-elevated) 72%, transparent);
+  border: 1px solid var(--border-pill);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.viara-dock-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--viara-emerald-500);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  animation: viara-pulse-ring 2s infinite ease-in-out;
+}
+
+.viara-dock-status-text {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-body);
+  white-space: nowrap;
+}
+
+.viara-dock-security-tag {
+  font-size: 0.66rem;
+  font-weight: 750;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  padding-inline-start: 8px;
+  border-inline-start: 1px solid var(--border-subtle);
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   COMMAND PALETTE MODAL
+   ═════════════════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════════════════
+   RESPONSIVE BREAKPOINTS
+   ═════════════════════════════════════════════════════════════ */
+@media (min-width: 1025px) and (max-height: 900px) {
+  .viara-editorial-navbar {
+    padding-block: 10px;
+  }
+
+  .viara-header-logo-img {
+    width: 42px;
+    height: 32px;
+  }
+
+  .viara-split-left-pane,
+  [dir='rtl'] .viara-split-left-pane {
+    padding-block: 14px;
+  }
+
+  .viara-eyebrow-container {
+    margin-bottom: 8px;
+  }
+
+  .viara-editorial-hero-title {
+    font-size: clamp(1.7rem, 2.35vw, 2.25rem);
+    margin-bottom: 6px;
+  }
+
+  .viara-tracked-kicker {
+    margin-bottom: 10px;
+  }
+
+  .viara-pill-cta-cluster {
+    margin-bottom: 10px;
+  }
+
+  .viara-cta-pill-primary,
+  .viara-cta-pill-outline {
+    padding-block: 9px;
+  }
+
+  .viara-editorial-hero-desc {
+    margin-bottom: 10px;
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
+  .viara-left-compact-hud {
+    padding-block: 7px;
+  }
+
+  .viara-hud-header {
+    padding-bottom: 6px;
+  }
+
+  .viara-hud-telemetry-grid {
+    padding-block: 6px;
+  }
+
+  .viara-hud-workspace {
+    min-height: 50px;
+    padding-top: 6px;
+  }
+
+  .viara-split-right-pane,
+  [dir='rtl'] .viara-split-right-pane {
+    padding-block: 16px;
+  }
+
+  .viara-slide-illustration {
+    gap: 10px;
+  }
+
+  .viara-slide-illustration__caption {
+    padding-top: 7px;
+  }
+
+  .viara-editorial-bottom-dock {
+    min-height: 40px;
+    padding-block: 7px 9px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .viara-landing-slide-os {
+    height: auto;
+    max-height: none;
+    overflow-y: auto;
+  }
+
+  .viara-split-hero-container {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .viara-split-hero-container::after {
+    display: none;
+  }
+
+  .viara-editorial-navbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 14px 20px;
+  }
+
+  .viara-editorial-nav-links {
+    display: none;
+  }
+
+  .viara-split-left-pane {
+    padding: 24px 20px;
+  }
+
+  .viara-split-right-pane {
+    padding: 24px 20px;
+  }
+
+  .viara-workstation-scene-stage {
+    width: 100%;
+    max-width: 760px;
+    margin-inline-start: 0;
+  }
+
+  .viara-editorial-bottom-dock {
+    padding: 10px 20px 12px;
+  }
+}
+
+/* VIARA brand alignment: clinical emerald foundation with logo-spectrum accents. */
+.viara-landing-slide-os {
+  background:
+    radial-gradient(circle at 8% 10%, rgba(36, 199, 161, 0.16), transparent 26%),
+    radial-gradient(circle at 92% 8%, rgba(244, 185, 66, 0.12), transparent 24%),
+    var(--bg-page-outer);
+}
+
+.viara-landing-slide-os :is(button, a, select, input):focus-visible {
+  outline: 3px solid rgba(36, 199, 161, 0.38);
+  outline-offset: 3px;
+}
+
+@media (max-width: 1024px) {
+  .viara-editorial-navbar {
+    padding: 12px 24px 8px;
+  }
+
+  .viara-editorial-nav-island {
+    display: none;
+  }
+
+  .viara-editorial-bottom-dock {
+    padding: 10px 24px 12px;
+  }
+
+  .viara-dock-center-scene-pill {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .viara-editorial-navbar {
+    padding: 12px 16px;
+  }
+
+  .viara-split-left-pane {
+    padding: 30px 18px 24px;
+  }
+
+  .viara-editorial-hero-title {
+    font-size: clamp(1.95rem, 9vw, 2.55rem);
+  }
+
+  .viara-number-counter-items {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 0;
+  }
+
+  .viara-number-counter {
+    padding-inline: 8px;
+  }
+
+  .viara-number-counter:nth-child(2) {
+    border-inline-end: 0;
+  }
+
+  .viara-hud-telemetry-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .viara-hud-stat-box:nth-child(2) {
+    border-inline-end: 1px solid var(--border-subtle);
+  }
+
+  .viara-slide-illustration {
+    gap: 12px;
+  }
+
+  .viara-slide-illustration__caption {
+    padding-inline: 2px;
+  }
+}
+
+@media (max-width: 460px) {
+  .viara-logo-name {
+    font-size: 1rem;
+  }
+
+  .viara-util-circle-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .viara-pill-signin-btn {
+    padding: 8px 12px;
+  }
+
+  .viara-pill-signin-btn span {
+    display: none;
+  }
+
+  .viara-pill-cta-cluster>* {
+    flex: 1 1 150px;
+    justify-content: center;
+  }
+
+  .viara-split-right-pane {
+    padding-inline: 12px;
+  }
+
+  .viara-slide-illustration__canvas {
+    border-radius: 22px;
+  }
+
+  .viara-slide-illustration__logo-shell {
+    width: 40px;
+    height: 40px;
+    border-radius: 13px;
+  }
+
+  .viara-slide-illustration__counter {
+    display: none;
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   INTEGRATED PAGE CHROME — quiet navigation and footer rails
+   ═════════════════════════════════════════════════════════════════════ */
+.viara-editorial-navbar {
+  isolation: isolate;
+  min-height: 58px;
+  padding: 8px clamp(24px, 3vw, 52px);
+  gap: clamp(14px, 2vw, 28px);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-canvas-left) 96%, transparent),
+    color-mix(in srgb, var(--bg-canvas-left) 76%, transparent)
+  );
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.viara-editorial-navbar::after {
+  content: '';
+  position: absolute;
+  inset: auto clamp(24px, 3vw, 52px) 0;
+  height: 1px;
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--viara-terracotta) 34%, var(--border-subtle)) 18%,
+    var(--border-subtle) 50%,
+    color-mix(in srgb, var(--viara-mint) 30%, var(--border-subtle)) 82%,
+    transparent
+  );
+}
+
+.viara-editorial-logo-link {
+  gap: 8px;
+}
+
+.viara-header-logo-shell {
+  width: 34px;
+  height: 34px;
+  border-color: color-mix(in srgb, var(--viara-mint) 24%, var(--border-subtle));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-surface-elevated) 54%, transparent);
+  box-shadow: none;
+}
+
+.viara-header-logo-img {
+  width: 23px;
+  height: 23px;
+}
+
+.viara-logo-text-wrap {
+  display: block;
+}
+
+.viara-logo-name {
+  font-size: 1rem;
+  letter-spacing: 0.11em;
+}
+
+.viara-logo-tagline {
+  display: none;
+}
+
+.viara-editorial-nav-island {
+  height: 36px;
+  gap: clamp(3px, 0.55vw, 9px);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.viara-editorial-nav-item {
+  gap: 5px;
+  min-height: 34px;
+  padding: 7px clamp(7px, 0.7vw, 11px);
+  border-radius: 9px;
+  font-size: 0.74rem;
+  font-weight: 720;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.viara-editorial-nav-item:hover {
+  background: color-mix(in srgb, var(--viara-terracotta) 6%, transparent);
+}
+
+.viara-editorial-nav-item.is-active {
+  color: var(--text-headline) !important;
+  font-weight: 820;
+}
+
+.viara-nav-item-icon {
+  color: var(--viara-terracotta);
+}
+
+.viara-nav-active-glow {
+  inset: auto 9px 0;
+  height: 2px;
+  border-radius: 999px 999px 0 0;
+  background: linear-gradient(90deg, var(--viara-terracotta), var(--viara-mint));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--viara-mint) 38%, transparent);
+}
+
+.viara-editorial-nav-actions {
+  gap: 6px;
+}
+
+.viara-util-circle-btn {
+  height: 32px;
+  padding-inline: 9px;
+  border-radius: 9px;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.viara-pill-signin-btn {
+  height: 34px;
+  padding-inline: 14px;
+  border-radius: 10px;
+  font-size: 0.76rem;
+  box-shadow: 0 8px 20px -12px rgba(8, 127, 91, 0.72);
+}
+
+.viara-editorial-bottom-dock {
+  isolation: isolate;
+  min-height: 42px;
+  padding: 7px clamp(24px, 3vw, 52px) 9px;
+  background: linear-gradient(
+    0deg,
+    color-mix(in srgb, var(--bg-canvas-left) 96%, transparent),
+    color-mix(in srgb, var(--bg-canvas-left) 72%, transparent)
+  );
+}
+
+.viara-editorial-bottom-dock::before {
+  content: '';
+  position: absolute;
+  inset: 0 clamp(24px, 3vw, 52px) auto;
+  height: 1px;
+  z-index: -1;
+  background: linear-gradient(90deg, transparent, var(--border-subtle) 16%, var(--border-subtle) 84%, transparent);
+}
+
+.viara-dock-left-group,
+.viara-dock-right-group {
+  flex: 1 1 0;
+}
+
+.viara-dock-right-group {
+  justify-content: flex-end;
+}
+
+.viara-dock-brand-pill,
+.viara-dock-center-scene-pill,
+.viara-dock-status-pill {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.viara-dock-brand-pill {
+  gap: 7px;
+}
+
+.viara-dock-copyright-note,
+.viara-dock-edition-badge,
+.viara-dock-status-text {
+  font-size: 0.66rem;
+}
+
+.viara-dock-sep {
+  color: color-mix(in srgb, var(--viara-terracotta) 48%, var(--border-subtle));
+}
+
+.viara-dock-center-scene-pill {
+  gap: 9px;
+}
+
+.viara-dock-scene-counter {
+  font-size: 0.66rem;
+}
+
+.viara-dock-scene-name {
+  min-width: 110px;
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.viara-dock-progress-track {
+  width: 64px;
+  height: 2px;
+}
+
+.viara-dock-progress-bar {
+  transition: none;
+}
+
+.viara-dock-status-pill {
+  gap: 7px;
+}
+
+.viara-dock-pulse-dot {
+  width: 6px;
+  height: 6px;
+  animation: none;
+}
+
+@media (min-width: 1025px) and (max-width: 1180px) {
+  .viara-editorial-nav-item {
+    width: 34px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .viara-nav-item-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 1024px) {
+  .viara-editorial-navbar {
+    min-height: 54px;
+    padding: 8px 20px;
+  }
+
+  .viara-editorial-navbar::after,
+  .viara-editorial-bottom-dock::before {
+    inset-inline: 20px;
+  }
+
+  .viara-editorial-bottom-dock {
+    min-height: 40px;
+    padding: 7px 20px 9px;
+  }
+
+  .viara-dock-edition-badge,
+  .viara-dock-sep {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .viara-editorial-navbar {
+    padding-inline: 14px;
+  }
+
+  .viara-editorial-navbar::after,
+  .viara-editorial-bottom-dock::before {
+    inset-inline: 14px;
+  }
+
+  .viara-util-btn-lang-code {
+    display: none;
+  }
+
+  .viara-util-circle-btn {
+    width: 32px;
+    padding: 0;
+  }
+
+  .viara-editorial-bottom-dock {
+    padding-inline: 14px;
+  }
+
+  .viara-dock-status-text {
+    display: none;
+  }
+}

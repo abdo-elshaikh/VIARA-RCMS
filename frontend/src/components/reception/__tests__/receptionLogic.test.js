@@ -4,15 +4,22 @@ import {
     buildScheduleSummary,
     calculateAdjustedBalance,
     canTransitionQueue,
+    getInvoiceCoverageCategory,
     getNextStageAfterPayment,
     getPaymentValidation,
     getValidQueueTransitions,
+    shiftLocalDateInput,
     toLocalDateInput
 } from '../receptionLogic';
 
 describe('receptionLogic', () => {
     it('formats local dates without timezone drift', () => {
         expect(toLocalDateInput(new Date(2026, 6, 12))).toBe('2026-07-12');
+    });
+
+    it('shifts local date inputs without converting through UTC', () => {
+        expect(shiftLocalDateInput('2026-08-20', 1)).toBe('2026-08-21');
+        expect(shiftLocalDateInput('2026-08-20', -1)).toBe('2026-08-19');
     });
 
     it('builds an effective permission model from direct and elevated permissions', () => {
@@ -36,6 +43,17 @@ describe('receptionLogic', () => {
             paid_amount: 30,
             refunded_amount: 5
         }, 5)).toBe(48.5);
+    });
+
+    it('preserves an explicit zero patient payable for fully insured invoices', () => {
+        const category = getInvoiceCoverageCategory({
+            total_amount: 250,
+            insurance_covered_amount: 250,
+            patient_payable_amount: 0,
+            provider_name: 'Health Plan'
+        });
+        expect(category.patientPayable).toBe(0);
+        expect(category.totalAmount).toBe(250);
     });
 
     it('subtracts credit notes when calculating remaining patient balance', () => {
@@ -83,9 +101,14 @@ describe('receptionLogic', () => {
         expect(buildScheduleSummary([
             { status: 'Confirmed', priority: 'Routine' },
             { status: 'Cancelled', priority: 'Emergency' }
-        ], [{ exam_id: '1' }])).toEqual({ booked: 2, ready: 1, urgent: 1, activeQueue: 1 });
+        ], [
+            { exam_id: '1', queue_stage: 'Arrived' },
+            { exam_id: '2', queue_stage: 'Delivered' },
+            { exam_id: '3', queue_stage: 'Cancelled' }
+        ])).toEqual({ booked: 2, ready: 1, urgent: 1, activeQueue: 1 });
 
         expect(getNextStageAfterPayment({ nurse_id: 'nurse-1' })).toBe('Prep Pending');
+        expect(getNextStageAfterPayment({ nurseName: 'Sarah Nurse' })).toBe('Prep Pending');
         expect(getNextStageAfterPayment({})).toBe('Ready for Exam');
     });
 

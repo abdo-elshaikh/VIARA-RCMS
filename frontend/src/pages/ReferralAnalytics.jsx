@@ -37,7 +37,7 @@ const COLORS = ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'
 
 const ReferralAnalytics = () => {
     const { t, i18n } = useTranslation('admin');
-    const [startDate, setStartDate] = useState(isoDate(new Date(Date.now() - 30 * DAY)));
+    const [startDate, setStartDate] = useState(isoDate(new Date(Date.now() - 29 * DAY)));
     const [endDate, setEndDate] = useState(isoDate(new Date()));
 
     const query = { startDate, endDate };
@@ -48,13 +48,13 @@ const ReferralAnalytics = () => {
     const number = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }), [locale]);
     const money = useMemo(() => new Intl.NumberFormat(locale, {
         style: 'currency',
-        currency: 'USD',
+        currency: 'EGP',
         maximumFractionDigits: 0
     }), [locale]);
 
     const setPreset = (days) => {
         setEndDate(isoDate(new Date()));
-        setStartDate(isoDate(new Date(Date.now() - days * DAY)));
+        setStartDate(isoDate(new Date(Date.now() - (days - 1) * DAY)));
     };
 
     const handleExport = async () => {

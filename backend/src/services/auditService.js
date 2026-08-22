@@ -89,6 +89,23 @@ const SENSITIVE_KEYS = new Set([
   'resubmission_notes',
   'cancellationreason',
   'cancellation_reason',
+  'clinicalindication',
+  'clinical_indication',
+  'provisionaldiagnosis',
+  'provisional_diagnosis',
+  'diagnosis',
+  'diagnosiscode',
+  'diagnosis_code',
+  'icdcode',
+  'icd_code',
+  'medicalhistory',
+  'medical_history',
+  'symptoms',
+  'medications',
+  'proceduredescription',
+  'procedure_description',
+  'preparationinstructions',
+  'preparation_instructions',
 ]);
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -450,20 +467,33 @@ async function executeLogQuery(db, rawEntry) {
       resourceId: entry.resourceId
     });
 
-    await logSecurityEvent(db, {
-      eventType: 'AUDIT_LOG_FAILURE',
-      severity: 'warning',
-      userId: entry.userId || null,
-      patientId: entry.patientId || null,
-      ipAddress: entry.ip_address,
-      userAgent: entry.user_agent,
-      details: {
+    try {
+      await logSecurityEvent(db, {
+        eventType: 'AUDIT_LOG_FAILURE',
+        severity: 'warning',
+        userId: entry.user_id || null,
+        patientId: entry.patient_id || null,
+        ipAddress: entry.ip_address,
+        userAgent: entry.user_agent,
+        details: {
+          action: entry.action,
+          resourceTable: entry.resource_table,
+          resourceId: entry.resource_id,
+          reason: 'Audit entry could not be persisted'
+        }
+      });
+    } catch (securityLogError) {
+      logger.error('AuditService: secondary security event logging failed', {
+        error: securityLogError.message,
         action: entry.action,
-        resourceTable: entry.resourceTable,
-        resourceId: entry.resourceId,
-        reason: 'Audit entry could not be persisted'
-      }
-    });
+      });
+    }
+
+    if (rawEntry.required === true) {
+      const error = new Error(`Required audit entry could not be persisted for ${entry.action}`);
+      error.code = 'AUDIT_LOG_REQUIRED_FAILED';
+      throw error;
+    }
   }
 
   await persistAuditAlerts(db, entry, logId);

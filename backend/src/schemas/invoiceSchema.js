@@ -28,6 +28,7 @@ const createInvoiceSchema = z.object({
     patientId: z.string().uuid().optional(),
     items: z.array(invoiceItemSchema).optional(),
     insuranceCoveredAmount: z.coerce.number().min(0).optional(),
+    insurancePolicyId: z.string().uuid().optional(),
     discountAmount: z.coerce.number().min(0).optional(),
     discountPercentage: z.coerce.number().min(0).max(100).optional(),
     discountReason: z.string().trim().max(1000).optional(),
@@ -48,6 +49,7 @@ const createInvoiceSchema = z.object({
 const updateInvoiceSchema = z.object({
     invoiceStatus: z.literal('Voided').optional(),
     insuranceCoveredAmount: z.coerce.number().min(0).optional(),
+    insurancePolicyId: z.string().uuid().nullable().optional(),
     discountAmount: z.coerce.number().min(0).optional(),
     discountPercentage: z.coerce.number().min(0).max(100).optional(),
     discountReason: z.string().trim().max(1000).optional(),
@@ -75,6 +77,11 @@ const getInvoicesQuerySchema = validateDateRange(z.object({
     q: z.string().trim().max(100).optional(),
     startDate: dateString.optional(),
     endDate: dateString.optional(),
+    appointmentDate: dateString.optional(),
+    openOnly: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
+    includeMeta: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
+    sortBy: z.enum(['number', 'date', 'total', 'paid', 'balance', 'status']).optional(),
+    sortDirection: z.enum(['asc', 'desc']).optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
     offset: z.string().regex(/^\d+$/).transform(Number).optional()
 }));
@@ -84,7 +91,8 @@ const collectPaymentSchema = z.object({
     method: paymentMethodSchema.optional(),
     paymentReference: z.string().trim().max(150).optional(),
     discountAmount: z.coerce.number().min(0).optional().default(0),
-    discountReason: z.string().trim().max(1000).optional()
+    discountReason: z.string().trim().max(1000).optional(),
+    verificationChecklist: z.record(z.boolean()).optional()
 }).superRefine((data, context) => {
     if (data.amount <= 0 && data.discountAmount <= 0) {
         context.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'A payment or discount amount is required' });

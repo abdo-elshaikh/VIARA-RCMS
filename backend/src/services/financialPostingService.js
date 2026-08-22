@@ -120,7 +120,9 @@ const lockFinancialBusinessDate = async (
         UNION ALL
         SELECT 1
         FROM financial_closures
-        WHERE closure_date = $2::date AND status = 'Finalized'
+        WHERE branch_id = $1
+          AND closure_date = $2::date
+          AND status = 'Finalized'
         LIMIT 1
     `, [branchId, resolvedDate]);
     if (locked.rows.length) {

@@ -35,7 +35,12 @@ import {
     Clock,
     RefreshCw,
     Inbox,
-    BellDot
+    BellDot,
+    Award,
+    Building2,
+    Zap,
+    HeartPulse,
+    Radio
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { selectCurrentUser } from '../../store/authSlice';
@@ -62,18 +67,77 @@ import {
 import PageHeader from '../ui/PageHeader';
 
 const CHANNELS = [
-    { id: 'general', name: 'general', descKey: 'chat.channelGeneralDesc', descFallback: 'Center-wide announcements & discussion' },
-    { id: 'radiology', name: 'radiology', descKey: 'chat.channelRadiologyDesc', descFallback: 'Radiologist and technician channel' },
-    { id: 'reception', name: 'reception', descKey: 'chat.channelReceptionDesc', descFallback: 'Receptionist desk coordination' }
+    { 
+        id: 'general', 
+        name: 'general', 
+        descKey: 'chat.channelGeneralDesc', 
+        descFallback: 'Center-wide announcements & discussion',
+        iconColor: 'from-blue-500 to-indigo-600',
+        activeBg: 'bg-blue-50/80 dark:bg-blue-950/25 ring-blue-200 dark:ring-blue-800 text-blue-900 dark:text-blue-200'
+    },
+    { 
+        id: 'radiology', 
+        name: 'radiology', 
+        descKey: 'chat.channelRadiologyDesc', 
+        descFallback: 'Radiologist and technician channel',
+        iconColor: 'from-purple-500 to-fuchsia-600',
+        activeBg: 'bg-purple-50/80 dark:bg-purple-950/25 ring-purple-200 dark:ring-purple-800 text-purple-900 dark:text-purple-200'
+    },
+    { 
+        id: 'reception', 
+        name: 'reception', 
+        descKey: 'chat.channelReceptionDesc', 
+        descFallback: 'Receptionist desk coordination',
+        iconColor: 'from-emerald-500 to-teal-600',
+        activeBg: 'bg-emerald-50/80 dark:bg-emerald-950/25 ring-emerald-200 dark:ring-emerald-800 text-emerald-900 dark:text-emerald-200'
+    }
 ];
 
 const QUICK_REPLIES = [
-    { key: 'chat.quickGreeting', fallback: 'Hello! How can we assist you today?' },
-    { key: 'chat.quickReportReady', fallback: 'Your report has been finalized and is now available in your portal.' },
-    { key: 'chat.quickReferral', fallback: 'Please bring your original physician referral form with you on your visit.' },
-    { key: 'chat.quickStatusUpdated', fallback: 'We have updated your appointment status. Please check your dashboard.' },
-    { key: 'chat.quickBillingSettled', fallback: 'The billing invoice is settled. Thank you for your payment.' }
+    { key: 'chat.quickGreeting', fallback: 'Hello! How can we assist you today?', tone: 'border-teal-200/80 bg-teal-50/70 text-teal-800 hover:bg-teal-600 hover:text-white dark:border-teal-800/60 dark:bg-teal-950/40 dark:text-teal-300' },
+    { key: 'chat.quickReportReady', fallback: 'Your report has been finalized and is now available in your portal.', tone: 'border-emerald-200/80 bg-emerald-50/70 text-emerald-800 hover:bg-emerald-600 hover:text-white dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300' },
+    { key: 'chat.quickReferral', fallback: 'Please bring your original physician referral form with you on your visit.', tone: 'border-purple-200/80 bg-purple-50/70 text-purple-800 hover:bg-purple-600 hover:text-white dark:border-purple-800/60 dark:bg-purple-950/40 dark:text-purple-300' },
+    { key: 'chat.quickStatusUpdated', fallback: 'We have updated your appointment status. Please check your dashboard.', tone: 'border-sky-200/80 bg-sky-50/70 text-sky-800 hover:bg-sky-600 hover:text-white dark:border-sky-800/60 dark:bg-sky-950/40 dark:text-sky-300' },
+    { key: 'chat.quickBillingSettled', fallback: 'The billing invoice is settled. Thank you for your payment.', tone: 'border-amber-200/80 bg-amber-50/70 text-amber-800 hover:bg-amber-600 hover:text-white dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300' }
 ];
+
+const getRoleTheme = (role) => {
+    const r = (role || '').toLowerCase();
+    if (r.includes('doctor') || r.includes('radiologist')) {
+        return {
+            gradient: 'from-violet-600 to-purple-600',
+            badge: 'bg-purple-100 text-purple-800 ring-purple-300/60 dark:bg-purple-950/60 dark:text-purple-300 dark:ring-purple-800/50',
+            accent: 'text-purple-600 dark:text-purple-400',
+            ring: 'ring-purple-400/40',
+            activeCard: 'bg-purple-50/90 text-purple-950 dark:bg-purple-950/30 dark:text-purple-200 ring-1 ring-purple-300/80 dark:ring-purple-800/60'
+        };
+    }
+    if (r.includes('tech') || r.includes('nurse')) {
+        return {
+            gradient: 'from-sky-500 to-cyan-600',
+            badge: 'bg-sky-100 text-sky-800 ring-sky-300/60 dark:bg-sky-950/60 dark:text-sky-300 dark:ring-sky-800/50',
+            accent: 'text-sky-600 dark:text-sky-400',
+            ring: 'ring-sky-400/40',
+            activeCard: 'bg-sky-50/90 text-sky-950 dark:bg-sky-950/30 dark:text-sky-200 ring-1 ring-sky-300/80 dark:ring-sky-800/60'
+        };
+    }
+    if (r.includes('admin') || r.includes('super')) {
+        return {
+            gradient: 'from-amber-500 to-orange-600',
+            badge: 'bg-amber-100 text-amber-800 ring-amber-300/60 dark:bg-amber-950/60 dark:text-amber-300 dark:ring-amber-800/50',
+            accent: 'text-amber-600 dark:text-amber-400',
+            ring: 'ring-amber-400/40',
+            activeCard: 'bg-amber-50/90 text-amber-950 dark:bg-amber-950/30 dark:text-amber-200 ring-1 ring-amber-300/80 dark:ring-amber-800/60'
+        };
+    }
+    return {
+        gradient: 'from-teal-600 to-emerald-600',
+        badge: 'bg-teal-100 text-teal-800 ring-teal-300/60 dark:bg-teal-950/60 dark:text-teal-300 dark:ring-teal-800/50',
+        accent: 'text-teal-600 dark:text-teal-400',
+        ring: 'ring-teal-400/40',
+        activeCard: 'bg-teal-50/90 text-teal-950 dark:bg-teal-500/20 dark:text-teal-200 ring-1 ring-teal-300/80 dark:ring-teal-500/40'
+    };
+};
 
 function initials(name) {
     if (!name) return '?';
@@ -93,37 +157,39 @@ const getLatestTimestamp = (items) => Math.max(
     ...items.map(item => getTimeValue(item.last_message_at || item.created_at || item.updated_at))
 );
 
-const MiniMetric = ({ icon: Icon, label, value, tone = 'teal' }) => {
+const MetricCard = ({ icon: Icon, label, value, tone = 'teal' }) => {
     const tones = {
-        teal: 'bg-teal-50 text-teal-700 ring-teal-100 dark:bg-teal-950/30 dark:text-teal-300 dark:ring-teal-900/60',
-        rose: 'bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-950/30 dark:text-rose-300 dark:ring-rose-900/60',
-        slate: 'bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700',
-        violet: 'bg-violet-50 text-violet-700 ring-violet-100 dark:bg-violet-950/30 dark:text-violet-300 dark:ring-violet-900/60'
+        teal: 'from-teal-500/10 via-teal-500/5 to-cyan-500/10 border-teal-200/80 text-teal-800 dark:border-teal-800/60 dark:text-teal-300',
+        rose: 'from-rose-500/10 via-rose-500/5 to-pink-500/10 border-rose-200/80 text-rose-800 dark:border-rose-800/60 dark:text-rose-300',
+        purple: 'from-purple-500/10 via-purple-500/5 to-violet-500/10 border-purple-200/80 text-purple-800 dark:border-purple-800/60 dark:text-purple-300',
+        amber: 'from-amber-500/10 via-amber-500/5 to-orange-500/10 border-amber-200/80 text-amber-800 dark:border-amber-800/60 dark:text-amber-300'
     };
 
     return (
-        <div className={`rounded-xl px-3 py-2 ring-1 ${tones[tone] || tones.teal}`}>
-            <div className="flex items-center gap-2">
-                <Icon size={14} className="shrink-0" />
-                <span className="text-[10px] font-black uppercase tracking-wide">{label}</span>
+        <div className={`flex items-center gap-2.5 rounded-xl border bg-gradient-to-br px-3.5 py-2 shadow-xs backdrop-blur-md transition-all ${tones[tone] || tones.teal}`}>
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/80 shadow-2xs dark:bg-slate-800/80">
+                <Icon size={14} />
+            </span>
+            <div className="min-w-0">
+                <p className="text-[9.5px] font-black uppercase tracking-wider opacity-75">{label}</p>
+                <p className="font-mono text-xs font-black tabular-nums">{value}</p>
             </div>
-            <p className="mt-1 text-sm font-black">{value}</p>
         </div>
     );
 };
 
 const EmptyListState = ({ icon: Icon = Inbox, title, description, actionLabel, onAction }) => (
-    <div className="m-2 rounded-2xl border border-dashed border-slate-300 bg-white/70 p-5 text-center dark:border-slate-700 dark:bg-slate-900/40">
-        <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
-            <Icon size={21} />
+    <div className="m-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center dark:border-slate-800 dark:bg-slate-900/30">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500/15 to-cyan-500/15 text-teal-600 shadow-sm ring-1 ring-teal-500/20 dark:text-teal-400">
+            <Icon size={22} />
         </div>
-        <p className="mt-3 text-xs font-black text-slate-700 dark:text-slate-200">{title}</p>
+        <p className="mt-3 text-xs font-black text-slate-800 dark:text-slate-200">{title}</p>
         {description && <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-400">{description}</p>}
         {actionLabel && (
             <button
                 type="button"
                 onClick={onAction}
-                className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                className="mt-3.5 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 px-3.5 py-1.5 text-[11px] font-black text-white shadow-sm transition hover:brightness-110 active:scale-95"
             >
                 {actionLabel}
             </button>
@@ -135,14 +201,38 @@ export default function CommunicationCenter() {
     const { t, i18n } = useTranslation(['system', 'common']);
 
     const formatRelativeActivity = (timestamp) => {
-        if (!timestamp) return t('chat.noActivity', 'No activity');
+        if (!timestamp) return t('chat.noActivity', { defaultValue: 'No activity' });
         const diffMinutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000));
-        if (diffMinutes < 1) return t('chat.justNow', 'Just now');
-        if (diffMinutes < 60) return t('chat.minutesAgo', '{{count}}m ago', { count: diffMinutes });
+        if (diffMinutes < 1) return t('chat.justNow', { defaultValue: 'Just now' });
+        if (diffMinutes < 60) return t('chat.minutesAgo', { count: diffMinutes, defaultValue: `${diffMinutes}m ago` });
         const diffHours = Math.round(diffMinutes / 60);
-        if (diffHours < 24) return t('chat.hoursAgo', '{{count}}h ago', { count: diffHours });
+        if (diffHours < 24) return t('chat.hoursAgo', { count: diffHours, defaultValue: `${diffHours}h ago` });
         const diffDays = Math.round(diffHours / 24);
-        return t('chat.daysAgo', '{{count}}d ago', { count: diffDays });
+        return t('chat.daysAgo', { count: diffDays, defaultValue: `${diffDays}d ago` });
+    };
+
+    const formatDay = (timestamp) => {
+        if (!timestamp) return '';
+        const d = new Date(timestamp);
+        const today = new Date();
+        if (d.toDateString() === today.toDateString()) return t('chat.today', { defaultValue: 'Today' });
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        if (d.toDateString() === yesterday.toDateString()) return t('chat.yesterday', { defaultValue: 'Yesterday' });
+        return d.toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric'
+        });
+    };
+
+    const formatTime = (timestamp) => {
+        if (!timestamp) return '';
+        return new Date(timestamp).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
     };
 
     const isRtl = i18n.dir() === 'rtl';
@@ -169,7 +259,7 @@ export default function CommunicationCenter() {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [unreadOnlyFilter, setUnreadOnlyFilter] = useState(false);
+    const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'unread' | 'online'
     const [showContextPanel, setShowContextPanel] = useState(true);
     const [mobileShowChat, setMobileShowChat] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -187,6 +277,7 @@ export default function CommunicationCenter() {
     const patientUnreadSum = useMemo(() => patientConversations.reduce((sum, p) => sum + (p.unread_count || 0), 0), [patientConversations]);
     const doctorUnreadSum = useMemo(() => doctorConversations.reduce((sum, d) => sum + (d.unread_count || 0), 0), [doctorConversations]);
     const totalUnreadSum = staffUnreadSum + patientUnreadSum + doctorUnreadSum;
+    const totalThreadCount = CHANNELS.length + staffUsers.length + patientConversations.length + doctorConversations.length;
     const latestActivityAt = useMemo(() => getLatestTimestamp([
         ...staffUsers,
         ...patientConversations,
@@ -221,7 +312,7 @@ export default function CommunicationCenter() {
         if (isChannel || isDM) refetchChatMsgs();
         if (isPatient) refetchPatientMsgs();
         if (isDoctor) refetchDoctorMsgs();
-        toast.success(t('chat.refreshed', 'Communications refreshed'));
+        toast.success(t('chat.refreshed', { defaultValue: 'Communications refreshed' }));
     };
 
     // Mutations
@@ -237,8 +328,10 @@ export default function CommunicationCenter() {
     // Filtered lists
     const filteredStaff = useMemo(() => {
         let list = [...staffUsers];
-        if (unreadOnlyFilter) {
+        if (activeFilter === 'unread') {
             list = list.filter(u => (u.unread_count || 0) > 0);
+        } else if (activeFilter === 'online') {
+            list = list.filter(u => u.isOnline);
         }
         const q = searchQuery.toLowerCase().trim();
         if (q) {
@@ -255,11 +348,11 @@ export default function CommunicationCenter() {
             if (b.isOnline !== a.isOnline) return (b.isOnline ? 1 : 0) - (a.isOnline ? 1 : 0);
             return a.full_name?.localeCompare(b.full_name);
         });
-    }, [staffUsers, searchQuery, unreadOnlyFilter]);
+    }, [staffUsers, searchQuery, activeFilter]);
 
     const filteredPatients = useMemo(() => {
         let list = [...patientConversations];
-        if (unreadOnlyFilter) {
+        if (activeFilter === 'unread') {
             list = list.filter(p => (p.unread_count || 0) > 0);
         }
         const q = searchQuery.toLowerCase().trim();
@@ -271,11 +364,11 @@ export default function CommunicationCenter() {
             );
         }
         return list.sort((a, b) => compareNewest(a.last_message_at, b.last_message_at));
-    }, [patientConversations, searchQuery, unreadOnlyFilter]);
+    }, [patientConversations, searchQuery, activeFilter]);
 
     const filteredDoctors = useMemo(() => {
         let list = [...doctorConversations];
-        if (unreadOnlyFilter) {
+        if (activeFilter === 'unread') {
             list = list.filter(d => (d.unread_count || 0) > 0);
         }
         const q = searchQuery.toLowerCase().trim();
@@ -287,7 +380,7 @@ export default function CommunicationCenter() {
             );
         }
         return list.sort((a, b) => compareNewest(a.last_message_at, b.last_message_at));
-    }, [doctorConversations, searchQuery, unreadOnlyFilter]);
+    }, [doctorConversations, searchQuery, activeFilter]);
 
     // Active Chat metadata
     const activeChatMeta = useMemo(() => {
@@ -348,124 +441,108 @@ export default function CommunicationCenter() {
         setMobileShowChat(true);
     };
 
+    const handleFilesSelected = (files) => {
+        const selected = Array.from(files || []);
+        const valid = [];
+        for (const file of selected) {
+            if (file.size > 10 * 1024 * 1024) {
+                toast.error(t('chat.fileTooLarge', { defaultValue: 'Each chat file must be 10 MB or smaller.' }));
+                continue;
+            }
+            valid.push(file);
+        }
+        setPendingFiles(prev => [...prev, ...valid]);
+    };
+
+    const removePendingFile = (idx) => {
+        setPendingFiles(prev => prev.filter((_, i) => i !== idx));
+    };
+
     const insertEmoji = (emoji) => {
-        setMessageText(current => `${current}${emoji}`);
+        setMessageText(prev => prev + emoji);
         setShowEmojiPicker(false);
     };
 
-    const handleFilesSelected = (filesList) => {
-        const files = Array.from(filesList || []);
-        if (!files.length) return;
-        const validFiles = files.filter(file => file.size <= 10 * 1024 * 1024);
-        if (validFiles.length !== files.length) {
-            toast.error(t('chat.fileTooLarge', 'Each chat file must be 10 MB or smaller.'));
+    const handleSendMessage = async (e, directText = null) => {
+        if (e?.preventDefault) e.preventDefault();
+        const textToSend = (directText !== null ? directText : messageText).trim();
+        if (!textToSend && pendingFiles.length === 0) return;
+
+        try {
+            if (isChannel) {
+                const formData = createChatFormData({
+                    body: textToSend,
+                    channel_name: selectedChat.id,
+                    attachments: pendingFiles
+                });
+                await sendChatMessage(formData).unwrap();
+            } else if (isDM) {
+                const formData = createChatFormData({
+                    body: textToSend,
+                    recipient_id: selectedChat.id,
+                    attachments: pendingFiles
+                });
+                await sendChatMessage(formData).unwrap();
+            } else if (isPatient) {
+                const formData = createChatFormData({
+                    patientId: selectedChat.id,
+                    body: textToSend,
+                    attachments: pendingFiles
+                });
+                await sendPatientReply(formData).unwrap();
+            } else if (isDoctor) {
+                const formData = createChatFormData({
+                    doctorId: selectedChat.id,
+                    body: textToSend,
+                    attachments: pendingFiles
+                });
+                await sendDoctorReply(formData).unwrap();
+            }
+
+            setMessageText('');
+            setPendingFiles([]);
+            setShowEmojiPicker(false);
+            setShowStickerPicker(false);
+        } catch (error) {
+            toast.error(error?.data?.message || t('chat.sendFailed', { defaultValue: 'Failed to send message' }));
         }
-        setPendingFiles(current => [...current, ...validFiles].slice(0, 5));
     };
 
-    const removePendingFile = (index) => {
-        setPendingFiles(current => current.filter((_, itemIndex) => itemIndex !== index));
+    const sendSticker = (sticker) => {
+        handleSendMessage(null, sticker.value);
+    };
+
+    const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+        toast.success(t('chat.copied', { defaultValue: 'Copied to clipboard' }));
     };
 
     const handleDragOver = (e) => {
         e.preventDefault();
-        e.stopPropagation();
         setIsDraggingOver(true);
     };
 
     const handleDragLeave = (e) => {
         e.preventDefault();
-        e.stopPropagation();
         setIsDraggingOver(false);
     };
 
     const handleDrop = (e) => {
         e.preventDefault();
-        e.stopPropagation();
         setIsDraggingOver(false);
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        if (e.dataTransfer.files?.length) {
             handleFilesSelected(e.dataTransfer.files);
         }
     };
 
-    const copyToClipboard = (text) => {
-        if (!text) return;
-        navigator.clipboard.writeText(text);
-        toast.success(t('chat.copied', 'Copied to clipboard'));
-    };
-
-    const buildMessagePayload = (text, messageKind, attachments) => {
-        const common = isChannel
-            ? { channelName: selectedChat.id }
-            : isDM
-                ? { recipientId: selectedChat.id }
-                : {};
-
-        if (attachments.length > 0) {
-            return createChatFormData({ ...common, body: text, messageKind, attachments });
+    const sectionTitle = useMemo(() => {
+        switch (activeSection) {
+            case 'staff': return t('chat.staffMessages', { defaultValue: 'Team & Channels' });
+            case 'patient': return t('chat.patientMessages', { defaultValue: 'Patient Inquiries' });
+            case 'doctor': return t('chat.doctorMessages', { defaultValue: 'Doctor Messages' });
+            default: return '';
         }
-
-        return { ...common, body: text, messageKind };
-    };
-
-    const handleSendMessage = async (e, customText = null, options = {}) => {
-        if (e) e.preventDefault();
-        const text = customText || messageText;
-        const attachments = customText ? [] : pendingFiles;
-        const messageKind = options.messageKind || (attachments.length > 0 ? 'attachment' : 'text');
-        if (!text.trim() && attachments.length === 0) return;
-
-        try {
-            if (isChannel) {
-                await sendChatMessage(buildMessagePayload(text, messageKind, attachments)).unwrap();
-            } else if (isDM) {
-                await sendChatMessage(buildMessagePayload(text, messageKind, attachments)).unwrap();
-            } else if (isPatient) {
-                const payload = attachments.length > 0
-                    ? createChatFormData({ body: text, messageKind, attachments })
-                    : { body: text, messageKind };
-                await sendPatientReply(attachments.length > 0
-                    ? { patientId: selectedChat.id, data: payload }
-                    : { patientId: selectedChat.id, ...payload }).unwrap();
-            } else if (isDoctor) {
-                const payload = attachments.length > 0
-                    ? createChatFormData({ body: text, messageKind, attachments })
-                    : { body: text, messageKind };
-                await sendDoctorReply(attachments.length > 0
-                    ? { doctorId: selectedChat.id, data: payload }
-                    : { doctorId: selectedChat.id, ...payload }).unwrap();
-            }
-            if (!customText) {
-                setMessageText('');
-                setPendingFiles([]);
-            }
-            setShowEmojiPicker(false);
-            setShowStickerPicker(false);
-        } catch (error) {
-            toast.error(error.data?.error || t('chat.sendFailed', 'Failed to send message'));
-        }
-    };
-
-    const sendSticker = (sticker) => {
-        handleSendMessage(null, sticker.value, { messageKind: 'sticker' });
-    };
-
-    const dateLocale = isRtl ? 'ar-EG' : undefined;
-    const formatTime = (d) => new Date(d).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' });
-    const formatDay = (d) => {
-        const date = new Date(d);
-        const today = new Date();
-        const yesterday = new Date();
-        yesterday.setDate(today.getDate() - 1);
-        if (date.toDateString() === today.toDateString()) return t('chat.today', 'Today');
-        if (date.toDateString() === yesterday.toDateString()) return t('chat.yesterday', 'Yesterday');
-        return date.toLocaleDateString(dateLocale, { weekday: 'short', month: 'short', day: 'numeric' });
-    };
-
-    const sectionTitle =
-        activeSection === 'staff' ? t('chat.staffMessages', 'Team & Channels')
-            : activeSection === 'patient' ? t('chat.patientMessages', 'Patient Messages')
-                : t('chat.doctorMessages', 'Doctor Inquiries');
+    }, [activeSection, t]);
 
     const activeSectionStats = useMemo(() => {
         if (activeSection === 'patient') {
@@ -483,7 +560,7 @@ export default function CommunicationCenter() {
             };
         }
         return {
-            count: staffUsers.length + CHANNELS.length,
+            count: CHANNELS.length + staffUsers.length,
             unread: staffUnreadSum,
             latest: getLatestTimestamp(staffUsers)
         };
@@ -493,80 +570,118 @@ export default function CommunicationCenter() {
         : isDM ? activeChatMeta?.full_name
             : isPatient ? activeChatMeta?.patient_name
                 : isDoctor ? activeChatMeta?.doctor_name
-                    : t('chat.selectConversation', 'Select a conversation');
+                    : t('chat.selectConversation', { defaultValue: 'Select a conversation' });
 
-    const headerSubtitle = isChannel ? t(activeChatMeta?.descKey, activeChatMeta?.descFallback)
-        : isDM ? `${activeChatMeta?.role || ''} • ${activeChatMeta?.isOnline ? t('chat.online', 'Online') : t('chat.offline', 'Offline')}`
-            : isPatient ? `${t('chat.mrn', 'MRN')}: ${activeChatMeta?.patient_mrn || '—'}`
-                : isDoctor ? `${t('chat.referringDoctor', 'Referring Doctor')} • ${activeChatMeta?.doctor_clinic || ''}`
+    const headerSubtitle = isChannel ? t(activeChatMeta?.descKey, { defaultValue: activeChatMeta?.descFallback })
+        : isDM ? `${activeChatMeta?.role || ''} · ${activeChatMeta?.isOnline ? t('chat.online', { defaultValue: 'Online' }) : t('chat.offline', { defaultValue: 'Offline' })}`
+            : isPatient ? `${t('chat.mrn', { defaultValue: 'MRN' })}: ${activeChatMeta?.patient_mrn || '-'}`
+                : isDoctor ? `${t('chat.referringDoctor', { defaultValue: 'Referring Doctor' })} · ${activeChatMeta?.doctor_clinic || ''}`
                     : '';
 
+    const activeRoleTheme = useMemo(() => {
+        if (isDM && activeChatMeta) return getRoleTheme(activeChatMeta.role);
+        if (isDoctor) return getRoleTheme('doctor');
+        if (isPatient) return getRoleTheme('patient');
+        return getRoleTheme('staff');
+    }, [isDM, activeChatMeta, isDoctor, isPatient]);
+
     return (
-        <div className="space-y-4">
-            {/* Top Workspace Header */}
+        <div className="space-y-4 text-slate-950 dark:text-slate-100" dir={isRtl ? 'rtl' : 'ltr'}>
+            {/* Header with Colorful KPI Highlights */}
             <PageHeader
                 icon={MessageSquare}
-                eyebrow={t('chat.eyebrow', 'Real-time Communication')}
+                eyebrow={t('chat.eyebrow', { defaultValue: 'Real-time Communication' })}
                 eyebrowIcon={Activity}
-                title={t('chat.inbox', 'Inbox & Communication Center')}
-                description={t('chat.workspaceDescription', 'Coordinate with team channels, respond to patient portal queries, and manage referring physician inquiries.')}
+                title={t('chat.inbox', { defaultValue: 'Inbox & Communication Center' })}
+                description={t('chat.workspaceDescription', { defaultValue: 'Coordinate with team channels, respond to patient portal queries, and manage referring physician inquiries.' })}
                 actions={
                     <div className="flex flex-wrap items-center gap-2">
-                        <div className="flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white/80 px-3.5 py-2 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300">
-                            <BellDot size={15} className="text-rose-600 dark:text-rose-400" />
-                            <span>{totalUnreadSum} {t('chat.unreadTotal', 'Unread')}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white/80 px-3.5 py-2 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300">
-                            <Clock size={15} className="text-teal-600 dark:text-teal-400" />
-                            <span>{formatRelativeActivity(latestActivityAt)}</span>
-                        </div>
+                        <MetricCard
+                            icon={Inbox}
+                            label={t('chat.threads', { defaultValue: 'Threads' })}
+                            value={totalThreadCount}
+                            tone="teal"
+                        />
+                        <MetricCard
+                            icon={BellDot}
+                            label={t('chat.unreadTotal', { defaultValue: 'Unread' })}
+                            value={totalUnreadSum}
+                            tone={totalUnreadSum > 0 ? 'rose' : 'purple'}
+                        />
+                        <MetricCard
+                            icon={Clock}
+                            label={t('chat.latest', { defaultValue: 'Latest' })}
+                            value={formatRelativeActivity(latestActivityAt)}
+                            tone="amber"
+                        />
                         <button
                             type="button"
                             onClick={refreshAll}
-                            className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-3 text-xs font-black text-slate-700 shadow-xs transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-teal-950/30"
+                            aria-label={t('chat.refresh', { defaultValue: 'Refresh' })}
+                            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-teal-200/70 bg-gradient-to-r from-teal-50 via-cyan-50 to-teal-50 px-3.5 text-xs font-black text-teal-800 shadow-xs transition hover:scale-105 active:scale-95 dark:border-teal-800/60 dark:from-teal-950/40 dark:to-cyan-950/40 dark:text-teal-300"
                         >
-                            <RefreshCw size={14} />
-                            {t('chat.refresh', 'Refresh')}
+                            <RefreshCw size={13} className="text-teal-600 dark:text-teal-400" />
+                            <span>{t('chat.refresh', { defaultValue: 'Refresh' })}</span>
                         </button>
                     </div>
                 }
             />
 
-            {/* Main Chat Container */}
-            <div className="flex h-[calc(100dvh-12rem)] min-h-[620px] overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-2xl dark:border-slate-800/80 dark:bg-[#070e1a] select-none">
+            {/* Main Chat Hub Container with Luminous Ambient Border */}
+            <div className="flex h-[calc(100dvh-13.5rem)] min-h-[580px] overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-md shadow-slate-900/5 ring-1 ring-slate-100 backdrop-blur-2xl dark:border-slate-800/90 dark:bg-[#070e1a] dark:ring-slate-900" aria-label={t('chat.inbox', { defaultValue: 'Inbox & Communication Center' })}>
 
                 {/* ─── LEFT PANEL: Nav lists ────────────────────────────────────────── */}
-                <div className={`${mobileShowChat ? 'hidden' : 'flex'} lg:flex w-full lg:w-[21rem] xl:w-[23rem] shrink-0 flex-col border-e border-slate-200/80 bg-slate-50/70 dark:border-slate-800/80 dark:bg-[#08101e]`}>
-                    {/* Title + Search Header */}
+                <div className={`${mobileShowChat ? 'hidden' : 'flex'} lg:flex w-full lg:w-[21.5rem] xl:w-[23.5rem] shrink-0 flex-col border-e border-slate-200/80 bg-gradient-to-b from-slate-50/90 via-slate-50/50 to-white/90 dark:border-slate-800/80 dark:from-[#091222] dark:via-[#08101e] dark:to-[#070e1a]`}>
+                    {/* Title + Filter Chips */}
                     <div className="p-3.5 pb-2.5">
                         <div className="mb-2.5 flex items-center justify-between">
-                            <h2 className="flex items-center gap-2 text-sm font-extrabold text-slate-900 dark:text-white">
-                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-500/10 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400">
-                                    <MessageSquare size={16} />
-                                </div>
-                                {t('chat.conversations', 'Conversations')}
+                            <h2 className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-white">
+                                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-xs">
+                                    <MessageSquare size={14} />
+                                </span>
+                                {t('chat.conversations', { defaultValue: 'Conversations' })}
                             </h2>
-                            <button
-                                type="button"
-                                onClick={() => setUnreadOnlyFilter(!unreadOnlyFilter)}
-                                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-extrabold transition ${
-                                    unreadOnlyFilter
-                                        ? 'bg-rose-500 text-white shadow-xs'
-                                        : 'bg-slate-200/70 text-slate-600 hover:bg-slate-300/70 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
-                                }`}
-                                title={t('chat.toggleUnread', 'Filter unread chats')}
-                            >
-                                <Filter size={12} />
-                                {t('chat.unread', 'Unread')}
-                            </button>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveFilter(activeFilter === 'unread' ? 'all' : 'unread')}
+                                    className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-black transition ${
+                                        activeFilter === 'unread'
+                                            ? 'bg-rose-500 text-white shadow-xs shadow-rose-500/30'
+                                            : 'bg-slate-200/60 text-slate-600 hover:bg-rose-50 hover:text-rose-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-rose-950/30 dark:hover:text-rose-300'
+                                    }`}
+                                    title={t('chat.toggleUnread', { defaultValue: 'Filter unread chats' })}
+                                    aria-label={t('chat.toggleUnread', { defaultValue: 'Filter unread chats' })}
+                                >
+                                    <Filter size={11} />
+                                    <span>{t('chat.unread', { defaultValue: 'Unread' })}</span>
+                                </button>
+                                {activeSection === 'staff' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setActiveFilter(activeFilter === 'online' ? 'all' : 'online')}
+                                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-black transition ${
+                                            activeFilter === 'online'
+                                                ? 'bg-emerald-600 text-white shadow-xs shadow-emerald-600/30'
+                                                : 'bg-slate-200/60 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-300'
+                                        }`}
+                                        title={t('chat.filterOnline', { defaultValue: 'Online' })}
+                                        aria-label={t('chat.filterOnline', { defaultValue: 'Online' })}
+                                    >
+                                        <Circle size={6} className="fill-current" />
+                                        <span>{t('chat.filterOnline', { defaultValue: 'Online' })}</span>
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         {/* Search Input */}
                         <div className="relative">
-                            <Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <Search size={14} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input
-                                type="text"
-                                placeholder={t('chat.searchPlaceholder', 'Search chats, users, MRNs...')}
+                                type="search"
+                                placeholder={t('chat.searchPlaceholder', { defaultValue: 'Search chats, users, MRNs...' })}
+                                aria-label={t('chat.searchPlaceholder', { defaultValue: 'Search chats, users, MRNs...' })}
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 className="h-9 w-full rounded-xl border border-slate-200 bg-white ps-9 pe-8 text-xs font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-[#0b1426] dark:text-slate-200"
@@ -576,112 +691,152 @@ export default function CommunicationCenter() {
                                     type="button"
                                     onClick={() => setSearchQuery('')}
                                     className="absolute end-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                    aria-label={t('chat.clearFilters', { defaultValue: 'Clear filters' })}
                                 >
-                                    <X size={13} />
+                                    <X size={12} />
                                 </button>
                             )}
                         </div>
                     </div>
 
-                    {/* Tab Controls (Team / Patients / Doctors) */}
-                    <div className="grid grid-cols-3 gap-1 border-b border-slate-200/80 px-3 pb-2 dark:border-slate-800/80">
+                    {/* Rich Category Switcher Tabs */}
+                    <div className="grid grid-cols-3 gap-1.5 border-b border-slate-200/80 px-3 pb-2.5 dark:border-slate-800/80">
                         {[
-                            { key: 'staff', icon: Users, label: t('chat.tabStaff', 'Team'), count: staffUnreadSum },
-                            { key: 'patient', icon: MessageSquare, label: t('chat.tabPatients', 'Patients'), count: patientUnreadSum },
-                            { key: 'doctor', icon: Stethoscope, label: t('chat.tabDoctors', 'Doctors'), count: doctorUnreadSum }
-                        ].map(({ key, icon: Icon, label, count }) => (
+                            { 
+                                key: 'staff', 
+                                icon: Users, 
+                                label: t('chat.tabStaff', { defaultValue: 'Team' }), 
+                                count: staffUnreadSum,
+                                activeGrad: 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs shadow-indigo-600/30'
+                            },
+                            { 
+                                key: 'patient', 
+                                icon: MessageSquare, 
+                                label: t('chat.tabPatients', { defaultValue: 'Patients' }), 
+                                count: patientUnreadSum,
+                                activeGrad: 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-xs shadow-teal-600/30'
+                            },
+                            { 
+                                key: 'doctor', 
+                                icon: Stethoscope, 
+                                label: t('chat.tabDoctors', { defaultValue: 'Doctors' }), 
+                                count: doctorUnreadSum,
+                                activeGrad: 'bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white shadow-xs shadow-purple-600/30'
+                            }
+                        ].map(({ key, icon: Icon, label, count, activeGrad }) => (
                             <button
+                                type="button"
                                 key={key}
-                                onClick={() => setActiveSection(key)}
-                                className={`flex flex-col items-center gap-1 rounded-xl p-2 text-[10px] font-extrabold uppercase tracking-wider transition-all ${
+                                onClick={() => { setActiveSection(key); setActiveFilter('all'); }}
+                                className={`relative flex flex-col items-center gap-1 rounded-xl p-2 text-[10px] font-black uppercase tracking-wider transition-all duration-200 ${
                                     activeSection === key
-                                        ? 'bg-gradient-to-r from-teal-500/15 via-cyan-500/15 to-teal-500/10 text-teal-800 dark:from-teal-500/25 dark:to-cyan-500/20 dark:text-teal-300 shadow-xs'
-                                        : 'text-slate-500 hover:bg-slate-200/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100'
+                                        ? activeGrad
+                                        : 'bg-white/80 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:bg-slate-800/60 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100'
                                 }`}
                             >
                                 <div className="relative">
                                     <Icon size={16} />
                                     {count > 0 && (
-                                        <span className="absolute -top-1.5 -end-2.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[8px] font-black text-white ring-2 ring-slate-50 dark:ring-[#08101e]">
+                                        <span className={`absolute -top-1.5 -end-2.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[8px] font-black ${
+                                            activeSection === key ? 'bg-amber-300 text-amber-950 ring-2 ring-indigo-900/30' : 'bg-rose-500 text-white ring-2 ring-slate-50 dark:ring-[#08101e]'
+                                        }`}>
                                             {count}
                                         </span>
                                     )}
                                 </div>
-                                <span>{label}</span>
+                                <span className="truncate">{label}</span>
                             </button>
                         ))}
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 border-b border-slate-200/80 px-3 py-3 dark:border-slate-800/80">
-                        <MiniMetric icon={Inbox} label={t('chat.threads', 'Threads')} value={activeSectionStats.count} tone="slate" />
-                        <MiniMetric icon={BellDot} label={t('chat.unread', 'Unread')} value={activeSectionStats.unread} tone={activeSectionStats.unread ? 'rose' : 'teal'} />
-                        <MiniMetric icon={Clock} label={t('chat.latest', 'Latest')} value={formatRelativeActivity(activeSectionStats.latest)} tone="violet" />
+                    {/* Section Summary Mini-Bar */}
+                    <div className="grid grid-cols-3 gap-1.5 border-b border-slate-200/80 px-3 py-2 dark:border-slate-800/80 bg-white/40 dark:bg-slate-950/20">
+                        <div className="rounded-lg bg-slate-100/80 px-2 py-1.5 dark:bg-slate-800/50">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">{t('chat.threads', { defaultValue: 'Threads' })}</span>
+                            <p className="font-mono text-xs font-black text-slate-700 dark:text-slate-200">{activeSectionStats.count}</p>
+                        </div>
+                        <div className={`rounded-lg px-2 py-1.5 ${activeSectionStats.unread ? 'bg-rose-50 dark:bg-rose-950/30' : 'bg-slate-100/80 dark:bg-slate-800/50'}`}>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">{t('chat.unread', { defaultValue: 'Unread' })}</span>
+                            <p className={`font-mono text-xs font-black ${activeSectionStats.unread ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'}`}>{activeSectionStats.unread}</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-100/80 px-2 py-1.5 dark:bg-slate-800/50">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">{t('chat.latest', { defaultValue: 'Latest' })}</span>
+                            <p className="truncate text-xs font-bold text-teal-700 dark:text-teal-300">{formatRelativeActivity(activeSectionStats.latest)}</p>
+                        </div>
                     </div>
 
                     {/* Chat Lists */}
                     <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
-                        <div className="px-2.5 pb-1 pt-2 text-[9px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                        <div className="px-2.5 pb-1 pt-2 text-[9.5px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
                             {sectionTitle}
                         </div>
 
                         {/* STAFF VIEW */}
                         {activeSection === 'staff' && (
                             <>
-                                {CHANNELS.map(ch => {
+                                {activeFilter === 'all' && CHANNELS.map(ch => {
                                     const active = selectedChat.type === 'channel' && selectedChat.id === ch.id;
                                     return (
                                         <button
+                                            type="button"
                                             key={ch.id}
                                             onClick={() => openChat({ type: 'channel', id: ch.id })}
                                             className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-start text-xs font-bold transition-all ${
                                                 active
-                                                    ? 'bg-teal-500/15 text-teal-900 dark:bg-teal-500/20 dark:text-teal-200 shadow-xs'
-                                                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/60'
+                                                    ? ch.activeBg
+                                                    : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/60'
                                             }`}
                                         >
-                                            <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${active ? 'bg-teal-500 text-white' : 'bg-slate-200/80 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
-                                                <Hash size={14} />
+                                            <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${ch.iconColor} text-white shadow-2xs`}>
+                                                <Hash size={13} />
                                             </div>
-                                            <span className="truncate">{ch.name}</span>
+                                            <div className="min-w-0">
+                                                <p className="truncate font-black">{ch.name}</p>
+                                                <p className="truncate text-[10px] font-normal text-slate-400">{t(ch.descKey, { defaultValue: ch.descFallback })}</p>
+                                            </div>
                                         </button>
                                     );
                                 })}
 
-                                <div className="mt-3 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                                    {t('chat.directMessages', 'Direct Messages')}
+                                <div className="mt-2.5 px-2.5 py-1 text-[9.5px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                                    {t('chat.directMessages', { defaultValue: 'Direct Messages' })}
                                 </div>
                                 {filteredStaff.length === 0 ? (
                                     <EmptyListState
                                         icon={Users}
-                                        title={t('chat.noStaff', 'No team members found')}
-                                        description={t('chat.adjustFilters', 'Try clearing search or unread filters.')}
-                                        actionLabel={t('chat.clearFilters', 'Clear filters')}
-                                        onAction={() => { setSearchQuery(''); setUnreadOnlyFilter(false); }}
+                                        title={t('chat.noStaff', { defaultValue: 'No team members found' })}
+                                        description={t('chat.adjustFilters', { defaultValue: 'Try clearing search or filters.' })}
+                                        actionLabel={t('chat.clearFilters', { defaultValue: 'Clear filters' })}
+                                        onAction={() => { setSearchQuery(''); setActiveFilter('all'); }}
                                     />
                                 ) : filteredStaff.map(user => {
                                     const active = selectedChat.type === 'dm' && selectedChat.id === user.user_id;
+                                    const theme = getRoleTheme(user.role);
                                     return (
                                         <button
+                                            type="button"
                                             key={user.user_id}
                                             onClick={() => openChat({ type: 'dm', id: user.user_id })}
                                             className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3 py-2.5 text-start text-xs font-bold transition-all ${
                                                 active
-                                                    ? 'bg-teal-500/15 text-teal-900 dark:bg-teal-500/20 dark:text-teal-200 shadow-xs'
-                                                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/60'
+                                                    ? theme.activeCard
+                                                    : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/60'
                                             }`}
                                         >
                                             <div className="flex min-w-0 items-center gap-2.5">
                                                 <div className="relative shrink-0">
-                                                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-[10px] font-extrabold uppercase text-white shadow-xs dark:bg-cyan-400/20 dark:text-cyan-200">
+                                                    <div className={`flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br ${theme.gradient} text-[10px] font-black uppercase text-white shadow-xs`}>
                                                         {initials(user.full_name)}
                                                     </div>
-                                                    <span className={`absolute bottom-0 end-0 h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-[#08101e] ${
-                                                        user.isOnline ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
+                                                    <span className={`absolute -bottom-0.5 -end-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-[#08101e] ${
+                                                        user.isOnline ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]' : 'bg-slate-300 dark:bg-slate-600'
                                                     }`} />
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <div className="truncate text-slate-900 dark:text-white">{user.full_name}</div>
-                                                    <div className="truncate text-[10px] font-semibold text-slate-400">{user.role}</div>
+                                                    <div className="truncate font-black text-slate-900 dark:text-white text-xs">{user.full_name}</div>
+                                                    <span className={`inline-block truncate rounded-md px-1.5 py-0.2 text-[9px] font-bold ${theme.badge}`}>
+                                                        {user.role}
+                                                    </span>
                                                     {user.last_message_body && (
                                                         <div className="mt-0.5 truncate text-[10px] font-medium text-slate-400 dark:text-slate-500">
                                                             {user.last_message_body}
@@ -696,7 +851,7 @@ export default function CommunicationCenter() {
                                                     </span>
                                                 )}
                                                 {user.unread_count > 0 && (
-                                                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[9px] font-black text-white">
+                                                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[9px] font-black text-white shadow-xs shadow-rose-500/40">
                                                         {user.unread_count}
                                                     </span>
                                                 )}
@@ -712,37 +867,38 @@ export default function CommunicationCenter() {
                             filteredPatients.length === 0 ? (
                                 <EmptyListState
                                     icon={MessageSquare}
-                                    title={t('chat.noPatientChats', 'No active patient chats')}
-                                    description={t('chat.patientEmptyHelp', 'Patient portal conversations will appear here as soon as patients message the center.')}
-                                    actionLabel={t('chat.clearFilters', 'Clear filters')}
-                                    onAction={() => { setSearchQuery(''); setUnreadOnlyFilter(false); }}
+                                    title={t('chat.noPatientChats', { defaultValue: 'No active patient chats' })}
+                                    description={t('chat.patientEmptyHelp', { defaultValue: 'Patient portal conversations will appear here as soon as patients message the center.' })}
+                                    actionLabel={t('chat.clearFilters', { defaultValue: 'Clear filters' })}
+                                    onAction={() => { setSearchQuery(''); setActiveFilter('all'); }}
                                 />
                             ) : filteredPatients.map(chat => {
                                 const active = selectedChat.type === 'patient' && selectedChat.id === chat.patient_id;
                                 return (
                                     <button
+                                        type="button"
                                         key={chat.patient_id}
                                         onClick={() => openChat({ type: 'patient', id: chat.patient_id })}
                                         className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3 py-2.5 text-start text-xs font-bold transition-all ${
                                             active
-                                                ? 'bg-teal-500/15 text-teal-900 dark:bg-teal-500/20 dark:text-teal-200 shadow-xs'
-                                                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/60'
+                                                ? 'bg-teal-50/90 text-teal-950 dark:bg-teal-950/30 dark:text-teal-200 ring-1 ring-teal-300 dark:ring-teal-700/60 shadow-xs'
+                                                : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/60'
                                         }`}
                                     >
                                         <div className="flex min-w-0 items-center gap-2.5">
-                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-100 text-xs font-extrabold uppercase text-teal-800 dark:bg-teal-950/60 dark:text-teal-300">
+                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 text-xs font-black uppercase text-white shadow-xs">
                                                 {initials(chat.patient_name)}
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="truncate text-slate-900 dark:text-white">{chat.patient_name}</div>
-                                                <div className="truncate text-[10px] font-semibold text-teal-600 dark:text-teal-400">{t('chat.mrn', 'MRN')}: {chat.patient_mrn}</div>
+                                                <div className="truncate font-black text-slate-900 dark:text-white text-xs">{chat.patient_name}</div>
+                                                <div className="truncate text-[10px] font-bold text-teal-700 dark:text-teal-400">{t('chat.mrn', { defaultValue: 'MRN' })}: {chat.patient_mrn}</div>
                                                 <div className="mt-0.5 truncate text-[10px] font-medium text-slate-400 dark:text-slate-500">
                                                     {chat.last_message_body}
                                                 </div>
                                             </div>
                                         </div>
                                         {chat.unread_count > 0 && (
-                                            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[9px] font-black text-white">
+                                            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[9px] font-black text-white shadow-xs shadow-rose-500/40">
                                                 {chat.unread_count}
                                             </span>
                                         )}
@@ -756,37 +912,38 @@ export default function CommunicationCenter() {
                             filteredDoctors.length === 0 ? (
                                 <EmptyListState
                                     icon={Stethoscope}
-                                    title={t('chat.noDoctorChats', 'No active doctor chats')}
-                                    description={t('chat.doctorEmptyHelp', 'Referring doctor inquiries will appear here after portal messages arrive.')}
-                                    actionLabel={t('chat.clearFilters', 'Clear filters')}
-                                    onAction={() => { setSearchQuery(''); setUnreadOnlyFilter(false); }}
+                                    title={t('chat.noDoctorChats', { defaultValue: 'No active doctor chats' })}
+                                    description={t('chat.doctorEmptyHelp', { defaultValue: 'Referring doctor inquiries will appear here after portal messages arrive.' })}
+                                    actionLabel={t('chat.clearFilters', { defaultValue: 'Clear filters' })}
+                                    onAction={() => { setSearchQuery(''); setActiveFilter('all'); }}
                                 />
                             ) : filteredDoctors.map(chat => {
                                 const active = selectedChat.type === 'doctor' && selectedChat.id === chat.doctor_id;
                                 return (
                                     <button
+                                        type="button"
                                         key={chat.doctor_id}
                                         onClick={() => openChat({ type: 'doctor', id: chat.doctor_id })}
                                         className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3 py-2.5 text-start text-xs font-bold transition-all ${
                                             active
-                                                ? 'bg-purple-500/15 text-purple-900 dark:bg-purple-500/20 dark:text-purple-200 shadow-xs'
-                                                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/60'
+                                                ? 'bg-purple-50/90 text-purple-950 dark:bg-purple-950/30 dark:text-purple-200 ring-1 ring-purple-300 dark:ring-purple-700/60 shadow-xs'
+                                                : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/60'
                                         }`}
                                     >
                                         <div className="flex min-w-0 items-center gap-2.5">
-                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
-                                                <Stethoscope size={16} />
+                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 text-white shadow-xs">
+                                                <Stethoscope size={15} />
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="truncate text-slate-900 dark:text-white">{chat.doctor_name}</div>
-                                                <div className="truncate text-[10px] font-semibold text-purple-600 dark:text-purple-400">{chat.doctor_clinic}</div>
+                                                <div className="truncate font-black text-slate-900 dark:text-white text-xs">{chat.doctor_name}</div>
+                                                <div className="truncate text-[10px] font-bold text-purple-700 dark:text-purple-300">{chat.doctor_clinic}</div>
                                                 <div className="mt-0.5 truncate text-[10px] font-medium text-slate-400 dark:text-slate-500">
                                                     {chat.last_message_body}
                                                 </div>
                                             </div>
                                         </div>
                                         {chat.unread_count > 0 && (
-                                            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[9px] font-black text-white">
+                                            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[9px] font-black text-white shadow-xs shadow-rose-500/40">
                                                 {chat.unread_count}
                                             </span>
                                         )}
@@ -806,15 +963,15 @@ export default function CommunicationCenter() {
                 >
                     {/* Drag & Drop File Overlay */}
                     {isDraggingOver && (
-                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-teal-900/80 backdrop-blur-md p-6 text-white animate-in fade-in duration-200">
-                            <UploadCloud size={48} className="animate-bounce text-teal-300" />
-                            <h3 className="mt-3 text-lg font-black">{t('chat.dropFilesHere', 'Drop files to attach to message')}</h3>
-                            <p className="mt-1 text-xs text-teal-100">{t('chat.dropSubtitle', 'Images, documents, and PDFs supported (up to 10MB)')}</p>
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-teal-900/90 to-cyan-900/90 backdrop-blur-md p-6 text-white animate-in fade-in duration-200">
+                            <UploadCloud size={48} className="animate-bounce text-cyan-300" />
+                            <h3 className="mt-3 text-lg font-black">{t('chat.dropFilesHere', { defaultValue: 'Drop files to attach to message' })}</h3>
+                            <p className="mt-1 text-xs text-cyan-100">{t('chat.dropSubtitle', { defaultValue: 'Images, documents, and PDFs supported (up to 10MB)' })}</p>
                         </div>
                     )}
 
                     {/* Chat Header */}
-                    <div className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 backdrop-blur-md dark:border-slate-800/80 dark:bg-[#070e1a] lg:px-6">
+                    <div className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur-md dark:border-slate-800/80 dark:bg-[#070e1a]/90 lg:px-6">
                         <div
                             onClick={() => {
                                 if (isPatient) handleNavigateProfile('patient', selectedChat.id);
@@ -824,23 +981,25 @@ export default function CommunicationCenter() {
                             className={`flex min-w-0 items-center gap-3 ${!isChannel ? 'cursor-pointer group' : ''}`}
                         >
                             <button
+                                type="button"
                                 onClick={(e) => { e.stopPropagation(); setMobileShowChat(false); }}
                                 className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"
-                                title={t('chat.back', 'Back')}
+                                title={t('chat.back', { defaultValue: 'Back' })}
+                                aria-label={t('chat.back', { defaultValue: 'Back' })}
                             >
                                 <ArrowLeft size={18} className={isRtl ? 'rotate-180' : ''} />
                             </button>
                             {isChannel ? (
-                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-md shadow-teal-500/20">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-sm shadow-teal-500/30">
                                     <Hash size={18} />
                                 </div>
                             ) : (
-                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-slate-800 to-slate-950 font-bold text-white shadow-xs transition group-hover:scale-105 dark:from-slate-700 dark:to-slate-900">
+                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${activeRoleTheme.gradient} font-bold text-white shadow-xs transition group-hover:scale-105`}>
                                     {isDoctor ? <Stethoscope size={18} /> : <User size={18} />}
                                 </div>
                             )}
                             <div className="min-w-0">
-                                <h3 className="truncate text-sm font-extrabold text-slate-900 transition group-hover:text-teal-600 dark:text-white dark:group-hover:text-teal-400">{headerTitle}</h3>
+                                <h3 className="truncate text-sm font-black text-slate-900 transition group-hover:text-teal-600 dark:text-white dark:group-hover:text-teal-400">{headerTitle}</h3>
                                 <p className="flex items-center gap-1.5 truncate text-[11px] font-semibold text-slate-400">
                                     {isDM && (
                                         <Circle size={7} className={activeChatMeta?.isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-slate-300 text-slate-300 dark:fill-slate-600 dark:text-slate-600'} />
@@ -852,24 +1011,30 @@ export default function CommunicationCenter() {
 
                         {hasContext && (
                             <button
+                                type="button"
                                 onClick={() => setShowContextPanel(!showContextPanel)}
-                                className="shrink-0 rounded-xl border border-slate-200/80 p-2 text-slate-500 transition hover:border-slate-300 hover:bg-slate-100 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-800"
-                                title={t('chat.toggleInfo', 'Toggle info panel')}
+                                className={`shrink-0 rounded-xl border p-2 transition active:scale-95 ${
+                                    showContextPanel
+                                        ? 'border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-700/60 dark:bg-teal-950/40 dark:text-teal-300'
+                                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                                }`}
+                                title={t('chat.toggleInfo', { defaultValue: 'Toggle info panel' })}
+                                aria-label={t('chat.toggleInfo', { defaultValue: 'Toggle info panel' })}
                             >
                                 {showContextPanel ? <PanelRightClose size={18} /> : <PanelRight size={18} />}
                             </button>
                         )}
                     </div>
 
-                    {/* Messages List Viewport with Ambient Wallpaper */}
-                    <div className="relative flex-1 overflow-y-auto bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-100/60 via-slate-50/40 to-teal-50/20 p-4 dark:from-[#050b14] dark:via-[#070e19] dark:to-[#081326] lg:p-6 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                    {/* Messages List Viewport with Radiant Gradient Wallpaper */}
+                    <div className="relative flex-1 overflow-y-auto bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-teal-500/5 via-slate-50/60 to-cyan-500/5 p-4 dark:from-[#050b14] dark:via-[#070e19] dark:to-[#081326] lg:p-6 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
                         {activeMessages.length === 0 ? (
                             <div className="flex h-full flex-col items-center justify-center text-center text-slate-400">
-                                <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 text-teal-600 dark:text-teal-400 shadow-inner">
+                                <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 text-teal-600 dark:text-teal-400 shadow-inner ring-1 ring-teal-500/30">
                                     <MessageSquare size={30} />
                                 </div>
-                                <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">{t('chat.emptyThread', 'No messages yet. Say hello!')}</p>
-                                <p className="mt-1 text-[11px] font-semibold text-slate-400">{t('chat.composePlaceholder', 'Type a message... (Press Enter to send)')}</p>
+                                <p className="text-xs font-black text-slate-800 dark:text-slate-200">{t('chat.emptyThread', { defaultValue: 'No messages yet. Say hello!' })}</p>
+                                <p className="mt-1 text-[11px] font-semibold text-slate-400">{t('chat.composePlaceholder', { defaultValue: 'Type a message... (Press Enter to send)' })}</p>
                             </div>
                         ) : activeMessages.map((msg, i) => {
                             const isMe = (isChannel || isDM)
@@ -879,13 +1044,9 @@ export default function CommunicationCenter() {
                             const prevIsMe = prev && ((isChannel || isDM) ? String(prev.sender_id) === String(currentUserId) : prev.sender_role === 'Staff');
                             const showDayDivider = !prev || new Date(prev.created_at).toDateString() !== new Date(msg.created_at).toDateString();
                             const groupStart = showDayDivider || prevIsMe !== isMe || prev?.sender_id !== msg.sender_id;
-                            const senderName = isMe ? t('chat.you', 'You') : msg.sender_name || (isPatient ? t('chat.patient', 'Patient') : isDoctor ? t('chat.doctor', 'Doctor') : t('chat.staff', 'Staff'));
+                            const senderName = isMe ? t('chat.you', { defaultValue: 'You' }) : msg.sender_name || (isPatient ? t('chat.patient', { defaultValue: 'Patient' }) : isDoctor ? t('chat.doctor', { defaultValue: 'Doctor' }) : t('chat.staff', { defaultValue: 'Staff' }));
 
-                            const roleBadgeColor = isDoctor
-                                ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
-                                : isPatient
-                                    ? 'bg-teal-100 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300'
-                                    : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+                            const senderTheme = getRoleTheme(msg.sender_role || (isPatient ? 'patient' : isDoctor ? 'doctor' : 'staff'));
 
                             return (
                                 <React.Fragment key={msg.message_id || i}>
@@ -902,7 +1063,7 @@ export default function CommunicationCenter() {
                                         {!isMe && (
                                             <div className="shrink-0 pb-0.5">
                                                 {groupStart ? (
-                                                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-black uppercase shadow-xs ring-2 ring-white/60 dark:ring-slate-800 ${roleBadgeColor}`}>
+                                                    <div className={`flex h-8 w-8 items-center justify-center rounded-xl text-[10px] font-black uppercase text-white shadow-xs ring-2 ring-white/60 dark:ring-slate-800 bg-gradient-to-br ${senderTheme.gradient}`}>
                                                         {initials(senderName)}
                                                     </div>
                                                 ) : (
@@ -914,9 +1075,9 @@ export default function CommunicationCenter() {
                                         <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] sm:max-w-[70%]`}>
                                             {groupStart && !isMe && (
                                                 <div className="mb-1 flex items-center gap-1.5 px-1.5">
-                                                    <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200">{senderName}</span>
+                                                    <span className="text-[11px] font-black text-slate-900 dark:text-slate-100">{senderName}</span>
                                                     {msg.sender_role && (
-                                                        <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                                        <span className={`rounded-md px-1.5 py-0.2 text-[8.5px] font-black uppercase tracking-wider ${senderTheme.badge}`}>
                                                             {msg.sender_role}
                                                         </span>
                                                     )}
@@ -926,15 +1087,15 @@ export default function CommunicationCenter() {
                                             {/* Distinct Sent vs Received Speech Bubbles */}
                                             <div className={`relative px-4 py-2.5 text-xs font-semibold leading-relaxed transition-all ${
                                                 isMe
-                                                    ? `bg-gradient-to-br from-teal-600 via-teal-600 to-cyan-600 text-white shadow-md shadow-teal-500/20 dark:shadow-teal-900/40 border border-teal-400/20 ${
+                                                    ? `bg-gradient-to-r from-teal-600 via-teal-700 to-cyan-700 text-white shadow-md shadow-teal-900/20 border border-teal-500/30 ${
                                                         isRtl
                                                             ? groupStart ? 'rounded-2xl rounded-tl-xs' : 'rounded-2xl'
                                                             : groupStart ? 'rounded-2xl rounded-tr-xs' : 'rounded-2xl'
                                                       }`
-                                                    : `bg-gradient-to-br from-slate-100 to-slate-200/70 text-slate-900 border border-slate-200/90 shadow-xs dark:from-[#121f35] dark:to-[#172740] dark:border-slate-700/70 dark:text-slate-100 ${
+                                                    : `bg-white text-slate-900 border border-slate-200/90 shadow-xs dark:bg-slate-800/95 dark:border-slate-700/60 dark:text-slate-100 ${
                                                         isRtl
-                                                            ? groupStart ? 'rounded-2xl rounded-tr-xs' : 'rounded-2xl'
-                                                            : groupStart ? 'rounded-2xl rounded-tl-xs' : 'rounded-2xl'
+                                                            ? groupStart ? 'rounded-2xl rounded-tr-xs border-r-4 border-r-teal-500' : 'rounded-2xl'
+                                                            : groupStart ? 'rounded-2xl rounded-tl-xs border-l-4 border-l-teal-500' : 'rounded-2xl'
                                                       }`
                                             }`}>
                                                 <ChatMessageContent message={msg} isMe={isMe} t={t} />
@@ -945,7 +1106,8 @@ export default function CommunicationCenter() {
                                                         type="button"
                                                         onClick={() => copyToClipboard(msg.body)}
                                                         className="absolute top-2 end-2 opacity-0 group-hover/msg:opacity-100 rounded-md bg-black/20 p-1 text-white transition hover:bg-black/40"
-                                                        title="Copy text"
+                                                        title={t('chat.copyText', { defaultValue: 'Copy text' })}
+                                                        aria-label={t('chat.copyText', { defaultValue: 'Copy text' })}
                                                     >
                                                         <Copy size={11} />
                                                     </button>
@@ -959,17 +1121,17 @@ export default function CommunicationCenter() {
                                                     {isMe && !isChannel && (
                                                         <span
                                                             className="inline-flex items-center gap-0.5 text-[9px] font-extrabold"
-                                                            title={msg.is_read ? t('chat.seen', 'Seen / Read') : t('chat.delivered', 'Delivered')}
+                                                            title={msg.is_read ? t('chat.seen', { defaultValue: 'Seen / Read' }) : t('chat.delivered', { defaultValue: 'Delivered' })}
                                                         >
                                                             {msg.is_read ? (
                                                                 <>
                                                                     <CheckCheck size={14} className="text-cyan-200" />
-                                                                    <span className="text-[8.5px] font-black text-cyan-200/90 opacity-90">{t('chat.seenLabel', 'Seen')}</span>
+                                                                    <span className="text-[8.5px] font-black text-cyan-200/90 opacity-90">{t('chat.seenLabel', { defaultValue: 'Seen' })}</span>
                                                                 </>
                                                             ) : (
                                                                 <>
                                                                     <Check size={13} className="text-teal-200/80" />
-                                                                    <span className="text-[8.5px] font-bold text-teal-200/70">{t('chat.sentLabel', 'Sent')}</span>
+                                                                    <span className="text-[8.5px] font-bold text-teal-200/70">{t('chat.sentLabel', { defaultValue: 'Sent' })}</span>
                                                                 </>
                                                             )}
                                                         </span>
@@ -984,21 +1146,21 @@ export default function CommunicationCenter() {
                         <div ref={messageEndRef} />
                     </div>
 
-                    {/* Quick Replies Bar with Animated Hover Badges */}
+                    {/* Quick Replies Bar with Multi-Colored Badges */}
                     {(isPatient || isDoctor) && (
                         <div className="flex select-none items-center gap-2 overflow-x-auto border-t border-slate-200/80 bg-slate-50/80 px-4 py-2 dark:border-slate-800/80 dark:bg-[#08101e] lg:px-6 scrollbar-none">
-                            <Sparkles size={14} className="shrink-0 text-teal-600 dark:text-teal-400 animate-pulse" />
-                            <span className="me-1 shrink-0 text-[9px] font-extrabold uppercase tracking-wider text-slate-400">{t('chat.quickReplies', 'Quick replies')}:</span>
+                            <Sparkles size={14} className="shrink-0 text-amber-500 animate-pulse" />
+                            <span className="me-1 shrink-0 text-[9px] font-black uppercase tracking-wider text-slate-400">{t('chat.quickReplies', { defaultValue: 'Quick replies' })}:</span>
                             {QUICK_REPLIES.map((reply, idx) => {
-                                const label = t(reply.key, reply.fallback);
+                                const label = t(reply.key, { defaultValue: reply.fallback });
                                 return (
                                     <button
                                         key={idx}
                                         type="button"
                                         onClick={(e) => handleSendMessage(e, label)}
-                                        className="shrink-0 rounded-full border border-slate-200/90 bg-white px-3 py-1 text-[10px] font-bold text-slate-700 shadow-2xs transition-all duration-200 hover:scale-105 hover:border-transparent hover:bg-gradient-to-r hover:from-teal-600 hover:to-cyan-600 hover:text-white hover:shadow-md dark:border-slate-800 dark:bg-[#0b1426] dark:text-slate-300 dark:hover:text-white"
+                                        className={`shrink-0 rounded-full border px-3 py-1 text-[10px] font-bold shadow-2xs transition-all duration-200 hover:scale-105 ${reply.tone}`}
                                     >
-                                        {label.length > 36 ? `${label.slice(0, 36)}…` : label}
+                                        {label.length > 36 ? `${label.slice(0, 36)}...` : label}
                                     </button>
                                 );
                             })}
@@ -1011,7 +1173,7 @@ export default function CommunicationCenter() {
                         {showEmojiPicker && (
                             <div className="mb-2 flex flex-wrap gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-[#091222]">
                                 {EMOJI_OPTIONS.map(emoji => (
-                                    <button key={emoji} type="button" onClick={() => insertEmoji(emoji)} className="flex h-8 w-8 items-center justify-center rounded-lg text-lg transition hover:bg-white dark:hover:bg-slate-800" aria-label={t('chat.insertEmoji', 'Insert emoji')}>
+                                    <button key={emoji} type="button" onClick={() => insertEmoji(emoji)} className="flex h-8 w-8 items-center justify-center rounded-lg text-lg transition hover:bg-white dark:hover:bg-slate-800" aria-label={t('chat.insertEmoji', { defaultValue: 'Insert emoji' })}>
                                         {emoji}
                                     </button>
                                 ))}
@@ -1032,24 +1194,27 @@ export default function CommunicationCenter() {
                             <button
                                 type="button"
                                 onClick={() => fileInputRef.current?.click()}
-                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-800 dark:bg-[#091222] dark:text-slate-300 dark:hover:bg-teal-950/30"
-                                title={t('chat.attachFile', 'Attach file')}
+                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-800 dark:bg-[#091222] dark:text-slate-300 dark:hover:bg-teal-950/30"
+                                title={t('chat.attachFile', { defaultValue: 'Attach file' })}
+                                aria-label={t('chat.attachFile', { defaultValue: 'Attach file' })}
                             >
                                 <Paperclip size={16} />
                             </button>
                             <button
                                 type="button"
                                 onClick={() => { setShowEmojiPicker(value => !value); setShowStickerPicker(false); }}
-                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-800 dark:bg-[#091222] dark:text-slate-300 dark:hover:bg-teal-950/30"
-                                title={t('chat.emoji', 'Emoji')}
+                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 dark:border-slate-800 dark:bg-[#091222] dark:text-slate-300 dark:hover:bg-amber-950/30"
+                                title={t('chat.emoji', { defaultValue: 'Emoji' })}
+                                aria-label={t('chat.emoji', { defaultValue: 'Emoji' })}
                             >
                                 <SmilePlus size={16} />
                             </button>
                             <button
                                 type="button"
                                 onClick={() => { setShowStickerPicker(value => !value); setShowEmojiPicker(false); }}
-                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-800 dark:bg-[#091222] dark:text-slate-300 dark:hover:bg-teal-950/30"
-                                title={t('chat.stickers', 'Stickers')}
+                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 dark:border-slate-800 dark:bg-[#091222] dark:text-slate-300 dark:hover:bg-purple-950/30"
+                                title={t('chat.stickers', { defaultValue: 'Stickers' })}
+                                aria-label={t('chat.stickers', { defaultValue: 'Stickers' })}
                             >
                                 <Sticker size={16} />
                             </button>
@@ -1062,14 +1227,15 @@ export default function CommunicationCenter() {
                                         handleSendMessage(e);
                                     }
                                 }}
-                                placeholder={t('chat.composePlaceholder', 'Type a message... (Press Enter to send)')}
+                                placeholder={t('chat.composePlaceholder', { defaultValue: 'Type a message... (Press Enter to send)' })}
                                 rows={1}
                                 className="max-h-32 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-800 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-[#091222] dark:text-slate-100 dark:focus:bg-[#070e1a] placeholder:text-slate-400"
                             />
                             <button
                                 type="submit"
                                 disabled={(!messageText.trim() && pendingFiles.length === 0) || isSending}
-                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-md shadow-teal-600/20 transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                                aria-label={t('chat.sendMessage', { defaultValue: 'Send message' })}
+                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-md shadow-teal-600/30 transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 <Send size={16} className={isRtl ? 'rotate-180' : ''} />
                             </button>
@@ -1084,143 +1250,166 @@ export default function CommunicationCenter() {
                             className="fixed inset-0 z-30 bg-slate-950/40 backdrop-blur-xs xl:hidden"
                             onClick={() => setShowContextPanel(false)}
                         />
-                        <div className="fixed end-0 top-0 z-40 h-full w-80 max-w-[85vw] shrink-0 overflow-y-auto border-s border-slate-200/80 bg-white p-6 shadow-2xl animate-in slide-in-from-end duration-200 dark:border-slate-800 dark:bg-[#070e1a] xl:static xl:z-auto xl:h-auto xl:max-w-none xl:animate-none xl:bg-slate-50/70 xl:shadow-none dark:xl:bg-[#08101e]">
+                        <div className="fixed end-0 top-0 z-40 h-full w-80 max-w-[85vw] shrink-0 overflow-y-auto border-s border-slate-200/80 bg-white p-5 shadow-2xl animate-in slide-in-from-end duration-200 dark:border-slate-800 dark:bg-[#070e1a] xl:static xl:z-auto xl:h-auto xl:max-w-none xl:animate-none xl:bg-gradient-to-b xl:from-slate-50/80 xl:to-white/90 xl:shadow-none dark:xl:from-[#091222] dark:xl:to-[#070e1a]">
                             <button
+                                type="button"
                                 onClick={() => setShowContextPanel(false)}
                                 className="absolute end-4 top-4 rounded-xl p-1.5 text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800 xl:hidden"
+                                aria-label={t('chat.toggleInfo', { defaultValue: 'Toggle info panel' })}
                             >
                                 <X size={16} />
                             </button>
 
                             {isPatient && patientDetails ? (
-                                <div className="space-y-6">
-                                    <div className="text-center">
-                                        <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-teal-100 text-xl font-black uppercase text-teal-800 shadow-md dark:bg-teal-950/60 dark:text-teal-300">
+                                <div className="space-y-5">
+                                    {/* Patient Hero Card */}
+                                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-500/15 via-cyan-500/10 to-teal-500/5 p-4 text-center ring-1 ring-teal-500/20">
+                                        <div className="mx-auto inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 text-xl font-black uppercase text-white shadow-md shadow-teal-600/30 ring-2 ring-white dark:ring-slate-800">
                                             {initials(patientDetails.full_name)}
                                         </div>
-                                        <h4 className="mt-3 text-sm font-extrabold text-slate-900 dark:text-white">{patientDetails.full_name}</h4>
+                                        <h4 className="mt-3 text-sm font-black text-slate-900 dark:text-white">{patientDetails.full_name}</h4>
                                         <span className="mt-1 inline-flex rounded-full bg-teal-100 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-teal-800 dark:bg-teal-950/60 dark:text-teal-300">
-                                            {t('chat.patient', 'Patient')}
+                                            {t('chat.patient', { defaultValue: 'Patient' })}
                                         </span>
                                         <div className="mt-3 grid gap-2">
                                             <button
+                                                type="button"
                                                 onClick={() => navigate(`/patients/${patientDetails.patient_id}`)}
-                                                className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 px-3 py-2 text-xs font-extrabold text-white shadow-xs transition hover:bg-teal-700"
+                                                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 px-3 py-2 text-xs font-black text-white shadow-xs transition hover:brightness-110 active:scale-95"
                                             >
-                                                <ExternalLink size={14} />
-                                                <span>{t('chat.viewFullProfile', 'View Full Patient Profile')}</span>
+                                                <ExternalLink size={13} />
+                                                <span>{t('chat.viewFullProfile', { defaultValue: 'View Full Patient Profile' })}</span>
                                             </button>
                                             <button
+                                                type="button"
                                                 onClick={() => navigate(`/appointments?patientId=${patientDetails.patient_id}`)}
-                                                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                                                className="flex w-full items-center justify-center gap-2 rounded-xl border border-teal-200 bg-white px-3 py-2 text-xs font-bold text-teal-900 shadow-xs transition hover:bg-teal-50 active:scale-95 dark:border-teal-800 dark:bg-slate-900 dark:text-teal-200"
                                             >
-                                                <Calendar size={14} />
-                                                <span>{t('chat.bookAppointment', 'Appointments')}</span>
+                                                <Calendar size={13} />
+                                                <span>{t('chat.bookAppointment', { defaultValue: 'Appointments' })}</span>
                                             </button>
                                         </div>
                                     </div>
 
-                                    <div className="space-y-3 border-t border-slate-200/80 pt-4 dark:border-slate-800">
-                                        <h5 className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">{t('chat.contactInfo', 'Contact Info')}</h5>
-                                        <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                            <Phone size={14} className="shrink-0 text-teal-600 dark:text-teal-400" />
-                                            <span className="truncate">{patientDetails.phone || t('chat.noPhone', 'No phone')}</span>
+                                    {/* Contact Section */}
+                                    <div className="space-y-2.5 rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800 dark:bg-[#0b1426]">
+                                        <h5 className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">{t('chat.contactInfo', { defaultValue: 'Contact Info' })}</h5>
+                                        <div className="flex items-center gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-400">
+                                                <Phone size={13} />
+                                            </span>
+                                            <span className="truncate">{patientDetails.phone || t('chat.noPhone', { defaultValue: 'No phone' })}</span>
                                         </div>
-                                        <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                            <Mail size={14} className="shrink-0 text-teal-600 dark:text-teal-400" />
-                                            <span className="truncate">{patientDetails.email || t('chat.noEmail', 'No email')}</span>
+                                        <div className="flex items-center gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600 dark:bg-cyan-950/50 dark:text-cyan-400">
+                                                <Mail size={13} />
+                                            </span>
+                                            <span className="truncate">{patientDetails.email || t('chat.noEmail', { defaultValue: 'No email' })}</span>
                                         </div>
-                                        <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                            <MapPin size={14} className="shrink-0 text-teal-600 dark:text-teal-400" />
-                                            <span className="truncate">{patientDetails.address || t('chat.noAddress', 'No address')}</span>
+                                        <div className="flex items-center gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                                                <MapPin size={13} />
+                                            </span>
+                                            <span className="truncate">{patientDetails.address || t('chat.noAddress', { defaultValue: 'No address' })}</span>
                                         </div>
                                     </div>
 
-                                    <div className="space-y-3 border-t border-slate-200/80 pt-4 dark:border-slate-800">
-                                        <h5 className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">{t('chat.summary', 'Summary')}</h5>
-                                        <div className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-white p-3 shadow-xs dark:border-slate-800 dark:bg-[#0b1426]">
-                                            <div className="flex items-center gap-2">
-                                                <Calendar size={15} className="text-teal-600 dark:text-teal-400" />
-                                                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{t('chat.gender', 'Gender')}</span>
-                                            </div>
-                                            <span className="text-xs font-extrabold text-slate-900 dark:text-white">{patientDetails.gender || '—'}</span>
+                                    {/* Patient Stats Summary */}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs dark:border-slate-800 dark:bg-[#0b1426]">
+                                            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">{t('chat.gender', { defaultValue: 'Gender' })}</p>
+                                            <p className="mt-1 text-xs font-black text-slate-900 dark:text-white">{patientDetails.gender || '-'}</p>
                                         </div>
-                                        <div className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-white p-3 shadow-xs dark:border-slate-800 dark:bg-[#0b1426]">
-                                            <div className="flex items-center gap-2">
-                                                <Receipt size={15} className="text-teal-600 dark:text-teal-400" />
-                                                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{t('chat.carePoints', 'Care Points')}</span>
+                                        <div className="rounded-xl border border-amber-200/80 bg-gradient-to-br from-amber-50/80 to-amber-100/40 p-3 shadow-2xs dark:border-amber-800/60 dark:from-amber-950/30 dark:to-amber-900/10">
+                                            <div className="flex items-center gap-1">
+                                                <Award size={13} className="text-amber-600 dark:text-amber-400" />
+                                                <p className="text-[9px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">{t('chat.carePoints', { defaultValue: 'Care Points' })}</p>
                                             </div>
-                                            <span className="text-xs font-black text-teal-700 dark:text-teal-400">{patientDetails.loyalty_points || 0} {t('chat.pts', 'pts')}</span>
+                                            <p className="mt-1 font-mono text-sm font-black text-amber-900 dark:text-amber-200 tabular-nums">{patientDetails.loyalty_points || 0}</p>
                                         </div>
                                     </div>
                                 </div>
                             ) : isDoctor && doctorDetails ? (
-                                <div className="space-y-6">
-                                    <div className="text-center">
-                                        <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-purple-100 text-purple-700 shadow-md dark:bg-purple-950/60 dark:text-purple-300">
+                                <div className="space-y-5">
+                                    {/* Doctor Hero Card */}
+                                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-500/15 via-violet-500/10 to-purple-500/5 p-4 text-center ring-1 ring-purple-500/20">
+                                        <div className="mx-auto inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-violet-700 text-white shadow-md shadow-purple-600/30 ring-2 ring-white dark:ring-slate-800">
                                             <Stethoscope size={28} />
                                         </div>
-                                        <h4 className="mt-3 text-sm font-extrabold text-slate-900 dark:text-white">{doctorDetails.full_name}</h4>
+                                        <h4 className="mt-3 text-sm font-black text-slate-900 dark:text-white">{doctorDetails.full_name}</h4>
                                         <span className="mt-1 inline-flex rounded-full bg-purple-100 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
-                                            {doctorDetails.specialty || t('chat.referringDoctor', 'Referring Doctor')}
+                                            {doctorDetails.specialty || t('chat.referringDoctor', { defaultValue: 'Referring Doctor' })}
                                         </span>
                                         <button
+                                            type="button"
                                             onClick={() => navigate(`/referring-doctors/${doctorDetails.doctor_id}`)}
-                                            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-purple-600 px-3 py-2 text-xs font-extrabold text-white shadow-xs transition hover:bg-purple-700"
+                                            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-violet-600 px-3 py-2 text-xs font-black text-white shadow-xs transition hover:brightness-110 active:scale-95"
                                         >
-                                            <ExternalLink size={14} />
-                                            <span>{t('chat.viewFullDoctorDetails', 'View Doctor Details')}</span>
+                                            <ExternalLink size={13} />
+                                            <span>{t('chat.viewFullDoctorDetails', { defaultValue: 'View Doctor Details' })}</span>
                                         </button>
                                     </div>
 
-                                    <div className="space-y-3 border-t border-slate-200/80 pt-4 dark:border-slate-800">
-                                        <h5 className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">{t('chat.clinicInfo', 'Clinic Info')}</h5>
-                                        <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                            <Activity size={14} className="shrink-0 text-purple-600 dark:text-purple-400" />
-                                            <span className="truncate">{doctorDetails.clinic_name || t('chat.noClinic', 'No clinic')}</span>
+                                    {/* Clinic Info */}
+                                    <div className="space-y-2.5 rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800 dark:bg-[#0b1426]">
+                                        <h5 className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">{t('chat.clinicInfo', { defaultValue: 'Clinic Info' })}</h5>
+                                        <div className="flex items-center gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400">
+                                                <Building2 size={13} />
+                                            </span>
+                                            <span className="truncate">{doctorDetails.clinic_name || t('chat.noClinic', { defaultValue: 'No clinic' })}</span>
                                         </div>
-                                        <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                            <Phone size={14} className="shrink-0 text-purple-600 dark:text-purple-400" />
-                                            <span className="truncate">{doctorDetails.phone || t('chat.noPhone', 'No phone')}</span>
+                                        <div className="flex items-center gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-400">
+                                                <Phone size={13} />
+                                            </span>
+                                            <span className="truncate">{doctorDetails.phone || t('chat.noPhone', { defaultValue: 'No phone' })}</span>
                                         </div>
-                                        <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                            <Mail size={14} className="shrink-0 text-purple-600 dark:text-purple-400" />
-                                            <span className="truncate">{doctorDetails.email || t('chat.noEmail', 'No email')}</span>
+                                        <div className="flex items-center gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-fuchsia-50 text-fuchsia-600 dark:bg-fuchsia-950/50 dark:text-fuchsia-400">
+                                                <Mail size={13} />
+                                            </span>
+                                            <span className="truncate">{doctorDetails.email || t('chat.noEmail', { defaultValue: 'No email' })}</span>
                                         </div>
                                     </div>
                                 </div>
                             ) : isDM && activeChatMeta ? (
-                                <div className="space-y-6">
-                                    <div className="text-center">
-                                        <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-slate-900 text-xl font-black uppercase text-white shadow-md dark:bg-cyan-400/20 dark:text-cyan-200">
+                                <div className="space-y-5">
+                                    {/* Staff Hero Card */}
+                                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500/15 via-blue-500/10 to-indigo-500/5 p-4 text-center ring-1 ring-indigo-500/20">
+                                        <div className={`mx-auto inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br ${activeRoleTheme.gradient} text-xl font-black uppercase text-white shadow-md ring-2 ring-white dark:ring-slate-800`}>
                                             {initials(activeChatMeta.full_name)}
                                         </div>
-                                        <h4 className="mt-3 text-sm font-extrabold text-slate-900 dark:text-white">{activeChatMeta.full_name}</h4>
-                                        <span className="mt-1 inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                        <h4 className="mt-3 text-sm font-black text-slate-900 dark:text-white">{activeChatMeta.full_name}</h4>
+                                        <span className={`mt-1 inline-flex rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${activeRoleTheme.badge}`}>
                                             {activeChatMeta.role}
                                         </span>
                                         <button
+                                            type="button"
                                             onClick={() => navigate(`/users/${activeChatMeta.user_id}`)}
-                                            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-extrabold text-white shadow-xs transition hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700"
+                                            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-slate-900 to-indigo-950 px-3 py-2 text-xs font-black text-white shadow-xs transition hover:brightness-110 active:scale-95 dark:from-slate-800 dark:to-indigo-900"
                                         >
-                                            <ExternalLink size={14} />
-                                            <span>{t('chat.viewUserAccount', 'View User Profile & Movements')}</span>
+                                            <ExternalLink size={13} />
+                                            <span>{t('chat.viewUserAccount', { defaultValue: 'View User Profile' })}</span>
                                         </button>
                                     </div>
 
-                                    <div className="space-y-3 border-t border-slate-200/80 pt-4 dark:border-slate-800">
-                                        <h5 className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">{t('chat.staffInfo', 'Staff Info')}</h5>
-                                        <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                            <Mail size={14} className="shrink-0 text-teal-600 dark:text-teal-400" />
+                                    {/* Staff Info */}
+                                    <div className="space-y-2.5 rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800 dark:bg-[#0b1426]">
+                                        <h5 className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">{t('chat.staffInfo', { defaultValue: 'Staff Info' })}</h5>
+                                        <div className="flex items-center gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-400">
+                                                <Mail size={13} />
+                                            </span>
                                             <span className="truncate">{activeChatMeta.email}</span>
                                         </div>
-                                        <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                            <Circle size={9} className={activeChatMeta.isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-slate-300 text-slate-300 dark:fill-slate-600 dark:text-slate-600'} />
-                                            <span>{activeChatMeta.isOnline ? t('chat.online', 'Online') : t('chat.offline', 'Offline')}</span>
+                                        <div className="flex items-center gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            <Circle size={8} className={activeChatMeta.isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-slate-300 text-slate-300 dark:fill-slate-600 dark:text-slate-600'} />
+                                            <span>{activeChatMeta.isOnline ? t('chat.online', { defaultValue: 'Online' }) : t('chat.offline', { defaultValue: 'Offline' })}</span>
                                         </div>
-                                        <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                            <Shield size={14} className="shrink-0 text-teal-600 dark:text-teal-400" />
-                                            <span>{t('chat.accountActive', 'Account status: Active')}</span>
+                                        <div className="flex items-center gap-2.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            <Shield size={14} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                            <span>{t('chat.accountActive', { defaultValue: 'Account status: Active' })}</span>
                                         </div>
                                     </div>
                                 </div>

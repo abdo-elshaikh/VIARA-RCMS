@@ -1,5 +1,6 @@
 const { AppError } = require('./errorHandler');
 const { logSecurityEvent } = require('../services/securityEventService');
+const { triggerEventForRole } = require('../services/notificationJobService');
 
 // Simple in-memory cache for role permissions to avoid DB hits on every request
 // In a distributed setup, this would be Redis.
@@ -106,6 +107,8 @@ const hasPermission = (db, requiredPermission) => {
                 userAgent: req.get('user-agent'),
                 details: { role, requiredPermission, path: req.originalUrl }
             });
+            triggerEventForRole(db, 'PERMISSION_DENIED', 'Admin', { priority: 'Warning' }).catch(() => {});
+            triggerEventForRole(db, 'PERMISSION_DENIED', 'HR', { priority: 'Warning' }).catch(() => {});
 
             return next(new AppError(`Access Denied: Requires ${requiredPermission} permission`, 403));
         } catch (error) {
@@ -164,6 +167,8 @@ const hasAnyPermission = (db, requiredPermissions = []) => {
                 userAgent: req.get('user-agent'),
                 details: { role, requiredPermissions, path: req.originalUrl }
             });
+            triggerEventForRole(db, 'PERMISSION_DENIED', 'Admin', { priority: 'Warning' }).catch(() => {});
+            triggerEventForRole(db, 'PERMISSION_DENIED', 'HR', { priority: 'Warning' }).catch(() => {});
 
             return next(new AppError(`Access Denied: Requires one of [${requiredPermissions.join(', ')}]`, 403));
         } catch (error) {

@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-RCMS has a **strong accessibility foundation** with visible focus styling, reduced-motion support, shared modal focus trapping, and semantic labels on many interactive elements. **All Critical and High accessibility findings have been remediated**: mobile navigation drawer now uses proper dialog semantics with focus trapping; custom dialogs migrated to shared `Modal`; chart data is available via expandable tables; form errors are programmatically associated via `aria-errormessage`; touch targets raised to 44×44px.
+VIARA has a **strong accessibility foundation** with visible focus styling, reduced-motion support, shared modal focus trapping, and semantic labels on many interactive elements. **All Critical and High accessibility findings have been remediated**: mobile navigation drawer now uses proper dialog semantics with focus trapping; custom dialogs migrated to shared `Modal`; chart data is available via expandable tables; form errors are programmatically associated via `aria-errormessage`; touch targets raised to 44×44px.
 
 **Status: WCAG 2.1 AA foundations in place — runtime verification still required for full conformance.**
 

@@ -1,9 +1,5 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src/main.tsx", "src/vite-env.d.ts"],
-  "exclude": ["src/**/*.test.*", "src/**/*.spec.*"],
-  "compilerOptions": {
-    "strict": true,
-    "noImplicitAny": false
-  }
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
+  "exclude": ["src/**/*.test.*", "src/**/*.spec.*", "node_modules", "dist"]
 }

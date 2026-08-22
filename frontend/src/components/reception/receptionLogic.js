@@ -7,6 +7,13 @@ export const toLocalDateInput = (date = new Date()) => {
     return `${year}-${month}-${day}`;
 };
 
+export const shiftLocalDateInput = (dateInput, days) => {
+    const date = new Date(`${dateInput}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return dateInput;
+    date.setDate(date.getDate() + days);
+    return toLocalDateInput(date);
+};
+
 export const getCurrentUserId = (user) => user?.id || user?.user_id || null;
 
 export const buildPermissionModel = (user) => {
@@ -19,11 +26,124 @@ export const buildPermissionModel = (user) => {
         canReconcileShifts: has('RECONCILE_SHIFTS'),
         canOpenCashierShift: has('OPEN_CASHIER_SHIFT'),
         canCloseCashierShift: has('CLOSE_CASHIER_SHIFT'),
+        canReviewShiftVariance: has('APPROVE_SHIFT_VARIANCE'),
         canDiscount: user?.role === 'Developer' || permissions.has('APPLY_DISCOUNTS'),
         canAppendSupplies: has('CONSUME_INVENTORY'),
         canManageQueue: has('MANAGE_QUEUE'),
         canDeliverResults: has('DELIVER_RESULTS')
     };
+};
+
+export const getInvoiceCoverageCategory = (invoice) => {
+    if (!invoice) {
+        return {
+            type: 'self_pay',
+            isInsurance: false,
+            isContract: false,
+            labelAr: 'حساب خاص (نقدي)',
+            labelEn: 'Self-Pay (Cash)',
+            providerName: null,
+            policyNumber: null,
+            memberNumber: null,
+            planName: null,
+            insuranceCovered: 0,
+            patientPayable: 0,
+            totalAmount: 0
+        };
+    }
+
+    const insuranceCovered = toFinancialNumber(invoice.insurance_covered_amount);
+    const patientPayable = toFinancialNumber(invoice.patient_payable_amount);
+    const totalAmount = toFinancialNumber(invoice.total_amount ?? (insuranceCovered + patientPayable));
+    const providerName = invoice.provider_name || invoice.insurance_provider_name || null;
+    const policyNumber = invoice.policy_number || invoice.insurance_policy_number || null;
+    const memberNumber = invoice.member_number || invoice.insurance_member_number || null;
+    const planName = invoice.plan_name || invoice.insurance_plan_name || null;
+
+    const hasCoverage = insuranceCovered > 0 || Boolean(providerName) || Boolean(policyNumber);
+
+    if (!hasCoverage) {
+        return {
+            type: 'self_pay',
+            isInsurance: false,
+            isContract: false,
+            labelAr: 'حساب خاص (نقدي)',
+            labelEn: 'Self-Pay (Cash)',
+            providerName: null,
+            policyNumber: null,
+            memberNumber: null,
+            planName: null,
+            insuranceCovered: 0,
+            patientPayable,
+            totalAmount
+        };
+    }
+
+    // Determine if it's a corporate / syndicate contract or health insurance
+    const lowerName = String(providerName || '').toLowerCase();
+    const isContract = lowerName.includes('نقابة') ||
+                       lowerName.includes('شركة') ||
+                       lowerName.includes('contract') ||
+                       lowerName.includes('syndicate') ||
+                       lowerName.includes('corporate') ||
+                       lowerName.includes('هيئة') ||
+                       lowerName.includes('جمعية');
+
+    return {
+        type: isContract ? 'contract' : 'insurance',
+        isInsurance: !isContract,
+        isContract,
+        labelAr: isContract ? 'تعاقد جهة / نقابة' : 'تأمين صحي',
+        labelEn: isContract ? 'Corporate Contract' : 'Health Insurance',
+        providerName,
+        policyNumber,
+        memberNumber,
+        planName,
+        insuranceCovered,
+        patientPayable,
+        totalAmount
+    };
+};
+
+export const getContractRequirementsChecklist = (category, isAr = false) => {
+    if (!category || category.type === 'self_pay') return [];
+
+    const isContract = category.type === 'contract';
+
+    return [
+        {
+            id: 'card',
+            labelAr: isContract ? 'التحقق من كارنيه الجهة / إثبات الهوية ساري' : 'التحقق من بطاقة / كارنيه التأمين ساري الصلاحية',
+            labelEn: isContract ? 'Valid Entity / Syndicate ID Card Verified' : 'Valid Health Insurance Card Verified',
+            required: true,
+            hintAr: category.memberNumber ? `رقم الكارنيه: ${category.memberNumber}` : 'التأكد من مطابقة الاسم والصورة',
+            hintEn: category.memberNumber ? `Card #: ${category.memberNumber}` : 'Match photo & full name'
+        },
+        {
+            id: 'referral',
+            labelAr: 'أصل خطاب التحويل الطبي / الروشتة معتمدة ومختومة',
+            labelEn: 'Original Signed & Stamped Medical Referral / Prescription',
+            required: true,
+            hintAr: 'التحقق من وضوح اسم الطبيب وتاريخ التحويل',
+            hintEn: 'Check referring physician signature and date'
+        },
+        {
+            id: 'preauth',
+            labelAr: isContract ? 'خطاب تفويض / أمر تكليف صادر من الجهة (إن وُجد)' : 'كود الموافقة المسبقة من شركة التأمين (Pre-Auth)',
+            labelEn: isContract ? 'Official Letter of Authorization / PO (if applicable)' : 'Insurance Pre-Authorization Code & Expiry',
+            required: category.insuranceCovered > 0,
+            hintAr: category.policyNumber ? `رقم الوثيقة / البوليصة: ${category.policyNumber}` : 'التحقق من تغطية الفحص المطلوب',
+            hintEn: category.policyNumber ? `Policy #: ${category.policyNumber}` : 'Ensure requested exam code matches approval'
+        },
+        {
+            id: 'patient_copay_sign',
+            labelAr: 'توقيع المريض على نموذج الاستلام وإقرار نسبة التحمل',
+            labelEn: 'Patient Signed Claim Form & Copay Acknowledgment',
+            required: true,
+            hintAr: `نسبة التحمل المقررة: ${category.patientPayable.toLocaleString()} ج.م`,
+            hintEn: `Assigned patient copay: ${category.patientPayable.toLocaleString()} EGP`
+        }
+    ];
 };
 
 export const calculateAdjustedBalance = (invoice, additionalDiscount = 0) => {
@@ -69,7 +189,13 @@ export const getPaymentValidation = ({
 
 export const getNextStageAfterPayment = (queueItem) => {
     if (!queueItem) return null;
-    return queueItem.nurse_name || queueItem.nurse_id ? 'Prep Pending' : 'Ready for Exam';
+    const hasNurse = Boolean(
+        queueItem.nurse_name ||
+        queueItem.nurse_id ||
+        queueItem.nurseName ||
+        queueItem.nurseId
+    );
+    return hasNurse ? 'Prep Pending' : 'Ready for Exam';
 };
 
 export const VALID_QUEUE_TRANSITIONS = {
@@ -95,9 +221,9 @@ export const canTransitionQueue = (fromStage, toStage) => {
 
 export const buildScheduleSummary = (appointments = [], queueItems = []) => ({
     booked: appointments.length,
-    ready: appointments.filter((appointment) => ['Confirmed', 'Scheduled'].includes(appointment.status)).length,
+    ready: queueItems.filter((item) => ['Arrived', 'Payment Pending', 'Prep Pending'].includes(item.queue_stage || item.queueStage)).length,
     urgent: appointments.filter((appointment) => ['Urgent', 'Emergency'].includes(appointment.priority)).length,
-    activeQueue: queueItems.length
+    activeQueue: queueItems.filter((item) => !['Delivered', 'Cancelled'].includes(item.queue_stage || item.queueStage)).length
 });
 
 export const buildReceptionTabs = ({ canProcessPayments, t }) => [

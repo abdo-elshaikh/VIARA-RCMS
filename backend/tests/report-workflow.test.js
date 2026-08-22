@@ -19,8 +19,9 @@ describe('report workflow', () => {
         expect(getReportTransitionError('Approved', 'Typed')).toMatch(/backward/);
     });
 
-    test('allows explicit finalization from an editable stage', () => {
-        expect(getReportTransitionError('Typed', 'Finalized', { finalizing: true })).toBeNull();
+    test('allows finalization only after approval', () => {
+        expect(getReportTransitionError('Typed', 'Finalized', { finalizing: true })).toMatch(/Approved/);
+        expect(getReportTransitionError('Approved', 'Finalized', { finalizing: true })).toBeNull();
     });
 
     test('controller rejects a skipped workflow stage within a transaction', async () => {

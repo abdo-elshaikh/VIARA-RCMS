@@ -1,5 +1,5 @@
-{
-  "eyebrow": "RCMS knowledge center",
+﻿{
+  "eyebrow": "VIARA knowledge center",
   "title": "How can we help?",
   "description": "Practical, role-aware guidance for {{role}} workflows, security, and troubleshooting.",
   "roleGuide": "Guidance for {{role}}",
@@ -45,7 +45,7 @@
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",
-    "description": "Move around RCMS faster.",
+    "description": "Move around VIARA faster.",
     "search": "Global search",
     "help": "Shortcut reference",
     "close": "Close dialog",

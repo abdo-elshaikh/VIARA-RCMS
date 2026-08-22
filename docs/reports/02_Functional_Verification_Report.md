@@ -1,14 +1,14 @@
 # 02 — Functional Verification Report
 
 **Review date:** 2026-08-04  
-**Scope:** All RCMS functional domains — backend API, staff frontend, patient portal, doctor portal, PACS integration  
+**Scope:** All VIARA functional domains — backend API, staff frontend, patient portal, doctor portal, PACS integration  
 **Methodology:** Static code review of controllers, routes, services, frontend pages, and database schema  
 
 ---
 
 ## Executive Summary
 
-RCMS implements a comprehensive set of functional modules covering the full radiology center workflow from patient registration through result delivery and billing. The system demonstrates strong requirements coverage across **22 functional domains** with **47 backend controllers** and **105 database migrations**.
+VIARA implements a comprehensive set of functional modules covering the full radiology center workflow from patient registration through result delivery and billing. The system demonstrates strong requirements coverage across **22 functional domains** with **47 backend controllers** and **105 database migrations**.
 
 ---
 

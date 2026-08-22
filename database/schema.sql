@@ -1,4 +1,4 @@
--- RCMS Database Schema (PostgreSQL)
+-- VIARA Database Schema (PostgreSQL)
 
 -- 1. ENUMS and Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -542,6 +542,7 @@ CREATE TABLE invoices (
     subtotal_amount DECIMAL(10, 2) DEFAULT 0,
     total_amount DECIMAL(10, 2) NOT NULL,
     insurance_covered_amount DECIMAL(10, 2) DEFAULT 0,
+    insurance_policy_id UUID REFERENCES patient_insurance_policies(policy_id) ON DELETE RESTRICT,
     patient_payable_amount DECIMAL(10, 2) NOT NULL,
     discount_amount DECIMAL(10, 2) DEFAULT 0,
     discount_percentage DECIMAL(5, 2) DEFAULT 0,
@@ -894,7 +895,7 @@ CREATE INDEX idx_integration_logs_status ON integration_logs(status);
 -- 15. Center Settings (Phase 24)
 CREATE TABLE center_settings (
     setting_id INT PRIMARY KEY DEFAULT 1,
-    center_name VARCHAR(255) DEFAULT 'RCMS Medical Center',
+    center_name VARCHAR(255) DEFAULT 'VIARA Medical Center',
     tax_id VARCHAR(100),
     phone VARCHAR(50),
     email VARCHAR(100),

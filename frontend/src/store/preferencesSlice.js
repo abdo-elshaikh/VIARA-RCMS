@@ -1,10 +1,13 @@
 import { createSlice } from '@reduxjs/toolkit';
+import { normalizePaletteOverrides } from '../utils/themePalette';
 
 export const DEFAULT_PREFERENCES = {
     // Appearance
     theme: 'system', // 'light', 'dark', 'system'
-    primaryColor: 'cyan', // 'cyan', 'indigo', 'rose', 'emerald', 'amber', 'slate', 'custom'
-    customColor: '#0ea5e9', // Used when primaryColor is 'custom'
+    primaryColor: 'emerald', // 'cyan', 'indigo', 'rose', 'emerald', 'amber', 'slate', 'custom'
+    customColor: '#087F5B', // Used when primaryColor is 'custom'
+    // Optional per-mode semantic overrides. Empty values inherit the audited VIARA palette.
+    colorOverrides: { light: {}, dark: {} },
     density: 'comfortable', // 'compact', 'comfortable', 'spacious'
     fontScale: 'normal', // 'small', 'normal', 'large', 'xlarge'
     fontFamily: 'inter', // 'inter', 'system', 'mono', 'dyslexic'
@@ -45,7 +48,7 @@ export const DEFAULT_PREFERENCES = {
 const persistState = (state) => {
     try {
         if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('rcms_preferences', JSON.stringify(state));
+            localStorage.setItem('VIARA_preferences', JSON.stringify(state));
         }
     } catch (e) {
         console.warn('Could not save preferences to localStorage', e);
@@ -73,6 +76,7 @@ export const normalizePreferences = (value = {}) => {
         theme: pick(raw.theme, ['light', 'dark', 'system'], DEFAULT_PREFERENCES.theme),
         primaryColor: pick(raw.primaryColor, ['cyan', 'indigo', 'rose', 'emerald', 'amber', 'slate', 'custom'], DEFAULT_PREFERENCES.primaryColor),
         customColor: toHex(raw.customColor, DEFAULT_PREFERENCES.customColor),
+        colorOverrides: normalizePaletteOverrides(raw.colorOverrides),
         density: pick(raw.density, ['compact', 'comfortable', 'spacious'], DEFAULT_PREFERENCES.density),
         fontScale: pick(raw.fontScale, ['small', 'normal', 'large', 'xlarge'], DEFAULT_PREFERENCES.fontScale),
         fontFamily: pick(raw.fontFamily, ['inter', 'system', 'roboto', 'mono', 'dyslexic'], DEFAULT_PREFERENCES.fontFamily),
@@ -111,7 +115,7 @@ export const normalizePreferences = (value = {}) => {
 const loadInitialState = () => {
     try {
         if (typeof localStorage === 'undefined') return DEFAULT_PREFERENCES;
-        const saved = localStorage.getItem('rcms_preferences');
+        const saved = localStorage.getItem('VIARA_preferences');
         if (saved) return normalizePreferences(JSON.parse(saved));
     } catch (e) {
         console.warn('Could not load preferences from localStorage', e);

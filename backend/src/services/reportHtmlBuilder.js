@@ -27,7 +27,7 @@ const normalizeCenterSettings = (settings = {}) => {
     }
 
     return {
-        center_name: settings.center_name || settings['center.name'] || 'RCMS Radiology Center',
+        center_name: settings.center_name || settings['center.name'] || 'Radiology Center',
         branch_name: settings.branch_name || settings['center.branch'] || '',
         logo_url: settings.logo_url || settings['center.logo_url'] || '',
         phone: settings.phone || settings['center.phone'] || '',
@@ -120,7 +120,7 @@ const METADATA_CATALOG = [
 const THEMES = {
     modern: {
         name: 'Modern Executive',
-        description: 'Teal accent, geometric sans, the RCMS house style',
+        description: 'Emerald accent, geometric sans, the VIARA clinical style',
         swatch: ['#0891b2', '#2563eb'],
         accent: '#0891b2',
         accentSecondary: '#2563eb',
@@ -248,12 +248,12 @@ const buildReportHtml = (report, centerSettings = {}) => {
     const dir = center.direction;
 
     const facilityName = [center.center_name, center.branch_name].filter(Boolean).join(' - ');
-    const logoText = String(center.center_name || 'RCMS').trim().slice(0, 4).toUpperCase();
+    const logoText = String(center.center_name || 'Center').trim().slice(0, 4).toUpperCase();
     const finalized = ['Finalized', 'Amended'].includes(report.report_status) || report.report_locked || report.status === 'Finalized';
     const isUrgent = ['STAT', 'Urgent', 'Critical'].includes(report.priority);
 
     const verificationHash = report.digital_signature_hash || (finalized
-        ? `RCMS-VERIFIED-${String(report.exam_id || '').slice(0, 8).toUpperCase()}`
+        ? `VIARA-VERIFIED-${String(report.exam_id || '').slice(0, 8).toUpperCase()}`
         : 'Pending Signature');
 
     const rawCatalog = METADATA_CATALOG.map(f => ({
@@ -878,7 +878,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 density: document.body.getAttribute('data-density')
             };
             try {
-                localStorage.setItem('rcms_report_preset', JSON.stringify(preset));
+                localStorage.setItem('VIARA_report_preset', JSON.stringify(preset));
                 alert('Customized template preset saved successfully!');
             } catch (e) {
                 alert('Could not save preset in this browser context.');

@@ -1,6 +1,18 @@
 const { createAppointmentSchema } = require('../src/schemas/appointmentSchema');
+const { VALID_WAITING_LIST_STATUSES } = require('../src/utils/queryValidator');
 
 describe('appointment schema validation', () => {
+    test('waiting-list booking accepts a waitlist reference', () => {
+        const result = createAppointmentSchema.safeParse({
+            patientId: '00000000-0000-4000-8000-000000000301',
+            modalityId: '00000000-0000-4000-8000-000000000101',
+            startTime: '2030-01-15T10:00:00Z',
+            endTime: '2030-01-15T11:00:00Z',
+            waitlistId: '00000000-0000-4000-8000-000000000601'
+        });
+        expect(result.success).toBe(true);
+    });
+
     test('createAppointmentSchema rejects invalid UUID format', () => {
         const result = createAppointmentSchema.safeParse({
             patientId: 'not-a-uuid',
@@ -46,6 +58,10 @@ describe('appointment schema validation', () => {
         });
         expect(result.success).toBe(true);
     });
+});
+
+test('waiting-list query statuses include contacted entries', () => {
+    expect(VALID_WAITING_LIST_STATUSES).toEqual(['Waiting', 'Contacted', 'Scheduled', 'Cancelled']);
 });
 
 describe('patient conflict detection in appointment scheduling', () => {

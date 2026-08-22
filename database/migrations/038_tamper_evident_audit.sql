@@ -29,12 +29,12 @@ BEGIN
     END LOOP;
 END $$;
 
-CREATE OR REPLACE FUNCTION rcms_chain_audit_log()
+CREATE OR REPLACE FUNCTION VIARA_chain_audit_log()
 RETURNS TRIGGER AS $$
 DECLARE
     last_hash VARCHAR(64);
 BEGIN
-    PERFORM pg_advisory_xact_lock(hashtext('rcms_system_logs_chain'));
+    PERFORM pg_advisory_xact_lock(hashtext('VIARA_system_logs_chain'));
     SELECT entry_hash INTO last_hash
     FROM system_logs
     ORDER BY log_id DESC
@@ -55,12 +55,12 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_system_logs_chain ON system_logs;
 CREATE TRIGGER trg_system_logs_chain
 BEFORE INSERT ON system_logs
-FOR EACH ROW EXECUTE FUNCTION rcms_chain_audit_log();
+FOR EACH ROW EXECUTE FUNCTION VIARA_chain_audit_log();
 
-CREATE OR REPLACE FUNCTION rcms_protect_audit_log()
+CREATE OR REPLACE FUNCTION VIARA_protect_audit_log()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF current_setting('rcms.audit_maintenance', TRUE) IS DISTINCT FROM 'on' THEN
+    IF current_setting('VIARA.audit_maintenance', TRUE) IS DISTINCT FROM 'on' THEN
         RAISE EXCEPTION 'system_logs are append-only';
     END IF;
     RETURN OLD;
@@ -70,4 +70,4 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_system_logs_append_only ON system_logs;
 CREATE TRIGGER trg_system_logs_append_only
 BEFORE UPDATE OR DELETE ON system_logs
-FOR EACH ROW EXECUTE FUNCTION rcms_protect_audit_log();
+FOR EACH ROW EXECUTE FUNCTION VIARA_protect_audit_log();

@@ -6,8 +6,11 @@
     "system": "System"
   },
   "items": {
+    "profile": "My Profile",
+    "accountSecurity": "Account Security",
     "approvals": "Approval Inbox",
     "dashboard": "Dashboard",
+    "leave": "My Leave",
     "reception": "Reception",
     "communications": "Inbox & Chat",
     "notifications": "Notifications",

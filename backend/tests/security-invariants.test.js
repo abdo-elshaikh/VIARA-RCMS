@@ -46,7 +46,7 @@ describe('security and financial invariants', () => {
         const next = jest.fn();
 
         await getDashboardStats({})({
-            user: { role: 'Developer', user_id: 'dev-1', email: 'developer@rcms.com' }
+            user: { role: 'Developer', user_id: 'dev-1', email: 'developer@VIARA.com' }
         }, res, next);
 
         expect(adminSpy).toHaveBeenCalled();
@@ -57,7 +57,7 @@ describe('security and financial invariants', () => {
             totalScans: 12,
             activeStaff: 4,
             recentActivity: [],
-            userName: 'developer@rcms.com'
+            userName: 'developer@VIARA.com'
         }));
 
         adminSpy.mockRestore();
@@ -96,12 +96,69 @@ describe('security and financial invariants', () => {
         expect(client.release).toHaveBeenCalled();
     });
 
+    test('claims cannot be submitted before approval', async () => {
+        const { updateClaimStatus } = require('../src/controllers/claimsController');
+        const client = {
+            query: jest.fn()
+                .mockResolvedValueOnce({ rows: [] })
+                .mockResolvedValueOnce({ rows: [{ claim_id: 'claim-1', status: 'Draft', expected_amount: 100, received_amount: 0 }] })
+                .mockResolvedValueOnce({ rows: [] }),
+            release: jest.fn()
+        };
+        const next = jest.fn();
+
+        await updateClaimStatus({ connect: jest.fn().mockResolvedValue(client) })({
+            params: { id: 'claim-1' },
+            body: { status: 'Submitted', claimReferenceNumber: 'PAYER-1' },
+            user: { user_id: 'admin-1' }
+        }, createResponse(), next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409 }));
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE insurance_claims'))).toBe(false);
+        expect(client.release).toHaveBeenCalled();
+    });
+
+    test('claim creators cannot approve their own request', async () => {
+        const { updateClaimStatus } = require('../src/controllers/claimsController');
+        const client = {
+            query: jest.fn()
+                .mockResolvedValueOnce({ rows: [] })
+                .mockResolvedValueOnce({
+                    rows: [{
+                        claim_id: 'claim-1',
+                        status: 'Pending Approval',
+                        expected_amount: 100,
+                        received_amount: 0,
+                        created_by: 'user-1'
+                    }]
+                })
+                .mockResolvedValueOnce({ rows: [] }),
+            release: jest.fn()
+        };
+        const next = jest.fn();
+
+        await updateClaimStatus({ connect: jest.fn().mockResolvedValue(client) })({
+            params: { id: 'claim-1' },
+            body: { status: 'Approved' },
+            user: { user_id: 'user-1', role: 'Insurance_Staff' }
+        }, createResponse(), next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE insurance_claims'))).toBe(false);
+        expect(client.release).toHaveBeenCalled();
+    });
+
     test('patient deletion preserves history and restricts the account', async () => {
         const { deletePatient } = require('../src/controllers/patientController');
         const client = {
             query: jest.fn(async sql => {
                 if (String(sql).includes('SELECT patient_id')) {
                     return { rows: [{ patient_id: 'patient-1', patient_status: 'Active' }] };
+                }
+                if (String(sql).includes('INSERT INTO system_logs')) {
+                    return { rows: [{ log_id: 'audit-patient-restricted' }] };
                 }
                 return { rows: [] };
             }),

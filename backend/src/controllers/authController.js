@@ -10,6 +10,7 @@ const { authenticator } = require('otplib');
 const qrcode = require('qrcode');
 const { encrypt, decrypt, hash } = require('../utils/crypto');
 const AuthService = require('../services/authService');
+const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 
 const SALT_ROUNDS = 10;
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
@@ -69,9 +70,10 @@ const register = (db) => async (req, res, next) => {
 const login = (db) => async (req, res, next) => {
     try {
         const { email, password } = req.body;
+        const normalizedEmail = String(email || '').trim().toLowerCase();
 
-        const query = 'SELECT * FROM users WHERE email = $1 AND is_active = TRUE';
-        const result = await db.query(query, [email]);
+        const query = 'SELECT * FROM users WHERE LOWER(email) = $1 AND is_active = TRUE';
+        const result = await db.query(query, [normalizedEmail]);
 
         if (result.rows.length === 0) {
             await logSecurityEvent(db, {
@@ -81,26 +83,38 @@ const login = (db) => async (req, res, next) => {
                 userAgent: req.get('user-agent'),
                 details: { reason: 'unknown_user' }
             });
+            triggerEventForRole(db, 'LOGIN_FAILED', 'Admin', { priority: 'Warning' }).catch(() => { });
+            triggerEventForRole(db, 'LOGIN_FAILED', 'HR', { priority: 'Warning' }).catch(() => { });
             logger.warn('LOGIN_FAILED', { reason: 'unknown_user', ip: req.ip });
             return next(new AppError('Invalid Credentials', 401));
         }
 
         const user = result.rows[0];
 
-        // 1. Check Lockout
-        if (user.locked_until && new Date() < new Date(user.locked_until)) {
-            await logSecurityEvent(db, {
-                eventType: 'ACCOUNT_LOCKED_ACCESS',
-                severity: 'critical',
-                userId: user.user_id,
-                ipAddress: req.ip,
-                details: { lockedUntil: user.locked_until }
-            });
-            logger.warn('ACCOUNT_LOCKED_ACCESS_ATTEMPT', { userId: user.user_id, ip: req.ip });
-            return next(new AppError('Account is locked due to too many failed attempts. Try again in 15 minutes.', 403));
-        }
-
+        // 1. Check Lockout & Password Validation
+        const isLocked = Boolean(user.locked_until && new Date() < new Date(user.locked_until));
         const match = await bcrypt.compare(password, user.password_hash);
+
+        if (isLocked) {
+            if (match) {
+                // Correct password supplied: auto-unlock account and reset counters
+                await db.query(`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = $1`, [user.user_id]);
+                user.locked_until = null;
+                user.failed_login_attempts = 0;
+            } else {
+                await logSecurityEvent(db, {
+                    eventType: 'ACCOUNT_LOCKED_ACCESS',
+                    severity: 'critical',
+                    userId: user.user_id,
+                    ipAddress: req.ip,
+                    details: { lockedUntil: user.locked_until }
+                });
+                triggerEventForRole(db, 'ACCOUNT_LOCKED_ACCESS', 'Admin', { priority: 'Critical' }).catch(() => { });
+                triggerEventForRole(db, 'ACCOUNT_LOCKED_ACCESS', 'HR', { priority: 'Critical' }).catch(() => { });
+                logger.warn('ACCOUNT_LOCKED_ACCESS_ATTEMPT', { userId: user.user_id, ip: req.ip });
+                return next(new AppError('Account is locked due to too many failed attempts. Try again in 15 minutes.', 403));
+            }
+        }
 
         // 2. Handle Failed Login
         if (!match) {
@@ -132,9 +146,28 @@ const login = (db) => async (req, res, next) => {
                 details: { attempts, lockedOut: !!lockedUntil }
             });
 
+            if (lockedUntil) {
+                triggerEventForRole(db, 'ACCOUNT_LOCKED', 'Admin', { priority: 'Critical' }).catch(() => { });
+                triggerEventForRole(db, 'ACCOUNT_LOCKED', 'HR', { priority: 'Critical' }).catch(() => { });
+            } else {
+                triggerEventForRole(db, 'LOGIN_FAILED', 'Admin', { priority: 'Warning' }).catch(() => { });
+                triggerEventForRole(db, 'LOGIN_FAILED', 'HR', { priority: 'Warning' }).catch(() => { });
+            }
+
             logger.warn('LOGIN_FAILED', { reason: 'invalid_password', userId: user.user_id, attempts, lockedOut: !!lockedUntil, ip: req.ip });
 
-            return next(new AppError('Invalid Credentials', 401));
+            const remainingAttempts = Math.max(0, 5 - attempts);
+            const isAr = req.get('accept-language')?.includes('ar') || req.body?.language === 'ar';
+
+            const errorMessage = lockedUntil
+                ? (isAr
+                    ? 'تم إغلاق الحساب بسبب محاولات دخول فاشلة متكررة. يرجى المحاولة بعد 15 دقيقة.'
+                    : 'Account is locked due to too many failed attempts. Try again in 15 minutes.')
+                : (isAr
+                    ? `بيانات الاعتماد غير صحيحة. متبقي ${remainingAttempts} محاولة قبل إغلاق الحساب (${attempts}/5).`
+                    : `Invalid credentials. ${remainingAttempts} attempt${remainingAttempts === 1 ? '' : 's'} remaining before account lock (${attempts}/5).`);
+
+            return next(new AppError(errorMessage, 401));
         }
 
         // 3. Reset failed attempts on success
@@ -201,10 +234,10 @@ const refresh = (db) => async (req, res, next) => {
         // Manually parse cookies
         const cookies = req.headers.cookie;
         if (!cookies) return next(new AppError('No refresh token provided', 401));
-        
+
         const match = cookies.match(/(^| )refreshToken=([^;]+)/);
         if (!match) return next(new AppError('No refresh token provided', 401));
-        
+
         const rawToken = match[2];
         const refreshHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
@@ -229,13 +262,15 @@ const refresh = (db) => async (req, res, next) => {
         }
 
         const tokenData = result.rows[0];
-        
+
         const genericOwnerId = tokenData.user_id || tokenData.patient_id || tokenData.doctor_id;
 
         if (tokenData.revoked) {
             // Token reuse detected - Security Breach!
             await client.query(`UPDATE refresh_tokens SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'token_reuse_detected' WHERE user_id = $1 OR patient_id = $1 OR doctor_id = $1`, [genericOwnerId]);
             await logSecurityEvent(client, { eventType: 'TOKEN_REUSE_DETECTED', severity: 'critical', details: { tokenId: tokenData.token_id, ownerId: genericOwnerId } });
+            triggerEventForRole(db, 'TOKEN_REUSE_DETECTED', 'Admin', { priority: 'Critical' }).catch(() => { });
+            triggerEventForRole(db, 'TOKEN_REUSE_DETECTED', 'HR', { priority: 'Critical' }).catch(() => { });
             try {
                 await client.query('COMMIT');
                 transactionComplete = true;
@@ -363,8 +398,8 @@ const setup2FA = (db) => async (req, res, next) => {
         const userId = req.user.user_id;
         const secret = authenticator.generateSecret();
         const user = await db.query('SELECT email FROM users WHERE user_id = $1', [userId]);
-        
-        const otpauth = authenticator.keyuri(user.rows[0].email, 'RCMS', secret);
+
+        const otpauth = authenticator.keyuri(user.rows[0].email, 'VIARA', secret);
         const qrCodeUrl = await qrcode.toDataURL(otpauth);
 
         // Save encrypted secret and hash to user, but don't enable yet
@@ -405,7 +440,7 @@ const enable2FA = (db) => async (req, res, next) => {
 const verify2FA = (db) => async (req, res, next) => {
     try {
         const { token, tempToken } = req.body;
-        
+
         // Decode temp token
         let decoded;
         try {
@@ -537,7 +572,7 @@ const changePortalPassword = (db) => async (req, res, next) => {
         res.json({ message: 'Password changed successfully' });
     } catch (error) {
         if (client) {
-            try { await client.query('ROLLBACK'); } catch (_) {}
+            try { await client.query('ROLLBACK'); } catch (_) { }
             client.release();
         }
         next(error);

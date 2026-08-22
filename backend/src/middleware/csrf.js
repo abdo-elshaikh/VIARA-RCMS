@@ -9,6 +9,7 @@ const EXEMPT_PATHS = new Set([
     '/api/portal/login',
     '/api/doctor-portal/login',
     '/api/public/case-status',
+    '/api/public/final-report',
     '/api/pacs/webhook',
     '/api/webhooks/stripe',
     '/api/webhooks/twilio',

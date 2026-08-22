@@ -11,7 +11,7 @@ const mockDefaultQueryResponse = async (sql, params = []) => {
     if (text.includes('FROM users u') && text.includes('LEFT JOIN') && text.includes('staff_messages')) {
         return {
             rows: [
-                { user_id: '2', full_name: 'Receptionist Jane', email: 'jane@rcms.com', role: 'Receptionist', is_active: true }
+                { user_id: '2', full_name: 'Receptionist Jane', email: 'jane@VIARA.com', role: 'Receptionist', is_active: true }
             ]
         };
     }

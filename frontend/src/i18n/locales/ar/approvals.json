@@ -34,6 +34,9 @@
     "high": "أولوية",
     "routine": "اعتيادي"
   },
+  "status": {
+    "pendingApproval": "بانتظار الموافقة"
+  },
   "filters": {
     "search": "البحث في الطلبات",
     "searchPlaceholder": "ابحث بالاسم أو المرجع أو مقدم الطلب أو السبب",
@@ -83,6 +86,9 @@
   "facts": {
     "penaltyType": "نوع الجزاء",
     "source": "المصدر",
+    "requestSource": "مصدر الطلب",
+    "sourceStatus": "حالة المصدر",
+    "approvalStatus": "حالة الموافقة",
     "period": "فترة الرواتب",
     "employees": "الموظفون",
     "netPay": "صافي الرواتب",

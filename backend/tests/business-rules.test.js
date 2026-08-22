@@ -12,13 +12,18 @@ const {
     reverseExpenseSchema
 } = require('../src/schemas/financeSchema');
 const { createAppointmentSchema, updateAppointmentSchema } = require('../src/schemas/appointmentSchema');
+const { updateInventoryStockSchema } = require('../src/schemas/inventorySchema');
+const { approvalSchema } = require('../src/schemas/insuranceSchema');
+const { updateExamReportSchema } = require('../src/schemas/examSchema');
+const { isValidCalendarDate } = require('../src/utils/dateValidation');
 const { isValidBackupFilename, resolveBackupPath } = require('../src/services/postgresBackupService');
 const { isJsonRestoreAllowed, validateJsonBackupPayload } = require('../src/controllers/backupController');
 const IntegrationService = require('../src/services/integrationService');
 const { renderTemplate } = require('../src/services/notificationService');
 const { getOutstandingClaims, getReceivablesAging } = require('../src/controllers/reportController');
 const { getMyInvoices } = require('../src/controllers/portalController');
-const { transitionQueue } = require('../src/controllers/queueController');
+const { getQueue, transitionQueue } = require('../src/controllers/queueController');
+const { reviewPartialPaymentException } = require('../src/controllers/partialPaymentExceptionController');
 const { assertInvoiceFullyPaid, assertInvoiceTransactionAllowed } = require('../src/services/partialPaymentExceptionService');
 const { getDiscountReport, getJournalLedger, getTrialBalance, normalizeRange } = require('../src/services/financialReportService');
 const {
@@ -166,7 +171,8 @@ describe('request and lifecycle business rules', () => {
             categoryId: crypto.randomUUID(),
             amount: '100.50',
             taxAmount: '14.00',
-            expenseDate: '2026-07-30'
+            expenseDate: '2026-07-30',
+            idempotencyKey: crypto.randomUUID()
         }).success).toBe(true);
         expect(getFinancialClosuresQuerySchema.safeParse({ startDate: '2026-07-31', endDate: '2026-07-01' }).success).toBe(false);
         expect(financialReportQuerySchema.safeParse({ groupBy: 'week' }).success).toBe(true);
@@ -297,9 +303,52 @@ describe('request and lifecycle business rules', () => {
         expect(parsed.radiologistId).toBeNull();
     });
 
+    test('appointment booleans are parsed strictly and terminal workflow statuses are rejected', () => {
+        const baseAppointment = {
+            patientId: crypto.randomUUID(),
+            modalityId: crypto.randomUUID(),
+            startTime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+            endTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+            contrastRequired: 'false',
+            arrived: 'false'
+        };
+
+        const parsed = createAppointmentSchema.parse(baseAppointment);
+        expect(parsed.contrastRequired).toBe(false);
+        expect(parsed.arrived).toBe(false);
+        expect(updateAppointmentSchema.safeParse({ status: 'Cancelled' }).success).toBe(false);
+        expect(updateAppointmentSchema.safeParse({ cancellationReason: 'Bypass' }).success).toBe(false);
+    });
+
+    test('inventory quantity changes require movement workflows', () => {
+        expect(updateInventoryStockSchema.safeParse({ quantity: 50 }).success).toBe(false);
+        expect(updateInventoryStockSchema.safeParse({}).success).toBe(false);
+        expect(updateInventoryStockSchema.safeParse({ minLevel: 5 }).success).toBe(true);
+    });
+
+    test('insurance authorization creation cannot self-approve or inject a decision amount', () => {
+        const base = { patientId: crypto.randomUUID(), providerId: crypto.randomUUID() };
+        expect(approvalSchema.safeParse({ ...base, status: 'Approved' }).success).toBe(false);
+        expect(approvalSchema.safeParse({ ...base, approvedAmount: 100 }).success).toBe(false);
+        expect(approvalSchema.safeParse({ ...base, status: 'Pending', requestedAmount: 100 }).success).toBe(true);
+    });
+
+    test('calendar date validation rejects normalized-but-impossible dates', () => {
+        expect(isValidCalendarDate('2026-02-28')).toBe(true);
+        expect(isValidCalendarDate('2026-02-30')).toBe(false);
+        expect(isValidCalendarDate('2026-13-01')).toBe(false);
+    });
+
+    test('report finalization may validate against persisted report sections', () => {
+        expect(updateExamReportSchema.safeParse({
+            examId: crypto.randomUUID(),
+            status: 'Finalized'
+        }).success).toBe(true);
+    });
+
     test('backup paths reject traversal and permit encrypted dump artifacts', () => {
         expect(isValidBackupFilename('../../secret.dump')).toBe(false);
-        expect(isValidBackupFilename('rcms_pg_20260704.dump.enc')).toBe(true);
+        expect(isValidBackupFilename('VIARA_pg_20260704.dump.enc')).toBe(true);
         expect(resolveBackupPath('../../secret.dump')).toBeNull();
     });
 
@@ -578,7 +627,7 @@ describe('request and lifecycle business rules', () => {
         await transitionQueue({ connect: jest.fn().mockResolvedValue(client) })({
             params: { examId },
             body: { toStage: 'Ready for Exam' },
-            user: { user_id: 'accountant-1', role: 'Accountant' }
+            user: { user_id: 'nurse-1', role: 'Nurse' }
         }, res, next);
 
         const invoiceSql = client.query.mock.calls
@@ -590,6 +639,114 @@ describe('request and lifecycle business rules', () => {
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ queue_stage: 'Ready for Exam' }));
         expect(next).not.toHaveBeenCalled();
         expect(client.release).toHaveBeenCalled();
+    });
+
+    test.each([
+        ['Receptionist', 'In Exam'],
+        ['Receptionist', 'Delivered'],
+        ['Accountant', 'In Exam'],
+        ['Accountant', 'Delivered'],
+        ['Nurse', 'In Exam'],
+        ['Nurse', 'Cancelled'],
+        ['Technician', 'Finalized'],
+        ['Technician', 'Cancelled'],
+        ['Radiologist', 'In Exam']
+    ])('%s cannot move a queue item into %s', async (role, toStage) => {
+        const examId = '00000000-0000-4000-8000-000000000111';
+        const client = {
+            query: jest.fn(async (sql) => {
+                const text = String(sql);
+                if (text.includes('FROM examinations e')) {
+                    return {
+                        rows: [{
+                            exam_id: examId,
+                            appointment_id: '00000000-0000-4000-8000-000000000112',
+                            queue_stage: toStage === 'Delivered' ? 'Finalized' : 'Ready for Exam',
+                            current_station: 'Modality',
+                            priority: 'Emergency',
+                            is_on_hold: false
+                        }]
+                    };
+                }
+                return { rows: [] };
+            }),
+            release: jest.fn()
+        };
+        const res = createResponse();
+        const next = jest.fn();
+
+        await transitionQueue({ connect: jest.fn().mockResolvedValue(client) })({
+            params: { examId },
+            body: { toStage },
+            user: { user_id: `${role.toLowerCase()}-1`, role }
+        }, res, next);
+
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            statusCode: 403,
+            message: 'Your role cannot move an item to this queue stage'
+        }));
+        expect(client.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE examinations'))).toBe(false);
+        expect(res.json).not.toHaveBeenCalled();
+        expect(client.release).toHaveBeenCalled();
+    });
+
+    test('queue KPIs use the full filtered result set instead of the paginated rows', async () => {
+        const db = {
+            query: jest.fn(async (sql) => {
+                const text = String(sql);
+                if (text.includes('WITH filtered_queue AS')) {
+                    return {
+                        rows: [{
+                            total: 12,
+                            on_hold: 3,
+                            overdue: 4,
+                            average_waiting_minutes: 27,
+                            average_turnaround_minutes: 91,
+                            by_stage: { 'Ready for Exam': 12 }
+                        }]
+                    };
+                }
+                return {
+                    rows: [{
+                        exam_id: '00000000-0000-4000-8000-000000000113',
+                        queue_stage: 'Ready for Exam',
+                        waiting_minutes: 5,
+                        turnaround_minutes: 10,
+                        is_on_hold: false
+                    }]
+                };
+            })
+        };
+        const res = createResponse();
+        const next = jest.fn();
+
+        await getQueue(db)({
+            query: { stage: 'Ready for Exam', priority: 'Routine', offset: '1', limit: '1' },
+            user: { user_id: 'technician-1', role: 'Technician' }
+        }, res, next);
+
+        expect(db.query).toHaveBeenCalledTimes(2);
+        const [pageSql, pageValues] = db.query.mock.calls[0];
+        const [kpiSql, kpiValues] = db.query.mock.calls[1];
+        expect(pageSql).toContain('LIMIT $4 OFFSET $5');
+        expect(pageValues).toEqual(['Ready for Exam', 'Routine', 'technician-1', 1, 1]);
+        expect(kpiSql).toContain('WITH filtered_queue AS');
+        expect(kpiSql).not.toContain('LIMIT $4 OFFSET $5');
+        expect(kpiSql).toContain('(a.technician_id = $3 OR a.technician_id IS NULL)');
+        expect(kpiValues).toEqual(['Ready for Exam', 'Routine', 'technician-1']);
+        expect(res.json).toHaveBeenCalledWith({
+            data: [expect.objectContaining({ exam_id: '00000000-0000-4000-8000-000000000113' })],
+            kpis: {
+                total: 12,
+                onHold: 3,
+                overdue: 4,
+                averageWaitingMinutes: 27,
+                averageTurnaroundMinutes: 91,
+                byStage: { 'Ready for Exam': 12 }
+            }
+        });
+        expect(next).not.toHaveBeenCalled();
     });
 
     test('restricted transactions require an approved exception for remaining partial balances', async () => {
@@ -621,6 +778,7 @@ describe('request and lifecycle business rules', () => {
         await expect(assertInvoiceTransactionAllowed(db, {
             invoiceId: '00000000-0000-4000-8000-000000000104',
             transactionType: 'ClinicalQueueTransition',
+            targetStage: 'Ready for Exam',
             transactionLabel: 'moving this exam forward'
         })).rejects.toMatchObject({
             statusCode: 409,
@@ -650,8 +808,9 @@ describe('request and lifecycle business rules', () => {
                         }]
                     };
                 }
+                if (text.includes('UPDATE partial_payment_exceptions')) return { rows: [] };
                 if (text.includes('partial_payment_exceptions')) {
-                    return params[1] === 'ClinicalQueueTransition'
+                    return params[1] === 'ClinicalQueueTransition' && params[2] === 'Ready for Exam'
                         ? { rows: [{ exception_id: 'exception-1', transaction_type: params[1], status: 'Approved' }] }
                         : { rows: [] };
                 }
@@ -662,11 +821,16 @@ describe('request and lifecycle business rules', () => {
         await expect(assertInvoiceTransactionAllowed(db, {
             invoiceId: '00000000-0000-4000-8000-000000000105',
             transactionType: 'ClinicalQueueTransition',
+            targetStage: 'Ready for Exam',
             transactionLabel: 'moving this exam forward'
         })).resolves.toMatchObject({
             allowed: true,
             exception: expect.objectContaining({ status: 'Approved' })
         });
+        expect(db.query).toHaveBeenCalledWith(
+            expect.stringContaining("SET status = 'Used'"),
+            ['exception-1', 'Ready for Exam']
+        );
 
         await expect(assertInvoiceFullyPaid(db, {
             invoiceId: '00000000-0000-4000-8000-000000000105',
@@ -678,6 +842,53 @@ describe('request and lifecycle business rules', () => {
                 balanceAmount: 100
             })
         });
+    });
+
+    test('partial payment exception approval uses one SQL type for status parameter', async () => {
+        const client = {
+            query: jest.fn(async (sql) => {
+                const text = String(sql);
+                if (text === 'BEGIN' || text === 'COMMIT') return { rows: [] };
+                if (text.includes('FOR UPDATE')) {
+                    return {
+                        rows: [{
+                            exception_id: '04c43fb6-b232-417e-b342-fab048e00a2c',
+                            status: 'Pending',
+                            requested_by: '11111111-1111-4111-8111-111111111111'
+                        }]
+                    };
+                }
+                if (text.includes('UPDATE partial_payment_exceptions')) {
+                    return {
+                        rows: [{
+                            exception_id: '04c43fb6-b232-417e-b342-fab048e00a2c',
+                            status: 'Approved'
+                        }]
+                    };
+                }
+                return { rows: [] };
+            }),
+            release: jest.fn()
+        };
+        const db = { connect: jest.fn(async () => client), query: jest.fn() };
+        const res = createResponse();
+        const next = jest.fn();
+
+        await reviewPartialPaymentException(db)({
+            params: { id: '04c43fb6-b232-417e-b342-fab048e00a2c' },
+            body: { status: 'Approved', reviewNotes: 'Manager approved partial movement.' },
+            user: { user_id: '22222222-2222-4222-8222-222222222222', role: 'Accountant' }
+        }, res, next);
+
+        const updateSql = client.query.mock.calls
+            .map(([sql]) => String(sql))
+            .find((sql) => sql.includes('UPDATE partial_payment_exceptions'));
+        expect(updateSql).toContain('status = $1::varchar(20)');
+        expect(updateSql).toContain("WHEN $1::varchar(20) = 'Approved'");
+        expect(updateSql).not.toContain('$1::text');
+        expect(client.query).toHaveBeenCalledWith('COMMIT');
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'Approved' }));
+        expect(next).not.toHaveBeenCalled();
     });
 });
 

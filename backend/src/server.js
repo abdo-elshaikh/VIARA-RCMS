@@ -1,10 +1,22 @@
 // Load environment variables first
 const path = require('path');
-const dotenvPath = path.resolve(__dirname, '../.env');
+const fs = require('fs');
+const rootEnvPath = path.resolve(__dirname, '../../.env');
+const backendEnvPath = path.resolve(__dirname, '../.env');
+const dotenvPath = fs.existsSync(rootEnvPath) ? rootEnvPath : backendEnvPath;
 const result = require('dotenv').config({ path: dotenvPath });
 
+if (!process.env.DATABASE_URL && process.env.POSTGRES_PASSWORD) {
+    const user = encodeURIComponent(process.env.POSTGRES_USER || 'VIARA');
+    const password = encodeURIComponent(process.env.POSTGRES_PASSWORD);
+    const database = encodeURIComponent(process.env.POSTGRES_DB || 'VIARA');
+    const port = process.env.POSTGRES_PORT || '5432';
+    process.env.DATABASE_URL = `postgresql://${user}:${password}@127.0.0.1:${port}/${database}`;
+}
+process.env.PORT ||= '3000';
+
 if (result.error) {
-    console.warn('⚠️  No .env file found — relying on environment variables');
+    console.warn('⚠️  No root or backend .env file found — relying on environment variables');
 }
 
 // NOTE: minor no-op change to trigger nodemon reload when env files are updated
@@ -16,7 +28,7 @@ try {
 } catch (error) {
     console.error('\n❌ Environment Validation Failed:\n');
     console.error(error.message);
-    console.error('\nPlease check your .env file in the backend directory.\n');
+    console.error('\nPlease check the root .env file or the backend process environment.\n');
     process.exit(1);
 }
 
@@ -56,6 +68,7 @@ const systemRoutes = require('./routes/systemRoutes');
 const safetyRoutes = require('./routes/safetyRoutes');
 const importRoutes = require('./routes/importRoutes');
 const { verifyWebhookSignature } = require('./middleware/webhookAuth');
+const IntegrationService = require('./services/integrationService');
 const pacsRoutes = require('./routes/pacsRoutes');
 const v1Router = require('./routes/v1');
 const reportController = require('./controllers/reportController');
@@ -98,6 +111,11 @@ const {
     getWaitingListQuerySchema
 } = require('./schemas/appointmentSchema');
 const { loginSchema, createUserSchema, updateUserSchema, enable2FASchema, verify2FASchema } = require('./schemas/userSchema');
+const {
+    passkeyAuthenticationOptionsSchema, passkeyAuthenticationVerifySchema,
+    passkeyRegistrationOptionsSchema, passkeyRegistrationVerifySchema,
+    passkeyRenameSchema, passkeyRevokeSchema
+} = require('./schemas/passkeySchema');
 const { updateProfileSchema, changePasswordSchema, profilePreferencesSchema } = require('./schemas/profileSchema');
 const { updateExamReportSchema, getWorklistQuerySchema, improveReportSchema, generatePreliminaryReportSchema, markAiReportDraftAppliedSchema } = require('./schemas/examSchema');
 const { getQueueQuerySchema, transitionQueueSchema } = require('./schemas/queueSchema');
@@ -162,6 +180,7 @@ const {
     updateNotificationTemplateSchema,
     manualSendSchema,
     updatePreferencesSchema,
+    updateStaffPreferencesSchema,
     notificationPreferencesQuerySchema,
     reminderSchema,
     unsubscribeSchema
@@ -187,12 +206,14 @@ const {
 const {
     updateProfileSchema: updateHrProfileSchema,
     createShiftSchema, updateShiftSchema,
-    clockInSchema, clockOutSchema,
+    clockInSchema, clockOutSchema, updateAttendanceSchema,
     createLeaveRequestSchema, updateLeaveStatusSchema
 } = require('./schemas/hrSchema');
 const {
     createPayrollPeriodSchema,
+    cancelPayrollPeriodSchema,
     createCompensationProfileSchema,
+    updateCompensationProfileSchema,
     createPayrollRuleSchema,
     updatePayrollRuleStatusSchema,
     createDeductionSchema,
@@ -221,6 +242,7 @@ const {
     generatePortalPassword
 } = require('./controllers/patientController');
 const { login, register, refresh, logout, setup2FA, enable2FA, verify2FA, changePortalPassword } = require('./controllers/authController');
+const passkeyController = require('./controllers/passkeyController');
 const {
     createMachine, getMachines, getMachineById, updateMachine, deleteMachine,
     getServiceContracts, createServiceContract, updateServiceContract,
@@ -265,16 +287,19 @@ const {
 const {
     getEmployeeProfiles, updateEmployeeProfile,
     getShifts, createShift, deleteShift,
-    getAttendance, clockIn, clockOut,
+    getAttendance, clockIn, clockOut, updateAttendance,
     getLeaveRequests, createLeaveRequest, updateLeaveStatus,
     getProductivityReport
 } = require('./controllers/hrController');
 const {
+    getPayrollEmployees,
     getPayrollOverview,
     getPayrollPeriods,
     createPayrollPeriod,
+    cancelPayrollPeriod,
     getCompensationProfiles,
     createCompensationProfile,
+    updateCompensationProfile,
     getPayrollRules,
     createPayrollRule,
     updatePayrollRuleStatus,
@@ -297,6 +322,7 @@ const {
 const {
     createInvoice,
     getInvoices,
+    getInvoiceSummary,
     getInvoiceById,
     updateInvoice,
     collectPayment,
@@ -387,6 +413,7 @@ const {
 } = require('./controllers/doctorPortalController');
 const {
     getNotifications, getUnreadCount, markAllRead, markNotificationRead,
+    getMyNotifications, markMyNotificationRead, markAllMyNotificationsRead,
     getTemplates: getNotifTemplates,
     createTemplate: createNotifTemplate,
     updateTemplate: updateNotifTemplate,
@@ -395,6 +422,8 @@ const {
     sendManual, sendReminder, unsubscribe,
     getPreferences: getNotificationPreferences,
     updatePreferences: updateNotificationPreferences,
+    getStaffPreferences, updateStaffPreferences,
+    getNotificationAnalytics,
     handleTwilioWebhook
 } = require('./controllers/notificationController');
 const { startPolling, stopPolling } = require('./services/notificationJobService');
@@ -403,7 +432,7 @@ const { startBackupScheduler, stopBackupScheduler } = require('./services/backup
 const { createServerLifecycle } = require('./services/serverLifecycle');
 
 const { getDashboardStats } = require('./controllers/dashboardController');
-const { getPublicLandingOverview, lookupPublicCaseStatus } = require('./controllers/publicLandingController');
+const { getPublicLandingOverview, lookupPublicCaseStatus, authorizePublicFinalReport } = require('./controllers/publicLandingController');
 const {
     getProfile, updateProfile, changePassword,
     getPreferences: getProfilePreferences,
@@ -488,10 +517,10 @@ const waitForDatabaseConnection = async (pool, {
 };
 
 // Database Connection
-    if (!process.env.DATABASE_URL) {
-        throw new Error('DATABASE_URL is required but not set');
-    }
-    const connectionString = process.env.DATABASE_URL;
+if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is required but not set');
+}
+const connectionString = process.env.DATABASE_URL;
 
 const pool = new Pool({
     connectionString,
@@ -570,7 +599,7 @@ if (process.env.NODE_ENV !== 'test') {
             client.release();
 
             const httpServer = app.listen(PORT, () => {
-                logger.info(`🚀 RCMS Server running on port ${PORT}`);
+                logger.info(`🚀 VIARA Server running on port ${PORT}`);
                 logger.info(`📊 Environment: ${process.env.NODE_ENV}`);
                 logger.info(`🌐 Client URL: ${process.env.CLIENT_URL}`);
 
@@ -635,7 +664,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
     'http://localhost:3005',
     'http://127.0.0.1:3005',
 ];
-const DEV_ALLOWED_PORTS = new Set(['5173', '5174', '3005']);
+const DEV_ALLOWED_PORTS = new Set(['5173', '5174', '5175', '5176', '3005']);
 
 const normalizeOrigin = (value) => {
     if (!value || typeof value !== 'string') return null;
@@ -783,7 +812,7 @@ app.use('/api/v1', v1Router(pool, authenticateToken, authorizeRole));
 
 app.get('/', (req, res) => {
     res.json({
-        name: 'RCMS Radiology Center Management System API',
+        name: 'VIARA Radiology Center Management System API',
         status: 'online',
         version: '1.0.0',
         environment: process.env.NODE_ENV || 'development',
@@ -848,28 +877,28 @@ app.use(metricsMiddleware);
 
 app.get('/metrics', (req, res) => {
     const lines = [];
-    lines.push('# HELP rcms_http_requests_total Total number of HTTP requests received');
-    lines.push('# TYPE rcms_http_requests_total counter');
+    lines.push('# HELP VIARA_http_requests_total Total number of HTTP requests received');
+    lines.push('# TYPE VIARA_http_requests_total counter');
     let totalRequests = 0;
     for (const [path, data] of httpRequestDurationMs) {
-        lines.push(`rcms_http_requests_total{method="${path}"} ${data.count}`);
+        lines.push(`VIARA_http_requests_total{method="${path}"} ${data.count}`);
         totalRequests += data.count;
     }
     if (totalRequests === 0) {
-        lines.push('rcms_http_requests_total{method="none"} 0');
+        lines.push('VIARA_http_requests_total{method="none"} 0');
     }
-    lines.push('# HELP rcms_http_request_duration_seconds HTTP request latency in seconds');
-    lines.push('# TYPE rcms_http_request_duration_seconds histogram');
+    lines.push('# HELP VIARA_http_request_duration_seconds HTTP request latency in seconds');
+    lines.push('# TYPE VIARA_http_request_duration_seconds histogram');
     for (const [path, data] of httpRequestDurationMs) {
-        lines.push(`rcms_http_request_duration_seconds_count{method="${path}"} ${data.count}`);
-        lines.push(`rcms_http_request_duration_seconds_sum{method="${path}"} ${(data.sum / 1000).toFixed(6)}`);
+        lines.push(`VIARA_http_request_duration_seconds_count{method="${path}"} ${data.count}`);
+        lines.push(`VIARA_http_request_duration_seconds_sum{method="${path}"} ${(data.sum / 1000).toFixed(6)}`);
     }
-    lines.push('# HELP rcms_active_connections Number of in-flight HTTP requests');
-    lines.push('# TYPE rcms_active_connections gauge');
-    lines.push(`rcms_active_connections ${activeConnections.count}`);
-    lines.push('# HELP rcms_total_connections_total Total connections handled');
-    lines.push('# TYPE rcms_total_connections_total counter');
-    lines.push(`rcms_total_connections_total ${activeConnections.total}`);
+    lines.push('# HELP VIARA_active_connections Number of in-flight HTTP requests');
+    lines.push('# TYPE VIARA_active_connections gauge');
+    lines.push(`VIARA_active_connections ${activeConnections.count}`);
+    lines.push('# HELP VIARA_total_connections_total Total connections handled');
+    lines.push('# TYPE VIARA_total_connections_total counter');
+    lines.push(`VIARA_total_connections_total ${activeConnections.total}`);
     res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
     res.set('Cache-Control', 'no-store');
     res.send(lines.join('\n') + '\n');
@@ -881,6 +910,8 @@ app.post('/api/auth/login',
     validateRequest(loginSchema),
     login(pool)
 );
+app.post('/api/auth/passkeys/authenticate/options', authLimiter, validateRequest(passkeyAuthenticationOptionsSchema), passkeyController.authenticationOptions(pool));
+app.post('/api/auth/passkeys/authenticate/verify', authLimiter, validateRequest(passkeyAuthenticationVerifySchema), passkeyController.authenticationVerify(pool));
 
 app.post('/api/auth/refresh', refresh(pool));
 app.post('/api/auth/logout', logout(pool));
@@ -905,11 +936,18 @@ app.post('/api/doctor-portal/login',
 // Public landing summary (aggregate operational data only; never patient data)
 app.get('/api/public/landing-overview', getPublicLandingOverview(pool));
 app.post('/api/public/case-status', publicCaseStatusLimiter, lookupPublicCaseStatus(pool));
+app.post('/api/public/final-report', publicCaseStatusLimiter, authorizePublicFinalReport, getReportPdf(pool));
+app.get('/api/public/final-report/:accessToken', publicCaseStatusLimiter, authorizePublicFinalReport, (req, _res, next) => {
+    req.publicReportFormat = 'pdf';
+    req.publicReportDisposition = 'inline';
+    next();
+}, getReportPdf(pool));
 
 // Auth Routes (Protected - Admin Only)
 app.post('/api/auth/register',
     authenticateToken,
     authorizeRole(['Admin']),
+    hasPermission(pool, 'MANAGE_USERS'),
     validateRequest(createUserSchema),
     register(pool)
 );
@@ -933,6 +971,12 @@ app.get('/api/profile/export', authenticateToken, sensitiveOpLimiter, exportPers
 app.get('/api/auth/sessions', authenticateToken, getProfileSessions(pool));
 app.delete('/api/auth/sessions/:id', authenticateToken, sensitiveOpLimiter, revokeProfileSession(pool));
 
+app.get('/api/auth/passkeys', authenticateToken, passkeyController.listPasskeys(pool));
+app.post('/api/auth/passkeys/register/options', authenticateToken, sensitiveOpLimiter, validateRequest(passkeyRegistrationOptionsSchema), passkeyController.registrationOptions(pool));
+app.post('/api/auth/passkeys/register/verify', authenticateToken, sensitiveOpLimiter, validateRequest(passkeyRegistrationVerifySchema), passkeyController.registrationVerify(pool));
+app.patch('/api/auth/passkeys/:id', authenticateToken, sensitiveOpLimiter, validateRequest(passkeyRenameSchema), passkeyController.renamePasskey(pool));
+app.delete('/api/auth/passkeys/:id', authenticateToken, sensitiveOpLimiter, validateRequest(passkeyRevokeSchema), passkeyController.revokePasskey(pool));
+
 app.get('/api/profile/tokens', authenticateToken, tokenController.getTokens(pool));
 app.post('/api/profile/tokens', authenticateToken, tokenController.createToken(pool));
 app.delete('/api/profile/tokens/:id', authenticateToken, tokenController.revokeToken(pool));
@@ -940,6 +984,7 @@ app.delete('/api/profile/tokens/:id', authenticateToken, tokenController.revokeT
 // Patient Routes (Protected - with validation)
 app.get('/api/patients',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'patients' }),
     patientDataLimiter,
     authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Technician', 'Nurse', 'Marketing']),
     validateQuery(getPatientsQuerySchema),
@@ -949,6 +994,7 @@ app.get('/api/patients',
 app.post('/api/patients',
     authenticateToken,
     authorizeRole(['Receptionist', 'Admin']),
+    hasPermission(pool, 'CREATE_PATIENTS'),
     validateRequest(createPatientSchema),
     createPatient(pool)
 );
@@ -956,11 +1002,13 @@ app.post('/api/patients',
 app.post('/api/patients/:id/generate-password',
     authenticateToken,
     authorizeRole(['Receptionist', 'Admin']),
+    hasPermission(pool, 'EDIT_PATIENTS'),
     generatePortalPassword(pool)
 );
 
 app.get('/api/patients/duplicates',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'patients' }),
     authorizeRole(['Receptionist', 'Admin']),
     validateQuery(getDuplicatePatientsQuerySchema),
     getDuplicatePatients(pool)
@@ -969,6 +1017,7 @@ app.get('/api/patients/duplicates',
 app.post('/api/patients/:id/merge',
     authenticateToken,
     authorizeRole(['Admin']),
+    hasPermission(pool, 'MERGE_PATIENTS'),
     validateRequest(mergePatientsSchema),
     mergePatients(pool)
 );
@@ -976,6 +1025,7 @@ app.post('/api/patients/:id/merge',
 app.put('/api/patients/:id',
     authenticateToken,
     authorizeRole(['Receptionist', 'Admin']),
+    hasPermission(pool, 'EDIT_PATIENTS'),
     validateRequest(require('./schemas/patientSchema').updatePatientSchema),
     updatePatient(pool, auditService)
 );
@@ -984,6 +1034,7 @@ app.delete('/api/patients/:id',
     sensitiveOpLimiter,
     authenticateToken,
     authorizeRole(['Admin']),
+    hasPermission(pool, 'DELETE_PATIENTS'),
     deletePatient(pool)
 );
 
@@ -995,31 +1046,32 @@ app.get('/api/patients/:id/history',
 );
 
 // Machine / Equipment Routes (Protected)
-app.get('/api/machines', authenticateToken, getMachines(pool));
+app.get('/api/machines', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse']), getMachines(pool));
 app.get('/api/machines/utilization', authenticateToken, authorizeRole(['Admin', 'Receptionist']), getUtilizationReport(pool));
-app.get('/api/machines/:id', authenticateToken, getMachineById(pool));
+app.get('/api/machines/:id', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse']), getMachineById(pool));
 app.post('/api/machines', authenticateToken, hasPermission(pool, 'MANAGE_EQUIPMENT'), validateRequest(createMachineSchema), createMachine(pool));
 app.put('/api/machines/:id', authenticateToken, hasPermission(pool, 'MANAGE_EQUIPMENT'), validateRequest(updateMachineSchema), updateMachine(pool));
 app.delete('/api/machines/:id', authenticateToken, hasPermission(pool, 'MANAGE_EQUIPMENT'), deleteMachine(pool));
 
 // Equipment Contracts
 app.get('/api/equipment/contracts', authenticateToken, authorizeRole(['Admin']), getServiceContracts(pool));
-app.post('/api/equipment/contracts', authenticateToken, authorizeRole(['Admin']), validateRequest(createServiceContractSchema), createServiceContract(pool));
-app.put('/api/equipment/contracts/:id', authenticateToken, authorizeRole(['Admin']), validateRequest(updateServiceContractSchema), updateServiceContract(pool));
+app.post('/api/equipment/contracts', authenticateToken, authorizeRole(['Admin']), hasPermission(pool, 'MANAGE_EQUIPMENT'), validateRequest(createServiceContractSchema), createServiceContract(pool));
+app.put('/api/equipment/contracts/:id', authenticateToken, authorizeRole(['Admin']), hasPermission(pool, 'MANAGE_EQUIPMENT'), validateRequest(updateServiceContractSchema), updateServiceContract(pool));
 
 // Equipment Maintenance
 app.get('/api/equipment/maintenance', authenticateToken, authorizeRole(['Admin', 'Technician']), getMaintenanceRecords(pool));
-app.post('/api/equipment/maintenance', authenticateToken, authorizeRole(['Admin', 'Technician']), validateRequest(createMaintenanceSchema), createMaintenance(pool));
-app.put('/api/equipment/maintenance/:id', authenticateToken, authorizeRole(['Admin', 'Technician']), validateRequest(updateMaintenanceSchema), updateMaintenance(pool));
+app.post('/api/equipment/maintenance', authenticateToken, authorizeRole(['Admin', 'Technician']), hasPermission(pool, 'MANAGE_MAINTENANCE'), validateRequest(createMaintenanceSchema), createMaintenance(pool));
+app.put('/api/equipment/maintenance/:id', authenticateToken, authorizeRole(['Admin', 'Technician']), hasPermission(pool, 'MANAGE_MAINTENANCE'), validateRequest(updateMaintenanceSchema), updateMaintenance(pool));
 
 // Equipment Downtime
 app.get('/api/equipment/downtime', authenticateToken, authorizeRole(['Admin', 'Technician', 'Receptionist']), getDowntimeRecords(pool));
-app.post('/api/equipment/downtime', authenticateToken, authorizeRole(['Admin', 'Technician', 'Receptionist']), validateRequest(createDowntimeSchema), createDowntime(pool));
-app.put('/api/equipment/downtime/:id', authenticateToken, authorizeRole(['Admin', 'Technician', 'Receptionist']), validateRequest(updateDowntimeSchema), updateDowntime(pool));
+app.post('/api/equipment/downtime', authenticateToken, authorizeRole(['Admin', 'Technician', 'Receptionist']), hasPermission(pool, 'MANAGE_DOWNTIME'), validateRequest(createDowntimeSchema), createDowntime(pool));
+app.put('/api/equipment/downtime/:id', authenticateToken, authorizeRole(['Admin', 'Technician', 'Receptionist']), hasPermission(pool, 'MANAGE_DOWNTIME'), validateRequest(updateDowntimeSchema), updateDowntime(pool));
 
 // Appointment Routes (Protected - with validation)
 app.get('/api/appointments',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'appointments' }),
     authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Technician', 'Nurse', 'Accountant']),
     validateQuery(getAppointmentsQuerySchema),
     getAppointments(pool)
@@ -1027,6 +1079,7 @@ app.get('/api/appointments',
 
 app.get('/api/appointments/:id',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'appointments' }),
     authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Technician', 'Nurse', 'Accountant']),
     getAppointmentById(pool)
 );
@@ -1034,6 +1087,7 @@ app.get('/api/appointments/:id',
 app.post('/api/appointments',
     authenticateToken,
     authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Technician', 'Nurse']),
+    hasPermission(pool, 'CREATE_APPOINTMENTS'),
     validateRequest(createAppointmentSchema),
     createAppointment(pool)
 );
@@ -1041,6 +1095,7 @@ app.post('/api/appointments',
 app.put('/api/appointments/:id',
     authenticateToken,
     authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Technician', 'Nurse']),
+    hasPermission(pool, 'EDIT_APPOINTMENTS'),
     validateRequest(updateAppointmentSchema),
     updateAppointment(pool)
 );
@@ -1048,12 +1103,14 @@ app.put('/api/appointments/:id',
 app.delete('/api/appointments/:id',
     authenticateToken,
     authorizeRole(['Receptionist', 'Admin']),
+    hasPermission(pool, 'DELETE_APPOINTMENTS'),
     cancelAppointment(pool)
 );
 
 app.post('/api/appointments/:id/no-show',
     authenticateToken,
     authorizeRole(['Receptionist', 'Admin']),
+    hasPermission(pool, 'EDIT_APPOINTMENTS'),
     validateRequest(noShowAppointmentSchema),
     markNoShow(pool)
 );
@@ -1061,6 +1118,7 @@ app.post('/api/appointments/:id/no-show',
 app.post('/api/appointments/:id/reschedule',
     authenticateToken,
     authorizeRole(['Receptionist', 'Admin']),
+    hasPermission(pool, 'EDIT_APPOINTMENTS'),
     validateRequest(rescheduleAppointmentSchema),
     rescheduleAppointment(pool)
 );
@@ -1074,6 +1132,7 @@ app.get('/api/schedule/availability',
 
 app.get('/api/orders/:id/timeline',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'appointments' }),
     authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Technician', 'Nurse', 'Accountant']),
     getOrderTimeline(pool)
 );
@@ -1088,6 +1147,7 @@ app.get('/api/waiting-list',
 app.post('/api/waiting-list',
     authenticateToken,
     authorizeRole(['Receptionist', 'Admin']),
+    hasPermission(pool, 'MANAGE_WAITLIST'),
     validateRequest(createWaitingListSchema),
     createWaitingListEntry(pool)
 );
@@ -1095,6 +1155,7 @@ app.post('/api/waiting-list',
 app.put('/api/waiting-list/:id',
     authenticateToken,
     authorizeRole(['Receptionist', 'Admin']),
+    hasPermission(pool, 'MANAGE_WAITLIST'),
     validateRequest(updateWaitingListSchema),
     updateWaitingListEntry(pool)
 );
@@ -1110,6 +1171,7 @@ app.get('/api/referring-doctors',
 app.post('/api/referring-doctors',
     authenticateToken,
     authorizeRole(['Receptionist', 'Admin']),
+    hasPermission(pool, 'MANAGE_REFERRING_DOCTORS'),
     validateRequest(createReferringDoctorSchema),
     createReferringDoctor(pool)
 );
@@ -1117,6 +1179,7 @@ app.post('/api/referring-doctors',
 app.put('/api/referring-doctors/:id',
     authenticateToken,
     authorizeRole(['Admin']),
+    hasPermission(pool, 'MANAGE_REFERRING_DOCTORS'),
     validateRequest(updateReferringDoctorSchema),
     updateReferringDoctor(pool)
 );
@@ -1124,6 +1187,7 @@ app.put('/api/referring-doctors/:id',
 app.delete('/api/referring-doctors/:id',
     authenticateToken,
     authorizeRole(['Admin']),
+    hasPermission(pool, 'MANAGE_REFERRING_DOCTORS'),
     deleteReferringDoctor(pool)
 );
 
@@ -1148,27 +1212,28 @@ app.get('/api/reports/journal-ledger', authenticateToken, authorizeRole(['Admin'
 
 // Phase 15: Financial Management Routes (Expenses & Payables)
 app.get('/api/finance/categories', authenticateToken, authorizeRole(['Admin', 'Accountant']), getExpenseCategories(pool));
-app.post('/api/finance/categories', authenticateToken, authorizeRole(['Admin', 'Accountant']), validateRequest(createExpenseCategorySchema), createExpenseCategory(pool));
-app.put('/api/finance/categories/:id', authenticateToken, authorizeRole(['Admin', 'Accountant']), validateRequest(updateExpenseCategorySchema), updateExpenseCategory(pool));
+app.post('/api/finance/categories', authenticateToken, authorizeRole(['Admin', 'Accountant']), hasPermission(pool, 'MANAGE_EXPENSES'), validateRequest(createExpenseCategorySchema), createExpenseCategory(pool));
+app.put('/api/finance/categories/:id', authenticateToken, authorizeRole(['Admin', 'Accountant']), hasPermission(pool, 'MANAGE_EXPENSES'), validateRequest(updateExpenseCategorySchema), updateExpenseCategory(pool));
 
 app.get('/api/finance/expenses', authenticateToken, authorizeRole(['Admin', 'Accountant']), validateQuery(getExpensesQuerySchema), getExpenses(pool));
-app.post('/api/finance/expenses', authenticateToken, authorizeRole(['Admin', 'Accountant']), validateRequest(createExpenseSchema), createExpense(pool));
-app.put('/api/finance/expenses/:id', authenticateToken, authorizeRole(['Admin', 'Accountant']), validateRequest(updateExpenseSchema), updateExpense(pool));
-app.delete('/api/finance/expenses/:id', authenticateToken, authorizeRole(['Admin', 'Accountant']), validateRequest(reverseExpenseSchema), deleteExpense(pool));
+app.post('/api/finance/expenses', authenticateToken, authorizeRole(['Admin', 'Accountant']), hasPermission(pool, 'MANAGE_EXPENSES'), validateRequest(createExpenseSchema), createExpense(pool));
+app.put('/api/finance/expenses/:id', authenticateToken, authorizeRole(['Admin', 'Accountant']), hasPermission(pool, 'MANAGE_EXPENSES'), validateRequest(updateExpenseSchema), updateExpense(pool));
+app.delete('/api/finance/expenses/:id', authenticateToken, authorizeRole(['Admin', 'Accountant']), hasPermission(pool, 'MANAGE_EXPENSES'), validateRequest(reverseExpenseSchema), deleteExpense(pool));
 
 app.get('/api/finance/payables', authenticateToken, authorizeRole(['Admin', 'Accountant']), getCommissionPayables(pool));
-app.post('/api/finance/payables/pay', authenticateToken, authorizeRole(['Admin', 'Accountant']), validateRequest(payCommissionSchema), payCommission(pool));
+app.post('/api/finance/payables/pay', authenticateToken, authorizeRole(['Admin', 'Accountant']), hasPermission(pool, 'MANAGE_COMMISSIONS'), validateRequest(payCommissionSchema), payCommission(pool));
 
 // Financial Closures (daily/monthly close)
 app.get('/api/finance/closures', authenticateToken, authorizeRole(['Admin', 'Accountant']), validateQuery(getFinancialClosuresQuerySchema), getFinancialClosures(pool));
-app.post('/api/finance/closures', authenticateToken, authorizeRole(['Admin', 'Accountant']), validateRequest(createClosureSchema), createFinancialClosure(pool));
-app.put('/api/finance/closures/:id', authenticateToken, authorizeRole(['Admin']), validateRequest(finalizeClosureSchema), finalizeFinancialClosure(pool));
+app.post('/api/finance/closures', authenticateToken, authorizeRole(['Admin', 'Accountant']), hasPermission(pool, 'CLOSE_FINANCIAL_PERIODS'), validateRequest(createClosureSchema), createFinancialClosure(pool));
+app.put('/api/finance/closures/:id', authenticateToken, authorizeRole(['Admin']), hasPermission(pool, 'CLOSE_FINANCIAL_PERIODS'), validateRequest(finalizeClosureSchema), finalizeFinancialClosure(pool));
 
 // Billing, Invoicing & Cashier
 app.post('/api/invoices',
     invoiceLimiter,
     authenticateToken,
     authorizeRole(['Admin', 'Accountant', 'Receptionist']),
+    hasPermission(pool, 'CREATE_INVOICES'),
     validateRequest(createInvoiceSchema),
     createInvoice(pool)
 );
@@ -1176,13 +1241,22 @@ app.post('/api/invoices',
 app.get('/api/invoices',
     invoiceLimiter,
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'invoices' }),
     authorizeRole(['Admin', 'Accountant', 'Receptionist', 'Cashier']),
     validateQuery(getInvoicesQuerySchema),
     getInvoices(pool)
 );
 
+app.get('/api/invoice-summary',
+    invoiceLimiter,
+    authenticateToken,
+    authorizeRole(['Admin', 'Accountant', 'Receptionist', 'Cashier']),
+    getInvoiceSummary(pool)
+);
+
 app.get('/api/invoices/:id',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'invoices' }),
     authorizeRole(['Admin', 'Accountant', 'Receptionist', 'Cashier']),
     getInvoiceById(pool)
 );
@@ -1190,6 +1264,7 @@ app.get('/api/invoices/:id',
 app.put('/api/invoices/:id',
     authenticateToken,
     authorizeRole(['Admin', 'Accountant']),
+    hasPermission(pool, 'EDIT_INVOICES'),
     validateRequest(updateInvoiceSchema),
     updateInvoice(pool)
 );
@@ -1245,6 +1320,7 @@ app.patch('/api/partial-payment-exceptions/:id/status',
 
 app.get('/api/invoices/:id/pdf',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'invoices' }),
     authorizeRole(['Admin', 'Accountant', 'Receptionist', 'Cashier']),
     getInvoicePdf(pool)
 );
@@ -1265,7 +1341,7 @@ app.post('/api/cashier/shifts/:id/close',
 
 app.get('/api/cashier/reconciliation',
     authenticateToken,
-    hasAnyPermission(pool, ['PROCESS_PAYMENTS', 'RECONCILE_SHIFTS']),
+    hasAnyPermission(pool, ['PROCESS_PAYMENTS', 'RECONCILE_SHIFTS', 'APPROVE_SHIFT_VARIANCE']),
     validateQuery(reconciliationQuerySchema),
     getReconciliation(pool)
 );
@@ -1287,6 +1363,7 @@ app.get('/api/insurance/providers',
 app.post('/api/insurance/providers',
     authenticateToken,
     authorizeRole(['Admin', 'Accountant', 'Insurance_Staff']),
+    hasPermission(pool, 'MANAGE_INSURANCE_PROVIDERS'),
     validateRequest(providerSchema),
     createProvider(pool)
 );
@@ -1300,6 +1377,7 @@ app.get('/api/insurance/contracts',
 app.post('/api/insurance/contracts',
     authenticateToken,
     authorizeRole(['Admin', 'Accountant', 'Insurance_Staff']),
+    hasPermission(pool, 'MANAGE_INSURANCE_CONTRACTS'),
     validateRequest(contractSchema),
     createContract(pool)
 );
@@ -1313,6 +1391,7 @@ app.get('/api/insurance/policies',
 app.post('/api/insurance/policies',
     authenticateToken,
     authorizeRole(['Admin', 'Accountant', 'Insurance_Staff', 'Receptionist']),
+    hasPermission(pool, 'MANAGE_INSURANCE_CONTRACTS'),
     validateRequest(policySchema),
     createPolicy(pool)
 );
@@ -1326,6 +1405,7 @@ app.get('/api/insurance/coverage-rules',
 app.post('/api/insurance/coverage-rules',
     authenticateToken,
     authorizeRole(['Admin', 'Accountant', 'Insurance_Staff']),
+    hasPermission(pool, 'MANAGE_INSURANCE_CONTRACTS'),
     validateRequest(coverageRuleSchema),
     createCoverageRule(pool)
 );
@@ -1346,6 +1426,7 @@ app.get('/api/insurance/approvals',
 app.post('/api/insurance/approvals',
     authenticateToken,
     authorizeRole(['Admin', 'Accountant', 'Insurance_Staff', 'Receptionist', 'Nurse']),
+    hasPermission(pool, 'MANAGE_INSURANCE_APPROVALS'),
     validateRequest(approvalSchema),
     createApproval(pool)
 );
@@ -1359,7 +1440,9 @@ app.put('/api/insurance/approvals/:approvalId/status',
 
 app.get('/api/claims',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'insurance_claims' }),
     authorizeRole(['Admin', 'Accountant', 'Insurance_Staff', 'Receptionist']),
+    hasAnyPermission(pool, ['VIEW_INSURANCE', 'MANAGE_INSURANCE_CLAIMS']),
     validateQuery(getClaimsQuerySchema),
     getClaims(pool)
 );
@@ -1367,6 +1450,7 @@ app.get('/api/claims',
 app.post('/api/claims',
     authenticateToken,
     authorizeRole(['Admin', 'Accountant', 'Insurance_Staff']),
+    hasPermission(pool, 'MANAGE_INSURANCE_CLAIMS'),
     validateRequest(createClaimSchema),
     createClaim(pool)
 );
@@ -1374,6 +1458,7 @@ app.post('/api/claims',
 app.put('/api/claims/:id/status',
     authenticateToken,
     authorizeRole(['Admin', 'Accountant', 'Insurance_Staff']),
+    hasPermission(pool, 'MANAGE_INSURANCE_CLAIMS'),
     validateRequest(updateClaimStatusSchema),
     updateClaimStatus(pool)
 );
@@ -1381,6 +1466,7 @@ app.put('/api/claims/:id/status',
 // Clinical Routes (Radiologist & Technician & Nurse) - with validation
 app.get('/api/exams/worklist',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'examinations' }),
     authorizeRole(['Radiologist', 'Technician', 'Nurse']),
     validateQuery(getWorklistQuerySchema),
     getWorklist(pool)
@@ -1388,18 +1474,21 @@ app.get('/api/exams/worklist',
 
 app.get('/api/case-reports',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'examinations' }),
     hasAnyPermission(pool, ['VIEW_REPORTS']),
     getCaseReports(pool)
 );
 
 app.get('/api/case-reports/lookup',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'examinations' }),
     hasAnyPermission(pool, ['VIEW_REPORTS']),
     lookupCaseReport(pool)
 );
 
 app.get('/api/exams/:id',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'examinations' }),
     authorizeRole(['Admin', 'Radiologist']),
     getExamById(pool)
 );
@@ -1408,6 +1497,12 @@ app.put('/api/exams/report',
     authenticateToken,
     hasAnyPermission(pool, ['WRITE_REPORTS', 'AMEND_REPORTS']),
     validateRequest(updateExamReportSchema),
+    (req, res, next) => {
+        if (req.body.status === 'Finalized' || req.body.reportStatus === 'Finalized') {
+            return hasPermission(pool, 'FINALIZE_REPORTS')(req, res, next);
+        }
+        return next();
+    },
     updateReport(pool)
 );
 
@@ -1427,6 +1522,7 @@ app.post('/api/exams/:id/ai-preliminary-draft',
 
 app.get('/api/exams/:id/ai-drafts',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'examinations' }),
     hasAnyPermission(pool, ['WRITE_REPORTS', 'IMPROVE_REPORT_FORMAT']),
     listAiReportDrafts(pool)
 );
@@ -1448,6 +1544,7 @@ app.get('/api/report-templates',
 app.post('/api/report-templates',
     authenticateToken,
     authorizeRole(['Admin', 'Radiologist']),
+    hasPermission(pool, 'WRITE_REPORTS'),
     validateRequest(reportTemplateSchema),
     createReportTemplate(pool)
 );
@@ -1455,6 +1552,7 @@ app.post('/api/report-templates',
 app.put('/api/report-templates/:id',
     authenticateToken,
     authorizeRole(['Admin', 'Radiologist']),
+    hasPermission(pool, 'WRITE_REPORTS'),
     validateRequest(updateReportTemplateSchema),
     updateReportTemplate(pool)
 );
@@ -1462,6 +1560,7 @@ app.put('/api/report-templates/:id',
 app.delete('/api/report-templates/:id',
     authenticateToken,
     authorizeRole(['Admin', 'Radiologist']),
+    hasPermission(pool, 'WRITE_REPORTS'),
     deleteReportTemplate(pool)
 );
 
@@ -1476,6 +1575,7 @@ const allowReportPdfAccess = (req, res, next) => {
 
 app.get('/api/exams/:id/report/pdf',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'examinations' }),
     allowReportPdfAccess,
     getReportPdf(pool)
 );
@@ -1483,6 +1583,7 @@ app.get('/api/exams/:id/report/pdf',
 app.post('/api/exams/:id/report/amend',
     authenticateToken,
     authorizeRole(['Admin', 'Radiologist']),
+    hasPermission(pool, 'AMEND_REPORTS'),
     validateRequest(amendReportSchema),
     amendReport(pool)
 );
@@ -1496,12 +1597,14 @@ app.post('/api/results/:examId/deliver',
 
 app.get('/api/results/:examId/delivery-history',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'examinations', resourceIdParam: 'examId' }),
     hasAnyPermission(pool, ['VIEW_REPORTS']),
     getDeliveryHistory(pool)
 );
 
 app.get('/api/queue',
     authenticateToken,
+    auditRead(auditService, { resourceTable: 'examinations' }),
     authorizeRole(['Receptionist', 'Admin', 'Accountant', 'Radiologist', 'Technician', 'Nurse']),
     validateQuery(getQueueQuerySchema),
     getQueue(pool)
@@ -1532,6 +1635,7 @@ app.get('/api/staff',
 app.post('/api/staff',
     authenticateToken,
     authorizeRole(['HR', 'Admin']),
+    hasPermission(pool, 'MANAGE_STAFF'),
     validateRequest(createUserSchema),
     createStaff(pool)
 );
@@ -1539,6 +1643,7 @@ app.post('/api/staff',
 app.put('/api/staff/:id',
     authenticateToken,
     authorizeRole(['HR', 'Admin']),
+    hasPermission(pool, 'MANAGE_STAFF'),
     validateRequest(updateUserSchema),
     updateStaff(pool)
 );
@@ -1547,48 +1652,56 @@ app.delete('/api/staff/:id',
     strictLimiter,
     authenticateToken,
     authorizeRole(['HR', 'Admin']),
+    hasPermission(pool, 'MANAGE_STAFF'),
     deleteStaff(pool)
 );
 
 // Phase 16: Extended HR Routes
-app.get('/api/hr/profiles', authenticateToken, authorizeRole(['HR', 'Admin']), getEmployeeProfiles(pool));
-app.put('/api/hr/profiles/:id', authenticateToken, authorizeRole(['HR', 'Admin']), validateRequest(updateHrProfileSchema), updateEmployeeProfile(pool));
+const employeeLeaveRoles = ['HR', 'Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'Cashier', 'Accountant', 'Insurance_Staff', 'Marketing'];
+const employeeAttendanceRoles = ['HR', 'Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'Cashier', 'Accountant', 'Insurance_Staff', 'Marketing'];
 
-app.get('/api/hr/shifts', authenticateToken, authorizeRole(['HR', 'Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse']), getShifts(pool));
-app.post('/api/hr/shifts', authenticateToken, authorizeRole(['HR', 'Admin']), validateRequest(createShiftSchema), createShift(pool));
-app.delete('/api/hr/shifts/:id', authenticateToken, authorizeRole(['HR', 'Admin']), deleteShift(pool));
+app.get('/api/hr/profiles', authenticateToken, authorizeRole(['HR', 'Admin']), auditRead(auditService, { resourceTable: 'employee_profiles' }), getEmployeeProfiles(pool));
+app.put('/api/hr/profiles/:id', authenticateToken, authorizeRole(['HR', 'Admin']), hasPermission(pool, 'MANAGE_STAFF'), validateRequest(updateHrProfileSchema), updateEmployeeProfile(pool));
 
-app.get('/api/hr/attendance', authenticateToken, authorizeRole(['HR', 'Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse']), getAttendance(pool));
-app.post('/api/hr/attendance/clock-in', authenticateToken, validateRequest(clockInSchema), clockIn(pool));
-app.post('/api/hr/attendance/clock-out', authenticateToken, validateRequest(clockOutSchema), clockOut(pool));
+app.get('/api/hr/shifts', authenticateToken, authorizeRole(employeeAttendanceRoles), getShifts(pool));
+app.post('/api/hr/shifts', authenticateToken, authorizeRole(['HR', 'Admin']), hasPermission(pool, 'MANAGE_SHIFTS'), validateRequest(createShiftSchema), createShift(pool));
+app.delete('/api/hr/shifts/:id', authenticateToken, authorizeRole(['HR', 'Admin']), hasPermission(pool, 'MANAGE_SHIFTS'), deleteShift(pool));
 
-app.get('/api/hr/leave', authenticateToken, authorizeRole(['HR', 'Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse']), getLeaveRequests(pool));
-app.post('/api/hr/leave', authenticateToken, validateRequest(createLeaveRequestSchema), createLeaveRequest(pool));
-app.put('/api/hr/leave/:id/status', authenticateToken, authorizeRole(['HR', 'Admin']), validateRequest(updateLeaveStatusSchema), updateLeaveStatus(pool));
+app.get('/api/hr/attendance', authenticateToken, authorizeRole(employeeAttendanceRoles), auditRead(auditService, { resourceTable: 'attendance_logs' }), getAttendance(pool));
+app.post('/api/hr/attendance/clock-in', authenticateToken, authorizeRole(employeeAttendanceRoles), validateRequest(clockInSchema), clockIn(pool));
+app.post('/api/hr/attendance/clock-out', authenticateToken, authorizeRole(employeeAttendanceRoles), validateRequest(clockOutSchema), clockOut(pool));
+app.put('/api/hr/attendance/:id', authenticateToken, authorizeRole(['HR', 'Admin']), hasPermission(pool, 'MANAGE_ATTENDANCE'), validateRequest(updateAttendanceSchema), updateAttendance(pool));
+
+app.get('/api/hr/leave', authenticateToken, authorizeRole(employeeLeaveRoles), getLeaveRequests(pool));
+app.post('/api/hr/leave', authenticateToken, authorizeRole(employeeLeaveRoles), validateRequest(createLeaveRequestSchema), createLeaveRequest(pool));
+app.put('/api/hr/leave/:id/status', authenticateToken, authorizeRole(['HR', 'Admin']), hasPermission(pool, 'MANAGE_LEAVE'), validateRequest(updateLeaveStatusSchema), updateLeaveStatus(pool));
 
 app.get('/api/hr/productivity', authenticateToken, authorizeRole(['HR', 'Admin']), getProductivityReport(pool));
 
 // Payroll, deductions, and penalties
-app.get('/api/payroll/overview', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), getPayrollOverview(pool));
-app.get('/api/payroll/periods', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), validateQuery(payrollQuerySchema), getPayrollPeriods(pool));
+app.get('/api/payroll/employees', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), auditRead(auditService, { resourceTable: 'employee_profiles' }), getPayrollEmployees(pool));
+app.get('/api/payroll/overview', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), validateQuery(payrollQuerySchema), auditRead(auditService, { resourceTable: 'payroll_periods' }), getPayrollOverview(pool));
+app.get('/api/payroll/periods', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), validateQuery(payrollQuerySchema), auditRead(auditService, { resourceTable: 'payroll_periods' }), getPayrollPeriods(pool));
 app.post('/api/payroll/periods', authenticateToken, hasPermission(pool, 'MANAGE_PAYROLL_PERIODS'), validateRequest(createPayrollPeriodSchema), createPayrollPeriod(pool));
+app.put('/api/payroll/periods/:periodId/status', authenticateToken, hasPermission(pool, 'MANAGE_PAYROLL_PERIODS'), validateRequest(cancelPayrollPeriodSchema), cancelPayrollPeriod(pool));
 
-app.get('/api/payroll/compensation', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), validateQuery(payrollQuerySchema), getCompensationProfiles(pool));
+app.get('/api/payroll/compensation', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), validateQuery(payrollQuerySchema), auditRead(auditService, { resourceTable: 'employee_compensation_profiles' }), getCompensationProfiles(pool));
 app.post('/api/payroll/compensation', authenticateToken, hasPermission(pool, 'MANAGE_EMPLOYEE_COMPENSATION'), validateRequest(createCompensationProfileSchema), createCompensationProfile(pool));
+app.put('/api/payroll/compensation/:profileId', authenticateToken, hasPermission(pool, 'MANAGE_EMPLOYEE_COMPENSATION'), validateRequest(updateCompensationProfileSchema), updateCompensationProfile(pool));
 
-app.get('/api/payroll/rules', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), getPayrollRules(pool));
+app.get('/api/payroll/rules', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), auditRead(auditService, { resourceTable: 'payroll_rules' }), getPayrollRules(pool));
 app.post('/api/payroll/rules', authenticateToken, hasPermission(pool, 'MANAGE_PAYROLL_RULES'), validateRequest(createPayrollRuleSchema), createPayrollRule(pool));
 app.put('/api/payroll/rules/:ruleId/status', authenticateToken, hasPermission(pool, 'APPROVE_PAYROLL'), validateRequest(updatePayrollRuleStatusSchema), updatePayrollRuleStatus(pool));
 
-app.get('/api/payroll/deductions', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), validateQuery(payrollQuerySchema), getDeductions(pool));
+app.get('/api/payroll/deductions', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), validateQuery(payrollQuerySchema), auditRead(auditService, { resourceTable: 'employee_deductions' }), getDeductions(pool));
 app.post('/api/payroll/deductions', authenticateToken, hasPermission(pool, 'MANAGE_DEDUCTIONS'), validateRequest(createDeductionSchema), createDeduction(pool));
 app.put('/api/payroll/deductions/:deductionId/status', authenticateToken, hasPermission(pool, 'APPROVE_PAYROLL'), validateRequest(updateDeductionStatusSchema), updateDeductionStatus(pool));
 
-app.get('/api/payroll/penalties', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), validateQuery(payrollQuerySchema), getPenalties(pool));
+app.get('/api/payroll/penalties', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), validateQuery(payrollQuerySchema), auditRead(auditService, { resourceTable: 'employee_penalties' }), getPenalties(pool));
 app.post('/api/payroll/penalties', authenticateToken, hasPermission(pool, 'MANAGE_PENALTIES'), validateRequest(createPenaltySchema), createPenalty(pool));
 app.put('/api/payroll/penalties/:penaltyId/status', authenticateToken, hasPermission(pool, 'APPROVE_PAYROLL'), validateRequest(updatePenaltyStatusSchema), updatePenaltyStatus(pool));
 
-app.get('/api/payroll/periods/:periodId/run', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), getPayrollRun(pool));
+app.get('/api/payroll/periods/:periodId/run', authenticateToken, hasPermission(pool, 'VIEW_PAYROLL'), auditRead(auditService, { resourceTable: 'payroll_runs', resourceIdParam: 'periodId' }), getPayrollRun(pool));
 app.post('/api/payroll/runs/calculate', authenticateToken, hasPermission(pool, 'CALCULATE_PAYROLL'), validateRequest(calculatePayrollSchema), calculatePayroll(pool));
 app.put(
     '/api/payroll/runs/:runId/status',
@@ -1616,11 +1729,80 @@ app.use('/api/documents', documentRoutes(pool, authenticateToken, authorizeRole)
 app.use('/api/integrations', integrationRoutes(pool, authenticateToken, authorizeRole));
 
 // ─── Webhook Routes (raw body enabled above, no JWT required) ──────────────────
-app.post('/api/webhooks/stripe', verifyWebhookSignature(pool, 'Stripe'), (req, res) => {
-    res.json({ received: true });
+app.post('/api/webhooks/stripe', verifyWebhookSignature(pool, 'Stripe'), async (req, res) => {
+    const integrationService = new IntegrationService(pool);
+    try {
+        const event = req.body;
+        const integration = await integrationService.getProviderConfig('Stripe');
+        if (!integration) {
+            return res.status(400).json({ error: 'Stripe integration not configured' });
+        }
+
+        const payload = { event_type: event.type, event_id: event.id, data: event.data };
+        const idempotencyKey = `stripe:webhook:${event.id}`;
+
+        if (event.type === 'payment_intent.succeeded') {
+            const invoiceId = event.data?.object?.metadata?.invoiceId;
+            const amount = event.data?.object?.amount / 100;
+            const currency = event.data?.object?.currency;
+            if (invoiceId && amount) {
+                await integrationService.capturePayment(invoiceId, amount, currency, {
+                    idempotencyKey,
+                    webhookId: event.id,
+                    providerResponse: payload
+                });
+            }
+        }
+
+        await integrationService.logEvent(
+            integration.integration_id,
+            `Stripe Webhook: ${event.type}`,
+            payload,
+            'Success',
+            { idempotencyKey, webhookId: event.id }
+        );
+
+        res.json({ received: true });
+    } catch (error) {
+        console.error('[StripeWebhook] Error:', error.message);
+        res.status(500).json({ error: 'Webhook processing failed' });
+    }
 });
-app.post('/api/webhooks/twilio', verifyWebhookSignature(pool, 'Twilio'), (req, res) => {
-    res.json({ received: true });
+
+app.post('/api/webhooks/twilio', verifyWebhookSignature(pool, 'Twilio'), async (req, res) => {
+    const integrationService = new IntegrationService(pool);
+    try {
+        const { MessageSid, MessageStatus, To, Body } = req.body;
+        const integration = await integrationService.getProviderConfig('Twilio');
+        if (!integration) {
+            return res.status(400).json({ error: 'Twilio integration not configured' });
+        }
+
+        const payload = { message_sid: MessageSid, status: MessageStatus, to: To };
+        const idempotencyKey = `twilio:webhook:${MessageSid}`;
+
+        if (MessageSid) {
+            await pool.query(`
+                UPDATE notifications
+                SET status = CASE WHEN $1::text IN ('delivered', 'sent') THEN 'Delivered' ELSE 'Failed' END
+                WHERE provider_message_id = $2
+                  AND status NOT IN ('Delivered', 'Failed')
+            `, [MessageStatus || 'unknown', MessageSid]);
+        }
+
+        await integrationService.logEvent(
+            integration.integration_id,
+            `Twilio Webhook: ${MessageStatus || 'unknown'}`,
+            payload,
+            'Success',
+            { idempotencyKey, webhookId: MessageSid }
+        );
+
+        res.sendStatus(204);
+    } catch (error) {
+        console.error('[TwilioWebhook] Error:', error.message);
+        res.status(500).json({ error: 'Webhook processing failed' });
+    }
 });
 app.use('/api/settings', settingsRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/backups', backupRoutes(pool, authenticateToken, authorizeRole));
@@ -1630,26 +1812,31 @@ app.use('/api/import', importRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/pacs', pacsRoutes(pool, authenticateToken, authorizeRole));
 
 app.get('/api/crm/activities', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'HR', 'Marketing']), getCrmActivities(pool));
-app.post('/api/crm/activities', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'HR', 'Marketing']), validateRequest(createCrmActivitySchema), createCrmActivity(pool));
-app.put('/api/crm/activities/:id', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'HR', 'Marketing']), validateRequest(updateCrmActivitySchema), updateCrmActivity(pool));
+app.post('/api/crm/activities', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'HR', 'Marketing']), hasPermission(pool, 'MANAGE_CRM'), validateRequest(createCrmActivitySchema), createCrmActivity(pool));
+app.put('/api/crm/activities/:id', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'HR', 'Marketing']), hasPermission(pool, 'MANAGE_CRM'), validateRequest(updateCrmActivitySchema), updateCrmActivity(pool));
 
 app.get('/api/crm/segments', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing']), getSegments(pool));
-app.post('/api/crm/segments', authenticateToken, authorizeRole(['Admin', 'Marketing']), validateRequest(createSegmentSchema), createSegment(pool));
-app.post('/api/crm/segments/:segmentId/members', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing']), validateRequest(addSegmentMemberSchema), addSegmentMember(pool));
+app.post('/api/crm/segments', authenticateToken, authorizeRole(['Admin', 'Marketing']), hasPermission(pool, 'MANAGE_CRM'), validateRequest(createSegmentSchema), createSegment(pool));
+app.post('/api/crm/segments/:segmentId/members', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing']), hasPermission(pool, 'MANAGE_CRM'), validateRequest(addSegmentMemberSchema), addSegmentMember(pool));
 
 app.get('/api/crm/campaigns', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing']), getCampaigns(pool));
-app.post('/api/crm/campaigns', authenticateToken, authorizeRole(['Admin', 'Marketing']), validateRequest(createCampaignSchema), createCampaign(pool));
-app.put('/api/crm/campaigns/:id/status', authenticateToken, authorizeRole(['Admin', 'Marketing']), validateRequest(updateCampaignStatusSchema), updateCampaignStatus(pool));
+app.post('/api/crm/campaigns', authenticateToken, authorizeRole(['Admin', 'Marketing']), hasPermission(pool, 'MANAGE_CRM'), validateRequest(createCampaignSchema), createCampaign(pool));
+app.put('/api/crm/campaigns/:id/status', authenticateToken, authorizeRole(['Admin', 'Marketing']), hasPermission(pool, 'MANAGE_CRM'), validateRequest(updateCampaignStatusSchema), updateCampaignStatus(pool));
 
-app.post('/api/crm/feedback', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing', 'Patient']), validateRequest(submitFeedbackSchema), submitFeedback(pool));
+app.post('/api/crm/feedback', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing', 'Patient']), (req, res, next) => (
+    req.user?.role === 'Patient'
+        ? next()
+        : hasPermission(pool, 'MANAGE_CRM')(req, res, next)
+), validateRequest(submitFeedbackSchema), submitFeedback(pool));
 app.get('/api/crm/feedback', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing']), getFeedback(pool));
 
-app.put('/api/crm/loyalty/:patientId', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing']), validateRequest(updateLoyaltySchema), updateLoyaltyPoints(pool));
+app.put('/api/crm/loyalty/:patientId', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing']), hasPermission(pool, 'MANAGE_CRM'), validateRequest(updateLoyaltySchema), updateLoyaltyPoints(pool));
 
 // Notification Routes (Legacy reminder kept for backward compat)
 app.post('/api/notifications/remind',
     authenticateToken,
     authorizeRole(['Admin', 'Receptionist']),
+    hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
     notificationLimiter,
     validateRequest(reminderSchema),
     sendReminder(pool)
@@ -1657,25 +1844,25 @@ app.post('/api/notifications/remind',
 
 // Inventory & Consumables Routes
 // Suppliers
-app.get('/api/suppliers', authenticateToken, authorizeRole(['Admin', 'Accountant']), getSuppliers(pool));
-app.get('/api/suppliers/:id', authenticateToken, authorizeRole(['Admin', 'Accountant']), getSupplierById(pool));
-app.post('/api/suppliers', authenticateToken, authorizeRole(['Admin']), validateRequest(createSupplierSchema), createSupplier(pool));
-app.put('/api/suppliers/:id', authenticateToken, authorizeRole(['Admin']), validateRequest(updateSupplierSchema), updateSupplier(pool));
+app.get('/api/suppliers', authenticateToken, authorizeRole(['Admin', 'Accountant', 'Technician']), getSuppliers(pool));
+app.get('/api/suppliers/:id', authenticateToken, authorizeRole(['Admin', 'Accountant', 'Technician']), getSupplierById(pool));
+app.post('/api/suppliers', authenticateToken, authorizeRole(['Admin']), hasPermission(pool, 'MANAGE_SUPPLIERS'), validateRequest(createSupplierSchema), createSupplier(pool));
+app.put('/api/suppliers/:id', authenticateToken, authorizeRole(['Admin']), hasPermission(pool, 'MANAGE_SUPPLIERS'), validateRequest(updateSupplierSchema), updateSupplier(pool));
 
 // Purchase Orders
-app.get('/api/purchase-orders', authenticateToken, authorizeRole(['Admin', 'Accountant']), getPurchaseOrders(pool));
-app.get('/api/purchase-orders/:id', authenticateToken, authorizeRole(['Admin', 'Accountant']), getPurchaseOrderById(pool));
-app.post('/api/purchase-orders', authenticateToken, authorizeRole(['Admin']), validateRequest(createPurchaseOrderSchema), createPurchaseOrder(pool));
-app.put('/api/purchase-orders/:id/status', authenticateToken, authorizeRole(['Admin']), validateRequest(updatePurchaseOrderStatusSchema), updatePurchaseOrderStatus(pool));
-app.post('/api/purchase-orders/:id/receive', authenticateToken, authorizeRole(['Admin', 'Technician']), validateRequest(receiveStockSchema), receiveStock(pool));
+app.get('/api/purchase-orders', authenticateToken, authorizeRole(['Admin', 'Accountant', 'Technician']), getPurchaseOrders(pool));
+app.get('/api/purchase-orders/:id', authenticateToken, authorizeRole(['Admin', 'Accountant', 'Technician']), getPurchaseOrderById(pool));
+app.post('/api/purchase-orders', authenticateToken, authorizeRole(['Admin']), hasPermission(pool, 'MANAGE_PURCHASE_ORDERS'), validateRequest(createPurchaseOrderSchema), createPurchaseOrder(pool));
+app.put('/api/purchase-orders/:id/status', authenticateToken, authorizeRole(['Admin']), hasPermission(pool, 'MANAGE_PURCHASE_ORDERS'), validateRequest(updatePurchaseOrderStatusSchema), updatePurchaseOrderStatus(pool));
+app.post('/api/purchase-orders/:id/receive', authenticateToken, authorizeRole(['Admin', 'Technician']), hasAnyPermission(pool, ['MANAGE_PURCHASE_ORDERS', 'MANAGE_INVENTORY']), validateRequest(receiveStockSchema), receiveStock(pool));
 
 // Inventory Catalog & Movements
 app.get('/api/inventory', authenticateToken, authorizeRole(['Admin', 'Technician', 'Accountant', 'Nurse', 'Radiologist', 'Receptionist', 'Cashier']), hasAnyPermission(pool, ['VIEW_INVENTORY', 'CONSUME_INVENTORY']), getInventory(pool));
-app.post('/api/inventory', authenticateToken, authorizeRole(['Admin']), validateRequest(createInventoryItemSchema), addItem(pool));
-app.put('/api/inventory/:itemId', authenticateToken, authorizeRole(['Admin']), validateRequest(updateInventoryStockSchema), updateStock(pool));
+app.post('/api/inventory', authenticateToken, authorizeRole(['Admin']), hasPermission(pool, 'MANAGE_INVENTORY'), validateRequest(createInventoryItemSchema), addItem(pool));
+app.put('/api/inventory/:itemId', authenticateToken, authorizeRole(['Admin']), hasPermission(pool, 'MANAGE_INVENTORY'), validateRequest(updateInventoryStockSchema), updateStock(pool));
 
 app.post('/api/inventory/consume', authenticateToken, authorizeRole(['Admin', 'Technician', 'Nurse', 'Receptionist', 'Cashier']), hasPermission(pool, 'CONSUME_INVENTORY'), validateRequest(consumeStockSchema), consumeStock(pool));
-app.post('/api/inventory/adjust', authenticateToken, authorizeRole(['Admin']), validateRequest(adjustStockSchema), adjustStock(pool));
+app.post('/api/inventory/adjust', authenticateToken, authorizeRole(['Admin']), hasPermission(pool, 'MANAGE_INVENTORY'), validateRequest(adjustStockSchema), adjustStock(pool));
 app.get('/api/inventory/movements', authenticateToken, authorizeRole(['Admin', 'Accountant', 'Receptionist', 'Cashier', 'Nurse', 'Technician']), getStockMovements(pool));
 app.get('/api/inventory/expiry-alerts', authenticateToken, authorizeRole(['Admin', 'Nurse', 'Technician']), getExpiryAlerts(pool));
 
@@ -1683,12 +1870,14 @@ app.get('/api/inventory/expiry-alerts', authenticateToken, authorizeRole(['Admin
 app.get('/api/portal/review-requests',
     authenticateToken,
     authorizeRole(['Admin', 'Receptionist']),
+    hasAnyPermission(pool, ['EDIT_APPOINTMENTS', 'EDIT_PATIENTS']),
     getPendingPortalReviewRequests(pool)
 );
 
 app.put('/api/portal/appointment-requests/:requestId/review',
     authenticateToken,
     authorizeRole(['Admin', 'Receptionist']),
+    hasPermission(pool, 'EDIT_APPOINTMENTS'),
     validateRequest(reviewAppointmentRequestSchema),
     reviewPortalAppointmentRequest(pool)
 );
@@ -1696,6 +1885,7 @@ app.put('/api/portal/appointment-requests/:requestId/review',
 app.put('/api/portal/profile-update-requests/:requestId/review',
     authenticateToken,
     authorizeRole(['Admin', 'Receptionist']),
+    hasPermission(pool, 'EDIT_PATIENTS'),
     validateRequest(reviewProfileUpdateRequestSchema),
     reviewPortalProfileUpdateRequest(pool)
 );
@@ -1759,6 +1949,7 @@ app.post('/api/portal/profile-update-requests',
 app.post('/api/referring-doctors/:id/set-portal-password',
     authenticateToken,
     authorizeRole(['Admin']),
+    hasPermission(pool, 'MANAGE_REFERRING_DOCTORS'),
     validateRequest(setPortalPasswordSchema),
     setPortalPassword(pool)
 );
@@ -1839,6 +2030,7 @@ app.put('/api/notifications/:id/read',
 app.post('/api/notifications/send-reminder',
     authenticateToken,
     authorizeRole(['Admin', 'Receptionist']),
+    hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
     notificationLimiter,
     validateRequest(reminderSchema),
     sendReminder(pool)
@@ -1848,6 +2040,7 @@ app.post('/api/notifications/send-reminder',
 app.post('/api/notifications/send-manual',
     authenticateToken,
     authorizeRole(['Developer', 'Admin', 'Receptionist', 'Marketing']),
+    hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
     notificationLimiter,
     validateRequest(manualSendSchema),
     sendManual(pool)
@@ -1868,18 +2061,21 @@ app.get('/api/notification-templates',
 app.post('/api/notification-templates',
     authenticateToken,
     authorizeRole(['Developer', 'Admin']),
+    hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
     validateRequest(notificationTemplateSchema),
     createNotifTemplate(pool)
 );
 app.put('/api/notification-templates/:id',
     authenticateToken,
     authorizeRole(['Developer', 'Admin']),
+    hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
     validateRequest(updateNotificationTemplateSchema),
     updateNotifTemplate(pool)
 );
 app.delete('/api/notification-templates/:id',
     authenticateToken,
     authorizeRole(['Developer', 'Admin']),
+    hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
     deleteNotifTemplate(pool)
 );
 
@@ -1893,11 +2089,13 @@ app.get('/api/notification-jobs',
 app.post('/api/notification-jobs/:id/retry',
     authenticateToken,
     authorizeRole(['Developer', 'Admin']),
+    hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
     retryJob(pool)
 );
 app.post('/api/notification-jobs/process',
     authenticateToken,
     authorizeRole(['Developer', 'Admin']),
+    hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
     notificationLimiter,
     triggerProcessJobs(pool)
 );
@@ -1912,9 +2110,42 @@ app.get('/api/notification-preferences',
 app.put('/api/notification-preferences',
     authenticateToken,
     authorizeRole(['Developer', 'Admin', 'Receptionist', 'Marketing']),
+    hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
     validateQuery(notificationPreferencesQuerySchema),
     validateRequest(updatePreferencesSchema),
     updateNotificationPreferences(pool)
+);
+
+// ─── Staff Notification Center ────────────────────────────────────────────────
+
+app.get('/api/notifications/my-notifications',
+    authenticateToken,
+    getMyNotifications(pool)
+);
+app.put('/api/notifications/my-notifications/mark-all-read',
+    authenticateToken,
+    markAllMyNotificationsRead(pool)
+);
+app.put('/api/notifications/my-notifications/:id/read',
+    authenticateToken,
+    markMyNotificationRead(pool)
+);
+
+app.get('/api/notifications/my-preferences',
+    authenticateToken,
+    getStaffPreferences(pool)
+);
+app.put('/api/notifications/my-preferences',
+    authenticateToken,
+    validateRequest(updateStaffPreferencesSchema),
+    updateStaffPreferences(pool)
+);
+
+app.get('/api/notifications/analytics',
+    authenticateToken,
+    authorizeRole(['Developer', 'Admin', 'Receptionist', 'Marketing']),
+    validateQuery(getNotificationsQuerySchema),
+    getNotificationAnalytics(pool)
 );
 
 // ─── Real-time SSE Connection ────────────────────────────────────────────────
@@ -1948,6 +2179,7 @@ app.get('/api/messages/patients/:patientId',
 app.post('/api/messages/patients/:patientId',
     authenticateToken,
     authorizeRole(['Admin', 'Receptionist', 'Marketing']),
+    hasPermission(pool, 'MANAGE_CHAT'),
     chatAttachmentUpload.array('attachments'),
     validateChatAttachments,
     replyToPatient(pool)
@@ -1967,6 +2199,7 @@ app.get('/api/messages/doctors/:doctorId',
 app.post('/api/messages/doctors/:doctorId',
     authenticateToken,
     authorizeRole(['Admin', 'Receptionist', 'Marketing']),
+    hasPermission(pool, 'MANAGE_CHAT'),
     chatAttachmentUpload.array('attachments'),
     validateChatAttachments,
     replyToDoctor(pool)

@@ -17,12 +17,12 @@ jest.mock('pg', () => {
         const text = normalize(sql);
 
         if (text.includes('SELECT * FROM users WHERE email = $1')) {
-            if (params[0] === 'admin@rcms.com') {
+            if (params[0] === 'admin@VIARA.com') {
                 return {
                     rows: [{
                         user_id: ids.admin,
                         full_name: 'System Admin',
-                        email: 'admin@rcms.com',
+                        email: 'admin@VIARA.com',
                         password_hash: passwordHash,
                         role: 'Admin',
                         is_active: true,

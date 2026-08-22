@@ -1,12 +1,16 @@
 /* eslint-disable react-refresh/only-export-components -- form defaults and catalog are intentionally co-located */
 import React from 'react';
 import { Clock3, Contrast, Edit3, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import Modal from '../../ui/Modal';
 import { Status, Field, Select, Check, Actions } from './SharedComponents';
 
 export const emptyExam = { modalityId: '', code: '', name: '', price: '', durationMinutes: '30', bodyPart: '', preparationInstructions: '', contrastRequired: false, isActive: true };
 
-export const ExamCatalog = ({ records, t, onEdit, onDelete }) => {
+export const ExamCatalog = ({ records, t: propT, onEdit, onDelete }) => {
+    const { t: hookT } = useTranslation('settings');
+    const t = typeof propT === 'function' ? propT : hookT;
+
     return (
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {records.map(exam => {
@@ -85,94 +89,99 @@ export const ExamCatalog = ({ records, t, onEdit, onDelete }) => {
     );
 };
 
-export const ExamDialog = ({ open, editing, form, setForm, machines, onClose, onSave, busy, t }) => (
-    <Modal
-        isOpen={open}
-        onClose={onClose}
-        title={t(editing ? 'settings.clinical.exams.editTitle' : 'settings.clinical.exams.createTitle', {
-            defaultValue: editing ? 'Edit Procedure Specifications' : 'Create New Clinical Procedure'
-        })}
-        size="wide"
-        width="max-w-3xl"
-    >
-        <form onSubmit={onSave} className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                <Select
-                    label={t('settings.clinical.exams.machine', { defaultValue: 'Primary Modality Machine' })}
-                    required
-                    value={form.modalityId}
-                    onChange={value => setForm({ ...form, modalityId: value })}
-                    options={machines.map(machine => machine.modality_id)}
-                    render={value => machines.find(machine => machine.modality_id === value)?.name || value}
-                />
-                <Field
-                    label={t('settings.clinical.exams.code', { defaultValue: 'Procedure / CPT Code' })}
-                    placeholder="e.g. MRI-BRAIN-C"
-                    value={form.code}
-                    onChange={value => setForm({ ...form, code: value.toUpperCase() })}
-                />
-                <Field
-                    label={t('settings.clinical.exams.name', { defaultValue: 'Procedure Title' })}
-                    required
-                    placeholder="e.g. Brain MRI with contrast"
-                    value={form.name}
-                    onChange={value => setForm({ ...form, name: value })}
-                />
-                <Field
-                    label={t('settings.clinical.exams.price', { defaultValue: 'Fee / Price ($)' })}
-                    required
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={form.price}
-                    onChange={value => setForm({ ...form, price: value })}
-                />
-                <Field
-                    label={t('settings.clinical.exams.duration', { defaultValue: 'Duration (Minutes)' })}
-                    required
-                    type="number"
-                    min="1"
-                    max="1440"
-                    placeholder="30"
-                    value={form.durationMinutes}
-                    onChange={value => setForm({ ...form, durationMinutes: value })}
-                />
-                <Field
-                    label={t('settings.clinical.exams.bodyPart', { defaultValue: 'Anatomical Region / Body Part' })}
-                    placeholder="e.g. Brain / Head"
-                    value={form.bodyPart}
-                    onChange={value => setForm({ ...form, bodyPart: value })}
-                />
-            </div>
+export const ExamDialog = ({ open, editing, form, setForm, machines, onClose, onSave, busy, t: propT }) => {
+    const { t: hookT } = useTranslation('settings');
+    const t = typeof propT === 'function' ? propT : hookT;
 
-            <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
-                    {t('settings.clinical.exams.preparation', { defaultValue: 'Patient Preparation & Pre-Scan Instructions' })}
-                </label>
-                <textarea
-                    rows="3"
-                    placeholder="Detail fasting requirements, oral contrast instructions, metal precautions, or blood work checks..."
-                    value={form.preparationInstructions}
-                    onChange={event => setForm({ ...form, preparationInstructions: event.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-                />
-            </div>
-            
-            <div className="grid gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:grid-cols-2">
-                <Check
-                    label={t('settings.clinical.exams.contrast', { defaultValue: 'Contrast Agent Injected / Required' })}
-                    checked={form.contrastRequired}
-                    onChange={value => setForm({ ...form, contrastRequired: value })}
-                />
-                <Check
-                    label={t('settings.clinical.exams.active', { defaultValue: 'Publish Procedure in Active Catalog' })}
-                    checked={form.isActive}
-                    onChange={value => setForm({ ...form, isActive: value })}
-                />
-            </div>
-            
-            <Actions busy={busy} onClose={onClose} t={t} />
-        </form>
-    </Modal>
-);
+    return (
+        <Modal
+            isOpen={open}
+            onClose={onClose}
+            title={t(editing ? 'settings.clinical.exams.editTitle' : 'settings.clinical.exams.createTitle', {
+                defaultValue: editing ? 'Edit Procedure Specifications' : 'Create New Clinical Procedure'
+            })}
+            size="wide"
+            width="max-w-3xl"
+        >
+            <form onSubmit={onSave} className="space-y-5">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    <Select
+                        label={t('settings.clinical.exams.machine', { defaultValue: 'Primary Modality Machine' })}
+                        required
+                        value={form.modalityId}
+                        onChange={value => setForm({ ...form, modalityId: value })}
+                        options={machines.map(machine => machine.modality_id || machine.id)}
+                        render={value => machines.find(machine => (machine.modality_id || machine.id) === value)?.name || value}
+                    />
+                    <Field
+                        label={t('settings.clinical.exams.code', { defaultValue: 'Procedure / CPT Code' })}
+                        placeholder="e.g. MRI-BRAIN-C"
+                        value={form.code}
+                        onChange={value => setForm({ ...form, code: value.toUpperCase() })}
+                    />
+                    <Field
+                        label={t('settings.clinical.exams.name', { defaultValue: 'Procedure Title' })}
+                        required
+                        placeholder="e.g. Brain MRI with contrast"
+                        value={form.name}
+                        onChange={value => setForm({ ...form, name: value })}
+                    />
+                    <Field
+                        label={t('settings.clinical.exams.price', { defaultValue: 'Fee / Price ($)' })}
+                        required
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={form.price}
+                        onChange={value => setForm({ ...form, price: value })}
+                    />
+                    <Field
+                        label={t('settings.clinical.exams.duration', { defaultValue: 'Duration (Minutes)' })}
+                        required
+                        type="number"
+                        min="1"
+                        max="1440"
+                        placeholder="30"
+                        value={form.durationMinutes}
+                        onChange={value => setForm({ ...form, durationMinutes: value })}
+                    />
+                    <Field
+                        label={t('settings.clinical.exams.bodyPart', { defaultValue: 'Anatomical Region / Body Part' })}
+                        placeholder="e.g. Brain / Head"
+                        value={form.bodyPart}
+                        onChange={value => setForm({ ...form, bodyPart: value })}
+                    />
+                </div>
+
+                <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
+                        {t('settings.clinical.exams.preparation', { defaultValue: 'Patient Preparation & Pre-Scan Instructions' })}
+                    </label>
+                    <textarea
+                        rows="3"
+                        placeholder="Detail fasting requirements, oral contrast instructions, metal precautions, or blood work checks..."
+                        value={form.preparationInstructions}
+                        onChange={event => setForm({ ...form, preparationInstructions: event.target.value })}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                    />
+                </div>
+                
+                <div className="grid gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:grid-cols-2">
+                    <Check
+                        label={t('settings.clinical.exams.contrast', { defaultValue: 'Contrast Agent Injected / Required' })}
+                        checked={form.contrastRequired}
+                        onChange={value => setForm({ ...form, contrastRequired: value })}
+                    />
+                    <Check
+                        label={t('settings.clinical.exams.active', { defaultValue: 'Publish Procedure in Active Catalog' })}
+                        checked={form.isActive}
+                        onChange={value => setForm({ ...form, isActive: value })}
+                    />
+                </div>
+                
+                <Actions busy={busy} onClose={onClose} t={t} />
+            </form>
+        </Modal>
+    );
+};
