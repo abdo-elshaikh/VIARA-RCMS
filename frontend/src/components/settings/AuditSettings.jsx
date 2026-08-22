@@ -94,10 +94,10 @@ const AuditSettings = () => {
                                     </span>
                                 )}
                             </div>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                            <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('settings.audit.title', { defaultValue: 'My Security & Audit Log' })}
                             </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
                                 {t('settings.audit.subtitle', { defaultValue: 'Immutable record of logins, sensitive PHI access, exports, and credential modifications for your account.' })}
                             </p>
                         </div>
@@ -221,7 +221,7 @@ const AuditRow = ({ log, t }) => {
                     </span>
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                            <p className="truncate text-xs font-black text-slate-950 dark:text-white">{log.event}</p>
+                            <p className="break-words text-xs font-black text-slate-950 dark:text-white">{log.event}</p>
                             <OutcomeChip outcome={outcome} t={t} />
                             {hasRedaction && (
                                 <span className="inline-flex items-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2 py-0.5 text-[9px] font-bold text-teal-700 dark:text-teal-300">
@@ -230,7 +230,7 @@ const AuditRow = ({ log, t }) => {
                                 </span>
                             )}
                         </div>
-                        <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                        <p className="mt-0.5 break-all text-[11px] font-medium text-slate-500 dark:text-slate-400">
                             {log.ip ? <span className="font-mono text-slate-600 dark:text-slate-300">IP: {log.ip}</span> : <span className="text-slate-400">Internal Session</span>}
                         </p>
                     </div>

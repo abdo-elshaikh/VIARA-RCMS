@@ -292,16 +292,16 @@ export default function NotificationSettingsPanel() {
                                     </span>
                                 )}
                             </div>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                            <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('settings.notifications.title', { defaultValue: 'Notification Control Center' })}
                             </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
                                 {t('settings.notifications.description', { defaultValue: 'Control in-app badges, chimes, Windows desktop alerts, delivery channels, and quiet hours.' })}
                             </p>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2.5">
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
                         <Fact label={t('settings.notifications.unreadLabel', { defaultValue: 'Unread' })} value={String(unreadCount)} />
                         <Fact label={t('settings.notifications.desktopRules', { defaultValue: 'Desktop' })} value={enabledDesktopSummary} />
                         <Fact label={t('settings.notifications.channelRules', { defaultValue: 'Channels' })} value={enabledStaffSummary} />
@@ -309,7 +309,7 @@ export default function NotificationSettingsPanel() {
                 </div>
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+            <div className="grid min-w-0 gap-4">
                 <div className="space-y-4">
                     <section className={panelClass}>
                         <SectionHeader
@@ -534,7 +534,7 @@ export default function NotificationSettingsPanel() {
                                                     <p className={`text-xs font-semibold ${item.is_read ? 'text-slate-600 dark:text-slate-400' : 'text-slate-900 dark:text-white'}`}>
                                                         {item.event_type?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                                                     </p>
-                                                    <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                                    <p className="mt-0.5 break-words text-[11px] leading-4 text-slate-500 dark:text-slate-400">
                                                         {item.channel} &middot; {new Date(item.created_at).toLocaleString()}
                                                     </p>
                                                 </div>
@@ -704,7 +704,7 @@ const TimeField = ({ label, value, disabled, onChange }) => (
 const Fact = ({ label, value }) => (
     <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-2xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/60 text-center">
         <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
-        <p className="mt-1 truncate text-xs font-black capitalize text-slate-900 dark:text-white">{value}</p>
+        <p className="mt-1 break-words text-xs font-black capitalize leading-5 text-slate-900 dark:text-white">{value}</p>
     </div>
 );
 

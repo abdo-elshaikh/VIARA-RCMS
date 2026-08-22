@@ -408,10 +408,10 @@ const CenterSettings = ({ embedded = false }) => {
                                     </span>
                                 )}
                             </div>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                            <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('header.title', { defaultValue: 'Facility & Center Settings' })}
                             </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
                                 {t('header.description', { defaultValue: 'Maintain healthcare organization identity, branch overrides, brand colors, document templates, and print defaults.' })}
                             </p>
                         </div>

@@ -189,10 +189,10 @@ const DeveloperSettings = () => {
                                 <Key size={11} />
                                 <span>API Engine & Database Architecture</span>
                             </span>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                            <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {copy('title', { defaultValue: 'Developer Operations & Database Infrastructure' })}
                             </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
                                 {copy('description', { defaultValue: 'Manage PostgreSQL database connection pools, test cluster health, issue scoped Bearer API tokens, and monitor runtime telemetry.' })}
                             </p>
                         </div>
@@ -207,7 +207,7 @@ const DeveloperSettings = () => {
                         </div>
                         <div className="min-w-0">
                             <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy('activeDatabase', { defaultValue: 'Active Database' })}</p>
-                            <p className="font-mono text-base font-black text-slate-900 dark:text-white truncate">{activeDb ? activeDb.database : '--'}</p>
+                            <p className="break-all font-mono text-base font-black text-slate-900 dark:text-white">{activeDb ? activeDb.database : '--'}</p>
                         </div>
                     </div>
 
@@ -645,10 +645,10 @@ const Metric = ({ label, value, icon: Icon, tone = 'neutral' }) => {
     return (
         <div className={`rounded-lg border p-3 ${toneClass}`}>
             <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-lg font-semibold leading-none">{value}</p>
+                <p className="break-words text-lg font-semibold leading-tight">{value}</p>
                 <Icon size={16} className="shrink-0 opacity-70" />
             </div>
-            <p className="mt-1 truncate text-xs font-medium">{label}</p>
+            <p className="mt-1 break-words text-xs font-medium leading-4">{label}</p>
         </div>
     );
 };

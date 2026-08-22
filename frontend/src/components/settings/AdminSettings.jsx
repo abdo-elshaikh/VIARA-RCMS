@@ -158,10 +158,10 @@ const AdminSettings = () => {
                                     {t('settings.adminHub.statusOptimal', { defaultValue: 'System Operational' })}
                                 </span>
                             </div>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                            <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('settings.adminTab', { defaultValue: 'System Administration & Superuser Center' })}
                             </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
                                 {t('settings.adminDesc', { defaultValue: 'Manage notification delivery, background schedulers, data retention governance, and emergency operational controls.' })}
                             </p>
                         </div>
@@ -377,8 +377,8 @@ const AdminSettings = () => {
                                             <Icon size={18} />
                                         </span>
                                         <div className="min-w-0">
-                                            <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{service.name}</p>
-                                            <p className="mt-0.5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                            <p className="break-words text-sm font-bold text-slate-950 dark:text-white">{service.name}</p>
+                                            <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                                                 <Clock size={13} />
                                                 <span>Interval: <span className="font-semibold text-slate-700 dark:text-slate-300">{service.interval}</span></span>
                                                 <span>·</span>

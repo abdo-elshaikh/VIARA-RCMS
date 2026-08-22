@@ -270,10 +270,10 @@ const PreferencesSettings = () => {
                                 <Clock3 size={11} />
                                 <span>Regional & Workstation Config</span>
                             </span>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                            <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('settings.preferencesTab', { defaultValue: 'Workstation Preferences & Localization' })}
                             </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
                                 {t('settings.preferencesDesc', { defaultValue: 'Configure workspace languages, timezones, date formatting, notification chimes, and personal data exports.' })}
                             </p>
                         </div>
@@ -300,7 +300,7 @@ const PreferencesSettings = () => {
                 </div>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+            <div className="grid min-w-0 gap-6">
                 <div className="space-y-6">
                     {/* Language & Regional Localization */}
                     <Panel icon={Globe2} title={t('settings.language', { defaultValue: 'Language & Locale' })} description={t('settings.preferences.languageDescription', { defaultValue: 'Select active workstation language and direction.' })}>
@@ -717,7 +717,7 @@ const ChoiceButton = ({ selected, disabled, onClick, center, children }) => (
 const Fact = ({ label, value }) => (
     <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-2.5 dark:border-slate-800 dark:bg-slate-950/50">
         <span className="text-[10px] font-bold uppercase text-slate-400">{label}</span>
-        <p className="mt-0.5 truncate text-xs font-black text-slate-900 dark:text-white">{value}</p>
+        <p className="mt-0.5 break-words text-xs font-black leading-5 text-slate-900 dark:text-white">{value}</p>
     </div>
 );
 

@@ -335,9 +335,9 @@ const Settings = () => {
                 </header>
 
                 {/*  settings navigation with Minimizable & Resizable Sidebar */}
-                <div className={`grid items-start gap-5 transition-all duration-300 ${isNavCollapsed ? '2xl:grid-cols-[76px_minmax(0,1fr)]' : '2xl:grid-cols-[minmax(260px,280px)_minmax(0,1fr)]'}`}>
+                <div className={`grid items-start gap-5 transition-all duration-300 ${isNavCollapsed ? 'min-[1800px]:grid-cols-[76px_minmax(0,1fr)]' : 'min-[1800px]:grid-cols-[minmax(260px,280px)_minmax(0,1fr)]'}`}>
                     <aside
-                        className="hidden w-full rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-sm backdrop-blur-xl transition-all duration-300 dark:border-slate-800/80 dark:bg-slate-900/60 2xl:sticky 2xl:top-5 2xl:block"
+                        className="hidden w-full rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-sm backdrop-blur-xl transition-all duration-300 dark:border-slate-800/80 dark:bg-slate-900/60 min-[1800px]:sticky min-[1800px]:top-5 min-[1800px]:block"
                         aria-label={t('settings.navigationLabel')}
                     >
                         {/* Sidebar Header & Collapse Toggle */}
@@ -443,42 +443,49 @@ const Settings = () => {
                     </aside>
 
                     <main className="min-w-0 space-y-4">
-                        <div className="lg:hidden">
-                            <div className="relative mb-3">
-                                <Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-                                <input
-                                    value={query}
-                                    onChange={event => setQuery(event.target.value)}
-                                    placeholder={t('settings.search.placeholder')}
-                                    className="h-11 w-full rounded-xl border border-slate-200 bg-white pe-9 ps-9 text-xs font-semibold text-slate-900 outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
-                                />
-                                {query && (
-                                    <button type="button" onClick={() => setQuery('')} className="absolute end-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-200" aria-label={t('settings.search.clear')}>
-                                        <X size={14} />
-                                    </button>
-                                )}
-                            </div>
-                            <div ref={mobileNavRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }} aria-label={t('settings.navigationLabel')}>
-                                {filteredTabs.map(tab => (
-                                    <MobileTab key={tab.id} tab={tab} selected={active.id === tab.id} onClick={handleTabChange} />
-                                ))}
-                            </div>
-                            {filteredTabs.length === 0 && (
-                                <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-                                    {t('settings.search.emptyDescription')}
+                        <nav className="rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/80 sm:p-4 min-[1800px]:hidden" aria-label={t('settings.navigationLabel')}>
+                            <div className="flex min-w-0 items-center gap-3">
+                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
+                                    <ActiveComponentIcon icon={active.icon} />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <label htmlFor="settings-section-select" className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                        {t('settings.navigationLabel')}
+                                    </label>
+                                    <select
+                                        id="settings-section-select"
+                                        value={active.id}
+                                        onChange={event => handleTabChange(event.target.value)}
+                                        className="h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-950 outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                    >
+                                        {GROUP_ORDER.map(group => {
+                                            const groupTabs = tabs.filter(tab => tab.group === group);
+                                            if (!groupTabs.length) return null;
+                                            return (
+                                                <optgroup key={group} label={t(`settings.groups.${group}`)}>
+                                                    {groupTabs.map(tab => (
+                                                        <option key={tab.id} value={tab.id}>{tab.label}</option>
+                                                    ))}
+                                                </optgroup>
+                                            );
+                                        })}
+                                    </select>
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                            <p className="mt-3 break-words border-t border-slate-100 pt-3 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                                {active.description}
+                            </p>
+                        </nav>
 
-                        <section className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/60 sm:p-5">
+                        <section className="min-w-0 rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/60 sm:p-5">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div className="flex min-w-0 items-center gap-3">
                                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
                                         <ActiveComponentIcon icon={active.icon} />
                                     </span>
                                     <div className="min-w-0">
-                                        <h2 className="text-base font-black text-slate-950 dark:text-white">{active.label}</h2>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">{active.description}</p>
+                                        <h2 className="break-words text-base font-black text-slate-950 dark:text-white">{active.label}</h2>
+                                        <p className="break-words text-xs leading-5 text-slate-500 dark:text-slate-400">{active.description}</p>
                                     </div>
                                 </div>
                             </div>

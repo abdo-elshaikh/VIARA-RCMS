@@ -1389,9 +1389,9 @@ const StorageInfoCard = ({ icon: Icon, title, tone = 'slate', rows = [] }) => (
         </div>
         <div className="mt-4 space-y-2">
             {rows.map(([label, value]) => (
-                <div key={label} className="flex items-center justify-between gap-3 text-xs">
-                    <span className="text-slate-500 dark:text-slate-400">{label}</span>
-                    <span className="max-w-[58%] truncate text-end font-mono font-bold text-slate-900 dark:text-slate-100">{value}</span>
+                <div key={label} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-3 text-xs">
+                    <span className="break-words text-slate-500 dark:text-slate-400">{label}</span>
+                    <span className="break-all text-end font-mono font-bold text-slate-900 dark:text-slate-100">{value}</span>
                 </div>
             ))}
         </div>
@@ -1520,10 +1520,10 @@ const PacsSettings = () => {
                                 <Network size={11} />
                                 <span>DICOM Engine & Imaging Archive</span>
                             </span>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                            <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('admin:pacsSettings.title', { defaultValue: 'PACS & DICOM Server Network' })}
                             </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
                                 {t('admin:pacsSettings.subtitle', { defaultValue: 'Orthanc server endpoints, scanner AET nodes, AI analysis queue, Modality Worklist, storage tiering, and DICOM audit logs.' })}
                             </p>
                         </div>

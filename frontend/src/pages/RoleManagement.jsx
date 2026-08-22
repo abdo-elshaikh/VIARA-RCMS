@@ -422,10 +422,10 @@ const RoleManagement = ({ embedded = false }) => {
                                         : t('rbac.values.saved', { defaultValue: 'Saved' })}
                                 </StatusPill>
                             </div>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                            <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('rbac.title', { defaultValue: 'Role & Permission Controls (RBAC)' })}
                             </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
                                 {t('rbac.description', { defaultValue: 'Manage granular access rights, risk levels, and operational scope across all clinical and administrative roles.' })}
                             </p>
                         </div>
@@ -594,7 +594,7 @@ const RoleManagement = ({ embedded = false }) => {
                                 <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2.5">
                                         {React.createElement(ROLE_ICONS[selectedRole] || ShieldCheck, { size: 22, className: 'text-emerald-600 dark:text-emerald-400 shrink-0' })}
-                                        <h2 className="truncate text-lg font-black text-slate-900 dark:text-white sm:text-xl">{roleLabel(selectedRole, t)}</h2>
+                                        <h2 className="break-words text-lg font-black text-slate-900 dark:text-white sm:text-xl">{roleLabel(selectedRole, t)}</h2>
                                         {PROTECTED_ROLES.has(selectedRole) ? <StatusPill tone="amber">{t('rbac.values.protected', { defaultValue: 'Protected' })}</StatusPill> : null}
                                         {dirtyRoles.has(selectedRole) ? <StatusPill tone="amber">{t('rbac.values.modified', { defaultValue: 'Unsaved Changes' })}</StatusPill> : <StatusPill tone="emerald">{t('rbac.values.saved', { defaultValue: 'Saved' })}</StatusPill>}
                                     </div>

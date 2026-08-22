@@ -223,10 +223,10 @@ const AiProviderSettings = () => {
                                 <Sparkles size={11} />
                                 <span>Clinical Intelligence & Vision Routing</span>
                             </span>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                            <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('settings.aiProfiles.title', { defaultValue: 'AI Engine & Vision Providers' })}
                             </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
                                 {t('settings.aiProfiles.description', { defaultValue: 'Configure report narrative LLMs, PACS vision models, local worker endpoints, and active inference profiles.' })}
                             </p>
                         </div>

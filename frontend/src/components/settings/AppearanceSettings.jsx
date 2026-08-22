@@ -168,10 +168,10 @@ const AppearanceSettings = () => {
                                     <Sparkles size={11} />
                                     <span>{t('settings.appearance.previewEyebrow', { defaultValue: 'Personalization engine' })}</span>
                                 </span>
-                                <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                                <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                     {t('settings.appearance.previewTitle', { defaultValue: 'Theme & Visual Styling Engine' })}
                                 </h1>
-                                <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
+                                <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
                                     {t('settings.appearance.previewDescription', { defaultValue: 'Customize UI themes, medical color palettes, display densities, typography sizes, and motion preferences.' })}
                                 </p>
                             </div>
@@ -202,7 +202,7 @@ const AppearanceSettings = () => {
                 </div>
             </section>
 
-            <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_380px]">
+            <div className="grid min-w-0 gap-6">
                 <div className="space-y-6">
                     {/* Theme Mode Selector */}
                     <Panel icon={Sun} title={t('settings.themeMode', { defaultValue: 'Interface Theme Mode' })} description={t('settings.appearance.themeDescription', { defaultValue: 'Switch between Light, Dark, or Automatic System Theme.' })}>
@@ -252,7 +252,7 @@ const AppearanceSettings = () => {
                             </div>
                             
                             {preferences.primaryColor === 'custom' && (
-                                <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+                                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
                                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300">{t('settings.appearance.customColorLabel', { defaultValue: 'Custom hex color' })}</label>
                                     <div className="flex items-center gap-2">
                                         <input 
@@ -281,8 +281,8 @@ const AppearanceSettings = () => {
                     >
                         <div className="grid gap-4 xl:grid-cols-2">
                             {['light', 'dark'].map((mode) => (
-                                <section key={mode} className="rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-4">
-                                    <div className="mb-3 flex items-center justify-between gap-3">
+                                <section key={mode} className="min-w-0 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-3 sm:p-4">
+                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                                         <h3 className="text-sm font-black text-[var(--VIARA-ink)]">
                                             {t(`settings.appearance.semanticPalette.${mode}`, { defaultValue: mode === 'light' ? 'Light palette' : 'Dark palette' })}
                                         </h3>
@@ -300,7 +300,7 @@ const AppearanceSettings = () => {
                                             const value = preferences.colorOverrides?.[mode]?.[key]
                                                 || SEMANTIC_PALETTE_DEFAULTS[mode][key];
                                             return (
-                                                <label key={key} className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 py-2 text-[11px] font-bold text-[var(--VIARA-ink)]">
+                                                <label key={key} className="grid min-h-11 min-w-0 grid-cols-[36px_minmax(0,1fr)] items-center gap-2 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 py-2 text-[11px] font-bold text-[var(--VIARA-ink)]">
                                                     <input
                                                         type="color"
                                                         value={value}
@@ -309,7 +309,7 @@ const AppearanceSettings = () => {
                                                         className="h-7 w-9 shrink-0 cursor-pointer rounded-md border-0 bg-transparent p-0 disabled:cursor-wait"
                                                         aria-label={t(`settings.appearance.semanticPalette.colors.${key}`, { defaultValue: fallbackLabel })}
                                                     />
-                                                    <span className="min-w-0 truncate">
+                                                    <span className="min-w-0 break-words leading-4">
                                                         {t(`settings.appearance.semanticPalette.colors.${key}`, { defaultValue: fallbackLabel })}
                                                     </span>
                                                 </label>
@@ -503,7 +503,7 @@ const ChoiceButton = ({ selected, disabled, onClick, compact, center, children }
 const Fact = ({ label, value }) => (
     <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-2.5 dark:border-slate-800 dark:bg-slate-950/50">
         <span className="text-[10px] font-bold uppercase text-slate-400">{label}</span>
-        <p className="mt-0.5 truncate text-xs font-black text-slate-900 dark:text-white">{value}</p>
+        <p className="mt-0.5 break-words text-xs font-black leading-5 text-slate-900 dark:text-white">{value}</p>
     </div>
 );
 

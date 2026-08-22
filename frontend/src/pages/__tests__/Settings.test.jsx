@@ -56,4 +56,17 @@ describe('Settings workspace', () => {
         expect(screen.queryByRole('button', { name: /Profile Identity and contact details/i })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /Security Password, 2FA, and sessions/i })).not.toBeInTheDocument();
     });
+
+    it('supports compact responsive navigation without hiding section details', () => {
+        renderSettings();
+
+        const sectionPicker = screen.getByRole('combobox', { name: 'Settings sections' });
+        expect(sectionPicker).toHaveValue('appearance');
+
+        fireEvent.change(sectionPicker, { target: { value: 'developer' } });
+
+        expect(sectionPicker).toHaveValue('developer');
+        expect(screen.getAllByText('API credentials and webhooks').length).toBeGreaterThan(0);
+        expect(screen.getByText('Developer panel')).toBeInTheDocument();
+    });
 });
