@@ -11,6 +11,12 @@ const SENSITIVE_KEYS = new Set([
   'password',
   'passwordhash',
   'password_hash',
+  'currentpassword',
+  'current_password',
+  'newpassword',
+  'new_password',
+  'confirmpassword',
+  'passwordconfirmation',
   'token',
   'authorization',
   'secret',
@@ -190,10 +196,15 @@ const auditLogger = (auditService) => (req, res, next) => {
             method: req.method,
             path: requestPath,
             sourceSystem: 'backend-api',
+            metadata: (req.emergencyAccess || req.emergencyAccessVerified) ? {
+              emergencyAccessId: (req.emergencyAccess || req.emergencyAccessVerified).grantId,
+              emergencyPermissions: (req.emergencyAccess || req.emergencyAccessVerified).permissions,
+            } : {},
           },
           details: {
             body: sanitizeForAudit(req.body),
             statusCode: res.statusCode,
+            emergencyAccessId: (req.emergencyAccess || req.emergencyAccessVerified)?.grantId || null,
           },
           result: {
             outcome,

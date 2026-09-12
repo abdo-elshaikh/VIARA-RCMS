@@ -8,8 +8,6 @@ const EXEMPT_PATHS = new Set([
     '/api/auth/login',
     '/api/portal/login',
     '/api/doctor-portal/login',
-    '/api/public/case-status',
-    '/api/public/final-report',
     '/api/pacs/webhook',
     '/api/webhooks/stripe',
     '/api/webhooks/twilio',
@@ -24,7 +22,9 @@ const EXEMPT_PATHS = new Set([
  * For state-changing methods (POST, PUT, DELETE, PATCH), requires the
  * x-csrf-token header to match the cookie value.
  *
- * Exempt paths (webhooks, public endpoints) are skipped.
+ * Only credential bootstrap and signed machine-to-machine callbacks are
+ * exempt. Public portal mutations use the same protection as authenticated
+ * browser requests.
  */
 function csrfProtection() {
     return (req, res, next) => {

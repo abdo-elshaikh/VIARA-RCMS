@@ -36,7 +36,13 @@ const updateExamReportSchema = z.object({
 
     impression: z.string()
         .max(2000, 'Impression must be less than 2000 characters')
-        .optional()
+        .optional(),
+
+    criticalResult: z.boolean().optional()
+});
+
+const acknowledgeCriticalResultSchema = z.object({
+    notes: z.string().trim().max(2000).optional()
 });
 
 // Get worklist query schema
@@ -45,6 +51,7 @@ const getWorklistQuerySchema = z.object({
     modalityType: z.string().optional(),
     priority: z.enum(['Routine', 'Urgent', 'Emergency']).optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    scope: z.enum(['all', 'mine', 'available']).optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
     offset: z.string().regex(/^\d+$/).transform(Number).optional()
 });
@@ -82,6 +89,7 @@ module.exports = {
     updateExamReportSchema,
     getWorklistQuerySchema,
     improveReportSchema,
+    acknowledgeCriticalResultSchema,
     generatePreliminaryReportSchema,
     markAiReportDraftAppliedSchema
 };

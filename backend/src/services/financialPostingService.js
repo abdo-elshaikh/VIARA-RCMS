@@ -102,7 +102,10 @@ const lockFinancialBusinessDate = async (
 ) => {
     const normalizedBusinessDate = normalizeBusinessDate(businessDate);
     const dateResult = await client.query(
-        'SELECT COALESCE($1::date, CURRENT_DATE)::text AS business_date',
+        `SELECT COALESCE($1::date, (CURRENT_TIMESTAMP AT TIME ZONE COALESCE(
+            NULLIF((SELECT setting_value FROM system_settings WHERE setting_key = 'center.timezone'), ''),
+            'Africa/Cairo'
+        ))::date)::text AS business_date`,
         [normalizedBusinessDate]
     );
     const resolvedDate = dateResult.rows[0].business_date;

@@ -60,6 +60,13 @@ const hasGlobalPacsAccess = (user) => (
     || hasEffectivePermission(user, 'MANAGE_PACS')
 );
 
+const hasEmergencyClinicalPacsAccess = (user) => Boolean(
+    user?.emergencyAccessId
+    && Array.isArray(user?.elevatedPermissions)
+    && Number(user?.breakGlassExpiry) > Date.now()
+    && user.elevatedPermissions.includes('VIEW_PACS_IMAGES')
+);
+
 const isValidStudyUid = (uid) => /^[0-9][0-9.]{2,127}$/.test(uid) && !uid.includes('..') && !uid.endsWith('.');
 
 const decodeDicomUid = (value) => {
@@ -177,12 +184,11 @@ const assertStudyAccess = async (db, user, studyUids) => {
          LEFT JOIN appointments a ON a.appointment_id = e.appointment_id
          WHERE e.study_instance_uid = ANY($1::text[])
            AND (
-                $2::text IN ('Developer', 'Admin')
-                OR $4::boolean
-                OR ($2::text = 'Radiologist' AND (e.performing_radiologist_id = $3::uuid OR e.performing_radiologist_id IS NULL))
-                OR ($2::text = 'Technician' AND a.technician_id = $3::uuid)
-           )`,
-        [uids, user.role, user.user_id, hasGlobalPacsAccess(user)]
+                 $4::boolean
+                 OR ($2::text = 'Radiologist' AND e.performing_radiologist_id = $3::uuid)
+                 OR ($2::text = 'Technician' AND a.technician_id = $3::uuid)
+            )`,
+        [uids, user.role, user.user_id, hasEmergencyClinicalPacsAccess(user)]
     );
 
     const allowed = new Set(rows.map((row) => row.study_instance_uid));
@@ -214,13 +220,12 @@ const assertExamViewerAccess = async (db, user, { examId = null, accessionNumber
          WHERE (($3::text <> '' AND e.exam_id::text = $3::text)
              OR ($4::text <> '' AND e.order_number = $4::text))
            AND (
-                $1::text IN ('Developer', 'Admin')
-                OR $5::boolean
-                OR ($1::text = 'Radiologist' AND (e.performing_radiologist_id = $2::uuid OR e.performing_radiologist_id IS NULL))
-                OR ($1::text = 'Technician' AND a.technician_id = $2::uuid)
+                 $5::boolean
+                 OR ($1::text = 'Radiologist' AND e.performing_radiologist_id = $2::uuid)
+                 OR ($1::text = 'Technician' AND a.technician_id = $2::uuid)
            )
          LIMIT 1`,
-        [user.role, user.user_id, normalizedExamId, normalizedAccession, hasGlobalPacsAccess(user)]
+        [user.role, user.user_id, normalizedExamId, normalizedAccession, hasEmergencyClinicalPacsAccess(user)]
     );
 
     if (!rows.length) {
@@ -252,13 +257,12 @@ const assertExamImagingAccess = async (db, user, examId) => {
          JOIN patients p ON p.patient_id = e.patient_id
          WHERE e.exam_id = $1
            AND (
-                $2::text IN ('Developer', 'Admin')
-                OR $4::boolean
-                OR ($2::text = 'Radiologist' AND (e.performing_radiologist_id = $3::uuid OR e.performing_radiologist_id IS NULL))
-                OR ($2::text = 'Technician' AND a.technician_id = $3::uuid)
+                 $4::boolean
+                 OR ($2::text = 'Radiologist' AND e.performing_radiologist_id = $3::uuid)
+                 OR ($2::text = 'Technician' AND a.technician_id = $3::uuid)
            )
          LIMIT 1`,
-        [examId, user.role, user.user_id, hasGlobalPacsAccess(user)]
+        [examId, user.role, user.user_id, hasEmergencyClinicalPacsAccess(user)]
     );
 
     if (!rows.length) {
@@ -271,7 +275,7 @@ const assertDicomWebStudyScope = async (db, req, subPath) => {
     const { studyUids: requested, unresolvedEntityUids } = await resolveDicomWebStudyScope(db, subPath, req.query || {});
     const pathStudyUids = getPathStudyUids(subPath);
     const isStudyBrowse = req.method === 'GET' && /^\/dicom-web\/studies\/?$/.test(subPath);
-    const isGlobal = hasGlobalPacsAccess(req.user);
+    const isGlobal = hasEmergencyClinicalPacsAccess(req.user);
 
     if (['pacs_viewer_cookie', 'pacs_viewer_bearer'].includes(req.authType)) {
         const allowed = parseStudyUidList(req.user?.study_instance_uids || []);
@@ -648,28 +652,47 @@ const getOrthancSystemStatus = () => async (req, res, next) => {
         ]);
 
         if (!systemRes.ok || !statsRes.ok) {
-            return next(new AppError('Failed to fetch Orthanc system stats', 502));
+            return res.status(200).json({
+                status: 'unreachable',
+                message: 'Orthanc server health check failing. Check REST URL, credentials, or DICOM service status.',
+                version: null,
+                aet: null,
+                databaseVersion: null,
+                totalDiskSizeMB: 0,
+                countPatients: 0,
+                countStudies: 0,
+                countSeries: 0,
+                countInstances: 0
+            });
         }
 
         const system = await systemRes.json();
         const stats = await statsRes.json();
 
         res.json({
-            success: true,
-            data: {
-                version: system.Version,
-                aet: system.DicomAet,
-                databaseVersion: system.DatabaseVersion,
-                totalDiskSizeMB: Math.round(stats.TotalDiskSizeMB || 0),
-                countPatients: stats.CountPatients || 0,
-                countStudies: stats.CountStudies || 0,
-                countSeries: stats.CountSeries || 0,
-                countInstances: stats.CountInstances || 0
-            }
+            version: system.Version,
+            aet: system.DicomAet,
+            databaseVersion: system.DatabaseVersion,
+            totalDiskSizeMB: Math.round(stats.TotalDiskSizeMB || 0),
+            countPatients: stats.CountPatients || 0,
+            countStudies: stats.CountStudies || 0,
+            countSeries: stats.CountSeries || 0,
+            countInstances: stats.CountInstances || 0
         });
     } catch (error) {
-        logger.error(`Error fetching Orthanc stats: ${error.message}`);
-        next(new AppError('PACS is currently unreachable', 503));
+        logger.warn(`Orthanc system status unavailable: ${error.message}`);
+        res.status(200).json({
+            status: 'unreachable',
+            message: 'PACS is currently unreachable. Check Orthanc service, REST URL, credentials, host networking, and firewall rules.',
+            version: null,
+            aet: null,
+            databaseVersion: null,
+            totalDiskSizeMB: 0,
+            countPatients: 0,
+            countStudies: 0,
+            countSeries: 0,
+            countInstances: 0
+        });
     }
 };
 

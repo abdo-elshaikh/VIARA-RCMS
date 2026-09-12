@@ -149,7 +149,7 @@ describe('PACS controller authorization', () => {
         }));
     });
 
-    it('allows a PACS manager to browse studies through the proxy', async () => {
+    it('does not let a PACS manager browse private studies without emergency access', async () => {
         const db = { query: jest.fn() };
         const req = {
             method: 'GET',
@@ -161,6 +161,32 @@ describe('PACS controller authorization', () => {
                 role: 'Admin',
                 user_id: '00000000-0000-0000-0000-000000000002',
                 permissions: ['MANAGE_PACS']
+            },
+            setTimeout: jest.fn()
+        };
+        const next = jest.fn();
+
+        await dicomWebProxy(db)(req, makeRes(), next);
+
+        expect(proxyToOrthanc).not.toHaveBeenCalled();
+        expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403 });
+    });
+
+    it('allows audited emergency access to browse PACS studies', async () => {
+        const db = { query: jest.fn() };
+        const req = {
+            method: 'GET',
+            params: { 0: 'dicom-web', 1: '/studies' },
+            query: {},
+            originalUrl: '/api/pacs/dicom-web/studies',
+            authType: 'jwt',
+            user: {
+                role: 'Admin',
+                user_id: '00000000-0000-0000-0000-000000000002',
+                permissions: ['MANAGE_PACS'],
+                emergencyAccessId: '00000000-0000-4000-8000-000000000099',
+                elevatedPermissions: ['VIEW_PACS_IMAGES'],
+                breakGlassExpiry: Date.now() + 60000
             },
             setTimeout: jest.fn()
         };

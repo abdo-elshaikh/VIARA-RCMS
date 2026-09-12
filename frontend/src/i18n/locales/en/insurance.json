@@ -6,6 +6,7 @@
   },
   "stats": {
     "label": "Insurance operations summary",
+    "liveStatus": "Insurance registry up to date",
     "providers": "Configured providers",
     "contracts": "Active contracts",
     "approvals": "Pending approvals",
@@ -22,7 +23,9 @@
     "approvals": "Pre-authorization",
     "approvalsDescription": "Record coverage decisions and follow up rejected claims.",
     "claims": "Claims workbench",
-    "claimsDescription": "Create claims, monitor expected recovery, and manage status follow-up."
+    "claimsDescription": "Create claims, monitor expected recovery, and manage status follow-up.",
+    "policies": "Patient Insurance Policies",
+    "policiesDescription": "View and manage patient insurance policies, plans, and contract links."
   },
   "configuration": {
     "eyebrow": "Payer configuration",
@@ -86,7 +89,16 @@
     "submit": "Submit",
     "partialPaid": "Record partial",
     "paid": "Mark paid",
-    "reject": "Reject"
+    "reject": "Reject",
+    "export": "Export",
+    "exportCsv": "Export CSV",
+    "exportJson": "Export JSON",
+    "exportClaimsCsv": "Export Claims (Excel/CSV)",
+    "exportClaimsJson": "Export Claims (JSON)",
+    "exportPolicies": "Export Policies (CSV)",
+    "exporting": "Exporting...",
+    "edit": "Edit",
+    "addPolicy": "Add Patient Policy"
   },
   "filters": {
     "search": "Search claim, reference, provider, patient, or MRN...",
@@ -122,6 +134,7 @@
   },
   "errors": {
     "load": "Some insurance data could not be loaded. Available sections remain usable.",
+    "partialStatus": "Some insurance data needs attention",
     "retry": "Try again"
   },
   "allExams": "All examinations",
@@ -162,13 +175,21 @@
     "claimUpdatedError": "The claim could not be updated.",
     "claimCreated": "Claim created.",
     "claimCreatedError": "The claim could not be created.",
-    "claimStatus": "Claim marked {{status}}."
+    "claimStatus": "Claim marked {{status}}.",
+    "providerUpdated": "Provider details updated successfully.",
+    "contractUpdated": "Contract updated successfully.",
+    "policyAdded": "Insurance policy added successfully.",
+    "policyUpdated": "Insurance policy updated successfully.",
+    "ruleUpdated": "Coverage rule updated successfully.",
+    "exportSuccess": "Claims exported successfully.",
+    "exportFailed": "Failed to export claims."
   },
   "tabs": {
     "claims": "Claims Workbench",
     "providers": "Payers & Contracts",
     "rules": "Coverage & Simulator",
-    "approvals": "Pre-Authorizations"
+    "approvals": "Pre-Authorizations",
+    "policies": "Patient Policies"
   },
   "calculator": {
     "title": "Coverage Preview Calculator",
@@ -192,5 +213,33 @@
     "Resubmitted": "Resubmitted",
     "Active": "Active",
     "Inactive": "Inactive"
+  },
+  "settlement": {
+    "title": "Settle Claim & Record Payment",
+    "description": "Record received insurer remittance along with contractual deductions or approved disallowances.",
+    "receivedAmount": "Received Amount (EGP)",
+    "deductionAmount": "Contractual Deduction / Disallowance (EGP)",
+    "deductionReason": "Deduction / Disallowance Reason",
+    "deductionReasonPlaceholder": "e.g. Contractual tariff discount, patient copay disallowance...",
+    "expectedAmount": "Expected Amount",
+    "totalSettled": "Total Settled",
+    "remaining": "Remaining",
+    "settlePaid": "Full Settlement (Paid)",
+    "settlePartial": "Partial Settlement",
+    "confirm": "Confirm Settlement & Post Entries"
+  },
+  "exportModal": {
+    "title": "Export Claims by Provider",
+    "description": "Select provider, claim status, and date range to download a customized financial report.",
+    "provider": "Insurance Provider",
+    "allProviders": "All Providers (Comprehensive Report)",
+    "status": "Claim Status",
+    "allStatuses": "All Statuses",
+    "startDate": "From Date",
+    "endDate": "To Date",
+    "format": "Export Format",
+    "download": "Download Report Now",
+    "exportProvider": "Export Claims for this Provider",
+    "quickExportByProvider": "Export by Provider"
   }
 }

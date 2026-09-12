@@ -1,0 +1,169 @@
+.print-workspace,
+.print-workspace * {
+    box-sizing: border-box;
+}
+
+.print-workspace {
+    min-width: 0;
+}
+
+.print-preview-stage {
+    min-width: 0;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.print-document {
+    color-scheme: light;
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+
+.print-document img,
+.print-document svg {
+    max-width: 100%;
+}
+
+.print-table-region {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+}
+
+.print-table-region table {
+    min-width: 34rem;
+}
+
+.print-keep-together,
+.print-document thead,
+.print-document tfoot,
+.print-document tr,
+.print-document img,
+.print-document svg {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+@media screen {
+    .print-sheet {
+        width: min(var(--print-page-width, 210mm), 100%) !important;
+        min-height: auto !important;
+        aspect-ratio: var(--print-page-aspect, 210 / 297);
+    }
+
+    .print-roll {
+        width: min(var(--print-page-width, 80mm), 100%) !important;
+        min-height: auto !important;
+    }
+
+    .print-label {
+        width: min(var(--print-page-width, 4in), 100%) !important;
+        height: auto !important;
+        aspect-ratio: var(--print-page-aspect, 2 / 1);
+    }
+}
+
+@media (max-width: 1023px) {
+    .print-controls {
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+
+    .print-preview-stage {
+        min-height: 45vh;
+    }
+}
+
+@media (max-width: 639px) {
+    .print-preview-stage {
+        padding: 0.75rem !important;
+    }
+
+    .print-document {
+        border-radius: 0.75rem !important;
+        box-shadow: 0 12px 35px rgb(15 23 42 / 0.12) !important;
+    }
+
+    .print-table-region {
+        margin-inline: -0.25rem;
+        padding-block-end: 0.35rem;
+    }
+
+    .print-table-region::after {
+        content: '';
+        display: block;
+        width: 1px;
+        height: 1px;
+    }
+}
+
+@media print {
+    @supports (print-color-adjust: exact) {
+        .print-document {
+            print-color-adjust: exact;
+        }
+    }
+
+    html,
+    body,
+    #root {
+        width: auto !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        background: #fff !important;
+    }
+
+    .no-print,
+    .print-controls {
+        display: none !important;
+    }
+
+    .print-workspace,
+    .print-preview-stage {
+        display: block !important;
+        width: auto !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        background: #fff !important;
+    }
+
+    .print-document {
+        max-width: none !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        transform: none !important;
+        zoom: 1 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    .print-table-region {
+        overflow: visible !important;
+    }
+
+    .print-table-region table {
+        min-width: 0 !important;
+    }
+
+    .print-document thead {
+        display: table-header-group;
+    }
+
+    .print-document tfoot {
+        display: table-footer-group;
+    }
+
+    .print-document a {
+        color: inherit !important;
+        text-decoration: none !important;
+    }
+}

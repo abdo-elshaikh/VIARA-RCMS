@@ -111,7 +111,12 @@ export const ExamDialog = ({ open, editing, form, setForm, machines, onClose, on
                         value={form.modalityId}
                         onChange={value => setForm({ ...form, modalityId: value })}
                         options={machines.map(machine => machine.modality_id || machine.id)}
-                        render={value => machines.find(machine => (machine.modality_id || machine.id) === value)?.name || value}
+                        render={value => {
+                            const m = machines.find(machine => (machine.modality_id || machine.id) === value);
+                            if (!m) return value;
+                            const roomTxt = m.room_name || m.room_number ? ` [غرفة: ${m.room_name || m.room_number}]` : '';
+                            return `${m.name} (${m.type || m.machineType || ''})${roomTxt}`;
+                        }}
                     />
                     <Field
                         label={t('settings.clinical.exams.code', { defaultValue: 'Procedure / CPT Code' })}

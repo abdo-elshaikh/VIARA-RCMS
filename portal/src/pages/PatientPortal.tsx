@@ -42,6 +42,10 @@ import { getErrorMessage } from "../utils/getErrorMessage";
 import { normalizeCenterSettings } from "../utils/centerSettings";
 import { inputClass, primaryBtn, secondaryBtn } from "../utils/designTokens";
 import { formatLocalizedDate } from "../utils/localizedDate";
+import { todayLocalISO, isPastDate } from "../utils/date";
+import { openPrintableReport } from "../utils/printableReport";
+import { isFinalizedRecord } from "../utils/recordStatus";
+import { fetchWithAuthRetry } from "../lib/api";
 import { PortalIdentityProvider, resolvePortalIdentity } from "../lib/portal-identity";
 
 import Panel from "../components/ui/Panel";
@@ -62,7 +66,7 @@ import PatientMessagesView from "../components/patient/PatientMessagesView";
 import PortalChatBubble from "../components/PortalChatBubble";
 import PortalNotificationsView from "../components/PortalNotificationsView";
 import { useAppDispatch, useAppSelector } from "../store/store";
-import { exportReportToWord } from "@/utils/exportReportToWord";
+import { usePortalRealtime } from "../hooks/use-portal-realtime";
 
 const emptyRequestForm = {
   preferredDate: "",
@@ -104,16 +108,11 @@ const getLoyaltyTier = (points: number = 0) => {
   return { key: "bronze", label: "Bronze", tone: "from-orange-800 to-amber-600", next: 300 };
 };
 
-const isFinalizedRecord = (record: any) =>
-  record?.exam_status === "Finalized" ||
-  ["Finalized", "Amended"].includes(record?.report_status) ||
-  record?.report_locked === true;
-
 const PatientPortal = () => {
   const { t, i18n } = useTranslation("portal");
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const user = useAppSelector(selectCurrentUser);
   const language = (i18n.resolvedLanguage || i18n.language || "en").split("-")[0];
   const locale = i18n.language?.startsWith("ar") ? "ar-EG" : "en-GB";
@@ -135,6 +134,7 @@ const PatientPortal = () => {
   } = useGetMyAppointmentRequestsQuery(undefined);
   const { data: notificationUnreadData } = useGetMyPortalNotificationUnreadCountQuery(undefined, {
     pollingInterval: 15000,
+    skipPollingIfUnfocused: true,
   });
   const { data: profileData, isLoading: isLoadingProfile } = useGetMyPortalProfileQuery(undefined);
   const { data: rawCenterSettings } = useGetCenterSettingsQuery(undefined);
@@ -144,12 +144,40 @@ const PatientPortal = () => {
   const [createProfileUpdateRequest, { isLoading: isRequestingProfileUpdate }] =
     useCreatePortalProfileUpdateRequestMutation();
 
-  const [activeTab, setActiveTab] = useState(() =>
-    searchParams.get("tab") === "records" ? "records" : "overview",
-  );
-  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState(() => {
+    const requestedTab = searchParams.get("tab");
+    return ["overview", "records", "invoices", "crm", "documents", "requests", "notifications", "messages"].includes(requestedTab || "")
+      ? requestedTab!
+      : "overview";
+  });
+  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(() => searchParams.get("entityId"));
   const [requestForm, setRequestForm] = useState(emptyRequestForm);
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
+
+  usePortalRealtime(Boolean(user), ({ event: realtimeEvent }) => {
+    if (realtimeEvent === "NEW_NOTIFICATION") {
+      dispatch(api.util.invalidateTags(["PortalNotifications"]));
+    } else if (realtimeEvent === "NEW_PORTAL_MESSAGE") {
+      dispatch(api.util.invalidateTags(["PatientMessages"]));
+      // The full messages tab already shows the new message (and resets the
+      // badge on entry); only notify the floating bubble when it is not visible.
+      if (activeTab !== "messages") {
+        window.dispatchEvent(new CustomEvent("SSE_PATIENT_MESSAGE_UPDATE"));
+      }
+    }
+  });
+
+  const openPortalTab = (tab: string, entityId?: string | null) => {
+    setActiveTab(tab);
+    if (tab === "records" && entityId) setExpandedRecordId(entityId);
+    setSearchParams(entityId ? { tab, entityId } : { tab }, { replace: true });
+  };
+
+  useEffect(() => {
+    if (activeTab === "messages") {
+      window.dispatchEvent(new Event("VIARA_PORTAL_MESSAGES_VIEWED"));
+    }
+  }, [activeTab]);
 
   const centerSettings = useMemo(
     () => normalizeCenterSettings(rawCenterSettings || {}, language),
@@ -166,6 +194,10 @@ const PatientPortal = () => {
   const patient = profileData?.profile || {};
   const activities = profileData?.activities || [];
   const finalizedRecords = useMemo(() => records.filter(isFinalizedRecord), [records]);
+
+  useEffect(() => {
+    document.title = `${t("patient.brand", "Patient Portal")} | ${centerDisplayName || "VIARA"}`;
+  }, [centerDisplayName, t]);
   const upcomingRecords = useMemo(
     () =>
       records
@@ -235,7 +267,7 @@ const PatientPortal = () => {
   ]);
 
   const formatDate = (dateStr: any, showTime = false) => {
-    if (!dateStr) return "-";
+    if (!dateStr) return "—";
     const options: Intl.DateTimeFormatOptions = showTime
       ? { dateStyle: "medium", timeStyle: "short" }
       : { dateStyle: "medium" };
@@ -336,6 +368,7 @@ const PatientPortal = () => {
     }
 
     try {
+      const { exportReportToWord } = await import("../utils/exportReportToWord");
       const exam = {
         ...record,
         exam_id: record.exam_id,
@@ -366,39 +399,16 @@ const PatientPortal = () => {
       throw new Error(t("records.notReady", "The final report is not available yet."));
     }
 
-    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
-    const response = await fetch(`${baseUrl}/exams/${record.exam_id}/report/pdf?customize=false`, {
-      credentials: "include",
-      headers: { authorization: `Bearer ${sessionStorage.getItem("token") || ""}` },
-    });
+    const response = await fetchWithAuthRetry(
+      `/exams/${encodeURIComponent(record.exam_id)}/report/pdf?customize=false`,
+    );
     if (!response.ok) throw new Error(t("patient.documentError", "Unable to open document"));
     return response.text();
   };
 
-  const openReportDocument = (html: string, printImmediately = false) => {
-    const printScript = printImmediately
-      ? '<script>window.addEventListener("load",function(){window.setTimeout(function(){window.print();},300);});</script>'
-      : "";
-    const printableHtml =
-      printScript && html.includes("</body>")
-        ? html.replace("</body>", `${printScript}</body>`)
-        : `${html}${printScript}`;
-    const url = URL.createObjectURL(new Blob([printableHtml], { type: "text/html;charset=utf-8" }));
-    const popup = window.open(url, "_blank");
-    if (popup) popup.opener = null;
-    if (!popup) {
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      anchor.click();
-    }
-    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-  };
-
   const handlePreviewReport = async (record: any) => {
     try {
-      openReportDocument(await fetchFinalReportHtml(record));
+      openPrintableReport(await fetchFinalReportHtml(record));
     } catch (error) {
       toast.error(getErrorMessage(error, t("patient.documentError", "Unable to open document")));
     }
@@ -406,7 +416,35 @@ const PatientPortal = () => {
 
   const handlePrintReport = async (record: any) => {
     try {
-      openReportDocument(await fetchFinalReportHtml(record), true);
+      openPrintableReport(await fetchFinalReportHtml(record), { printImmediately: true });
+    } catch (error) {
+      toast.error(getErrorMessage(error, t("patient.documentError", "Unable to open document")));
+    }
+  };
+
+  const handleDownloadPdf = async (record: any) => {
+    if (!record.exam_id || !isFinalizedRecord(record)) {
+      toast.error(t("records.notReady", "The final report is not available yet."));
+      return;
+    }
+
+    try {
+      const response = await fetchWithAuthRetry(
+        `/exams/${encodeURIComponent(record.exam_id)}/report/pdf?format=pdf&disposition=attachment`,
+      );
+      if (!response.ok) throw new Error(t("patient.documentError", "Unable to open document"));
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const orderNum = record.order_number || record.appointment_id || record.exam_id;
+      link.download = `Diagnostic-Report-${orderNum}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success(t("records.downloadPdfSuccess", "Report PDF downloaded successfully"));
     } catch (error) {
       toast.error(getErrorMessage(error, t("patient.documentError", "Unable to open document")));
     }
@@ -416,6 +454,10 @@ const PatientPortal = () => {
     event.preventDefault();
     if (!requestForm.preferredDate) {
       toast.error(t("patient.appointment.dateRequired", "Choose a preferred date."));
+      return;
+    }
+    if (isPastDate(requestForm.preferredDate)) {
+      toast.error(t("patient.appointment.pastDate", "The preferred date cannot be in the past."));
       return;
     }
     try {
@@ -488,7 +530,7 @@ const PatientPortal = () => {
         onLogout={handleLogout}
         tabs={tabs}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={openPortalTab}
       >
         {activeTab === "overview" && (
           <div className="space-y-5">
@@ -633,6 +675,7 @@ const PatientPortal = () => {
                     formatDate={formatDate}
                     onPreviewReport={handlePreviewReport}
                     onPrintReport={handlePrintReport}
+                    onDownloadPdf={handleDownloadPdf}
                     onExportWord={handleExportWord}
                     onCopyReport={copyReport}
                     t={t}
@@ -733,6 +776,7 @@ const PatientPortal = () => {
                 formatDate={formatDate}
                 onPreviewReport={handlePreviewReport}
                 onPrintReport={handlePrintReport}
+                onDownloadPdf={handleDownloadPdf}
                 onExportWord={handleExportWord}
                 onCopyReport={copyReport}
                 t={t}
@@ -919,7 +963,7 @@ const PatientPortal = () => {
                   <Field label={t("patient.appointment.date", "Preferred date")} required>
                     <input
                       type="date"
-                      min={new Date().toISOString().split("T")[0]}
+                      min={todayLocalISO()}
                       value={requestForm.preferredDate}
                       onChange={(event) =>
                         setRequestForm((current) => ({
@@ -1081,7 +1125,7 @@ const PatientPortal = () => {
                 {isLoadingProfile ? (
                   <Loading compact label={t("patient.profileInfo.loading", "Loading profile")} />
                 ) : (
-                  <ProfileGrid patient={patient} formatDate={formatDate} t={t} />
+                  <ProfileGrid patient={patient} formatDate={formatDate} t={t} language={language} />
                 )}
               </Panel>
             </section>
@@ -1228,7 +1272,7 @@ const PatientPortal = () => {
                 "Stay informed about appointments, reports, documents, and messages.",
               )}
             />
-            <PortalNotificationsView portalType="patient" locale={locale} t={t} />
+            <PortalNotificationsView portalType="patient" locale={locale} t={t} onNavigate={openPortalTab} />
           </div>
         )}
 

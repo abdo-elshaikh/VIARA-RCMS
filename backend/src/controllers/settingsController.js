@@ -274,6 +274,7 @@ const getCenterSettings = (db) => async (req, res, next) => {
             working_hours: parseJSONSafe(allSettings['center.working_hours']),
             print_settings: parseJSONSafe(allSettings['center.print_settings']),
             homepage_settings: parseJSONSafe(allSettings['center.homepage_settings'])
+            ,workstation_presets: parseJSONSafe(allSettings['center.workstation_presets']) || []
         };
 
         res.json(data);
@@ -411,6 +412,9 @@ const updateCenterSettings = (db) => async (req, res, next) => {
         if (data.homepage_settings !== undefined) {
             updates['center.homepage_settings'] = JSON.stringify(data.homepage_settings);
         }
+        if (data.workstation_presets !== undefined) {
+            updates['center.workstation_presets'] = JSON.stringify(data.workstation_presets || []);
+        }
 
         if (Object.keys(updates).length > 0) {
             await settingsService.updateAll(updates);
@@ -482,6 +486,7 @@ const updateCenterSettings = (db) => async (req, res, next) => {
             working_hours: parseJSONSafe(allSettings['center.working_hours']),
             print_settings: parseJSONSafe(allSettings['center.print_settings']),
             homepage_settings: parseJSONSafe(allSettings['center.homepage_settings'])
+            ,workstation_presets: parseJSONSafe(allSettings['center.workstation_presets']) || []
         });
     } catch (error) {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
@@ -912,7 +917,7 @@ const vacuumDatabase = (db) => async (req, res, next) => {
     }
 };
 
-const flushServerCache = () => async (req, res, next) => {
+const flushServerCache = (db) => async (req, res, next) => {
     try {
         settingsService.cacheTime = 0;
         settingsService.cache = {};

@@ -81,16 +81,40 @@ const getWorklist = (db) => async (req, res, next) => {
     try {
         const userId = req.user.user_id;
         const { role } = req.user;
-        const { status, modalityType, priority, date, limit = 100, offset = 0 } = req.query;
+        const { status, modalityType, priority, date, scope = 'all', limit = 100, offset = 0 } = req.query;
 
-        const assignmentPredicate = role === 'Technician'
-            ? '(a.technician_id = $1 OR a.technician_id IS NULL)'
+        const assignmentColumn = role === 'Technician'
+            ? 'a.technician_id'
             : role === 'Nurse'
-                ? '(a.nurse_id = $1 OR a.nurse_id IS NULL)'
-                : '(e.performing_radiologist_id = $1 OR e.performing_radiologist_id IS NULL)';
+                ? 'a.nurse_id'
+                : role === 'Radiologist'
+                    ? 'e.performing_radiologist_id'
+                    : null;
+        const roleStation = role === 'Technician' ? 'Modality'
+            : role === 'Nurse' ? 'Nurse'
+                : role === 'Radiologist' ? 'Radiologist' : null;
+        const values = [];
+        let param = 1;
+        let assignmentPredicate;
 
-        const values = [userId];
-        let param = 2;
+        if (assignmentColumn) {
+            if (scope === 'mine') {
+                assignmentPredicate = `${assignmentColumn} = $${param++}`;
+                values.push(userId);
+            } else if (scope === 'available') {
+                assignmentPredicate = `${assignmentColumn} IS NULL`;
+            } else {
+                assignmentPredicate = `(${assignmentColumn} = $${param++} OR ${assignmentColumn} IS NULL)`;
+                values.push(userId);
+            }
+        } else {
+            assignmentPredicate = `(
+                e.current_station NOT IN ('Nurse', 'Modality', 'Radiologist')
+                OR (e.current_station = 'Nurse' AND a.nurse_id IS NULL)
+                OR (e.current_station = 'Modality' AND a.technician_id IS NULL)
+                OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL)
+            )`;
+        }
 
         let query = `
           SELECT e.exam_id, e.appointment_id, e.status, e.created_at, e.report_content,
@@ -106,6 +130,27 @@ const getWorklist = (db) => async (req, res, next) => {
                  e.implant_safety_status, e.renal_safety_status,
                  e.is_follow_up, e.prior_exam_id, e.follow_up_reason,
                  a.start_time, a.end_time, a.preparation_status,
+                 a.nurse_id, a.nurse_assigned_at, a.nurse_task_started_at, a.nurse_assignment_version,
+                 a.technician_id, a.technician_assigned_at, a.technician_task_started_at, a.technician_assignment_version,
+                 e.performing_radiologist_id, e.radiologist_assigned_at, e.radiologist_task_started_at, e.radiologist_assignment_version,
+                 CASE e.current_station
+                   WHEN 'Nurse' THEN a.nurse_id
+                   WHEN 'Modality' THEN a.technician_id
+                   WHEN 'Radiologist' THEN e.performing_radiologist_id
+                   ELSE NULL
+                 END AS task_assignee_id,
+                 CASE e.current_station
+                   WHEN 'Nurse' THEN a.nurse_assigned_at
+                   WHEN 'Modality' THEN a.technician_assigned_at
+                   WHEN 'Radiologist' THEN e.radiologist_assigned_at
+                   ELSE NULL
+                 END AS task_assigned_at,
+                 CASE e.current_station
+                   WHEN 'Nurse' THEN a.nurse_task_started_at
+                   WHEN 'Modality' THEN a.technician_task_started_at
+                   WHEN 'Radiologist' THEN e.radiologist_task_started_at
+                   ELSE NULL
+                 END AS task_started_at,
                  et.name as exam_type_name, et.preparation_instructions,
                  p.mrn, p.gender, p.first_name_enc, p.last_name_enc,
                  m.name as modality_name, m.type as modality_type,
@@ -126,7 +171,8 @@ const getWorklist = (db) => async (req, res, next) => {
           LEFT JOIN appointments prior_a ON prior_a.appointment_id = prior_e.appointment_id
           LEFT JOIN examination_types prior_et ON prior_et.type_id = prior_e.exam_type_id
           LEFT JOIN modalities prior_m ON prior_m.modality_id = prior_e.modality_id
-          WHERE ${assignmentPredicate}
+           WHERE ${assignmentPredicate}
+           ${roleStation ? `AND e.current_station = '${roleStation}'` : ''}
         `;
 
         if (status) {
@@ -159,6 +205,14 @@ const getWorklist = (db) => async (req, res, next) => {
 
         const mappedRows = result.rows.map(row => {
             const mapped = { ...row };
+            mapped.assignment_status = !row.task_assignee_id
+                ? 'Unassigned'
+                : row.is_on_hold
+                    ? 'On Hold'
+                    : row.task_started_at
+                        ? 'In Progress'
+                        : 'Assigned';
+            mapped.is_assigned_to_me = String(row.task_assignee_id || '') === String(userId);
             if (row.first_name_enc || row.last_name_enc) {
                 mapped.patient_name = [decrypt(row.first_name_enc), decrypt(row.last_name_enc)]
                     .filter(Boolean)
@@ -197,15 +251,25 @@ const buildCaseReportFilters = (req) => {
 };
 
 const appendCaseReportAccessPredicate = (role, userId, values, where) => {
-    if (role === 'Developer' || role === 'Admin' || role === 'Receptionist') return;
-    values.push(userId);
-    const param = values.length;
     if (role === 'Radiologist') {
-        where.push(`e.performing_radiologist_id = $${param}`);
+        values.push(userId);
+        const param = values.length;
+        where.push(`(e.performing_radiologist_id = $${param} OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL))`);
     } else if (role === 'Technician') {
-        where.push(`a.technician_id = $${param}`);
+        values.push(userId);
+        const param = values.length;
+        where.push(`(a.technician_id = $${param} OR (e.current_station = 'Modality' AND a.technician_id IS NULL))`);
     } else if (role === 'Nurse') {
-        where.push(`a.nurse_id = $${param}`);
+        values.push(userId);
+        const param = values.length;
+        where.push(`(a.nurse_id = $${param} OR (e.current_station = 'Nurse' AND a.nurse_id IS NULL))`);
+    } else if (['Developer', 'Admin', 'Receptionist'].includes(role)) {
+        where.push(`(
+            e.current_station NOT IN ('Nurse', 'Modality', 'Radiologist')
+            OR (e.current_station = 'Nurse' AND a.nurse_id IS NULL)
+            OR (e.current_station = 'Modality' AND a.technician_id IS NULL)
+            OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL)
+        )`);
     } else {
         where.push('FALSE');
     }
@@ -406,9 +470,20 @@ const getExamById = (db) => async (req, res, next) => {
             LEFT JOIN appointments prior_a ON prior_a.appointment_id = prior_e.appointment_id
             LEFT JOIN examination_types prior_et ON prior_et.type_id = prior_e.exam_type_id
             LEFT JOIN modalities prior_m ON prior_m.modality_id = prior_e.modality_id
-            WHERE e.exam_id = $1
-              AND ($2::text IN ('Developer', 'Admin') OR $2::text = 'Radiologist')
-        `, [id, req.user.role]);
+             WHERE e.exam_id = $1
+               AND (
+                   ($2::text = 'Radiologist' AND e.performing_radiologist_id = $3)
+                   OR $4::boolean
+               )
+        `, [
+            id,
+            req.user.role,
+            req.user.user_id,
+            Boolean(req.user.emergencyAccessId
+                && Array.isArray(req.user.elevatedPermissions)
+                && req.user.elevatedPermissions.includes('VIEW_EXAMS')
+                && Number(req.user.breakGlassExpiry) > Date.now())
+        ]);
 
         if (result.rows.length === 0) {
             return next(new AppError('Exam not found or you are not authorized to view it', 404));
@@ -436,15 +511,22 @@ const getExamById = (db) => async (req, res, next) => {
 
 const updateReport = (db) => async (req, res, next) => {
     let client;
+    let committed = false;
     let patientPortalRelease = null;
+    let criticalAcknowledgements = [];
     try {
-        const { examId, status, reportContent, findings, impression, sections, templateId, reportStatus } = req.body;
+        const { examId, status, reportContent, findings, impression, sections, templateId, reportStatus, criticalResult } = req.body;
         const userId = req.user.user_id;
         const { role } = req.user;
         const isRadiologist = role === 'Radiologist';
+        const criticalResultProvided = Object.prototype.hasOwnProperty.call(req.body, 'criticalResult');
+
+        if (criticalResultProvided && typeof criticalResult !== 'boolean') {
+            return next(new AppError('criticalResult must be a boolean', 400));
+        }
 
         if (!isRadiologist) {
-            const attemptedReportEdit = [reportContent, findings, impression, sections, templateId, reportStatus]
+            const attemptedReportEdit = [reportContent, findings, impression, sections, templateId, reportStatus, criticalResult]
                 .some(value => value !== undefined);
             if (attemptedReportEdit || status === 'Finalized') {
                 return next(new AppError('Only a radiologist may edit or finalize a diagnostic report', 403));
@@ -461,14 +543,16 @@ const updateReport = (db) => async (req, res, next) => {
             ? 'a.technician_id = $2'
             : role === 'Nurse'
                 ? 'a.nurse_id = $2'
-                : '(e.performing_radiologist_id = $2 OR e.performing_radiologist_id IS NULL)';
+                : 'e.performing_radiologist_id = $2';
 
         client = await db.connect();
         await client.query('BEGIN');
 
         const checkQuery = `
             SELECT e.status, e.appointment_id, e.report_locked, e.report_sections,
-                   e.report_content, e.report_status
+                    e.report_content, e.report_status, e.critical_result,
+                    e.order_number,
+                    COALESCE(e.external_referring_doctor_id, a.referring_doctor_id) AS referring_doctor_id
             FROM examinations e
             JOIN appointments a ON e.appointment_id = a.appointment_id
             WHERE e.exam_id = $1 AND ${assignmentPredicate}
@@ -502,6 +586,11 @@ const updateReport = (db) => async (req, res, next) => {
                     ? getReportStatusForSave(currentReportStatus)
                     : currentReportStatus))
             : currentReportStatus;
+
+        if (criticalResultProvided && newStatus !== 'Finalized') {
+            await client.query('ROLLBACK');
+            return next(new AppError('criticalResult may only be explicitly set while finalizing a report', 422));
+        }
 
         if (newStatus === 'Finalized') {
             const hasFindings = typeof nextSections.findings === 'string' && nextSections.findings.trim().length > 0;
@@ -559,6 +648,18 @@ const updateReport = (db) => async (req, res, next) => {
             report_locked = CASE WHEN $2::exam_status = 'Finalized' THEN TRUE ELSE report_locked END,
             report_locked_at = CASE WHEN $2::exam_status = 'Finalized' THEN COALESCE(report_locked_at, NOW()) ELSE report_locked_at END,
             performing_radiologist_id = CASE WHEN $13::boolean THEN COALESCE(performing_radiologist_id, $9) ELSE performing_radiologist_id END,
+            radiologist_task_started_at = CASE WHEN $13::boolean THEN COALESCE(radiologist_task_started_at, NOW()) ELSE radiologist_task_started_at END,
+            critical_result = CASE WHEN $14::boolean IS NULL THEN critical_result ELSE $14::boolean END,
+            critical_result_marked_at = CASE
+                WHEN $14::boolean = TRUE THEN COALESCE(critical_result_marked_at, NOW())
+                WHEN $14::boolean = FALSE THEN NULL
+                ELSE critical_result_marked_at
+            END,
+            critical_result_marked_by = CASE
+                WHEN $14::boolean = TRUE THEN COALESCE(critical_result_marked_by, $9)
+                WHEN $14::boolean = FALSE THEN NULL
+                ELSE critical_result_marked_by
+            END,
             exam_started_at = CASE WHEN $2::exam_status = 'Scanning' THEN COALESCE(exam_started_at, NOW()) ELSE exam_started_at END,
             exam_completed_at = CASE WHEN $2::exam_status = 'Reporting' THEN COALESCE(exam_completed_at, NOW()) ELSE exam_completed_at END,
             reporting_started_at = CASE WHEN $2::exam_status = 'Reporting' THEN COALESCE(reporting_started_at, NOW()) ELSE reporting_started_at END,
@@ -580,7 +681,8 @@ const updateReport = (db) => async (req, res, next) => {
             req.user.name || req.user.full_name || 'Signed Radiologist',
             role,
             signatureHash,
-            isRadiologist
+            isRadiologist,
+            criticalResultProvided ? criticalResult : null
         ]);
 
         if (isRadiologist) {
@@ -684,7 +786,66 @@ const updateReport = (db) => async (req, res, next) => {
             patientPortalRelease = releaseResult.rows[0] || null;
         }
 
+        if (newStatus === 'Finalized' && result.rows[0]?.critical_result) {
+            if (checkResult.rows[0].referring_doctor_id) {
+                const acknowledgementResult = await client.query(`
+                    INSERT INTO critical_result_acknowledgements (
+                        exam_id, referring_doctor_id, recipient_role, status, acknowledgement_due_at
+                    )
+                    VALUES ($1, $2, 'Doctor', 'Pending', NOW() + INTERVAL '15 minutes')
+                    ON CONFLICT DO NOTHING
+                    RETURNING acknowledgement_id, referring_doctor_id, recipient_role
+                `, [examId, checkResult.rows[0].referring_doctor_id]);
+                criticalAcknowledgements = acknowledgementResult.rows;
+            } else {
+                const acknowledgementResult = await client.query(`
+                    INSERT INTO critical_result_acknowledgements (
+                        exam_id, recipient_user_id, recipient_role, status, acknowledgement_due_at
+                    )
+                    SELECT $1, u.user_id, 'Admin', 'Pending', NOW() + INTERVAL '15 minutes'
+                    FROM users u
+                    WHERE u.is_active = TRUE AND u.role = 'Admin'
+                    ON CONFLICT DO NOTHING
+                    RETURNING acknowledgement_id, recipient_user_id, recipient_role
+                `, [examId]);
+                criticalAcknowledgements = acknowledgementResult.rows;
+            }
+        }
+
         await client.query('COMMIT');
+        committed = true;
+
+        if (newStatus === 'Finalized' && result.rows[0]?.critical_result) {
+            const criticalMarkedAt = result.rows[0].critical_result_marked_at;
+            const basePayload = {
+                entityType: 'Exam',
+                entityId: examId,
+                priority: 'Critical',
+                required: true,
+                variables: {
+                    exam_id: examId,
+                    order_number: result.rows[0].order_number || checkResult.rows[0].order_number || '',
+                    critical_marked_at: criticalMarkedAt,
+                    force_delivery: true
+                }
+            };
+            const notifications = [triggerEvent(db, 'CriticalResultFinalized', {
+                ...basePayload,
+                staffId: userId,
+                staffRole: 'Radiologist',
+                occurrenceKey: `${String(criticalMarkedAt)}:finalizer:${userId}`
+            })];
+            for (const acknowledgement of criticalAcknowledgements) {
+                notifications.push(triggerEvent(db, 'CriticalResultFinalized', {
+                    ...basePayload,
+                    occurrenceKey: acknowledgement.acknowledgement_id,
+                    doctorId: acknowledgement.referring_doctor_id || undefined,
+                    staffId: acknowledgement.recipient_user_id || undefined,
+                    staffRole: acknowledgement.recipient_role || undefined
+                }));
+            }
+            await Promise.allSettled(notifications);
+        }
 
         // Fire notifications outside the transaction (fire-and-forget)
         if (newStatus === 'Finalized') {
@@ -746,10 +907,72 @@ const updateReport = (db) => async (req, res, next) => {
         res.json(result.rows[0]);
 
     } catch (error) {
-        if (client) await client.query('ROLLBACK');
+        if (client && !committed) await client.query('ROLLBACK');
         next(error);
     } finally {
         if (client) client.release();
+    }
+};
+
+const acknowledgeCriticalResult = (db) => async (req, res, next) => {
+    try {
+        const userId = req.user?.user_id;
+        const result = await db.query(`
+            UPDATE critical_result_acknowledgements cra
+            SET status = 'Acknowledged',
+                acknowledged_at = COALESCE(cra.acknowledged_at, CURRENT_TIMESTAMP),
+                acknowledged_by_user_id = COALESCE(cra.acknowledged_by_user_id, $2),
+                notes = CASE
+                    WHEN cra.status = 'Pending' THEN NULLIF($3, '')
+                    ELSE cra.notes
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            FROM examinations e
+            WHERE cra.exam_id = $1
+              AND cra.exam_id = e.exam_id
+              AND e.critical_result = TRUE
+              AND cra.recipient_user_id = $2
+            RETURNING cra.acknowledgement_id, cra.exam_id, cra.recipient_role,
+                      cra.status, cra.acknowledged_at, cra.notes
+        `, [req.params.id, userId, req.body?.notes || null]);
+
+        if (result.rows.length === 0) {
+            return next(new AppError('Critical-result acknowledgement is not assigned to this user', 404));
+        }
+
+        await db.query(`
+            UPDATE critical_result_acknowledgements
+            SET status = 'Superseded', updated_at = NOW()
+            WHERE exam_id = $1
+              AND acknowledgement_id <> $2
+              AND status = 'Pending'
+        `, [req.params.id, result.rows[0].acknowledgement_id]);
+        await db.query(`
+            UPDATE notification_jobs
+            SET status = 'Cancelled', processed_at = NOW(), next_retry_at = NULL,
+                locked_at = NULL, locked_by = NULL,
+                error_message = 'Critical result was acknowledged'
+            WHERE entity_type = 'Exam' AND entity_id = $1
+              AND event_type = 'CriticalResultEscalated'
+              AND status IN ('Pending', 'Processing')
+        `, [req.params.id]);
+
+        await logAction(db, {
+            userId,
+            action: 'CRITICAL_RESULT_ACKNOWLEDGED',
+            resourceId: req.params.id,
+            resourceTable: 'examinations',
+            ipAddress: req.ip,
+            details: {
+                acknowledgementId: result.rows[0].acknowledgement_id,
+                recipientRole: result.rows[0].recipient_role
+            },
+            required: true
+        });
+
+        res.json({ success: true, acknowledgement: result.rows[0] });
+    } catch (error) {
+        next(error);
     }
 };
 
@@ -801,13 +1024,21 @@ const getReportPdf = (db) => async (req, res, next) => {
         const isFinalized = ['Finalized', 'Amended'].includes(rawExam.report_status) || rawExam.report_locked || rawExam.status === 'Finalized';
 
         // Access permissions check
-        const isStaff = userRole === 'Developer' || req.user.permissions?.includes('VIEW_REPORTS');
+        const hasEmergencyReportAccess = Boolean(req.user.emergencyAccessId
+            && Array.isArray(req.user.elevatedPermissions)
+            && req.user.elevatedPermissions.includes('VIEW_REPORTS')
+            && Number(req.user.breakGlassExpiry) > Date.now());
+        const isStaff = ['Admin', 'Developer', 'Receptionist'].includes(userRole)
+            || (userRole === 'Radiologist')
+            || (Array.isArray(req.grantedPermissions) && req.grantedPermissions.includes('VIEW_REPORTS'))
+            || (Array.isArray(req.user?.grantedPermissions) && req.user.grantedPermissions.includes('VIEW_REPORTS'))
+            || hasEmergencyReportAccess;
         const isReferringDoctorPortalUser = ['Doctor', 'Referring Doctor', 'Referring_Doctor'].includes(userRole);
         const isReferringDoctorOwner = isReferringDoctorPortalUser
             && rawExam.access_referring_doctor_id === (req.user.doctorId || req.user.doctor_id)
             && isFinalized;
-        const isInvoiceSettled = Boolean(rawExam.report_invoice_id)
-            && Number(rawExam.report_balance_amount || 0) <= 0.005;
+        const isInvoiceSettled = !rawExam.report_invoice_id
+            || Number(rawExam.report_balance_amount || 0) <= 0.005;
         const isPatientOwner = userRole === 'Patient'
             && rawExam.patient_id === userId
             && isFinalized
@@ -997,6 +1228,15 @@ const amendReport = (db) => async (req, res, next) => {
             return next(new AppError('Only finalized reports can be amended', 400));
         }
 
+        // Emergency (break-glass) elevation is read-only by design and never
+        // includes amendment rights; only the reporting radiologist may amend.
+        const isReportOwner = req.user.role === 'Radiologist'
+            && String(existing.rows[0].performing_radiologist_id || '') === String(req.user.user_id || '');
+        if (!isReportOwner) {
+            await client.query('ROLLBACK');
+            return next(new AppError('Exam not found or not assigned to this user', 404));
+        }
+
         const isRadiologist = req.user.role === 'Radiologist';
         const isDeveloper = req.user.role === 'Developer';
         if (!isRadiologist && !isDeveloper) {
@@ -1064,6 +1304,11 @@ const amendReport = (db) => async (req, res, next) => {
 const improveReportFormat = (db) => async (req, res, next) => {
     try {
         const { reportText, examId, modality, examType, sectionType } = req.body;
+        if (examId) {
+            const exam = await verifyReportExamAccess(db, examId, req.user);
+            if (!exam) return next(new AppError('Exam not found or not assigned to this user', 404));
+        }
+
 
         const improved = await aiReportService.improveReportFormat({
             reportText,
@@ -1089,14 +1334,13 @@ const improveReportFormat = (db) => async (req, res, next) => {
 };
 
 const verifyReportExamAccess = async (db, examId, user) => {
+    // AI-draft authoring is a write-path workflow: emergency (break-glass)
+    // elevation is read-only by design and must never unlock it.
     const { rows } = await db.query(
         `SELECT exam_id, performing_radiologist_id, report_locked
          FROM examinations
          WHERE exam_id = $1
-           AND (
-                $2::text IN ('Developer', 'Admin')
-                OR ($2::text = 'Radiologist' AND (performing_radiologist_id = $3::uuid OR performing_radiologist_id IS NULL))
-           )
+           AND ($2::text = 'Radiologist' AND performing_radiologist_id = $3::uuid)
          LIMIT 1`,
         [examId, user.role, user.user_id]
     );
@@ -1136,6 +1380,8 @@ const generatePreliminaryReportDraft = (db) => async (req, res, next) => {
     try {
         const { id } = req.params;
         const { templateId } = req.body || {};
+            const accessibleExam = await verifyReportExamAccess(db, id, req.user);
+        if (!accessibleExam) return next(new AppError('Exam not found or not assigned to this user', 404));
         const { rows } = await db.query(
             `SELECT e.exam_id, e.order_number, e.study_instance_uid, e.orthanc_study_id,
                     e.clinical_indication, e.provisional_diagnosis, e.priority,
@@ -1159,13 +1405,9 @@ const generatePreliminaryReportDraft = (db) => async (req, res, next) => {
              LEFT JOIN appointments prior_a ON prior_a.appointment_id = prior_e.appointment_id
              LEFT JOIN examination_types prior_et ON prior_et.type_id = prior_e.exam_type_id
              LEFT JOIN modalities prior_m ON prior_m.modality_id = prior_e.modality_id
-             WHERE e.exam_id = $1
-               AND (
-                    $2::text IN ('Developer', 'Admin')
-                    OR ($2::text = 'Radiologist' AND (e.performing_radiologist_id = $3::uuid OR e.performing_radiologist_id IS NULL))
-               )
-             LIMIT 1`,
-            [id, req.user.role, req.user.user_id]
+              WHERE e.exam_id = $1
+              LIMIT 1`,
+            [id]
         );
 
         if (!rows.length) return next(new AppError('Exam not found or not assigned to this user', 404));
@@ -1366,4 +1608,4 @@ const markAiReportDraftApplied = (db) => async (req, res, next) => {
     }
 };
 
-module.exports = { getWorklist, getCaseReports, lookupCaseReport, getExamById, updateReport, getReportPdf, amendReport, improveReportFormat, listAiReportDrafts, generatePreliminaryReportDraft, markAiReportDraftApplied };
+module.exports = { getWorklist, getCaseReports, lookupCaseReport, getExamById, updateReport, acknowledgeCriticalResult, getReportPdf, amendReport, improveReportFormat, listAiReportDrafts, generatePreliminaryReportDraft, markAiReportDraftApplied };

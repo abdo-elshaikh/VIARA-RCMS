@@ -37,7 +37,7 @@ export const buildExamForm = (exam, fallback = {}) => ({
 });
 
 const pruneEmpty = (payload) => Object.fromEntries(
-    Object.entries(payload).filter(([, value]) => value !== undefined)
+    Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== '')
 );
 
 export const toMachinePayload = (form, { mode = 'create' } = {}) => {

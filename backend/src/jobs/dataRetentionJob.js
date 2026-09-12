@@ -6,6 +6,11 @@ const { AUDIT_EVENT_CODES, AUDIT_OUTCOME } = require('../services/auditTaxonomy'
 
 const PRIVACY_EXPORT_DIR = path.resolve(process.env.PRIVACY_EXPORT_DIR || path.join(__dirname, '../../private/privacy_exports'));
 const PRIVACY_EXPORT_CLEANUP_LIMIT = Math.max(Number.parseInt(process.env.PRIVACY_EXPORT_CLEANUP_LIMIT, 10) || 100, 1);
+const NOTIFICATION_RETENTION_LIMIT = Math.max(Number.parseInt(process.env.NOTIFICATION_RETENTION_LIMIT, 10) || 500, 1);
+const NOTIFICATION_JOB_PAYLOAD_DAYS = Math.max(Number.parseInt(process.env.NOTIFICATION_JOB_PAYLOAD_DAYS, 10) || 30, 1);
+const NOTIFICATION_JOB_RETENTION_DAYS = Math.max(Number.parseInt(process.env.NOTIFICATION_JOB_RETENTION_DAYS, 10) || 90, NOTIFICATION_JOB_PAYLOAD_DAYS);
+const NOTIFICATION_RETENTION_DAYS = Math.max(Number.parseInt(process.env.NOTIFICATION_RETENTION_DAYS, 10) || 365, 1);
+const PUBLIC_APPOINTMENT_RETENTION_DAYS = Math.max(Number.parseInt(process.env.PUBLIC_APPOINTMENT_RETENTION_DAYS, 10) || 365, 30);
 
 const isPathInside = (candidatePath, parentPath) => {
     const relative = path.relative(parentPath, path.resolve(candidatePath));
@@ -49,6 +54,74 @@ const cleanupExpiredPrivacyExports = async (pool) => {
     return { scanned: result.rows.length, deleted, skipped };
 };
 
+const cleanupNotificationData = async (pool) => {
+    const redactedJobs = await pool.query(`
+        WITH candidates AS (
+            SELECT job_id
+            FROM notification_jobs
+            WHERE status IN ('Sent', 'Failed', 'Cancelled', 'Skipped')
+              AND processed_at < NOW() - ($1::int * INTERVAL '1 day')
+              AND variables <> '{"redacted":true}'::jsonb
+            ORDER BY processed_at ASC
+            LIMIT $2
+        )
+        UPDATE notification_jobs nj
+        SET variables = '{"redacted":true}'::jsonb,
+            recipient_contact = NULL,
+            recipient_contact_enc = NULL
+        FROM candidates c
+        WHERE nj.job_id = c.job_id
+    `, [NOTIFICATION_JOB_PAYLOAD_DAYS, NOTIFICATION_RETENTION_LIMIT]);
+
+    const deletedJobs = await pool.query(`
+        DELETE FROM notification_jobs
+        WHERE job_id IN (
+            SELECT job_id
+            FROM notification_jobs
+            WHERE status IN ('Sent', 'Failed', 'Cancelled', 'Skipped')
+              AND COALESCE(processed_at, created_at) < NOW() - ($1::int * INTERVAL '1 day')
+            ORDER BY COALESCE(processed_at, created_at) ASC
+            LIMIT $2
+        )
+    `, [NOTIFICATION_JOB_RETENTION_DAYS, NOTIFICATION_RETENTION_LIMIT]);
+
+    // Critical notifications are retained for their dedicated clinical/audit
+    // policy rather than being removed by the general inbox cleanup.
+    const deletedNotifications = await pool.query(`
+        DELETE FROM notifications
+        WHERE notification_id IN (
+            SELECT notification_id
+            FROM notifications
+            WHERE created_at < NOW() - ($1::int * INTERVAL '1 day')
+              AND priority <> 'Critical'
+            ORDER BY created_at ASC
+            LIMIT $2
+        )
+    `, [NOTIFICATION_RETENTION_DAYS, NOTIFICATION_RETENTION_LIMIT]);
+
+    return {
+        jobPayloadsRedacted: redactedJobs.rowCount || 0,
+        jobsDeleted: deletedJobs.rowCount || 0,
+        notificationsDeleted: deletedNotifications.rowCount || 0
+    };
+};
+
+const cleanupPublicPortalData = async (pool) => {
+    const challenges = await pool.query(`
+        DELETE FROM public_case_verification_challenges
+        WHERE expires_at < NOW() - INTERVAL '24 hours'
+    `);
+    const appointmentRequests = await pool.query(`
+        DELETE FROM public_appointment_requests
+        WHERE created_at < NOW() - ($1::int * INTERVAL '1 day')
+          AND status IN ('Scheduled', 'Rejected', 'Cancelled')
+    `, [PUBLIC_APPOINTMENT_RETENTION_DAYS]);
+    return {
+        verificationChallengesDeleted: challenges.rowCount || 0,
+        appointmentRequestsDeleted: appointmentRequests.rowCount || 0,
+    };
+};
+
 const scheduleDataRetentionJobs = (pool) => {
     const runJob = async () => {
         logger.info('Running data retention cleanup jobs...');
@@ -64,6 +137,12 @@ const scheduleDataRetentionJobs = (pool) => {
             const privacyResult = await cleanupExpiredPrivacyExports(pool);
             logger.info('Cleaned up expired privacy export artifacts.', privacyResult);
 
+            const notificationResult = await cleanupNotificationData(pool);
+            logger.info('Applied notification retention policy.', notificationResult);
+
+            const publicPortalResult = await cleanupPublicPortalData(pool);
+            logger.info('Applied public portal retention policy.', publicPortalResult);
+
             await logSystemAuditEvent(pool, {
                 eventCode: AUDIT_EVENT_CODES.SYSTEM_RETENTION_JOB_RAN,
                 jobName: 'data-retention-cleanup',
@@ -71,6 +150,8 @@ const scheduleDataRetentionJobs = (pool) => {
                 details: {
                     revokedRefreshTokensDeleted: tokenResult.rowCount || 0,
                     privacyExports: privacyResult,
+                    notifications: notificationResult,
+                    publicPortal: publicPortalResult,
                 },
             });
         } catch (error) {
@@ -97,4 +178,4 @@ const scheduleDataRetentionJobs = (pool) => {
     };
 };
 
-module.exports = { scheduleDataRetentionJobs, cleanupExpiredPrivacyExports };
+module.exports = { scheduleDataRetentionJobs, cleanupExpiredPrivacyExports, cleanupNotificationData, cleanupPublicPortalData };

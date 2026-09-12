@@ -25,13 +25,16 @@ export const formatMoney = (value, {
     minimumFractionDigits,
     maximumFractionDigits,
     signDisplay = 'auto',
-} = {}) => new Intl.NumberFormat(locale || localeFor(language), {
-    style: 'currency',
-    currency,
-    signDisplay,
-    ...(minimumFractionDigits === undefined ? {} : { minimumFractionDigits }),
-    ...(maximumFractionDigits === undefined ? {} : { maximumFractionDigits }),
-}).format(toFinancialNumber(value));
+} = {}) => {
+    const formatted = new Intl.NumberFormat(locale || localeFor(language), {
+        style: 'currency',
+        currency,
+        signDisplay,
+        ...(minimumFractionDigits === undefined ? {} : { minimumFractionDigits }),
+        ...(maximumFractionDigits === undefined ? {} : { maximumFractionDigits }),
+    }).format(toFinancialNumber(value));
+    return formatted.replace(/\s+/g, '\u00A0');
+};
 
 export const formatFinancialCurrency = (value, language = 'en') => formatMoney(roundFinancialAmount(value), {
     currency: 'EGP',

@@ -118,8 +118,8 @@ const uploadDocument = (db) => async (req, res, next) => {
         const relation = await db.query(`
             SELECT 1
             FROM patients p
-            LEFT JOIN appointments a ON a.appointment_id = $2 AND a.patient_id = p.patient_id
-            LEFT JOIN examinations e ON e.exam_id = $3 AND e.patient_id = p.patient_id
+            LEFT JOIN appointments a ON a.appointment_id = $2::uuid AND a.patient_id = p.patient_id
+            LEFT JOIN examinations e ON e.exam_id = $3::uuid AND e.patient_id = p.patient_id
             WHERE p.patient_id = $1
               AND ($2::uuid IS NULL OR a.appointment_id IS NOT NULL)
               AND ($3::uuid IS NULL OR e.exam_id IS NOT NULL)

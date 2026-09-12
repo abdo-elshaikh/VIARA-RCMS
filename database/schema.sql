@@ -189,6 +189,14 @@ CREATE TABLE appointments (
     technician_id UUID REFERENCES users(user_id),
     nurse_id UUID REFERENCES users(user_id),
     radiologist_id UUID REFERENCES users(user_id),
+    technician_assigned_at TIMESTAMP WITH TIME ZONE,
+    nurse_assigned_at TIMESTAMP WITH TIME ZONE,
+    technician_task_available_at TIMESTAMP WITH TIME ZONE,
+    nurse_task_available_at TIMESTAMP WITH TIME ZONE,
+    technician_task_started_at TIMESTAMP WITH TIME ZONE,
+    nurse_task_started_at TIMESTAMP WITH TIME ZONE,
+    technician_assignment_version INTEGER NOT NULL DEFAULT 0,
+    nurse_assignment_version INTEGER NOT NULL DEFAULT 0,
     payment_method VARCHAR(50),
     payment_amount DECIMAL(10,2),
     transaction_ref VARCHAR(100),
@@ -215,6 +223,10 @@ CREATE TABLE examinations (
     modality_id UUID REFERENCES modalities(modality_id),
     exam_type_id UUID REFERENCES examination_types(type_id),
     performing_radiologist_id UUID REFERENCES users(user_id),
+    radiologist_assigned_at TIMESTAMP WITH TIME ZONE,
+    radiologist_task_available_at TIMESTAMP WITH TIME ZONE,
+    radiologist_task_started_at TIMESTAMP WITH TIME ZONE,
+    radiologist_assignment_version INTEGER NOT NULL DEFAULT 0,
     referring_doctor_id UUID REFERENCES users(user_id), -- Can be internal or external
     external_referring_doctor_id UUID REFERENCES referring_doctors(doctor_id),
     
@@ -233,7 +245,7 @@ CREATE TABLE examinations (
     is_follow_up BOOLEAN NOT NULL DEFAULT FALSE,
     prior_exam_id UUID REFERENCES examinations(exam_id) ON DELETE RESTRICT,
     follow_up_reason TEXT,
-    queue_stage VARCHAR(30) DEFAULT 'Scheduled' CHECK (queue_stage IN ('Registered', 'Scheduled', 'Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam', 'In Exam', 'Reporting', 'Finalized', 'Delivered')),
+    queue_stage VARCHAR(30) DEFAULT 'Scheduled' CHECK (queue_stage IN ('Registered', 'Scheduled', 'Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam', 'In Exam', 'Reporting', 'Finalized', 'Delivered', 'Cancelled')),
     current_station VARCHAR(30) DEFAULT 'Reception' CHECK (current_station IN ('Reception', 'Cashier', 'Nurse', 'Modality', 'Radiologist', 'Delivery')),
     arrived_at TIMESTAMP WITH TIME ZONE,
     prep_started_at TIMESTAMP WITH TIME ZONE,
@@ -446,6 +458,100 @@ CREATE INDEX idx_examinations_current_station ON examinations(current_station);
 CREATE INDEX idx_examinations_queue_hold ON examinations(is_on_hold);
 CREATE INDEX idx_queue_events_exam ON queue_events(exam_id);
 CREATE INDEX idx_queue_events_created_at ON queue_events(created_at);
+
+CREATE TABLE clinical_task_hold_intervals (
+    hold_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    exam_id UUID NOT NULL REFERENCES examinations(exam_id) ON DELETE CASCADE,
+    task_role VARCHAR(30),
+    queue_stage VARCHAR(30) NOT NULL,
+    started_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    released_at TIMESTAMP WITH TIME ZONE,
+    reason TEXT,
+    created_by UUID REFERENCES users(user_id),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (released_at IS NULL OR released_at >= started_at)
+);
+
+CREATE INDEX idx_clinical_task_hold_exam_time ON clinical_task_hold_intervals(exam_id, started_at, released_at);
+CREATE UNIQUE INDEX idx_clinical_task_one_open_hold ON clinical_task_hold_intervals(exam_id) WHERE released_at IS NULL;
+
+CREATE TABLE clinical_task_assignment_events (
+    event_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    exam_id UUID NOT NULL REFERENCES examinations(exam_id) ON DELETE CASCADE,
+    appointment_id UUID REFERENCES appointments(appointment_id) ON DELETE CASCADE,
+    task_role VARCHAR(30) NOT NULL CHECK (task_role IN ('Nurse', 'Technician', 'Radiologist')),
+    action VARCHAR(30) NOT NULL CHECK (action IN ('Claim', 'Assign', 'Transfer', 'Release', 'Complete')),
+    previous_user_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
+    new_user_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
+    performed_by UUID NOT NULL REFERENCES users(user_id),
+    reason TEXT,
+    available_at TIMESTAMP WITH TIME ZONE,
+    assignment_version INTEGER NOT NULL CHECK (assignment_version > 0),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    previous_hash VARCHAR(64),
+    entry_hash VARCHAR(64)
+);
+
+CREATE INDEX idx_clinical_task_assignment_exam ON clinical_task_assignment_events(exam_id, task_role, created_at DESC);
+CREATE INDEX idx_clinical_task_assignment_new_user ON clinical_task_assignment_events(new_user_id, created_at DESC) WHERE new_user_id IS NOT NULL;
+CREATE INDEX idx_appointments_nurse_active_assignment ON appointments(nurse_id, nurse_assigned_at) WHERE nurse_id IS NOT NULL;
+CREATE INDEX idx_appointments_technician_active_assignment ON appointments(technician_id, technician_assigned_at) WHERE technician_id IS NOT NULL;
+CREATE INDEX idx_examinations_radiologist_active_assignment ON examinations(performing_radiologist_id, radiologist_assigned_at) WHERE performing_radiologist_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION sync_appointment_assignment_metadata()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.nurse_id IS NOT NULL THEN
+            NEW.nurse_assigned_at := COALESCE(NEW.nurse_assigned_at, CURRENT_TIMESTAMP);
+            NEW.nurse_assignment_version := GREATEST(NEW.nurse_assignment_version, 1);
+        END IF;
+        IF NEW.technician_id IS NOT NULL THEN
+            NEW.technician_assigned_at := COALESCE(NEW.technician_assigned_at, CURRENT_TIMESTAMP);
+            NEW.technician_assignment_version := GREATEST(NEW.technician_assignment_version, 1);
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF NEW.nurse_id IS DISTINCT FROM OLD.nurse_id THEN
+        NEW.nurse_assigned_at := CASE WHEN NEW.nurse_id IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END;
+        NEW.nurse_task_started_at := NULL;
+        NEW.nurse_assignment_version := GREATEST(NEW.nurse_assignment_version, OLD.nurse_assignment_version + 1);
+    END IF;
+    IF NEW.technician_id IS DISTINCT FROM OLD.technician_id THEN
+        NEW.technician_assigned_at := CASE WHEN NEW.technician_id IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END;
+        NEW.technician_task_started_at := NULL;
+        NEW.technician_assignment_version := GREATEST(NEW.technician_assignment_version, OLD.technician_assignment_version + 1);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_sync_appointment_assignment_metadata
+BEFORE INSERT OR UPDATE OF nurse_id, technician_id ON appointments
+FOR EACH ROW EXECUTE FUNCTION sync_appointment_assignment_metadata();
+
+CREATE OR REPLACE FUNCTION sync_radiologist_assignment_metadata()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.performing_radiologist_id IS NOT NULL THEN
+            NEW.radiologist_assigned_at := COALESCE(NEW.radiologist_assigned_at, CURRENT_TIMESTAMP);
+            NEW.radiologist_assignment_version := GREATEST(NEW.radiologist_assignment_version, 1);
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF NEW.performing_radiologist_id IS DISTINCT FROM OLD.performing_radiologist_id THEN
+        NEW.radiologist_assigned_at := CASE WHEN NEW.performing_radiologist_id IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END;
+        NEW.radiologist_task_started_at := NULL;
+        NEW.radiologist_assignment_version := GREATEST(NEW.radiologist_assignment_version, OLD.radiologist_assignment_version + 1);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_sync_radiologist_assignment_metadata
+BEFORE INSERT OR UPDATE OF performing_radiologist_id ON examinations
+FOR EACH ROW EXECUTE FUNCTION sync_radiologist_assignment_metadata();
 
 -- 7. Financials, Insurance & Contracts
 CREATE TABLE insurance_providers (
@@ -733,14 +839,28 @@ CREATE TABLE role_permissions (
 
 CREATE TABLE emergency_access_logs (
     log_id BIGSERIAL PRIMARY KEY,
+    grant_id UUID NOT NULL DEFAULT uuid_generate_v4() UNIQUE,
     user_id UUID REFERENCES users(user_id),
     reason TEXT NOT NULL,
+    reason_enc TEXT,
+    permissions TEXT[] NOT NULL DEFAULT ARRAY['VIEW_PATIENTS', 'VIEW_EXAMS', 'VIEW_REPORTS', 'VIEW_PACS_IMAGES']::text[],
+    session_id UUID,
+    ip_address TEXT,
+    user_agent TEXT,
     granted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    status VARCHAR(20) DEFAULT 'Active' CHECK (status IN ('Active', 'Expired', 'Revoked'))
+    status VARCHAR(20) DEFAULT 'Active' CHECK (status IN ('Active', 'Expired', 'Revoked')),
+    revoked_at TIMESTAMP WITH TIME ZONE,
+    revoked_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
+    revoke_reason TEXT,
+    revoke_reason_enc TEXT,
+    last_used_at TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT chk_emergency_access_reason_length CHECK (char_length(btrim(reason)) BETWEEN 20 AND 1000)
 );
 
 CREATE INDEX idx_emergency_logs_user ON emergency_access_logs(user_id);
+CREATE INDEX idx_emergency_access_active_user ON emergency_access_logs(user_id, expires_at DESC) WHERE status = 'Active';
+CREATE UNIQUE INDEX uq_emergency_access_active_session ON emergency_access_logs(user_id, session_id) WHERE status = 'Active' AND session_id IS NOT NULL;
 
 -- 9. Scheduling Support
 CREATE TABLE appointment_reschedule_history (
@@ -765,7 +885,7 @@ CREATE TABLE waiting_list (
     preferred_end_time TIME,
     priority VARCHAR(20) DEFAULT 'Routine' CHECK (priority IN ('Routine', 'Urgent', 'Emergency')),
     source VARCHAR(30) DEFAULT 'Walk-in' CHECK (source IN ('Walk-in', 'Phone', 'Website', 'Patient Portal', 'Doctor Portal', 'Call Center')),
-    status VARCHAR(20) DEFAULT 'Waiting' CHECK (status IN ('Waiting', 'Contacted', 'Scheduled', 'Cancelled')),
+    status VARCHAR(20) DEFAULT 'Waiting' CHECK (status IN ('Waiting', 'Contacted', 'Offered', 'Scheduled', 'Declined', 'Expired', 'Cancelled')),
     notes TEXT,
     created_by UUID REFERENCES users(user_id),
     assigned_appointment_id UUID REFERENCES appointments(appointment_id),
@@ -870,9 +990,25 @@ CREATE TABLE integrations (
     integration_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     provider_name VARCHAR(100) UNIQUE NOT NULL, -- e.g., 'Twilio', 'Stripe', 'QuickBooks'
     type VARCHAR(50) NOT NULL, -- 'SMS', 'Payment', 'Accounting'
-    api_key VARCHAR(255),
-    api_secret VARCHAR(255),
-    webhook_url VARCHAR(255),
+    api_key TEXT,
+    api_secret TEXT,
+    webhook_secret TEXT,
+    webhook_url TEXT,
+    sender_identity VARCHAR(100),
+    extra_config JSONB DEFAULT '{}'::jsonb,
+    max_retries INT DEFAULT 3,
+    retry_backoff_ms INT DEFAULT 1000,
+    webhook_timeout_ms INT DEFAULT 5000,
+    secret_version INT DEFAULT 1,
+    last_rotated_at TIMESTAMP WITH TIME ZONE,
+    rotation_policy VARCHAR(50) DEFAULT 'manual',
+    health_status VARCHAR(24) NOT NULL DEFAULT 'Disabled' CHECK (health_status IN ('NotConfigured', 'Unknown', 'Healthy', 'Degraded', 'Unhealthy', 'Disabled')),
+    last_checked_at TIMESTAMP WITH TIME ZONE,
+    last_success_at TIMESTAMP WITH TIME ZONE,
+    last_error_code VARCHAR(80),
+    last_error_message TEXT,
+    config_version INTEGER NOT NULL DEFAULT 1 CHECK (config_version > 0),
+    updated_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
     is_active BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -886,11 +1022,25 @@ CREATE TABLE integration_logs (
     status VARCHAR(20) DEFAULT 'Pending', -- 'Pending', 'Success', 'Failed'
     error_message TEXT,
     retry_count INT DEFAULT 0,
+    idempotency_key VARCHAR(255),
+    webhook_id VARCHAR(255),
+    delivery_attempt INT DEFAULT 1,
+    max_retries INT DEFAULT 3,
+    next_retry_at TIMESTAMP WITH TIME ZONE,
+    dead_letter_reason TEXT,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    provider_response JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_integration_logs_status ON integration_logs(status);
+CREATE UNIQUE INDEX uq_integration_logs_idempotency ON integration_logs(idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX idx_integration_logs_claim ON integration_logs(status, next_retry_at, created_at)
+    WHERE status IN ('Pending', 'Failed', 'Processing');
+CREATE INDEX idx_integration_logs_dead_letter ON integration_logs(status, created_at DESC)
+    WHERE status = 'DeadLetter';
+CREATE INDEX idx_integrations_health ON integrations(is_active, health_status, last_checked_at DESC);
 
 -- 15. Center Settings (Phase 24)
 CREATE TABLE center_settings (

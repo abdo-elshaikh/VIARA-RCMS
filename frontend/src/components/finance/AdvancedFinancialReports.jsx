@@ -526,10 +526,10 @@ const ReportPreview = ({ report, t, sectionCount, numberLabel }) => (
                     <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                         <table className="min-w-full text-start text-xs">
                             <thead className="bg-slate-50 text-slate-500 dark:bg-slate-950/45 dark:text-slate-400">
-                                <tr>{section.columns.map((column) => <th key={column.key} className="px-2.5 py-2 text-start font-black uppercase tracking-wider">{column.header}</th>)}</tr>
+                                <tr>{section.columns.map((column) => <th key={column.key} className="px-2.5 py-2 text-start font-black uppercase tracking-wider whitespace-nowrap">{column.header}</th>)}</tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {section.rows.length ? section.rows.map((row, index) => <tr key={`${section.title}-${index}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/45">{section.columns.map((column) => <td key={column.key} className="px-2.5 py-2 font-semibold text-slate-700 dark:text-slate-300">{row[column.key]}</td>)}</tr>) : <tr><td className="px-3 py-4 text-center font-bold text-slate-400" colSpan={section.columns.length}>{t('finance.reports.noRecords', { defaultValue: 'No records' })}</td></tr>}
+                                {section.rows.length ? section.rows.map((row, index) => <tr key={`${section.title}-${index}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/45">{section.columns.map((column) => <td key={column.key} className="px-2.5 py-2 font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">{row[column.key]}</td>)}</tr>) : <tr><td className="px-3 py-4 text-center font-bold text-slate-400" colSpan={section.columns.length}>{t('finance.reports.noRecords', { defaultValue: 'No records' })}</td></tr>}
                             </tbody>
                         </table>
                     </div>

@@ -62,10 +62,12 @@ import { selectCurrentUser } from '../store/authSlice';
 import { authenticatedFetch } from '../utils/authenticatedFetch';
 import { formatLocalizedDate } from '../utils/localizedDate';
 import { getErrorMessage } from '../utils/getErrorMessage';
+import { hasEffectivePermission } from '../utils/effectivePermissions';
 import PageHeader from '../components/ui/PageHeader';
 import Modal from '../components/ui/Modal';
 import Pagination from '../components/ui/Pagination';
 import { getPaginationState } from '../utils/pagination';
+import { printWhenReady } from '../utils/printDocument';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const REPORT_STATUSES = ['Draft', 'Typed', 'Reviewed', 'Approved', 'Finalized', 'Amended'];
@@ -196,9 +198,7 @@ const reportPlainText = (item) => {
 
 const userHasPermission = (user, permission) => {
     if (!user) return false;
-    if (user.role === 'Developer') return true;
-    if (user.elevatedPermissions?.includes(permission)) return true;
-    return Boolean(user.permissions?.includes(permission));
+    return hasEffectivePermission(user, permission);
 };
 
 const CaseReports = () => {
@@ -343,6 +343,31 @@ const CaseReports = () => {
         }
     }, [selectedTemplateId, t]);
 
+    const downloadPdf = useCallback(async (item) => {
+        try {
+            const queryParam = selectedTemplateId
+                ? `?templateId=${encodeURIComponent(selectedTemplateId)}&format=pdf&disposition=attachment`
+                : '?format=pdf&disposition=attachment';
+            const response = await authenticatedFetch(`${API_BASE}/exams/${item.exam_id}/report/pdf${queryParam}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            const patientStem = String(item?.patient_name || 'Patient').replace(/[^a-zA-Z0-9_\u0600-\u06FF]+/g, '_');
+            const examStem = String(item?.exam_type_name || 'Report').replace(/[^a-zA-Z0-9_\u0600-\u06FF]+/g, '_');
+            const orderStem = String(item?.order_number || item?.mrn || item.exam_id).replace(/[^a-zA-Z0-9_\u0600-\u06FF]+/g, '_');
+            anchor.download = `${patientStem}_${examStem}_${orderStem}.pdf`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+            toast.success(t('messages.pdfDownloaded', { defaultValue: 'PDF downloaded successfully' }));
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('caseReports.toasts.downloadError', { defaultValue: 'Failed to download PDF' })));
+        }
+    }, [selectedTemplateId, t]);
+
     const exportWord = useCallback(async (item) => {
         if (isExportingWord) return;
         setIsExportingWord(true);
@@ -392,6 +417,11 @@ const CaseReports = () => {
 
     const printBatch = useCallback(async () => {
         if (!selectedItems.length) return;
+        const popup = window.open('about:blank', '_blank');
+        if (!popup) {
+            toast.error(t('caseReports.toasts.popupBlocked', { defaultValue: 'Allow pop-ups to print selected reports.' }));
+            return;
+        }
         setIsBatchBusy(true);
         try {
             const documents = await Promise.all(selectedItems.map(async (item) => {
@@ -400,14 +430,22 @@ const CaseReports = () => {
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const html = await response.text();
                 const parsed = new DOMParser().parseFromString(html, 'text/html');
-                return parsed.body?.innerHTML || html;
+                parsed.querySelectorAll('.customize-panel, script, .no-print').forEach((node) => node.remove());
+                return {
+                    body: parsed.body?.innerHTML || html,
+                    styles: Array.from(parsed.head?.querySelectorAll('style') || []).map((style) => style.textContent).join('\n'),
+                    dir: parsed.documentElement?.dir || 'ltr'
+                };
             }));
-            const html = `<!doctype html><html><head><meta charset="utf-8"><title>Selected case reports</title><style>body{margin:0;font-family:Arial,"Noto Sans Arabic",sans-serif}.report-page{break-after:page;page-break-after:always}.report-page:last-child{break-after:auto;page-break-after:auto}@media print{.report-page{break-after:page;page-break-after:always}}</style></head><body>${documents.map((body) => `<section class="report-page">${body}</section>`).join('')}</body></html>`;
+            const dir = documents.some((document) => document.dir === 'rtl') ? 'rtl' : 'ltr';
+            const reportStyles = documents[0]?.styles || '';
+            const html = `<!doctype html><html dir="${dir}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Selected case reports</title><style>${reportStyles}</style><style>html,body{margin:0}.report-page{break-after:page;page-break-after:always}.report-page:last-child{break-after:auto;page-break-after:auto}@media screen{body{background:#334155}.report-page{margin-block-end:24px}}@media print{@page{size:A4;margin:12mm 12mm 16mm}.report-page{break-after:page;page-break-after:always}.report-page:last-child{break-after:auto;page-break-after:auto}.customize-panel,.no-print{display:none!important}}</style></head><body>${documents.map((document) => `<section class="report-page">${document.body}</section>`).join('')}</body></html>`;
             const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-            const popup = window.open(url, '_blank', 'noopener,noreferrer');
-            if (popup) popup.addEventListener('load', () => popup.print(), { once: true });
+            popup.addEventListener('load', () => printWhenReady(popup), { once: true });
+            popup.location.replace(url);
             window.setTimeout(() => URL.revokeObjectURL(url), 60000);
         } catch (error) {
+            popup.close();
             toast.error(getErrorMessage(error, t('caseReports.toasts.batchPrintError')));
         } finally {
             setIsBatchBusy(false);
@@ -508,74 +546,14 @@ const CaseReports = () => {
                         </button>
                     </div>
                 }
+                metrics={[
+                    { key: 'total', icon: FileText, tone: 'slate', label: ar.totalReports, value: summary.total, loading: isLoading, error: isError },
+                    { key: 'final', icon: CheckCircle2, tone: 'emerald', label: ar.finalizedReports, value: summary.finalized, loading: isLoading, error: isError },
+                    { key: 'pending', icon: PenLine, tone: 'amber', label: ar.pendingReports, value: summary.pending, loading: isLoading, error: isError },
+                    { key: 'delivered', icon: Send, tone: 'teal', label: ar.deliveredReports, value: summary.delivered, loading: isLoading, error: isError },
+                ]}
+                metricsLabel={tr(t, 'caseReports.metricsLabel', 'Case report record indicators', 'مؤشرات سجل التقارير', isAr)}
             />
-
-            {/* 4-Tile Telemetry Metric HUD */}
-            <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                {/* 1. Total */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                    <div className="flex items-center justify-between">
-                        <span className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                            <FileText size={18} />
-                        </span>
-                        <span className="font-mono text-[10px] font-black uppercase text-slate-400">REGISTER</span>
-                    </div>
-                    <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        {ar.totalReports}
-                    </p>
-                    <p className="mt-0.5 text-2xl font-black tabular-nums text-slate-900 dark:text-white sm:text-3xl">
-                        {summary.total}
-                    </p>
-                </div>
-
-                {/* 2. Finalized */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                    <div className="flex items-center justify-between">
-                        <span className="grid h-9 w-9 place-items-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                            <CheckCircle2 size={18} />
-                        </span>
-                        <span className="font-mono text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400">FINAL</span>
-                    </div>
-                    <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        {ar.finalizedReports}
-                    </p>
-                    <p className="mt-0.5 text-2xl font-black tabular-nums text-slate-900 dark:text-white sm:text-3xl">
-                        {summary.finalized}
-                    </p>
-                </div>
-
-                {/* 3. Pending / Typed */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                    <div className="flex items-center justify-between">
-                        <span className="grid h-9 w-9 place-items-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300">
-                            <PenLine size={18} />
-                        </span>
-                        <span className="font-mono text-[10px] font-black uppercase text-amber-600 dark:text-amber-400">QUEUE</span>
-                    </div>
-                    <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        {ar.pendingReports}
-                    </p>
-                    <p className="mt-0.5 text-2xl font-black tabular-nums text-slate-900 dark:text-white sm:text-3xl">
-                        {summary.pending}
-                    </p>
-                </div>
-
-                {/* 4. Delivered */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                    <div className="flex items-center justify-between">
-                        <span className="grid h-9 w-9 place-items-center rounded-xl border border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300">
-                            <Send size={18} />
-                        </span>
-                        <span className="font-mono text-[10px] font-black uppercase text-teal-600 dark:text-teal-400">DELIVERY</span>
-                    </div>
-                    <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                        {ar.deliveredReports}
-                    </p>
-                    <p className="mt-0.5 text-2xl font-black tabular-nums text-slate-900 dark:text-white sm:text-3xl">
-                        {summary.delivered}
-                    </p>
-                </div>
-            </section>
 
             {/* Quick Queue Filter Pills */}
             <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
@@ -587,11 +565,10 @@ const CaseReports = () => {
                             key={queue.key || 'all'}
                             type="button"
                             onClick={() => setQuickQueue(queue.key)}
-                            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
-                                isActive
+                            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all ${isActive
                                     ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20'
                                     : 'border border-transparent text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
-                            }`}
+                                }`}
                         >
                             <Icon size={14} />
                             <span>{ar.queues[queue.labelKey] || queue.labelKey}</span>
@@ -881,11 +858,10 @@ const CaseReports = () => {
                             return (
                                 <article
                                     key={item.exam_id}
-                                    className={`group relative transition-all duration-150 ${
-                                        isSelected
+                                    className={`group relative transition-all duration-150 ${isSelected
                                             ? 'bg-teal-50/60 dark:bg-teal-950/20'
                                             : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/40'
-                                    }`}
+                                        }`}
                                 >
                                     {/* Acuity Side Stripe */}
                                     <div className={`absolute inset-y-0 start-0 w-1 ${priorityRail[priorityKey]}`} />
@@ -977,7 +953,7 @@ const CaseReports = () => {
                                             {/* Download PDF */}
                                             <button
                                                 type="button"
-                                                onClick={() => openPrintableReport(item, false)}
+                                                onClick={() => downloadPdf(item)}
                                                 title="Download PDF"
                                                 className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-teal-500 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition"
                                             >
@@ -1025,11 +1001,10 @@ const CaseReports = () => {
                                                 type="button"
                                                 onClick={() => setExpandedId(isExpanded ? null : item.exam_id)}
                                                 title="Toggle Case Metadata"
-                                                className={`grid h-8 w-8 place-items-center rounded-lg border text-slate-500 transition ${
-                                                    isExpanded
+                                                className={`grid h-8 w-8 place-items-center rounded-lg border text-slate-500 transition ${isExpanded
                                                         ? 'border-teal-500 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300 rotate-180'
                                                         : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
-                                                }`}
+                                                    }`}
                                             >
                                                 <ChevronDown size={14} />
                                             </button>
@@ -1193,7 +1168,7 @@ const ScannerDialog = ({ value, onChange, onClose, onLookup, busy, t, isAr }) =>
                 stream.getTracks().forEach((track) => track.stop());
                 return;
             }
-            
+
             if (!jsqrModule) {
                 toast.error(t('caseReports.scanner.loadError') || 'Failed to initialize QR engine');
                 setCameraState('unsupported');
@@ -1205,10 +1180,10 @@ const ScannerDialog = ({ value, onChange, onClose, onLookup, busy, t, isAr }) =>
             videoRef.current.srcObject = stream;
             await videoRef.current.play();
             setCameraState('scanning');
-            
+
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d', { willReadFrequently: true });
-            
+
             const tick = () => {
                 if (!videoRef.current || !streamRef.current || videoRef.current.readyState !== videoRef.current.HAVE_ENOUGH_DATA) {
                     if (streamRef.current) rafRef.current = requestAnimationFrame(tick);
@@ -1219,7 +1194,7 @@ const ScannerDialog = ({ value, onChange, onClose, onLookup, busy, t, isAr }) =>
                 context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
                 const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
                 const code = typeof jsqrModule === 'function' ? jsqrModule(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' }) : null;
-                
+
                 if (code && code.data) {
                     onChange(code.data);
                     stopCamera();

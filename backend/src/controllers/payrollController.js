@@ -1,6 +1,7 @@
 const { AppError } = require('../middleware/errorHandler');
 const Decimal = require('decimal.js');
 const { logAction } = require('../services/auditService');
+const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 const {
     DEFAULT_BRANCH_ID,
     DEFAULT_CURRENCY,
@@ -10,6 +11,16 @@ const {
 } = require('../services/financialPostingService');
 
 const getUserId = (req) => req.user?.user_id || req.user?.userId || req.user?.id || null;
+const getBranchId = (req, source = {}) => (
+    source.branchId || req.query?.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID
+);
+
+const assertBranchAccess = (req, branchId) => {
+    const userBranchId = req.user?.branch_id || req.user?.branchId;
+    if (req.user?.role !== 'Developer' && userBranchId && userBranchId !== branchId) {
+        throw new AppError('You cannot access payroll data for another branch', 403);
+    }
+};
 
 const boundedInteger = (value, fallback = 100, max = 500) => {
     const parsed = Number.parseInt(value, 10);
@@ -148,15 +159,19 @@ const payrollPaymentJournalEntries = (run, paymentMethod) => {
 
 const getPayrollEmployees = (db) => async (req, res, next) => {
     try {
+        const branchId = getBranchId(req);
+        assertBranchAccess(req, branchId);
         const result = await db.query(`
             SELECT u.user_id, u.full_name, u.email, u.role, u.is_active,
                    ep.employee_id, ep.department, ep.job_title, ep.hire_date,
-                   ep.termination_date, ep.employment_status
+                   ep.termination_date, ep.employment_status, ep.payroll_branch_id
             FROM users u
             JOIN employee_profiles ep ON ep.user_id = u.user_id
             WHERE u.role = ANY($1::user_role[])
+              AND ep.payroll_branch_id = $2::uuid
+              AND (u.is_active = TRUE OR ep.termination_date IS NOT NULL)
             ORDER BY u.full_name ASC
-        `, [PAYROLL_EMPLOYEE_ROLES]);
+        `, [PAYROLL_EMPLOYEE_ROLES, branchId]);
         res.json(result.rows);
     } catch (error) {
         next(error);
@@ -165,16 +180,21 @@ const getPayrollEmployees = (db) => async (req, res, next) => {
 
 const getPayrollOverview = (db) => async (req, res, next) => {
     try {
-        const { currencyCode, branchId } = req.query;
-        const params = [];
-        let filters = `WHERE status != 'Cancelled'`;
+        const { currencyCode, periodId } = req.query;
+        const branchId = getBranchId(req);
+        assertBranchAccess(req, branchId);
+        const params = [branchId];
+        let filters = `WHERE status != 'Cancelled' AND branch_id = $1::uuid`;
+        const branchPlaceholder = '$1';
+        let currencyPlaceholder = null;
         if (currencyCode) {
             params.push(currencyCode);
+            currencyPlaceholder = `$${params.length}`;
             filters += ` AND currency_code = $${params.length}`;
         }
-        if (branchId) {
-            params.push(branchId);
-            filters += ` AND branch_id = $${params.length}::uuid`;
+        if (periodId) {
+            params.push(periodId);
+            filters += ` AND period_id = $${params.length}::uuid`;
         }
         const result = await db.query(`
             SELECT
@@ -186,10 +206,19 @@ const getPayrollOverview = (db) => async (req, res, next) => {
                 COALESCE(SUM(total_employer_contributions), 0)::numeric AS total_employer_contributions,
                 COALESCE(SUM(total_net), 0)::numeric AS total_net,
                 COALESCE((
-                    SELECT COUNT(*) FROM employee_penalties WHERE status IN ('Draft', 'Pending Approval')
+                    SELECT COUNT(*) FROM employee_penalties
+                    WHERE (
+                        status IN ('Draft', 'Pending Approval')
+                        OR (status = 'Approved' AND remaining_amount > 0 AND payroll_period_id IS NULL)
+                    )
+                      AND branch_id = ${branchPlaceholder}::uuid
+                      ${currencyPlaceholder ? `AND currency_code = ${currencyPlaceholder}` : ''}
                 ), 0)::int AS pending_penalties,
                 COALESCE((
-                    SELECT COUNT(*) FROM employee_deductions WHERE status IN ('Draft', 'Paused')
+                    SELECT COUNT(*) FROM employee_deductions
+                    WHERE status IN ('Draft', 'Paused')
+                      AND branch_id = ${branchPlaceholder}::uuid
+                      ${currencyPlaceholder ? `AND currency_code = ${currencyPlaceholder}` : ''}
                 ), 0)::int AS pending_deductions
             FROM payroll_periods
             ${filters}
@@ -202,7 +231,9 @@ const getPayrollOverview = (db) => async (req, res, next) => {
 
 const getPayrollPeriods = (db) => async (req, res, next) => {
     try {
-        const { status, startDate, endDate, branchId, limit = 100 } = req.query;
+        const { status, startDate, endDate, limit = 100 } = req.query;
+        const branchId = getBranchId(req);
+        assertBranchAccess(req, branchId);
         const pageLimit = boundedInteger(limit);
         const params = [];
         let query = `
@@ -234,10 +265,8 @@ const getPayrollPeriods = (db) => async (req, res, next) => {
             params.push(endDate);
             query += ` AND p.start_date <= $${params.length}::date`;
         }
-        if (branchId) {
-            params.push(branchId);
-            query += ` AND p.branch_id = $${params.length}::uuid`;
-        }
+        params.push(branchId);
+        query += ` AND p.branch_id = $${params.length}::uuid`;
         params.push(pageLimit);
         query += ` ORDER BY p.start_date DESC, p.created_at DESC LIMIT $${params.length}::int`;
         const result = await db.query(query, params);
@@ -251,7 +280,8 @@ const createPayrollPeriod = (db) => async (req, res, next) => {
     let client;
     try {
         const data = req.body;
-        const branchId = data.branchId || DEFAULT_BRANCH_ID;
+        const branchId = getBranchId(req, data);
+        assertBranchAccess(req, branchId);
         client = await db.connect();
         await client.query('BEGIN');
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 11704))', [branchId]);
@@ -348,18 +378,25 @@ const cancelPayrollPeriod = (db) => async (req, res, next) => {
 
 const getCompensationProfiles = (db) => async (req, res, next) => {
     try {
-        const { userId, limit = 100 } = req.query;
+        const { userId, currencyCode, limit = 100 } = req.query;
+        const branchId = getBranchId(req);
+        assertBranchAccess(req, branchId);
         const pageLimit = boundedInteger(limit);
-        const params = [PAYROLL_EMPLOYEE_ROLES];
+        const params = [PAYROLL_EMPLOYEE_ROLES, branchId];
         let query = `
             SELECT cp.*, u.full_name AS employee_name, u.email, u.role
             FROM employee_compensation_profiles cp
             JOIN users u ON u.user_id = cp.user_id
             WHERE u.role = ANY($1::user_role[])
+              AND cp.branch_id = $2::uuid
         `;
         if (userId) {
             params.push(userId);
             query += ` AND cp.user_id = $${params.length}::uuid`;
+        }
+        if (currencyCode) {
+            params.push(currencyCode);
+            query += ` AND cp.currency_code = $${params.length}`;
         }
         params.push(pageLimit);
         query += ` ORDER BY cp.is_active DESC, cp.effective_from DESC, cp.created_at DESC LIMIT $${params.length}::int`;
@@ -374,23 +411,29 @@ const createCompensationProfile = (db) => async (req, res, next) => {
     let client;
     try {
         const data = req.body;
+        const branchId = getBranchId(req, data);
+        assertBranchAccess(req, branchId);
         client = await db.connect();
         await client.query('BEGIN');
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 11703))', [data.userId]);
-        const employee = await client.query(
-            'SELECT user_id FROM users WHERE user_id = $1 AND role = ANY($2::user_role[])',
-            [data.userId, PAYROLL_EMPLOYEE_ROLES]
-        );
+        const employee = await client.query(`
+            SELECT u.user_id
+            FROM users u
+            JOIN employee_profiles ep ON ep.user_id = u.user_id
+            WHERE u.user_id = $1 AND u.role = ANY($2::user_role[])
+              AND ep.payroll_branch_id = $3::uuid
+        `, [data.userId, PAYROLL_EMPLOYEE_ROLES, branchId]);
         if (!employee.rows.length) throw new AppError('Eligible employee not found', 400);
         const overlap = await client.query(`
             SELECT profile_id
             FROM employee_compensation_profiles
             WHERE user_id = $1
+              AND branch_id = $4::uuid
               AND is_active = TRUE
               AND daterange(effective_from, COALESCE(effective_to, '9999-12-31'::date), '[]')
                   && daterange($2::date, COALESCE($3::date, '9999-12-31'::date), '[]')
             LIMIT 1
-        `, [data.userId, data.effectiveFrom, data.effectiveTo || null]);
+        `, [data.userId, data.effectiveFrom, data.effectiveTo || null, branchId]);
         if (overlap.rows.length) {
             throw new AppError('Employee already has an active compensation profile in this date range', 409);
         }
@@ -398,9 +441,10 @@ const createCompensationProfile = (db) => async (req, res, next) => {
         const result = await client.query(`
             INSERT INTO employee_compensation_profiles (
                 user_id, salary_type, base_salary, hourly_rate, standard_hours_per_day,
-                standard_days_per_period, effective_from, effective_to, is_active, notes, created_by
+                standard_days_per_period, effective_from, effective_to, is_active, notes, created_by,
+                branch_id, currency_code
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::uuid, $13)
             RETURNING *
         `, [
             data.userId,
@@ -413,7 +457,9 @@ const createCompensationProfile = (db) => async (req, res, next) => {
             data.effectiveTo || null,
             data.isActive,
             data.notes,
-            getUserId(req)
+            getUserId(req),
+            branchId,
+            data.currencyCode
         ]);
         await client.query(`
             INSERT INTO payroll_audit_log (entity_type, entity_id, action, new_status, details, changed_by)
@@ -427,7 +473,7 @@ const createCompensationProfile = (db) => async (req, res, next) => {
         await logAction(client, {
             userId: getUserId(req), action: 'COMPENSATION_PROFILE_CREATED', resourceId: result.rows[0].profile_id,
             resourceTable: 'employee_compensation_profiles', ipAddress: req.ip,
-            details: { userId: data.userId, salaryType: data.salaryType, effectiveFrom: data.effectiveFrom }, required: true
+            details: { userId: data.userId, salaryType: data.salaryType, effectiveFrom: data.effectiveFrom, branchId, currencyCode: data.currencyCode }, required: true
         });
         await client.query('COMMIT');
         res.status(201).json(result.rows[0]);
@@ -452,6 +498,7 @@ const updateCompensationProfile = (db) => async (req, res, next) => {
             [profileId]
         );
         if (!existing.rows.length) throw new AppError('Compensation profile not found', 404);
+        assertBranchAccess(req, existing.rows[0].branch_id || DEFAULT_BRANCH_ID);
         if (dateOnly(data.effectiveTo) < dateOnly(existing.rows[0].effective_from)) {
             throw new AppError('Effective end date must be on or after effective start date', 400);
         }
@@ -490,17 +537,27 @@ const updateCompensationProfile = (db) => async (req, res, next) => {
 
 const getPayrollRules = (db) => async (req, res, next) => {
     try {
-        const { status } = req.query;
-        const params = [];
+        const { status, currencyCode } = req.query;
+        const branchId = getBranchId(req);
+        assertBranchAccess(req, branchId);
+        const params = [branchId];
+        let filters = 'WHERE r.branch_id = $1::uuid';
+        if (status) {
+            params.push(status);
+            filters += ` AND r.status = $${params.length}::varchar(30)`;
+        }
+        if (currencyCode) {
+            params.push(currencyCode);
+            filters += ` AND r.currency_code = $${params.length}`;
+        }
         const result = await db.query(`
             SELECT r.*, creator.full_name AS created_by_name, approver.full_name AS approved_by_name
             FROM payroll_rules r
             LEFT JOIN users creator ON creator.user_id = r.created_by
             LEFT JOIN users approver ON approver.user_id = r.approved_by
-            WHERE 1=1
-            ${status ? `AND r.status = $1::varchar(30)` : ''}
+            ${filters}
             ORDER BY r.status ASC, r.is_active DESC, r.rule_type ASC, r.name ASC
-        `, status ? [status] : params);
+        `, params);
         res.json(result.rows);
     } catch (error) {
         next(error);
@@ -511,6 +568,8 @@ const createPayrollRule = (db) => async (req, res, next) => {
     let client;
     try {
         const data = req.body;
+        const branchId = getBranchId(req, data);
+        assertBranchAccess(req, branchId);
         const status = 'Pending Approval';
         const isActive = false;
         client = await db.connect();
@@ -519,9 +578,9 @@ const createPayrollRule = (db) => async (req, res, next) => {
             INSERT INTO payroll_rules (
                 rule_type, name, calculation_method, value, taxable, requires_approval,
                 effective_from, effective_to, is_active, status, metadata, created_by,
-                approved_by, approved_at
+                approved_by, approved_at, branch_id, currency_code
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::varchar(30), $11::jsonb, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::varchar(30), $11::jsonb, $12, $13, $14, $15::uuid, $16)
             RETURNING *
         `, [
             data.ruleType,
@@ -537,7 +596,9 @@ const createPayrollRule = (db) => async (req, res, next) => {
             JSON.stringify(data.metadata || {}),
             getUserId(req),
             null,
-            null
+            null,
+            branchId,
+            data.currencyCode
         ]);
         await client.query(`
             INSERT INTO payroll_audit_log (entity_type, entity_id, action, new_status, details, changed_by)
@@ -572,10 +633,13 @@ const updatePayrollRuleStatus = (db) => async (req, res, next) => {
         );
         if (!existing.rows.length) throw new AppError('Payroll rule not found', 404);
         const rule = existing.rows[0];
-        if (rule.status !== 'Pending Approval') {
+        assertBranchAccess(req, rule.branch_id || DEFAULT_BRANCH_ID);
+        const validTransition = (rule.status === 'Pending Approval' && ['Approved', 'Rejected'].includes(status))
+            || (rule.status === 'Approved' && status === 'Cancelled');
+        if (!validTransition) {
             throw new AppError(`Payroll rule cannot move from ${rule.status} to ${status}`, 409);
         }
-        if (req.user?.role !== 'Developer' && rule.created_by === userId) {
+        if (rule.status === 'Pending Approval' && req.user?.role !== 'Developer' && rule.created_by === userId) {
             throw new AppError('The payroll rule creator cannot approve or reject their own request', 403);
         }
 
@@ -631,9 +695,11 @@ const updatePayrollRuleStatus = (db) => async (req, res, next) => {
 
 const getDeductions = (db) => async (req, res, next) => {
     try {
-        const { userId, status, limit = 100 } = req.query;
+        const { userId, status, currencyCode, limit = 100 } = req.query;
+        const branchId = getBranchId(req);
+        assertBranchAccess(req, branchId);
         const pageLimit = boundedInteger(limit);
-        const params = [PAYROLL_EMPLOYEE_ROLES];
+        const params = [PAYROLL_EMPLOYEE_ROLES, branchId];
         let query = `
             SELECT d.*, u.full_name AS employee_name, creator.full_name AS created_by_name, approver.full_name AS approved_by_name
             FROM employee_deductions d
@@ -641,6 +707,7 @@ const getDeductions = (db) => async (req, res, next) => {
             LEFT JOIN users creator ON creator.user_id = d.created_by
             LEFT JOIN users approver ON approver.user_id = d.approved_by
             WHERE u.role = ANY($1::user_role[])
+              AND d.branch_id = $2::uuid
         `;
         if (userId) {
             params.push(userId);
@@ -649,6 +716,10 @@ const getDeductions = (db) => async (req, res, next) => {
         if (status) {
             params.push(status);
             query += ` AND d.status = $${params.length}::varchar`;
+        }
+        if (currencyCode) {
+            params.push(currencyCode);
+            query += ` AND d.currency_code = $${params.length}`;
         }
         params.push(pageLimit);
         query += ` ORDER BY d.created_at DESC LIMIT $${params.length}::int`;
@@ -663,19 +734,26 @@ const createDeduction = (db) => async (req, res, next) => {
     let client;
     try {
         const data = req.body;
+        const branchId = getBranchId(req, data);
+        assertBranchAccess(req, branchId);
         client = await db.connect();
         await client.query('BEGIN');
-        const employee = await client.query(
-            'SELECT user_id FROM users WHERE user_id = $1 AND role = ANY($2::user_role[])',
-            [data.userId, PAYROLL_EMPLOYEE_ROLES]
-        );
+        const employee = await client.query(`
+            SELECT u.user_id
+            FROM users u
+            JOIN employee_profiles ep ON ep.user_id = u.user_id
+            WHERE u.user_id = $1 AND u.role = ANY($2::user_role[])
+              AND ep.payroll_branch_id = $3::uuid
+        `, [data.userId, PAYROLL_EMPLOYEE_ROLES, branchId]);
         if (!employee.rows.length) throw new AppError('Eligible employee not found', 400);
         const result = await client.query(`
             INSERT INTO employee_deductions (
                 user_id, name, deduction_type, amount, percentage, total_amount,
-                remaining_amount, start_date, end_date, status, notes, created_by, approved_by, approved_at
+                remaining_amount, start_date, end_date, status, notes, created_by, approved_by, approved_at,
+                branch_id, currency_code, recurrence_type, max_occurrences
             )
-            VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, $6), $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, $6, $4), $8, $9, $10, $11, $12, $13, $14,
+                    $15::uuid, $16, $17, $18)
             RETURNING *
         `, [
             data.userId,
@@ -691,7 +769,11 @@ const createDeduction = (db) => async (req, res, next) => {
             data.notes,
             getUserId(req),
             null,
-            null
+            null,
+            branchId,
+            data.currencyCode,
+            data.recurrenceType,
+            data.maxOccurrences || null
         ]);
         await client.query(`
             INSERT INTO payroll_audit_log (entity_type, entity_id, action, new_status, details, changed_by)
@@ -726,6 +808,7 @@ const updateDeductionStatus = (db) => async (req, res, next) => {
         );
         if (!existing.rows.length) throw new AppError('Payroll deduction not found', 404);
         const deduction = existing.rows[0];
+        assertBranchAccess(req, deduction.branch_id || DEFAULT_BRANCH_ID);
         const allowedStatuses = DEDUCTION_STATUS_TRANSITIONS[deduction.status] || new Set();
         if (!allowedStatuses.has(status)) {
             throw new AppError(`Deduction cannot move from ${deduction.status} to ${status}`, 409);
@@ -733,8 +816,11 @@ const updateDeductionStatus = (db) => async (req, res, next) => {
         if (deduction.payroll_period_id && status !== 'Approved') {
             throw new AppError('Deduction is reserved by a calculated payroll period; cancel or recalculate that run first', 409);
         }
-        if (deduction.status === 'Draft' && req.user?.role !== 'Developer' && deduction.created_by === userId) {
-            throw new AppError('The deduction creator cannot approve or reject their own request', 403);
+        // Blocks Draft -> Approved and Paused -> Approved alike: resuming a
+        // paused deduction re-opens payroll impact, so the maker cannot also
+        // be the checker.
+        if (status === 'Approved' && req.user?.role !== 'Developer' && deduction.created_by === userId) {
+            throw new AppError('The deduction creator cannot approve their own request', 403);
         }
 
         const updated = await client.query(`
@@ -782,9 +868,11 @@ const updateDeductionStatus = (db) => async (req, res, next) => {
 
 const getPenalties = (db) => async (req, res, next) => {
     try {
-        const { userId, status, limit = 100 } = req.query;
+        const { userId, status, currencyCode, limit = 100 } = req.query;
+        const branchId = getBranchId(req);
+        assertBranchAccess(req, branchId);
         const pageLimit = boundedInteger(limit);
-        const params = [PAYROLL_EMPLOYEE_ROLES];
+        const params = [PAYROLL_EMPLOYEE_ROLES, branchId];
         let query = `
             SELECT p.*, u.full_name AS employee_name, creator.full_name AS created_by_name, approver.full_name AS approved_by_name
             FROM employee_penalties p
@@ -792,6 +880,7 @@ const getPenalties = (db) => async (req, res, next) => {
             LEFT JOIN users creator ON creator.user_id = p.created_by
             LEFT JOIN users approver ON approver.user_id = p.approved_by
             WHERE u.role = ANY($1::user_role[])
+              AND p.branch_id = $2::uuid
         `;
         if (userId) {
             params.push(userId);
@@ -800,6 +889,10 @@ const getPenalties = (db) => async (req, res, next) => {
         if (status) {
             params.push(status);
             query += ` AND p.status = $${params.length}::varchar`;
+        }
+        if (currencyCode) {
+            params.push(currencyCode);
+            query += ` AND p.currency_code = $${params.length}`;
         }
         params.push(pageLimit);
         query += ` ORDER BY p.created_at DESC LIMIT $${params.length}::int`;
@@ -814,33 +907,41 @@ const createPenalty = (db) => async (req, res, next) => {
     let client;
     try {
         const data = req.body;
+        const branchId = getBranchId(req, data);
+        assertBranchAccess(req, branchId);
         client = await db.connect();
         await client.query('BEGIN');
-        const employee = await client.query(
-            'SELECT user_id FROM users WHERE user_id = $1 AND role = ANY($2::user_role[])',
-            [data.userId, PAYROLL_EMPLOYEE_ROLES]
-        );
+        const employee = await client.query(`
+            SELECT u.user_id
+            FROM users u
+            JOIN employee_profiles ep ON ep.user_id = u.user_id
+            WHERE u.user_id = $1 AND u.role = ANY($2::user_role[])
+              AND ep.payroll_branch_id = $3::uuid
+        `, [data.userId, PAYROLL_EMPLOYEE_ROLES, branchId]);
         if (!employee.rows.length) throw new AppError('Eligible employee not found', 400);
         if (data.attendanceId) {
             const attendance = await client.query(
                 'SELECT 1 FROM attendance_logs WHERE log_id = $1::uuid AND user_id = $2::uuid',
                 [data.attendanceId, data.userId]
             );
-            if (!attendance.rows.length) throw new AppError('Attendance record does not belong to the selected employee', 400);
+        if (!attendance.rows.length) throw new AppError('Attendance record does not belong to the selected employee', 400);
         }
         if (data.payrollPeriodId) {
             const period = await client.query(
-                "SELECT period_id FROM payroll_periods WHERE period_id = $1::uuid AND status IN ('Draft', 'Calculated') FOR UPDATE",
-                [data.payrollPeriodId]
+                `SELECT period_id FROM payroll_periods
+                 WHERE period_id = $1::uuid AND branch_id = $2::uuid AND currency_code = $3
+                   AND status IN ('Draft', 'Calculated') FOR UPDATE`,
+                [data.payrollPeriodId, branchId, data.currencyCode]
             );
             if (!period.rows.length) throw new AppError('Penalty can only target an open Draft or Calculated payroll period', 409);
         }
         const result = await client.query(`
             INSERT INTO employee_penalties (
                 user_id, attendance_id, payroll_period_id, penalty_type, amount, reason,
-                source, status, remaining_amount, created_by, approved_by, approved_at
+                source, status, remaining_amount, created_by, approved_by, approved_at,
+                branch_id, currency_code, incident_date
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'Pending Approval', $5, $8, NULL, NULL)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'Pending Approval', $5, $8, NULL, NULL, $9::uuid, $10, $11)
             RETURNING *
         `, [
             data.userId,
@@ -850,7 +951,10 @@ const createPenalty = (db) => async (req, res, next) => {
             data.amount,
             data.reason,
             data.source,
-            getUserId(req)
+            getUserId(req),
+            branchId,
+            data.currencyCode,
+            data.incidentDate
         ]);
         await client.query(`
             INSERT INTO payroll_audit_log (entity_type, entity_id, action, new_status, details, changed_by)
@@ -879,31 +983,62 @@ const updatePenaltyStatus = (db) => async (req, res, next) => {
         const userId = getUserId(req);
         await client.query('BEGIN');
 
+        // Lock the target period (if any) before the penalty itself so the
+        // lock order matches calculatePayroll (period -> penalties); the two
+        // transactions can no longer deadlock on each other.
+        const periodProbe = await client.query(
+            'SELECT payroll_period_id FROM employee_penalties WHERE penalty_id = $1::uuid',
+            [penaltyId]
+        );
+        if (!periodProbe.rows.length) throw new AppError('Payroll penalty not found', 404);
+        if (periodProbe.rows[0].payroll_period_id) {
+            await client.query(
+                'SELECT period_id FROM payroll_periods WHERE period_id = $1::uuid FOR UPDATE',
+                [periodProbe.rows[0].payroll_period_id]
+            );
+        }
+
         const existing = await client.query(
             'SELECT * FROM employee_penalties WHERE penalty_id = $1::uuid FOR UPDATE',
             [penaltyId]
         );
         if (!existing.rows.length) throw new AppError('Payroll penalty not found', 404);
         const penalty = existing.rows[0];
-        if (penalty.status !== 'Pending Approval') {
+        assertBranchAccess(req, penalty.branch_id || DEFAULT_BRANCH_ID);
+
+        const allowedPenaltyTransitions = {
+            'Pending Approval': new Set(['Approved', 'Rejected', 'Cancelled']),
+            Approved: new Set(['Cancelled'])
+        };
+        const allowedTargets = allowedPenaltyTransitions[penalty.status] || new Set();
+        if (!allowedTargets.has(status)) {
             throw new AppError(`Penalty cannot move from ${penalty.status} to ${status}`, 409);
         }
-        if (status === 'Approved' && penalty.payroll_period_id) {
+        if (status === 'Cancelled' && String(notes || '').trim().length < 3) {
+            throw new AppError('A reason of at least 3 characters is required to cancel a penalty', 400);
+        }
+        if (status === 'Cancelled' && penalty.payroll_period_id) {
+            // An approved penalty can only be cancelled while its reserving
+            // run can still be recalculated or cancelled.
             const period = await client.query(
-                "SELECT period_id FROM payroll_periods WHERE period_id = $1::uuid AND status IN ('Draft', 'Calculated') FOR UPDATE",
+                "SELECT status FROM payroll_periods WHERE period_id = $1::uuid",
                 [penalty.payroll_period_id]
             );
-            if (!period.rows.length) throw new AppError('Penalty target payroll period is no longer open for calculation', 409);
+            if (!period.rows.length || !['Draft', 'Calculated', 'Reviewed'].includes(period.rows[0].status)) {
+                throw new AppError('Penalty is reserved by a payroll run that can no longer be changed; cancel that run first', 409);
+            }
         }
         if (req.user?.role !== 'Developer' && penalty.created_by === userId) {
-            throw new AppError('The penalty creator cannot approve or reject their own request', 403);
+            throw new AppError('The penalty creator cannot approve, reject, or cancel their own request', 403);
         }
 
         const updated = await client.query(`
             UPDATE employee_penalties
             SET status = $2::varchar(30),
-                approved_by = CASE WHEN $2::varchar(30) = 'Approved' THEN $3::uuid ELSE NULL END,
-                approved_at = CASE WHEN $2::varchar(30) = 'Approved' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                approved_by = CASE WHEN $2::varchar(30) = 'Approved' THEN $3::uuid ELSE approved_by END,
+                approved_at = CASE WHEN $2::varchar(30) = 'Approved' THEN CURRENT_TIMESTAMP ELSE approved_at END,
+                remaining_amount = CASE WHEN $2::varchar(30) = 'Cancelled' THEN 0 ELSE remaining_amount END,
+                payroll_period_id = CASE WHEN $2::varchar(30) = 'Cancelled' THEN NULL ELSE payroll_period_id END,
                 updated_at = CURRENT_TIMESTAMP
             WHERE penalty_id = $1::uuid
             RETURNING *
@@ -933,12 +1068,253 @@ const updatePenaltyStatus = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+
+        // The affected employee learns about an imposed penalty; payroll
+        // stakeholders learn when one is withdrawn.
+        if (status === 'Approved') {
+            db.query('SELECT role FROM users WHERE user_id = $1', [penalty.user_id])
+                .then(({ rows }) => rows[0]?.role && triggerEvent(db, 'PenaltyImposed', {
+                    staffId: penalty.user_id,
+                    staffRole: rows[0].role,
+                    entityType: 'EmployeePenalty',
+                    entityId: penaltyId,
+                    variables: {
+                        penalty_type: penalty.penalty_type,
+                        amount: penalty.amount,
+                        reason: penalty.reason
+                    }
+                }))
+                .catch(() => {});
+        }
+        if (status === 'Cancelled') {
+            for (const role of ['Admin', 'HR', 'Accountant']) {
+                triggerEventForRole(db, 'PenaltyCancelled', role, {
+                    entityType: 'EmployeePenalty',
+                    entityId: penaltyId,
+                    variables: {
+                        penalty_type: penalty.penalty_type,
+                        amount: penalty.amount,
+                        reason: notes || ''
+                    }
+                }).catch(() => {});
+            }
+        }
+
         res.json(updated.rows[0]);
     } catch (error) {
         await client.query('ROLLBACK');
         next(error);
     } finally {
         client.release();
+    }
+};
+
+const acknowledgePenalty = (db) => async (req, res, next) => {
+    const client = await db.connect();
+    try {
+        const { penaltyId } = req.params;
+        const data = req.body;
+        const userId = getUserId(req);
+        await client.query('BEGIN');
+
+        const existing = await client.query(
+            'SELECT * FROM employee_penalties WHERE penalty_id = $1::uuid FOR UPDATE',
+            [penaltyId]
+        );
+        if (!existing.rows.length) throw new AppError('Payroll penalty not found', 404);
+        const penalty = existing.rows[0];
+        if (String(penalty.user_id) !== String(userId)) {
+            throw new AppError('Employees can only acknowledge their own penalties', 403);
+        }
+        if (penalty.status !== 'Approved') {
+            throw new AppError('Only approved penalties can be acknowledged or disputed', 409);
+        }
+        if (data.status === 'Acknowledged' && penalty.acknowledgement_status === 'Disputed') {
+            throw new AppError('This penalty is under dispute review; acknowledge after the dispute is resolved', 409);
+        }
+        if (data.status === 'Disputed' && penalty.acknowledgement_status === 'Resolved') {
+            throw new AppError('This dispute was already resolved', 409);
+        }
+
+        const updated = await client.query(`
+            UPDATE employee_penalties
+            SET acknowledgement_status = $2::varchar(20),
+                employee_acknowledged_at = CURRENT_TIMESTAMP,
+                disputed_at = CASE WHEN $2::varchar(20) = 'Disputed' THEN CURRENT_TIMESTAMP ELSE disputed_at END,
+                dispute_reason = CASE WHEN $2::varchar(20) = 'Disputed' THEN $3 ELSE dispute_reason END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE penalty_id = $1::uuid
+            RETURNING *
+        `, [penaltyId, data.status, data.reason || null]);
+
+        await client.query(`
+            INSERT INTO payroll_audit_log (
+                entity_type, entity_id, action, new_status, details, changed_by
+            )
+            VALUES ('employee_penalty', $1::uuid, 'ACKNOWLEDGEMENT', $2::varchar(20), $3::jsonb, $4::uuid)
+        `, [penaltyId, data.status, JSON.stringify({ reason: data.reason || null, previousStatus: penalty.acknowledgement_status }), userId]);
+
+        await logAction(client, {
+            userId,
+            action: 'PAYROLL_PENALTY_ACKNOWLEDGED',
+            resourceId: penaltyId,
+            resourceTable: 'employee_penalties',
+            ipAddress: req.ip,
+            details: { acknowledgementStatus: data.status, reason: data.reason || null },
+            required: true
+        });
+
+        await client.query('COMMIT');
+
+        // A dispute freezes the penalty out of payroll calculation until HR
+        // resolves it, so HR must hear about it immediately.
+        if (data.status === 'Disputed') {
+            for (const role of ['Admin', 'HR']) {
+                triggerEventForRole(db, 'PenaltyDisputed', role, {
+                    entityType: 'EmployeePenalty',
+                    entityId: penaltyId,
+                    variables: {
+                        penalty_type: penalty.penalty_type,
+                        amount: penalty.amount,
+                        dispute_reason: data.reason || ''
+                    }
+                }).catch(() => {});
+            }
+        }
+
+        res.json(updated.rows[0]);
+    } catch (error) {
+        await client.query('ROLLBACK');
+        next(error);
+    } finally {
+        client.release();
+    }
+};
+
+const resolvePenaltyDispute = (db) => async (req, res, next) => {
+    const client = await db.connect();
+    try {
+        const { penaltyId } = req.params;
+        const data = req.body;
+        const userId = getUserId(req);
+        await client.query('BEGIN');
+
+        // Match the calculatePayroll lock order when the penalty is reserved.
+        const periodProbe = await client.query(
+            'SELECT payroll_period_id FROM employee_penalties WHERE penalty_id = $1::uuid',
+            [penaltyId]
+        );
+        if (!periodProbe.rows.length) throw new AppError('Payroll penalty not found', 404);
+        if (periodProbe.rows[0].payroll_period_id) {
+            await client.query(
+                'SELECT period_id FROM payroll_periods WHERE period_id = $1::uuid FOR UPDATE',
+                [periodProbe.rows[0].payroll_period_id]
+            );
+        }
+
+        const existing = await client.query(
+            'SELECT * FROM employee_penalties WHERE penalty_id = $1::uuid FOR UPDATE',
+            [penaltyId]
+        );
+        if (!existing.rows.length) throw new AppError('Payroll penalty not found', 404);
+        const penalty = existing.rows[0];
+        assertBranchAccess(req, penalty.branch_id || DEFAULT_BRANCH_ID);
+        if (penalty.acknowledgement_status !== 'Disputed') {
+            throw new AppError('Only disputed penalties can be resolved', 409);
+        }
+        if (penalty.status !== 'Approved') {
+            throw new AppError(`A ${penalty.status} penalty cannot be resolved through dispute review`, 409);
+        }
+        if (data.status === 'Rejected' && penalty.payroll_period_id) {
+            const period = await client.query(
+                "SELECT status FROM payroll_periods WHERE period_id = $1::uuid",
+                [penalty.payroll_period_id]
+            );
+            if (!period.rows.length || !['Draft', 'Calculated', 'Reviewed'].includes(period.rows[0].status)) {
+                throw new AppError('Penalty is reserved by a payroll run that can no longer be changed; cancel that run first', 409);
+            }
+        }
+
+        const updated = await client.query(`
+            UPDATE employee_penalties
+            SET acknowledgement_status = 'Resolved',
+                dispute_resolved_at = CURRENT_TIMESTAMP,
+                dispute_resolution = $2,
+                status = $3::varchar(30),
+                remaining_amount = CASE WHEN $3::varchar(30) = 'Rejected' THEN 0 ELSE remaining_amount END,
+                payroll_period_id = CASE WHEN $3::varchar(30) = 'Rejected' THEN NULL ELSE payroll_period_id END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE penalty_id = $1::uuid
+            RETURNING *
+        `, [penaltyId, data.resolution, data.status]);
+
+        await client.query(`
+            INSERT INTO payroll_audit_log (
+                entity_type, entity_id, action, previous_status, new_status, details, changed_by
+            )
+            VALUES ('employee_penalty', $1::uuid, 'DISPUTE_RESOLVED', 'Disputed', $2::varchar(20), $3::jsonb, $4::uuid)
+        `, [penaltyId, data.status, JSON.stringify({ resolution: data.resolution }), userId]);
+
+        await logAction(client, {
+            userId,
+            action: 'PAYROLL_PENALTY_DISPUTE_RESOLVED',
+            resourceId: penaltyId,
+            resourceTable: 'employee_penalties',
+            ipAddress: req.ip,
+            details: { outcome: data.status, resolution: data.resolution },
+            required: true
+        });
+
+        await client.query('COMMIT');
+
+        db.query('SELECT role FROM users WHERE user_id = $1', [penalty.user_id])
+            .then(({ rows }) => rows[0]?.role && triggerEvent(db, 'PenaltyDisputeResolved', {
+                staffId: penalty.user_id,
+                staffRole: rows[0].role,
+                entityType: 'EmployeePenalty',
+                entityId: penaltyId,
+                variables: {
+                    outcome: data.status,
+                    penalty_type: penalty.penalty_type,
+                    resolution: data.resolution
+                }
+            }))
+            .catch(() => {});
+
+        res.json(updated.rows[0]);
+    } catch (error) {
+        await client.query('ROLLBACK');
+        next(error);
+    } finally {
+        client.release();
+    }
+};
+
+const getMyPayrollHistory = (db) => async (req, res, next) => {
+    try {
+        const userId = getUserId(req);
+        const result = await db.query(`
+            SELECT i.item_id, i.run_id, p.name AS period_name, p.start_date, p.end_date,
+                   p.status AS period_status, p.currency_code, p.paid_at,
+                   i.gross_earnings, i.total_deductions, i.total_penalties,
+                   i.total_employer_contributions, i.net_pay,
+                   COALESCE(jsonb_agg(jsonb_build_object(
+                       'type', li.item_type, 'description', li.description,
+                       'amount', li.amount, 'taxable', li.taxable
+                   ) ORDER BY li.created_at) FILTER (WHERE li.line_item_id IS NOT NULL), '[]'::jsonb) AS line_items
+            FROM payroll_employee_items i
+            JOIN payroll_runs r ON r.run_id = i.run_id
+            JOIN payroll_periods p ON p.period_id = r.period_id
+            LEFT JOIN payroll_line_items li ON li.payroll_employee_item_id = i.item_id
+            WHERE i.user_id = $1::uuid
+              AND r.status IN ('Paid', 'Locked')
+            GROUP BY i.item_id, p.period_id
+            ORDER BY p.start_date DESC
+            LIMIT 36
+        `, [userId]);
+        res.json(result.rows);
+    } catch (error) {
+        next(error);
     }
 };
 
@@ -1132,16 +1508,25 @@ const summarizeAttendance = ({ attendance, shifts, leaves, periodStart, periodEn
 };
 
 const loadCalculationInputs = async (client, period) => {
+    // A payroll run pays one branch, in one currency. Every input is scoped
+    // to the period's branch/currency so a run can never pull employees,
+    // rules, deductions, or penalties from another branch or apply another
+    // currency's rules on top.
+    const branchId = period.branch_id || DEFAULT_BRANCH_ID;
+    const currencyCode = period.currency_code || DEFAULT_CURRENCY;
+
     const employees = await client.query(`
         SELECT u.user_id, u.full_name, u.email, u.role,
                ep.hire_date, ep.termination_date, ep.employment_status
         FROM users u
         JOIN employee_profiles ep ON ep.user_id = u.user_id
         WHERE u.role = ANY($3::user_role[])
+          AND ep.payroll_branch_id = $4::uuid
+          AND (u.is_active = TRUE OR ep.termination_date IS NOT NULL)
           AND (ep.hire_date IS NULL OR ep.hire_date <= $2::date)
           AND (ep.termination_date IS NULL OR ep.termination_date >= $1::date)
         ORDER BY u.full_name ASC
-    `, [period.start_date, period.end_date, PAYROLL_EMPLOYEE_ROLES]);
+    `, [period.start_date, period.end_date, PAYROLL_EMPLOYEE_ROLES, branchId]);
 
     const compensation = await client.query(`
         WITH bounds AS (
@@ -1177,6 +1562,8 @@ const loadCalculationInputs = async (client, period) => {
         JOIN employee_profiles ep ON ep.user_id = cp.user_id
         CROSS JOIN bounds b
         WHERE cp.is_active = TRUE
+          AND cp.branch_id = $3::uuid
+          AND cp.currency_code = $4
           AND ((cp.salary_type = 'Monthly' AND cp.base_salary > 0)
                OR (cp.salary_type = 'Hourly' AND cp.hourly_rate > 0))
           AND cp.effective_from <= $2::date
@@ -1184,7 +1571,7 @@ const loadCalculationInputs = async (client, period) => {
           AND (ep.hire_date IS NULL OR ep.hire_date <= $2::date)
           AND (ep.termination_date IS NULL OR ep.termination_date >= $1::date)
         ORDER BY cp.user_id, cp.effective_from ASC, cp.created_at ASC
-    `, [period.start_date, period.end_date]);
+    `, [period.start_date, period.end_date, branchId, currencyCode]);
 
     const attendance = await client.query(`
         WITH bounds AS (
@@ -1207,30 +1594,35 @@ const loadCalculationInputs = async (client, period) => {
                ) ORDER BY a.clock_in), '[]'::jsonb) AS logs
         FROM attendance_logs a
         CROSS JOIN bounds b
-        WHERE a.clock_in < b.period_end
+        WHERE a.user_id IN (SELECT ep2.user_id FROM employee_profiles ep2 WHERE ep2.payroll_branch_id = $3::uuid)
+          AND a.clock_in < b.period_end
           AND (a.clock_out IS NULL OR a.clock_out > b.period_start)
         GROUP BY a.user_id
-    `, [period.start_date, period.end_date]);
+    `, [period.start_date, period.end_date, branchId]);
 
     const shifts = await client.query(`
         SELECT s.*,
                GREATEST(s.start_time, ($1::date::timestamp AT TIME ZONE 'Africa/Cairo')) AS period_start_time,
                LEAST(s.end_time, (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Cairo')) AS period_end_time
         FROM staff_shifts s
-        WHERE s.start_time < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Cairo')
+        WHERE s.user_id IN (SELECT ep2.user_id FROM employee_profiles ep2 WHERE ep2.payroll_branch_id = $3::uuid)
+          AND s.start_time < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Cairo')
           AND s.end_time > ($1::date::timestamp AT TIME ZONE 'Africa/Cairo')
         ORDER BY s.start_time ASC
-    `, [period.start_date, period.end_date]);
+    `, [period.start_date, period.end_date, branchId]);
 
     const leaves = await client.query(`
-        SELECT * FROM leave_requests
-        WHERE status = 'Approved' AND start_date <= $2::date AND end_date >= $1::date
-        ORDER BY start_date ASC
-    `, [period.start_date, period.end_date]);
+        SELECT l.* FROM leave_requests l
+        WHERE l.status = 'Approved' AND l.start_date <= $2::date AND l.end_date >= $1::date
+          AND l.user_id IN (SELECT ep2.user_id FROM employee_profiles ep2 WHERE ep2.payroll_branch_id = $3::uuid)
+        ORDER BY l.start_date ASC
+    `, [period.start_date, period.end_date, branchId]);
 
     const deductions = await client.query(`
         SELECT * FROM employee_deductions
         WHERE status = 'Approved'
+          AND branch_id = $4::uuid
+          AND currency_code = $5
           AND (
               (deduction_type = 'Percentage' AND percentage > 0 AND amount = 0)
               OR (
@@ -1243,25 +1635,31 @@ const loadCalculationInputs = async (client, period) => {
                   )
               )
           )
+          AND (recurrence_type <> 'Recurring' OR max_occurrences IS NULL OR applied_occurrences < max_occurrences)
           AND start_date <= $2::date
           AND (end_date IS NULL OR end_date >= $1::date)
           AND (payroll_period_id IS NULL OR payroll_period_id = $3::uuid)
         ORDER BY created_at ASC
         FOR UPDATE
-    `, [period.start_date, period.end_date, period.period_id]);
+    `, [period.start_date, period.end_date, period.period_id, branchId, currencyCode]);
 
     const penalties = await client.query(`
         SELECT * FROM employee_penalties
         WHERE status = 'Approved'
           AND remaining_amount > 0
+          AND branch_id = $2::uuid
+          AND currency_code = $3
+          AND COALESCE(acknowledgement_status, 'Pending') <> 'Disputed'
           AND (payroll_period_id IS NULL OR payroll_period_id = $1::uuid)
         ORDER BY created_at ASC
         FOR UPDATE
-    `, [period.period_id]);
+    `, [period.period_id, branchId, currencyCode]);
 
     const rules = await client.query(`
         SELECT * FROM payroll_rules
         WHERE is_active = TRUE AND status = 'Approved'
+          AND branch_id = $3::uuid
+          AND currency_code = $4
           AND value > 0
           AND (calculation_method <> 'HourlyMultiplier' OR value > 1)
           AND (
@@ -1274,7 +1672,7 @@ const loadCalculationInputs = async (client, period) => {
           AND effective_from <= $2::date
           AND (effective_to IS NULL OR effective_to >= $1::date)
         ORDER BY rule_type ASC, created_at ASC
-    `, [period.start_date, period.end_date]);
+    `, [period.start_date, period.end_date, branchId, currencyCode]);
 
     const attendanceMap = new Map(attendance.rows.map((row) => [row.user_id, row]));
     const shiftsByUser = groupRowsByUser(shifts.rows);
@@ -1323,9 +1721,14 @@ const applyPaidDeductionBalances = async (client, runId, userId) => {
                     0::numeric,
                     COALESCE(d.remaining_amount, d.total_amount, d.amount) - applied.applied_amount
                 ),
+                applied_occurrences = d.applied_occurrences + 1,
                 status = CASE
                     WHEN d.deduction_type IN ('Installment', 'Advance', 'Loan')
                      AND GREATEST(0::numeric, COALESCE(d.remaining_amount, d.total_amount, d.amount) - applied.applied_amount) <= 0
+                        THEN 'Completed'
+                    WHEN d.recurrence_type = 'Recurring'
+                     AND d.max_occurrences IS NOT NULL
+                     AND d.applied_occurrences + 1 >= d.max_occurrences
                         THEN 'Completed'
                     ELSE d.status
                 END,
@@ -1333,8 +1736,11 @@ const applyPaidDeductionBalances = async (client, runId, userId) => {
                 updated_at = CURRENT_TIMESTAMP
             FROM applied
             WHERE d.deduction_id = applied.deduction_id
-              AND d.deduction_type IN ('Installment', 'Advance', 'Loan')
-            RETURNING d.deduction_id, applied.applied_amount, d.remaining_amount, d.status
+              AND (
+                  d.deduction_type IN ('Installment', 'Advance', 'Loan')
+                  OR d.recurrence_type = 'Recurring'
+              )
+              RETURNING d.deduction_id, applied.applied_amount, d.remaining_amount, d.status
         )
         INSERT INTO payroll_audit_log (entity_type, entity_id, action, previous_status, new_status, details, changed_by)
         SELECT 'employee_deduction',
@@ -1396,15 +1802,22 @@ const calculatePayroll = (db) => async (req, res, next) => {
         const claimedPenaltyIds = [];
         const claimedDeductionIds = [];
 
-        const missingCompensation = inputs.employees.filter(
-            (employee) => !(inputs.compensationByUser.get(employee.user_id) || []).length
+        // Employees without an active in-scope compensation profile cannot be
+        // paid, but they must not block the whole branch either. They are
+        // skipped, recorded on the run, audited, and escalated to HR/Admin —
+        // the reviewer sees the exclusions before approving payment.
+        const skippedEmployees = inputs.employees
+            .filter((employee) => !(inputs.compensationByUser.get(employee.user_id) || []).length)
+            .map((employee) => ({
+                userId: employee.user_id,
+                fullName: employee.full_name,
+                reason: 'missing_compensation_profile'
+            }));
+        const payableEmployees = inputs.employees.filter(
+            (employee) => (inputs.compensationByUser.get(employee.user_id) || []).length
         );
-        if (missingCompensation.length) {
-            const names = missingCompensation.slice(0, 5).map((employee) => employee.full_name).join(', ');
-            throw new AppError(`Missing compensation profiles for ${names}${missingCompensation.length > 5 ? ' and others' : ''}`, 409);
-        }
 
-        for (const employee of inputs.employees) {
+        for (const employee of payableEmployees) {
             const attendance = inputs.attendanceByUser.get(employee.user_id) || {
                 log_count: 0,
                 days_worked: 0,
@@ -1699,11 +2112,12 @@ const calculatePayroll = (db) => async (req, res, next) => {
                 total_penalties = $5,
                 total_net = $6,
                 total_employer_contributions = $7,
+                skipped_employees = $8::jsonb,
                 status = 'Calculated',
                 updated_at = CURRENT_TIMESTAMP
             WHERE run_id = $1
             RETURNING *
-        `, [run.run_id, totals.employeeCount, roundMoney(totals.gross), roundMoney(totals.deductions), roundMoney(totals.penalties), roundMoney(totals.net), roundMoney(totals.employerContributions)]);
+        `, [run.run_id, totals.employeeCount, roundMoney(totals.gross), roundMoney(totals.deductions), roundMoney(totals.penalties), roundMoney(totals.net), roundMoney(totals.employerContributions), JSON.stringify(skippedEmployees)]);
 
         await client.query(`
             UPDATE payroll_periods
@@ -1720,7 +2134,14 @@ const calculatePayroll = (db) => async (req, res, next) => {
         await client.query(`
             INSERT INTO payroll_audit_log (entity_type, entity_id, action, previous_status, new_status, details, changed_by)
             VALUES ('payroll_run', $1, 'CALCULATE_PAYROLL', $2, 'Calculated', $3::jsonb, $4)
-        `, [run.run_id, period.status, JSON.stringify(totals), getUserId(req)]);
+        `, [run.run_id, period.status, JSON.stringify({ ...totals, skippedEmployees }), getUserId(req)]);
+
+        if (skippedEmployees.length) {
+            await client.query(`
+                INSERT INTO payroll_audit_log (entity_type, entity_id, action, new_status, details, changed_by)
+                VALUES ('payroll_run', $1, 'EMPLOYEES_SKIPPED', 'Calculated', $2::jsonb, $3)
+            `, [run.run_id, JSON.stringify({ skippedEmployees }), getUserId(req)]);
+        }
 
         await logAction(client, {
             userId: getUserId(req),
@@ -1733,6 +2154,23 @@ const calculatePayroll = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+
+        // Skipped employees are an approval-blocking visibility issue: make
+        // sure HR hears about it the moment the run is calculated.
+        if (skippedEmployees.length) {
+            for (const role of ['Admin', 'HR']) {
+                triggerEventForRole(db, 'PayrollEmployeesSkipped', role, {
+                    entityType: 'PayrollRun',
+                    entityId: run.run_id,
+                    variables: {
+                        period_name: period.name || '',
+                        skipped_count: skippedEmployees.length,
+                        employee_names: skippedEmployees.map((item) => item.fullName).join(', ')
+                    }
+                }).catch(() => {});
+            }
+        }
+
         res.json(updatedRun.rows[0]);
     } catch (error) {
         await client.query('ROLLBACK');
@@ -1946,6 +2384,24 @@ const updatePayrollRunStatus = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+
+        // Notify the payroll stakeholders at each hand-off so a run cannot
+        // stall silently between maker-checker stages.
+        if (['Reviewed', 'Approved', 'Paid', 'Locked', 'Cancelled'].includes(data.status)) {
+            for (const role of ['Admin', 'Accountant', 'HR']) {
+                triggerEventForRole(db, 'PayrollRunStatusChanged', role, {
+                    entityType: 'PayrollRun',
+                    entityId: runId,
+                    variables: {
+                        period_name: run.period_name || '',
+                        status: data.status,
+                        total_net: moneyNumber(run.total_net),
+                        currency_code: run.currency_code || DEFAULT_CURRENCY
+                    }
+                }).catch(() => {});
+            }
+        }
+
         res.json(updatedRun.rows[0]);
     } catch (error) {
         await client.query('ROLLBACK');
@@ -1973,6 +2429,9 @@ module.exports = {
     getPenalties,
     createPenalty,
     updatePenaltyStatus,
+    acknowledgePenalty,
+    resolvePenaltyDispute,
+    getMyPayrollHistory,
     getPayrollRun,
     calculatePayroll,
     updatePayrollRunStatus,
@@ -1982,6 +2441,7 @@ module.exports = {
         calculateRuleAmount,
         capLineAmounts,
         inclusiveDays,
+        loadCalculationInputs,
         monthlyAccrualFactor,
         overlapDays,
         payrollPaymentJournalEntries,

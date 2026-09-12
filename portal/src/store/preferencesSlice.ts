@@ -52,7 +52,7 @@ const loadInitialState = (): PreferencesState => {
     return defaults;
 };
 
-const initialState = loadInitialState();
+const initialState: any = loadInitialState();
 
 const preferencesSlice = createSlice({
     name: 'preferences',

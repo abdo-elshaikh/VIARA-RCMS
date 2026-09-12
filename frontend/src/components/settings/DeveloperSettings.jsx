@@ -36,8 +36,8 @@ import { getErrorMessage } from '../../utils/getErrorMessage';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 
 const ACCESS_LEVELS = [
-    { id: 'read', labelKey: 'readOnly', badge: 'GET', pill: 'border-[rgba(var(--VIARA-accent-rgb),0.28)] bg-[var(--VIARA-accent-soft)] text-[var(--VIARA-accent)]', active: 'border-[var(--VIARA-accent)] bg-[var(--VIARA-accent-soft)] dark:bg-[rgba(var(--VIARA-accent-rgb),0.16)]' },
-    { id: 'read_write', labelKey: 'readWrite', badge: 'FULL', pill: 'border-amber-200 bg-amber-50 text-amber-700', active: 'border-amber-500 bg-amber-50 dark:bg-amber-950/20' },
+    { id: 'read', labelKey: 'readOnly', badge: 'GET', pill: 'ds-status ds-status-accent border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide', active: 'settings-choice-selected' },
+    { id: 'read_write', labelKey: 'readWrite', badge: 'FULL', pill: 'ds-status ds-status-warning border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide', active: 'settings-choice-selected border-[var(--VIARA-warning-border)] bg-[var(--VIARA-warning-soft)]' },
 ];
 
 const EMPTY_DB_FORM = {
@@ -53,10 +53,16 @@ const EMPTY_DB_FORM = {
     idleTimeoutMs: 30000
 };
 
-const buttonBase = 'inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl px-4 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50';
-const primaryButton = `${buttonBase} bg-teal-600 text-white shadow-sm hover:bg-teal-500`;
-const secondaryButton = `${buttonBase} border border-slate-200/80 bg-white/90 text-slate-700 shadow-2xs backdrop-blur-md hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800`;
-const dangerButton = `${buttonBase} border border-rose-500/20 bg-rose-500/10 text-rose-700 hover:bg-rose-500/20 dark:border-rose-500/30 dark:text-rose-300`;
+const primaryButton = 'ds-button ds-button-primary ds-button-sm';
+const secondaryButton = 'ds-button ds-button-secondary ds-button-sm';
+const dangerButton = 'ds-button ds-button-danger ds-button-sm';
+const panelShell = 'settings-section overflow-hidden';
+const panelHeader = 'settings-section-header flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between';
+const panelBody = 'settings-section-body';
+const panelIcon = 'settings-section-icon flex h-10 w-10 shrink-0 items-center justify-center';
+const mutedText = 'text-[var(--VIARA-muted)]';
+const strongText = 'text-[var(--VIARA-ink)]';
+const monoValue = 'font-mono font-bold text-[var(--VIARA-ink)]';
 
 const CODE_SNIPPET = `const res = await fetch('/api/v1/patients', {
   headers: { Authorization: 'Bearer <YOUR_TOKEN>' },
@@ -80,7 +86,7 @@ const formFromConfig = (config) => ({
     keepExistingPassword: Boolean(config?.passwordConfigured)
 });
 
-const DeveloperSettings = () => {
+const DeveloperSettings = ({ embedded = false }) => {
     const { t } = useTranslation(['settings', 'common']);
     const copy = useCallback((key, options = {}) => t(`settings.developer.${key}`, options), [t]);
     const dbQuery = useGetDatabaseSettingsQuery();
@@ -173,26 +179,26 @@ const DeveloperSettings = () => {
     };
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-10">
+        <div className={`mx-auto max-w-7xl ${embedded ? 'space-y-4 pb-4' : 'space-y-5 pb-10'}`}>
             {/* VIARA Hero Command Deck */}
-            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8 space-y-6">
-                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
-                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
+            <div className={`settings-section relative overflow-hidden p-[var(--VIARA-density-card-padding)] ${embedded ? 'space-y-4' : 'space-y-5'}`}>
+                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-[rgba(var(--VIARA-accent-rgb),0.14)] blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-[var(--VIARA-info-soft)] blur-3xl" />
 
-                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex items-start gap-4 sm:items-center min-w-0">
-                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-sky-500/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
-                            <Terminal size={26} strokeWidth={2} />
+                <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex min-w-0 items-start gap-3.5 sm:items-center">
+                        <div className={`settings-section-icon grid shrink-0 place-items-center shadow-inner ${embedded ? 'h-11 w-11' : 'h-12 w-12'}`}>
+                            <Terminal size={embedded ? 22 : 26} strokeWidth={2} />
                         </div>
                         <div className="min-w-0">
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                            <span className="ds-status ds-status-accent inline-flex items-center gap-1.5 border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider">
                                 <Key size={11} />
-                                <span>API Engine & Database Architecture</span>
+                                <span>{copy('eyebrow', { defaultValue: 'API engine & database architecture' })}</span>
                             </span>
-                            <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                            <h1 className={`mt-1 break-words font-black text-[var(--VIARA-ink)] ${embedded ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl'}`}>
                                 {copy('title', { defaultValue: 'Developer Operations & Database Infrastructure' })}
                             </h1>
-                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
+                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-[var(--VIARA-muted)] sm:text-sm">
                                 {copy('description', { defaultValue: 'Manage PostgreSQL database connection pools, test cluster health, issue scoped Bearer API tokens, and monitor runtime telemetry.' })}
                             </p>
                         </div>
@@ -200,44 +206,44 @@ const DeveloperSettings = () => {
                 </div>
 
                 {/* Telemetry Facts HUD */}
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-slate-100/80 px-4 py-3 shadow-2xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-300">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
-                            <Database size={16} className="text-teal-600 dark:text-teal-400" />
+                <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="settings-fact flex items-center gap-3 shadow-2xs">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--VIARA-radius-control)] bg-[var(--VIARA-surface)] shadow-2xs">
+                            <Database size={16} className="text-[var(--VIARA-accent)]" />
                         </div>
                         <div className="min-w-0">
-                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy('activeDatabase', { defaultValue: 'Active Database' })}</p>
-                            <p className="break-all font-mono text-base font-black text-slate-900 dark:text-white">{activeDb ? activeDb.database : '--'}</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{copy('activeDatabase', { defaultValue: 'Active Database' })}</p>
+                            <p className="break-all font-mono text-base font-black text-[var(--VIARA-ink)]">{activeDb ? activeDb.database : '--'}</p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-emerald-800 dark:text-emerald-300">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
-                            <Activity size={16} className="text-emerald-600 dark:text-emerald-400" />
+                    <div className="settings-fact flex items-center gap-3 shadow-2xs">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--VIARA-radius-control)] bg-[var(--VIARA-success-soft)] shadow-2xs">
+                            <Activity size={16} className="text-[var(--VIARA-success)]" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">{copy('poolInUse', { defaultValue: 'Connection Pool' })}</p>
-                            <p className="font-mono text-base font-black text-emerald-900 dark:text-white">{`${pool.total ?? 0}/${pool.idle ?? 0}`}</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{copy('poolInUse', { defaultValue: 'Connection Pool' })}</p>
+                            <p className="font-mono text-base font-black text-[var(--VIARA-ink)]">{`${pool.total ?? 0}/${pool.idle ?? 0}`}</p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3 rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-sky-800 dark:text-sky-300">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
-                            <Key size={16} className="text-sky-600 dark:text-sky-400" />
+                    <div className="settings-fact flex items-center gap-3 shadow-2xs">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--VIARA-radius-control)] bg-[var(--VIARA-info-soft)] shadow-2xs">
+                            <Key size={16} className="text-[var(--VIARA-info)]" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">{copy('activeTokens', { defaultValue: 'Active API Tokens' })}</p>
-                            <p className="font-mono text-base font-black text-sky-900 dark:text-white">{tokens.length}</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{copy('activeTokens', { defaultValue: 'Active API Tokens' })}</p>
+                            <p className="font-mono text-base font-black text-[var(--VIARA-ink)]">{tokens.length}</p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-amber-800 dark:text-amber-300">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
-                            <ShieldCheck size={16} className="text-amber-600 dark:text-amber-400" />
+                    <div className="settings-fact flex items-center gap-3 shadow-2xs">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--VIARA-radius-control)] bg-[var(--VIARA-warning-soft)] shadow-2xs">
+                            <ShieldCheck size={16} className="text-[var(--VIARA-warning)]" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">{copy('writeTokens', { defaultValue: 'Full Access' })}</p>
-                            <p className="font-mono text-base font-black text-amber-900 dark:text-white">{readWriteCount}</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{copy('writeTokens', { defaultValue: 'Full Access' })}</p>
+                            <p className="font-mono text-base font-black text-[var(--VIARA-ink)]">{readWriteCount}</p>
                         </div>
                     </div>
                 </div>
@@ -345,15 +351,15 @@ const DatabaseConfigPanel = ({
     onReload,
     dbSummary
 }) => (
-    <section className="rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-slate-200/80 p-6 dark:border-slate-800 lg:flex-row lg:items-start lg:justify-between">
+    <section className={panelShell}>
+        <div className={panelHeader}>
             <div className="flex min-w-0 items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
+                <span className={panelIcon}>
                     <Database size={18} aria-hidden="true" />
                 </span>
                 <div>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">{copy('dbTitle')}</h3>
-                    <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">{copy('dbDescription')}</p>
+                    <h3 className={`text-sm font-bold ${strongText}`}>{copy('dbTitle')}</h3>
+                    <p className={`mt-1 max-w-3xl text-xs leading-5 ${mutedText}`}>{copy('dbDescription')}</p>
                 </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -368,11 +374,11 @@ const DatabaseConfigPanel = ({
             </div>
         </div>
 
-        <div className="grid gap-5 p-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className={`${panelBody} grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]`}>
             <form onSubmit={onSave} className="space-y-4">
-                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-5 text-amber-900 dark:text-amber-200">
+                <div className="rounded-[var(--VIARA-radius-surface)] border border-[var(--VIARA-warning-border)] bg-[var(--VIARA-warning-soft)] p-4 text-xs leading-5 text-[var(--VIARA-warning)]">
                     <div className="flex gap-2">
-                        <Lock size={15} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <Lock size={15} className="mt-0.5 shrink-0" />
                         <p>{copy('dbRestartNotice')}</p>
                     </div>
                 </div>
@@ -382,38 +388,38 @@ const DatabaseConfigPanel = ({
                     <TextField label={copy('port')} value={dbForm.port} onChange={value => onFieldChange('port', value)} type="number" min="1" max="65535" required />
                     <TextField label={copy('username')} value={dbForm.username} onChange={value => onFieldChange('username', value)} placeholder="VIARA" required />
                     <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{copy('password')}</label>
-                        <div className="mt-2 flex rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950">
+                        <label className={`block text-xs font-semibold uppercase tracking-wide ${mutedText}`}>{copy('password')}</label>
+                        <div className="mt-2 flex rounded-[var(--VIARA-radius-control)] border border-[var(--VIARA-line)] bg-[var(--VIARA-field)]">
                             <input
                                 value={dbForm.password}
                                 onChange={event => onFieldChange('password', event.target.value)}
                                 type={showPassword ? 'text' : 'password'}
                                 placeholder={dbForm.keepExistingPassword ? copy('keepExistingPassword') : copy('passwordPlaceholder')}
-                                className="min-w-0 flex-1 rounded-l-lg bg-transparent px-3 py-2 text-sm text-slate-900 outline-none dark:text-white"
+                                className="min-w-0 flex-1 rounded-[var(--VIARA-radius-control)] bg-transparent px-[var(--VIARA-density-control-x)] py-[var(--VIARA-density-control-y)] text-sm text-[var(--VIARA-ink)] outline-none placeholder:text-[var(--VIARA-muted)]"
                             />
-                            <button type="button" onClick={onTogglePassword} className="px-3 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" aria-label={showPassword ? copy('hidePassword') : copy('showPassword')}>
+                            <button type="button" onClick={onTogglePassword} className="px-3 text-[var(--VIARA-muted)] hover:text-[var(--VIARA-accent-text)]" aria-label={showPassword ? copy('hidePassword') : copy('showPassword')}>
                                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                             </button>
                         </div>
                         {savedDb?.passwordConfigured && (
-                            <label className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                            <label className={`mt-2 flex items-center gap-2 text-xs ${mutedText}`}>
                                 <input
                                     type="checkbox"
                                     checked={dbForm.keepExistingPassword && !dbForm.password}
                                     onChange={event => onFieldChange('keepExistingPassword', event.target.checked)}
                                     disabled={Boolean(dbForm.password)}
-                                    className="h-4 w-4 rounded border-slate-300"
+                                    className="h-4 w-4 rounded-[var(--VIARA-radius-control)] border-[var(--VIARA-line)] accent-[var(--VIARA-accent)]"
                                 />
                                 {copy('keepExistingPassword')}
                             </label>
                         )}
                     </div>
                     <label className="block">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{copy('sslMode')}</span>
+                        <span className={`text-xs font-semibold uppercase tracking-wide ${mutedText}`}>{copy('sslMode')}</span>
                         <select
                             value={dbForm.sslMode}
                             onChange={event => onFieldChange('sslMode', event.target.value)}
-                            className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                            className="ds-field mt-2 text-sm"
                         >
                             {['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'].map(mode => <option key={mode} value={mode}>{mode}</option>)}
                         </select>
@@ -426,7 +432,7 @@ const DatabaseConfigPanel = ({
                     <TextField label={copy('idleTimeout')} value={dbForm.idleTimeoutMs} onChange={value => onFieldChange('idleTimeoutMs', value)} type="number" min="1000" />
                 </div>
 
-                <div className="flex flex-wrap gap-2 border-t border-slate-200/80 pt-4 dark:border-slate-800">
+                <div className="settings-row flex flex-wrap gap-2 pt-4">
                     <button type="button" onClick={() => onTest('custom')} disabled={isTesting} className={secondaryButton}>
                         <Zap size={16} className={isTesting ? 'animate-pulse' : ''} />
                         {copy('testDraft')}
@@ -452,9 +458,9 @@ const DatabaseConfigPanel = ({
                     [copy('password'), savedDb?.passwordConfigured ? copy('configured') : copy('notConfigured')]
                 ]} />
                 {dbResult && (
-                    <div className={`rounded-2xl border p-4 ${dbResult.success ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-950/20 dark:text-emerald-100' : 'border-rose-500/30 bg-rose-500/10 text-rose-900 dark:border-rose-500/30 dark:bg-rose-950/20 dark:text-rose-100'}`}>
+                    <div role="status" className={`rounded-[var(--VIARA-radius-surface)] border p-4 ${dbResult.success ? 'border-[var(--VIARA-success-border)] bg-[var(--VIARA-success-soft)] text-[var(--VIARA-success)]' : 'border-[var(--VIARA-danger-border)] bg-[var(--VIARA-danger-soft)] text-[var(--VIARA-danger)]'}`}>
                         <div className="flex items-start gap-2">
-                            {dbResult.success ? <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" /> : <AlertCircle size={17} className="mt-0.5 shrink-0 text-rose-600 dark:text-rose-400" />}
+                            {dbResult.success ? <CheckCircle2 size={17} className="mt-0.5 shrink-0" /> : <AlertCircle size={17} className="mt-0.5 shrink-0" />}
                             <div>
                                 <p className="text-sm font-bold">{dbResult.success ? copy('dbTestPassed') : copy('dbTestFailed')}</p>
                                 <p className="mt-1 text-xs leading-5">{dbResult.message || `${dbResult.database || ''} ${dbResult.latencyMs ? `(${dbResult.latencyMs} ms)` : ''}`}</p>
@@ -468,15 +474,15 @@ const DatabaseConfigPanel = ({
 );
 
 const TokenPanel = ({ copy, tokens, isLoading, isError, isFetching, isGenerating, showCreate, newToken, onCreateOpen, onCreateClose, onGenerate, onDismissToken, onRevoke, onRefresh }) => (
-    <section className="rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-slate-200/80 p-6 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+    <section className={panelShell}>
+        <div className={`${panelHeader} sm:flex-row sm:items-center`}>
             <div className="flex min-w-0 items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
+                <span className={panelIcon}>
                     <Key size={18} aria-hidden="true" />
                 </span>
                 <div>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">{copy('tokensTitle')}</h3>
-                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{copy('tokensDescription')}</p>
+                    <h3 className={`text-sm font-bold ${strongText}`}>{copy('tokensTitle')}</h3>
+                    <p className={`mt-1 text-xs leading-5 ${mutedText}`}>{copy('tokensDescription')}</p>
                 </div>
             </div>
             <div className="flex gap-2">
@@ -490,15 +496,21 @@ const TokenPanel = ({ copy, tokens, isLoading, isError, isFetching, isGenerating
                 </button>
             </div>
         </div>
-        <div className="space-y-4 p-6">
+        <div className={`${panelBody} space-y-4`}>
+            <div className="rounded-[var(--VIARA-radius-surface)] border border-[var(--VIARA-info-border)] bg-[var(--VIARA-info-soft)] p-3 text-xs leading-5 text-[var(--VIARA-info)]">
+                <div className="flex gap-2">
+                    <ShieldCheck size={15} className="mt-0.5 shrink-0" />
+                    <p>{copy('tokenGovernance', { defaultValue: 'These are personal access tokens for the current user. Read/write tokens require developer-grade authorization and should be issued only for trusted automation.' })}</p>
+                </div>
+            </div>
             {showCreate && !newToken && <CreateForm copy={copy} onSubmit={onGenerate} onCancel={onCreateClose} isGenerating={isGenerating} />}
             {newToken && <TokenReveal copy={copy} token={newToken} onDismiss={onDismissToken} />}
             {isLoading && <SkeletonList />}
             {!isLoading && isError && <EmptyError copy={copy} onRefresh={onRefresh} isFetching={isFetching} />}
             {!isLoading && !isError && tokens.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700">
-                    <Key size={28} className="mx-auto text-slate-400" aria-hidden="true" />
-                    <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">{copy('empty')}</p>
+                <div className="rounded-[var(--VIARA-radius-surface)] border border-dashed border-[var(--VIARA-line-strong)] p-8 text-center">
+                    <Key size={28} className="mx-auto text-[var(--VIARA-muted)]" aria-hidden="true" />
+                    <p className={`mt-3 text-sm font-semibold ${strongText}`}>{copy('empty')}</p>
                     <button type="button" onClick={onCreateOpen} className={`${primaryButton} mt-4`}>
                         <Plus size={16} />
                         {copy('generate')}
@@ -526,23 +538,23 @@ const TokenRow = ({ copy, token, onRevoke }) => {
         }
     };
     return (
-        <article className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
+        <article className="settings-fact p-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-white">{token.name}</h3>
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${level.pill}`}>{level.badge}</span>
+                        <h3 className={`truncate text-sm font-semibold ${strongText}`}>{token.name}</h3>
+                        <span className={level.pill}>{level.badge}</span>
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <code className="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-200">{showPrefix ? token.prefix : maskedPrefix}</code>
-                        <button type="button" onClick={() => setShowPrefix(value => !value)} className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200" aria-label={showPrefix ? copy('hidePrefix') : copy('showPrefix')}>
+                        <code className="rounded-[var(--VIARA-radius-control)] bg-[var(--VIARA-surface)] px-2 py-1 font-mono text-xs tracking-wide text-[var(--VIARA-ink)]">{showPrefix ? token.prefix : maskedPrefix}</code>
+                        <button type="button" onClick={() => setShowPrefix(value => !value)} className="rounded-[var(--VIARA-radius-control)] p-1.5 text-[var(--VIARA-muted)] transition hover:bg-[var(--VIARA-surface-hover)] hover:text-[var(--VIARA-accent-text)]" aria-label={showPrefix ? copy('hidePrefix') : copy('showPrefix')}>
                             {showPrefix ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
-                        <button type="button" onClick={copyPrefix} className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200" aria-label={copy('copy')}>
+                        <button type="button" onClick={copyPrefix} className="rounded-[var(--VIARA-radius-control)] p-1.5 text-[var(--VIARA-muted)] transition hover:bg-[var(--VIARA-surface-hover)] hover:text-[var(--VIARA-accent-text)]" aria-label={copy('copy')}>
                             <Copy size={14} />
                         </button>
                     </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                    <div className={`mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${mutedText}`}>
                         <span className="inline-flex items-center gap-1"><Clock size={12} />{formatShortDate(token.created)}</span>
                         <span>{copy('lastUsed', { used: token.lastUsed ? formatRelativeTime(token.lastUsed) : copy('never') })}</span>
                     </div>
@@ -570,18 +582,18 @@ const TokenReveal = ({ copy, token, onDismiss }) => {
     };
 
     return (
-        <section role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/20">
+        <section role="status" className="rounded-[var(--VIARA-radius-surface)] border border-[var(--VIARA-success-border)] bg-[var(--VIARA-success-soft)] p-4 text-[var(--VIARA-success)]">
             <div className="flex items-start justify-between gap-4">
                 <div>
-                    <h3 className="text-sm font-semibold text-emerald-950 dark:text-emerald-100">{copy('secretTitle')}</h3>
-                    <p className="mt-1 text-xs leading-5 text-emerald-800 dark:text-emerald-200">{copy('secretDescription')}</p>
+                    <h3 className="text-sm font-semibold">{copy('secretTitle')}</h3>
+                    <p className="mt-1 text-xs leading-5">{copy('secretDescription')}</p>
                 </div>
-                <button type="button" onClick={onDismiss} className="rounded-lg p-2 text-emerald-700 transition hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-900/40" aria-label="Dismiss">
+                <button type="button" onClick={onDismiss} className="rounded-[var(--VIARA-radius-control)] p-2 transition hover:bg-[var(--VIARA-surface-hover)]" aria-label={copy('dismiss', { defaultValue: 'Dismiss' })}>
                     <X size={16} />
                 </button>
             </div>
-            <div className="mt-4 rounded-lg border border-emerald-200 bg-white p-3 dark:border-emerald-900/50 dark:bg-slate-950">
-                <code className="block overflow-x-auto whitespace-nowrap font-mono text-xs leading-6 text-slate-800 dark:text-slate-100">{token}</code>
+            <div className="mt-4 rounded-[var(--VIARA-radius-control)] border border-[var(--VIARA-success-border)] bg-[var(--VIARA-surface)] p-3">
+                <code className="block overflow-x-auto whitespace-nowrap font-mono text-xs leading-6 text-[var(--VIARA-ink)]">{token}</code>
             </div>
             <button type="button" onClick={handleCopy} className={`${primaryButton} mt-4`}>
                 {copied ? <CheckCircle2 size={16} /> : <Copy size={16} />}
@@ -596,18 +608,23 @@ const CreateForm = ({ copy, onSubmit, onCancel, isGenerating }) => {
     const [level, setLevel] = useState('read');
 
     return (
-        <section className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+        <section className="settings-fact p-4">
             <form onSubmit={event => { event.preventDefault(); onSubmit(name.trim(), level); }} className="space-y-4">
                 <TextField label={copy('tokenName')} value={name} onChange={setName} placeholder={copy('namePlaceholder')} required maxLength={100} />
                 <div className="grid gap-3 sm:grid-cols-2">
                     {ACCESS_LEVELS.map(item => {
                         const active = level === item.id;
                         return (
-                            <button key={item.id} type="button" onClick={() => setLevel(item.id)} className={`rounded-lg border p-4 text-start transition ${active ? item.active : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'}`} aria-pressed={active}>
+                            <button key={item.id} type="button" onClick={() => setLevel(item.id)} className={`settings-choice text-start ${active ? item.active : ''}`} aria-pressed={active}>
                                 <span className="flex items-start justify-between gap-3">
-                                    <span className="text-sm font-semibold text-slate-900 dark:text-white">{copy(item.labelKey)}</span>
-                                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${item.pill}`}>{item.badge}</span>
+                                    <span className={`text-sm font-semibold ${strongText}`}>{copy(item.labelKey)}</span>
+                                    <span className={item.pill}>{item.badge}</span>
                                 </span>
+                                {item.id === 'read_write' && (
+                                    <span className="mt-2 block text-[11px] font-semibold leading-4 text-[var(--VIARA-warning)]">
+                                        {copy('writeTokenWarning', { defaultValue: 'Write access can modify clinical data and is limited by backend policy.' })}
+                                    </span>
+                                )}
                             </button>
                         );
                     })}
@@ -626,13 +643,13 @@ const CreateForm = ({ copy, onSubmit, onCancel, isGenerating }) => {
 
 const TextField = ({ label, value, onChange, type = 'text', ...props }) => (
     <label className="block">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</span>
+        <span className={`text-xs font-semibold uppercase tracking-wide ${mutedText}`}>{label}</span>
         <input
             {...props}
             type={type}
             value={value ?? ''}
             onChange={event => onChange(event.target.value)}
-            className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-slate-500 dark:focus:ring-slate-800"
+            className="ds-field mt-2 text-sm"
         />
     </label>
 );
@@ -654,14 +671,14 @@ const Metric = ({ label, value, icon: Icon, tone = 'neutral' }) => {
 };
 
 const StatusBox = ({ title, value, details }) => (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{title}</p>
-        <p className="mt-2 break-words text-sm font-semibold text-slate-900 dark:text-white">{value}</p>
+    <div className="settings-fact p-4">
+        <p className={`text-xs font-semibold uppercase tracking-wide ${mutedText}`}>{title}</p>
+        <p className={`mt-2 break-words text-sm font-semibold ${strongText}`}>{value}</p>
         <div className="mt-3 space-y-2">
             {details.map(([label, item]) => (
-                <div key={label} className="flex justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+                <div key={label} className={`flex justify-between gap-3 text-xs ${mutedText}`}>
                     <span>{label}</span>
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">{item}</span>
+                    <span className="font-semibold text-[var(--VIARA-ink)]">{item}</span>
                 </div>
             ))}
         </div>
@@ -669,21 +686,21 @@ const StatusBox = ({ title, value, details }) => (
 );
 
 const ToolCard = ({ icon: Icon, title, description, rows, action }) => (
-    <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 space-y-4">
+    <section className={`${panelShell} space-y-4 p-[var(--VIARA-density-card-padding)]`}>
         <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
+            <span className={panelIcon}>
                 <Icon size={18} />
             </span>
             <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">{title}</h3>
-                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</p>
+                <h3 className={`text-sm font-bold ${strongText}`}>{title}</h3>
+                <p className={`mt-1 text-xs leading-5 ${mutedText}`}>{description}</p>
             </div>
         </div>
-        <div className="space-y-2 rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+        <div className="settings-fact space-y-2 p-4">
             {rows.map(([label, value]) => (
                 <div key={label} className="flex justify-between gap-3 text-xs">
-                    <span className="font-medium text-slate-500 dark:text-slate-400">{label}</span>
-                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100">{value}</span>
+                    <span className={`font-medium ${mutedText}`}>{label}</span>
+                    <span className={monoValue}>{value}</span>
                 </div>
             ))}
         </div>
@@ -694,11 +711,11 @@ const ToolCard = ({ icon: Icon, title, description, rows, action }) => (
 const SkeletonList = () => (
     <div className="space-y-3">
         {[1, 2].map(item => (
-            <div key={item} className="flex items-center gap-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-                <div className="h-10 w-10 shrink-0 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+            <div key={item} className="settings-fact flex items-center gap-3 p-4">
+                <div className="h-10 w-10 shrink-0 animate-pulse rounded-[var(--VIARA-radius-control)] bg-[var(--VIARA-surface-muted)]" />
                 <div className="flex-1 space-y-2">
-                    <div className="h-3 w-36 animate-pulse rounded bg-slate-100 dark:bg-slate-800" />
-                    <div className="h-3 w-56 animate-pulse rounded bg-slate-100 dark:bg-slate-800" />
+                    <div className="h-3 w-36 animate-pulse rounded-[var(--VIARA-radius-pill)] bg-[var(--VIARA-surface-muted)]" />
+                    <div className="h-3 w-56 animate-pulse rounded-[var(--VIARA-radius-pill)] bg-[var(--VIARA-surface-muted)]" />
                 </div>
             </div>
         ))}
@@ -706,9 +723,9 @@ const SkeletonList = () => (
 );
 
 const EmptyError = ({ copy, onRefresh, isFetching }) => (
-    <div className="rounded-lg border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-900/60 dark:bg-rose-950/20">
-        <AlertCircle size={28} className="mx-auto text-rose-500" aria-hidden="true" />
-        <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">{copy('loadFailed')}</p>
+    <div className="rounded-[var(--VIARA-radius-surface)] border border-[var(--VIARA-danger-border)] bg-[var(--VIARA-danger-soft)] p-6 text-center text-[var(--VIARA-danger)]">
+        <AlertCircle size={28} className="mx-auto" aria-hidden="true" />
+        <p className="mt-3 text-sm font-semibold">{copy('loadFailed')}</p>
         <button type="button" onClick={onRefresh} className={`${secondaryButton} mt-4`}>
             <RefreshCw size={16} className={isFetching ? 'animate-spin' : ''} />
             {copy('retry')}

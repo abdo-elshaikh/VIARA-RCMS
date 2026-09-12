@@ -1,9 +1,11 @@
 const twilio = require('twilio');
-const { dispatch, notifyClients } = require('../services/notificationService');
+const { dispatch, notifyClients, computeActionUrl } = require('../services/notificationService');
 const { processJobs, validateRequiredVariables, validateTemplatePlaceholders } = require('../services/notificationJobService');
 const { AppError } = require('../middleware/errorHandler');
 const { decrypt, hash } = require('../utils/crypto');
+const { verifyUnsubscribeToken } = require('../utils/notificationUnsubscribeToken');
 const settingsService = require('../services/settingsService');
+const { logAction } = require('../services/auditService');
 
 const FULL_NOTIFICATION_ROLES = new Set(['Developer', 'Admin']);
 const SEARCH_SCAN_LIMIT = Math.min(
@@ -14,17 +16,6 @@ const SEARCH_SCAN_LIMIT = Math.min(
 const getUserId = (req) => req.user?.user_id || req.user?.userId || req.user?.id || null;
 const normalizeSearch = (value) => String(value ?? '').trim().toLocaleLowerCase();
 
-const isNotificationReadSchemaMissing = (error) => {
-    if (!['42P01', '42703'].includes(error?.code)) return false;
-    const message = String(error?.message || '');
-    return [
-        'notification_reads',
-        'audience_type',
-        'audience_role',
-        'recipient_user_id'
-    ].some(identifier => message.includes(identifier));
-};
-
 const decryptStored = value => {
     if (!value || (!String(value).startsWith('v2:') && !/^[0-9a-f]+:[0-9a-f]+$/i.test(value))) return value;
     try {
@@ -34,42 +25,14 @@ const decryptStored = value => {
     }
 };
 
-const computeActionUrl = (item = {}) => {
-    if (item.action_url) return item.action_url;
-    const event = String(item.event_type || '').toUpperCase();
-    const entityId = item.entity_id;
-    const patientId = item.patient_id;
-
-    if (event.includes('STAT') || event.includes('CRITICAL') || event.includes('EXAM') || event.includes('REPORT')) {
-        return entityId ? `/worklist?examId=${entityId}` : '/worklist';
-    }
-    if (event.includes('INVOICE') || event.includes('PAYMENT') || event.includes('BILLING') || event.includes('REFUND')) {
-        return entityId ? `/reception?tab=cashier&invoiceId=${entityId}` : '/reception';
-    }
-    if (event.includes('APPOINTMENT') || event.includes('WAITLIST') || event.includes('BOOKING')) {
-        return entityId ? `/appointments?appointmentId=${entityId}` : '/appointments';
-    }
-    if (event.includes('INVENTORY') || event.includes('STOCK') || event.includes('EXPIRY')) {
-        return '/inventory';
-    }
-    if (event.includes('EQUIPMENT') || event.includes('MAINTENANCE') || event.includes('DOWNTIME')) {
-        return '/equipment';
-    }
-    if (event.includes('PAYROLL')) {
-        return '/payroll';
-    }
-    if (patientId) {
-        return `/patients?patientId=${patientId}`;
-    }
-    return null;
-};
-
 const mapNotificationRow = row => ({
     ...row,
     recipient: decryptStored(row.recipient),
     subject: decryptStored(row.subject),
     content: decryptStored(row.content),
-    action_url: computeActionUrl(row)
+    // These endpoints are staff surfaces even when the delivery itself targets
+    // a patient or doctor. Never send a staff operator into a portal route.
+    action_url: computeActionUrl({ ...row, audience_type: 'Staff' })
 });
 
 const matchesNotificationSearch = (row, q) => {
@@ -92,8 +55,7 @@ const addStaffVisibilityFilter = (filters, values, param, req) => {
     const role = req.user?.role || '';
     const userId = getUserId(req);
     filters += ` AND (
-        n.audience_type = 'Global'
-        OR n.recipient_user_id = $${param}
+        n.recipient_user_id = $${param}
         OR (
             n.audience_type = 'Staff'
             AND n.recipient_user_id IS NULL
@@ -105,7 +67,7 @@ const addStaffVisibilityFilter = (filters, values, param, req) => {
 };
 
 const buildStaffNotificationFilters = (req) => {
-    const { channel, status, eventType, patientId, startDate, endDate } = req.query;
+    const { channel, status, eventType, category, priority, patientId, startDate, endDate } = req.query;
     const values = [];
     let param = 1;
     let filters = '';
@@ -113,6 +75,8 @@ const buildStaffNotificationFilters = (req) => {
     if (channel) { filters += ` AND n.channel = $${param++}`; values.push(channel); }
     if (status) { filters += ` AND n.status = $${param++}`; values.push(status); }
     if (eventType) { filters += ` AND n.event_type = $${param++}`; values.push(eventType); }
+    if (category) { filters += ` AND ec.category = $${param++}`; values.push(category); }
+    if (priority) { filters += ` AND n.priority = $${param++}`; values.push(priority); }
     if (patientId) { filters += ` AND n.patient_id = $${param++}`; values.push(patientId); }
     if (startDate) { filters += ` AND n.created_at >= $${param++}::date`; values.push(startDate); }
     if (endDate) { filters += ` AND n.created_at < ($${param++}::date + interval '1 day')`; values.push(endDate); }
@@ -126,8 +90,9 @@ const getNotifications = (db) => async (req, res, next) => {
         const { limit = 50, offset = 0, q } = req.query;
         const userId = getUserId(req);
         let { filters, values, param } = buildStaffNotificationFilters(req);
-        const viewCondition = req.query.view === 'unread'
+        const viewCondition = req.query.view === 'unread' || req.query.readState === 'unread'
             ? 'nr.read_at IS NULL'
+            : req.query.readState === 'read' ? 'nr.read_at IS NOT NULL'
             : req.query.view === 'failed' ? "n.status = 'Failed'" : 'TRUE';
         const viewFilter = ` AND ${viewCondition}`;
         const readParam = param;
@@ -135,16 +100,24 @@ const getNotifications = (db) => async (req, res, next) => {
         if (q) {
             const searchQuery = `
                 SELECT n.*,
+                       ec.category,
                        p.mrn AS patient_mrn,
+                       cra.status AS acknowledgement_status,
+                       cra.acknowledgement_due_at,
+                       cra.escalated_at,
                        (nr.read_at IS NOT NULL) AS is_read,
                        nr.read_at
                 FROM notifications n
                 LEFT JOIN patients p ON n.patient_id = p.patient_id
+                LEFT JOIN notification_event_catalog ec ON ec.event_type = n.event_type
+                LEFT JOIN critical_result_acknowledgements cra
+                  ON cra.exam_id = n.entity_id
+                 AND cra.recipient_user_id = $${readParam}
                 LEFT JOIN notification_reads nr
                   ON nr.notification_id = n.notification_id
                  AND nr.user_id = $${param++}
-                 WHERE 1=1 ${filters}
-                ORDER BY n.created_at DESC
+                  WHERE 1=1 ${filters} ${viewFilter}
+                 ORDER BY n.created_at DESC, n.notification_id DESC
                 LIMIT $${param}
             `;
             const result = await db.query(searchQuery, [...values, userId, SEARCH_SCAN_LIMIT + 1]);
@@ -162,8 +135,9 @@ const getNotifications = (db) => async (req, res, next) => {
                 if (row.status === 'Pending') acc.pending += 1;
                 if (row.status === 'Sent') acc.sent += 1;
                 if (row.status === 'Delivered') acc.delivered += 1;
+                if (row.priority === 'Critical') acc.critical += 1;
                 return acc;
-            }, { all: 0, unread: 0, failed: 0, pending: 0, sent: 0, delivered: 0 });
+            }, { all: 0, unread: 0, failed: 0, pending: 0, sent: 0, delivered: 0, critical: 0 });
 
             return res.json({
                 items: pageRows,
@@ -178,16 +152,24 @@ const getNotifications = (db) => async (req, res, next) => {
 
         const dataQuery = `
             SELECT n.*,
+                   ec.category,
                    p.mrn AS patient_mrn,
+                   cra.status AS acknowledgement_status,
+                   cra.acknowledgement_due_at,
+                   cra.escalated_at,
                    (nr.read_at IS NOT NULL) AS is_read,
                    nr.read_at
             FROM notifications n
             LEFT JOIN patients p ON n.patient_id = p.patient_id
+            LEFT JOIN notification_event_catalog ec ON ec.event_type = n.event_type
+            LEFT JOIN critical_result_acknowledgements cra
+              ON cra.exam_id = n.entity_id
+             AND cra.recipient_user_id = $${readParam}
             LEFT JOIN notification_reads nr
               ON nr.notification_id = n.notification_id
              AND nr.user_id = $${param++}
             WHERE 1=1 ${filters} ${viewFilter}
-            ORDER BY n.created_at DESC
+            ORDER BY n.created_at DESC, n.notification_id DESC
             LIMIT $${param++} OFFSET $${param}
         `;
         const dataValues = [...values, userId, limit, offset];
@@ -200,9 +182,11 @@ const getNotifications = (db) => async (req, res, next) => {
                 COUNT(*) FILTER (WHERE n.status = 'Failed')::int AS failed,
                 COUNT(*) FILTER (WHERE n.status = 'Pending')::int AS pending,
                 COUNT(*) FILTER (WHERE n.status = 'Sent')::int AS sent,
-                COUNT(*) FILTER (WHERE n.status = 'Delivered')::int AS delivered
+                COUNT(*) FILTER (WHERE n.status = 'Delivered')::int AS delivered,
+                COUNT(*) FILTER (WHERE n.priority = 'Critical')::int AS critical
             FROM notifications n
             LEFT JOIN patients p ON n.patient_id = p.patient_id
+            LEFT JOIN notification_event_catalog ec ON ec.event_type = n.event_type
             LEFT JOIN notification_reads nr
               ON nr.notification_id = n.notification_id
              AND nr.user_id = $${readParam}
@@ -216,7 +200,7 @@ const getNotifications = (db) => async (req, res, next) => {
         ]);
 
         const items = result.rows.map(mapNotificationRow);
-        const meta = countResult.rows[0] || { filtered_total: 0, total: 0, unread: 0, failed: 0, pending: 0, sent: 0, delivered: 0 };
+        const meta = countResult.rows[0] || { filtered_total: 0, total: 0, unread: 0, failed: 0, pending: 0, sent: 0, delivered: 0, critical: 0 };
 
         res.json({
             items,
@@ -229,7 +213,8 @@ const getNotifications = (db) => async (req, res, next) => {
                 failed: meta.failed,
                 pending: meta.pending,
                 sent: meta.sent,
-                delivered: meta.delivered
+                delivered: meta.delivered,
+                critical: meta.critical
             }
         });
     } catch (error) {
@@ -248,22 +233,10 @@ const getUnreadCount = (db) => async (req, res, next) => {
             LEFT JOIN notification_reads nr
               ON nr.notification_id = n.notification_id
              AND nr.user_id = $${param}
-            WHERE nr.read_at IS NULL ${filters}
+            WHERE n.channel = 'InApp' AND nr.read_at IS NULL ${filters}
         `, [...values, userId]);
         res.json({ unreadCount: parseInt(result.rows[0].unread_count, 10) });
     } catch (error) {
-        if (isNotificationReadSchemaMissing(error)) {
-            try {
-                const result = await db.query(`
-                    SELECT COUNT(*) AS unread_count
-                    FROM notifications n
-                    WHERE COALESCE(n.is_read, FALSE) = FALSE
-                `);
-                return res.json({ unreadCount: parseInt(result.rows[0].unread_count, 10) });
-            } catch (fallbackError) {
-                return next(fallbackError);
-            }
-        }
         next(error);
     }
 };
@@ -272,28 +245,44 @@ const getMyNotifications = (db) => async (req, res, next) => {
     try {
         const userId = getUserId(req);
         const role = req.user?.role || '';
-        const { limit = 50, offset = 0, q } = req.query;
+        const { limit = 50, offset = 0, q, channel, status, eventType, category, priority, readState } = req.query;
         const values = [userId, role];
         let param = 3;
-        let filters = ` AND (
+        let filters = ` AND n.channel = 'InApp' AND (
             n.recipient_user_id = $1
-            OR n.audience_type = 'Global'
+            OR (n.audience_type = 'Global' AND $2::text IN ('Admin', 'Developer'))
             OR (n.audience_type = 'Staff' AND n.recipient_user_id IS NULL AND n.audience_role = $2)
         )`;
+        if (channel) { filters += ` AND n.channel = $${param++}`; values.push(channel); }
+        if (status) { filters += ` AND n.status = $${param++}`; values.push(status); }
+        if (eventType) { filters += ` AND n.event_type = $${param++}`; values.push(eventType); }
+        if (category) { filters += ` AND ec.category = $${param++}`; values.push(category); }
+        if (priority) { filters += ` AND n.priority = $${param++}`; values.push(priority); }
+        const readCondition = readState === 'unread'
+            ? 'nr.read_at IS NULL'
+            : readState === 'read' ? 'nr.read_at IS NOT NULL' : 'TRUE';
 
         if (q) {
             const searchQuery = `
                 SELECT n.*,
+                       ec.category,
                        p.mrn AS patient_mrn,
+                       cra.status AS acknowledgement_status,
+                       cra.acknowledgement_due_at,
+                       cra.escalated_at,
                        (nr.read_at IS NOT NULL) AS is_read,
                        nr.read_at
-                FROM notifications n
+             FROM notifications n
                 LEFT JOIN patients p ON n.patient_id = p.patient_id
+                LEFT JOIN notification_event_catalog ec ON ec.event_type = n.event_type
+                LEFT JOIN critical_result_acknowledgements cra
+                  ON cra.exam_id = n.entity_id
+                 AND cra.recipient_user_id = $1
                 LEFT JOIN notification_reads nr
                   ON nr.notification_id = n.notification_id
                  AND nr.user_id = $1
-                WHERE 1=1 ${filters}
-                ORDER BY n.created_at DESC
+                WHERE 1=1 ${filters} AND ${readCondition}
+                ORDER BY n.created_at DESC, n.notification_id DESC
                 LIMIT $${param}
             `;
             const result = await db.query(searchQuery, [...values, SEARCH_SCAN_LIMIT + 1]);
@@ -303,8 +292,9 @@ const getMyNotifications = (db) => async (req, res, next) => {
             const counts = matchingRows.reduce((acc, row) => {
                 acc.all += 1;
                 if (!row.is_read) acc.unread += 1;
+                if (row.priority === 'Critical') acc.critical += 1;
                 return acc;
-            }, { all: 0, unread: 0 });
+            }, { all: 0, unread: 0, critical: 0 });
 
             return res.json({
                 items: pageRows,
@@ -317,38 +307,48 @@ const getMyNotifications = (db) => async (req, res, next) => {
 
         const dataQuery = `
             SELECT n.*,
+                   ec.category,
                    p.mrn AS patient_mrn,
+                   cra.status AS acknowledgement_status,
+                   cra.acknowledgement_due_at,
+                   cra.escalated_at,
                    (nr.read_at IS NOT NULL) AS is_read,
                    nr.read_at
             FROM notifications n
             LEFT JOIN patients p ON n.patient_id = p.patient_id
+            LEFT JOIN notification_event_catalog ec ON ec.event_type = n.event_type
+            LEFT JOIN critical_result_acknowledgements cra
+              ON cra.exam_id = n.entity_id
+             AND cra.recipient_user_id = $1
             LEFT JOIN notification_reads nr
               ON nr.notification_id = n.notification_id
              AND nr.user_id = $1
-            WHERE 1=1 ${filters}
-            ORDER BY n.created_at DESC
+            WHERE 1=1 ${filters} AND ${readCondition}
+            ORDER BY n.created_at DESC, n.notification_id DESC
             LIMIT $${param++} OFFSET $${param}
         `;
 
         const countQuery = `
             SELECT
                 COUNT(*)::int AS total,
-                COUNT(*) FILTER (WHERE nr.read_at IS NULL)::int AS unread
+                COUNT(*) FILTER (WHERE nr.read_at IS NULL)::int AS unread,
+                COUNT(*) FILTER (WHERE n.priority = 'Critical')::int AS critical
             FROM notifications n
             LEFT JOIN patients p ON n.patient_id = p.patient_id
+            LEFT JOIN notification_event_catalog ec ON ec.event_type = n.event_type
             LEFT JOIN notification_reads nr
               ON nr.notification_id = n.notification_id
              AND nr.user_id = $1
-            WHERE 1=1 ${filters}
+            WHERE 1=1 ${filters} AND ${readCondition}
         `;
 
         const [result, countResult] = await Promise.all([
-            db.query(dataQuery, [userId, role, limit, offset]),
-            db.query(countQuery, [userId, role])
+            db.query(dataQuery, [...values, limit, offset]),
+            db.query(countQuery, values)
         ]);
 
         const items = result.rows.map(mapNotificationRow);
-        const meta = countResult.rows[0] || { total: 0, unread: 0 };
+        const meta = countResult.rows[0] || { total: 0, unread: 0, critical: 0 };
 
         res.json({
             items,
@@ -357,7 +357,8 @@ const getMyNotifications = (db) => async (req, res, next) => {
             offset,
             counts: {
                 all: meta.total,
-                unread: meta.unread
+                unread: meta.unread,
+                critical: meta.critical
             }
         });
     } catch (error) {
@@ -375,9 +376,10 @@ const markMyNotificationRead = (db) => async (req, res, next) => {
             SELECT n.notification_id, $1, NOW()
             FROM notifications n
             WHERE n.notification_id = $2
+              AND n.channel = 'InApp'
               AND (
                   n.recipient_user_id = $1
-                  OR n.audience_type = 'Global'
+                  OR (n.audience_type = 'Global' AND $3::text IN ('Admin', 'Developer'))
                   OR (n.audience_type = 'Staff' AND n.recipient_user_id IS NULL AND n.audience_role = $3)
               )
             ON CONFLICT (notification_id, user_id)
@@ -403,9 +405,10 @@ const markAllMyNotificationsRead = (db) => async (req, res, next) => {
             INSERT INTO notification_reads (notification_id, user_id, read_at)
             SELECT n.notification_id, $1, NOW()
             FROM notifications n
-            WHERE (
+            WHERE n.channel = 'InApp'
+              AND (
                 n.recipient_user_id = $1
-                OR n.audience_type = 'Global'
+                OR (n.audience_type = 'Global' AND $2::text IN ('Admin', 'Developer'))
                 OR (n.audience_type = 'Staff' AND n.recipient_user_id IS NULL AND n.audience_role = $2)
             )
               AND NOT EXISTS (
@@ -431,7 +434,7 @@ const markAllRead = (db) => async (req, res, next) => {
             SELECT n.notification_id, $1, NOW()
             FROM notifications n
             LEFT JOIN patients p ON n.patient_id = p.patient_id
-            WHERE 1=1 ${filters}
+            WHERE n.channel = 'InApp' AND 1=1 ${filters}
             ON CONFLICT (notification_id, user_id)
             DO UPDATE SET read_at = COALESCE(notification_reads.read_at, EXCLUDED.read_at)
             RETURNING notification_id
@@ -452,7 +455,7 @@ const markNotificationRead = (db) => async (req, res, next) => {
             SELECT n.notification_id, $1, NOW()
             FROM notifications n
             LEFT JOIN patients p ON n.patient_id = p.patient_id
-            WHERE n.notification_id = $2 ${filters}
+            WHERE n.notification_id = $2 AND n.channel = 'InApp' ${filters}
             ON CONFLICT (notification_id, user_id)
             DO UPDATE SET read_at = COALESCE(notification_reads.read_at, EXCLUDED.read_at)
             RETURNING notification_id, TRUE AS is_read, read_at
@@ -494,9 +497,11 @@ const createTemplate = (db) => async (req, res, next) => {
         const data = req.body;
 
         const requiredVars = await validateRequiredVariables(db, data.eventType, {});
-        const missingInSubject = validateTemplatePlaceholders(data.subject || '', requiredVars);
-        const missingInBody = validateTemplatePlaceholders(data.body || '', requiredVars);
-        const allMissing = [...new Set([...missingInSubject, ...missingInBody])];
+        const templateText = `${data.subject || ''}\n${data.body || ''}`;
+        const allMissing = validateTemplatePlaceholders(templateText, requiredVars);
+        if (/\{\{\s*(?:#|\/)|\|\||[^{}]*[^\w.\s][^{}]*\}\}/.test(templateText)) {
+            return next(new AppError('Template contains unsupported syntax; use simple {{variable}} placeholders', 400));
+        }
 
         if (allMissing.length > 0) {
             return next(new AppError(`Template is missing required placeholders: ${allMissing.join(', ')}`, 400));
@@ -527,9 +532,11 @@ const updateTemplate = (db) => async (req, res, next) => {
         const body = data.body !== undefined ? data.body : t.body;
 
         const requiredVars = await validateRequiredVariables(db, t.event_type, {});
-        const missingInSubject = validateTemplatePlaceholders(subject || '', requiredVars);
-        const missingInBody = validateTemplatePlaceholders(body || '', requiredVars);
-        const allMissing = [...new Set([...missingInSubject, ...missingInBody])];
+        const templateText = `${subject || ''}\n${body || ''}`;
+        const allMissing = validateTemplatePlaceholders(templateText, requiredVars);
+        if (/\{\{\s*(?:#|\/)|\|\||[^{}]*[^\w.\s][^{}]*\}\}/.test(templateText)) {
+            return next(new AppError('Template contains unsupported syntax; use simple {{variable}} placeholders', 400));
+        }
 
         if (allMissing.length > 0) {
             return next(new AppError(`Template is missing required placeholders: ${allMissing.join(', ')}`, 400));
@@ -570,13 +577,27 @@ const getJobs = (db) => async (req, res, next) => {
         const values = [];
         let param = 1;
         let filters = '';
+        if (req.user?.role === 'Marketing') {
+            filters += ` AND event_type = $${param++}`;
+            values.push('MarketingCampaign');
+        }
         if (status)    { filters += ` AND status = $${param++}`; values.push(status); }
         if (eventType) { filters += ` AND event_type = $${param++}`; values.push(eventType); }
 
         const [result, countResult] = await Promise.all([
             db.query(
-                `SELECT * FROM notification_jobs WHERE 1=1 ${filters} ORDER BY scheduled_for DESC, job_id DESC LIMIT $${param++} OFFSET $${param}`,
-                [...values, limit, offset]
+                `SELECT job_id, event_type, channel, recipient_type,
+                        CASE WHEN $${param}::text = 'Marketing' THEN NULL ELSE recipient_id END AS recipient_id,
+                        entity_type, entity_id, status, scheduled_for, processed_at,
+                        notification_id,
+                        CASE WHEN $${param}::text = 'Marketing' THEN NULL ELSE error_message END AS error_message,
+                        retry_count, max_retries, created_at,
+                        CASE WHEN $${param}::text = 'Marketing' THEN '{}'::jsonb ELSE variables END AS variables
+                 FROM notification_jobs
+                 WHERE 1=1 ${filters}
+                 ORDER BY scheduled_for DESC, job_id DESC
+                 LIMIT $${param + 1} OFFSET $${param + 2}`,
+                [...values, req.user?.role || '', limit, offset]
             ),
             db.query(`SELECT COUNT(*)::int AS total FROM notification_jobs WHERE 1=1 ${filters}`, values)
         ]);
@@ -640,12 +661,29 @@ const sendManual = (db) => async (req, res, next) => {
             if (consentField && p.rows[0][consentField] !== true) {
                 return next(new AppError(`Patient has not consented to ${data.channel} notifications`, 409));
             }
-            if (!contact) {
-                contact = data.channel === 'Email' ? decrypt(p.rows[0].email_enc) : decrypt(p.rows[0].phone_enc);
+            const patientContact = data.channel === 'Email'
+                ? decrypt(p.rows[0].email_enc)
+                : decrypt(p.rows[0].phone_enc);
+            if (!patientContact) {
+                return next(new AppError(`Patient ${data.channel} contact is unavailable`, 409));
             }
+            if (contact && String(contact).trim().toLowerCase() !== String(patientContact).trim().toLowerCase()) {
+                return next(new AppError('Recipient contact does not belong to the selected patient', 409));
+            }
+            contact = patientContact;
         }
 
         if (!contact) return next(new AppError('Could not resolve recipient contact', 400));
+
+        await logAction(db, {
+            userId: getUserId(req),
+            action: 'NOTIFICATION_MANUAL_SEND_REQUESTED',
+            resourceId: data.patientId || data.entityId || null,
+            resourceTable: data.patientId ? 'patients' : (data.entityType || 'notifications'),
+            ipAddress: req.ip,
+            details: { channel: data.channel, eventType: 'ManualSend', patientBound: Boolean(data.patientId) },
+            required: true
+        });
 
         const result = await dispatch(
             data.channel, contact, data.subject || '', data.body, db,
@@ -657,13 +695,30 @@ const sendManual = (db) => async (req, res, next) => {
                 // Custom external messages are private operational records. They
                 // must never become globally visible merely because no patient ID
                 // was supplied.
-                recipientUserId: getUserId(req),
+                // sentBy belongs in the audit trail, not recipient_user_id. An
+                // external manual dispatch must not become an inbox item for its
+                // sender merely to give the delivery log an owner.
+                recipientUserId: null,
                 audienceType: data.patientId ? 'Patient' : 'Staff',
                 priority: 'Action'
             }
         );
 
         if (!result.success) return next(new AppError('Failed to send notification', 500));
+        await logAction(db, {
+            userId: getUserId(req),
+            action: 'NOTIFICATION_MANUAL_SEND_COMPLETED',
+            resourceId: data.patientId || data.entityId || null,
+            resourceTable: data.patientId ? 'patients' : (data.entityType || 'notifications'),
+            ipAddress: req.ip,
+            details: {
+                channel: data.channel,
+                eventType: 'ManualSend',
+                notificationId: result.notificationId || null,
+                patientBound: Boolean(data.patientId)
+            },
+            required: false
+        });
         res.json({ message: 'Notification sent', notificationId: result.notificationId });
     } catch (error) {
         next(error);
@@ -677,12 +732,9 @@ const getPreferences = (db) => async (req, res, next) => {
         const { patientId, doctorId } = req.query;
         if (!patientId && !doctorId) return next(new AppError('Provide patientId or doctorId', 400));
 
-        const result = await db.query(`
-            SELECT * FROM notification_preferences
-            WHERE ($1::uuid IS NULL OR patient_id = $1)
-              AND ($2::uuid IS NULL OR doctor_id = $2)
-            LIMIT 1
-        `, [patientId || null, doctorId || null]);
+        const result = patientId
+            ? await db.query('SELECT * FROM notification_preferences WHERE patient_id = $1::uuid LIMIT 1', [patientId])
+            : await db.query('SELECT * FROM notification_preferences WHERE doctor_id = $1::uuid LIMIT 1', [doctorId]);
 
         if (result.rows.length === 0) {
             return res.json({
@@ -740,7 +792,7 @@ const updateStaffPreferences = (db) => async (req, res, next) => {
             'notify_security_event', 'notify_staff_lifecycle', 'notify_order_events',
             'notify_queue_change', 'notify_pacs_alert', 'notify_backup_status',
             'notify_privacy_request', 'notify_chat_message', 'notify_inventory_expiry',
-            'notify_claim_update', 'notify_payment_update',
+            'notify_claim_update', 'notify_payment_update', 'time_zone',
             'quiet_hours_enabled', 'quiet_hours_start', 'quiet_hours_end'
         ]);
 
@@ -753,7 +805,7 @@ const updateStaffPreferences = (db) => async (req, res, next) => {
             ON CONFLICT DO NOTHING
         `, [userId]);
 
-        const setClauses = entries.map(([k, v], i) => `${k} = $${i + 2}`).join(', ');
+        const setClauses = entries.map(([k], i) => `${k} = $${i + 2}`).join(', ');
         const vals = entries.map(([, v]) => v);
 
         await db.query(
@@ -776,6 +828,7 @@ const updatePreferences = (db) => async (req, res, next) => {
         const data = req.body;
         const colMap = {
             emailEnabled: 'email_enabled', smsEnabled: 'sms_enabled', whatsappEnabled: 'whatsapp_enabled',
+            inappEnabled: 'inapp_enabled',
             notifyAppointmentCreated: 'notify_appointment_created',
             notifyAppointmentReminder: 'notify_appointment_reminder',
             notifyAppointmentRescheduled: 'notify_appointment_rescheduled',
@@ -785,7 +838,11 @@ const updatePreferences = (db) => async (req, res, next) => {
             notifyReportReady: 'notify_report_ready',
             notifyResultDelivered: 'notify_result_delivered',
             notifyFollowupReminder: 'notify_followup_reminder',
-            notifyMarketing: 'notify_marketing'
+            notifyMarketing: 'notify_marketing',
+            quietHoursEnabled: 'quiet_hours_enabled',
+            quietHoursStart: 'quiet_hours_start',
+            quietHoursEnd: 'quiet_hours_end',
+            timeZone: 'time_zone'
         };
 
         const sets = Object.entries(data)
@@ -801,14 +858,20 @@ const updatePreferences = (db) => async (req, res, next) => {
             ON CONFLICT DO NOTHING
         `, [patientId || null, doctorId || null]);
 
-        const setClauses = sets.map((s, i) => `${s.col} = $${i + 3}`).join(', ');
+        const setClauses = sets.map((s, i) => `${s.col} = $${i + 2}`).join(', ');
         const vals = sets.map(s => s.val);
 
-        await db.query(
-            `UPDATE notification_preferences SET ${setClauses}, updated_at = NOW()
-             WHERE ($1::uuid IS NULL OR patient_id = $1) AND ($2::uuid IS NULL OR doctor_id = $2)`,
-            [patientId || null, doctorId || null, ...vals]
-        );
+        if (patientId) {
+            await db.query(
+                `UPDATE notification_preferences SET ${setClauses}, updated_at = NOW() WHERE patient_id = $1::uuid`,
+                [patientId, ...vals]
+            );
+        } else {
+            await db.query(
+                `UPDATE notification_preferences SET ${setClauses}, updated_at = NOW() WHERE doctor_id = $1::uuid`,
+                [doctorId, ...vals]
+            );
+        }
 
         res.json({ message: 'Preferences updated' });
     } catch (error) {
@@ -818,22 +881,69 @@ const updatePreferences = (db) => async (req, res, next) => {
 
 const sendReminder = (db) => async (req, res, next) => {
     try {
-        const { appointmentId, recipientEmail, patientName, time } = req.body;
-        if (!recipientEmail) return next(new AppError('Recipient email is required', 400));
+        const { appointmentId } = req.body;
+        if (!appointmentId) return next(new AppError('Appointment is required', 400));
+
+        const appointmentResult = await db.query(`
+            SELECT a.appointment_id, a.patient_id, a.order_number, a.start_time, a.status,
+                   p.email_enc, p.first_name_enc, p.last_name_enc
+            FROM appointments a
+            JOIN patients p ON p.patient_id = a.patient_id
+            WHERE a.appointment_id = $1
+            LIMIT 1
+        `, [appointmentId]);
+        const appointment = appointmentResult.rows[0];
+        if (!appointment) return next(new AppError('Appointment not found', 404));
+        if (!['Scheduled', 'Confirmed'].includes(appointment.status)) {
+            return next(new AppError('Only scheduled or confirmed appointments can be reminded', 409));
+        }
+        if (!appointment.start_time || new Date(appointment.start_time) <= new Date()) {
+            return next(new AppError('Appointment time must be in the future', 409));
+        }
+        const recipientEmail = decrypt(appointment.email_enc);
+        if (!recipientEmail) return next(new AppError('Patient email is unavailable', 409));
+        const patientName = [decrypt(appointment.first_name_enc), decrypt(appointment.last_name_enc)]
+            .filter(Boolean).join(' ') || appointment.order_number;
+        const time = appointment.start_time;
 
         const allSettings = await settingsService.getAll();
         const centerName = [allSettings['center.name'], allSettings['center.branch']].filter(Boolean).join(' - ') || 'Radiology Center';
         const subject = `Appointment Reminder: ${patientName}`;
         const body = `Dear ${patientName},\n\nThis is a reminder for your appointment at ${centerName} scheduled for ${new Date(time).toLocaleString()}.\n\nPlease arrive 15 minutes early.\n\nRegards,\n${centerName} Team`;
 
+        await logAction(db, {
+            userId: getUserId(req),
+            action: 'APPOINTMENT_REMINDER_MANUAL_SEND_REQUESTED',
+            resourceId: appointmentId,
+            resourceTable: 'appointments',
+            ipAddress: req.ip,
+            details: { channel: 'Email' },
+            required: true
+        });
+
         const result = await dispatch('Email', recipientEmail, subject, body, db, {
             eventType: 'ManualReminder',
             entityType: 'Appointment',
             entityId: appointmentId,
+            patientId: appointment.patient_id,
             audienceType: 'Patient',
+            variables: {
+                patient_name: patientName,
+                order_number: appointment.order_number,
+                appointment_time: new Date(time).toLocaleString()
+            },
             priority: 'Action'
         });
         if (result.success) {
+            await logAction(db, {
+                userId: getUserId(req),
+                action: 'APPOINTMENT_REMINDER_MANUAL_SEND_COMPLETED',
+                resourceId: appointmentId,
+                resourceTable: 'appointments',
+                ipAddress: req.ip,
+                details: { notificationId: result.notificationId || null, channel: 'Email' },
+                required: false
+            });
             res.json({ message: 'Reminder sent successfully' });
         } else {
             return next(new AppError('Failed to send reminder', 500));
@@ -845,59 +955,41 @@ const sendReminder = (db) => async (req, res, next) => {
 
 const unsubscribe = (db) => async (req, res, next) => {
     try {
-        const { phone, email } = req.body;
+        const { phone, email, token } = req.body;
+        const contact = email || phone;
+        const channel = email ? 'Email' : 'SMS';
+        const response = {
+            message: 'If the unsubscribe request was valid, marketing preferences have been updated.'
+        };
 
-        let targetPatientId;
-
-        if (!targetPatientId && phone) {
-            const phoneHash = hash(String(phone).trim());
-            const found = await db.query('SELECT patient_id FROM patients WHERE phone_hash = $1 LIMIT 1', [phoneHash]);
-            targetPatientId = found.rows[0]?.patient_id;
+        if (!verifyUnsubscribeToken({ token, contact, channel })) {
+            return res.json(response);
         }
 
-        if (!targetPatientId && email) {
-            const emailHash = hash(String(email).trim().toLowerCase());
-            const found = await db.query('SELECT patient_id FROM patients WHERE email_hash = $1 LIMIT 1', [emailHash]);
-            targetPatientId = found.rows[0]?.patient_id;
-        }
-
-        if (!targetPatientId) {
-            return next(new AppError('Patient not found for unsubscribe request', 404));
-        }
-
-        const channelColumn = email ? 'email_enabled' : 'sms_enabled';
-        const consentColumn = email ? 'consent_email' : 'consent_sms';
-
+        const contactHash = hash(String(contact).trim().toLowerCase());
+        const contactHashColumn = email ? 'email_hash' : 'phone_hash';
         await db.query(`
-            UPDATE patients
-            SET opt_in_marketing = FALSE,
-                consent_marketing = FALSE,
-                ${consentColumn} = FALSE
-            WHERE patient_id = $1
-        `, [targetPatientId]);
+            WITH target AS (
+                SELECT patient_id
+                FROM patients
+                WHERE ${contactHashColumn} = $1
+                LIMIT 1
+            ), updated_patient AS (
+                UPDATE patients p
+                SET opt_in_marketing = FALSE,
+                    consent_marketing = FALSE
+                FROM target
+                WHERE p.patient_id = target.patient_id
+                RETURNING p.patient_id
+            )
+            INSERT INTO notification_preferences (patient_id, notify_marketing)
+            SELECT patient_id, FALSE
+            FROM updated_patient
+            ON CONFLICT (patient_id) WHERE patient_id IS NOT NULL
+            DO UPDATE SET notify_marketing = FALSE, updated_at = NOW()
+        `, [contactHash]);
 
-        const pref = await db.query(
-            'SELECT preference_id FROM notification_preferences WHERE patient_id = $1 LIMIT 1',
-            [targetPatientId]
-        );
-
-        if (pref.rows.length) {
-            await db.query(`
-                UPDATE notification_preferences
-                SET notify_marketing = FALSE, ${channelColumn} = FALSE, updated_at = NOW()
-                WHERE patient_id = $1
-            `, [targetPatientId]);
-        } else {
-            await db.query(`
-                INSERT INTO notification_preferences (patient_id, notify_marketing, ${channelColumn})
-                VALUES ($1, FALSE, FALSE)
-            `, [targetPatientId]);
-        }
-
-        res.json({
-            message: `Unsubscribed from marketing and ${email ? 'email' : 'SMS'} notifications`,
-            channel: email ? 'Email' : 'SMS'
-        });
+        res.json(response);
     } catch (error) {
         next(error);
     }
@@ -991,12 +1083,66 @@ const getNotificationAnalytics = (db) => async (req, res, next) => {
 };
 
 const TWILIO_STATUS_MAP = {
+    queued: 'Pending',
+    accepted: 'Pending',
+    scheduled: 'Pending',
+    sending: 'Pending',
+    sent: 'Sent',
     delivered: 'Delivered',
     failed: 'Failed',
     undelivered: 'Failed',
 };
 
+const applyTwilioDeliveryReceipt = async (db, { MessageSid, MessageStatus }) => {
+    const mappedStatus = TWILIO_STATUS_MAP[String(MessageStatus || '').toLowerCase()];
+    if (!MessageSid || !mappedStatus) return { updated: 0, status: mappedStatus || null };
+
+    const result = await db.query(`
+        UPDATE notifications
+        SET status = $1,
+            error_message = CASE
+                WHEN $1::text = 'Failed' THEN COALESCE(error_message, 'Provider delivery failed')
+                WHEN $1::text = 'Delivered' THEN NULL
+                ELSE error_message
+            END
+        WHERE provider_message_id = $2
+          AND (
+              ($1::text = 'Pending' AND status = 'Pending')
+              OR ($1::text = 'Sent' AND status IN ('Pending', 'Sent'))
+              OR ($1::text = 'Delivered' AND status <> 'Delivered')
+              OR ($1::text = 'Failed' AND status NOT IN ('Delivered', 'Failed'))
+          )
+        RETURNING notification_id
+    `, [mappedStatus, MessageSid]);
+
+    for (const row of result.rows) {
+        await db.query(`
+            UPDATE notification_jobs
+            SET status = CASE
+                    WHEN $1::text = 'Failed' THEN 'Failed'
+                    WHEN $1::text IN ('Sent', 'Delivered') THEN 'Sent'
+                    ELSE status
+                END,
+                processed_at = CASE
+                    WHEN $1::text IN ('Sent', 'Delivered', 'Failed') THEN COALESCE(processed_at, NOW())
+                    ELSE processed_at
+                END,
+                error_message = CASE
+                    WHEN $1::text = 'Failed' THEN COALESCE(error_message, 'Provider delivery failed')
+                    WHEN $1::text = 'Delivered' THEN NULL
+                    ELSE error_message
+                END
+            WHERE notification_id = $2
+              AND status NOT IN ('Cancelled', 'Skipped')
+        `, [mappedStatus, row.notification_id]);
+        await notifyClients(db, row.notification_id);
+    }
+
+    return { updated: result.rowCount || result.rows.length, status: mappedStatus };
+};
+
 const validateTwilioSignature = (req) => {
+    if (req.webhookSignatureVerified === 'Twilio') return true;
     const token = process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_TOKEN;
     if (!token) return process.env.NODE_ENV !== 'production';
 
@@ -1014,32 +1160,13 @@ const handleTwilioWebhook = (db) => async (req, res) => {
         return res.status(403).json({ error: 'Invalid Twilio signature' });
     }
 
-    const { MessageSid, MessageStatus } = req.body;
-    const mappedStatus = TWILIO_STATUS_MAP[MessageStatus];
-    if (MessageSid && mappedStatus) {
-        try {
-            const result = await db.query(
-                `UPDATE notifications
-                 SET status = $1
-                 WHERE provider_message_id = $2
-                 RETURNING notification_id`,
-                [mappedStatus, MessageSid]
-            );
-            for (const row of result.rows) {
-                await db.query(`
-                    UPDATE notification_jobs
-                    SET status = CASE WHEN $1::text = 'Delivered' THEN 'Sent' ELSE 'Failed' END,
-                        processed_at = COALESCE(processed_at, NOW()),
-                        error_message = CASE WHEN $1::text = 'Failed' THEN COALESCE(error_message, 'Provider delivery failed') ELSE error_message END
-                    WHERE notification_id = $2
-                `, [mappedStatus, row.notification_id]);
-                await notifyClients(db, row.notification_id);
-            }
-        } catch (err) {
-            console.error('[TwilioWebhook] DB error:', err.message);
-        }
+    try {
+        await applyTwilioDeliveryReceipt(db, req.body || {});
+        return res.sendStatus(204);
+    } catch (err) {
+        console.error('[TwilioWebhook] DB error:', err.message);
+        return res.status(500).json({ error: 'Webhook processing failed' });
     }
-    return res.sendStatus(204);
 };
 
 module.exports = {
@@ -1051,5 +1178,6 @@ module.exports = {
     getPreferences, updatePreferences,
     getStaffPreferences, updateStaffPreferences,
     getNotificationAnalytics,
-    handleTwilioWebhook
+    handleTwilioWebhook,
+    applyTwilioDeliveryReceipt
 };

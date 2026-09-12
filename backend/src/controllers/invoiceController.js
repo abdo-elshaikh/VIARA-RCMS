@@ -680,7 +680,7 @@ const createInvoice = (db) => async (req, res, next) => {
 const getInvoices = (db) => async (req, res, next) => {
     try {
         const {
-            status, patientId, q, startDate, endDate, appointmentDate,
+            status, patientId, q, startDate, endDate, appointmentDate, date,
             openOnly = false, includeMeta = false, sortBy = 'date', sortDirection = 'desc',
             limit = 100, offset = 0
         } = req.query;
@@ -707,6 +707,37 @@ const getInvoices = (db) => async (req, res, next) => {
                        + COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0),
                        0
                    ) as balance_amount,
+                   COALESCE((
+                       SELECT jsonb_agg(
+                           jsonb_build_object(
+                               'item_id', ii.item_id,
+                               'description', ii.description,
+                               'quantity', ii.quantity,
+                               'unit_price', ii.unit_price,
+                               'discount_amount', ii.discount_amount,
+                               'tax_amount', ii.tax_amount,
+                               'total_amount', ii.total_amount
+                           )
+                       )
+                       FROM invoice_items ii
+                       WHERE ii.invoice_id = i.invoice_id
+                   ), '[]'::jsonb) AS items,
+                   COALESCE((
+                       SELECT jsonb_agg(
+                           jsonb_build_object(
+                               'payment_id', pmt.payment_id,
+                               'amount', pmt.amount,
+                               'method', pmt.method,
+                               'payment_status', pmt.payment_status,
+                               'payment_reference', pmt.payment_reference,
+                               'transaction_date', pmt.transaction_date,
+                               'cashier_shift_id', pmt.cashier_shift_id,
+                               'created_at', pmt.transaction_date
+                           ) ORDER BY pmt.transaction_date DESC
+                       )
+                       FROM payments pmt
+                       WHERE pmt.invoice_id = i.invoice_id AND pmt.payment_status = 'Completed'
+                   ), '[]'::jsonb) AS payments,
                    COUNT(*) OVER()::integer AS filtered_count
             FROM invoices i
             JOIN patients p ON i.patient_id = p.patient_id
@@ -756,19 +787,31 @@ const getInvoices = (db) => async (req, res, next) => {
             )`;
         }
 
-        if (startDate) {
-            query += ` AND i.business_date >= $${param++}::date`;
-            values.push(startDate);
-        }
+        const effectiveDate = date || (startDate && endDate && startDate === endDate ? startDate : null);
+        if (effectiveDate) {
+            query += ` AND (
+                i.service_date = $${param}::date
+                OR i.business_date = $${param}::date
+                OR a.start_time::date = $${param}::date
+                OR i.generated_at::date = $${param}::date
+            )`;
+            param++;
+            values.push(effectiveDate);
+        } else {
+            if (startDate) {
+                query += ` AND i.business_date >= $${param++}::date`;
+                values.push(startDate);
+            }
 
-        if (endDate) {
-            query += ` AND i.business_date <= $${param++}::date`;
-            values.push(endDate);
-        }
+            if (endDate) {
+                query += ` AND i.business_date <= $${param++}::date`;
+                values.push(endDate);
+            }
 
-        if (appointmentDate) {
-            query += ` AND a.start_time::date = $${param++}::date`;
-            values.push(appointmentDate);
+            if (appointmentDate) {
+                query += ` AND a.start_time::date = $${param++}::date`;
+                values.push(appointmentDate);
+            }
         }
 
         query += `
@@ -827,6 +870,35 @@ const getInvoices = (db) => async (req, res, next) => {
 
 const getInvoiceSummary = (db) => async (req, res, next) => {
     try {
+        const { startDate, endDate, date } = req.query;
+        const values = [];
+        let param = 1;
+        let whereClause = '';
+
+        const effectiveDate = date || (startDate && endDate && startDate === endDate ? startDate : null);
+        if (effectiveDate) {
+            whereClause = ` WHERE (
+                i.service_date = $${param}::date
+                OR i.business_date = $${param}::date
+                OR a.start_time::date = $${param}::date
+                OR i.generated_at::date = $${param}::date
+            )`;
+            param++;
+            values.push(effectiveDate);
+        } else if (startDate || endDate) {
+            whereClause = ' WHERE 1=1';
+            if (startDate) {
+                whereClause += ` AND (i.service_date >= $${param}::date OR i.business_date >= $${param}::date)`;
+                param++;
+                values.push(startDate);
+            }
+            if (endDate) {
+                whereClause += ` AND (i.service_date <= $${param}::date OR i.business_date <= $${param}::date)`;
+                param++;
+                values.push(endDate);
+            }
+        }
+
         const result = await db.query(`
             WITH payment_totals AS (
                 SELECT invoice_id,
@@ -845,9 +917,11 @@ const getInvoiceSummary = (db) => async (req, res, next) => {
                        GREATEST(i.patient_payable_amount - COALESCE(c.credited_amount, 0)
                            - COALESCE(p.paid_amount, 0) + COALESCE(r.refunded_amount, 0), 0) AS balance_amount
                 FROM invoices i
+                LEFT JOIN appointments a ON i.appointment_id = a.appointment_id
                 LEFT JOIN payment_totals p ON p.invoice_id = i.invoice_id
                 LEFT JOIN refund_totals r ON r.invoice_id = i.invoice_id
                 LEFT JOIN credit_totals c ON c.invoice_id = i.invoice_id
+                ${whereClause}
             )
             SELECT
                 COUNT(*)::integer AS total_count,
@@ -862,7 +936,7 @@ const getInvoiceSummary = (db) => async (req, res, next) => {
                 COUNT(*) FILTER (WHERE invoice_status = 'Refunded')::integer AS refunded_count,
                 COUNT(*) FILTER (WHERE invoice_status = 'Voided')::integer AS voided_count
             FROM positions
-        `);
+        `, values);
         res.json(result.rows[0]);
     } catch (error) {
         next(error);

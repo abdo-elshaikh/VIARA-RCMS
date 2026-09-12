@@ -8,7 +8,7 @@ const VALID_INVOICE_STATUSES = ['Pending', 'Paid', 'Partial', 'Refunded', 'Voide
 const VALID_QUEUE_STAGES = ['Registered', 'Scheduled', 'Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam', 'In Exam', 'Reporting', 'Finalized', 'Delivered', 'Cancelled'];
 const VALID_STATIONS = ['Reception', 'Cashier', 'Nurse', 'Modality', 'Radiologist', 'Delivery'];
 const VALID_PRIORITIES = ['Routine', 'Urgent', 'Emergency'];
-const VALID_WAITING_LIST_STATUSES = ['Waiting', 'Contacted', 'Scheduled', 'Cancelled'];
+const VALID_WAITING_LIST_STATUSES = ['Waiting', 'Contacted', 'Offered', 'Scheduled', 'Declined', 'Expired', 'Cancelled'];
 const VALID_FINANCE_STATUSES = ['Pending', 'Paid', 'Cancelled'];
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

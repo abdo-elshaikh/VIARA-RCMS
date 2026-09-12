@@ -55,15 +55,38 @@ import {
     BadgeAlert,
     RadioTower
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { selectCurrentUser } from '../store/authSlice';
 import { VIARA_BRAND } from '../config/brand';
+import { canAccessRouteTarget } from '../config/routes';
+import { getEffectivePermissions } from '../utils/effectivePermissions';
+import PageHeader from '../components/ui/PageHeader';
+import {
+    HELP_CATEGORIES,
+    HELP_ROLE_ORDER,
+    HELP_TAB_IDS,
+    HELP_SHORTCUTS,
+    HELP_TROUBLESHOOTING,
+    HELP_TYPE_LABELS,
+    HELP_TASKS,
+    WORKFLOW_STAGES,
+    buildSearchCorpus,
+    getRoleWorkflowStages,
+    getArticleGovernance,
+    getHelpFeedback,
+    getLocalizedHelpItem,
+    itemCanBeRead,
+    itemCanOpen,
+    recordHelpEvent,
+    saveHelpFeedback,
+    searchHelpCatalog,
+} from '../help/helpCatalog';
 
 /* ── Role Definitions & Playbooks ──────────────────────────── */
-const ALL_STAFF = ['Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant', 'HR', 'Technician', 'Nurse', 'Insurance_Staff', 'Marketing', 'Developer'];
+const ALL_STAFF = ['Developer', 'Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant', 'Insurance_Staff', 'Referring_Doctor', 'HR', 'Technician', 'Nurse', 'Marketing'];
 
 const ROLE_PLAYBOOKS = [
     {
@@ -95,7 +118,7 @@ const ROLE_PLAYBOOKS = [
         summaryAr: 'تحضير المرضى، اختيار بروتوكول الجهاز المناسب، مراقبة التصوير، وإرسال الدراسات إلى خادم PACS.',
         checklist: [
             { en: 'Verify patient safety screening (MRI implants, contrast allergy)', ar: 'التحقق من نموذج السلامة (الزرعات المعدنية وحساسية الصبغة)' },
-            { en: 'Select acquisition protocol and check radiation dose index (CTDI/DLP)', ar: 'تحديد بروتوكول الفحص ومراقبة مؤشر الجرعة الإشعاعية' },
+            { en: 'Select the approved acquisition protocol and review device dose indicators when the configured modality exposes them', ar: 'اختر بروتوكول التصوير المعتمد وراجع مؤشرات جرعة الجهاز عندما يتيحها الجهاز المتكامل' },
             { en: 'Confirm image quality and send series to PACS gateway', ar: 'التأكد من جودة الصور وإرسال السلاسل لخادم الـ PACS' },
             { en: 'Log contrast consumables used (Batch & Volume)', ar: 'تسجيل الصبغات والمستهلكات المستخدمة (رقم التشغيلة والكمية)' }
         ],
@@ -159,8 +182,92 @@ const ROLE_PLAYBOOKS = [
         primaryRoutes: [
             { name: 'User Management', nameAr: 'إدارة المستخدمين', path: '/users' },
             { name: 'System Settings', nameAr: 'إعدادات النظام والأمان', path: '/settings' },
-            { name: 'Audit Trails', nameAr: 'سجلات التدقيق والأمان', path: '/audit-logs' }
+            { name: 'Audit Trails', nameAr: 'سجلات التدقيق والأمان', path: '/settings?tab=auditLogs' }
         ]
+    },
+    {
+        role: 'Nurse', title: 'Nursing & Patient Preparation', titleAr: 'التمريض وتحضير المرضى', icon: HeartPulse, color: 'emerald',
+        summary: 'Receive arrived patients, complete safety screening, document preparation, and hand off safely to modality staff.',
+        summaryAr: 'استلام المرضى الواصلين، استكمال فحوص السلامة والتحضير، وتسليم الحالة بأمان لفني الجهاز.',
+        checklist: [
+            { en: 'Review All visible tasks for assigned and unassigned preparation cases', ar: 'راجع كل المهام الظاهرة للحالات المسندة وغير المسندة في التحضير' },
+            { en: 'Claim only an unassigned task you can start immediately', ar: 'استلم فقط المهمة غير المسندة التي يمكنك بدء العمل عليها فوراً' },
+            { en: 'Document MRI implants, pregnancy, renal screening, and contrast risks in the available safety fields', ar: 'وثق زرعات MRI والحمل وفحص الكلى ومخاطر الصبغة في حقول السلامة المتاحة' },
+            { en: 'Advance the patient only when preparation and payment gates are complete', ar: 'قدّم المريض للمرحلة التالية فقط بعد اكتمال التحضير والبوابة المالية' }
+        ],
+        primaryRoutes: [{ name: 'Nurse Workspace', nameAr: 'مساحة عمل التمريض', path: '/nurse' }, { name: 'Clinical Worklist', nameAr: 'قائمة العمل السريري', path: '/worklist' }]
+    },
+    {
+        role: 'Accountant', title: 'Accounting & Financial Governance', titleAr: 'المحاسبة والحوكمة المالية', icon: BarChart3, color: 'purple',
+        summary: 'Control receivables, expenses, insurer settlements, commissions, periods, payroll approval, and financial reporting.',
+        summaryAr: 'إدارة الذمم والمصروفات وتسويات التأمين والعمولات والفترات واعتماد الرواتب والتقارير المالية.',
+        checklist: [
+            { en: 'Review branch revenue, unpaid invoices, claim receipts, and daily variances', ar: 'راجع إيرادات الفروع والفواتير غير المسددة وإيصالات المطالبات وفروق الإقفال' },
+            { en: 'Approve governed refunds, payroll, and financial exceptions with evidence', ar: 'اعتمد الاستردادات والرواتب والاستثناءات المالية وفق المستندات' },
+            { en: 'Record expenses and commission settlements with valid references', ar: 'سجل المصروفات وتسويات العمولات بمراجع صحيحة' },
+            { en: 'Finalize periods only after source counts and totals reconcile', ar: 'أغلق الفترات فقط بعد تطابق أعداد المصادر والإجماليات' }
+        ],
+        primaryRoutes: [{ name: 'Financials', nameAr: 'الماليات', path: '/financials' }, { name: 'Payroll', nameAr: 'الرواتب', path: '/payroll' }, { name: 'Insurance', nameAr: 'التأمين', path: '/insurance' }]
+    },
+    {
+        role: 'Insurance_Staff', title: 'Insurance Authorization & Claims', titleAr: 'الموافقات والمطالبات التأمينية', icon: Shield, color: 'sky',
+        summary: 'Validate policies and coverage, manage pre-authorization, submit claims, and resolve payer responses.',
+        summaryAr: 'التحقق من الوثائق والتغطية وإدارة الموافقات المسبقة وتقديم المطالبات ومعالجة ردود الشركات.',
+        checklist: [
+            { en: 'Review expiring policies and pending pre-authorization requests', ar: 'راجع الوثائق القريبة من الانتهاء وطلبات الموافقة المسبقة' },
+            { en: 'Attach the correct exam, invoice, prescription, and signed report', ar: 'اربط الفحص والفاتورة والروشتة والتقرير المعتمد الصحيح' },
+            { en: 'Record rejection reasons and corrective action before resubmission', ar: 'سجل سبب الرفض والإجراء التصحيحي قبل إعادة التقديم' },
+            { en: 'Reconcile claim receipts with paid and partially paid claims', ar: 'طابق إيصالات التحصيل مع المطالبات المدفوعة والمدفوعة جزئياً' }
+        ],
+        primaryRoutes: [{ name: 'Insurance Workbench', nameAr: 'منصة التأمين', path: '/insurance' }, { name: 'Approvals', nameAr: 'الموافقات', path: '/approvals' }]
+    },
+    {
+        role: 'HR', title: 'Human Resources & Payroll Operations', titleAr: 'الموارد البشرية وعمليات الرواتب', icon: Users, color: 'emerald',
+        summary: 'Maintain staff profiles, attendance, shifts, leave, compensation, payroll review, and employee access lifecycle.',
+        summaryAr: 'إدارة ملفات الموظفين والحضور والورديات والإجازات والتعويضات ومراجعة الرواتب ودورة الحسابات.',
+        checklist: [
+            { en: 'Review attendance exceptions, leave requests, and staffing gaps', ar: 'راجع استثناءات الحضور وطلبات الإجازة ونقص التغطية' },
+            { en: 'Maintain current compensation profiles before payroll calculation', ar: 'حدّث ملفات التعويضات قبل احتساب الرواتب' },
+            { en: 'Review payroll employee items and deductions before approval', ar: 'راجع عناصر الموظفين والاستقطاعات قبل اعتماد الرواتب' },
+            { en: 'Deactivate departed staff and verify their sessions and access are revoked', ar: 'عطّل حسابات المنتهية خدمتهم وتأكد من إلغاء جلساتهم وصلاحياتهم' }
+        ],
+        primaryRoutes: [{ name: 'HR Workspace', nameAr: 'مساحة الموارد البشرية', path: '/hr' }, { name: 'Payroll', nameAr: 'الرواتب', path: '/payroll' }, { name: 'Approvals', nameAr: 'الموافقات', path: '/approvals' }]
+    },
+    {
+        role: 'Marketing', title: 'CRM, Campaigns & Patient Experience', titleAr: 'إدارة العلاقات والحملات وتجربة المريض', icon: Megaphone, color: 'pink',
+        summary: 'Build consent-aware segments, coordinate campaigns, analyze referrals, and close patient-experience tasks.',
+        summaryAr: 'إنشاء شرائح تحترم الموافقات وتنسيق الحملات وتحليل الإحالات ومتابعة تجربة المريض.',
+        checklist: [
+            { en: 'Review communication consent before adding any campaign recipient', ar: 'تحقق من موافقة التواصل قبل إضافة أي مستلم للحملة' },
+            { en: 'Monitor queued, sent, failed, skipped, and converted recipients', ar: 'راقب المستلمين المنتظرين والمرسلين والفاشلين والمتجاوزين والمتحولين' },
+            { en: 'Respond to feedback without exposing clinical details', ar: 'تعامل مع التقييمات دون كشف تفاصيل سريرية' },
+            { en: 'Use analytics to compare campaigns, referrals, and retention', ar: 'استخدم التحليلات لمقارنة الحملات والإحالات والاحتفاظ' }
+        ],
+        primaryRoutes: [{ name: 'Marketing & CRM', nameAr: 'التسويق وCRM', path: '/marketing' }, { name: 'Analytics', nameAr: 'التحليلات', path: '/analytics' }]
+    },
+    {
+        role: 'Developer', title: 'Developer & Platform Operations', titleAr: 'المطور وتشغيل المنصة', icon: FileCode, color: 'indigo',
+        summary: 'Operate integrations, PACS, backups, security diagnostics, notification delivery, database controls, and technical support.',
+        summaryAr: 'تشغيل التكاملات وPACS والنسخ الاحتياطي والتشخيصات الأمنية وتسليم الإشعارات وضوابط قاعدة البيانات.',
+        checklist: [
+            { en: 'Review integration health, retries, webhook signatures, and dead letters', ar: 'راجع صحة التكاملات والمحاولات والتوقيعات والرسائل الميتة' },
+            { en: 'Monitor PACS reconciliation, storage, MWL, and AI worker health', ar: 'راقب مطابقة PACS والتخزين وMWL وعمال الذكاء الاصطناعي' },
+            { en: 'Verify backups and test restore procedures without using production data', ar: 'تحقق من النسخ واختبر الاستعادة دون استخدام بيانات الإنتاج' },
+            { en: 'Use audit diagnostics and least-privilege controls for support work', ar: 'استخدم تشخيصات التدقيق وأقل صلاحية في أعمال الدعم' }
+        ],
+        primaryRoutes: [{ name: 'System Settings', nameAr: 'إعدادات النظام', path: '/settings' }, { name: 'PACS Reconciliation', nameAr: 'مطابقة PACS', path: '/pacs/reconciliation' }, { name: 'Audit Logs', nameAr: 'سجلات التدقيق', path: '/settings?tab=auditLogs' }]
+    },
+    {
+        role: 'Referring_Doctor', title: 'Referring Doctor Portal', titleAr: 'بوابة الطبيب المحول', icon: Stethoscope, color: 'blue',
+        summary: 'Submit referral context, follow report readiness, acknowledge critical communication, and message the imaging center securely.',
+        summaryAr: 'إرسال سياق الإحالة ومتابعة جاهزية التقرير وتأكيد البلاغات الحرجة ومراسلة مركز الأشعة بأمان.',
+        checklist: [
+            { en: 'Verify patient and referral identifiers before opening a result', ar: 'تحقق من هوية المريض والإحالة قبل فتح النتيجة' },
+            { en: 'Review finalized reports and relevant images only for referred cases', ar: 'راجع التقارير المعتمدة والصور للحالات المحولة فقط' },
+            { en: 'Acknowledge critical-result communication promptly', ar: 'أكد استلام بلاغ النتيجة الحرجة فوراً' },
+            { en: 'Use secure portal messaging for clinical clarification', ar: 'استخدم رسائل البوابة الآمنة للاستفسارات السريرية' }
+        ],
+        primaryRoutes: [{ name: 'Profile & Security', nameAr: 'الملف والأمان', path: '/profile' }, { name: 'Notifications', nameAr: 'الإشعارات', path: '/notifications' }]
     }
 ];
 
@@ -274,7 +381,7 @@ const CLINICAL_PROTOCOLS = [
     }
 ];
 
-/* ── Comprehensive 20 Knowledge Base Articles with Full Bilingual Steps ───────────────── */
+/* ── Comprehensive bilingual knowledge-base articles ───────────────── */
 const ARTICLES = [
     // 1. Getting Started
     {
@@ -290,7 +397,7 @@ const ARTICLES = [
         descAr: 'فهم مؤشرات لوحة القيادة، البحث السريع، التنبيهات المباشرة، وتخصيص إعدادات الحساب.',
         stepsEn: [
             'Log in with your credentials and check the role dashboard for today’s active workload.',
-            'Use Ctrl + K from any screen to search patients, jump to modules, or execute actions.',
+            'Use Ctrl + K from any screen to search patients, jump to modules, and open records you have access to.',
             'Open Settings to set your display theme (Dark/Light), preferred language, and digital signature.'
         ],
         stepsAr: [
@@ -331,24 +438,24 @@ const ARTICLES = [
         id: 'pacs_viewer',
         category: 'clinical',
         icon: HardDrive,
-        roles: ['Admin', 'Radiologist', 'Technician', 'Developer'],
-        route: '/worklist',
+        roles: ['Admin', 'Radiologist', 'Technician', 'Nurse', 'Developer'],
+        route: '/pacs/viewer',
         color: 'cyan',
-        titleEn: 'DICOM Web Viewer & Diagnostic 3D MPR Tools',
-        titleAr: 'مستعرض صور الأشعة DICOM وأدوات القياس وMPR',
-        descEn: 'High-performance diagnostic image viewing with multi-planar reconstruction and window presets.',
-        descAr: 'عرض تشخيصي عالي الدقة لصور الأشعة مع إعادة البناء ثلاثي الأبعاد وأدوات القياس والتباين.',
+        titleEn: 'DICOM Web Viewer & Diagnostic Imaging Tools',
+        titleAr: 'مستعرض صور الأشعة DICOM وأدوات القياس',
+        descEn: 'High-performance diagnostic image viewing with window/level presets and calibrated measurement tools.',
+        descAr: 'عرض تشخيصي عالي الدقة لصور الأشعة مع إعدادات التباين والإضاءة وأدوات قياس بدقة ميليمترية.',
         stepsEn: [
             'Click the DICOM icon next to any completed study to launch the medical image viewer.',
             'Use keyboard shortcut (W) for Window/Level presets (Bone, Soft Tissue, Lung, Brain).',
-            'Use (Z) for Zoom, (P) for Pan, and (M) for calibrated distance and angle measurements.',
-            'Switch layout to 2x2 or 3x1 to compare current study series side-by-side with prior scans.'
+            'Use (Z) for Zoom, (P) for Pan, (M) for calibrated distance, and (A) for angle measurements.',
+            'Switch between available layouts to compare current study series with prior scans.'
         ],
         stepsAr: [
             'اضغط على أيقونة DICOM بجوار أي فحص مكتمل لفتح مستعرض الصور الطبية التفاعلي.',
             'استخدم زر (W) للتبديل بين إعدادات التباين والإضاءة الجاهزة (عظام، أنسجة رخوة، رئة، مخ).',
-            'استخدم (Z) للتكبير، و (P) للتحريك، و (M) لأدوات قياس المسافات والزوايا بدقة ميليمترية.',
-            'غير تقسيم الشاشة إلى (2×2 أو 3×1) لمقارنة السلاسل الحالية جنباً إلى جنب مع الفحوصات السابقة.'
+            'استخدم (Z) للتكبير، و (P) للتحريك، و (M) لقياس المسافات، و (A) لقياس الزوايا بدقة ميليمترية.',
+            'بدّل بين التخطيطات المتاحة لمقارنة السلاسل الحالية مع الفحوصات السابقة.'
         ]
     },
 
@@ -384,7 +491,7 @@ const ARTICLES = [
         category: 'clinical',
         icon: Stethoscope,
         roles: ['Admin', 'Radiologist', 'Developer'],
-        route: '/worklist',
+        route: '/case-reports',
         color: 'cyan',
         titleEn: 'Radiology Diagnostic Report Editor',
         titleAr: 'محرر وكتابة واعتماد التقارير الطبية',
@@ -410,22 +517,22 @@ const ARTICLES = [
         category: 'clinical',
         icon: AlertTriangle,
         roles: ['Admin', 'Radiologist', 'Nurse', 'Developer'],
-        route: '/worklist',
+        route: '/case-reports',
         color: 'rose',
         titleEn: 'Critical & STAT Urgent Findings Protocol',
         titleAr: 'بروتوكول إخطار وتوثيق النتائج الحرجة والطارئة',
         descEn: 'Mandatory clinical safety workflow for life-threatening unexpected radiological discoveries.',
         descAr: 'المسار السريري الإلزامي للتعامل مع الاكتشافات الإشعاعية الخطيرة والمهددة للحياة.',
         stepsEn: [
-            'When diagnosing an urgent finding (e.g. Aortic dissection, acute intracranial hemorrhage), toggle "Critical Finding".',
-            'Document the name of the treating physician notified and communication timestamp.',
-            'The system dispatches high-priority SMS and visual alerts to the clinical team.',
+            'When diagnosing an urgent finding (e.g. Aortic dissection, acute intracranial hemorrhage), toggle "Critical Finding" inside the report editor.',
+            'Document the name of the treating physician notified and the communication timestamp in the dedicated critical-finding log.',
+            'The system dispatches high-priority visual alerts and notification events to the configured clinical recipients per the notification policy.',
             'All critical finding communication logs are permanently stored in electronic audit trails.'
         ],
         stepsAr: [
-            'عند تشخيص حالة حرجة طارئة (مثل: نزيف حاد بالمخ أو اشتباه جلطة)، فعل خيار (نتيجة حرجة).',
-            'سجل اسم الطبيب المعالج الذي تم التواصل معه هاتفياً ووقت الإبلاغ بدقة.',
-            'يقوم النظام بإرسال إشعار فوري ورسالة عاجلة للفريق الطبي المعالج.',
+            'عند تشخيص حالة حرجة طارئة (مثل: نزيف حاد بالمخ أو اشتباه جلطة)، فعل خيار (نتيجة حرجة) داخل محرر التقرير.',
+            'سجل اسم الطبيب المعالج الذي تم التواصل معه ووقت الإبلاغ بدقة في سجل النتائج الحرجة.',
+            'يقوم النظام بإرسال إشعار عاجل داخل التطبيق للأطراف السريرية وفقاً لسياسة الإشعارات المعرّفة.',
             'يتم حفظ سجل إبلاغ النتيجة الحرجة في سجلات التدقيق القانوني الطبي.'
         ]
     },
@@ -436,7 +543,7 @@ const ARTICLES = [
         category: 'clinical',
         icon: Activity,
         roles: ['Admin', 'Nurse', 'Technician', 'Developer'],
-        route: '/appointments',
+        route: '/nurse',
         color: 'teal',
         titleEn: 'Nursing Care, Vitals & Contrast Screening',
         titleAr: 'التمريض ومتابعة العلامات الحيوية وفحص الصبغة',
@@ -459,7 +566,7 @@ const ARTICLES = [
         id: 'patients',
         category: 'operations',
         icon: Users,
-        roles: ['Admin', 'Receptionist', 'Radiologist', 'Nurse', 'Developer'],
+        roles: ['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'Marketing', 'Developer'],
         route: '/patients',
         color: 'blue',
         titleEn: 'Master Patient Index & Demographics Registry',
@@ -485,7 +592,7 @@ const ARTICLES = [
         id: 'appointments',
         category: 'operations',
         icon: CalendarDays,
-        roles: ['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'Developer'],
+        roles: ['Admin', 'Receptionist', 'Developer'],
         route: '/appointments',
         color: 'teal',
         titleEn: 'Multi-Room Appointment Scheduler & Calendar',
@@ -511,7 +618,7 @@ const ARTICLES = [
         id: 'payments',
         category: 'operations',
         icon: CreditCard,
-        roles: ['Admin', 'Receptionist', 'Cashier', 'Accountant', 'Developer'],
+        roles: ['Admin', 'Receptionist', 'Cashier', 'Developer'],
         route: '/reception',
         color: 'amber',
         titleEn: 'Cashier Workspace & Shift Settlement',
@@ -661,7 +768,7 @@ const ARTICLES = [
         id: 'inventory',
         category: 'operations',
         icon: Layers,
-        roles: ['Admin', 'Technician', 'Nurse', 'Accountant', 'Developer'],
+        roles: ['Admin', 'Technician', 'Developer'],
         route: '/inventory',
         color: 'amber',
         titleEn: 'Consumables, Contrast Media & FEFO Expiry',
@@ -690,8 +797,8 @@ const ARTICLES = [
         color: 'rose',
         titleEn: 'Role-Based Access Control (RBAC) & Security Governance',
         titleAr: 'الصلاحيات والأمان وإدارة أدوار المستخدمين',
-        descEn: '11 Granular role spectrums, privilege boundaries, password security, and active sessions.',
-        descAr: 'إدارة 11 دوراً وظيفياً، تعيين الصلاحيات الدقيقة، سياسات كلمات المرور، والجلسات النشطة.',
+        descEn: '12 role spectrums, privilege boundaries, password security, and active sessions.',
+        descAr: 'إدارة 12 دوراً وظيفياً، تعيين الصلاحيات الدقيقة، سياسات كلمات المرور، والجلسات النشطة.',
         stepsEn: [
             'Assign users to pre-configured security roles (Radiologist, Cashier, Reception, Admin, etc.).',
             'Configure multi-factor authentication (MFA) and auto-session lockout timeouts.',
@@ -710,7 +817,7 @@ const ARTICLES = [
         category: 'administration',
         icon: ShieldAlert,
         roles: ['Admin', 'Developer'],
-        route: '/audit-logs',
+        route: '/settings?tab=auditLogs',
         color: 'rose',
         titleEn: 'Electronic Audit Trails & Compliance Logging',
         titleAr: 'سجلات التدقيق والأمان السريري والقانوني',
@@ -719,12 +826,12 @@ const ARTICLES = [
         stepsEn: [
             'Search audit logs by User, Patient MRN, Action Type, or timestamp range.',
             'Inspect raw metadata changes (Before vs After) for modified clinical reports or invoices.',
-            'Export compliance verification certificates for HIPAA/GDPR health governance audits.'
+            'Use the audit retention controls in the Settings panel to align logs with your compliance policy.'
         ],
         stepsAr: [
             'ابحث في سجلات التدقيق باسم المستخدم، رقم الملف MRN، نوع الإجراء، أو الفترة الزمنية.',
             'راجع التغييرات التفصيلية (قبل التعديل وبعده) لأي تقرير طبي أو فاتورة مالية تم تعديلها.',
-            'صدر تقارير الامتثال المعتمدة للمراجعات الطبية والقانونية.'
+            'استخدم إعدادات الاحتفاظ بسجلات التدقيق في شاشة الإعدادات لمواءمتها مع سياسة الامتثال لديك.'
         ]
     },
 
@@ -734,20 +841,20 @@ const ARTICLES = [
         category: 'administration',
         icon: Database,
         roles: ['Admin', 'Developer'],
-        route: '/backup',
+        route: '/settings?tab=backups',
         color: 'indigo',
         titleEn: 'Database Backup & PACS Cold Storage Archiving',
         titleAr: 'النسخ الاحتياطي وتخزين وأرشفة الـ PACS',
-        descEn: 'Scheduled automated database dumps, offsite disaster recovery, and DICOM storage tiering.',
-        descAr: 'النسخ الاحتياطي التلقائي لقاعدة البيانات، التعافي من الكوارث، وأرشفة الصور التاريخية.',
+        descEn: 'Scheduled automated database dumps, offsite disaster recovery, and clinical data retention policies.',
+        descAr: 'النسخ الاحتياطي التلقائي لقاعدة البيانات، التعافي من الكوارث، وسياسات الاحتفاظ بالبيانات السريرية.',
         stepsEn: [
-            'Verify daily automated database snapshots and cloud backup sync integrity.',
-            'Configure PACS DICOM hot/cold storage tiers to archive studies older than 3 years.',
+            'Verify daily automated database snapshots and offsite backup sync integrity.',
+            'Configure database retention windows and offsite storage targets in the Settings panel.',
             'Execute test recovery drills to ensure business continuity in emergency events.'
         ],
         stepsAr: [
-            'تأكد من اكتمال النسخ الاحتياطي التلقائي اليومي وسلامة المزامنة السحابية.',
-            'اضبط قواعد أرشفة الـ PACS لنقل الدراسات الطبية الأقدم من 3 سنوات للأرشيف البارد.',
+            'تأكد من اكتمال النسخ الاحتياطي التلقائي اليومي وسلامة المزامنة الخارجية.',
+            'اضبط نوافذ الاحتفاظ بقاعدة البيانات وأهداف التخزين الخارجي من شاشة الإعدادات.',
             'نفذ اختبارات استعادة دورية لضمان استمرارية العمل في حالات الطوارئ.'
         ]
     },
@@ -774,6 +881,117 @@ const ARTICLES = [
             'اضبط معرفات أجهزة الأشعة (DICOM AE Title) ومنافذ استقبال صور الـ PACS.',
             'بدّل لغة الواجهة بين العربية (RTL) والإنجليزية (LTR) بسلاسة كاملة.'
         ]
+    },
+    {
+        id: 'task_assignment', category: 'clinical', icon: CheckSquare,
+        roles: ['Admin', 'Radiologist', 'Technician', 'Nurse', 'Developer'],
+        route: '/worklist',
+        color: 'emerald',
+        titleEn: 'Assigned, Unassigned & Held Clinical Tasks', titleAr: 'المهام السريرية المسندة وغير المسندة والمعلّقة',
+        descEn: 'Use All, My tasks, and Available tasks without losing shared work or taking another user’s assignment.',
+        descAr: 'استخدم نطاقات الكل ومهامي والمتاحة دون إخفاء العمل المشترك أو أخذ مهمة مستخدم آخر.',
+        stepsEn: [
+            'All visible tasks combines your assignments with unassigned work available to your current station.',
+            'My tasks shows only work assigned to you; Available tasks shows only unassigned work you can claim.',
+            'Claim an available task before starting it. Assigned tasks are not transferable without an authorized assignment action.',
+            'When placing work on hold, record a specific reason; release it promptly when the blocker is resolved.'
+        ],
+        stepsAr: [
+            'يجمع نطاق كل المهام الظاهرة بين مهامك والمهام غير المسندة المتاحة لمحطتك الحالية.',
+            'يعرض نطاق مهامي المسند إليك فقط، ويعرض نطاق المهام المتاحة غير المسندة القابلة للاستلام.',
+            'استلم المهمة المتاحة قبل بدء العمل. لا تنقل مهمة مسندة لمستخدم آخر دون إجراء تكليف مخول.',
+            'عند تعليق المهمة سجّل سبباً محدداً، ثم حررها فور زوال العائق.'
+        ]
+    },
+    {
+        id: 'approvals', category: 'administration', icon: ClipboardList,
+        roles: ['Admin', 'HR', 'Accountant', 'Insurance_Staff', 'Receptionist', 'Developer'], route: '/approvals', color: 'amber',
+        titleEn: 'Cross-Department Approvals & Exception Review', titleAr: 'الموافقات المشتركة ومراجعة الاستثناءات',
+        descEn: 'Review leave, payroll, refund, insurance, privacy, cash variance, and governed exception requests.',
+        descAr: 'مراجعة الإجازات والرواتب والاستردادات والتأمين والخصوصية وفروق النقدية والاستثناءات المحكومة.',
+        stepsEn: ['Open the relevant approval queue and inspect evidence, requester, amount, and timeline.', 'Use the decision allowed by the request type; some workflows are acknowledgement-only.', 'Enter a specific review note for rejection, escalation, or variance acknowledgement.', 'Verify the resulting status and audit event after submitting the decision.'],
+        stepsAr: ['افتح قائمة الموافقات المناسبة وراجع المستندات والطالب والمبلغ والتسلسل الزمني.', 'استخدم القرار المسموح لنوع الطلب؛ بعض المسارات تعتمد على الإقرار فقط.', 'أدخل ملاحظة محددة للرفض أو التصعيد أو إقرار فرق النقدية.', 'تحقق من الحالة الناتجة وسجل التدقيق بعد إرسال القرار.']
+    },
+    {
+        id: 'notifications', category: 'operations', icon: Radio,
+        roles: ALL_STAFF, route: '/notifications', color: 'sky',
+        titleEn: 'Notifications, Preferences & Delivery Status', titleAr: 'الإشعارات والتفضيلات وحالة التسليم',
+        descEn: 'Read in-app alerts, distinguish priorities, configure channels and quiet hours, and investigate failed delivery.',
+        descAr: 'قراءة التنبيهات وتمييز الأولويات وضبط القنوات وساعات الهدوء والتحقق من فشل التسليم.',
+        stepsEn: ['Open Notifications and prioritize Critical, Warning, and Action items before Normal messages.', 'Mark an alert read only after completing or recording its required action.', 'Configure Email, SMS, WhatsApp, In-App, timezone, and quiet hours in Settings.', 'Administrators review templates, jobs, retries, and provider health from notification settings.'],
+        stepsAr: ['افتح الإشعارات وابدأ بالحرجة والتحذيرية والإجرائية قبل الرسائل العادية.', 'علّم التنبيه كمقروء بعد تنفيذ الإجراء المطلوب أو توثيقه.', 'اضبط البريد والرسائل وواتساب وداخل النظام والمنطقة الزمنية وساعات الهدوء من الإعدادات.', 'يراجع المسؤولون القوالب والمهام والمحاولات وصحة المزود من إعدادات الإشعارات.']
+    },
+    {
+        id: 'communications', category: 'operations', icon: RadioTower,
+        roles: ['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'HR', 'Marketing', 'Developer'], route: '/communications', color: 'blue',
+        titleEn: 'Secure Staff & Portal Communications', titleAr: 'اتصالات الموظفين والبوابات الآمنة',
+        descEn: 'Use authorized channels for staff coordination and patient/doctor follow-up without leaking protected data.',
+        descAr: 'استخدم القنوات المصرح بها لتنسيق الموظفين ومتابعة المرضى والأطباء دون تسريب بيانات محمية.',
+        stepsEn: ['Choose the correct team or case context before sending a message.', 'Do not send credentials, exported reports, or patient identifiers outside approved channels.', 'Use threads and acknowledgements to keep clinical escalation traceable.', 'Escalate urgent clinical findings through the critical-result workflow, not ordinary chat.'],
+        stepsAr: ['اختر الفريق أو سياق الحالة الصحيح قبل إرسال الرسالة.', 'لا ترسل بيانات الدخول أو التقارير المصدرة أو معرفات المرضى خارج القنوات المعتمدة.', 'استخدم سلاسل الرد والإقرار للحفاظ على قابلية تتبع التصعيد.', 'صعّد النتائج الحرجة عبر مسار النتائج الحرجة وليس المحادثة العادية.']
+    },
+    {
+        id: 'hr_staff', category: 'administration', icon: Users,
+        roles: ['Admin', 'HR', 'Developer'], route: '/hr', color: 'emerald',
+        titleEn: 'Staff, Attendance, Shifts & Leave', titleAr: 'الموظفون والحضور والورديات والإجازات',
+        descEn: 'Maintain employee profiles, rosters, attendance exceptions, leave decisions, and staffing readiness.',
+        descAr: 'إدارة ملفات الموظفين والجداول واستثناءات الحضور وقرارات الإجازة وجاهزية التغطية.',
+        stepsEn: ['Review active staff and required profile fields before scheduling shifts.', 'Inspect late, absent, overtime, and corrected attendance entries.', 'Process leave from Approvals and verify coverage before approval.', 'Keep employment status aligned with account access and payroll eligibility.'],
+        stepsAr: ['راجع الموظفين النشطين والحقول المطلوبة قبل جدولة الورديات.', 'افحص التأخير والغياب والإضافي وتصحيحات الحضور.', 'عالج الإجازات من الموافقات وتحقق من التغطية قبل الاعتماد.', 'وحّد حالة التوظيف مع صلاحية الحساب واستحقاق الرواتب.']
+    },
+    {
+        id: 'user_management', category: 'administration', icon: ShieldCheck,
+        roles: ['Admin', 'HR', 'Developer'], route: '/users', color: 'rose',
+        titleEn: 'Users, Activity & Account Lifecycle', titleAr: 'المستخدمون والنشاط ودورة حياة الحساب',
+        descEn: 'Create staff accounts, assign roles, investigate activity, reset access, and deactivate safely.',
+        descAr: 'إنشاء حسابات الموظفين وتعيين الأدوار ومراجعة النشاط وإعادة الوصول والتعطيل الآمن.',
+        stepsEn: ['Create one identity per employee and assign the minimum operational role.', 'Review the user detail and activity timeline before changing access.', 'Use password reset and session revocation for suspected compromise.', 'Deactivate departed users; never recycle an old account for a new employee.'],
+        stepsAr: ['أنشئ هوية واحدة لكل موظف وعيّن أقل دور تشغيلي مطلوب.', 'راجع تفاصيل المستخدم وتسلسل النشاط قبل تغيير الوصول.', 'استخدم إعادة كلمة المرور وإلغاء الجلسات عند الاشتباه في الاختراق.', 'عطّل حساب المنتهي خدمته ولا تعيد استخدامه لموظف جديد.']
+    },
+    {
+        id: 'privacy', category: 'administration', icon: Lock,
+        roles: ['Admin', 'Developer'], route: '/settings?tab=privacy', color: 'rose',
+        titleEn: 'Privacy Requests, Consent & Data Governance', titleAr: 'طلبات الخصوصية والموافقات وحوكمة البيانات',
+        descEn: 'Verify identity, process access/correction/export requests, control consent, and document every decision.',
+        descAr: 'التحقق من الهوية ومعالجة الوصول والتصحيح والتصدير وإدارة الموافقات وتوثيق كل قرار.',
+        stepsEn: ['Verify requester identity and legal basis before reviewing patient data.', 'Limit the request scope and attach only approved records.', 'Record approval, rejection, export expiry, or correction notes precisely.', 'Use audit logs to verify access, downloads, and completion.'],
+        stepsAr: ['تحقق من هوية مقدم الطلب والأساس النظامي قبل مراجعة بيانات المريض.', 'حدد نطاق الطلب وأرفق السجلات المعتمدة فقط.', 'سجل الاعتماد أو الرفض أو انتهاء التصدير أو ملاحظات التصحيح بدقة.', 'استخدم سجل التدقيق للتحقق من الوصول والتنزيل والإكمال.']
+    },
+    {
+        id: 'integrations', category: 'administration', icon: GitBranch,
+        roles: ['Admin', 'Developer'], route: '/settings?tab=integrations', color: 'indigo',
+        titleEn: 'External Integrations, Credentials & Webhooks', titleAr: 'التكاملات الخارجية والاعتمادات والـWebhooks',
+        descEn: 'Configure providers, rotate secrets, set sender identity, verify signed webhooks, and monitor retries.',
+        descAr: 'إعداد المزودين وتدوير الأسرار وضبط هوية المرسل والتحقق من التوقيعات ومراقبة المحاولات.',
+        stepsEn: ['Enter credentials only in the encrypted integration settings fields.', 'Configure the inbound webhook secret separately from API credentials.', 'Set sender identity and provider-specific options before activation.', 'Use health checks and logs to investigate Failed, Degraded, or retrying deliveries.'],
+        stepsAr: ['أدخل الاعتمادات فقط في حقول إعدادات التكامل المشفرة.', 'اضبط سر الـWebhook الوارد منفصلاً عن اعتماد API.', 'حدد هوية المرسل وخيارات المزود قبل التفعيل.', 'استخدم فحوص الصحة والسجلات للتحقق من الفشل أو التدهور أو إعادة المحاولة.']
+    },
+    {
+        id: 'analytics_full', category: 'administration', icon: BarChart3,
+        roles: ['Admin', 'Accountant', 'Marketing', 'Developer'], route: '/analytics', color: 'purple',
+        titleEn: 'Operational Analytics & Export Governance', titleAr: 'التحليلات التشغيلية وحوكمة التصدير',
+        descEn: 'Analyze volume, turnaround, cancellations, revenue, referral performance, and patient experience.',
+        descAr: 'تحليل الحجم وزمن الإنجاز والإلغاءات والإيراد والإحالات وتجربة المريض.',
+        stepsEn: ['Select a valid date range and compare like-for-like branches or modalities.', 'Read KPI definitions before interpreting charts and trends.', 'Drill into source records when an outlier requires investigation.', 'Export only the minimum dataset and store it according to facility policy.'],
+        stepsAr: ['اختر فترة صحيحة وقارن الفروع أو الأجهزة المتجانسة.', 'اقرأ تعريفات المؤشرات قبل تفسير الرسوم والاتجاهات.', 'انتقل للسجلات المصدرية عند الحاجة للتحقق من قيمة شاذة.', 'صدّر أقل مجموعة لازمة واحفظها وفق سياسة المنشأة.']
+    },
+    {
+        id: 'portal_workflows', category: 'operations', icon: ExternalLink,
+        roles: ['Admin', 'Receptionist', 'Referring_Doctor', 'Developer'], route: '/notifications', color: 'sky',
+        titleEn: 'Patient & Referring-Doctor Portal Workflows', titleAr: 'مسارات بوابة المريض والطبيب المحول',
+        descEn: 'Manage appointment requests, profile changes, documents, result delivery, referral messages, and acknowledgements.',
+        descAr: 'إدارة طلبات المواعيد وتحديث الملف والمستندات وتسليم النتائج ورسائل الإحالة والإقرارات.',
+        stepsEn: ['Review incoming requests after verifying patient or doctor identity.', 'Publish only finalized, patient-visible documents and approved delivery links.', 'Record staff review notes for scheduled, rejected, or applied requests.', 'Use secure portal messaging and track delivery or acknowledgement status.'],
+        stepsAr: ['راجع الطلبات الواردة بعد التحقق من هوية المريض أو الطبيب.', 'انشر المستندات النهائية الظاهرة للمريض وروابط التسليم المعتمدة فقط.', 'سجل ملاحظات المراجع للطلبات المجدولة أو المرفوضة أو المطبقة.', 'استخدم رسائل البوابة الآمنة وتابع حالة التسليم أو الإقرار.']
+    },
+    {
+        id: 'printing', category: 'operations', icon: Printer,
+        roles: ['Admin', 'Receptionist', 'Cashier', 'Radiologist', 'Technician', 'Nurse', 'Developer'], route: '/reception', color: 'amber',
+        titleEn: 'Clinical & Financial Printing', titleAr: 'الطباعة السريرية والمالية',
+        descEn: 'Print booking slips, labels, receipts, invoices, reports, and result copies with correct identity and page settings.',
+        descAr: 'طباعة الحجز والملصقات والإيصالات والفواتير والتقارير ونسخ النتائج بهوية وإعدادات صحيحة.',
+        stepsEn: ['Verify patient, exam, invoice, and copy destination before opening print view.', 'Use the correct paper size and enable background graphics where required.', 'Never leave printed patient material unattended.', 'Record result pickup and extra print-copy counts when applicable.'],
+        stepsAr: ['تحقق من المريض والفحص والفاتورة ووجهة النسخة قبل فتح الطباعة.', 'استخدم مقاس الورق الصحيح وفعل رسومات الخلفية عند الحاجة.', 'لا تترك مطبوعات المريض دون رقابة.', 'سجل استلام النتائج وعدد النسخ الإضافية عند التطبيق.']
     }
 ];
 
@@ -862,29 +1080,87 @@ const TROUBLESHOOTING_GUIDES = [
     }
 ];
 
-/* ── Keyboard Shortcuts Matrix ──────────────────────────────── */
+/* ── Keyboard Shortcuts Matrix (verified against implementation) ─── */
 const KEYBOARD_SHORTCUTS = [
     { category: 'Global Navigation', categoryAr: 'التنقل العام', shortcuts: [
         { keys: ['Ctrl', 'K'], label: 'Global quick search (Patients, Modalities, Pages)', labelAr: 'البحث الشامل في المرضى والأجهزة والصفحات' },
         { keys: ['Esc'], label: 'Close active modal / dialog', labelAr: 'إغلاق النوافذ المنبثقة النشطة' },
         { keys: ['Alt', 'D'], label: 'Jump to Main Dashboard', labelAr: 'الانتقال السريع للوحة التحكم الرئيسية' },
+        { keys: ['?'], label: 'Show keyboard shortcuts guide', labelAr: 'عرض دليل اختصارات لوحة المفاتيح' },
     ]},
     { category: 'Clinical & Reporting', categoryAr: 'التقارير الطبية والأشعة', shortcuts: [
         { keys: ['Ctrl', 'S'], label: 'Quick save report draft', labelAr: 'حفظ مسودة التقرير الطبي فوراً' },
-        { keys: ['Ctrl', 'Enter'], label: 'Finalize & Electronically sign report', labelAr: 'اعتماد وتوقيع التقرير الطبي نهائياً' },
+        { keys: ['Ctrl', 'Enter'], label: 'Finalize & electronically sign report', labelAr: 'اعتماد وتوقيع التقرير الطبي نهائياً' },
         { keys: ['Ctrl', 'Space'], label: 'Insert template / macro snippet', labelAr: 'إدراج قالب تقرير أو عبارة سريرية جاهزة' },
     ]},
     { category: 'PACS DICOM Viewer', categoryAr: 'مستعرض صور الأشعة PACS', shortcuts: [
         { keys: ['W'], label: 'Window / Level (Contrast & Brightness adjustment)', labelAr: 'ضبط تباين وإضاءة صور الأشعة (Window/Level)' },
-        { keys: ['Z'], label: 'Zoom in / Zoom out tool', labelAr: 'أداة التكبير والتصغير' },
         { keys: ['P'], label: 'Pan image across canvas', labelAr: 'أداة تحريك الصورة (Pan)' },
-        { keys: ['R'], label: 'Rotate image 90° clockwise', labelAr: 'تدوير الصورة 90 درجة مع عقارب الساعة' },
-        { keys: ['M'], label: 'Length & Angle measurement tool', labelAr: 'أداة قياس المسافات والزوايا' }
+        { keys: ['Z'], label: 'Zoom in / Zoom out tool', labelAr: 'أداة التكبير والتصغير' },
+        { keys: ['M'], label: 'Length / distance measurement tool', labelAr: 'أداة قياس المسافات' },
+        { keys: ['A'], label: 'Angle measurement (3 points)', labelAr: 'أداة قياس الزوايا (3 نقاط)' },
+        { keys: ['E'], label: 'ROI area & pixel density tool', labelAr: 'أداة مساحة وكثافة البكسل (ROI)' },
+        { keys: ['O'], label: 'Toggle corner DICOM overlays', labelAr: 'إظهار/إخفاء بيانات DICOM الزاوية' },
+        { keys: ['Space'], label: 'Play / Pause Cine loop animation', labelAr: 'تشغيل / إيقاف تحريك مقاطع الفحص (Cine Loop)' },
+        { keys: ['←', '→'], label: 'Previous / next image slice', labelAr: 'المقطع السابق / التالي' },
+        { keys: ['S'], label: 'Toggle series drawer', labelAr: 'إظهار/إخفاء قائمة السلاسل' },
+        { keys: ['Tab'], label: 'Toggle clinical report & DICOM inspector', labelAr: 'تبديل التقرير السريري وفاحص DICOM' },
+        { keys: ['K'], label: 'Bookmark key image', labelAr: 'وضع علامة على الصورة المفتاحية' },
+        { keys: ['F'], label: 'Toggle Fullscreen view', labelAr: 'تبديل وضع ملء الشاشة' }
     ]}
 ];
 
-const articleVisibleForRole = (a, role) =>
-    a.roles.includes(role) || (role === 'Developer' && a.roles.includes('Admin'));
+const articleCanBeRead = (article, user = {}) => {
+    const governance = getArticleGovernance(article.id);
+    return itemCanBeRead({
+        roles: article.roles,
+        permissions: governance.permissions,
+    }, user);
+};
+
+const articleCanOpen = (article, user = {}) => (
+    !article.route || canAccessRouteTarget(article.route, user)
+);
+
+const articleVisibleForRole = (article, user = {}) => articleCanBeRead(article, user);
+
+const protocolAsSearchItem = (protocol) => ({
+    id: `protocol.${protocol.id}`,
+    type: 'protocol',
+    category: 'clinical',
+    roles: ['Admin', 'Radiologist', 'Technician', 'Nurse', 'Developer'],
+    route: '/nurse',
+    title: { en: protocol.modality, ar: protocol.modalityAr },
+    summary: {
+        en: 'Clinical preparation and contrast reference. Follow the approved facility protocol.',
+        ar: 'مرجع التحضير السريري والصبغة. اتبع بروتوكول المنشأة المعتمد.',
+    },
+    aliases: protocol.exams.flatMap((exam) => [exam.name, exam.nameAr, exam.fasting, exam.fastingAr, exam.prep, exam.prepAr]),
+});
+
+const legacyArticleAsSearchItem = (article) => ({
+    id: `guide.${article.id}`,
+    type: 'guide',
+    category: article.category,
+    roles: article.roles,
+    route: article.route,
+    title: { en: article.titleEn, ar: article.titleAr },
+    summary: { en: article.descEn, ar: article.descAr },
+    aliases: article.keywords ? [article.keywords] : [],
+    steps: { en: article.stepsEn, ar: article.stepsAr },
+    permissions: getArticleGovernance(article.id).permissions,
+});
+
+const troubleshootingAsSearchItem = (item) => ({
+    ...item,
+    title: { en: item.title, ar: item.titleAr },
+    summary: { en: item.cause, ar: item.causeAr },
+    steps: {
+        en: item.solutions.map((solution) => solution.en),
+        ar: item.solutions.map((solution) => solution.ar),
+    },
+    aliases: [item.cause, item.causeAr],
+});
 
 /* ── Sub-components ─────────────────────────────────────────── */
 
@@ -941,17 +1217,25 @@ const QuickCard = ({ article, isArabic }) => {
     );
 };
 
-const ArticleCard = ({ article, isArabic }) => {
+const ArticleCard = ({ article, isArabic, canOpenRoute = true }) => {
     const [open, setOpen] = useState(false);
+    const [feedback, setFeedback] = useState(() => getHelpFeedback()[article.id] || null);
     const tone = COLOR_MAP[article.color] ?? COLOR_MAP.emerald;
     const Icon = article.icon;
     const CatIcon = CAT_ICON[article.category] ?? BookOpen;
+    const governance = getArticleGovernance(article.id);
 
     const toggle = useCallback(() => setOpen((v) => !v), []);
 
     const title = isArabic ? article.titleAr : article.titleEn;
     const desc = isArabic ? article.descAr : article.descEn;
     const steps = isArabic ? article.stepsAr : article.stepsEn;
+    const contentId = `help-article-${article.id}-content`;
+
+    const submitFeedback = (value) => {
+        setFeedback(value);
+        saveHelpFeedback(article.id, value);
+    };
 
     return (
         <div
@@ -965,6 +1249,8 @@ const ArticleCard = ({ article, isArabic }) => {
                 type="button"
                 onClick={toggle}
                 aria-expanded={open}
+                aria-controls={contentId}
+                aria-label={title}
                 className="flex w-full items-start gap-4 p-5 text-start transition hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
             >
                 <div className={`mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${tone.bg} border ${tone.badge.split(' ')[2] || 'border-teal-500/30'} transition-transform duration-200 group-hover:scale-105`}>
@@ -997,7 +1283,7 @@ const ArticleCard = ({ article, isArabic }) => {
             </button>
 
             {open && (
-                <div className="border-t border-slate-100 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-950/40 animate-in fade-in-50 duration-200">
+                <div id={contentId} role="region" aria-label={title} className="border-t border-slate-100 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-950/40 animate-in fade-in-50 duration-200">
                     <ol className="space-y-3">
                         {steps.map((stepText, i) => (
                             <li key={i} className="flex items-start gap-3 text-xs leading-relaxed font-bold text-slate-700 dark:text-slate-300">
@@ -1009,7 +1295,15 @@ const ArticleCard = ({ article, isArabic }) => {
                         ))}
                     </ol>
 
-                    {article.route && (
+                    <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4 text-[10px] font-bold text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                        <span className="rounded-full bg-slate-200/70 px-2.5 py-1 dark:bg-slate-800">{isArabic ? `المالك: ${governance.owner}` : `Owner: ${governance.owner}`}</span>
+                        <span className="rounded-full bg-slate-200/70 px-2.5 py-1 dark:bg-slate-800">{isArabic ? `الإصدار ${governance.version}` : `Version ${governance.version}`}</span>
+                        <span className={`rounded-full px-2.5 py-1 ${governance.riskLevel === 'clinical' || governance.riskLevel === 'high' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>
+                            {isArabic ? `مراجعة: ${governance.reviewedAt}` : `Reviewed: ${governance.reviewedAt}`}
+                        </span>
+                    </div>
+
+                    {article.route && canOpenRoute && (
                         <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800">
                             <Link
                                 to={article.route}
@@ -1021,9 +1315,50 @@ const ArticleCard = ({ article, isArabic }) => {
                             </Link>
                         </div>
                     )}
+
+                    {article.route && !canOpenRoute && (
+                        <p role="note" className="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-bold text-amber-800 dark:text-amber-300">
+                            {isArabic ? 'يمكنك قراءة هذا الدليل، لكن صلاحيتك الحالية لا تسمح بفتح الشاشة المرتبطة.' : 'You can read this guide, but your current access does not allow opening the linked workspace.'}
+                        </p>
+                    )}
+
+                    <div className="mt-4 flex items-center gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                        <span>{isArabic ? 'هل كان هذا الدليل مفيداً؟' : 'Was this guide helpful?'}</span>
+                        <button type="button" aria-pressed={feedback === 'yes'} onClick={() => submitFeedback('yes')} className={`rounded-lg px-2.5 py-1 transition ${feedback === 'yes' ? 'bg-emerald-500 text-white' : 'bg-slate-200/70 hover:bg-emerald-500/20 dark:bg-slate-800'}`}>
+                            {isArabic ? 'نعم' : 'Yes'}
+                        </button>
+                        <button type="button" aria-pressed={feedback === 'no'} onClick={() => submitFeedback('no')} className={`rounded-lg px-2.5 py-1 transition ${feedback === 'no' ? 'bg-rose-500 text-white' : 'bg-slate-200/70 hover:bg-rose-500/20 dark:bg-slate-800'}`}>
+                            {isArabic ? 'لا' : 'No'}
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
+    );
+};
+
+const CatalogResultCard = ({ item, isArabic, user }) => {
+    const localized = getLocalizedHelpItem(item, isArabic ? 'ar' : 'en');
+    const canOpen = itemCanOpen(item, user);
+    const typeLabel = HELP_TYPE_LABELS[item.type]?.[isArabic ? 'ar' : 'en'] || item.type;
+    const steps = localized.steps || [];
+
+    return (
+        <article className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 dark:bg-sky-500/10">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-black text-slate-900 dark:text-white">{localized.title}</h3>
+                        <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-black text-sky-700 dark:text-sky-300">{typeLabel}</span>
+                    </div>
+                    <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-300">{localized.summary || localized.description}</p>
+                </div>
+                {item.route && canOpen && <Link to={item.route} onClick={() => recordHelpEvent('help_route_opened', { itemId: item.id })} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-2 text-[11px] font-black text-white hover:bg-sky-500"><Zap size={12} />{isArabic ? 'فتح' : 'Open'}</Link>}
+            </div>
+            {item.state && <p className="mt-2 text-[10px] font-black text-sky-700 dark:text-sky-300">{isArabic ? `الحالة: ${item.state}` : `Stage: ${item.state}`}</p>}
+            {steps.length > 0 && <ol className="mt-3 space-y-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">{steps.slice(0, 3).map((step, index) => <li key={index} className="flex gap-2"><span className="font-black text-sky-600">{index + 1}.</span><span>{step}</span></li>)}</ol>}
+            {item.route && !canOpen && <p className="mt-3 text-[11px] font-bold text-amber-700 dark:text-amber-300">{isArabic ? 'المعلومة متاحة للقراءة، لكن الشاشة المرتبطة تتطلب صلاحية إضافية.' : 'Read-only guidance: the linked workspace requires additional access.'}</p>}
+        </article>
     );
 };
 
@@ -1033,34 +1368,105 @@ const Help = () => {
     const isArabic = i18n.language === 'ar';
     const user = useSelector(selectCurrentUser);
     const role = user?.role || 'Staff';
-    const isOnline = navigator.onLine;
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
 
-    const [mainTab, setMainTab] = useState('guides'); // 'guides' | 'playbooks' | 'protocols' | 'troubleshooting' | 'shortcuts'
-    const [search, setSearch] = useState('');
-    const [category, setCategory] = useState('all');
+    const requestedTab = searchParams.get('tab');
+    const requestedRole = searchParams.get('role');
+    const requestedQuery = searchParams.get('q') || '';
+    const requestedCategory = searchParams.get('category') || 'all';
+    const initialTab = HELP_TAB_IDS.includes(requestedTab) ? requestedTab : 'guides';
+    const initialCategory = HELP_CATEGORIES.includes(requestedCategory) ? requestedCategory : 'all';
+    const requestedPlaybook = ROLE_PLAYBOOKS.find((playbook) => playbook.role === requestedRole);
+    const requestedPlaybookAllowed = requestedPlaybook && (requestedPlaybook.role === role || role === 'Admin' || role === 'Developer');
+    const [mainTab, setMainTabState] = useState(initialTab);
+    const [search, setSearchState] = useState(requestedQuery);
+    const [category, setCategoryState] = useState(initialCategory);
     const [selectedRolePlaybook, setSelectedRolePlaybook] = useState(
-        ROLE_PLAYBOOKS.find(p => p.role === role) || ROLE_PLAYBOOKS[0]
+        requestedPlaybookAllowed ? requestedPlaybook : ROLE_PLAYBOOKS.find(p => p.role === role) || ROLE_PLAYBOOKS[0]
     );
     const [selectedProtocolModality, setSelectedProtocolModality] = useState(CLINICAL_PROTOCOLS[0]);
     const [copied, setCopied] = useState(false);
     const searchRef = useRef(null);
 
-    /* Ctrl+K to focus search */
+    const updateUrlState = useCallback((next = {}) => {
+        const params = new URLSearchParams(searchParams);
+        const values = {
+            tab: mainTab,
+            q: search,
+            category,
+            role: selectedRolePlaybook?.role || role,
+            ...next,
+        };
+        Object.entries(values).forEach(([key, value]) => {
+            const defaultValue = key === 'tab' ? 'guides' : key === 'category' ? 'all' : '';
+            if (value && value !== defaultValue) params.set(key, value);
+            else params.delete(key);
+        });
+        setSearchParams(params, { replace: true });
+    }, [category, mainTab, role, search, searchParams, selectedRolePlaybook?.role, setSearchParams]);
+
+    const setMainTab = useCallback((value) => {
+        setMainTabState(value);
+        updateUrlState({ tab: value });
+        recordHelpEvent('help_tab_opened', { tab: value, role });
+    }, [role, updateUrlState]);
+
+    const setSearch = useCallback((value) => {
+        setSearchState(value);
+        updateUrlState({ q: value, tab: value ? 'guides' : mainTab });
+        if (value) recordHelpEvent('help_search_submitted', { resultCount: null, role });
+    }, [mainTab, role, updateUrlState]);
+
+    const setCategory = useCallback((value) => {
+        setCategoryState(value);
+        updateUrlState({ category: value });
+    }, [updateUrlState]);
+
+    useEffect(() => {
+        const handleOnline = () => setIsOnline(true);
+        const handleOffline = () => setIsOnline(false);
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
+
+    useEffect(() => {
+        setMainTabState(initialTab);
+        setSearchState(requestedQuery);
+        setCategoryState(initialCategory);
+        if (requestedPlaybookAllowed) {
+            setSelectedRolePlaybook(ROLE_PLAYBOOKS.find((playbook) => playbook.role === requestedRole));
+        }
+    }, [initialCategory, initialTab, requestedPlaybookAllowed, requestedQuery, requestedRole]);
+
+    useEffect(() => {
+        if (!ROLE_PLAYBOOKS.some((playbook) => playbook.role === role)) return;
+        if (!requestedRole) setSelectedRolePlaybook(ROLE_PLAYBOOKS.find((playbook) => playbook.role === role));
+    }, [requestedRole, role]);
+
+    /* Ctrl+K focuses the on-page help search.
+       Capture phase + stopPropagation ensures the page-level affordance (the "Ctrl K" badge
+       next to this search field) wins over the global search overlay registered in Topbar. */
     useEffect(() => {
         const handler = (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
                 e.preventDefault();
+                e.stopPropagation();
                 searchRef.current?.focus();
             }
         };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
+        window.addEventListener('keydown', handler, true);
+        return () => window.removeEventListener('keydown', handler, true);
     }, []);
 
     const visibleArticles = useMemo(() => {
         const q = search.trim().toLowerCase();
         return ARTICLES
-            .filter((a) => articleVisibleForRole(a, role))
+            .filter((a) => articleVisibleForRole(a, user))
             .filter((a) => category === 'all' || a.category === category)
             .filter((a) => {
                 if (!q) return true;
@@ -1075,29 +1481,58 @@ const Help = () => {
                 ].join(' ').toLowerCase();
                 return searchCorpus.includes(q);
             });
-    }, [category, role, search]);
+    }, [category, search, user]);
+
+    const catalogItems = useMemo(() => [
+        ...HELP_TASKS,
+        ...HELP_TROUBLESHOOTING,
+        ...HELP_SHORTCUTS,
+        ...CLINICAL_PROTOCOLS.map(protocolAsSearchItem),
+        ...ARTICLES.map(legacyArticleAsSearchItem),
+    ], []);
+
+    const catalogResults = useMemo(() => {
+        if (!search.trim()) return [];
+        const seen = new Set();
+        return searchHelpCatalog(search, user || {}, i18n.language, catalogItems).filter((item) => {
+            if (seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+        });
+    }, [catalogItems, i18n.language, search, user]);
 
     const availableCategories = CATEGORIES.filter(
-        (c) => c === 'all' || ARTICLES.some((a) => a.category === c && articleVisibleForRole(a, role))
+        (c) => c === 'all' || ARTICLES.some((a) => a.category === c && articleVisibleForRole(a, user))
     );
 
     const categoryCounts = useMemo(() => {
         const map = {};
-        ARTICLES.filter((a) => articleVisibleForRole(a, role)).forEach((a) => {
+        ARTICLES.filter((a) => articleVisibleForRole(a, user)).forEach((a) => {
             map[a.category] = (map[a.category] || 0) + 1;
         });
         return map;
-    }, [role]);
+    }, [user]);
 
     const quickLinks = useMemo(
-        () => ARTICLES.filter((a) => articleVisibleForRole(a, role) && a.route).slice(0, 4),
-        [role]
+        () => ARTICLES.filter((a) => articleVisibleForRole(a, user) && a.route && articleCanOpen(a, user)).slice(0, 4),
+        [user]
     );
-    const roleArticleCount = ARTICLES.filter((a) => articleVisibleForRole(a, role)).length;
+    const roleArticleCount = ARTICLES.filter((a) => articleVisibleForRole(a, user)).length;
+    const accessiblePlaybooks = useMemo(() => ROLE_PLAYBOOKS.filter((playbook) => {
+        if (playbook.role === role || role === 'Admin' || role === 'Developer') return true;
+        return false;
+    }), [role]);
+    const roleStages = useMemo(() => getRoleWorkflowStages(role), [role]);
+    const visibleTroubleshooting = useMemo(() => HELP_TROUBLESHOOTING.filter((item) => itemCanBeRead(item, user || {})), [user]);
 
     const clearSearch = () => {
         setSearch('');
         searchRef.current?.focus();
+    };
+
+    const selectPlaybook = (playbook) => {
+        setSelectedRolePlaybook(playbook);
+        updateUrlState({ role: playbook.role, tab: 'playbooks' });
     };
 
     const copyDiagnostics = async () => {
@@ -1107,7 +1542,10 @@ const Help = () => {
             `=========================================`,
             `Active User Role: ${role}`,
             `Interface Language: ${i18n.language}`,
-            `Online Network Status: ${navigator.onLine ? 'Connected (Synced)' : 'Offline (Local Cache)'}`,
+            `Online Network Status: ${isOnline ? 'Connected' : 'Offline'}`,
+            `Current Route: ${window.location.pathname}${window.location.search}`,
+            `Effective Permissions: ${Array.from(getEffectivePermissions(user || {})).sort().join(', ') || 'role-only session'}`,
+            `Help Content Version: 1.0`,
             `User Agent: ${navigator.userAgent}`,
             `Screen Viewport: ${window.innerWidth}x${window.innerHeight}`,
             `Client Timestamp: ${new Date().toISOString()}`,
@@ -1125,13 +1563,27 @@ const Help = () => {
 
     return (
         <main className="mx-auto max-w-[1600px] space-y-6 pb-14">
+            <PageHeader
+                icon={HelpCircle}
+                eyebrowIcon={Sparkles}
+                eyebrow={t('eyebrow', 'Knowledge Base & Operations Manual')}
+                title={isArabic ? 'مركز المعرفة والأدلة التشغيلية الشاملة' : 'Comprehensive Knowledge & Operations Center'}
+                description={isArabic ? `أدلة التشغيل والبروتوكولات المتاحة لدور ${t(`roles.${role}`, { defaultValue: role })}` : `Workflow manuals, clinical protocols, and troubleshooting guidance for ${role}`}
+                metrics={[
+                    { key: 'guides', icon: BookOpen, label: isArabic ? 'الأدلة المتاحة' : 'Available guides', value: roleArticleCount, tone: 'teal' },
+                    { key: 'results', icon: Search, label: isArabic ? 'نتائج البحث' : 'Search results', value: visibleArticles.length, tone: 'blue' },
+                    { key: 'categories', icon: Layers, label: isArabic ? 'التصنيفات' : 'Categories', value: Math.max(0, availableCategories.length - 1), tone: 'violet' },
+                    { key: 'network', icon: isOnline ? Wifi : WifiOff, label: isArabic ? 'حالة المعرفة' : 'Knowledge status', value: isOnline ? (isArabic ? 'متصل' : 'Online') : (isArabic ? 'دون اتصال' : 'Offline'), tone: isOnline ? 'emerald' : 'amber' }
+                ]}
+                metricsLabel={isArabic ? 'مؤشرات سجل المساعدة' : 'Help record indicators'}
+            />
             {/* Top Knowledge Hero Command Deck */}
             <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8">
                 <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
                 <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
 
                 <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex items-start gap-4 sm:items-center">
+                    <div className="hidden">
                         <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-teal-600/30 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
                             <HelpCircle size={26} />
                         </div>
@@ -1154,7 +1606,7 @@ const Help = () => {
                                 {isArabic ? 'مركز المعرفة والأدلة التشغيلية الشاملة' : 'Comprehensive Knowledge & Operations Center'}
                             </h1>
                             <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
-                                {isArabic ? `تغطية تشغيلية كاملة لجميع الأقسام والبروتوكولات السريرية لدور: ${t(`roles.${role}`, { defaultValue: role })}` : `Complete 20-module workflow manuals, clinical protocols, and troubleshooting diagnostics for ${role}`}
+                                {isArabic ? `تغطية تشغيلية كاملة لجميع الأقسام والبروتوكولات السريرية لدور: ${t(`roles.${role}`, { defaultValue: role })}` : `Complete ${ARTICLES.length}-guide workflow manuals, clinical protocols, and troubleshooting diagnostics for ${role}`}
                             </p>
                         </div>
                     </div>
@@ -1200,10 +1652,11 @@ const Help = () => {
                 </div>
 
                 {/* Sub-Tabs Strip */}
-                <div className="mt-6 flex gap-1.5 overflow-x-auto border-t border-slate-100 pt-4 dark:border-slate-800 scrollbar-none">
+                <div role="tablist" aria-label={isArabic ? 'أقسام مركز المساعدة' : 'Help center sections'} className="mt-6 flex gap-1.5 overflow-x-auto border-t border-slate-100 pt-4 dark:border-slate-800 scrollbar-none">
                     {[
-                        { id: 'guides', label: isArabic ? 'أدلة مسارات العمل الشاملة (20 قسماً)' : 'Workflow Manuals (20 Modules)', icon: BookOpen },
+                        { id: 'guides', label: isArabic ? `أدلة مسارات العمل الشاملة (${ARTICLES.length} دليلاً)` : `Workflow Manuals (${ARTICLES.length} Guides)`, icon: BookOpen },
                         { id: 'playbooks', label: isArabic ? 'دليل المهام اليومية للأدوار' : 'Role Daily Playbooks', icon: CheckSquare },
+                        { id: 'workflows', label: isArabic ? 'خريطة رحلة الفحص والتصعيد' : 'Study Journey & Escalation', icon: GitBranch },
                         { id: 'protocols', label: isArabic ? 'بروتوكولات الفحوصات والتحضير السريري' : 'Clinical Exam Protocols & Prep', icon: HeartPulse },
                         { id: 'troubleshooting', label: isArabic ? 'استكشاف الأخطاء والحلول' : 'Troubleshooting Matrix', icon: AlertTriangle },
                         { id: 'shortcuts', label: isArabic ? 'اختصارات الكيبورد ومستعرض PACS' : 'Keyboard & PACS Shortcuts', icon: Keyboard },
@@ -1215,6 +1668,11 @@ const Help = () => {
                                 key={tab.id}
                                 type="button"
                                 onClick={() => setMainTab(tab.id)}
+                                role="tab"
+                                id={`help-tab-${tab.id}`}
+                                aria-selected={isActive}
+                                aria-controls={`help-panel-${tab.id}`}
+                                tabIndex={isActive ? 0 : -1}
                                 className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition whitespace-nowrap ${
                                     isActive
                                         ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20'
@@ -1229,9 +1687,27 @@ const Help = () => {
                 </div>
             </div>
 
-            {/* TAB 1: WORKFLOW MANUALS (20 MODULES) */}
+            {/* TAB 1: WORKFLOW MANUALS */}
             {mainTab === 'guides' && (
-                <div className="space-y-6">
+                <div id="help-panel-guides" role="tabpanel" aria-labelledby="help-tab-guides" className="space-y-6">
+                    {search.trim() && (
+                        <section aria-live="polite" className="rounded-3xl border border-sky-500/20 bg-white/90 p-5 shadow-sm dark:bg-slate-900/90">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                    <h2 className="text-sm font-black text-slate-900 dark:text-white">{isArabic ? 'نتائج البحث في كل مركز المساعدة' : 'Results across the entire help center'}</h2>
+                                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{isArabic ? `${catalogResults.length} نتيجة في المهام والأدلة والبروتوكولات والأخطاء والاختصارات` : `${catalogResults.length} results across tasks, guides, protocols, errors, and shortcuts`}</p>
+                                </div>
+                                <span className="rounded-full bg-sky-500/10 px-3 py-1 text-xs font-black text-sky-700 dark:text-sky-300">{catalogResults.length}</span>
+                            </div>
+                            {catalogResults.length > 0 ? (
+                                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                                    {catalogResults.slice(0, 12).map((item) => <CatalogResultCard key={item.id} item={item} isArabic={isArabic} user={user} />)}
+                                </div>
+                            ) : (
+                                <p className="mt-4 rounded-2xl bg-slate-100 p-4 text-xs font-bold text-slate-600 dark:bg-slate-950 dark:text-slate-300">{isArabic ? 'لا توجد نتيجة مطابقة. جرّب اسم حالة أو صلاحية أو رمز خطأ مثل 403.' : 'No matching result. Try a workflow state, permission, or error code such as 403.'}</p>
+                            )}
+                        </section>
+                    )}
                     {/* Quick Access Workspaces Strip */}
                     <section className="space-y-3" aria-labelledby="quick-heading">
                         <div className="flex items-center justify-between">
@@ -1258,7 +1734,7 @@ const Help = () => {
                         <div className="space-y-4 min-w-0">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
-                                    <h2 className="text-sm font-black text-slate-900 dark:text-white">{isArabic ? 'فهرس الأدلة التشغيلية السريرية والإدارية (20 قسماً كاملاً)' : 'Full 20-Module Clinical & Operational Index'}</h2>
+                                    <h2 className="text-sm font-black text-slate-900 dark:text-white">{isArabic ? `فهرس الأدلة التشغيلية السريرية والإدارية (${ARTICLES.length} دليلاً)` : `Full ${ARTICLES.length}-Guide Clinical & Operational Index`}</h2>
                                     <p className="text-xs font-semibold text-slate-400">
                                         {isArabic ? `${visibleArticles.length} دليلاً متاحاً لدورك الحالي مع خطوات واضحة ومباشرة` : `${visibleArticles.length} guides available for your role with actionable steps`}
                                     </p>
@@ -1320,7 +1796,7 @@ const Help = () => {
                             ) : (
                                 <div className="space-y-3">
                                     {visibleArticles.map((a) => (
-                                        <ArticleCard key={a.id} article={a} isArabic={isArabic} />
+                                        <ArticleCard key={a.id} article={a} isArabic={isArabic} canOpenRoute={articleCanOpen(a, user)} />
                                     ))}
                                 </div>
                             )}
@@ -1359,7 +1835,7 @@ const Help = () => {
                                     <span>{isArabic ? 'الحوكمة والسلامة الإشعاعية والسريرية' : 'Clinical Governance & Safety'}</span>
                                 </div>
                                 <p className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-400 leading-relaxed">
-                                    {isArabic ? 'جميع تقارير الفحوصات والجرعات الإشعاعية تخضع لمسارات تدقيق إلكترونية دائمة لضمان الامتثال الطبي الكامل.' : 'All study reports and radiation exposures are logged under electronic audit trails for regulatory compliance.'}
+                                {isArabic ? 'تخضع عمليات الوصول والتعديل والاعتماد للتقارير لسجلات تدقيق إلكترونية. يعتمد تسجيل جرعات الإشعاع على تكامل الجهاز وبيانات DICOM المتاحة في المنشأة.' : 'Report access, edits, and approvals are recorded in electronic audit trails. Radiation-dose capture depends on configured modality integration and available DICOM data.'}
                                 </p>
                             </div>
                         </aside>
@@ -1369,17 +1845,17 @@ const Help = () => {
 
             {/* TAB 2: ROLE PLAYBOOKS */}
             {mainTab === 'playbooks' && (
-                <section className="space-y-6">
+                <section id="help-panel-playbooks" role="tabpanel" aria-labelledby="help-tab-playbooks" className="space-y-6">
                     {/* Role Selector Pills */}
                     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-                        {ROLE_PLAYBOOKS.map((pb) => {
+                        {accessiblePlaybooks.map((pb) => {
                             const Icon = pb.icon;
                             const isActive = selectedRolePlaybook.role === pb.role;
                             return (
                                 <button
                                     key={pb.role}
                                     type="button"
-                                    onClick={() => setSelectedRolePlaybook(pb)}
+                                onClick={() => selectPlaybook(pb)}
                                     className={`inline-flex shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black transition ${
                                         isActive
                                             ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20'
@@ -1437,7 +1913,7 @@ const Help = () => {
                                 {isArabic ? 'أهم الشاشات التفاعلية المرتبطة بهذا الدور' : 'Primary Workspaces Linked to This Role'}
                             </h3>
                             <div className="flex flex-wrap gap-2.5">
-                                {selectedRolePlaybook.primaryRoutes.map(rt => (
+                                {selectedRolePlaybook.primaryRoutes.filter(rt => canAccessRouteTarget(rt.path, user)).map(rt => (
                                     <Link
                                         key={rt.path}
                                         to={rt.path}
@@ -1453,9 +1929,47 @@ const Help = () => {
                 </section>
             )}
 
+            {mainTab === 'workflows' && (
+                <section id="help-panel-workflows" role="tabpanel" aria-labelledby="help-tab-workflows" className="space-y-5">
+                    <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <h2 className="text-base font-black text-slate-900 dark:text-white">{isArabic ? 'رحلة الفحص من التسجيل إلى التسليم' : 'Study journey from registration to delivery'}</h2>
+                                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{isArabic ? 'توضح المحطة والحالة والمسؤول والخطوة التالية ومسار التصعيد.' : 'Shows each station, state, owner, next action, and escalation path.'}</p>
+                            </div>
+                            <span className="rounded-full bg-teal-500/10 px-3 py-1 text-xs font-black text-teal-700 dark:text-teal-300">{WORKFLOW_STAGES.length} {isArabic ? 'مراحل' : 'stages'}</span>
+                        </div>
+                        <div className="mt-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                            {WORKFLOW_STAGES.map((stage, index) => {
+                                const availableForRole = roleStages.some((candidate) => candidate.id === stage.id);
+                                const canOpen = canAccessRouteTarget(stage.route, user);
+                                return (
+                                    <article key={stage.id} className={`rounded-2xl border p-4 ${availableForRole ? 'border-teal-500/30 bg-teal-500/5' : 'border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40'}`}>
+                                        <div className="flex items-start gap-3">
+                                            <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-black ${availableForRole ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-800'}`}>{index + 1}</span>
+                                            <div>
+                                                <h3 className="text-sm font-black text-slate-900 dark:text-white">{isArabic ? stage.ar : stage.en}</h3>
+                                                <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">{stage.state} → {stage.next}</p>
+                                            </div>
+                                        </div>
+                                        <p className="mt-3 text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-300">{isArabic ? stage.escalationAr : stage.escalationEn}</p>
+                                        <div className="mt-3 flex flex-wrap gap-1.5">{stage.roles.map((stageRole) => <span key={stageRole} className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black text-slate-500 shadow-sm dark:bg-slate-900">{t(`roles.${stageRole}`, { defaultValue: stageRole })}</span>)}</div>
+                                        {canOpen && <Link to={stage.route} className="mt-4 inline-flex items-center gap-1.5 text-xs font-black text-teal-700 hover:text-teal-500 dark:text-teal-300"><ExternalLink size={12} />{isArabic ? 'فتح المحطة' : 'Open station'}</Link>}
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </section>
+            )}
+
             {/* TAB 3: CLINICAL EXAM PROTOCOLS & PATIENT PREPARATION */}
             {mainTab === 'protocols' && (
-                <section className="space-y-6">
+                <section id="help-panel-protocols" role="tabpanel" aria-labelledby="help-tab-protocols" className="space-y-6">
+                    <div role="note" className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-bold leading-relaxed text-amber-900 dark:text-amber-200">
+                        {isArabic ? 'مرجع سلامة سريري: هذه الإرشادات لا تستبدل بروتوكول المنشأة أو قرار الطبيب. يجب اعتماد كل بروتوكول محلياً ومراجعته دورياً قبل الاستخدام.' : 'Clinical safety reference: this guidance does not replace the facility protocol or a clinician decision. Each local protocol must be approved and reviewed before use.'}
+                        <span className="mt-2 block text-[10px] font-black uppercase tracking-wider">{isArabic ? 'المالك: الإدارة الطبية | الإصدار: 1.0 | آخر مراجعة: 2026-09-10' : 'Owner: Medical Director | Version: 1.0 | Reviewed: 2026-09-10'}</span>
+                    </div>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
                             <h2 className="text-base font-black text-slate-900 dark:text-white">
@@ -1542,7 +2056,7 @@ const Help = () => {
 
             {/* TAB 4: TROUBLESHOOTING MATRIX */}
             {mainTab === 'troubleshooting' && (
-                <section className="space-y-4">
+                <section id="help-panel-troubleshooting" role="tabpanel" aria-labelledby="help-tab-troubleshooting" className="space-y-4">
                     <div className="mb-2">
                         <h2 className="text-base font-black text-slate-900 dark:text-white">
                             {isArabic ? 'دليل استكشاف وحل المشكلات التشغيلية والفنية' : 'Operational & Technical Incident Resolver'}
@@ -1553,6 +2067,7 @@ const Help = () => {
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
+                        {visibleTroubleshooting.map((item) => <CatalogResultCard key={item.id} item={item} isArabic={isArabic} user={user} />)}
                         {TROUBLESHOOTING_GUIDES.map(item => {
                             const Icon = item.icon;
                             return (
@@ -1596,7 +2111,7 @@ const Help = () => {
 
             {/* TAB 5: KEYBOARD SHORTCUTS & PACS */}
             {mainTab === 'shortcuts' && (
-                <section className="space-y-6">
+                <section id="help-panel-shortcuts" role="tabpanel" aria-labelledby="help-tab-shortcuts" className="space-y-6">
                     <div className="mb-2">
                         <h2 className="text-base font-black text-slate-900 dark:text-white">
                             {isArabic ? 'دليل الاختصارات السريعة ومستعرض DICOM PACS' : 'Complete Keyboard & DICOM Viewer Shortcuts'}
@@ -1622,6 +2137,12 @@ const Help = () => {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {HELP_SHORTCUTS.filter((shortcut) => itemCanBeRead(shortcut, user || {})).map((shortcut) => {
+                            const localized = getLocalizedHelpItem(shortcut, isArabic ? 'ar' : 'en');
+                            return <ShortcutRow key={shortcut.id} keys={shortcut.keys} label={localized.title} />;
+                        })}
                     </div>
                 </section>
             )}

@@ -16,6 +16,7 @@ import {
 import { useDoctorLoginMutation, useGetPublicCenterSettingsQuery } from "../store/api";
 import { setCredentials } from "../store/authSlice";
 import { getErrorMessage } from "../utils/getErrorMessage";
+import { useLoginThrottle } from "../hooks/use-login-throttle";
 import { PortalAuthShell } from "../components/portal/layout/PortalAuthShell";
 import { resolvePortalIdentity } from "../lib/portal-identity";
 
@@ -35,6 +36,7 @@ const DoctorLogin = () => {
   const [login, { isLoading }] = useDoctorLoginMutation();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const throttle = useLoginThrottle("doctor");
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation(["auth", "common", "landing"]);
@@ -65,10 +67,18 @@ const DoctorLogin = () => {
     setErrorMsg(null);
     try {
       const result = await login({ email: data.email.trim(), password: data.password }).unwrap();
+      throttle.registerSuccess();
       dispatch(setCredentials({ user: result.user, token: result.token }));
       navigate("/doctor/dashboard");
     } catch (error) {
-      setErrorMsg(getErrorMessage(error, t("doctor.error")));
+      throttle.registerFailure();
+      const status = (error as any)?.status;
+      const generic = t("doctor.error");
+      setErrorMsg(
+        status === 400 || status === 401 || status === 403
+          ? generic
+          : getErrorMessage(error, generic),
+      );
     }
   };
 
@@ -90,13 +100,27 @@ const DoctorLogin = () => {
       benefits={displayBenefits as string[]}
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
-        {errorMsg && (
+        {!throttle.locked && errorMsg && (
           <div
             role="alert"
             className="flex items-start gap-2.5 rounded-lg border border-rose-200 bg-rose-50 p-3.5 text-xs font-semibold leading-5 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300"
           >
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{errorMsg}</span>
+          </div>
+        )}
+        {throttle.locked && (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-xs font-semibold leading-5 text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              {t("errors.tooManyAttempts", {
+                count: Math.ceil(throttle.lockRemainingMs / 1000),
+                defaultValue: "Too many failed attempts. Try again in {{count}} seconds.",
+              })}
+            </span>
           </div>
         )}
 
@@ -125,10 +149,14 @@ const DoctorLogin = () => {
               className={`${inputClass} px-10 text-left`}
               dir="ltr"
               aria-invalid={Boolean(errors.email)}
+              aria-describedby={errors.email ? "doctor-email-error" : undefined}
             />
           </div>
           {errors.email && (
-            <p className="mt-1.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+            <p
+              id="doctor-email-error"
+              className="mt-1.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400"
+            >
               {errors.email.message}
             </p>
           )}
@@ -154,6 +182,7 @@ const DoctorLogin = () => {
               className={`${inputClass} ps-10 pe-12 text-left`}
               dir="ltr"
               aria-invalid={Boolean(errors.password)}
+              aria-describedby={errors.password ? "doctor-password-error" : undefined}
             />
             <button
               type="button"
@@ -169,7 +198,10 @@ const DoctorLogin = () => {
             </button>
           </div>
           {errors.password && (
-            <p className="mt-1.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+            <p
+              id="doctor-password-error"
+              className="mt-1.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400"
+            >
               {errors.password.message}
             </p>
           )}
@@ -177,7 +209,7 @@ const DoctorLogin = () => {
 
         <button
           type="submit"
-          disabled={isLoading}
+          disabled={isLoading || throttle.locked}
           className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-bold text-white shadow-[0_8px_24px_rgba(8,120,95,0.2)] transition hover:-translate-y-0.5 hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60"
         >
           {isLoading ? (

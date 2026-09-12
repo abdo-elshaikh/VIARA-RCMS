@@ -4,7 +4,8 @@ import { ShieldCheck, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const EditSafetyDialog = ({ isOpen, patientName, initialSafety, isSaving, onClose, onConfirm }) => {
-    const { t } = useTranslation('clinicalQueues');
+    const { t, i18n } = useTranslation('clinicalQueues');
+    const isArabic = i18n.language?.startsWith('ar');
     const [pregnancy, setPregnancy] = useState(initialSafety?.pregnancy || 'Unknown');
     const [implant, setImplant] = useState(initialSafety?.implant || 'Unknown');
     const [renal, setRenal] = useState(initialSafety?.renal || 'Unknown');
@@ -33,7 +34,7 @@ const EditSafetyDialog = ({ isOpen, patientName, initialSafety, isSaving, onClos
     };
 
     return createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" dir={isArabic ? 'rtl' : 'ltr'}>
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
             <div className="relative w-full max-w-md overflow-hidden rounded-[2rem] bg-white shadow-2xl animate-in zoom-in-95 duration-200">
                 <div className="border-b border-slate-100 px-8 py-6 flex items-center justify-between bg-slate-50/50">
@@ -42,12 +43,14 @@ const EditSafetyDialog = ({ isOpen, patientName, initialSafety, isSaving, onClos
                             <ShieldCheck size={24} />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-slate-800">Edit Safety Checklist</h2>
+                            <h2 className="text-xl font-bold text-slate-800">{t('safetyEditor.title')}</h2>
                             <p className="mt-0.5 text-sm font-semibold text-slate-500">{patientName}</p>
                         </div>
                     </div>
                     <button 
+                        type="button"
                         onClick={onClose}
+                        aria-label={t('safetyEditor.close')}
                         className="rounded-full p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors"
                     >
                         <X size={20} strokeWidth={3} />
@@ -56,41 +59,44 @@ const EditSafetyDialog = ({ isOpen, patientName, initialSafety, isSaving, onClos
                 
                 <div className="p-8 space-y-5">
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
-                            Pregnancy Safety Status
+                        <label htmlFor="safety-pregnancy" className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
+                            {t('safetyEditor.fields.pregnancy')}
                         </label>
                         <select
+                            id="safety-pregnancy"
                             value={pregnancy}
                             onChange={(e) => setPregnancy(e.target.value)}
                             className={getSelectClass(pregnancy)}
                         >
-                            {safetyOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            {safetyOptions.map(opt => <option key={opt} value={opt}>{t(`safetyEditor.status.${opt}`)}</option>)}
                         </select>
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
-                            Implant Safety Status (e.g. Pacemakers/Metallic)
+                        <label htmlFor="safety-implant" className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
+                            {t('safetyEditor.fields.implant')}
                         </label>
                         <select
+                            id="safety-implant"
                             value={implant}
                             onChange={(e) => setImplant(e.target.value)}
                             className={getSelectClass(implant)}
                         >
-                            {safetyOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            {safetyOptions.map(opt => <option key={opt} value={opt}>{t(`safetyEditor.status.${opt}`)}</option>)}
                         </select>
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
-                            Renal Clearance Status
+                        <label htmlFor="safety-renal" className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
+                            {t('safetyEditor.fields.renal')}
                         </label>
                         <select
+                            id="safety-renal"
                             value={renal}
                             onChange={(e) => setRenal(e.target.value)}
                             className={getSelectClass(renal)}
                         >
-                            {safetyOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            {safetyOptions.map(opt => <option key={opt} value={opt}>{t(`safetyEditor.status.${opt}`)}</option>)}
                         </select>
                     </div>
                 </div>
@@ -108,7 +114,7 @@ const EditSafetyDialog = ({ isOpen, patientName, initialSafety, isSaving, onClos
                         disabled={isSaving}
                         className="rounded-xl bg-gradient-to-r from-teal-600 to-emerald-500 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-teal-500/30 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
                     >
-                        {isSaving ? t('common.saving') : 'Save Checklist'}
+                        {isSaving ? t('common.saving') : t('safetyEditor.save')}
                     </button>
                 </div>
             </div>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
     AlertTriangle,
@@ -12,13 +12,14 @@ import {
     X,
     XCircle
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { machineTypes } from './MachineManagement';
 
 const ClinicalImportModal = ({
     isOpen,
     onClose,
-    targetType = 'exams', // 'machines' or 'exams'
+    targetType: initialTargetType = 'exams', // 'machines' or 'exams'
     machines = [],
     exams = [],
     onImportMachines,
@@ -27,11 +28,19 @@ const ClinicalImportModal = ({
     onUpdateExam,
     isImporting = false
 }) => {
+    const { t } = useTranslation('settings');
+    const [targetType, setTargetType] = useState(initialTargetType);
     const [file, setFile] = useState(null);
     const [rawRows, setRawRows] = useState([]);
     const [duplicateStrategy, setDuplicateStrategy] = useState('skip'); // 'skip' | 'replace' | 'replaceAll'
     const [importFinished, setImportFinished] = useState(false);
     const [importedSummary, setImportedSummary] = useState(null);
+
+    useEffect(() => {
+        if (initialTargetType) {
+            setTargetType(initialTargetType);
+        }
+    }, [initialTargetType]);
 
     // Reset state when closing/opening
     const handleClose = () => {
@@ -41,6 +50,14 @@ const ClinicalImportModal = ({
         setImportFinished(false);
         setImportedSummary(null);
         onClose();
+    };
+
+    const handleSwitchTarget = (type) => {
+        setTargetType(type);
+        setFile(null);
+        setRawRows([]);
+        setImportFinished(false);
+        setImportedSummary(null);
     };
 
     // Parse CSV / TSV file content safely with automatic delimiter detection
@@ -110,7 +127,7 @@ const ClinicalImportModal = ({
         const isDelimited = lowerName.endsWith('.csv') || lowerName.endsWith('.tsv') || lowerName.endsWith('.txt');
 
         if (!isDelimited) {
-            toast.error('Unsupported file format. Please upload a .csv or .tsv spreadsheet export.');
+            toast.error(t('settings.clinical.importModal.unsupportedFormat', { defaultValue: 'Unsupported file format. Please upload a .csv or .tsv file.' }));
             return;
         }
 
@@ -123,12 +140,15 @@ const ClinicalImportModal = ({
                 const parsed = parseCSVText(String(text));
                 setRawRows(parsed);
                 if (parsed.length === 0) {
-                    toast.error('The selected file contains no readable data rows.');
+                    toast.error(t('settings.clinical.importModal.emptyFile', { defaultValue: 'The selected file contains no readable data rows.' }));
                 } else {
-                    toast.success(`Loaded ${parsed.length} rows for duplicate & format verification.`);
+                    toast.success(t('settings.clinical.importModal.loadedRows', {
+                        defaultValue: `Loaded ${parsed.length} rows for verification.`,
+                        count: parsed.length
+                    }));
                 }
-            } catch (err) {
-                toast.error('Failed to parse spreadsheet file.');
+            } catch {
+                toast.error(t('settings.clinical.importModal.parseError', { defaultValue: 'Failed to parse spreadsheet file.' }));
             }
         };
         reader.readAsText(selectedFile);
@@ -143,15 +163,20 @@ const ClinicalImportModal = ({
 
         const machineMapByName = new Map();
         machines.forEach(m => {
-            if (m.name) machineMapByName.set(m.name.toLowerCase().trim(), m.modality_id);
-            if (m.modality_id) machineMapByName.set(String(m.modality_id).toLowerCase().trim(), m.modality_id);
-            if (m.type) machineMapByName.set(m.type.toLowerCase().trim(), m.modality_id);
+            const id = m.modality_id || m.id;
+            if (m.name) {
+                machineMapByName.set(m.name.toLowerCase().trim(), id);
+                machineMapByName.set(m.name.toLowerCase().replace(/[^a-z0-9]/g, ''), id);
+            }
+            if (id) machineMapByName.set(String(id).toLowerCase().trim(), id);
+            if (m.type) machineMapByName.set(m.type.toLowerCase().trim(), id);
         });
 
         const examMapByCodeOrName = new Map();
         exams.forEach(e => {
-            if (e.code) examMapByCodeOrName.set(e.code.toLowerCase().trim(), e.type_id);
-            if (e.name) examMapByCodeOrName.set(e.name.toLowerCase().trim(), e.type_id);
+            const id = e.type_id || e.id;
+            if (e.code) examMapByCodeOrName.set(e.code.toLowerCase().trim(), id);
+            if (e.name) examMapByCodeOrName.set(e.name.toLowerCase().trim(), id);
         });
 
         rawRows.forEach(({ rowIndex, raw }) => {
@@ -167,9 +192,12 @@ const ClinicalImportModal = ({
                 const location = raw.facilitylocation || raw.location || '';
                 const status = raw.status || 'Active';
 
-                if (!name.trim()) errors.push('Missing required Machine Name');
-                if (type && !machineTypes.map(t => t.toLowerCase()).includes(type.toLowerCase())) {
-                    errors.push(`Unrecognized Modality Class "${type}". Standard types: ${machineTypes.join(', ')}`);
+                if (!name.trim()) errors.push(t('settings.clinical.importModal.missingMachineName', { defaultValue: 'Missing required Machine Name' }));
+                if (type && !machineTypes.map(tStr => tStr.toLowerCase()).includes(type.toLowerCase())) {
+                    errors.push(t('settings.clinical.importModal.unrecognizedClass', {
+                        defaultValue: `Unrecognized Modality Class "${type}". Standard: ${machineTypes.join(', ')}`,
+                        type
+                    }));
                 }
 
                 // Duplicate machine check
@@ -181,7 +209,16 @@ const ClinicalImportModal = ({
                         rowIndex,
                         isDuplicate,
                         existingId: matchedModalityId || null,
-                        data: { name: name.trim(), type: type.trim(), roomNumber, serialNumber, manufacturer, model, location, status }
+                        data: {
+                            name: name.trim(),
+                            type: type.trim(),
+                            roomNumber: roomNumber.trim() || undefined,
+                            serialNumber: serialNumber.trim() || undefined,
+                            manufacturer: manufacturer.trim() || undefined,
+                            model: model.trim() || undefined,
+                            location: location.trim() || undefined,
+                            status
+                        }
                     });
                 } else {
                     invalidRows.push({ rowIndex, raw, errors });
@@ -190,11 +227,9 @@ const ClinicalImportModal = ({
                 const code = raw.procedurecode || raw.code || raw.cptcode || raw.cpt || raw.itemcode || '';
                 const name = raw.procedurename || raw.name || raw.title || raw.procedure || raw.examname || raw.proceduretitle || '';
                 
-                // Parse Price ($) removing any $, commas, or spaces
                 const rawPrice = String(raw.price || raw.cost || raw.fee || raw.rate || raw.amount || '0').replace(/[^0-9.]/g, '');
                 const priceNum = parseFloat(rawPrice || '0');
 
-                // Parse Duration (Minutes)
                 const rawDuration = String(raw.durationminutes || raw.duration || raw.minutes || raw.time || '30').replace(/[^0-9]/g, '');
                 const durationNum = parseInt(rawDuration || '30', 10);
 
@@ -204,13 +239,24 @@ const ClinicalImportModal = ({
                 const contrastRequired = ['true', 'yes', '1', 'contrast', 'optional'].includes(contrastStr);
 
                 const machineRef = raw.modalitymachine || raw.machine || raw.modalityname || raw.modalityid || raw.equipment || '';
-                const matchedModalityId = machineMapByName.get(machineRef.toLowerCase().trim())
-                    || (machines.length > 0 ? machines[0].modality_id : null);
+                let matchedModalityId = machineMapByName.get(machineRef.toLowerCase().trim())
+                    || machineMapByName.get(machineRef.toLowerCase().replace(/[^a-z0-9]/g, ''));
 
-                if (!name.trim()) errors.push('Missing required Procedure Name');
-                if (isNaN(priceNum) || priceNum < 0) errors.push(`Invalid price "${raw.price}". Must be a non-negative number.`);
-                if (isNaN(durationNum) || durationNum < 1) errors.push(`Invalid duration "${raw.duration}". Must be at least 1 minute.`);
-                if (!matchedModalityId) errors.push(`No machine matching "${machineRef}" found in system registry.`);
+                if (!matchedModalityId && machineRef) {
+                    const found = machines.find(m =>
+                        m.name && (machineRef.toLowerCase().includes(m.name.toLowerCase()) || m.name.toLowerCase().includes(machineRef.toLowerCase()))
+                    );
+                    if (found) matchedModalityId = found.modality_id || found.id;
+                }
+
+                if (!matchedModalityId && machines.length > 0) {
+                    matchedModalityId = machines[0].modality_id || machines[0].id;
+                }
+
+                if (!name.trim()) errors.push(t('settings.clinical.importModal.missingExamName', { defaultValue: 'Missing required Procedure Name' }));
+                if (isNaN(priceNum) || priceNum < 0) errors.push(t('settings.clinical.importModal.invalidPrice', { defaultValue: 'Invalid price. Must be a non-negative number.' }));
+                if (isNaN(durationNum) || durationNum < 1) errors.push(t('settings.clinical.importModal.invalidDuration', { defaultValue: 'Invalid duration. Must be at least 1 minute.' }));
+                if (!matchedModalityId) errors.push(t('settings.clinical.importModal.machineNotFound', { defaultValue: `No machine matching "${machineRef}" found in system registry.`, machine: machineRef }));
 
                 // Duplicate procedure check by code or name
                 let matchedTypeId = null;
@@ -225,12 +271,12 @@ const ClinicalImportModal = ({
                         existingId: matchedTypeId || null,
                         data: {
                             modalityId: matchedModalityId,
-                            code: code.trim().toUpperCase(),
+                            code: code.trim() ? code.trim().toUpperCase() : undefined,
                             name: name.trim(),
                             price: priceNum,
                             durationMinutes: durationNum,
-                            bodyPart: bodyPart.trim(),
-                            preparationInstructions: prep.trim(),
+                            bodyPart: bodyPart.trim() || undefined,
+                            preparationInstructions: prep.trim() || undefined,
                             contrastRequired,
                             isActive: true
                         }
@@ -250,11 +296,11 @@ const ClinicalImportModal = ({
             duplicateCount,
             newCount
         };
-    }, [rawRows, targetType, machines, exams]);
+    }, [rawRows, targetType, machines, exams, t]);
 
     const handleExecuteImport = async () => {
         if (validationResults.validRows.length === 0) {
-            toast.error('No valid rows available to import.');
+            toast.error(t('settings.clinical.importModal.noValidRows', { defaultValue: 'No valid rows available to import.' }));
             return;
         }
 
@@ -263,6 +309,7 @@ const ClinicalImportModal = ({
             let replacedCount = 0;
             let skippedCount = 0;
             let failCount = 0;
+            const failureDetails = [];
 
             const rowsToProcess = validationResults.validRows;
 
@@ -278,49 +325,62 @@ const ClinicalImportModal = ({
                         try {
                             await onUpdateMachine(item.existingId, item.data);
                             replacedCount++;
-                        } catch {
+                        } catch (err) {
                             failCount++;
+                            failureDetails.push(`${item.data.name}: ${err?.data?.message || err?.message || 'Update failed'}`);
                         }
                     } else if (targetType === 'exams' && onUpdateExam && item.existingId) {
                         try {
                             await onUpdateExam(item.existingId, item.data);
                             replacedCount++;
-                        } catch {
+                        } catch (err) {
                             failCount++;
+                            failureDetails.push(`${item.data.name}: ${err?.data?.message || err?.message || 'Update failed'}`);
                         }
                     } else {
-                        // Fallback to new import if update handler missing
                         try {
                             if (targetType === 'machines') await onImportMachines(item.data);
                             else await onImportExams(item.data);
                             successCount++;
-                        } catch {
+                        } catch (err) {
                             failCount++;
+                            failureDetails.push(`${item.data.name}: ${err?.data?.message || err?.message || 'Import failed'}`);
                         }
                     }
                 } else {
-                    // Create New Record
+                    // New Record
                     try {
                         if (targetType === 'machines') await onImportMachines(item.data);
                         else await onImportExams(item.data);
                         successCount++;
-                    } catch {
+                    } catch (err) {
                         failCount++;
+                        failureDetails.push(`${item.data.name}: ${err?.data?.message || err?.message || 'Import failed'}`);
                     }
                 }
             }
 
             setImportedSummary({
-                total: rawRows.length,
+                total: rowsToProcess.length,
                 success: successCount,
                 replaced: replacedCount,
                 skipped: skippedCount,
-                failed: failCount + validationResults.invalidRows.length
+                failed: failCount,
+                failureDetails
             });
             setImportFinished(true);
-            toast.success(`Import finished! Added ${successCount} new, updated ${replacedCount} duplicates, skipped ${skippedCount}.`);
-        } catch (error) {
-            toast.error('An error occurred during bulk upload execution.');
+            if (failCount === 0) {
+                toast.success(t('settings.clinical.importModal.importSuccess', {
+                    defaultValue: `Import completed! Added ${successCount} new, updated ${replacedCount}, skipped ${skippedCount}.`,
+                    newCount: successCount,
+                    updatedCount: replacedCount,
+                    skippedCount
+                }));
+            } else {
+                toast.error(`Import finished with ${failCount} errors. ${successCount} added, ${replacedCount} updated.`);
+            }
+        } catch {
+            toast.error(t('settings.clinical.importModal.importFailed', { defaultValue: 'An error occurred during bulk import execution.' }));
         }
     };
 
@@ -330,26 +390,28 @@ const ClinicalImportModal = ({
         let fileName = '';
 
         if (targetType === 'machines') {
-            csvContent = "data:text/csv;charset=utf-8," +
-                "MachineName,ModalityClass,RoomNumber,SerialNumber,Manufacturer,Model,FacilityLocation,Status\n" +
-                "MRI 3T Bay 1,MRI,Room 101,SN-928374-X,Siemens,Magnetom Vida,Ground Floor East,Active\n" +
-                "CT Scanner 128,CT,Room 102,SN-448291-Y,GE Healthcare,Revolution CT,Ground Floor West,Active";
-            fileName = "clinical_machines_import_template.csv";
+            csvContent = "\uFEFFMachine Name,Modality Class,Room Number,Serial Number,Manufacturer,Model,Facility Location,Status\n" +
+                "MRI 3T Unit 1,MRI,Room 101,SN-928374-X,Siemens,Magnetom Vida,Ground Floor East,Active\n" +
+                "CT Scanner 128,CT,Room 102,SN-448291-Y,GE Healthcare,Revolution CT,Ground Floor West,Active\n" +
+                "Digital X-Ray Room,X-Ray,Room 103,SN-332918-Z,Philips,DigitalDiagnost,1st Floor,Active";
+            fileName = "VIARA_machines_import_template.csv";
         } else {
-            csvContent = "data:text/csv;charset=utf-8," +
-                "ProcedureCode,ProcedureName,ModalityMachine,Price,DurationMinutes,BodyPart,ContrastRequired,Preparation\n" +
-                "MRI-BRAIN-C,Brain MRI with Contrast,MRI 3T Bay 1,450.00,45,Brain,Yes,Fast for 4 hours prior\n" +
-                "CT-CHEST-NC,Chest CT Non-Contrast,CT Scanner 128,320.00,20,Chest,No,No special preparation required";
-            fileName = "clinical_procedures_import_template.csv";
+            csvContent = "\uFEFFProcedure Code,Procedure Name,Modality Machine,Price,Duration Minutes,Body Part,Contrast Required,Preparation Instructions\n" +
+                "MRI-BRAIN-C,Brain MRI with Contrast,MRI 3T Unit 1,1200.00,45,Brain,Yes,Fast for 4 hours prior\n" +
+                "CT-CHEST-NC,Chest CT Non-Contrast,CT Scanner 128,850.00,20,Chest,No,No special preparation required\n" +
+                "XRAY-CHEST-PA,Chest X-Ray PA View,Digital X-Ray Room,250.00,10,Chest,No,Remove metal jewelry";
+            fileName = "VIARA_procedures_import_template.csv";
         }
 
-        const encodedUri = encodeURI(csvContent);
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
+        link.setAttribute("href", url);
         link.setAttribute("download", fileName);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     };
 
     if (!isOpen) return null;
@@ -360,14 +422,18 @@ const ClinicalImportModal = ({
                 {/* Modal Header */}
                 <header className="shrink-0 flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-slate-800">
                     <div className="flex items-center gap-3">
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
                             {targetType === 'machines' ? <Server size={18} /> : <Microscope size={18} />}
                         </span>
                         <div>
                             <h3 className="text-base font-black text-slate-950 dark:text-white">
-                                {targetType === 'machines' ? 'Bulk Import Modality Machines' : 'Bulk Import Procedure Catalog'}
+                                {targetType === 'machines'
+                                    ? t('settings.clinical.importModal.titleMachines', { defaultValue: 'Bulk Import Modality Units' })
+                                    : t('settings.clinical.importModal.titleExams', { defaultValue: 'Bulk Import Procedure Catalog' })}
                             </h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">Upload a CSV/TSV spreadsheet export with duplicate check and overwrite prompt.</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {t('settings.clinical.importModal.subtitle', { defaultValue: 'Upload CSV/TSV spreadsheet export with duplicate checking.' })}
+                            </p>
                         </div>
                     </div>
                     <button
@@ -379,6 +445,36 @@ const ClinicalImportModal = ({
                     </button>
                 </header>
 
+                {/* Target Type Selector Switch */}
+                {!importFinished && (
+                    <div className="shrink-0 flex border-b border-slate-100 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40 px-6 pt-2">
+                        <button
+                            type="button"
+                            onClick={() => handleSwitchTarget('machines')}
+                            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-bold transition-all ${
+                                targetType === 'machines'
+                                    ? 'border-teal-600 text-teal-700 dark:text-teal-300 bg-white dark:bg-slate-900 rounded-t-xl shadow-2xs'
+                                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                            }`}
+                        >
+                            <Server size={14} />
+                            <span>{t('settings.clinical.importModal.tabMachines', { defaultValue: 'Modality Units (Machines)' })}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handleSwitchTarget('exams')}
+                            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-bold transition-all ${
+                                targetType === 'exams'
+                                    ? 'border-teal-600 text-teal-700 dark:text-teal-300 bg-white dark:bg-slate-900 rounded-t-xl shadow-2xs'
+                                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                            }`}
+                        >
+                            <Microscope size={14} />
+                            <span>{t('settings.clinical.importModal.tabExams', { defaultValue: 'Procedure Catalog' })}</span>
+                        </button>
+                    </div>
+                )}
+
                 <div className="flex-1 overflow-y-auto p-6 space-y-5">
                     {importFinished ? (
                         /* Import Result Summary */
@@ -387,56 +483,88 @@ const ClinicalImportModal = ({
                                 <CheckCircle2 size={32} />
                             </span>
                             <div>
-                                <h4 className="text-lg font-black text-slate-950 dark:text-white">Bulk Import Finished</h4>
-                                <p className="text-xs text-slate-500">Processed records have been synchronized into the system registry.</p>
+                                <h4 className="text-lg font-black text-slate-950 dark:text-white">
+                                    {t('settings.clinical.importModal.finishedTitle', { defaultValue: 'Bulk Import Finished' })}
+                                </h4>
+                                <p className="text-xs text-slate-500">
+                                    {t('settings.clinical.importModal.finishedDesc', { defaultValue: 'Processed records have been synchronized into the system registry.' })}
+                                </p>
                             </div>
 
                             <div className="grid grid-cols-4 gap-2.5 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-center dark:border-slate-800 dark:bg-slate-950/50">
                                 <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Rows</p>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                        {t('settings.clinical.importModal.totalRows', { defaultValue: 'Total Rows' })}
+                                    </p>
                                     <p className="text-lg font-black text-slate-900 dark:text-white">{importedSummary?.total}</p>
                                 </div>
                                 <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">New Added</p>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                                        {t('settings.clinical.importModal.newAdded', { defaultValue: 'New Added' })}
+                                    </p>
                                     <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">{importedSummary?.success}</p>
                                 </div>
                                 <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">Overwritten</p>
-                                    <p className="text-lg font-black text-cyan-600 dark:text-cyan-400">{importedSummary?.replaced}</p>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400">
+                                        {t('settings.clinical.importModal.overwritten', { defaultValue: 'Overwritten' })}
+                                    </p>
+                                    <p className="text-lg font-black text-teal-600 dark:text-teal-400">{importedSummary?.replaced}</p>
                                 </div>
                                 <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Skipped</p>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                                        {t('settings.clinical.importModal.skipped', { defaultValue: 'Skipped' })}
+                                    </p>
                                     <p className="text-lg font-black text-amber-600 dark:text-amber-400">{importedSummary?.skipped}</p>
                                 </div>
                             </div>
+
+                            {importedSummary?.failed > 0 && importedSummary?.failureDetails?.length > 0 && (
+                                <div className="max-h-36 overflow-y-auto rounded-xl border border-rose-200 bg-rose-50/40 p-3 space-y-1 text-xs text-start dark:border-rose-900/50 dark:bg-rose-950/20">
+                                    <p className="font-bold text-rose-700 dark:text-rose-400 text-[11px] uppercase tracking-wider">
+                                        {t('settings.clinical.importModal.failedListTitle', {
+                                            defaultValue: `Failed to import ${importedSummary.failed} record(s):`,
+                                            count: importedSummary.failed
+                                        })}
+                                    </p>
+                                    {importedSummary.failureDetails.map((errText, i) => (
+                                        <div key={i} className="flex items-start gap-1.5 text-rose-800 dark:text-rose-300 text-[11px]">
+                                            <XCircle size={13} className="mt-0.5 shrink-0 text-rose-500" />
+                                            <span>{errText}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <>
                             {/* Template Instructions Banner */}
-                            <div className="flex items-start justify-between gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4 dark:border-cyan-900/50 dark:bg-cyan-950/30">
+                            <div className="flex items-start justify-between gap-3 rounded-2xl border border-teal-100 bg-teal-50/60 p-4 dark:border-teal-900/50 dark:bg-teal-950/30">
                                 <div className="flex items-start gap-3">
-                                    <FileSpreadsheet size={20} className="mt-0.5 shrink-0 text-cyan-700 dark:text-cyan-300" />
+                                    <FileSpreadsheet size={20} className="mt-0.5 shrink-0 text-teal-700 dark:text-teal-300" />
                                     <div>
-                                        <p className="text-xs font-bold text-cyan-900 dark:text-cyan-200">
-                                            Spreadsheet Format & Duplicate Check:
+                                        <p className="text-xs font-bold text-teal-900 dark:text-teal-200">
+                                            {t('settings.clinical.importModal.instructionTitle', { defaultValue: 'Spreadsheet Format & Duplicate Check:' })}
                                         </p>
-                                        <p className="mt-0.5 text-xs text-cyan-700 dark:text-cyan-300/80 leading-relaxed">
-                                            Ensure column headers match standard field names. The system checks duplicates and asks whether to skip or replace.
+                                        <p className="mt-0.5 text-xs text-teal-700 dark:text-teal-300/80 leading-relaxed">
+                                            {t('settings.clinical.importModal.instructionBody', {
+                                                defaultValue: 'Ensure column headers match standard field names. The system checks duplicates and asks whether to skip or replace.'
+                                            })}
                                         </p>
                                     </div>
                                 </div>
                                 <button
                                     type="button"
                                     onClick={downloadCSVTemplate}
-                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-200 bg-white px-3 py-1.5 text-xs font-bold text-cyan-900 transition hover:bg-cyan-100 dark:border-cyan-800 dark:bg-slate-900 dark:text-cyan-200"
+                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-teal-200 bg-white px-3 py-1.5 text-xs font-bold text-teal-900 transition hover:bg-teal-100 dark:border-teal-800 dark:bg-slate-900 dark:text-teal-200"
                                 >
-                                    <Download size={13} /> Download Template
+                                    <Download size={13} />
+                                    <span>{t('settings.clinical.importModal.downloadTemplate', { defaultValue: 'Download Template' })}</span>
                                 </button>
                             </div>
 
                             {/* File Upload Drop Area */}
                             {!file ? (
-                                <div className="relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-8 text-center transition hover:border-cyan-400 hover:bg-cyan-50/20 dark:border-slate-800 dark:bg-slate-950/30">
+                                <div className="relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-8 text-center transition hover:border-teal-400 hover:bg-teal-50/20 dark:border-slate-800 dark:bg-slate-950/30">
                                     <input
                                         type="file"
                                         accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values"
@@ -444,13 +572,15 @@ const ClinicalImportModal = ({
                                         className="absolute inset-0 cursor-pointer opacity-0"
                                         id="clinicalSpreadsheetUpload"
                                     />
-                                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
+                                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
                                         <Upload size={22} />
                                     </span>
                                     <p className="mt-3 text-sm font-bold text-slate-900 dark:text-white">
-                                        Click or drop file to parse & verify duplicates
+                                        {t('settings.clinical.importModal.dropPrompt', { defaultValue: 'Click or drop file to parse & verify duplicates' })}
                                     </p>
-                                    <p className="mt-1 text-xs text-slate-400">Supports .CSV, .TSV, and .TXT files up to 10MB</p>
+                                    <p className="mt-1 text-xs text-slate-400">
+                                        {t('settings.clinical.importModal.supportedTypes', { defaultValue: 'Supports .CSV, .TSV, and .TXT files up to 10MB' })}
+                                    </p>
                                 </div>
                             ) : (
                                 /* Pre-Upload Format & Duplicate Summary */
@@ -460,7 +590,12 @@ const ClinicalImportModal = ({
                                             <FileText size={18} className="text-slate-500" />
                                             <div>
                                                 <p className="text-xs font-bold text-slate-900 dark:text-white">{file.name}</p>
-                                                <p className="text-[10px] text-slate-400">{rawRows.length} total rows parsed</p>
+                                                <p className="text-[10px] text-slate-400">
+                                                    {t('settings.clinical.importModal.rowsParsed', {
+                                                        defaultValue: `${rawRows.length} total rows parsed`,
+                                                        count: rawRows.length
+                                                    })}
+                                                </p>
                                             </div>
                                         </div>
 
@@ -469,22 +604,28 @@ const ClinicalImportModal = ({
                                             onClick={() => { setFile(null); setRawRows([]); }}
                                             className="text-xs font-bold text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                                         >
-                                            Change File
+                                            {t('settings.clinical.importModal.changeFile', { defaultValue: 'Change File' })}
                                         </button>
                                     </div>
 
                                     {/* Verification Pills */}
                                     <div className="grid grid-cols-3 gap-2.5 text-center">
                                         <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5 dark:border-emerald-900/40 dark:bg-emerald-950/20">
-                                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">New Records</span>
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                                                {t('settings.clinical.importModal.newRecords', { defaultValue: 'New Records' })}
+                                            </span>
                                             <p className="text-lg font-black text-emerald-700 dark:text-emerald-300">{validationResults.newCount}</p>
                                         </div>
                                         <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-2.5 dark:border-amber-900/40 dark:bg-amber-950/20">
-                                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Duplicates Detected</span>
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                                                {t('settings.clinical.importModal.duplicatesDetected', { defaultValue: 'Duplicates Detected' })}
+                                            </span>
                                             <p className="text-lg font-black text-amber-700 dark:text-amber-300">{validationResults.duplicateCount}</p>
                                         </div>
                                         <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-2.5 dark:border-rose-900/40 dark:bg-rose-950/20">
-                                            <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">Format Errors</span>
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                                                {t('settings.clinical.importModal.formatErrors', { defaultValue: 'Format Errors' })}
+                                            </span>
                                             <p className="text-lg font-black text-rose-700 dark:text-rose-300">{validationResults.invalidRows.length}</p>
                                         </div>
                                     </div>
@@ -494,10 +635,15 @@ const ClinicalImportModal = ({
                                         <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-xs dark:border-amber-900/50 dark:bg-amber-950/40 space-y-2.5">
                                             <div className="flex items-center gap-2 font-black text-amber-900 dark:text-amber-300 text-sm">
                                                 <AlertTriangle size={17} className="text-amber-600 shrink-0" />
-                                                Found {validationResults.duplicateCount} Duplicate Records in File
+                                                {t('settings.clinical.importModal.duplicatesFound', {
+                                                    defaultValue: `Found ${validationResults.duplicateCount} Duplicate Records in File`,
+                                                    count: validationResults.duplicateCount
+                                                })}
                                             </div>
                                             <p className="text-amber-800 dark:text-amber-300/80 leading-relaxed text-[11px]">
-                                                Choose how to handle records that already exist in the database:
+                                                {t('settings.clinical.importModal.chooseStrategy', {
+                                                    defaultValue: 'Choose how to handle records that already exist in the database:'
+                                                })}
                                             </p>
                                             <div className="grid gap-2 sm:grid-cols-3 pt-1">
                                                 <label className={`flex cursor-pointer items-center gap-2 rounded-xl border p-2.5 transition text-[11px] ${
@@ -513,7 +659,10 @@ const ClinicalImportModal = ({
                                                         onChange={() => setDuplicateStrategy('skip')}
                                                         className="accent-amber-600"
                                                     />
-                                                    <span>Skip Duplicates ({validationResults.newCount} New)</span>
+                                                    <span>{t('settings.clinical.importModal.skipStrategy', {
+                                                        defaultValue: `Skip Duplicates (${validationResults.newCount} New)`,
+                                                        count: validationResults.newCount
+                                                    })}</span>
                                                 </label>
 
                                                 <label className={`flex cursor-pointer items-center gap-2 rounded-xl border p-2.5 transition text-[11px] ${
@@ -529,7 +678,10 @@ const ClinicalImportModal = ({
                                                         onChange={() => setDuplicateStrategy('replace')}
                                                         className="accent-amber-600"
                                                     />
-                                                    <span>Replace Duplicates ({validationResults.duplicateCount} Existing)</span>
+                                                    <span>{t('settings.clinical.importModal.replaceStrategy', {
+                                                        defaultValue: `Replace Duplicates (${validationResults.duplicateCount} Existing)`,
+                                                        count: validationResults.duplicateCount
+                                                    })}</span>
                                                 </label>
 
                                                 <label className={`flex cursor-pointer items-center gap-2 rounded-xl border p-2.5 transition text-[11px] ${
@@ -545,7 +697,10 @@ const ClinicalImportModal = ({
                                                         onChange={() => setDuplicateStrategy('replaceAll')}
                                                         className="accent-amber-600"
                                                     />
-                                                    <span>Replace All ({validationResults.validRows.length} Total)</span>
+                                                    <span>{t('settings.clinical.importModal.replaceAllStrategy', {
+                                                        defaultValue: `Replace All (${validationResults.validRows.length} Total)`,
+                                                        count: validationResults.validRows.length
+                                                    })}</span>
                                                 </label>
                                             </div>
                                         </div>
@@ -554,7 +709,9 @@ const ClinicalImportModal = ({
                                     {/* Format Error Log Details */}
                                     {validationResults.invalidRows.length > 0 && (
                                         <div className="max-h-36 overflow-y-auto rounded-xl border border-rose-200 bg-rose-50/30 p-3 space-y-1 text-xs dark:border-rose-900/50 dark:bg-rose-950/20">
-                                            <p className="font-bold text-rose-700 dark:text-rose-400 text-[11px] uppercase tracking-wider">Format Errors:</p>
+                                            <p className="font-bold text-rose-700 dark:text-rose-400 text-[11px] uppercase tracking-wider">
+                                                {t('settings.clinical.importModal.errorsHeader', { defaultValue: 'Format Errors:' })}
+                                            </p>
                                             {validationResults.invalidRows.map((err, i) => (
                                                 <div key={i} className="flex items-start gap-1.5 text-rose-800 dark:text-rose-300 text-[11px]">
                                                     <XCircle size={13} className="mt-0.5 shrink-0 text-rose-500" />
@@ -576,7 +733,9 @@ const ClinicalImportModal = ({
                         onClick={handleClose}
                         className="h-10 rounded-xl px-4 text-xs font-bold text-slate-600 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
                     >
-                        {importFinished ? 'Close' : 'Cancel'}
+                        {importFinished
+                            ? t('settings.clinical.close', { defaultValue: 'Close' })
+                            : t('settings.clinical.cancel', { defaultValue: 'Cancel' })}
                     </button>
 
                     {!importFinished && (
@@ -584,14 +743,20 @@ const ClinicalImportModal = ({
                             type="button"
                             onClick={handleExecuteImport}
                             disabled={!file || validationResults.validRows.length === 0 || isImporting}
-                            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-cyan-700 px-5 text-xs font-bold text-white shadow-sm transition hover:bg-cyan-600 active:scale-95 disabled:opacity-40 dark:bg-cyan-600 dark:hover:bg-cyan-500"
+                            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-teal-600 px-5 text-xs font-bold text-white shadow-sm transition hover:bg-teal-500 active:scale-95 disabled:opacity-40"
                         >
                             <Upload size={14} />
                             {isImporting
-                                ? 'Importing Records...'
+                                ? t('settings.clinical.importModal.importing', { defaultValue: 'Importing Records...' })
                                 : duplicateStrategy === 'skip'
-                                ? `Import ${validationResults.newCount} New Records`
-                                : `Confirm & Overwrite (${duplicateStrategy === 'replaceAll' ? validationResults.validRows.length : validationResults.duplicateCount + validationResults.newCount} records)`
+                                ? t('settings.clinical.importModal.executeNew', {
+                                    defaultValue: `Import ${validationResults.newCount} New Records`,
+                                    count: validationResults.newCount
+                                })
+                                : t('settings.clinical.importModal.executeOverwrite', {
+                                    defaultValue: `Confirm & Import (${duplicateStrategy === 'replaceAll' ? validationResults.validRows.length : validationResults.duplicateCount + validationResults.newCount} records)`,
+                                    count: duplicateStrategy === 'replaceAll' ? validationResults.validRows.length : validationResults.duplicateCount + validationResults.newCount
+                                })
                             }
                         </button>
                     )}

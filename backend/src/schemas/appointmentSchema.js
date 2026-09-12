@@ -7,7 +7,7 @@ const { calendarDateSchema } = require('../utils/dateValidation');
 
 const appointmentSourceSchema = z.enum(['Walk-in', 'Phone', 'Website', 'Patient Portal', 'Doctor Portal', 'Call Center']);
 const preparationStatusSchema = z.enum(['Not Required', 'Pending', 'Completed', 'Waived']);
-const waitlistStatusSchema = z.enum(['Waiting', 'Contacted', 'Scheduled', 'Cancelled']);
+const waitlistStatusSchema = z.enum(['Waiting', 'Contacted', 'Offered', 'Scheduled', 'Declined', 'Expired', 'Cancelled']);
 const prioritySchema = z.enum(['Routine', 'Urgent', 'Emergency']);
 const safetyStatusSchema = z.enum(['Unknown', 'Cleared', 'At Risk', 'Not Applicable']);
 const strictBooleanSchema = z.preprocess((value) => {
@@ -45,6 +45,8 @@ const createAppointmentSchema = z.object({
     modalityId: z.string()
         .uuid('Invalid modality ID format'),
 
+    roomId: optionalNullableUuid('room'),
+
     examTypeId: z.string()
         .uuid('Invalid exam type ID format')
         .optional(),
@@ -67,9 +69,7 @@ const createAppointmentSchema = z.object({
         z.string().datetime('Invalid end time format')
     ),
 
-    notes: z.string()
-        .max(1000, 'Notes must be less than 1000 characters')
-        .optional(),
+    notes: optionalNullableTrimmedText(1000, 'Notes'),
 
     referringDoctor: optionalNullableTrimmedText(255, 'Referring doctor'),
     referringDoctorId: optionalNullableUuid('referring doctor'),
@@ -92,9 +92,10 @@ const createAppointmentSchema = z.object({
     technicianId: optionalNullableUuid('technician'),
     nurseId: optionalNullableUuid('nurse'),
     radiologistId: optionalNullableUuid('radiologist'),
+    assignmentReason: z.string().trim().min(3).max(1000).optional(),
 
     paymentMethod: z.enum(['Cash', 'Credit Card', 'Insurance', 'Card', 'Wallet', 'Bank Transfer', 'Installment', 'Corporate']).optional(),
-    paymentAmount: z.coerce.number().min(0, 'Payment amount cannot be negative').optional(),
+    paymentAmount: z.coerce.number().min(0, 'Payment amount cannot be negative').nullable().optional(),
     arrived: strictBooleanSchema.optional(),
     waitlistId: optionalNullableUuid('waiting list'),
     idempotencyKey: z.string().optional(),
@@ -123,11 +124,12 @@ const createAppointmentSchema = z.object({
 const updateAppointmentSchema = z.object({
     patientId: z.string().uuid('Invalid patient ID format').optional(),
     modalityId: z.string().uuid('Invalid modality ID format').optional(),
+    roomId: optionalNullableUuid('room'),
     examTypeId: z.string().uuid('Invalid exam type ID format').optional(),
     startTime: z.string().datetime().optional(),
     endTime: z.string().datetime().optional(),
     status: z.enum(['Scheduled', 'Confirmed', 'Arrived', 'Checked-in']).optional(),
-    notes: z.string().max(1000).optional(),
+    notes: optionalNullableTrimmedText(1000, 'Notes'),
     referringDoctor: optionalNullableTrimmedText(255, 'Referring doctor'),
     referringDoctorId: optionalNullableUuid('referring doctor'),
     appointmentSource: appointmentSourceSchema.optional(),
@@ -147,8 +149,9 @@ const updateAppointmentSchema = z.object({
     technicianId: optionalNullableUuid('technician'),
     nurseId: optionalNullableUuid('nurse'),
     radiologistId: optionalNullableUuid('radiologist'),
+    assignmentReason: z.string().trim().min(3).max(1000).optional(),
     paymentMethod: z.enum(['Cash', 'Credit Card', 'Insurance', 'Card', 'Wallet', 'Bank Transfer', 'Installment', 'Corporate']).optional(),
-    paymentAmount: z.coerce.number().min(0, 'Payment amount cannot be negative').optional()
+    paymentAmount: z.coerce.number().min(0, 'Payment amount cannot be negative').nullable().optional()
 }).refine((data) => Object.keys(data).length > 0, {
     message: 'At least one field must be provided for update'
 }).refine((data) => {
@@ -165,6 +168,9 @@ const updateAppointmentSchema = z.object({
 const getAppointmentsQuerySchema = z.object({
     patientId: z.string().uuid().optional(),
     modalityId: z.string().uuid().optional(),
+    roomId: z.string().uuid().optional(),
+    roomNumber: z.string().optional(),
+    receptionistId: z.string().uuid().optional(),
     status: z.enum(['Scheduled', 'Confirmed', 'Cancelled', 'No-Show', 'Completed', 'Arrived', 'Checked-in']).optional(),
     appointmentSource: appointmentSourceSchema.optional(),
     preparationStatus: preparationStatusSchema.optional(),
@@ -258,6 +264,7 @@ const getWaitingListQuerySchema = z.object({
     active: z.enum(['true', 'false']).optional(),
     modalityId: optionalNullableUuid('modality'),
     date: calendarDateSchema().optional(),
+    q: z.string().max(100).optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
     offset: z.string().regex(/^\d+$/).transform(Number).optional()
 });

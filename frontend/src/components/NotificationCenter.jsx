@@ -9,6 +9,7 @@ import {
     useState
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
     AlertTriangle,
@@ -23,22 +24,19 @@ import {
     MessageSquare,
     RefreshCw,
     Search,
-    Send,
     Smartphone,
     X,
     ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
-    useGetNotificationsQuery,
-    useMarkAllNotificationsReadMutation,
-    useMarkNotificationReadMutation,
-    useSendManualNotificationMutation
+    useGetMyNotificationsQuery,
+    useMarkAllMyNotificationsReadMutation,
+    useMarkMyNotificationReadMutation
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
 
 const CHANNELS = ['all', 'Email', 'SMS', 'WhatsApp', 'InApp'];
-const SEND_CHANNELS = ['Email', 'SMS', 'WhatsApp'];
 const STATUSES = ['all', 'Sent', 'Delivered', 'Pending', 'Failed'];
 const TABS = ['all', 'unread', 'failed'];
 const GROUPS = ['today', 'yesterday', 'week', 'older'];
@@ -71,13 +69,6 @@ const STATUS_STYLES = {
         badge: 'border-slate-200 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
         icon: 'bg-slate-100 text-slate-600 ring-slate-200 dark:bg-white/10 dark:text-slate-300 dark:ring-white/10'
     }
-};
-
-const EMPTY_MANUAL_FORM = {
-    recipient: '',
-    subject: '',
-    body: '',
-    channel: 'Email'
 };
 
 const cx = (...classes) => classes.filter(Boolean).join(' ');
@@ -172,6 +163,7 @@ const NotificationItem = ({
     onCopy,
     onMarkRead,
     onToggle,
+    onNavigate,
     t
 }) => {
     const ChannelIcon = CHANNEL_ICONS[notification.channel] || Bell;
@@ -233,13 +225,14 @@ const NotificationItem = ({
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                         {notification.action_url && (
-                            <a
-                                href={notification.action_url}
+                            <button
+                                type="button"
+                                onClick={() => onNavigate(notification.action_url)}
                                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 text-[10px] font-bold text-teal-700 transition hover:bg-teal-500/20 dark:text-teal-300"
                             >
-                                <ExternalLink size={12} />
+                                <ExternalLink size={12} aria-hidden="true" />
                                 <span>{t('notifications.openResource', { defaultValue: 'Open Record' })}</span>
-                            </a>
+                            </button>
                         )}
 
                         <button
@@ -291,8 +284,9 @@ const NotificationItem = ({
     );
 };
 
-const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = false }) => {
+const NotificationCenter = ({ isOpen, onClose, unreadCount = 0 }) => {
     const { t, i18n } = useTranslation('system');
+    const navigate = useNavigate();
     const titleId = useId();
     const panelRef = useRef(null);
     const closeButtonRef = useRef(null);
@@ -304,9 +298,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedId, setExpandedId] = useState(null);
     const [showFilters, setShowFilters] = useState(false);
-    const [showManualSend, setShowManualSend] = useState(false);
     const [markingId, setMarkingId] = useState(null);
-    const [manualForm, setManualForm] = useState(EMPTY_MANUAL_FORM);
 
     const deferredSearchTerm = useDeferredValue(searchTerm);
 
@@ -314,8 +306,10 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
         data: notificationsResponse,
         isLoading,
         isFetching,
+        isError,
+        error,
         refetch
-    } = useGetNotificationsQuery(
+    } = useGetMyNotificationsQuery(
         { limit: 120 },
         {
             skip: !isOpen,
@@ -325,9 +319,8 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
         }
     );
 
-    const [markAllRead, { isLoading: markingAll }] = useMarkAllNotificationsReadMutation();
-    const [markRead] = useMarkNotificationReadMutation();
-    const [sendManual, { isLoading: isSending }] = useSendManualNotificationMutation();
+    const [markAllRead, { isLoading: markingAll }] = useMarkAllMyNotificationsReadMutation();
+    const [markRead] = useMarkMyNotificationReadMutation();
 
     const notifications = useMemo(() => {
         const items = Array.isArray(notificationsResponse)
@@ -356,7 +349,9 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
         };
     }, [notifications, notificationsResponse]);
 
-    const effectiveUnreadCount = Math.max(Number(counts.unread) || 0, Number(unreadCount) || 0);
+    const effectiveUnreadCount = notificationsResponse
+        ? Math.max(0, Number(counts.unread) || 0)
+        : Math.max(0, Number(unreadCount) || 0);
 
     useEffect(() => {
         if (!isOpen) return undefined;
@@ -413,8 +408,6 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
         setStatusFilter('all');
         setActiveTab('all');
         setShowFilters(false);
-        setShowManualSend(false);
-        setManualForm(EMPTY_MANUAL_FORM);
         setMarkingId(null);
     }, [isOpen]);
 
@@ -466,6 +459,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
     const activeFilterCount = Number(channelFilter !== 'all') + Number(statusFilter !== 'all');
 
     const handleMarkAllRead = useCallback(async () => {
+        if (!window.confirm(t('notifications.confirmPersonalAllRead', { defaultValue: 'Mark all notifications in your personal inbox as read?' }))) return;
         try {
             await markAllRead().unwrap();
             toast.success(t('notifications.allRead', { defaultValue: 'All notifications marked as read' }));
@@ -473,6 +467,12 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
             toast.error(getErrorMessage(error, t('notifications.failed', { defaultValue: 'Action failed' })));
         }
     }, [markAllRead, t]);
+
+    const handleNavigate = useCallback((actionUrl) => {
+        if (!actionUrl || !String(actionUrl).startsWith('/')) return;
+        onClose();
+        navigate(actionUrl);
+    }, [navigate, onClose]);
 
     const handleMarkRead = useCallback(async (notificationId) => {
         setMarkingId(notificationId);
@@ -500,33 +500,6 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
         }
     }, [t]);
 
-    const handleManualSend = useCallback(async (event) => {
-        event.preventDefault();
-
-        const recipient = manualForm.recipient.trim();
-        const body = manualForm.body.trim();
-
-        if (!recipient || !body) return;
-
-        const payload = {
-            channel: manualForm.channel,
-            subject: manualForm.channel === 'Email' ? manualForm.subject.trim() || undefined : undefined,
-            body,
-            ...(manualForm.channel === 'Email'
-                ? { recipientEmail: recipient }
-                : { recipientPhone: recipient })
-        };
-
-        try {
-            await sendManual(payload).unwrap();
-            toast.success(t('notifications.sent', { defaultValue: 'Notification sent' }));
-            setManualForm(EMPTY_MANUAL_FORM);
-            setShowManualSend(false);
-        } catch (error) {
-            toast.error(getErrorMessage(error, t('notifications.sendFailed', { defaultValue: 'Could not send notification' })));
-        }
-    }, [manualForm, sendManual, t]);
-
     const resetFilters = () => {
         setChannelFilter('all');
         setStatusFilter('all');
@@ -537,10 +510,6 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
     const emptyMessage = searchTerm || activeFilterCount
         ? t('notifications.empty.filtered', { defaultValue: 'No notifications match the current filters.' })
         : t(`notifications.empty.${activeTab}`, { defaultValue: 'No notifications to display.' });
-
-    const recipientPlaceholder = manualForm.channel === 'Email'
-        ? t('notifications.recipientEmail', { defaultValue: 'Recipient email' })
-        : t('notifications.recipientPhone', { defaultValue: 'Recipient phone' });
 
     return createPortal(
         <div className="fixed inset-0 z-[70]">
@@ -591,16 +560,6 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                         </div>
 
                         <div className="flex shrink-0 items-center gap-1.5">
-                            {canSendManual && (
-                                <IconButton
-                                    label={t('notifications.manual', { defaultValue: 'Send notification' })}
-                                    aria-pressed={showManualSend}
-                                    onClick={() => setShowManualSend((current) => !current)}
-                                    className={showManualSend ? 'border-slate-900 bg-slate-900 text-white dark:border-cyan-300/30 dark:bg-cyan-300/15 dark:text-cyan-50' : ''}
-                                >
-                                    <Send size={16} />
-                                </IconButton>
-                            )}
                             <IconButton
                                 label={t('notifications.refresh', { defaultValue: 'Refresh' })}
                                 onClick={() => refetch()}
@@ -628,90 +587,6 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                         </div>
                     </div>
                 </header>
-
-                {canSendManual && showManualSend && (
-                    <form
-                        onSubmit={handleManualSend}
-                        className="shrink-0 space-y-3 border-b border-slate-200 bg-slate-50 p-4 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-muted)]/70 sm:px-5"
-                    >
-                        <div className="flex items-center justify-between gap-3">
-                            <div>
-                                <h3 className="text-sm font-semibold text-slate-900 dark:text-[var(--VIARA-ink)]">
-                                    {t('notifications.composeTitle', { defaultValue: 'New notification' })}
-                                </h3>
-                                <p className="mt-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                                    {t('notifications.composeHint', { defaultValue: 'Send a direct message through the selected channel.' })}
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setShowManualSend(false)}
-                                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-[var(--VIARA-ink)]"
-                                aria-label={t('notifications.closeComposer', { defaultValue: 'Close composer' })}
-                            >
-                                <X size={15} />
-                            </button>
-                        </div>
-
-                        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_128px]">
-                            <input
-                                value={manualForm.recipient}
-                                onChange={(event) => setManualForm((current) => ({ ...current, recipient: event.target.value }))}
-                                placeholder={recipientPlaceholder}
-                                type={manualForm.channel === 'Email' ? 'email' : 'tel'}
-                                autoComplete={manualForm.channel === 'Email' ? 'email' : 'tel'}
-                                required
-                                className="h-11 min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:focus:ring-cyan-500/15"
-                            />
-                            <select
-                                value={manualForm.channel}
-                                onChange={(event) => setManualForm((current) => ({
-                                    ...current,
-                                    channel: event.target.value,
-                                    subject: event.target.value === 'Email' ? current.subject : ''
-                                }))}
-                                className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:focus:ring-cyan-500/15"
-                            >
-                                {SEND_CHANNELS.map((channel) => <option key={channel}>{channel}</option>)}
-                            </select>
-                        </div>
-
-                        {manualForm.channel === 'Email' && (
-                            <input
-                                value={manualForm.subject}
-                                onChange={(event) => setManualForm((current) => ({ ...current, subject: event.target.value }))}
-                                placeholder={t('notifications.subject', { defaultValue: 'Subject' })}
-                                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:focus:ring-cyan-500/15"
-                            />
-                        )}
-
-                        <div className="relative">
-                            <textarea
-                                value={manualForm.body}
-                                onChange={(event) => setManualForm((current) => ({ ...current, body: event.target.value }))}
-                                placeholder={t('notifications.message', { defaultValue: 'Message' })}
-                                required
-                                maxLength={2000}
-                                rows={3}
-                                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 pb-7 pt-2.5 text-xs font-medium leading-5 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:focus:ring-cyan-500/15"
-                            />
-                            <span className="pointer-events-none absolute bottom-2 end-3 text-[10px] font-bold text-slate-400">
-                                {manualForm.body.length}/2000
-                            </span>
-                        </div>
-
-                        <button
-                            type="submit"
-                            disabled={isSending || !manualForm.recipient.trim() || !manualForm.body.trim()}
-                            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-xs font-semibold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-cyan-300 dark:text-slate-950 dark:hover:bg-cyan-200 dark:focus-visible:ring-offset-[var(--VIARA-canvas)]"
-                        >
-                            {isSending ? <RefreshCw size={15} className="animate-spin" /> : <Send size={15} />}
-                            {isSending
-                                ? t('notifications.sending', { defaultValue: 'Sending...' })
-                                : t('notifications.send', { defaultValue: 'Send notification' })}
-                        </button>
-                    </form>
-                )}
 
                 <div className="shrink-0 space-y-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] sm:px-5">
                     <div className="flex items-center gap-2">
@@ -757,7 +632,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-3 rounded-lg bg-slate-100 p-1 dark:bg-[var(--VIARA-surface-muted)]" role="tablist">
+                    <div className="grid grid-cols-3 rounded-lg bg-slate-100 p-1 dark:bg-[var(--VIARA-surface-muted)]" role="tablist" aria-label={t('notifications.tabs.label', { defaultValue: 'Notification views' })}>
                         {TABS.map((tab) => (
                             <button
                                 type="button"
@@ -840,7 +715,23 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                         </div>
                     )}
 
-                    {!isLoading && filteredNotifications.length === 0 && (
+                    {!isLoading && isError && (
+                        <div className="flex min-h-[280px] flex-col items-center justify-center px-6 text-center" role="alert">
+                            <AlertTriangle size={23} className="text-rose-500" aria-hidden="true" />
+                            <p className="mt-3 text-sm font-semibold text-slate-800 dark:text-[var(--VIARA-ink)]">
+                                {t('notifications.loadError', { defaultValue: 'Notifications could not be loaded' })}
+                            </p>
+                            <p className="mt-1 max-w-xs text-xs font-medium leading-5 text-slate-500 dark:text-slate-400">
+                                {getErrorMessage(error, t('notifications.retryHint', { defaultValue: 'Check your connection and try again.' }))}
+                            </p>
+                            <button type="button" onClick={() => refetch()} className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:bg-cyan-300 dark:text-slate-950">
+                                <RefreshCw size={14} aria-hidden="true" />
+                                {t('notifications.retry', { defaultValue: 'Retry' })}
+                            </button>
+                        </div>
+                    )}
+
+                    {!isLoading && !isError && filteredNotifications.length === 0 && (
                         <div className="flex min-h-[280px] flex-col items-center justify-center px-6 text-center">
                             <span className="flex h-14 w-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-muted)]">
                                 <Bell size={23} />
@@ -891,6 +782,7 @@ const NotificationCenter = ({ isOpen, onClose, unreadCount = 0, canSendManual = 
                                         ))}
                                         onMarkRead={handleMarkRead}
                                         onCopy={handleCopy}
+                                        onNavigate={handleNavigate}
                                         t={t}
                                     />
                                 ))}

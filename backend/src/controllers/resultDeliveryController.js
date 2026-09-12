@@ -64,11 +64,19 @@ const deliverResult = (db) => async (req, res, next) => {
         if (invoiceResult.rows.length === 0) {
             throw new AppError('Create and settle an invoice before final result delivery', 409);
         }
+
         await assertInvoiceFullyPaid(client, {
             invoiceId: invoiceResult.rows[0].invoice_id,
             transactionType: 'ResultDelivery',
             transactionLabel: 'delivering this result'
         });
+
+        await client.query(`
+            UPDATE partial_payment_exceptions
+            SET status = 'Used',
+                metadata = metadata || jsonb_build_object('usedAt', NOW(), 'deliveredAt', NOW(), 'deliveryChannel', 'ResultDelivery')
+            WHERE invoice_id = $1 AND status = 'Approved'
+        `, [invoiceResult.rows[0].invoice_id]);
 
         const status = data.deliveryStatus || methodDefaultStatus[data.deliveryMethod] || 'Delivered';
         const acknowledged = ['Acknowledged', 'Picked Up'].includes(status);
@@ -108,8 +116,8 @@ const deliverResult = (db) => async (req, res, next) => {
             await client.query(`
                 UPDATE examinations
                 SET delivered_at = COALESCE(delivered_at, NOW()),
-                    queue_stage = CASE WHEN queue_stage = 'Finalized' THEN 'Delivered' ELSE queue_stage END,
-                    current_station = CASE WHEN current_station = 'Delivery' THEN 'Delivery' ELSE current_station END
+                queue_stage = CASE WHEN queue_stage = 'Finalized' THEN 'Delivered' ELSE queue_stage END,
+                current_station = CASE WHEN current_station = 'Delivery' THEN 'Delivery' ELSE current_station END
                 WHERE exam_id = $1
             `, [exam.exam_id]);
 
@@ -121,7 +129,7 @@ const deliverResult = (db) => async (req, res, next) => {
                     )
                     VALUES ($1, $2, $3, 'Delivered', $4, 'Delivery', 'Transition', 'Result Delivered', $5)
                 `, [exam.exam_id, exam.appointment_id, exam.queue_stage, exam.current_station, req.user.user_id || null]);
-                
+
                 await client.query(`
                     INSERT INTO order_status_history (
                         appointment_id, exam_id, old_status, new_status, event_type, notes, changed_by

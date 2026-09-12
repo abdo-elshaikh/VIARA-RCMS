@@ -13,6 +13,7 @@ import {
     useProcessNotificationJobsMutation
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
+import Pagination from '../components/ui/Pagination';
 
 const NOTIFICATION_EVENT_IDS = [
     'notifyAppointmentCreated',
@@ -371,7 +372,7 @@ export const NotificationTemplates = () => {
 };
 
 export const NotificationJobs = () => {
-    const { t } = useTranslation(['settings', 'common']);
+    const { t, i18n } = useTranslation(['settings', 'common']);
     const [statusFilter, setStatusFilter] = useState('Failed');
     const [page, setPage] = useState(1);
     const pageSize = 25;
@@ -508,11 +509,7 @@ export const NotificationJobs = () => {
                     {totalJobs > 0 ? (
                         <div className="flex items-center justify-between gap-3 border-t border-slate-200/60 px-4 py-3 text-xs font-semibold text-slate-500 dark:border-slate-800/60 dark:text-slate-400">
                             <span>Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalJobs)} of {totalJobs}</span>
-                            <div className="flex items-center gap-2">
-                                <button type="button" disabled={page === 1} onClick={() => setPage(value => Math.max(1, value - 1))} className={secondaryButton}>Previous</button>
-                                <span>{page} / {pageCount}</span>
-                                <button type="button" disabled={page >= pageCount} onClick={() => setPage(value => Math.min(pageCount, value + 1))} className={secondaryButton}>Next</button>
-                            </div>
+                            <Pagination currentPage={page} pageCount={pageCount} onPageChange={setPage} isRtl={i18n.language?.startsWith('ar')} compact />
                         </div>
                     ) : null}
                 </div>

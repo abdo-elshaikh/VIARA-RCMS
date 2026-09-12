@@ -105,7 +105,6 @@ export const PortalAuthShell = ({
             src="/images/viara-hero-mri-room.jpg"
             alt=""
             className="h-full w-full object-cover object-center"
-            fetchPriority="high"
             decoding="async"
           />
           <div className="absolute inset-0 bg-white/78 dark:bg-[#071224]/86" />

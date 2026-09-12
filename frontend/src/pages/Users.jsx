@@ -27,8 +27,6 @@ import {
     UsersRound,
     UserX,
     XCircle,
-    ChevronLeft,
-    ChevronRight,
     Lock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -39,7 +37,7 @@ import {
     useUpdateStaffMutation
 } from '../store/api';
 import { selectCurrentUser } from '../store/authSlice';
-import { Button, ConfirmDialog, EmptyState, Input, Modal, Select, Skeleton } from '../components/ui';
+import { Button, ConfirmDialog, EmptyState, Input, Modal, PageHeader, Pagination, Select, Skeleton } from '../components/ui';
 import { getErrorMessage } from '../utils/getErrorMessage';
 
 const ROLE_CATALOG = [
@@ -67,7 +65,7 @@ const Users = () => {
     const navigate = useNavigate();
     const currentUser = useSelector(selectCurrentUser);
     const locale = isArabic ? 'ar-EG' : 'en-EG';
-    const { data: staff = [], isLoading, isError, refetch } = useGetStaffQuery();
+    const { data: staff = [], isLoading, isFetching, isError, refetch } = useGetStaffQuery();
     const [createStaff, { isLoading: isCreating }] = useCreateStaffMutation();
     const [updateStaff, { isLoading: isUpdating }] = useUpdateStaffMutation();
     const [deleteStaff, { isLoading: isDeleting }] = useDeleteStaffMutation();
@@ -279,33 +277,22 @@ const Users = () => {
 
     return (
         <main className="mx-auto max-w-[1600px] space-y-6 pb-12">
-            {/* Top Command Deck */}
-            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8">
-                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
-                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
-
-                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex items-start gap-4 sm:items-center">
-                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-teal-600/30 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
-                            <UsersRound size={26} />
-                        </div>
-                        <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
-                                    <ShieldCheck size={11} />
-                                    <span>{t('users.eyebrow')}</span>
-                                </span>
-                            </div>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
-                                {t('users.title')}
-                            </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
-                                {t('users.description')}
-                            </p>
-                        </div>
-                    </div>
-
+            <PageHeader
+                icon={UsersRound}
+                eyebrowIcon={ShieldCheck}
+                eyebrow={t('users.eyebrow')}
+                title={t('users.title')}
+                description={t('users.description')}
+                actions={(
                     <div className="flex flex-wrap items-center gap-2.5">
+                        <button
+                            type="button"
+                            onClick={() => navigate('/user-activity')}
+                            className="inline-flex h-10 items-center gap-2 rounded-xl border border-teal-500/30 bg-teal-50/70 px-4 text-xs font-black text-teal-800 shadow-2xs transition hover:bg-teal-100 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300"
+                        >
+                            <Activity size={15} className="text-teal-600 dark:text-teal-400" />
+                            <span>{isArabic ? 'تتبع نشاط المستخدمين' : 'Activity Tracker'}</span>
+                        </button>
                         <button
                             type="button"
                             onClick={exportUsers}
@@ -323,32 +310,16 @@ const Users = () => {
                             <span>{t('users.actions.add')}</span>
                         </button>
                     </div>
-                </div>
-            </div>
-
-            {/* Metrics HUD */}
-            <section className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label={t('users.metrics.label')}>
-                {[
-                    { label: t('users.metrics.total'), value: summary.total, icon: UsersRound, tone: 'teal', detail: t('users.metrics.roles', { count: summary.roleCount }) },
-                    { label: t('users.metrics.active'), value: summary.active, icon: UserCheck, tone: 'emerald', detail: t('users.metrics.activeDetail') },
-                    { label: t('users.metrics.disabled'), value: summary.disabled, icon: XCircle, tone: 'rose', detail: t('users.metrics.disabledDetail') },
-                    { label: t('users.metrics.critical'), value: summary.critical, icon: ShieldAlert, tone: 'purple', detail: t('users.metrics.criticalDetail') },
-                ].map(m => {
-                    const Icon = m.icon;
-                    return (
-                        <div key={m.label} className="rounded-3xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                            <div className="flex items-start justify-between gap-2">
-                                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 truncate">{m.label}</p>
-                                <span className="grid h-8 w-8 place-items-center rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/30">
-                                    <Icon size={16} />
-                                </span>
-                            </div>
-                            <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white tabular-nums">{m.value}</p>
-                            <p className="mt-0.5 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{m.detail}</p>
-                        </div>
-                    );
-                })}
-            </section>
+                )}
+                metrics={[
+                    { key: 'total', label: t('users.metrics.total'), value: summary.total, icon: UsersRound, tone: 'teal', detail: t('users.metrics.roles', { count: summary.roleCount }), loading: isLoading, error: isError },
+                    { key: 'active', label: t('users.metrics.active'), value: summary.active, icon: UserCheck, tone: 'emerald', detail: t('users.metrics.activeDetail'), loading: isLoading, error: isError },
+                    { key: 'disabled', label: t('users.metrics.disabled'), value: summary.disabled, icon: XCircle, tone: 'rose', detail: t('users.metrics.disabledDetail'), loading: isLoading, error: isError },
+                    { key: 'critical', label: t('users.metrics.critical'), value: summary.critical, icon: ShieldAlert, tone: 'violet', detail: t('users.metrics.criticalDetail'), loading: isLoading, error: isError },
+                ]}
+                metricsLabel={t('users.metrics.label')}
+                meta={isFetching && <span className="text-xs font-bold text-teal-700 dark:text-teal-300">{isArabic ? 'جارٍ تحديث السجل…' : 'Refreshing records…'}</span>}
+            />
 
             {/* Role Coverage Pills */}
             <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
@@ -506,27 +477,7 @@ const Users = () => {
                                 <span>{isArabic ? `من إجمالي ${filteredStaff.length} مستخدم` : `of ${filteredStaff.length} users`}</span>
                             </div>
 
-                            <div className="flex items-center gap-1.5">
-                                <button
-                                    type="button"
-                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                    disabled={currentPage === 1}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                                >
-                                    <ChevronLeft size={14} className={isArabic ? 'rotate-180' : ''} />
-                                </button>
-                                <span className="px-2 text-xs font-black text-slate-800 dark:text-slate-200">
-                                    {currentPage} / {totalPages}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                                    disabled={currentPage === totalPages}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                                >
-                                    <ChevronRight size={14} className={isArabic ? 'rotate-180' : ''} />
-                                </button>
-                            </div>
+                            <Pagination currentPage={currentPage} pageCount={totalPages} onPageChange={setCurrentPage} isRtl={isArabic} compact />
                         </div>
                     </>
                 )}

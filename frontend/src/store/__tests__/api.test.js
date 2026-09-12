@@ -1,7 +1,8 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, rehydrateSession } from '../api';
-import authReducer from '../authSlice';
+import authReducer, { logOut } from '../authSlice';
+import { clearApiCacheOnSessionBoundary } from '../store';
 
 const createStore = () => configureStore({
     reducer: {
@@ -9,6 +10,15 @@ const createStore = () => configureStore({
         auth: authReducer,
     },
     middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(api.middleware),
+});
+
+const createSessionAwareStore = () => configureStore({
+    reducer: {
+        [api.reducerPath]: api.reducer,
+        auth: authReducer,
+    },
+    middleware: (getDefaultMiddleware) => getDefaultMiddleware()
+        .concat(clearApiCacheOnSessionBoundary, api.middleware),
 });
 
 describe('session rehydration', () => {
@@ -59,5 +69,19 @@ describe('session rehydration', () => {
         expect(new URL(requests[1].url).pathname).toBe('/api/auth/refresh');
         expect(requests[1].method).toBe('POST');
         expect(requests[1].headers.get('x-csrf-token')).toBe('test-csrf-token');
+    });
+});
+
+describe('session-bound API cache isolation', () => {
+    it('clears cached clinical data when the user logs out', async () => {
+        const store = createSessionAwareStore();
+
+        await store.dispatch(api.util.upsertQueryData('getQueue', { station: 'Modality', limit: 100 }, {
+            data: [{ exam_id: 'exam-owned-by-another-technician' }],
+        }));
+        expect(Object.keys(store.getState()[api.reducerPath].queries)).not.toHaveLength(0);
+
+        store.dispatch(logOut());
+        expect(Object.keys(store.getState()[api.reducerPath].queries)).toHaveLength(0);
     });
 });

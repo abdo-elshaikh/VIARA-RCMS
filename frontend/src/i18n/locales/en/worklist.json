@@ -89,6 +89,8 @@
       "clearSelection": "Clear selection",
       "details": "Details",
       "viewEdit": "View/edit",
+      "viewCase": "Open case details",
+      "caseFile": "Case file",
       "openEditor": "Open editor",
       "print": "Print report",
       "pdf": "Export PDF",
@@ -168,6 +170,7 @@
       "wordExportError": "Word export failed",
       "csvEmpty": "No reports available to export",
       "batchPrintError": "Batch print failed",
+      "popupBlocked": "Allow pop-ups to print the selected reports.",
       "wordExportedPlural": "{{count}} Word reports exported",
       "wordExportedSingular": "1 Word report exported",
       "qrNotFound": "No report found for this receipt QR",
@@ -229,6 +232,8 @@
     "onHold": "On hold",
     "overdueDetail": "Beyond target wait time",
     "loadError": "Some worklist data could not be loaded. Refresh to try again.",
+    "noFilteredResults": "No matching cases",
+    "noFilteredHelp": "Try adjusting or clearing the active filters.",
     "scheduleLoadError": "The calendar data could not be loaded.",
     "queueLoadError": "The work queue data could not be loaded.",
     "metrics": {
@@ -241,8 +246,8 @@
       "visible": "{{count}} visible after filters",
       "readyHelp": "Studies ready for the next clinical action",
       "priorityHelp": "Urgent and emergency work that needs priority handling",
-      "averageWait": "Average wait",
-      "averageWaitHelp": "Average queue wait across loaded studies",
+      "averageWait": "Average active stage time",
+      "averageWaitHelp": "Average active time in the current stage, excluding holds",
       "overdue": "Overdue"
     },
     "machine": "Machine",
@@ -251,11 +256,13 @@
     "contrast": "Contrast",
     "required": "Required",
     "notRequired": "Not required",
-    "waiting": "Waiting",
+    "waiting": "Active stage time",
     "safetyClear": "Safety clear",
     "safetyRisks": "{{count}} safety risk",
     "safetyAlert": "Safety review is required before the patient advances.",
     "actions": {
+      "Arrived": "Route patient",
+      "Scheduled": "Confirm arrival",
       "Prep Pending": "Start preparation",
       "Ready for Exam": "Mark ready",
       "In Exam": "Start examination",
@@ -278,6 +285,32 @@
       "description": "Select a stage to focus the queue instantly."
     }
   },
+  "taskScope": {
+    "label": "Task visibility",
+    "all": "All visible tasks",
+    "mine": "My tasks",
+    "available": "Available tasks",
+    "accept": "Accept task",
+    "return": "Return to pool",
+    "claimed": "Task accepted and moved to your private queue.",
+    "released": "Task returned to the available pool.",
+    "claimConflict": "Another user accepted this task first.",
+    "releaseTitle": "Return task to the pool",
+    "releaseDescription": "Your access ends immediately and the task becomes available to eligible users.",
+    "releaseReason": "Reason",
+    "releasePlaceholder": "Explain why this task is being returned...",
+    "releaseConfirm": "Return task",
+    "releaseRequired": "Enter at least 3 characters.",
+    "allEmpty": "No assigned or unassigned tasks are currently visible for your role.",
+    "myEmpty": "No tasks are currently assigned to you.",
+    "availableEmpty": "No unassigned tasks are available for your role.",
+    "status": {
+      "Unassigned": "Unassigned",
+      "Assigned": "Assigned to you",
+      "In Progress": "In progress",
+      "On Hold": "On hold"
+    }
+  },
   "filters": {
     "title": "Schedule filters",
     "search": "Search patient, MRN, exam, machine, or modality",
@@ -294,14 +327,49 @@
     "all": "All",
     "stage": "Workflow stage",
     "sort": "Sort queue",
+    "centerCases": "Center cases",
+    "myCases": "My cases",
+    "assignedCases": "Assigned queue",
+    "showingAllCenter": "Showing all center cases",
+    "showingMyCases": "Showing my cases only",
     "sortOptions": {
       "risk": "Risk score",
       "priority": "Priority first",
-      "wait": "Longest wait",
+      "wait": "Longest active stage",
       "time": "Scheduled time",
       "newest": "Newest cases",
       "patient": "Patient name"
     }
+  },
+  "table": {
+    "patient": "Patient / order",
+    "study": "Study context",
+    "queueState": "Queue state / SLA",
+    "actions": "Actions"
+  },
+  "pagination": {
+    "showing": "Showing {{start}}–{{end}} of {{total}} cases",
+    "perPage": "Per page:"
+  },
+  "drawer": {
+    "tabs": {
+      "overview": "Overview",
+      "safety": "Safety & preparation",
+      "clinical": "Clinical & team"
+    },
+    "safety": {
+      "title": "Safety screenings",
+      "pregnancy": "Pregnancy",
+      "implant": "Metallic implant",
+      "renal": "Renal function",
+      "atRisk": "At risk",
+      "clear": "Clear"
+    },
+    "emptyPreparation": "No preparation instructions recorded.",
+    "emptyClinical": "No clinical indication was provided by the referring doctor."
+  },
+  "pacs": {
+    "viewImages": "Open PACS DICOM viewer"
   },
   "focus": {
     "all": "All work",
@@ -383,6 +451,7 @@
     "deliveryError": "Failed to record delivery.",
     "wordExported": "Word document exported successfully.",
     "wordExportError": "Failed to export Word document.",
+    "pdfDownloaded": "PDF downloaded successfully.",
     "openError": "Failed to open study.",
     "approveConfirm": "Are you sure you want to approve this report?",
     "finalizeConfirm": "Are you sure you want to finalize and sign this report?",
@@ -538,11 +607,14 @@
       "language": "Language",
       "english": "English",
       "contents": "Report contents",
-      "openPdf": "Open PDF",
-      "pdfDetail": "Download or print PDF",
-      "downloadWord": "Download Word",
-      "wordDetail": "Export editable DOCX",
+      "openPdf": "Open Print Preview",
+      "pdfDetail": "Interactive print preview & customizer",
+      "downloadWord": "Download Word (.docx)",
+      "wordDetail": "Export editable DOCX document",
+      "downloadPdf": "Download PDF (.pdf)",
+      "pdfDownloadDetail": "Direct high-res PDF with QR verification",
       "draftWarning": "This is a draft report. Finalize before official distribution.",
+      "draftNotice": "This report is currently in Draft. Exported documents will display a preliminary draft indicator until finalized.",
       "pdfDraftDetail": "PDF with draft watermark"
     },
     "aiImage": {
@@ -855,6 +927,7 @@
       "safety": "Safety and resources"
     },
     "patient": "Patient",
+    "staff": "Care team",
     "selectPatient": "Select patient",
     "machine": "Machine",
     "selectMachine": "Select machine",

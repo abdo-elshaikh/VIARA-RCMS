@@ -101,7 +101,7 @@ export const api = createApi({
     reducerPath: 'api',
     baseQuery: baseQueryWithReauth,
     tagTypes: [
-        'User', 'Profile', 'Sessions', 'Passkeys', 'Tokens', 'Patients', 'Appointments', 'ScheduleAvailability', 'WaitingList', 'PortalReviewRequests', 'ReferringDoctors', 'Machines', 'ExamTypes', 'Dashboard', 'Staff', 'StaffProfiles', 'Shifts', 'Attendance', 'LeaveRequests', 'Payroll', 'PayrollRuns', 'PayrollCompensation', 'PayrollRules', 'PayrollDeductions', 'PayrollPenalties', 'Inventory', 'PatientHistory', 'PatientDuplicates', 'OrderTimeline', 'Queue', 'CaseReports', 'Invoices', 'Refunds', 'PartialPaymentExceptions', 'Cashier', 'Insurance', 'Claims', 'ReportTemplates', 'ResultDelivery', 'AiReportDrafts', 'Notifications', 'NotificationTemplates', 'NotificationJobs', 'Audit', 'RBAC', 'Privacy', 'Analytics', 'Documents', 'Integrations', 'Settings', 'PublicSettings', 'PublicLanding', 'AdminTelemetry', 'Governance', 'Backups', 'ClinicalSafety', 'Closures', 'Pacs', 'PacsQuarantine', 'PacsAudit', 'PacsAiAnalysis', 'FinancialReports', 'Commissions', 'ExpenseCategories', 'Expenses', 'Segments', 'Campaigns', 'Feedback', 'ChatMessages', 'StaffUsers', 'PatientConversations', 'DoctorConversations', 'ChatUnread'
+        'User', 'Profile', 'Sessions', 'Passkeys', 'Tokens', 'Patients', 'Appointments', 'ScheduleAvailability', 'WaitingList', 'PortalReviewRequests', 'ReferringDoctors', 'Machines', 'ExamTypes', 'Rooms', 'Dashboard', 'Staff', 'StaffProfiles', 'Shifts', 'Attendance', 'LeaveRequests', 'Payroll', 'PayrollRuns', 'PayrollCompensation', 'PayrollRules', 'PayrollDeductions', 'PayrollPenalties', 'Inventory', 'PatientHistory', 'PatientDuplicates', 'OrderTimeline', 'Queue', 'CaseReports', 'Invoices', 'Refunds', 'PartialPaymentExceptions', 'Cashier', 'Insurance', 'Claims', 'ReportTemplates', 'ResultDelivery', 'AiReportDrafts', 'Notifications', 'NotificationTemplates', 'NotificationJobs', 'Audit', 'RBAC', 'Privacy', 'Analytics', 'Documents', 'Integrations', 'Settings', 'PublicSettings', 'PublicLanding', 'AdminTelemetry', 'Governance', 'Backups', 'ClinicalSafety', 'Closures', 'Pacs', 'PacsQuarantine', 'PacsAudit', 'PacsAiAnalysis', 'FinancialReports', 'Commissions', 'ExpenseCategories', 'Expenses', 'Segments', 'Campaigns', 'Feedback', 'ChatMessages', 'StaffUsers', 'PatientConversations', 'DoctorConversations', 'ChatUnread', 'ChatChannels'
     ],
     endpoints: (builder) => ({
         login: builder.mutation({
@@ -837,6 +837,18 @@ export const api = createApi({
             query: ({ id, ...body }) => ({ url: `/hr/attendance/${id}`, method: 'PUT', body }),
             invalidatesTags: ['Attendance'],
         }),
+        getAttendancePermissions: builder.query({
+            query: (params) => ({ url: '/hr/attendance-permissions', params }),
+            providesTags: ['Attendance'],
+        }),
+        createAttendancePermission: builder.mutation({
+            query: (data) => ({ url: '/hr/attendance-permissions', method: 'POST', body: data }),
+            invalidatesTags: ['Attendance'],
+        }),
+        updateAttendancePermissionStatus: builder.mutation({
+            query: ({ id, ...body }) => ({ url: `/hr/attendance-permissions/${id}/status`, method: 'PUT', body }),
+            invalidatesTags: ['Attendance'],
+        }),
         getLeaveRequests: builder.query({
             query: (params) => ({ url: '/hr/leave', params }),
             providesTags: ['LeaveRequests'],
@@ -1332,6 +1344,38 @@ export const api = createApi({
             query: () => '/chat/unread-summary',
             providesTags: ['ChatUnread'],
         }),
+        getChatChannels: builder.query({
+            query: () => '/chat/channels',
+            providesTags: ['ChatChannels'],
+        }),
+        createChatChannel: builder.mutation({
+            query: (data) => ({ url: '/chat/channels', method: 'POST', body: data }),
+            invalidatesTags: ['ChatChannels'],
+        }),
+        updateChatChannel: builder.mutation({
+            query: ({ channelId, ...data }) => ({ url: `/chat/channels/${channelId}`, method: 'PUT', body: data }),
+            invalidatesTags: ['ChatChannels'],
+        }),
+        deleteChatChannel: builder.mutation({
+            query: (channelId) => ({ url: `/chat/channels/${channelId}`, method: 'DELETE' }),
+            invalidatesTags: ['ChatChannels'],
+        }),
+        getChannelMembers: builder.query({
+            query: (channelId) => `/chat/channels/${channelId}/members`,
+            providesTags: (result, error, channelId) => [{ type: 'ChatChannels', id: channelId }],
+        }),
+        addChannelMembers: builder.mutation({
+            query: ({ channelId, ...data }) => ({ url: `/chat/channels/${channelId}/members`, method: 'POST', body: data }),
+            invalidatesTags: (result, error, { channelId }) => ['ChatChannels', { type: 'ChatChannels', id: channelId }],
+        }),
+        removeChannelMember: builder.mutation({
+            query: ({ channelId, userId }) => ({ url: `/chat/channels/${channelId}/members/${userId}`, method: 'DELETE' }),
+            invalidatesTags: (result, error, { channelId }) => ['ChatChannels', { type: 'ChatChannels', id: channelId }],
+        }),
+        updateChannelMemberRole: builder.mutation({
+            query: ({ channelId, userId, ...data }) => ({ url: `/chat/channels/${channelId}/members/${userId}`, method: 'PUT', body: data }),
+            invalidatesTags: (result, error, { channelId }) => ['ChatChannels', { type: 'ChatChannels', id: channelId }],
+        }),
         getPatientConversations: builder.query({
             query: () => '/messages/patients',
             providesTags: ['PatientConversations'],
@@ -1363,50 +1407,6 @@ export const api = createApi({
                 body: data || rest,
             }),
             invalidatesTags: ['DoctorConversations'],
-        }),
-
-        // ─── RBAC (Role-Based Access Control) ────────────────────────────
-        getAllPermissions: builder.query({
-            query: () => '/rbac/permissions',
-            providesTags: ['RBAC'],
-        }),
-        getRolePermissions: builder.query({
-            query: () => '/rbac/roles',
-            providesTags: ['RBAC'],
-        }),
-        updateRolePermissions: builder.mutation({
-            query: ({ role, permissionIds }) => ({
-                url: `/rbac/roles/${role}/permissions`,
-                method: 'PUT',
-                body: { permissionIds }
-            }),
-            invalidatesTags: ['RBAC'],
-        }),
-        requestBreakGlass: builder.mutation({
-            query: (data) => ({
-                url: '/rbac/break-glass',
-                method: 'POST',
-                body: data
-            }),
-        }),
-        resetRolePermissions: builder.mutation({
-            query: (role) => ({
-                url: `/rbac/roles/${role}/reset`,
-                method: 'POST',
-            }),
-            invalidatesTags: ['RBAC'],
-        }),
-        cloneRolePermissions: builder.mutation({
-            query: ({ targetRole, sourceRole }) => ({
-                url: `/rbac/roles/${targetRole}/clone`,
-                method: 'POST',
-                body: { sourceRole }
-            }),
-            invalidatesTags: ['RBAC'],
-        }),
-        getRbacAuditLogs: builder.query({
-            query: () => '/rbac/audit-logs',
-            providesTags: ['RBAC'],
         }),
 
         // ─── Privacy & 2FA ──────────────────────────────────────────────────
@@ -1684,7 +1684,7 @@ export const api = createApi({
         // Advanced Inventory
         consumeStock: builder.mutation({
             query: (data) => ({ url: '/inventory/consume', method: 'POST', body: data }),
-            invalidatesTags: ['Inventory', 'StockMovements', 'Invoices'],
+            invalidatesTags: ['Inventory', 'StockMovements', 'Invoices', 'Queue', 'Appointments'],
         }),
         adjustStock: builder.mutation({
             query: (data) => ({ url: '/inventory/adjust', method: 'POST', body: data }),
@@ -1903,6 +1903,288 @@ export const api = createApi({
         verifyAuditChain: builder.query({
             query: () => ({ url: '/v1/audit/verify' }),
         }),
+
+        // RBAC & Emergency Access (Break-Glass)
+        getMyPermissions: builder.query({
+            query: () => '/rbac/my-permissions',
+            providesTags: ['RBAC'],
+        }),
+        getAllPermissions: builder.query({
+            query: () => '/rbac/permissions',
+            providesTags: ['RBAC'],
+        }),
+        getRolePermissions: builder.query({
+            query: () => '/rbac/roles',
+            providesTags: ['RBAC'],
+        }),
+        updateRolePermissions: builder.mutation({
+            query: ({ role, permissionIds }) => ({
+                url: `/rbac/roles/${role}/permissions`,
+                method: 'PUT',
+                body: { permissionIds },
+            }),
+            invalidatesTags: ['RBAC'],
+        }),
+        resetRolePermissions: builder.mutation({
+            query: (role) => ({
+                url: `/rbac/roles/${role}/reset`,
+                method: 'POST',
+            }),
+            invalidatesTags: ['RBAC'],
+        }),
+        cloneRolePermissions: builder.mutation({
+            query: ({ role, sourceRole }) => ({
+                url: `/rbac/roles/${role}/clone`,
+                method: 'POST',
+                body: { sourceRole },
+            }),
+            invalidatesTags: ['RBAC'],
+        }),
+        getRbacAuditLogs: builder.query({
+            query: (params = {}) => ({
+                url: '/rbac/audit-logs',
+                params,
+            }),
+            providesTags: ['RBAC'],
+        }),
+        getBreakGlassStatus: builder.query({
+            query: () => '/rbac/break-glass/status',
+            providesTags: ['RBAC'],
+        }),
+        getActiveBreakGlassGrants: builder.query({
+            query: () => '/rbac/break-glass/active',
+            providesTags: ['RBAC'],
+        }),
+        requestBreakGlass: builder.mutation({
+            query: (body) => ({
+                url: '/rbac/break-glass',
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['RBAC'],
+        }),
+        revokeBreakGlass: builder.mutation({
+            query: (body) => ({
+                url: '/rbac/break-glass/revoke',
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['RBAC'],
+        }),
+        adminRevokeBreakGlass: builder.mutation({
+            query: ({ grantId, reason }) => ({
+                url: `/rbac/break-glass/${grantId}/revoke`,
+                method: 'POST',
+                body: { reason },
+            }),
+            invalidatesTags: ['RBAC'],
+        }),
+
+        // Current Cashier Shift
+        getCurrentCashierShift: builder.query({
+            query: () => '/cashier/shifts/current',
+            providesTags: ['Cashier'],
+        }),
+
+        // Rooms & Clinical Hierarchy
+        getRooms: builder.query({
+            query: (params) => ({ url: '/rooms', params }),
+            providesTags: ['Rooms'],
+        }),
+        getRoomById: builder.query({
+            query: (id) => `/rooms/${id}`,
+            providesTags: (result, error, id) => [{ type: 'Rooms', id }],
+        }),
+        createRoom: builder.mutation({
+            query: (data) => ({ url: '/rooms', method: 'POST', body: data }),
+            invalidatesTags: ['Rooms'],
+        }),
+        updateRoom: builder.mutation({
+            query: ({ id, ...data }) => ({ url: `/rooms/${id}`, method: 'PUT', body: data }),
+            invalidatesTags: ['Rooms'],
+        }),
+        deleteRoom: builder.mutation({
+            query: (id) => ({ url: `/rooms/${id}`, method: 'DELETE' }),
+            invalidatesTags: ['Rooms'],
+        }),
+        getClinicalHierarchyMatrix: builder.query({
+            query: () => '/rooms/matrix',
+            providesTags: ['Rooms'],
+        }),
+
+        // Attendance Audit & Settings
+        getAttendanceAuditLedger: builder.query({
+            query: (params) => ({ url: '/hr/attendance/audit-ledger', params }),
+            providesTags: ['Attendance'],
+        }),
+        getAttendanceSettings: builder.query({
+            query: () => '/hr/attendance/settings',
+            providesTags: ['Attendance'],
+        }),
+        updateAttendanceSettings: builder.mutation({
+            query: (data) => ({ url: '/hr/attendance/settings', method: 'PUT', body: data }),
+            invalidatesTags: ['Attendance'],
+        }),
+        recordManualAttendance: builder.mutation({
+            query: (data) => ({ url: '/hr/attendance/manual', method: 'POST', body: data }),
+            invalidatesTags: ['Attendance'],
+        }),
+
+        // Shift Requests & Shift Updates
+        getShiftRequests: builder.query({
+            query: (params) => ({ url: '/hr/shifts/requests', params }),
+            providesTags: ['Shifts'],
+        }),
+        createShiftRequest: builder.mutation({
+            query: (data) => ({ url: '/hr/shifts/requests', method: 'POST', body: data }),
+            invalidatesTags: ['Shifts'],
+        }),
+        updateShiftRequestStatus: builder.mutation({
+            query: ({ id, ...data }) => ({ url: `/hr/shifts/requests/${id}/status`, method: 'PUT', body: data }),
+            invalidatesTags: ['Shifts'],
+        }),
+        updateShift: builder.mutation({
+            query: ({ id, ...data }) => ({ url: `/hr/shifts/${id}`, method: 'PUT', body: data }),
+            invalidatesTags: ['Shifts'],
+        }),
+
+        // Staff Credentials & Evaluations
+        getStaffCredentials: builder.query({
+            query: (staffId) => `/staff/${staffId}/credentials`,
+            providesTags: ['Staff'],
+        }),
+        createStaffCredential: builder.mutation({
+            query: ({ staffId, ...data }) => ({ url: `/staff/${staffId}/credentials`, method: 'POST', body: data }),
+            invalidatesTags: ['Staff'],
+        }),
+        updateStaffCredential: builder.mutation({
+            query: ({ staffId, id, ...data }) => ({ url: `/staff/${staffId}/credentials/${id}`, method: 'PUT', body: data }),
+            invalidatesTags: ['Staff'],
+        }),
+        deleteStaffCredential: builder.mutation({
+            query: ({ staffId, id }) => ({ url: `/staff/${staffId}/credentials/${id}`, method: 'DELETE' }),
+            invalidatesTags: ['Staff'],
+        }),
+        getStaffEvaluations: builder.query({
+            query: (staffId) => `/staff/${staffId}/evaluations`,
+            providesTags: ['Staff'],
+        }),
+        createStaffEvaluation: builder.mutation({
+            query: ({ staffId, ...data }) => ({ url: `/staff/${staffId}/evaluations`, method: 'POST', body: data }),
+            invalidatesTags: ['Staff'],
+        }),
+
+        // Leave Balances & Cancellation
+        getLeaveBalances: builder.query({
+            query: (params) => ({ url: '/hr/leaves/balances', params }),
+            providesTags: ['LeaveRequests'],
+        }),
+        updateLeaveBalance: builder.mutation({
+            query: ({ id, ...data }) => ({ url: `/hr/leaves/balances/${id}`, method: 'PUT', body: data }),
+            invalidatesTags: ['LeaveRequests'],
+        }),
+        cancelLeaveRequest: builder.mutation({
+            query: ({ id, ...data }) => ({ url: `/hr/leaves/${id}/cancel`, method: 'POST', body: data }),
+            invalidatesTags: ['LeaveRequests'],
+        }),
+
+        // Reception Shifts & Tasks
+        getCurrentReceptionShift: builder.query({
+            query: () => '/reception/shifts/current',
+            providesTags: ['Shifts'],
+        }),
+        openReceptionShift: builder.mutation({
+            query: (data) => ({ url: '/reception/shifts/open', method: 'POST', body: data }),
+            invalidatesTags: ['Shifts'],
+        }),
+        closeReceptionShift: builder.mutation({
+            query: ({ sessionId, ...data }) => ({ url: `/reception/shifts/${sessionId}/close`, method: 'POST', body: data }),
+            invalidatesTags: ['Shifts'],
+        }),
+        claimReceptionTask: builder.mutation({
+            query: ({ appointmentId }) => ({ url: `/reception/tasks/${appointmentId}/claim`, method: 'POST' }),
+            invalidatesTags: ['Queue', 'Appointments'],
+        }),
+        releaseReceptionTask: builder.mutation({
+            query: ({ appointmentId }) => ({ url: `/reception/tasks/${appointmentId}/release`, method: 'POST' }),
+            invalidatesTags: ['Queue', 'Appointments'],
+        }),
+        heartbeatReceptionTasks: builder.mutation({
+            query: (data) => ({ url: '/reception/tasks/heartbeat', method: 'POST', body: data }),
+        }),
+        broadcastPatientCall: builder.mutation({
+            query: (data) => ({ url: '/display/broadcast-call', method: 'POST', body: data }),
+        }),
+
+        // Display Board & Announcements
+        getDisplayBoard: builder.query({
+            query: (params) => ({ url: '/display/board', params }),
+        }),
+        getDisplayConfig: builder.query({
+            query: () => '/display/config',
+        }),
+        updateDisplayConfig: builder.mutation({
+            query: (data) => ({ url: '/display/config', method: 'PUT', body: data }),
+        }),
+        createDisplayAnnouncement: builder.mutation({
+            query: (data) => ({ url: '/display/announcements', method: 'POST', body: data }),
+        }),
+        updateDisplayAnnouncement: builder.mutation({
+            query: ({ id, ...data }) => ({ url: `/display/announcements/${id}`, method: 'PUT', body: data }),
+        }),
+        deleteDisplayAnnouncement: builder.mutation({
+            query: (id) => ({ url: `/display/announcements/${id}`, method: 'DELETE' }),
+        }),
+
+        // Clinical Queue Task Claiming & Notifications
+        claimQueueTask: builder.mutation({
+            query: (examId) => ({ url: `/queue/${examId}/claim`, method: 'POST' }),
+            invalidatesTags: ['Queue'],
+        }),
+        releaseQueueTaskAssignment: builder.mutation({
+            query: (examId) => ({ url: `/queue/${examId}/release`, method: 'POST' }),
+            invalidatesTags: ['Queue'],
+        }),
+        acknowledgeCriticalResult: builder.mutation({
+            query: (id) => ({ url: `/notifications/critical/${id}/ack`, method: 'POST' }),
+            invalidatesTags: ['Notifications'],
+        }),
+
+        // Insurance Updates
+        updateInsuranceProvider: builder.mutation({
+            query: ({ id, ...data }) => ({ url: `/insurance/providers/${id}`, method: 'PUT', body: data }),
+            invalidatesTags: ['Insurance'],
+        }),
+        updateInsuranceContract: builder.mutation({
+            query: ({ id, ...data }) => ({ url: `/insurance/contracts/${id}`, method: 'PUT', body: data }),
+            invalidatesTags: ['Insurance'],
+        }),
+        updateInsurancePolicy: builder.mutation({
+            query: ({ id, ...data }) => ({ url: `/insurance/policies/${id}`, method: 'PUT', body: data }),
+            invalidatesTags: ['Insurance'],
+        }),
+        updateCoverageRule: builder.mutation({
+            query: ({ id, ...data }) => ({ url: `/insurance/coverage-rules/${id}`, method: 'PUT', body: data }),
+            invalidatesTags: ['Insurance'],
+        }),
+
+        // Advanced Analytics & Integrations
+        getPeakHoursAnalytics: builder.query({
+            query: (params) => ({ url: '/v1/analytics/peak-hours', params }),
+            providesTags: ['Analytics'],
+        }),
+        getEquipmentUtilization: builder.query({
+            query: (params) => ({ url: '/v1/analytics/equipment-utilization', params }),
+            providesTags: ['Analytics'],
+        }),
+        getTopProceduresAnalytics: builder.query({
+            query: (params) => ({ url: '/v1/analytics/top-procedures', params }),
+            providesTags: ['Analytics'],
+        }),
+        seedIntegrations: builder.mutation({
+            query: () => ({ url: '/v1/integrations/seed', method: 'POST' }),
+            invalidatesTags: ['Integrations'],
+        }),
     }),
 })
 
@@ -2049,6 +2331,9 @@ export const {
     useClockInMutation,
     useClockOutMutation,
     useUpdateAttendanceMutation,
+    useGetAttendancePermissionsQuery,
+    useCreateAttendancePermissionMutation,
+    useUpdateAttendancePermissionStatusMutation,
     useGetLeaveRequestsQuery,
     useCreateLeaveRequestMutation,
     useUpdateLeaveStatusMutation,
@@ -2135,6 +2420,14 @@ export const {
     useGetChatUsersQuery,
     useGetChatMessagesQuery,
     useSendChatMessageMutation,
+    useGetChatChannelsQuery,
+    useCreateChatChannelMutation,
+    useUpdateChatChannelMutation,
+    useDeleteChatChannelMutation,
+    useGetChannelMembersQuery,
+    useAddChannelMembersMutation,
+    useRemoveChannelMemberMutation,
+    useUpdateChannelMemberRoleMutation,
     useGetChatUnreadSummaryQuery,
     useGetPatientConversationsQuery,
     useGetPatientMessageHistoryQuery,
@@ -2142,13 +2435,68 @@ export const {
     useGetDoctorConversationsQuery,
     useGetDoctorMessageHistoryQuery,
     useSendDoctorReplyMutation,
+    useGetMyPermissionsQuery,
     useGetAllPermissionsQuery,
     useGetRolePermissionsQuery,
     useUpdateRolePermissionsMutation,
     useRequestBreakGlassMutation,
+    useGetBreakGlassStatusQuery,
+    useGetActiveBreakGlassGrantsQuery,
+    useRevokeBreakGlassMutation,
+    useAdminRevokeBreakGlassMutation,
     useResetRolePermissionsMutation,
     useCloneRolePermissionsMutation,
     useGetRbacAuditLogsQuery,
+    useLazyGetRbacAuditLogsQuery,
+    useGetCurrentCashierShiftQuery,
+    useGetRoomsQuery,
+    useGetRoomByIdQuery,
+    useCreateRoomMutation,
+    useUpdateRoomMutation,
+    useDeleteRoomMutation,
+    useGetClinicalHierarchyMatrixQuery,
+    useGetAttendanceAuditLedgerQuery,
+    useGetAttendanceSettingsQuery,
+    useUpdateAttendanceSettingsMutation,
+    useRecordManualAttendanceMutation,
+    useGetShiftRequestsQuery,
+    useCreateShiftRequestMutation,
+    useUpdateShiftRequestStatusMutation,
+    useUpdateShiftMutation,
+    useLazyGetShiftsQuery,
+    useGetStaffCredentialsQuery,
+    useCreateStaffCredentialMutation,
+    useUpdateStaffCredentialMutation,
+    useDeleteStaffCredentialMutation,
+    useGetStaffEvaluationsQuery,
+    useCreateStaffEvaluationMutation,
+    useGetLeaveBalancesQuery,
+    useUpdateLeaveBalanceMutation,
+    useCancelLeaveRequestMutation,
+    useGetCurrentReceptionShiftQuery,
+    useOpenReceptionShiftMutation,
+    useCloseReceptionShiftMutation,
+    useClaimReceptionTaskMutation,
+    useReleaseReceptionTaskMutation,
+    useHeartbeatReceptionTasksMutation,
+    useBroadcastPatientCallMutation,
+    useGetDisplayBoardQuery,
+    useGetDisplayConfigQuery,
+    useUpdateDisplayConfigMutation,
+    useCreateDisplayAnnouncementMutation,
+    useUpdateDisplayAnnouncementMutation,
+    useDeleteDisplayAnnouncementMutation,
+    useClaimQueueTaskMutation,
+    useReleaseQueueTaskAssignmentMutation,
+    useAcknowledgeCriticalResultMutation,
+    useUpdateInsuranceProviderMutation,
+    useUpdateInsuranceContractMutation,
+    useUpdateInsurancePolicyMutation,
+    useUpdateCoverageRuleMutation,
+    useGetPeakHoursAnalyticsQuery,
+    useGetEquipmentUtilizationQuery,
+    useGetTopProceduresAnalyticsQuery,
+    useSeedIntegrationsMutation,
     useSetup2FAMutation,
     useEnable2FAMutation,
     useVerify2FAMutation,

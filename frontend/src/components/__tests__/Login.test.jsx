@@ -32,6 +32,20 @@ describe('Login Component', () => {
         expect(screen.getByRole('button', { name: /sign in to clinical console/i })).toBeInTheDocument();
     });
 
+    it('selects the technician account that owns seeded modality work', () => {
+        render(
+            <Provider store={store}>
+                <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                    <Login />
+                </BrowserRouter>
+            </Provider>
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /technologist/i }));
+
+        expect(screen.getByLabelText(/institutional email/i)).toHaveValue('mohamed.tech@VIARA.com');
+    });
+
     it('shows validation errors when submitting empty form', async () => {
         render(
             <Provider store={store}>

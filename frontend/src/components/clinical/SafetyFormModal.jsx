@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSubmitSafetyResponseMutation } from '../../store/api';
 import { AlertTriangle, CheckCircle, Save, X } from 'lucide-react';
@@ -7,6 +7,10 @@ import toast from 'react-hot-toast';
 const SafetyFormModal = ({ isOpen, onClose, examId, template, onComplete }) => {
     const [answers, setAnswers] = useState({});
     const [submitForm, { isLoading }] = useSubmitSafetyResponseMutation();
+
+    useEffect(() => {
+        if (isOpen) setAnswers({});
+    }, [examId, isOpen, template?.template_id]);
 
     if (!isOpen || !template) return null;
 
@@ -24,7 +28,7 @@ const SafetyFormModal = ({ isOpen, onClose, examId, template, onComplete }) => {
                 data: { templateId: template.template_id, answers }
             }).unwrap();
             toast.success('Safety protocol documented successfully');
-            onComplete();
+            await onComplete();
         } catch (error) {
             toast.error(error?.data?.error || 'Failed to submit form');
         }

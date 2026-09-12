@@ -201,34 +201,52 @@ const PatientDirectory = ({ searchTerm, setSearchTerm, onBook, onViewProfile }) 
                         <button type="button" onClick={refetch} className="ms-2 underline">{t('retry', { defaultValue: 'Retry' })}</button>
                     </div>
                 ) : paginatedPatients.length > 0 ? (
-                    <table className="w-full table-fixed text-start text-sm">
-                        <thead className="border-b border-slate-150/60 bg-slate-50/70 dark:border-slate-800/60 dark:bg-slate-950/40">
-                            <tr>
-                                <SortableHeader field="mrn" label={t('directory.mrn')} width="w-[100px]" className="ps-5" />
-                                <th className="w-[28%] px-3 py-3 text-start text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('directory.name')}</th>
-                                <SortableHeader field="gender" label={t('directory.gender')} width="hidden w-[110px] sm:table-cell" />
-                                <th className="hidden w-[150px] px-3 py-3 text-start text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 md:table-cell">{t('directory.mobile')}</th>
-                                <SortableHeader field="dob" label={t('directory.birthDate')} width="hidden w-[130px] lg:table-cell" />
-                                <th className="hidden px-3 py-3 xl:table-cell text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                    {t('directory.phoneLocation')}
-                                </th>
-                                <th className="w-[130px] px-4 py-3 pe-5 text-end text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                    {t('directory.action')}
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-150/40 dark:divide-slate-800/60">
+                    <>
+                        {/* Mobile Cards Layout (sm:hidden) */}
+                        <div className="divide-y divide-slate-150/60 p-2 sm:hidden dark:divide-slate-800">
                             {paginatedPatients.map((patient) => (
-                                <PatientRow
+                                <PatientCardMobile
                                     key={patient.patient_id}
+                                    patient={patient}
                                     onBook={onBook}
                                     onViewProfile={onViewProfile}
-                                    patient={patient}
                                     t={t}
                                 />
                             ))}
-                        </tbody>
-                    </table>
+                        </div>
+
+                        {/* Desktop Table Layout (hidden sm:block) */}
+                        <div className="hidden sm:block overflow-x-auto">
+                            <table className="w-full table-fixed text-start text-sm">
+                                <thead className="border-b border-slate-150/60 bg-slate-50/70 dark:border-slate-800/60 dark:bg-slate-950/40">
+                                    <tr>
+                                        <SortableHeader field="mrn" label={t('directory.mrn')} width="w-[100px]" className="ps-5" />
+                                        <th className="w-[28%] px-3 py-3 text-start text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('directory.name')}</th>
+                                        <SortableHeader field="gender" label={t('directory.gender')} width="hidden w-[110px] sm:table-cell" />
+                                        <th className="hidden w-[150px] px-3 py-3 text-start text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 md:table-cell">{t('directory.mobile')}</th>
+                                        <SortableHeader field="dob" label={t('directory.birthDate')} width="hidden w-[130px] lg:table-cell" />
+                                        <th className="hidden px-3 py-3 xl:table-cell text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                            {t('directory.phoneLocation')}
+                                        </th>
+                                        <th className="w-[130px] px-4 py-3 pe-5 text-end text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                            {t('directory.action')}
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-150/40 dark:divide-slate-800/60">
+                                    {paginatedPatients.map((patient) => (
+                                        <PatientRow
+                                            key={patient.patient_id}
+                                            onBook={onBook}
+                                            onViewProfile={onViewProfile}
+                                            patient={patient}
+                                            t={t}
+                                        />
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
                 ) : (
                     <div className="py-12">
                         <EmptyState icon={Search} title={t('directory.noPatients')} />
@@ -355,6 +373,67 @@ const PatientRow = ({ patient, onBook, onViewProfile, t }) => {
                 </div>
             </td>
         </tr>
+    );
+};
+
+const PatientCardMobile = ({ patient, onBook, onViewProfile, t }) => {
+    const name = getPatientName(patient);
+    const genderKey = patient.gender?.toLowerCase() || 'other';
+
+    return (
+        <article
+            onClick={() => onViewProfile(patient)}
+            className="my-1.5 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs transition-all active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900"
+        >
+            <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-slate-900 dark:text-white">{name}</p>
+                    <div className="mt-1 flex items-center gap-2">
+                        <span className="font-mono text-xs font-black text-slate-500 dark:text-slate-400 ltr-embed" dir="ltr">
+                            {patient.mrn || '-'}
+                        </span>
+                        {patient.gender && (
+                            <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[9.5px] font-black uppercase ${genderBadgeStyles[patient.gender] || genderBadgeStyles.Other}`}>
+                                {t(`directory.${genderKey}`, { defaultValue: patient.gender })}
+                            </span>
+                        )}
+                    </div>
+                </div>
+                {patient.date_of_birth && (
+                    <span className="shrink-0 text-[11px] font-bold text-slate-400">
+                        {patient.date_of_birth}
+                    </span>
+                )}
+            </div>
+
+            {patient.phone && (
+                <div className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    <span className="text-slate-400">{t('directory.mobile', { defaultValue: 'الهاتف' })}: </span>
+                    <span className="font-mono ltr-embed" dir="ltr">{patient.phone}</span>
+                </div>
+            )}
+
+            <div className="mt-3 flex items-center justify-end gap-2 border-t border-slate-100 pt-2.5 dark:border-slate-800/80">
+                <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onViewProfile(patient); }}
+                    className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                >
+                    <UserRound size={13} />
+                    <span>{t('directory.viewProfile', { defaultValue: 'الملف' })}</span>
+                </button>
+                {onBook && (
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onBook(patient); }}
+                        className="inline-flex h-8 items-center gap-1 rounded-xl bg-teal-600 px-3 text-xs font-bold text-white shadow-xs transition hover:bg-teal-700"
+                    >
+                        <CalendarPlus size={13} />
+                        <span>{t('directory.book', { defaultValue: 'حجز موعد' })}</span>
+                    </button>
+                )}
+            </div>
+        </article>
     );
 };
 

@@ -80,10 +80,8 @@ const CashierWorkspace = () => {
     const user = useSelector(selectCurrentUser);
     const [searchParams, setSearchParams] = useSearchParams();
 
-    const [activeTab, setActiveTab] = useState(() => {
-        const requested = searchParams.get('tab');
-        return ['billing', 'reconciliation', 'supervisor'].includes(requested) ? requested : 'billing';
-    });
+    const requestedTab = searchParams.get('tab');
+    const activeTab = ['billing', 'reconciliation', 'supervisor'].includes(requestedTab) ? requestedTab : 'billing';
     const [reviewTarget, setReviewTarget] = useState(null);
     const [reviewNotes, setReviewNotes] = useState('');
 
@@ -122,10 +120,9 @@ const CashierWorkspace = () => {
 
     const canChangeShift = currentShift ? canCloseShift : canOpenShift;
     const handleTabChange = useCallback((tab) => {
-        setActiveTab(tab);
         const nextParams = new URLSearchParams(searchParams);
         nextParams.set('tab', tab);
-        setSearchParams(nextParams, { replace: true });
+        setSearchParams(nextParams);
     }, [searchParams, setSearchParams]);
     useEffect(() => {
         const unauthorized = (activeTab === 'reconciliation' && !canCloseShift)
@@ -344,7 +341,7 @@ const CashierWorkspace = () => {
             </section>
 
             {/* Workspace Navigation Tabs */}
-            <div className="flex flex-wrap items-center gap-1.5 rounded-3xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+<div data-workspace-tabs className="flex flex-wrap items-center gap-1.5 rounded-3xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                 <button
                     type="button"
                     onClick={() => handleTabChange('billing')}
@@ -386,7 +383,7 @@ const CashierWorkspace = () => {
             </div>
 
             {/* Tab Contents */}
-            {activeTab === 'billing' && <BillingTab />}
+            {activeTab === 'billing' && <BillingTab receptionShift={currentShift} />}
 
             {activeTab === 'reconciliation' && (
                 <CashDrawerReconciliation

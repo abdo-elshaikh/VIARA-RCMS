@@ -127,7 +127,7 @@ const PrivacyCenter = ({ embedded = false }) => {
     if (isLoading) return <div className="p-10 text-center text-sm font-semibold text-slate-500">{t('privacyCenter.loading')}</div>;
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-10">
+        <div className={embedded ? 'space-y-5 pb-0' : 'mx-auto max-w-7xl space-y-6 pb-10'}>
             {/* VIARA Hero Command Deck */}
             <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8 space-y-6">
                 <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />

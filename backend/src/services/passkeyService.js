@@ -26,7 +26,7 @@ const consumeChallenge = async (db, ceremonyId, purpose, userId = null) => {
         UPDATE webauthn_challenges
         SET consumed_at = NOW()
         WHERE challenge_id_hash = $1 AND purpose = $2 AND consumed_at IS NULL
-          AND expires_at > NOW() AND ($3::uuid IS NULL OR user_id = $3)
+          AND expires_at > NOW() AND ($3::uuid IS NULL OR user_id = $3::uuid)
         RETURNING challenge, user_id
     `, [ceremonyHash(ceremonyId), purpose, userId]);
     if (!result.rows.length) throw new AppError('Passkey request expired or already used', 400, true, 'PASSKEY_CEREMONY_INVALID');

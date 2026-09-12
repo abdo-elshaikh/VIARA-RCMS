@@ -15,7 +15,7 @@ import {
 import toast from 'react-hot-toast';
 import { useGetQueueQuery, useUpdateReportMutation } from '../store/api';
 import Modal from '../components/ui/Modal';
-import { EmptyState, MetricCard, PageHeader, PagePanel, Skeleton } from '../components/ui';
+import { EmptyState, PageHeader, PagePanel, Skeleton } from '../components/ui';
 import { formatDuration } from '../utils/dateFormat';
 import { getErrorMessage } from '../utils/getErrorMessage';
 
@@ -91,14 +91,14 @@ const ClinicalDashboard = () => {
                         <RefreshCw size={17} className={isFetching ? 'animate-spin' : ''} />{isFetching ? t('common.refreshing') : t('common.refresh')}
                     </button>
                 }
+                metrics={[
+                    { key: 'total', icon: FileText, tone: 'cyan', label: t('clinicalWorklist.metrics.total'), value: formatNumber(summary.total, locale), detail: t('clinicalWorklist.metrics.totalHelp'), loading: isLoading, error: isError },
+                    { key: 'reporting', icon: Edit3, tone: 'blue', label: t('clinicalWorklist.metrics.reporting'), value: formatNumber(summary.reporting, locale), detail: t('clinicalWorklist.metrics.reportingHelp'), loading: isLoading, error: isError },
+                    { key: 'overdue', icon: AlertTriangle, tone: summary.overdue ? 'rose' : 'emerald', label: t('clinicalWorklist.metrics.overdue'), value: formatNumber(summary.overdue, locale), detail: t('clinicalWorklist.metrics.overdueHelp'), loading: isLoading, error: isError },
+                    { key: 'wait', icon: Clock3, tone: 'amber', label: t('clinicalWorklist.metrics.averageWait'), value: formatDuration(summary.avgWait, locale), detail: t('clinicalWorklist.metrics.averageWaitHelp'), loading: isLoading, error: isError },
+                ]}
+                metricsLabel={t('clinicalWorklist.metricsLabel')}
             />
-
-            <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label={t('clinicalWorklist.metricsLabel')}>
-                <MetricCard icon={FileText} tone="cyan" label={t('clinicalWorklist.metrics.total')} value={formatNumber(summary.total, locale)} detail={t('clinicalWorklist.metrics.totalHelp')} />
-                <MetricCard icon={Edit3} tone="blue" label={t('clinicalWorklist.metrics.reporting')} value={formatNumber(summary.reporting, locale)} detail={t('clinicalWorklist.metrics.reportingHelp')} />
-                <MetricCard icon={AlertTriangle} tone={summary.overdue ? 'rose' : 'emerald'} label={t('clinicalWorklist.metrics.overdue')} value={formatNumber(summary.overdue, locale)} detail={t('clinicalWorklist.metrics.overdueHelp')} />
-                <MetricCard icon={Clock3} tone="amber" label={t('clinicalWorklist.metrics.averageWait')} value={formatDuration(summary.avgWait, locale)} detail={t('clinicalWorklist.metrics.averageWaitHelp')} />
-            </section>
 
             <PagePanel
                 title={t('clinicalWorklist.queue.title')}

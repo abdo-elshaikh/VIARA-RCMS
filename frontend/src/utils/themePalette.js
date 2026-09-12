@@ -26,21 +26,21 @@ export const SEMANTIC_PALETTE_DEFAULTS = Object.freeze({
         viewerPanel: '#111615',
     }),
     dark: Object.freeze({
-        canvas: '#101518',
-        surface: '#171D20',
-        surfaceSecondary: '#1D262A',
-        surfaceMuted: '#253137',
-        border: '#34434A',
-        borderStrong: '#566D75',
-        text: '#EDF2F0',
-        textSecondary: '#BAC5C2',
-        textMuted: '#8E9D99',
-        success: '#55D6A4',
-        warning: '#F4C45E',
-        danger: '#F08A8A',
-        info: '#76C4D5',
-        viewerBackground: '#07090A',
-        viewerPanel: '#111719',
+        canvas: '#0B0F12',
+        surface: '#12181D',
+        surfaceSecondary: '#182027',
+        surfaceMuted: '#1F2A33',
+        border: '#26333D',
+        borderStrong: '#526678',
+        text: '#F0F6FC',
+        textSecondary: '#C5D1DE',
+        textMuted: '#8292A2',
+        success: '#10B981',
+        warning: '#F59E0B',
+        danger: '#F43F5E',
+        info: '#38BDF8',
+        viewerBackground: '#070A0C',
+        viewerPanel: '#0F1418',
     }),
 });
 
@@ -99,6 +99,14 @@ const contrastRatio = (first, second) => {
     const brighter = Math.max(relativeLuminance(first), relativeLuminance(second));
     const darker = Math.min(relativeLuminance(first), relativeLuminance(second));
     return (brighter + 0.05) / (darker + 0.05);
+};
+
+const getAccessibleSemanticTone = (source, background, fallback) => {
+    if (contrastRatio(source, background) >= 4.5) return source;
+    const candidate = [0.18, 0.32, 0.46, 0.6, 0.74, 0.88]
+        .map((weight) => mixHexColors(source, fallback, weight))
+        .find((color) => contrastRatio(color, background) >= 4.5);
+    return candidate || fallback;
 };
 
 export const getAccessibleBrandTone = (scale, background, mode = 'light') => {
@@ -202,8 +210,15 @@ export const applyThemePalette = (root, { brandColor, mode = 'light', colorOverr
     root.style.setProperty('--VIARA-accent-contrast', accentContrast);
     root.style.setProperty('--VIARA-accent-rgb', rgb);
 
-    root.style.setProperty('--success-bg', mixHexColors(palette.success, palette.surface, resolvedMode === 'dark' ? 0.82 : 0.88));
-    root.style.setProperty('--warning-bg', mixHexColors(palette.warning, palette.surface, resolvedMode === 'dark' ? 0.82 : 0.88));
-    root.style.setProperty('--danger-bg', mixHexColors(palette.danger, palette.surface, resolvedMode === 'dark' ? 0.82 : 0.88));
-    root.style.setProperty('--info-bg', mixHexColors(palette.info, palette.surface, resolvedMode === 'dark' ? 0.82 : 0.88));
+    const semanticSurfaceWeight = resolvedMode === 'dark' ? 0.82 : 0.88;
+    ['success', 'warning', 'danger', 'info'].forEach((key) => {
+        const soft = mixHexColors(palette[key], palette.surface, semanticSurfaceWeight);
+        const border = mixHexColors(palette[key], palette.surface, resolvedMode === 'dark' ? 0.62 : 0.7);
+        const foreground = getAccessibleSemanticTone(palette[key], soft, palette.text);
+        root.style.setProperty(`--${key}-bg`, soft);
+        root.style.setProperty(`--VIARA-${key}`, foreground);
+        root.style.setProperty(`--VIARA-${key}-soft`, soft);
+        root.style.setProperty(`--VIARA-${key}-border`, border);
+        root.style.setProperty(`--VIARA-${key}-contrast`, getContrastColor(foreground));
+    });
 };

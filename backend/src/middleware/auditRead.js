@@ -32,6 +32,7 @@ const auditRead = (auditService, { resourceTable = null, resourceIdParam = 'id' 
       const details = JSON.stringify({
         statusCode: res.statusCode,
         method: req.method,
+        emergencyAccessId: (req.emergencyAccess || req.emergencyAccessVerified)?.grantId || null,
       });
 
       const severity = outcome === AUDIT_OUTCOME.DENIED ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.NOTICE;
@@ -66,6 +67,10 @@ const auditRead = (auditService, { resourceTable = null, resourceIdParam = 'id' 
           method: 'GET',
           path: requestPath,
           sourceSystem: 'backend-api',
+          metadata: (req.emergencyAccess || req.emergencyAccessVerified) ? {
+            emergencyAccessId: (req.emergencyAccess || req.emergencyAccessVerified).grantId,
+            emergencyPermissions: (req.emergencyAccess || req.emergencyAccessVerified).permissions,
+          } : {},
         },
         details,
         result: {

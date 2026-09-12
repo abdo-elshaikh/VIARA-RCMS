@@ -60,8 +60,8 @@ describe('appointment schema validation', () => {
     });
 });
 
-test('waiting-list query statuses include contacted entries', () => {
-    expect(VALID_WAITING_LIST_STATUSES).toEqual(['Waiting', 'Contacted', 'Scheduled', 'Cancelled']);
+test('waiting-list query statuses include contacted and offered entries', () => {
+    expect(VALID_WAITING_LIST_STATUSES).toEqual(['Waiting', 'Contacted', 'Offered', 'Scheduled', 'Declined', 'Expired', 'Cancelled']);
 });
 
 describe('patient conflict detection in appointment scheduling', () => {
@@ -74,9 +74,10 @@ describe('patient conflict detection in appointment scheduling', () => {
                 if (text === 'BEGIN') return { rows: [] };
                 if (text === 'ROLLBACK') return { rows: [] };
                 if (text.includes('SELECT working_hours')) return { rows: [{ working_hours: { start: 6, end: 22, holidays: [] } }] };
-                if (text.includes('SELECT modality_id, status FROM modalities')) return { rows: [{ modality_id: 'modality-1', status: 'Active' }] };
+                if (text.includes('FROM modalities')) return { rows: [{ modality_id: 'modality-1', status: 'Active', room_status: 'Active' }] };
                 if (text.includes('FROM equipment_downtime')) return { rows: [] };
-                if (text.includes('FROM examination_types WHERE type_id')) return { rows: [{ body_part: 'Brain', contrast_required: false, modality_id: 'modality-1', is_active: true }] };
+                if (text.includes('FROM equipment_maintenance')) return { rows: [] };
+                if (text.includes('FROM examination_types WHERE type_id')) return { rows: [{ body_part: 'Brain', contrast_required: false, modality_id: 'modality-1', is_active: true, duration_minutes: 30 }] };
                 if (text.includes('FROM appointments') && text.includes('modality_id = $1')) return { rows: [] };
                 if (text.includes('FROM appointments') && text.includes('patient_id = $1')) return { rows: [] };
                 if (text.includes('INSERT INTO appointments')) return { rows: [{ appointment_id: 'appt-1' }] };
@@ -128,9 +129,10 @@ describe('patient conflict detection in appointment scheduling', () => {
                 const text = String(sql);
                 if (text.includes('BEGIN')) return { rows: [] };
                 if (text.includes('SELECT working_hours')) return { rows: [{ working_hours: { start: 6, end: 22, holidays: [] } }] };
-                if (text.includes('SELECT modality_id, status FROM modalities')) return { rows: [{ modality_id: 'modality-1', status: 'Active' }] };
+                if (text.includes('FROM modalities')) return { rows: [{ modality_id: 'modality-1', status: 'Active', room_status: 'Active' }] };
                 if (text.includes('FROM equipment_downtime')) return { rows: [] };
-                if (text.includes('FROM examination_types WHERE type_id')) return { rows: [{ body_part: 'Brain', contrast_required: false, modality_id: 'modality-1' }] };
+                if (text.includes('FROM equipment_maintenance')) return { rows: [] };
+                if (text.includes('FROM examination_types WHERE type_id')) return { rows: [{ body_part: 'Brain', contrast_required: false, modality_id: 'modality-1', duration_minutes: 30 }] };
                 if (text.includes('FROM appointments') && text.includes('modality_id = $1')) return { rows: [] };
                 if (text.includes('FROM appointments') && text.includes('patient_id = $1')) return { rows: [{ appointment_id: 'conflict-1' }] };
                 if (text.includes('ROLLBACK')) return { rows: [] };

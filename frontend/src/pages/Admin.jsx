@@ -10,7 +10,7 @@ import {
     WalletCards,
 } from 'lucide-react';
 import { useGetDoctorCommissionsQuery, useGetRevenueReportQuery } from '../store/api';
-import { AccessibleChartData, PageHeader, MetricCard, PagePanel, EmptyState } from '../components/ui';
+import { AccessibleChartData, PageHeader, PagePanel, EmptyState } from '../components/ui';
 
 const chartTooltipStyle = {
     background: 'rgba(255, 255, 255, 0.96)',
@@ -148,6 +148,13 @@ const Admin = () => {
                         </button>
                     </>
                 }
+                metrics={[
+                    { key: 'revenue', icon: BadgeDollarSign, tone: 'cyan', label: t('dashboard.revenue'), value: currency(totals.revenue), detail: t('dashboard.revenueDetail'), loading: revLoading, error: revenueError },
+                    { key: 'patient', icon: WalletCards, tone: 'emerald', label: t('dashboard.patientPaid'), value: currency(totals.patientPaid), detail: t('dashboard.patientPaidDetail'), loading: revLoading, error: revenueError },
+                    { key: 'claims', icon: CircleDollarSign, tone: 'blue', label: t('dashboard.claims'), value: currency(totals.insurance), detail: t('dashboard.claimsDetail'), loading: revLoading, error: revenueError },
+                    { key: 'commission', icon: Stethoscope, tone: 'violet', label: t('dashboard.commissions'), value: currency(commissionTotals.pending), detail: t('dashboard.commissionsDetail', { count: number(commissionRows.length) }), loading: commLoading, error: commissionsError },
+                ]}
+                metricsLabel={t('dashboard.metricsLabel')}
             />
 
             {isError && (
@@ -157,12 +164,6 @@ const Admin = () => {
                 </div>
             )}
 
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('dashboard.metricsLabel')}>
-                <MetricCard icon={BadgeDollarSign} tone="cyan" label={t('dashboard.revenue')} value={currency(totals.revenue)} detail={t('dashboard.revenueDetail')} loading={revLoading} />
-                <MetricCard icon={WalletCards} tone="emerald" label={t('dashboard.patientPaid')} value={currency(totals.patientPaid)} detail={t('dashboard.patientPaidDetail')} loading={revLoading} />
-                <MetricCard icon={CircleDollarSign} tone="blue" label={t('dashboard.claims')} value={currency(totals.insurance)} detail={t('dashboard.claimsDetail')} loading={revLoading} />
-                <MetricCard icon={Stethoscope} tone="violet" label={t('dashboard.commissions')} value={currency(commissionTotals.pending)} detail={t('dashboard.commissionsDetail', { count: number(commissionRows.length) })} loading={commLoading} />
-            </section>
 
             <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,.8fr)]">
                 <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-[#0b1426] sm:p-6">

@@ -5,9 +5,14 @@ import {
     CheckCircle2,
     Download,
     RefreshCw,
+    Lock,
+    Eye,
+    EyeOff,
+    ShieldCheck,
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { selectCurrentUser } from '../../store/authSlice';
+import { buildPermissionModel } from './receptionLogic';
 import { roundFinancialAmount, toFinancialNumber } from '../../utils/financialFormat';
 
 const CashDrawerReconciliation = ({
@@ -24,6 +29,18 @@ const CashDrawerReconciliation = ({
     const [countedCash, setCountedCash] = useState('');
     const [varianceNotes, setVarianceNotes] = useState('');
     const [showReview, setShowReview] = useState(false);
+    const [supervisorRevealed, setSupervisorRevealed] = useState(false);
+
+    const permModel = useMemo(() => buildPermissionModel(user), [user]);
+    const isSupervisor = Boolean(
+        user?.role === 'Developer' ||
+        user?.role === 'Admin' ||
+        user?.role === 'Financial Manager' ||
+        permModel.canReviewShiftVariance ||
+        permModel.canReconcileShifts
+    );
+
+    const isBlindCountActive = !showReview && !(isSupervisor && supervisorRevealed);
 
     const expectedCash = useMemo(() => {
         if (!currentShift && !reconciliationData?.expected) return 0;
@@ -47,6 +64,7 @@ const CashDrawerReconciliation = ({
             setShowReview(false);
             setCountedCash('');
             setVarianceNotes('');
+            setSupervisorRevealed(false);
         }
     }, [counted, countedCash, expectedCash, isSubmitting, onReconcile, variance, varianceNotes]);
 
@@ -97,11 +115,35 @@ const CashDrawerReconciliation = ({
                     <div className="grid grid-cols-3 gap-2">
                         <div className="rounded-none bg-slate-50 p-3 text-center dark:bg-slate-950/40">
                             <p className="text-[10px] font-black uppercase text-slate-400">{t('reconciliation.expected', 'Expected')}</p>
-                            <p className="mt-1 text-lg font-black text-slate-900 dark:text-white">{roundFinancialAmount(expectedCash).toFixed(2)}</p>
+                            {isBlindCountActive ? (
+                                <div className="mt-1 flex items-center justify-center gap-1 text-slate-400 dark:text-slate-500">
+                                    <Lock size={13} />
+                                    <span className="text-[11px] font-bold">{t('reconciliation.confidentialAmount', 'محمي (جرد أعمى)')}</span>
+                                </div>
+                            ) : (
+                                <p className="mt-1 text-lg font-black text-slate-900 dark:text-white">{roundFinancialAmount(expectedCash).toFixed(2)}</p>
+                            )}
+                            {isSupervisor && !showReview && (
+                                <button
+                                    type="button"
+                                    onClick={() => setSupervisorRevealed(!supervisorRevealed)}
+                                    className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-700 dark:text-cyan-400 hover:underline"
+                                >
+                                    {supervisorRevealed ? <EyeOff size={11} /> : <Eye size={11} />}
+                                    {supervisorRevealed ? t('reconciliation.hideSupervisor', 'إخفاء المتوقع') : t('reconciliation.revealSupervisor', 'كشف المتوقع (مشرف)')}
+                                </button>
+                            )}
                         </div>
                         <div className="rounded-none bg-slate-50 p-3 text-center dark:bg-slate-950/40">
                             <p className="text-[10px] font-black uppercase text-slate-400">{t('reconciliation.collected', 'Collected')}</p>
-                            <p className="mt-1 text-lg font-black text-slate-900 dark:text-white">{roundFinancialAmount(Number(currentShift.collected_amount || 0)).toFixed(2)}</p>
+                            {isBlindCountActive ? (
+                                <div className="mt-1 flex items-center justify-center gap-1 text-slate-400 dark:text-slate-500">
+                                    <Lock size={13} />
+                                    <span className="text-[11px] font-bold">{t('reconciliation.confidentialAmount', 'محمي (جرد أعمى)')}</span>
+                                </div>
+                            ) : (
+                                <p className="mt-1 text-lg font-black text-slate-900 dark:text-white">{roundFinancialAmount(Number(currentShift.collected_amount || 0)).toFixed(2)}</p>
+                            )}
                         </div>
                         <div className="rounded-none bg-slate-50 p-3 text-center dark:bg-slate-950/40">
                             <p className="text-[10px] font-black uppercase text-slate-400">{t('reconciliation.transactions', 'Txns')}</p>
@@ -126,33 +168,31 @@ const CashDrawerReconciliation = ({
                                 placeholder="0.00"
                             />
 
-                            <div className="mt-4 flex items-center justify-between rounded-none bg-white/60 p-3 dark:bg-slate-900/40">
-                                <div className="flex items-center gap-2">
-                                    {hasVariance ? (
-                                        <AlertTriangle size={16} className="text-amber-500" />
-                                    ) : (
-                                        <CheckCircle2 size={16} className="text-emerald-500" />
-                                    )}
-                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                                        {t('reconciliation.variance', { defaultValue: 'Variance' })}
+                            {isSupervisor && supervisorRevealed ? (
+                                <div className="mt-4 flex items-center justify-between rounded-none bg-white/60 p-3 dark:bg-slate-900/40">
+                                    <div className="flex items-center gap-2">
+                                        {hasVariance ? (
+                                            <AlertTriangle size={16} className="text-amber-500" />
+                                        ) : (
+                                            <CheckCircle2 size={16} className="text-emerald-500" />
+                                        )}
+                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            {t('reconciliation.variance', { defaultValue: 'Variance' })}
+                                        </span>
+                                    </div>
+                                    <span className={`text-sm font-black ${hasVariance ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
+                                        {variance > 0 ? '+' : ''}{roundFinancialAmount(variance).toFixed(2)}
                                     </span>
                                 </div>
-                                <span className={`text-sm font-black ${hasVariance ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
-                                    {variance > 0 ? '+' : ''}{roundFinancialAmount(variance).toFixed(2)}
-                                </span>
-                            </div>
-
-                            {hasVariance && (
-                                <div className="mt-3">
-                                    <label className="mb-1.5 block text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                                        {t('reconciliation.varianceNotes', { defaultValue: 'Variance Notes (optional)' })}
-                                    </label>
-                                    <textarea
-                                        rows="2"
-                                        value={varianceNotes}
-                                        onChange={(e) => setVarianceNotes(e.target.value)}
-                                        className="w-full rounded-none border border-slate-200 bg-white/80 px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
-                                    />
+                            ) : (
+                                <div className="mt-4 flex items-start gap-2.5 rounded-none border border-cyan-200 bg-cyan-50/60 p-3 text-cyan-950 dark:border-cyan-800 dark:bg-cyan-950/30 dark:text-cyan-200">
+                                    <ShieldCheck size={16} className="mt-0.5 shrink-0 text-cyan-600 dark:text-cyan-400" />
+                                    <div className="text-[11px] leading-relaxed">
+                                        <span className="font-bold block mb-0.5">{t('reconciliation.blindCountTitle', 'جرد أعمى (محمي)')}</span>
+                                        <p className="text-slate-600 dark:text-slate-300">
+                                            {t('reconciliation.blindCountNotice', 'نظام الجرد الأعمى نشط: يرجى إحصاء النقدية الفعلية بالدرج بدقة وإدخالها. سيتم تدقيق الرصيد الدفتري واحتساب الفارق في خطوة المراجعة التالية.')}
+                                        </p>
+                                    </div>
                                 </div>
                             )}
 
@@ -162,7 +202,7 @@ const CashDrawerReconciliation = ({
                                 disabled={countedCash === '' || counted < 0 || isSubmitting}
                                 className="mt-4 w-full rounded-none bg-gradient-to-b from-cyan-600 to-cyan-700 py-2.5 text-xs font-black text-white shadow-sm transition hover:from-cyan-700 hover:to-cyan-800 disabled:opacity-50"
                             >
-                                {t('reconciliation.reconcile', { defaultValue: 'Reconcile' })}
+                                {t('reconciliation.reviewAndVerify', { defaultValue: 'مراجعة وتدقيق الجرد' })}
                             </button>
                         </div>
                     ) : (
@@ -186,11 +226,31 @@ const CashDrawerReconciliation = ({
                                         defaultValue: `Counted: ${roundFinancialAmount(counted).toFixed(2)} | Expected: ${roundFinancialAmount(expectedCash).toFixed(2)} | Variance: ${roundFinancialAmount(variance).toFixed(2)}`,
                                     })}
                                 </p>
+                                {hasVariance && (
+                                    <p className="mt-2 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                                        {t('reconciliation.supervisorVarianceApprovalRequired', 'تنبيه: يوجد فارق نقدي، وسيتطلب إقفال الوردية اعتماد ومراجعة المشرف المالي.')}
+                                    </p>
+                                )}
                             </div>
 
+                            {hasVariance && (
+                                <div className="rounded-none border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                                    <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-400">
+                                        {t('reconciliation.varianceNotes', { defaultValue: 'ملاحظات ومبررات الفرق' })}
+                                    </label>
+                                    <textarea
+                                        rows="2"
+                                        value={varianceNotes}
+                                        onChange={(e) => setVarianceNotes(e.target.value)}
+                                        placeholder={t('reconciliation.varianceNotes', 'ملاحظات ومبررات الفرق')}
+                                        className="w-full rounded-none border border-slate-200 bg-white/80 px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+                                    />
+                                </div>
+                            )}
+
                             <div className="flex gap-3">
-                                <button type="button" onClick={() => { setShowReview(false); setCountedCash(''); setVarianceNotes(''); }} className="flex-1 rounded-none border border-slate-200 bg-white py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                                    {t('common.adjust', 'Adjust')}
+                                <button type="button" onClick={() => setShowReview(false)} className="flex-1 rounded-none border border-slate-200 bg-white py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                                    {t('common.adjust', 'تعديل العد')}
                                 </button>
                                 <button type="button" onClick={handleReconcile} disabled={isSubmitting} className="flex-1 rounded-none bg-gradient-to-b from-emerald-600 to-emerald-700 py-2.5 text-xs font-black text-white shadow-sm transition hover:from-emerald-700 hover:to-emerald-800 disabled:cursor-wait disabled:opacity-60">
                                     {isSubmitting ? t('reconciliation.processing', { defaultValue: 'Saving...' }) : t('reconciliation.confirmReconciliation', { defaultValue: 'Confirm Reconciliation' })}

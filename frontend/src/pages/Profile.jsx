@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
     Briefcase,
+    Calendar,
     CalendarOff,
     Camera,
     CheckCircle2,
@@ -16,7 +17,9 @@ import { useSearchParams } from 'react-router-dom';
 import ProfileSettings from '../components/settings/ProfileSettings';
 import SecuritySettings from '../components/settings/SecuritySettings';
 import LeaveManager from '../components/hr/LeaveManager';
+import StaffShiftSchedule from '../components/hr/attendance/StaffShiftSchedule';
 import { selectCurrentUser } from '../store/authSlice';
+import PageHeader from '../components/ui/PageHeader';
 
 /* ─── Avatar ──────────────────────────────────────────────────────── */
 const ProfileAvatar = ({ currentUser, initials, isRtl }) => {
@@ -177,9 +180,11 @@ const Profile = () => {
         ? 'security'
         : requestedSection === 'leave'
             ? 'leave'
-            : requestedSection === 'preferences'
-                ? 'preferences'
-                : 'identity';
+            : requestedSection === 'shifts'
+                ? 'shifts'
+                : requestedSection === 'preferences'
+                    ? 'preferences'
+                    : 'identity';
 
     const initials = displayName
         .split(/\s+/).filter(Boolean).slice(0, 2)
@@ -192,6 +197,12 @@ const Profile = () => {
             icon: UserRound,
             label: t('settings.profilePage.identity', { defaultValue: isRtl ? 'بيانات الهوية والمهنة' : 'Identity & Professional Info' }),
             description: t('settings.profilePage.identityDesc', { defaultValue: isRtl ? 'الاسم، الترخيص الطبي، الصورة، القسم، والمسمى الوظيفي.' : 'Name, medical license, contact, department, job title, and staff bio.' }),
+        },
+        {
+            id: 'shifts',
+            icon: Clock,
+            label: t('settings.profilePage.shifts', { defaultValue: isRtl ? 'جدول الورديات' : 'Shift Schedule' }),
+            description: t('settings.profilePage.shiftsDesc', { defaultValue: isRtl ? 'عرض الورديات المخصصة، وتقديم طلبات تبديل أو تعديل مع الزملاء.' : 'View assigned shifts and request swaps or schedule modifications.' }),
         },
         {
             id: 'security',
@@ -211,6 +222,7 @@ const Profile = () => {
         const next = new URLSearchParams(searchParams);
         if (section === 'security') next.set('section', 'security');
         else if (section === 'leave') next.set('section', 'leave');
+        else if (section === 'shifts') next.set('section', 'shifts');
         else if (section === 'preferences') next.set('section', 'preferences');
         else next.delete('section');
         setSearchParams(next, { replace: true });
@@ -225,6 +237,9 @@ const Profile = () => {
                 <LeaveManager selfServiceOnly />
             </div>
         );
+        if (activeSection === 'shifts') return (
+            <StaffShiftSchedule selfService />
+        );
         return <ProfileSettings />;
     };
 
@@ -235,6 +250,19 @@ const Profile = () => {
             className="mx-auto max-w-[1240px] space-y-6"
         >
             {/* ── Executive identity card ───────────────────────── */}
+            <PageHeader
+                icon={UserRound}
+                eyebrow={t('settings.profilePage.eyebrow', { defaultValue: isRtl ? 'الملف الشخصي للحساب' : 'Account Profile' })}
+                title={displayName}
+                description={t('settings.profilePage.description', { defaultValue: isRtl ? 'أدر بيانات الهوية والأمان والإجازات من مساحة موحدة.' : 'Manage identity, security, and leave from one workspace.' })}
+                metrics={[
+                    { key: 'role', icon: Briefcase, label: t('settings.role', { defaultValue: isRtl ? 'الدور الوظيفي' : 'Role' }), value: role || '-', tone: 'teal' },
+                    { key: 'department', icon: UserRound, label: t('settings.department', { defaultValue: isRtl ? 'القسم' : 'Department' }), value: department || '-', tone: 'blue' },
+                    { key: 'email', icon: Mail, label: t('settings.email', { defaultValue: isRtl ? 'البريد الإلكتروني' : 'Email' }), value: email || '-', tone: 'slate' },
+                    { key: 'section', icon: sections.find((section) => section.id === activeSection)?.icon || UserRound, label: t('settings.activeSection', { defaultValue: isRtl ? 'القسم الحالي' : 'Active section' }), value: sections.find((section) => section.id === activeSection)?.label || sections[0]?.label, tone: 'emerald' }
+                ]}
+                metricsLabel={isRtl ? 'مؤشرات سجل الحساب' : 'Account record indicators'}
+            />
             <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
                 {/* Decorative top band */}
                 <div className="h-2 w-full bg-gradient-to-r from-teal-600 via-emerald-500 to-teal-400" />
@@ -257,9 +285,9 @@ const Profile = () => {
                             </div>
 
                             {/* Full name */}
-                            <h1 className="mt-1.5 truncate text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                            <h2 className="mt-1.5 truncate text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
                                 {displayName}
-                            </h1>
+                            </h2>
 
                             {/* Role + department subtitle */}
                             <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
@@ -330,7 +358,7 @@ const Profile = () => {
 
             {/* ── Section switcher tabs ─────────────────────────── */}
             <nav
-                className="grid gap-3 sm:grid-cols-3"
+                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
                 aria-label={t('settings.profilePage.sections', { defaultValue: isRtl ? 'أقسام الملف الشخصي' : 'Profile sections' })}
             >
                 {sections.map((section) => (

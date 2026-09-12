@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -6,7 +6,7 @@ import {
   CheckCircle2,
   FileText,
   ScanLine,
-  Share2,
+  Stethoscope,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useTranslation } from "react-i18next";
@@ -48,14 +48,14 @@ const STEPS = [
   },
   {
     step: "04",
-    icon: Share2,
-    titleAr: "شارك النتيجة مع طبيبك",
-    titleEn: "Share with your doctor",
-    descAr: "شارك التقرير بسهولة لدعم متابعة أسرع وقرار طبي مبني على الصورة الكاملة.",
+    icon: Stethoscope,
+    titleAr: "تابع مع طبيبك",
+    titleEn: "Follow up with your doctor",
+    descAr: "استخدم بوابة المريض أو وصول الطبيب الآمن لدعم المتابعة واتخاذ القرار الطبي.",
     descEn:
-      "Share the report easily to support faster follow-up and better-informed clinical decisions.",
-    pointsAr: ["مشاركة رقمية مباشرة", "وصول واضح للتقرير", "متابعة أسرع للعلاج"],
-    pointsEn: ["Direct digital sharing", "Clear report access", "Faster care follow-up"],
+      "Use the patient portal or secure doctor access to support follow-up and clinical decisions.",
+    pointsAr: ["وصول موثّق للنتائج", "خصوصية أثناء المتابعة", "قرار مبني على التقرير"],
+    pointsEn: ["Verified result access", "Private follow-up", "Report-informed decisions"],
     action: "results" as const,
   },
 ];
@@ -70,21 +70,12 @@ export const PatientJourney = ({ onBook, onCheckResults }: PatientJourneyProps) 
   const isRtl = i18n.language?.startsWith("ar");
   const reduceMotion = useReducedMotion();
   const [activeIndex, setActiveIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
   const activeStep = STEPS[activeIndex];
   const ActiveIcon = activeStep.icon;
 
   const move = (direction: number) => {
     setActiveIndex((current) => (current + direction + STEPS.length) % STEPS.length);
   };
-
-  useEffect(() => {
-    if (paused || reduceMotion) return undefined;
-    const timer = window.setInterval(() => {
-      setActiveIndex((current) => (current + 1) % STEPS.length);
-    }, 6800);
-    return () => window.clearInterval(timer);
-  }, [paused, reduceMotion]);
 
   const handleAction = () => {
     if (activeStep.action === "results") onCheckResults?.();
@@ -115,10 +106,6 @@ export const PatientJourney = ({ onBook, onCheckResults }: PatientJourneyProps) 
 
         <div
           className="mx-auto w-full min-w-0 max-w-6xl overflow-hidden rounded-lg border border-[#DCE8E5] bg-[#F8FBFA] shadow-[0_18px_45px_rgba(11,35,72,0.08)] dark:border-border dark:bg-background"
-          onMouseEnter={() => setPaused(true)}
-          onMouseLeave={() => setPaused(false)}
-          onFocus={() => setPaused(true)}
-          onBlur={() => setPaused(false)}
         >
           <div className="relative grid min-w-0 grid-cols-2 border-b border-[#DCE8E5] bg-white dark:border-border dark:bg-surface lg:grid-cols-4">
             <div
@@ -165,7 +152,7 @@ export const PatientJourney = ({ onBook, onCheckResults }: PatientJourneyProps) 
                   </motion.span>
                   <span className="min-w-0">
                     <span
-                      className={`block text-[10px] font-bold ${isActive ? "text-primary" : "text-muted-foreground"}`}
+                      className={`block text-xs font-bold ${isActive ? "text-primary" : "text-muted-foreground"}`}
                     >
                       {step.step}
                     </span>
@@ -197,7 +184,7 @@ export const PatientJourney = ({ onBook, onCheckResults }: PatientJourneyProps) 
                   {activeStep.step}
                 </span>
                 <div className="relative">
-                  <span className="inline-flex items-center gap-2 text-[11px] font-bold text-[#80D9BD]">
+                  <span className="inline-flex items-center gap-2 text-xs font-bold text-[#80D9BD]">
                     <span className="h-1.5 w-1.5 rounded-full bg-[#80D9BD]" />
                     {isRtl
                       ? `الخطوة ${activeIndex + 1} من ${STEPS.length}`
@@ -246,7 +233,7 @@ export const PatientJourney = ({ onBook, onCheckResults }: PatientJourneyProps) 
                     >
                       <ArrowLeft className="h-4 w-4 rtl:-scale-x-100" />
                     </button>
-                    <span className="min-w-14 text-center text-[11px] font-bold tabular-nums text-muted-foreground">
+                    <span className="min-w-14 text-center text-xs font-bold tabular-nums text-muted-foreground">
                       {activeStep.step} / {String(STEPS.length).padStart(2, "0")}
                     </span>
                     <button

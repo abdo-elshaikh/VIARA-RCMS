@@ -1,5 +1,13 @@
-import { useState } from 'react';
-import { AlertTriangle, Banknote, CheckCircle2, RefreshCw, WalletCards } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { 
+    AlertTriangle, 
+    Banknote, 
+    CheckCircle2, 
+    Filter, 
+    RefreshCw, 
+    Search, 
+    WalletCards 
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-hot-toast';
 import TextPromptDialog from '../ui/TextPromptDialog';
@@ -8,14 +16,25 @@ import { formatFinancialCurrency, formatFinancialDate } from '../../utils/financ
 
 const CashReconciliation = () => {
     const { t, i18n } = useTranslation('workspace');
+    const isAr = i18n.language?.startsWith('ar');
     const [reviewTarget, setReviewTarget] = useState(null);
+    const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'open' | 'review' | 'closed'
     const { data, isLoading, isError, isFetching, refetch } = useGetCashierReconciliationQuery({});
     const [reviewClosure, { isLoading: reviewing }] = useReviewCashierClosureMutation();
 
-    const shifts = data?.data || [];
+    const shifts = useMemo(() => data?.data || [], [data?.data]);
     const summary = data?.summary || {};
     const reviewCount = shifts.filter((shift) => shift.review_status === 'Requires Review').length;
     const money = (value) => formatFinancialCurrency(value, i18n.language);
+
+    const filteredShifts = useMemo(() => {
+        return shifts.filter(shift => {
+            if (statusFilter === 'open') return shift.status === 'Open';
+            if (statusFilter === 'review') return shift.review_status === 'Requires Review';
+            if (statusFilter === 'closed') return shift.status === 'Closed';
+            return true;
+        });
+    }, [shifts, statusFilter]);
 
     const submitReview = async (reviewNotes) => {
         if (!reviewTarget) return false;
@@ -50,7 +69,7 @@ const CashReconciliation = () => {
                     type="button"
                     onClick={refetch}
                     disabled={isFetching}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
                     <RefreshCw size={15} className={isFetching ? 'animate-spin' : ''} />
                     {t('finance.cashier.refresh')}
@@ -65,12 +84,54 @@ const CashReconciliation = () => {
                 <Metric label={t('finance.cashier.needsReview')} value={reviewCount} alert={reviewCount > 0} />
             </div>
 
+            {/* Shift Filters */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100/80 p-4 dark:border-slate-800">
+                <div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                    <button
+                        type="button"
+                        onClick={() => setStatusFilter('all')}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                            statusFilter === 'all' ? 'bg-teal-700 text-white shadow font-black' : 'text-slate-600 dark:text-slate-300'
+                        }`}
+                    >
+                        {isAr ? 'كافة الورديات' : 'All Shifts'} ({shifts.length})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setStatusFilter('open')}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                            statusFilter === 'open' ? 'bg-teal-700 text-white shadow font-black' : 'text-slate-600 dark:text-slate-300'
+                        }`}
+                    >
+                        {isAr ? 'الورديات المفتوحة' : 'Open Shifts'} ({summary.openShifts || 0})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setStatusFilter('review')}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                            statusFilter === 'review' ? 'bg-amber-600 text-white shadow font-black' : 'text-slate-600 dark:text-slate-300'
+                        }`}
+                    >
+                        {isAr ? 'فروقات تحتاج مراجعة' : 'Requires Review'} ({reviewCount})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setStatusFilter('closed')}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                            statusFilter === 'closed' ? 'bg-teal-700 text-white shadow font-black' : 'text-slate-600 dark:text-slate-300'
+                        }`}
+                    >
+                        {isAr ? 'المغلقة' : 'Closed'}
+                    </button>
+                </div>
+            </div>
+
             {/* Shift List */}
             {isLoading ? (
                 <div className="p-12 text-center text-sm font-bold text-slate-400">{t('finance.cashier.loading')}</div>
             ) : isError ? (
                 <div role="alert" className="p-12 text-center text-sm font-bold text-rose-600 dark:text-rose-400">{t('finance.cashier.error')}</div>
-            ) : shifts.length === 0 ? (
+            ) : filteredShifts.length === 0 ? (
                 <div className="p-12 text-center">
                     <Banknote size={40} className="mx-auto text-slate-300 dark:text-slate-600" />
                     <p className="mt-3 font-black text-slate-700 dark:text-slate-300">{t('finance.cashier.emptyTitle')}</p>
@@ -78,7 +139,7 @@ const CashReconciliation = () => {
                 </div>
             ) : (
                 <div className="divide-y divide-slate-100/80 dark:divide-white/5">
-                    {shifts.map((shift) => (
+                    {filteredShifts.map((shift) => (
                         <Shift
                             key={shift.shift_id}
                             shift={shift}
@@ -115,7 +176,7 @@ const Metric = ({ label, value, alert }) => (
             : 'border-slate-200/60 bg-slate-50/70 dark:border-white/5 dark:bg-white/[0.02]'
     }`}>
         <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</p>
-        <p className={`mt-2 text-xl font-black ${alert ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>{value}</p>
+        <p className={`mt-2 font-mono text-xl font-black ${alert ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>{value}</p>
     </div>
 );
 

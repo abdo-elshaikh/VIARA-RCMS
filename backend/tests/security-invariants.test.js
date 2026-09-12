@@ -42,6 +42,10 @@ describe('security and financial invariants', () => {
             activeStaff: 4
         });
         const activitySpy = jest.spyOn(DashboardService.prototype, 'getRecentActivity').mockResolvedValue([]);
+        const snapshotSpy = jest.spyOn(DashboardService.prototype, 'getOperationalSnapshot').mockResolvedValue({
+            liveModalities: [],
+            turnaroundStages: []
+        });
         const res = createResponse();
         const next = jest.fn();
 
@@ -50,7 +54,8 @@ describe('security and financial invariants', () => {
         }, res, next);
 
         expect(adminSpy).toHaveBeenCalled();
-        expect(activitySpy).toHaveBeenCalledWith(5);
+        expect(activitySpy).toHaveBeenCalledWith(5, { role: 'Developer', userId: 'dev-1' });
+        expect(snapshotSpy).toHaveBeenCalled();
         expect(next).not.toHaveBeenCalled();
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
             role: 'Developer',
@@ -62,6 +67,7 @@ describe('security and financial invariants', () => {
 
         adminSpy.mockRestore();
         activitySpy.mockRestore();
+        snapshotSpy.mockRestore();
     });
 
     test('technicians cannot write diagnostic report content', async () => {

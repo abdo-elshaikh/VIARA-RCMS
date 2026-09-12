@@ -21,6 +21,7 @@ const TextPromptDialog = ({
     inputProps = {},
     helperText,
     isLoading = false,
+    hideInput = false,
 }) => {
     const [value, setValue] = useState(initialValue);
     const [attempted, setAttempted] = useState(false);
@@ -28,9 +29,9 @@ const TextPromptDialog = ({
     const submittingRef = useRef(false);
     const busy = isLoading || isSubmitting;
     const normalized = value.trim();
-    const customError = normalized && validate ? validate(normalized) : '';
+    const customError = !hideInput && normalized && validate ? validate(normalized) : '';
     const error = attempted
-        ? (required && !normalized ? validationMessage : customError)
+        ? (!hideInput && required && !normalized ? validationMessage : customError)
         : '';
 
     useEffect(() => {
@@ -44,11 +45,11 @@ const TextPromptDialog = ({
         event.preventDefault();
         if (busy || submittingRef.current) return;
         setAttempted(true);
-        if ((required && !normalized) || customError) return;
+        if ((!hideInput && required && !normalized) || customError) return;
         submittingRef.current = true;
         setIsSubmitting(true);
         try {
-            const completed = await onConfirm(normalized);
+            const completed = await onConfirm(hideInput ? '' : normalized);
             if (completed !== false) onClose?.();
         } finally {
             submittingRef.current = false;
@@ -60,7 +61,9 @@ const TextPromptDialog = ({
         <Modal isOpen={isOpen} onClose={busy ? undefined : onClose} title={title} size="sm">
             <form onSubmit={submit} noValidate className="space-y-5">
                 {message && <p className="text-sm leading-6 text-slate-600">{message}</p>}
-                <Input autoFocus label={label} type={type} value={value} onChange={(event) => setValue(event.target.value)} placeholder={placeholder} required={required} error={error || undefined} helperText={helperText} {...inputProps} disabled={busy || inputProps.disabled} />
+                {!hideInput && (
+                    <Input autoFocus label={label} type={type} value={value} onChange={(event) => setValue(event.target.value)} placeholder={placeholder} required={required} error={error || undefined} helperText={helperText} {...inputProps} disabled={busy || inputProps.disabled} />
+                )}
                 <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
                     <Button variant="ghost" onClick={onClose} disabled={busy}>{cancelLabel}</Button>
                     <Button type="submit" loading={busy}>{confirmLabel}</Button>

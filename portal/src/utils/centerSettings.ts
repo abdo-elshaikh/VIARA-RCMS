@@ -93,30 +93,18 @@ const DEFAULT_CENTER_SETTINGS: CenterSettings = {
     },
     homepage_settings: {
         enabled: true,
-        heroTitle: 'Advanced diagnostic imaging with clear, compassionate care.',
-        heroSubtitle: 'Book MRI, CT, ultrasound, X-ray, mammography, and specialized radiology services with a team focused on comfort, accuracy, and fast report delivery.',
-        announcement: 'Same-day appointments available for selected studies',
-        heroImageUrl: '/images/radiology-scan-montage.png',
-        accentColor: '#0891b2',
-        primaryCtaLabel: 'Book appointment',
-        primaryCtaUrl: '#contact',
-        secondaryCtaLabel: 'Patient portal',
-        secondaryCtaUrl: '/patient',
-        services: [
-            { title: 'MRI imaging', description: 'High-resolution neurological, musculoskeletal, abdominal, and vascular MRI studies.' },
-            { title: 'CT scanning', description: 'Fast cross-sectional imaging for urgent, chest, abdomen, and trauma evaluations.' },
-            { title: 'Ultrasound', description: 'Comfortable real-time imaging for abdominal, pelvic, vascular, and soft-tissue exams.' },
-            { title: 'X-ray and fluoroscopy', description: 'Efficient digital radiography and guided dynamic imaging for everyday diagnostics.' },
-            { title: 'Mammography', description: 'Breast imaging workflows designed for screening, diagnosis, and follow-up.' },
-            { title: 'Report delivery', description: 'Secure patient and referring doctor access to finalized reports and documents.' }
-        ],
-        stats: [
-            { value: '24/7', label: 'patient portal access' },
-            { value: '06+', label: 'imaging services' },
-            { value: '02', label: 'secure portals' },
-            { value: '01', label: 'connected care team' }
-        ],
-        highlights: ['Consultant radiologists', 'Digital reports', 'Arabic and English support', 'Insurance-ready workflows']
+        heroTitle: '',
+        heroSubtitle: '',
+        announcement: '',
+        heroImageUrl: '',
+        accentColor: '',
+        primaryCtaLabel: '',
+        primaryCtaUrl: '',
+        secondaryCtaLabel: '',
+        secondaryCtaUrl: '',
+        services: [],
+        stats: [],
+        highlights: []
     }
 };
 
@@ -149,24 +137,18 @@ export const normalizeCenterSettings = (settings: Record<string, any> = {}, lang
             ...DEFAULT_CENTER_SETTINGS.homepage_settings,
             ...homepageSettings,
             enabled: homepageSettings.enabled !== false,
-            heroTitle: homepageSettings.heroTitle || DEFAULT_CENTER_SETTINGS.homepage_settings.heroTitle,
-            heroSubtitle: homepageSettings.heroSubtitle || DEFAULT_CENTER_SETTINGS.homepage_settings.heroSubtitle,
-            announcement: homepageSettings.announcement || DEFAULT_CENTER_SETTINGS.homepage_settings.announcement,
-            heroImageUrl: homepageSettings.heroImageUrl || DEFAULT_CENTER_SETTINGS.homepage_settings.heroImageUrl,
-            accentColor: homepageSettings.accentColor || DEFAULT_CENTER_SETTINGS.homepage_settings.accentColor,
-            primaryCtaLabel: homepageSettings.primaryCtaLabel || DEFAULT_CENTER_SETTINGS.homepage_settings.primaryCtaLabel,
-            primaryCtaUrl: homepageSettings.primaryCtaUrl || DEFAULT_CENTER_SETTINGS.homepage_settings.primaryCtaUrl,
-            secondaryCtaLabel: homepageSettings.secondaryCtaLabel || DEFAULT_CENTER_SETTINGS.homepage_settings.secondaryCtaLabel,
-            secondaryCtaUrl: homepageSettings.secondaryCtaUrl || DEFAULT_CENTER_SETTINGS.homepage_settings.secondaryCtaUrl,
-            services: Array.isArray(homepageSettings.services) && homepageSettings.services.length
-                ? homepageSettings.services
-                : DEFAULT_CENTER_SETTINGS.homepage_settings.services,
-            stats: Array.isArray(homepageSettings.stats) && homepageSettings.stats.length
-                ? homepageSettings.stats
-                : DEFAULT_CENTER_SETTINGS.homepage_settings.stats,
-            highlights: Array.isArray(homepageSettings.highlights) && homepageSettings.highlights.length
-                ? homepageSettings.highlights
-                : DEFAULT_CENTER_SETTINGS.homepage_settings.highlights
+            heroTitle: homepageSettings.heroTitle || '',
+            heroSubtitle: homepageSettings.heroSubtitle || '',
+            announcement: homepageSettings.announcement || '',
+            heroImageUrl: homepageSettings.heroImageUrl || '',
+            accentColor: homepageSettings.accentColor || '',
+            primaryCtaLabel: homepageSettings.primaryCtaLabel || '',
+            primaryCtaUrl: homepageSettings.primaryCtaUrl || '',
+            secondaryCtaLabel: homepageSettings.secondaryCtaLabel || '',
+            secondaryCtaUrl: homepageSettings.secondaryCtaUrl || '',
+            services: Array.isArray(homepageSettings.services) ? homepageSettings.services : [],
+            stats: Array.isArray(homepageSettings.stats) ? homepageSettings.stats : [],
+            highlights: Array.isArray(homepageSettings.highlights) ? homepageSettings.highlights : []
         }
     };
 };

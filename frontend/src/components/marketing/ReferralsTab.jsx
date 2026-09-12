@@ -38,13 +38,16 @@ const ReferralsTab = () => {
     const dateInvalid = Boolean(startDate && endDate && startDate > endDate);
     const { data, isLoading, isError, refetch } = useGetReferralAnalyticsQuery(query, { skip: dateInvalid });
 
-    const locale = i18n.language === 'ar' ? 'ar-EG' : 'en-US';
+    const locale = i18n.language?.startsWith('ar') ? 'ar-EG' : 'en-EG';
     const number = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }), [locale]);
-    const money = useMemo(() => new Intl.NumberFormat(locale, {
-        style: 'currency',
-        currency: 'USD',
-        maximumFractionDigits: 0
-    }), [locale]);
+    const formatMoney = (val) => {
+        const formatted = new Intl.NumberFormat(locale, {
+            style: 'currency',
+            currency: 'EGP',
+            maximumFractionDigits: 0
+        }).format(Number(val || 0));
+        return formatted.replace(/\s+/g, '\u00A0');
+    };
 
     const setPreset = (days) => {
         setEndDate(isoDate(new Date()));
@@ -70,6 +73,7 @@ const ReferralsTab = () => {
     const topDoctor = doctorsData.length > 0 ? doctorsData[0] : null;
     const bestChannel = sourcesData.length > 0 ? sourcesData[0] : null;
 
+
     const filteredDoctorsTable = useMemo(() => {
         return doctorsData.filter(doc =>
             doc.doctorName?.toLowerCase().includes(tableSearch.toLowerCase()) ||
@@ -90,7 +94,7 @@ const ReferralsTab = () => {
             key: 'total_revenue',
             icon: Banknote,
             label: t('analytics.kpis.totalRevenue', 'Total Revenue'),
-            value: money.format(totalReferralRevenue),
+            value: formatMoney(totalReferralRevenue),
             note: t('analytics.kpis.totalRevenueNote', 'Generated from referrals'),
             tone: 'emerald'
         },
@@ -99,7 +103,7 @@ const ReferralsTab = () => {
             icon: Stethoscope,
             label: t('analytics.kpis.topDoctor', 'Top Referring Doctor'),
             value: topDoctor ? topDoctor.doctorName : '—',
-            note: topDoctor ? `${money.format(topDoctor.totalRevenue)} generated` : t('analytics.kpis.noData', 'No data available'),
+            note: topDoctor ? `${formatMoney(topDoctor.totalRevenue)} generated` : t('analytics.kpis.noData', 'No data available'),
             tone: 'cyan'
         },
         {
@@ -223,7 +227,7 @@ const ReferralsTab = () => {
                     </div>
                     <div className="p-5 flex-1">
                         {isLoading ? <ChartSkeleton label={t('analytics.states.loading', 'Loading')} /> : isError ? <ErrorState label={t('analytics.states.error', 'Error')} onRetry={refetch} t={t} /> : doctorsData.length === 0 ? <EmptyChart label={t('analytics.states.noData', 'No Data')} /> : (
-                            <TopDoctorsLeaderboard data={doctorsData} money={money} t={t} />
+                            <TopDoctorsLeaderboard data={doctorsData} money={formatMoney(totalReferralRevenue)} t={t} />
                         )}
                     </div>
                 </section>
@@ -304,8 +308,8 @@ const ReferralsTab = () => {
                                             <td className="px-6 py-3.5 font-mono font-bold text-slate-700 dark:text-slate-300 text-end">
                                                 {doc.totalExams}
                                             </td>
-                                            <td className="px-6 py-3.5 font-mono font-bold text-emerald-600 dark:text-emerald-400 text-end">
-                                                <span dir="ltr">{money.format(doc.totalRevenue)}</span>
+                                            <td className="px-6 py-3.5 font-mono font-bold text-emerald-600 dark:text-emerald-400 text-end whitespace-nowrap">
+                                                <span>{formatMoney(doc.totalRevenue)}</span>
                                             </td>
                                         </tr>
                                     );
@@ -434,9 +438,9 @@ const TopDoctorsLeaderboard = ({ data, money, t }) => {
                 return (
                     <div key={index} className="group relative flex items-center gap-3 rounded-xl p-2 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/30">
                         <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-bold text-xs ${index === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' :
-                                index === 1 ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300' :
-                                    index === 2 ? 'bg-orange-100 text-orange-850 dark:bg-orange-900/40 dark:text-orange-400' :
-                                        'bg-slate-100 text-slate-500 dark:bg-slate-800/80 dark:text-slate-400'
+                            index === 1 ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300' :
+                                index === 2 ? 'bg-orange-100 text-orange-850 dark:bg-orange-900/40 dark:text-orange-400' :
+                                    'bg-slate-100 text-slate-500 dark:bg-slate-800/80 dark:text-slate-400'
                             }`}>
                             #{index + 1}
                         </div>
@@ -447,15 +451,15 @@ const TopDoctorsLeaderboard = ({ data, money, t }) => {
                                     <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-400 dark:text-slate-500">{doc.clinicName || '—'} • {doc.totalExams} referrals</p>
                                 </div>
                                 <div className="text-end shrink-0">
-                                    <p className="font-mono text-xs font-bold text-slate-900 dark:text-white"><span dir="ltr">{money.format(doc.totalRevenue)}</span></p>
+                                    <p className="font-mono text-xs font-bold text-slate-900 dark:text-white"><span dir="ltr">{doc.totalRevenue}</span></p>
                                 </div>
                             </div>
                             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800/85">
                                 <div
                                     className={`h-full rounded-full transition-all duration-1000 ease-out ${index === 0 ? 'bg-gradient-to-r from-amber-400 to-amber-500' :
-                                            index === 1 ? 'bg-gradient-to-r from-slate-400 to-slate-500' :
-                                                index === 2 ? 'bg-gradient-to-r from-orange-400 to-orange-500' :
-                                                    'bg-gradient-to-r from-cyan-400 to-cyan-500'
+                                        index === 1 ? 'bg-gradient-to-r from-slate-400 to-slate-500' :
+                                            index === 2 ? 'bg-gradient-to-r from-orange-400 to-orange-500' :
+                                                'bg-gradient-to-r from-cyan-400 to-cyan-500'
                                         }`}
                                     style={{ width: `${percentage}%` }}
                                 />

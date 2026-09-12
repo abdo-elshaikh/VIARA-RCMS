@@ -4,9 +4,10 @@ import { Edit3, Server, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Modal from '../../ui/Modal';
 import { Status, Field, Select, Actions } from './SharedComponents';
+import { useGetRoomsQuery } from '../../../store/api';
 
 export const machineTypes = ['MRI', 'CT', 'X-Ray', 'Ultrasound', 'Mammography', 'Cath Lab', 'Panoramic X-Ray', 'PET-CT', 'Fluoroscopy', 'DEXA'];
-export const emptyMachine = { name: '', type: 'MRI', roomNumber: '', serialNumber: '', manufacturer: '', model: '', installationDate: '', location: '', status: 'Active' };
+export const emptyMachine = { name: '', type: 'MRI', roomId: '', roomNumber: '', serialNumber: '', manufacturer: '', model: '', installationDate: '', location: '', status: 'Active' };
 
 export const MachineCatalog = ({ records, t: propT, onEdit, onDelete }) => {
     const { t: hookT } = useTranslation('settings');
@@ -75,6 +76,7 @@ const InlineDetail = ({ label, value }) => value ? (
 export const MachineDialog = ({ open, editing, form, setForm, onClose, onSave, busy, t: propT }) => {
     const { t: hookT } = useTranslation('settings');
     const t = typeof propT === 'function' ? propT : hookT;
+    const { data: rooms = [] } = useGetRoomsQuery(undefined, { skip: !open });
 
     return (
         <Modal
@@ -102,12 +104,41 @@ export const MachineDialog = ({ open, editing, form, setForm, onClose, onSave, b
                         onChange={value => setForm({ ...form, type: value })}
                         options={machineTypes}
                     />
-                    <Field
-                        label={t('settings.clinical.machines.room', { defaultValue: 'Room Number' })}
-                        placeholder={t('settings.clinical.machines.placeholders.room', { defaultValue: 'e.g. Room 102' })}
-                        value={form.roomNumber}
-                        onChange={value => setForm({ ...form, roomNumber: value })}
-                    />
+                    <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
+                            {t('settings.clinical.machines.room', { defaultValue: 'Assigned Clinical Room / Suite' })}
+                        </label>
+                        <select
+                            value={form.roomId || (rooms.find(r => r.room_number === form.roomNumber)?.room_id || '')}
+                            onChange={e => {
+                                const val = e.target.value;
+                                const selectedRoom = rooms.find(r => r.room_id === val);
+                                setForm({
+                                    ...form,
+                                    roomId: val,
+                                    roomNumber: selectedRoom ? selectedRoom.room_number : form.roomNumber,
+                                    location: selectedRoom?.floor ? `Floor ${selectedRoom.floor}` : form.location
+                                });
+                            }}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                        >
+                            <option value="">{t('settings.clinical.machines.customOrNone', { defaultValue: '— Custom / Unassigned —' })}</option>
+                            {rooms.map(r => (
+                                <option key={r.room_id} value={r.room_id}>
+                                    {r.name} ({r.room_number}) [{r.type}]
+                                </option>
+                            ))}
+                        </select>
+                        {(!form.roomId && !rooms.some(r => r.room_id === form.roomId)) && (
+                            <input
+                                type="text"
+                                placeholder={t('settings.clinical.machines.placeholders.room', { defaultValue: 'Or type custom room number: e.g. Room 102' })}
+                                value={form.roomNumber}
+                                onChange={e => setForm({ ...form, roomNumber: e.target.value })}
+                                className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-800 placeholder:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                            />
+                        )}
+                    </div>
                     <Field
                         label={t('settings.clinical.machines.location', { defaultValue: 'Facility Location' })}
                         placeholder={t('settings.clinical.machines.placeholders.location', { defaultValue: 'e.g. Ground Floor, East Wing' })}

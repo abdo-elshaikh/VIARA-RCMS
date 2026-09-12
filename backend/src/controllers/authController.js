@@ -10,6 +10,7 @@ const { authenticator } = require('otplib');
 const qrcode = require('qrcode');
 const { encrypt, decrypt, hash } = require('../utils/crypto');
 const AuthService = require('../services/authService');
+const { attachActiveEmergencyClaims } = require('../services/emergencyAccessService');
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 
 const SALT_ROUNDS = 10;
@@ -173,6 +174,73 @@ const login = (db) => async (req, res, next) => {
         // 3. Reset failed attempts on success
         if (user.failed_login_attempts > 0 || user.locked_until) {
             await db.query(`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = $1`, [user.user_id]);
+        }
+
+        // 3.5 Check Shift-Based Login Restriction (if enabled in system_settings)
+        try {
+            const restrictionSetting = await db.query(`
+                SELECT setting_key, setting_value FROM system_settings
+                WHERE setting_key IN (
+                    'hr.attendance.enforce_shift_login_restriction',
+                    'hr.attendance.login_buffer_before_minutes',
+                    'hr.attendance.login_buffer_after_minutes',
+                    'hr.attendance.exempt_roles_from_login_restriction'
+                )
+            `);
+            const settingsMap = {};
+            for (const row of restrictionSetting.rows) {
+                settingsMap[row.setting_key] = row.setting_value;
+            }
+            const enforceRestriction = (settingsMap['hr.attendance.enforce_shift_login_restriction'] ?? 'false').toLowerCase() === 'true';
+            if (enforceRestriction) {
+                const exemptRoles = (settingsMap['hr.attendance.exempt_roles_from_login_restriction'] || 'Admin,Developer,HR,Doctor,Radiologist,Physician')
+                    .split(',')
+                    .map(r => r.trim().toLowerCase());
+                const userRoleNormalized = (user.role || '').toLowerCase();
+                if (!exemptRoles.includes(userRoleNormalized)) {
+                    const bufferBefore = Number.parseInt(settingsMap['hr.attendance.login_buffer_before_minutes'] ?? '30', 10) || 30;
+                    const bufferAfter = Number.parseInt(settingsMap['hr.attendance.login_buffer_after_minutes'] ?? '30', 10) || 30;
+
+                    const activeShift = await db.query(`
+                        SELECT shift_id, start_time, end_time
+                        FROM staff_shifts
+                        WHERE user_id = $1
+                          AND CURRENT_TIMESTAMP >= (start_time - ($2::int * INTERVAL '1 minute'))
+                          AND CURRENT_TIMESTAMP <= (end_time + ($3::int * INTERVAL '1 minute'))
+                        LIMIT 1
+                    `, [user.user_id, bufferBefore, bufferAfter]);
+
+                    if (!activeShift.rows.length) {
+                        const emergencyPerm = await db.query(`
+                            SELECT permission_id FROM attendance_permissions
+                            WHERE user_id = $1
+                              AND effective_date = CURRENT_DATE
+                              AND permission_type = 'EmergencyAccess'
+                              AND status = 'Approved'
+                            LIMIT 1
+                        `, [user.user_id]);
+
+                        if (!emergencyPerm.rows.length) {
+                            const isAr = req.get('accept-language')?.includes('ar') || req.body?.language === 'ar';
+                            const errMsg = isAr
+                                ? 'لا يمكنك تسجيل الدخول خارج أوقات ورديتك المعتمدة. يرجى مراجعة إدارة الموارد البشرية.'
+                                : 'Access restricted: You cannot log in outside your scheduled shift window. Please contact HR.';
+                            await logAction(db, {
+                                userId: user.user_id,
+                                action: 'LOGIN_BLOCKED_OUTSIDE_SHIFT',
+                                resourceId: user.user_id,
+                                resourceTable: 'users',
+                                ipAddress: req.ip,
+                                details: { role: user.role }
+                            });
+                            return next(new AppError(errMsg, 403, true, 'LOGIN_OUTSIDE_SHIFT_HOURS'));
+                        }
+                    }
+                }
+            }
+        } catch (restrictionErr) {
+            if (restrictionErr instanceof AppError) return next(restrictionErr);
+            logger.warn('Failed checking shift login restriction:', { error: restrictionErr.message });
         }
 
         // 4. Handle 2FA if enabled
@@ -347,6 +415,28 @@ const refresh = (db) => async (req, res, next) => {
         };
 
         res.cookie('refreshToken', newRefreshToken, cookieOptions);
+
+        // Staff tokens carry the session binding and any active break-glass claims.
+        // The refresh payload is rebuilt from scratch, so both must be re-attached
+        // here: without the session_id, single-active-session verification and
+        // emergency-grant validation silently stop working after a token refresh,
+        // dropping a clinician's emergency elevation mid-grant.
+        if (tokenData.user_id) {
+            try {
+                const sessionRes = await db.query(
+                    'SELECT current_session_id FROM users WHERE user_id = $1',
+                    [tokenData.user_id]
+                );
+                const sessionId = sessionRes.rows[0]?.current_session_id || null;
+                if (sessionId) payload.session_id = sessionId;
+                payload = await attachActiveEmergencyClaims(db, payload);
+            } catch (claimError) {
+                logger.warn('Failed to re-attach session/emergency claims during token refresh', {
+                    error: claimError.message,
+                    userId: tokenData.user_id
+                });
+            }
+        }
 
         const token = jwt.sign(payload, process.env.JWT_SECRET, {
             expiresIn: process.env.JWT_EXPIRY || '1h'

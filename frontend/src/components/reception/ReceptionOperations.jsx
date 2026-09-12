@@ -1,14 +1,22 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import { selectCurrentUser } from '../../store/authSlice';
 import {
+    api,
+    useGetCenterSettingsQuery,
     useGetInvoiceQuery,
     useGetPartialPaymentExceptionsQuery,
     useGetStockMovementsQuery,
-    useRequestPartialPaymentExceptionMutation
+    useRequestPartialPaymentExceptionMutation,
+    useGetRoomsQuery,
+    useGetMachinesQuery,
+    useHeartbeatReceptionTasksMutation,
+    useGetCurrentReceptionShiftQuery,
+    useOpenReceptionShiftMutation,
+    useCloseReceptionShiftMutation
 } from '../../store/api';
 import {
     Building2,
@@ -16,6 +24,7 @@ import {
     CalendarDays,
     CalendarPlus,
     CircleDollarSign,
+    MonitorPlay,
     RefreshCw,
     UserPlus,
     UsersRound,
@@ -51,8 +60,12 @@ import BillingTab from './BillingTab';
 import ShiftActionModal from './ShiftActionModal';
 import PaymentCollectionModal from './PaymentCollectionModal';
 import PatientRegistrationModal from './PatientRegistrationModal';
+import ReceptionWorkstationBar from './ReceptionWorkstationBar';
+import PublicQueueDisplayModal from './PublicQueueDisplayModal';
 import TextPromptDialog from '../ui/TextPromptDialog';
+import PageHeader from '../ui/PageHeader';
 import { getErrorMessage } from '../../utils/getErrorMessage';
+import { readWorkstationPresets } from './workstationPresets';
 
 const TAB_ICONS = {
     schedule: CalendarCheck2,
@@ -61,28 +74,311 @@ const TAB_ICONS = {
     billing: WalletCards,
 };
 
+const DEFAULT_RECEPTION_DESK = 'شباك 1 - الاستقبال العام';
+
+const readSavedWorkstation = (userId) => {
+    try {
+        const raw = localStorage.getItem(`viara_reception_workspace:${userId || 'anonymous'}`);
+        const saved = raw ? JSON.parse(raw) : {};
+        return {
+            desk: saved.desk || localStorage.getItem('viara_reception_desk') || DEFAULT_RECEPTION_DESK,
+            scope: saved.scope || 'all',
+            rooms: Array.isArray(saved.rooms) ? saved.rooms : [],
+            modalities: Array.isArray(saved.modalities) ? saved.modalities : [],
+        };
+    } catch {
+        return { desk: DEFAULT_RECEPTION_DESK, scope: 'all', rooms: [], modalities: [] };
+    }
+};
+
 const ReceptionOperations = () => {
+    const dispatch = useDispatch();
     const { t, i18n } = useTranslation('reception');
     const isArabic = i18n.language?.startsWith('ar');
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const user = useSelector(selectCurrentUser);
-    const [activeTab, setActiveTab] = useState(() => {
-        try {
-            return searchParams.get('tab') || sessionStorage.getItem('VIARA.reception.activeTab') || 'schedule';
-        } catch {
-            return 'schedule';
-        }
-    });
+    const savedWorkstation = useMemo(() => readSavedWorkstation(user?.user_id), [user?.user_id]);
+    const activeTab = searchParams.get('tab') || 'schedule';
     const [selectedDate, setSelectedDate] = useState(toLocalDateInput);
     const [searchTerm, setSearchTerm] = useState('');
-    const [viewingPatientId, setViewingPatientId] = useState(null);
     const [partialExceptionTarget, setPartialExceptionTarget] = useState(null);
     const linkedInvoiceId = searchParams.get('invoiceId');
     const { data: linkedInvoice } = useGetInvoiceQuery(linkedInvoiceId, { skip: !linkedInvoiceId });
+    const { data: rawCenterSettings } = useGetCenterSettingsQuery();
+    const centerLogo = rawCenterSettings?.logo_url || '/center-logo.png';
+    const { data: clinicalRooms = [] } = useGetRoomsQuery(undefined, { pollingInterval: 60000 });
+    const { data: clinicalMachines = [] } = useGetMachinesQuery(undefined, { pollingInterval: 60000 });
+
+    // Multi-Desk Workstation & Clinical Scope State
+    const [activeDesk, setActiveDesk] = useState(() => savedWorkstation.desk);
+    const [selectedScope, setSelectedScope] = useState(() => savedWorkstation.scope);
+    const [selectedRooms, setSelectedRooms] = useState(() => savedWorkstation.rooms);
+    const [selectedModalities, setSelectedModalities] = useState(() => savedWorkstation.modalities);
+    const [deskPresets, setDeskPresets] = useState(readWorkstationPresets);
+    const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
+    const [isDisplayBoardOpen, setIsDisplayBoardOpen] = useState(false);
+
+    useEffect(() => {
+        if (Array.isArray(rawCenterSettings?.workstation_presets) && rawCenterSettings.workstation_presets.length > 0) {
+            setDeskPresets(rawCenterSettings.workstation_presets);
+        }
+    }, [rawCenterSettings?.workstation_presets]);
+
+    useEffect(() => {
+        const refreshDeskPresets = () => setDeskPresets(readWorkstationPresets());
+        window.addEventListener('VIARA_WORKSTATION_PRESETS_CHANGED', refreshDeskPresets);
+        window.addEventListener('storage', refreshDeskPresets);
+        return () => {
+            window.removeEventListener('VIARA_WORKSTATION_PRESETS_CHANGED', refreshDeskPresets);
+            window.removeEventListener('storage', refreshDeskPresets);
+        };
+    }, []);
 
     const permissions = useReceptionPermissions();
     const { has, canProcessPayments, canOpenCashierShift, canCloseCashierShift, canDiscount, canAppendSupplies, canManageQueue, canDeliverResults } = permissions;
+    const [heartbeatReceptionTasks] = useHeartbeatReceptionTasksMutation();
+    const receptionShiftEnabled = Boolean(user?.user_id && ['Receptionist', 'Admin', 'Developer'].includes(user.role));
+    const {
+        data: currentReceptionShift,
+        isFetching: isReceptionShiftLoading,
+        refetch: refetchReceptionShift,
+    } = useGetCurrentReceptionShiftQuery(undefined, {
+        skip: !receptionShiftEnabled,
+        pollingInterval: 15_000,
+    });
+    const [openReceptionShift, { isLoading: isOpeningReceptionShift }] = useOpenReceptionShiftMutation();
+    const [closeReceptionShift, { isLoading: isClosingReceptionShift }] = useCloseReceptionShiftMutation();
+    const hydratedShiftIdRef = useRef(null);
+
+    useEffect(() => {
+        if (!receptionShiftEnabled) return undefined;
+        const refreshShiftFromAnotherTab = () => {
+            refetchReceptionShift().catch(() => undefined);
+        };
+        const handleStorage = (event) => {
+            if (event.key === 'VIARA.reception.shiftChanged') refreshShiftFromAnotherTab();
+        };
+        window.addEventListener('storage', handleStorage);
+
+        const channel = typeof BroadcastChannel !== 'undefined'
+            ? new BroadcastChannel('viara-reception-shift')
+            : null;
+        if (channel) channel.onmessage = refreshShiftFromAnotherTab;
+
+        return () => {
+            window.removeEventListener('storage', handleStorage);
+            channel?.close();
+        };
+    }, [receptionShiftEnabled, refetchReceptionShift]);
+
+    const notifyReceptionShiftChanged = useCallback(() => {
+        try {
+            localStorage.setItem('VIARA.reception.shiftChanged', String(Date.now()));
+            if (typeof BroadcastChannel !== 'undefined') {
+                const channel = new BroadcastChannel('viara-reception-shift');
+                channel.postMessage({ changedAt: Date.now() });
+                channel.close();
+            }
+        } catch {
+            // Cross-tab synchronization is best-effort; query invalidation remains authoritative.
+        }
+    }, []);
+
+    const cacheReceptionShift = useCallback(async (shift) => {
+        await dispatch(api.util.upsertQueryData('getCurrentReceptionShift', undefined, shift));
+    }, [dispatch]);
+
+    useEffect(() => {
+        if (!currentReceptionShift?.session_id) {
+            hydratedShiftIdRef.current = null;
+            return;
+        }
+        setActiveDesk(currentReceptionShift.desk_identifier || DEFAULT_RECEPTION_DESK);
+        setSelectedRooms(Array.isArray(currentReceptionShift.room_ids) ? currentReceptionShift.room_ids : []);
+        setSelectedModalities(Array.isArray(currentReceptionShift.modality_ids) ? currentReceptionShift.modality_ids : []);
+        if (hydratedShiftIdRef.current !== currentReceptionShift.session_id) {
+            setSelectedScope(currentReceptionShift.scope || 'all');
+            hydratedShiftIdRef.current = currentReceptionShift.session_id;
+        }
+    }, [currentReceptionShift]);
+
+    useEffect(() => {
+        if (!user?.user_id || !['Receptionist', 'Admin', 'Developer'].includes(user.role)) return undefined;
+        const renew = () => heartbeatReceptionTasks({
+            desk: activeDesk,
+            scope: selectedScope,
+            rooms: selectedRooms,
+            modalities: selectedModalities,
+        }).unwrap().catch(() => undefined);
+        renew();
+        const interval = window.setInterval(renew, 60_000);
+        return () => window.clearInterval(interval);
+    }, [activeDesk, heartbeatReceptionTasks, selectedModalities, selectedRooms, selectedScope, user?.role, user?.user_id]);
+
+    const handleOpenReceptionShift = useCallback(async () => {
+        try {
+            const assignmentScope = selectedRooms.length > 0
+                ? 'rooms'
+                : selectedModalities.length > 0
+                    ? 'modalities'
+                    : selectedScope === 'emergency' ? 'emergency' : 'all';
+            const openedShift = await openReceptionShift({
+                desk: activeDesk,
+                scope: assignmentScope,
+                rooms: selectedRooms,
+                modalities: selectedModalities,
+            }).unwrap();
+            await cacheReceptionShift(openedShift);
+            notifyReceptionShiftChanged();
+            toast.success(isArabic ? 'تم بدء وردية الاستقبال وربطها بمحطة العمل' : 'Reception shift started and linked to this workstation');
+        } catch (error) {
+            const alreadyOpen = error?.data?.code === 'RECEPTION_SHIFT_ALREADY_OPEN'
+                || String(error?.data?.message || '').includes('already have an open reception shift');
+            if (alreadyOpen) {
+                let openShift = error?.data?.details?.shift || null;
+                try {
+                    const refreshed = await refetchReceptionShift();
+                    openShift = refreshed?.data || openShift;
+                } catch {
+                    // The structured conflict payload still gives enough context for a clear message.
+                }
+                if (openShift?.session_id) await cacheReceptionShift(openShift);
+                const startedAt = openShift?.started_at
+                    ? new Date(openShift.started_at).toLocaleTimeString(isArabic ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' })
+                    : null;
+                const desk = openShift?.desk_identifier;
+                toast.success(isArabic
+                    ? `تم استعادة الوردية المفتوحة${desk ? ` — ${desk}` : ''}${startedAt ? ` · بدأت ${startedAt}` : ''}`
+                    : `Open shift restored${desk ? ` — ${desk}` : ''}${startedAt ? ` · started ${startedAt}` : ''}`, {
+                    icon: '🟢',
+                });
+                return;
+            }
+            toast.error(getErrorMessage(error, isArabic ? 'تعذر بدء وردية الاستقبال' : 'Could not start reception shift'));
+        }
+    }, [activeDesk, cacheReceptionShift, isArabic, notifyReceptionShiftChanged, openReceptionShift, refetchReceptionShift, selectedModalities, selectedRooms, selectedScope]);
+
+    const handleCloseReceptionShift = useCallback(async () => {
+        if (!currentReceptionShift?.session_id) return;
+        const confirmed = window.confirm(isArabic
+            ? 'سيتم تقفيل الوردية وحفظ إحصاءاتها. يجب تحويل أو تحرير كل المهام النشطة أولاً. هل تريد المتابعة؟'
+            : 'This will close the shift and save its statistics. Transfer or release active tasks first. Continue?');
+        if (!confirmed) return;
+        try {
+            const closed = await closeReceptionShift({ sessionId: currentReceptionShift.session_id }).unwrap();
+            await cacheReceptionShift(null);
+            notifyReceptionShiftChanged();
+            const completed = closed?.metrics?.completed || 0;
+            toast.success(isArabic ? `تم تقفيل الوردية — ${completed} مهمة مكتملة` : `Shift closed — ${completed} completed tasks`);
+        } catch (error) {
+            const code = error?.data?.code;
+            if (code === 'ACTIVE_RECEPTION_TASKS') {
+                const count = error?.data?.details?.activeTasks || '';
+                toast.error(
+                    isArabic
+                        ? `يوجد مهام نشطة بالاستقبال (${count}). يرجى تحويلها أو إنجازها قبل إغلاق الوردية.`
+                        : `Active tasks exist (${count}). Please transfer or release them before closing the shift.`,
+                    { duration: 6000 }
+                );
+            } else if (code === 'OPEN_CASHIER_SHIFT') {
+                toast.error(
+                    isArabic
+                        ? 'يجب إغلاق وردية الخزينة وجرد الدرج أولاً قبل إغلاق وردية الاستقبال.'
+                        : 'Close the cashier shift and reconcile its balance before closing the reception shift.',
+                    { duration: 6000 }
+                );
+            } else {
+                toast.error(getErrorMessage(error, isArabic ? 'تعذر تقفيل الوردية' : 'Could not close reception shift'));
+            }
+        }
+    }, [cacheReceptionShift, closeReceptionShift, currentReceptionShift?.session_id, isArabic, notifyReceptionShiftChanged]);
+
+    const handleOpenDisplayBoard = useCallback(() => {
+        const params = new URLSearchParams();
+        if (selectedRooms && selectedRooms.length > 0) {
+            params.set('rooms', selectedRooms.join(','));
+        }
+        const query = params.toString();
+        const displayUrl = `/display${query ? `?${query}` : ''}`;
+        window.open(displayUrl, '_blank', 'noopener,noreferrer');
+    }, [selectedRooms]);
+
+    const handleToggleRoom = useCallback((room) => {
+        if (currentReceptionShift?.session_id) {
+            toast.error(isArabic ? 'نطاق الغرف مثبت طوال الوردية؛ أغلق الوردية لتغييره' : 'Room assignment is locked for this shift');
+            return;
+        }
+        setSelectedRooms((prev) => {
+            const next = prev.includes(room) ? prev.filter((r) => r !== room) : [...prev, room];
+            setSelectedScope(next.length > 0 ? 'rooms' : (selectedModalities.length > 0 ? 'modalities' : 'all'));
+            return next;
+        });
+    }, [currentReceptionShift?.session_id, isArabic, selectedModalities.length]);
+
+    const handleToggleModality = useCallback((mod) => {
+        if (currentReceptionShift?.session_id) {
+            toast.error(isArabic ? 'نطاق الأجهزة مثبت طوال الوردية؛ أغلق الوردية لتغييره' : 'Device assignment is locked for this shift');
+            return;
+        }
+        setSelectedModalities((prev) => {
+            const next = prev.includes(mod) ? prev.filter((m) => m !== mod) : [...prev, mod];
+            setSelectedScope(next.length > 0 ? 'modalities' : (selectedRooms.length > 0 ? 'rooms' : 'all'));
+            return next;
+        });
+    }, [currentReceptionShift?.session_id, isArabic, selectedRooms.length]);
+
+    const handleClearRooms = useCallback(() => {
+        if (currentReceptionShift?.session_id) return;
+        setSelectedRooms([]);
+        setSelectedScope(selectedModalities.length > 0 ? 'modalities' : 'all');
+    }, [currentReceptionShift?.session_id, selectedModalities.length]);
+    const handleClearModalities = useCallback(() => {
+        if (currentReceptionShift?.session_id) return;
+        setSelectedModalities([]);
+        setSelectedScope(selectedRooms.length > 0 ? 'rooms' : 'all');
+    }, [currentReceptionShift?.session_id, selectedRooms.length]);
+    const handleClearAllFilters = useCallback(() => {
+        if (currentReceptionShift?.session_id) return;
+        setSelectedRooms([]);
+        setSelectedModalities([]);
+        setSelectedScope('all');
+    }, [currentReceptionShift?.session_id]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('viara_reception_desk', activeDesk);
+            localStorage.setItem(`viara_reception_workspace:${user?.user_id || 'anonymous'}`, JSON.stringify({
+                desk: activeDesk,
+                scope: selectedScope,
+                rooms: selectedRooms,
+                modalities: selectedModalities,
+            }));
+        } catch {
+            // Storage can be unavailable in privacy-restricted browsers.
+        }
+    }, [activeDesk, selectedModalities, selectedRooms, selectedScope, user?.user_id]);
+
+    const buildNewAppointmentUrl = useCallback((extraParams = {}) => {
+        const params = new URLSearchParams();
+        if (selectedDate) params.set('date', selectedDate);
+        if (selectedRooms && selectedRooms.length === 1) {
+            params.set('roomId', selectedRooms[0]);
+        }
+        if (selectedModalities && selectedModalities.length === 1) {
+            params.set('modalityId', selectedModalities[0]);
+        }
+        Object.entries(extraParams).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== '') params.set(k, v);
+        });
+        return `/appointments/new?${params.toString()}`;
+    }, [selectedDate, selectedRooms, selectedModalities]);
+
+    useEffect(() => {
+        const updateStatus = (event) => setIsRealtimeConnected(Boolean(event.detail?.connected));
+        window.addEventListener('SSE_CONNECTION_STATUS', updateStatus);
+        return () => window.removeEventListener('SSE_CONNECTION_STATUS', updateStatus);
+    }, []);
     const shiftFlow = useShiftFlow({ skip: !permissions.canProcessPayments && !permissions.canReconcileShifts });
     const receptionData = useReceptionData({ selectedDate });
     const {
@@ -123,8 +419,7 @@ const ReceptionOperations = () => {
     const registration = usePatientRegistration({ navigate, selectedDate });
     const [requestPartialPaymentException, partialExceptionMutation] = useRequestPartialPaymentExceptionMutation();
     const canUsePartialPaymentExceptions = has('REQUEST_PARTIAL_PAYMENT_EXCEPTION');
-    const { data: approvedPartialPaymentExceptions = [], refetch: refetchApprovedExceptions } = useGetPartialPaymentExceptionsQuery({
-        status: 'Approved',
+    const { data: partialPaymentExceptions = [], refetch: refetchPartialPaymentExceptions } = useGetPartialPaymentExceptionsQuery({
         transactionType: 'ClinicalQueueTransition',
         limit: 500,
     }, {
@@ -137,28 +432,189 @@ const ReceptionOperations = () => {
         [canProcessPayments, t]
     );
 
-    useEffect(() => {
-        if (!tabs.some((tab) => tab.id === activeTab)) {
-            setActiveTab(tabs[0]?.id || 'schedule');
+    // Dynamic Room and Modality sets connected to real clinical database
+    const availableRooms = useMemo(() => {
+        const map = new Map();
+
+        // 1. Physical clinical rooms from database
+        (clinicalRooms || []).forEach((r) => {
+            const roomNum = r.room_number || r.name;
+            if (roomNum) {
+                const machinesList = (r.machines || []).map((m) => m.name || m.type).filter(Boolean);
+                map.set(roomNum, {
+                    id: r.id || r.room_id || roomNum,
+                    room: roomNum,
+                    roomNumber: roomNum,
+                    label: r.name ? `${r.name} (${roomNum})` : `جناح ${roomNum}`,
+                    rawName: r.name,
+                    type: r.type || 'Imaging',
+                    status: r.status || 'Active',
+                    machines: machinesList,
+                    floor: r.floor,
+                });
+            }
+        });
+
+        // 2. Merge any rooms from today's appointments / queue items
+        (appointments || []).forEach((appt) => {
+            if (appt.room_number && !map.has(appt.room_number)) {
+                map.set(appt.room_number, {
+                    room: appt.room_number,
+                    roomNumber: appt.room_number,
+                    label: appt.room_name ? `${appt.room_name} (${appt.room_number})` : `جناح ${appt.room_number}`,
+                    rawName: appt.room_name,
+                    type: 'Imaging',
+                    status: 'Active',
+                    machines: appt.machine_name ? [appt.machine_name] : [],
+                });
+            }
+        });
+        (queueItems || []).forEach((q) => {
+            if (q.room_number && !map.has(q.room_number)) {
+                map.set(q.room_number, {
+                    room: q.room_number,
+                    roomNumber: q.room_number,
+                    label: `جناح ${q.room_number}`,
+                    rawName: `جناح ${q.room_number}`,
+                    type: 'Imaging',
+                    status: 'Active',
+                    machines: q.machine_name ? [q.machine_name] : [],
+                });
+            }
+        });
+
+        return Array.from(map.values()).sort((a, b) => {
+            if (a.type === 'Imaging' && b.type !== 'Imaging') return -1;
+            if (b.type === 'Imaging' && a.type !== 'Imaging') return 1;
+            return a.room.localeCompare(b.room);
+        });
+    }, [clinicalRooms, appointments, queueItems]);
+
+    const handleDeskChange = useCallback((desk) => {
+        if (currentReceptionShift?.session_id) {
+            toast.error(isArabic ? 'أغلق وردية الاستقبال الحالية قبل تغيير محطة العمل' : 'Close the current reception shift before changing workstation');
+            return;
         }
-    }, [activeTab, tabs]);
+        setActiveDesk(desk);
+
+        const preset = deskPresets.find((item) => item.label === desk);
+        if (!preset) return;
+
+        const linkedRooms = (preset.roomIds || []).filter((roomId) =>
+            availableRooms.some((room) => String(room.room) === String(roomId) || String(room.roomNumber) === String(roomId) || String(room.id) === String(roomId))
+        );
+        setSelectedModalities([]);
+        setSelectedRooms(linkedRooms);
+        setSelectedScope(preset.scope || (linkedRooms.length ? 'rooms' : 'all'));
+        if (preset.tab && (!currentReceptionShift?.session_id || preset.tab !== 'cashier' || canProcessPayments)) {
+            const next = new URLSearchParams(searchParams);
+            next.set('tab', preset.tab);
+            setSearchParams(next);
+        }
+
+        const linkedLabel = linkedRooms.length
+            ? (isArabic ? ` تم ربط ${linkedRooms.length} غرفة تلقائياً` : ` ${linkedRooms.length} room(s) linked automatically`)
+            : '';
+        toast.success(isArabic ? `تم تفعيل ${desk}.${linkedLabel}` : `${desk} activated.${linkedLabel}`);
+    }, [availableRooms, canProcessPayments, currentReceptionShift?.session_id, deskPresets, isArabic, searchParams, setSearchParams]);
+
+    const availableModalities = useMemo(() => {
+        const map = new Map();
+
+        // 1. Physical clinical machines and devices from database
+        (clinicalMachines || []).forEach((m) => {
+            const key = m.name || m.modality_id;
+            if (key) {
+                map.set(key, {
+                    id: m.modality_id || key,
+                    name: m.name,
+                    type: m.type || 'Imaging',
+                    roomNumber: m.room_number,
+                    roomName: m.room_name,
+                    status: m.status || 'Active',
+                    manufacturer: m.manufacturer,
+                    model: m.model,
+                });
+            }
+        });
+
+        // 2. Merge any machines / modality types from today's appointments / queue
+        (appointments || []).forEach((appt) => {
+            if (appt.machine_name && !map.has(appt.machine_name)) {
+                map.set(appt.machine_name, {
+                    id: appt.machine_name,
+                    name: appt.machine_name,
+                    type: appt.modality_type || 'Imaging',
+                    roomNumber: appt.room_number,
+                    roomName: appt.room_name,
+                    status: 'Active',
+                });
+            }
+            if (appt.modality_type && !map.has(appt.modality_type)) {
+                map.set(appt.modality_type, {
+                    id: appt.modality_type,
+                    name: appt.modality_type,
+                    type: appt.modality_type,
+                    status: 'Active',
+                });
+            }
+        });
+        (queueItems || []).forEach((q) => {
+            if (q.machine_name && !map.has(q.machine_name)) {
+                map.set(q.machine_name, {
+                    id: q.machine_name,
+                    name: q.machine_name,
+                    type: q.modality_name || 'Imaging',
+                    roomNumber: q.room_number,
+                    status: 'Active',
+                });
+            }
+            if (q.modality_name && !map.has(q.modality_name)) {
+                map.set(q.modality_name, {
+                    id: q.modality_name,
+                    name: q.modality_name,
+                    type: q.modality_name,
+                    status: 'Active',
+                });
+            }
+        });
+
+        return Array.from(map.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    }, [clinicalMachines, appointments, queueItems]);
+
+    const workstationCounts = useMemo(() => {
+        const total = appointments?.length || 0;
+        const mine = (appointments || []).filter(
+            (a) => String(a.receptionist_id) === String(user?.user_id)
+        ).length;
+        const unclaimed = (appointments || []).filter(
+            (a) => !a.receptionist_id && ['Scheduled', 'Arrived'].includes(a.status)
+        ).length;
+        const inExam = (appointments || []).filter(
+            (a) => a.status === 'In Exam' || a.queue_stage === 'In Exam'
+        ).length;
+        const emergency = (appointments || []).filter(
+            (a) => ['Emergency', 'Urgent'].includes(a.priority)
+        ).length;
+        return { total, mine, unclaimed, inExam, emergency };
+    }, [appointments, user?.user_id]);
 
     useEffect(() => {
-        try {
-            sessionStorage.setItem('VIARA.reception.activeTab', activeTab);
-        } catch {
-            // Session storage may be unavailable in privacy-restricted browsers.
+        if (!tabs.some((tab) => tab.id === activeTab)) {
+            const next = new URLSearchParams(searchParams);
+            next.set('tab', tabs[0]?.id || 'schedule');
+            setSearchParams(next, { replace: true });
         }
-    }, [activeTab]);
+    }, [activeTab, tabs, searchParams, setSearchParams]);
 
     useEffect(() => {
         const requestedInvoiceId = searchParams.get('invoiceId');
         if (!requestedInvoiceId) return;
         const requestedInvoice = linkedInvoice || invoices.find((invoice) => invoice.invoice_id === requestedInvoiceId);
         if (!requestedInvoice) return;
-        if (canProcessPayments) setActiveTab('cashier');
         openPayment(requestedInvoice);
         const nextParams = new URLSearchParams(searchParams);
+        if (canProcessPayments) nextParams.set('tab', 'cashier');
         nextParams.delete('invoiceId');
         setSearchParams(nextParams, { replace: true });
     }, [canProcessPayments, invoices, linkedInvoice, openPayment, searchParams, setSearchParams]);
@@ -167,16 +623,15 @@ const ReceptionOperations = () => {
         await Promise.all([
             refreshWorkspace(),
             canProcessPayments ? refetchStockMovements() : Promise.resolve(),
-            canUsePartialPaymentExceptions ? refetchApprovedExceptions() : Promise.resolve(),
+            canUsePartialPaymentExceptions ? refetchPartialPaymentExceptions() : Promise.resolve(),
         ]);
-    }, [canProcessPayments, canUsePartialPaymentExceptions, refetchApprovedExceptions, refetchStockMovements, refreshWorkspace]);
+    }, [canProcessPayments, canUsePartialPaymentExceptions, refetchPartialPaymentExceptions, refetchStockMovements, refreshWorkspace]);
 
     const handleTabChange = useCallback((nextTab) => {
         if (!tabs.some((tab) => tab.id === nextTab)) return;
-        setActiveTab(nextTab);
         const nextParams = new URLSearchParams(searchParams);
         nextParams.set('tab', nextTab);
-        setSearchParams(nextParams, { replace: true });
+        setSearchParams(nextParams);
     }, [searchParams, setSearchParams, tabs]);
 
     const submitPartialPaymentException = useCallback(async (reason) => {
@@ -190,13 +645,23 @@ const ReceptionOperations = () => {
             }).unwrap();
             toast.success(t('billing.exceptionRequested', { defaultValue: 'Exception request sent for approval.' }));
             setPartialExceptionTarget(null);
-            await refreshWorkspace();
+            await Promise.all([refreshWorkspace(), refetchPartialPaymentExceptions()]);
             return true;
         } catch (error) {
+            const isExistingPendingRequest = error?.data?.code === 'PARTIAL_PAYMENT_EXCEPTION_PENDING'
+                || String(error?.data?.message || '').includes('pending exception already exists');
+            if (isExistingPendingRequest) {
+                await refetchPartialPaymentExceptions();
+                setPartialExceptionTarget(null);
+                toast(t('billing.exceptionAlreadyPending', { defaultValue: 'An exception request already exists and is pending review.' }), {
+                    icon: '⏳',
+                });
+                return true;
+            }
             toast.error(getErrorMessage(error, t('billing.exceptionRequestFailed', { defaultValue: 'Exception request could not be submitted.' })));
             return false;
         }
-    }, [partialExceptionTarget, refreshWorkspace, requestPartialPaymentException, t]);
+    }, [partialExceptionTarget, refetchPartialPaymentExceptions, refreshWorkspace, requestPartialPaymentException, t]);
 
     const displayDate = useMemo(
         () => new Date(`${selectedDate}T00:00:00`).toLocaleDateString(
@@ -211,61 +676,47 @@ const ReceptionOperations = () => {
         setSelectedDate(shiftLocalDateInput(selectedDate, days));
     };
 
+    const [quickFilter, setQuickFilter] = useState(null);
+
+    const handleKpiClick = useCallback((filter, tab = 'schedule') => {
+        if (tab && activeTab !== tab) {
+            handleTabChange(tab);
+        }
+        if (filter) {
+            setQuickFilter({ ...filter, _ts: Date.now() });
+        }
+    }, [activeTab, handleTabChange]);
+
     const isToday = selectedDate === toLocalDateInput();
 
     return (
-        <div className="mx-auto max-w-[1600px] space-y-6 pb-12">
+        <div className="mx-auto max-w-[1600px] space-y-5 pb-12">
             {hasDataError && (
-                <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-300 bg-rose-50 p-4 text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
-                    <AlertTriangle size={18} className="mt-0.5 shrink-0" />
-                    <div>
-                        <p className="text-sm font-black">
+                <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50/80 p-4 shadow-sm dark:border-rose-900/50 dark:bg-rose-950/20">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 mt-0.5">
+                        <AlertTriangle size={16} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <p className="text-sm font-black text-rose-800 dark:text-rose-200">
                             {isArabic ? 'تعذر تحميل بعض بيانات الاستقبال' : 'Some reception data could not be loaded'}
                         </p>
-                        <p className="mt-1 text-xs font-medium">
+                        <p className="mt-0.5 text-xs font-medium text-rose-600/80 dark:text-rose-300/80">
                             {isArabic
                                 ? `المصادر المتأثرة: ${dataErrors.map(({ source }) => source).join('، ')}. لا تعتمد على الأرقام الصفرية قبل إعادة المحاولة.`
-                                : `Affected sources: ${dataErrors.map(({ source }) => source).join(', ')}. Do not treat zero values as authoritative until refresh succeeds.`}
+                                : `Affected: ${dataErrors.map(({ source }) => source).join(', ')}. Do not treat zero values as authoritative until refresh succeeds.`}
                         </p>
                     </div>
                 </div>
             )}
-            {/* Top Reception Hero Command Deck */}
-            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8">
-                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
-                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
-
-                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex items-start gap-4 sm:items-center">
-                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-teal-600/30 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
-                            <Building2 size={26} />
-                        </div>
-                        <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
-                                    <Sparkles size={11} />
-                                    <span>{t('command.live', { defaultValue: 'Reception Command Center' })}</span>
-                                </span>
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-black text-emerald-700 dark:text-emerald-300">
-                                    <span className="relative flex h-2 w-2">
-                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                                        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                                    </span>
-                                    <span>{isWorkspaceFetching || isRefreshing
-                                        ? (isArabic ? 'جاري التحديث' : 'Updating')
-                                        : (isArabic ? 'مزامنة مباشرة' : 'Live Sync')}</span>
-                                </span>
-                            </div>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
-                                {t('title', { defaultValue: 'Patient Reception & Operations' })}
-                            </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
-                                {displayDate} · {t('command.signedIn', { name: user?.name || user?.fullName || (isArabic ? 'موظف الاستقبال' : 'Reception Staff') })}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Date Navigation & Primary Action Buttons */}
+            <PageHeader
+                logoUrl={centerLogo}
+                icon={Building2}
+                eyebrowIcon={Sparkles}
+                eyebrow={t('command.live', { defaultValue: 'Reception Command Center' })}
+                title={t('title', { defaultValue: 'Patient Reception & Operations' })}
+                description={`${displayDate} · ${t('command.signedIn', { name: user?.name || user?.fullName || (isArabic ? 'موظف الاستقبال' : 'Reception Staff') })}`}
+                meta={<span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-700 dark:text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-500" />{isWorkspaceFetching || isRefreshing ? (isArabic ? 'جاري التحديث' : 'Updating') : (isArabic ? 'مزامنة مباشرة' : 'Live Sync')}</span>}
+                actions={(
                     <div className="flex flex-wrap items-center gap-2.5">
                         {/* Quick Date Stepper */}
                         <div className="flex items-center rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
@@ -324,50 +775,117 @@ const ReceptionOperations = () => {
                             <span>{t('command.addPatient', { defaultValue: 'Add Patient' })}</span>
                         </button>}
 
-                        <button
-                            type="button"
-                            onClick={() => navigate(`/appointments/new?date=${encodeURIComponent(selectedDate)}`)}
-                            className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-5 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95"
-                        >
-                            <CalendarPlus size={15} />
-                            <span>{t('booking.title', { defaultValue: 'Book Appointment' })}</span>
-                        </button>
+                        {has('CREATE_APPOINTMENTS') && (
+                            <button
+                                type="button"
+                                onClick={() => navigate(buildNewAppointmentUrl())}
+                                className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-5 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95"
+                            >
+                                <CalendarPlus size={15} />
+                                <span>{t('booking.title', { defaultValue: 'Book Appointment' })}</span>
+                            </button>
+                        )}
                     </div>
-                </div>
-            </div>
+                )}
+                metrics={[
+                    {
+                        key: 'booked',
+                        label: t('overview.booked', { defaultValue: 'Today Bookings' }),
+                        value: scheduleSummary.booked || 0,
+                        icon: CalendarCheck2,
+                        tone: 'teal',
+                        detail: isArabic ? 'إجمالي الحالات المجدولة' : 'Scheduled exams',
+                        loading: appLoading,
+                        error: hasDataError,
+                        onClick: () => handleKpiClick({ stage: 'all', priority: 'all' }, 'schedule')
+                    },
+                    {
+                        key: 'ready',
+                        label: t('overview.ready', { defaultValue: 'Arrived & In Prep' }),
+                        value: scheduleSummary.ready || 0,
+                        icon: CheckCircle2,
+                        tone: 'emerald',
+                        detail: isArabic ? 'حاضرون بالاستقبال' : 'Checked-in patients',
+                        loading: appLoading,
+                        error: hasDataError,
+                        onClick: () => handleKpiClick({ stage: 'Arrived', priority: 'all' }, 'schedule')
+                    },
+                    {
+                        key: 'exam',
+                        label: isArabic ? 'داخل غرف الأشعة' : 'In Examination',
+                        value: Math.max(
+                            queueItems.filter(q => (q.queue_stage || q.queueStage) === 'In Exam').length,
+                            (appointments || []).filter(a => a.status === 'In Exam' || a.queue_stage === 'In Exam').length
+                        ),
+                        icon: Activity,
+                        tone: 'blue',
+                        detail: isArabic ? 'فحوصات جارية حالياً' : 'Active modality scans',
+                        loading: appLoading,
+                        error: hasDataError,
+                        onClick: () => handleKpiClick({ stage: 'In Exam', priority: 'all' }, 'schedule')
+                    },
+                    {
+                        key: 'priority',
+                        label: t('overview.priority', { defaultValue: 'Priority & STAT' }),
+                        value: scheduleSummary.urgent || 0,
+                        icon: AlertTriangle,
+                        tone: 'amber',
+                        detail: isArabic ? 'حالات طارئة وعاجلة' : 'High-priority cases',
+                        loading: appLoading,
+                        error: hasDataError,
+                        onClick: () => handleKpiClick({ stage: 'all', priority: 'Emergency' }, 'schedule')
+                    },
+                    canProcessPayments && {
+                        key: 'cashier',
+                        label: isArabic ? 'التحصيل المعلق' : 'Cashier Pending',
+                        value: cashierPending.length,
+                        icon: CreditCard,
+                        tone: 'violet',
+                        detail: isArabic ? 'فواتير غير مسددة' : 'Awaiting payment',
+                        loading: appLoading,
+                        error: hasDataError,
+                        onClick: () => handleKpiClick(null, 'cashier')
+                    },
+                ].filter(Boolean)}
+                metricsLabel={isArabic ? 'مؤشرات سجل الاستقبال' : 'Reception record indicators'}
+            />
 
-            {/* 5-Tile High-Contrast Telemetry Metrics HUD */}
-            <section className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
-                {[
-                    { label: t('overview.booked', { defaultValue: 'Today Bookings' }), value: scheduleSummary.booked || 0, icon: CalendarCheck2, color: 'teal', detail: isArabic ? 'إجمالي الحالات المجدولة' : 'Scheduled exams' },
-                    { label: t('overview.ready', { defaultValue: 'Arrived & In Prep' }), value: scheduleSummary.ready || 0, icon: CheckCircle2, color: 'emerald', detail: isArabic ? 'حاضرون بالاستقبال' : 'Checked-in patients' },
-                    { label: isArabic ? 'داخل غرف الأشعة' : 'In Examination', value: (queueItems.filter(q => (q.queue_stage || q.queueStage) === 'In Exam').length) || 0, icon: Activity, color: 'indigo', detail: isArabic ? 'فحوصات جارية حالياً' : 'Active modality scans' },
-                    { label: t('overview.priority', { defaultValue: 'Priority & STAT' }), value: scheduleSummary.urgent || 0, icon: AlertTriangle, color: 'amber', detail: isArabic ? 'حالات طارئة وعاجلة' : 'High-priority cases' },
-                    { label: isArabic ? 'التحصيل المعلق' : 'Cashier Pending', value: cashierPending.length || 0, icon: CreditCard, color: 'purple', detail: isArabic ? 'فواتير غير مسددة' : 'Awaiting payment' },
-                ].map((m) => {
-                    const Icon = m.icon;
-                    return (
-                        <div key={m.label} className="rounded-3xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                            <div className="flex items-start justify-between gap-2">
-                                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 truncate">{m.label}</p>
-                                <span className="grid h-8 w-8 place-items-center rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/30">
-                                    <Icon size={16} />
-                                </span>
-                            </div>
-                            <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white tabular-nums">{m.value}</p>
-                            <p className="mt-0.5 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{m.detail}</p>
-                        </div>
-                    );
-                })}
-            </section>
 
             {/* Sub-Tabs Nav */}
             <ReceptionTabNav
                 activeTab={activeTab}
                 cashierPending={cashierPending.length}
+                scheduleCount={scheduleSummary.booked || 0}
                 onTabChange={handleTabChange}
                 tabs={tabs}
                 t={t}
+            />
+
+            {/* Reception Multi-Desk Workstation & Work Division Scope Bar */}
+            <ReceptionWorkstationBar
+                activeDesk={activeDesk}
+                onDeskChange={handleDeskChange}
+                selectedScope={selectedScope}
+                onScopeChange={setSelectedScope}
+                selectedRooms={selectedRooms}
+                onToggleRoom={handleToggleRoom}
+                selectedModalities={selectedModalities}
+                onToggleModality={handleToggleModality}
+                onClearRooms={handleClearRooms}
+                onClearModalities={handleClearModalities}
+                onClearAll={handleClearAllFilters}
+                availableRooms={availableRooms}
+                availableModalities={availableModalities}
+                counts={workstationCounts}
+                onOpenDisplayBoard={handleOpenDisplayBoard}
+                currentUser={user}
+                isRealtimeConnected={isRealtimeConnected}
+                receptionShift={currentReceptionShift}
+                workstationLocked={Boolean(currentReceptionShift?.session_id)}
+                isShiftLoading={isReceptionShiftLoading || isOpeningReceptionShift || isClosingReceptionShift}
+                onOpenShift={handleOpenReceptionShift}
+                onCloseShift={handleCloseReceptionShift}
+                deskPresets={deskPresets}
             />
 
             {/* Main Tab Workspaces */}
@@ -399,8 +917,15 @@ const ReceptionOperations = () => {
                         onQueueMove={moveQueue}
                         onPickup={setPickupTarget}
                         onOpenPayment={paymentFlow.openPayment}
-                        approvedPartialPaymentExceptions={approvedPartialPaymentExceptions}
+                        partialPaymentExceptions={partialPaymentExceptions}
                         onRequestPartialPaymentException={canUsePartialPaymentExceptions ? setPartialExceptionTarget : undefined}
+                        quickFilter={quickFilter}
+                        externalDesk={activeDesk}
+                        externalScope={selectedScope}
+                        externalRooms={selectedRooms}
+                        externalModalities={selectedModalities}
+                        onDeskChange={handleDeskChange}
+                        onScopeChange={setSelectedScope}
                     />
                 )}
 
@@ -408,8 +933,8 @@ const ReceptionOperations = () => {
                     <PatientDirectory
                         searchTerm={searchTerm}
                         setSearchTerm={setSearchTerm}
-                        onBook={has('CREATE_APPOINTMENTS') ? (pat) => navigate(`/appointments/new?patientId=${encodeURIComponent(pat.patient_id || pat.id)}&date=${encodeURIComponent(selectedDate)}`) : undefined}
-                        onViewProfile={(pat) => setViewingPatientId(pat.patient_id || pat.id)}
+                        onBook={has('CREATE_APPOINTMENTS') ? (pat) => navigate(buildNewAppointmentUrl({ patientId: pat.patient_id || pat.id })) : undefined}
+                        onViewProfile={(pat) => navigate(`/patients/${encodeURIComponent(pat.patient_id || pat.id)}`)}
                     />
                 )}
 
@@ -418,6 +943,8 @@ const ReceptionOperations = () => {
                         canAppendSupplies={canAppendSupplies}
                         canCloseShift={canCloseCashierShift}
                         canOpenShift={canOpenCashierShift}
+                        canReconcileShifts={permissions.canReconcileShifts}
+                        canReviewShiftVariance={permissions.canReviewShiftVariance}
                         currentShift={shiftFlow.currentShift}
                         invoices={invoices}
                         isLoadingShift={shiftFlow.isLoadingShift}
@@ -427,12 +954,18 @@ const ReceptionOperations = () => {
                         onCreateInvoice={createAppointmentInvoice}
                         onMoveQueue={moveQueue}
                         onOpenPayment={paymentFlow.openPayment}
+                        onReconcile={shiftFlow.handleReconciliation}
+                        onRefresh={handleRefresh}
+                        onSupplyConsumed={handleRefresh}
+                        partialPaymentExceptions={partialPaymentExceptions}
+                        onRequestPartialPaymentException={canUsePartialPaymentExceptions ? setPartialExceptionTarget : undefined}
                         onShiftAction={shiftFlow.openShiftDialog}
+                        receptionShift={currentReceptionShift}
                         t={t}
                     />
                 )}
 
-                {activeTab === 'billing' && <BillingTab />}
+                {activeTab === 'billing' && <BillingTab selectedDate={selectedDate} receptionShift={currentReceptionShift} />}
             </main>
 
             {/* Modals & Dialogs */}
@@ -483,16 +1016,12 @@ const ReceptionOperations = () => {
                 isLoading={isDeliveringResult}
             />
 
-            {viewingPatientId && (
-                <PatientDetail
-                    patientId={viewingPatientId}
-                    onClose={() => setViewingPatientId(null)}
-                    onBook={(pat) => {
-                        setViewingPatientId(null);
-                        navigate(`/appointments/new?patientId=${encodeURIComponent(pat.patient_id)}&date=${encodeURIComponent(selectedDate)}`);
-                    }}
-                />
-            )}
+            {/* Public Patient Queue TV Display Modal */}
+            <PublicQueueDisplayModal
+                isOpen={isDisplayBoardOpen}
+                onClose={() => setIsDisplayBoardOpen(false)}
+            />
+
         </div>
     );
 };

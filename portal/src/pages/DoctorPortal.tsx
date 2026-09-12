@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import toast from "react-hot-toast";
 import {
@@ -13,12 +13,13 @@ import {
   Filter,
   MessageCircle,
   Plus,
+  Printer,
   RefreshCw,
   Search,
   Stethoscope,
   X,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   api,
   useCreateDoctorOrderMutation,
@@ -50,6 +51,12 @@ import {
 import { normalizeCenterSettings } from "@/utils/centerSettings";
 import { useAppDispatch, useAppSelector } from "../store/store";
 import { PortalIdentityProvider, resolvePortalIdentity } from "../lib/portal-identity";
+import { usePortalRealtime } from "../hooks/use-portal-realtime";
+import { useDebounce } from "../hooks/use-debounce";
+import { useFocusTrap } from "../hooks/use-focus-trap";
+import { openPrintableReport } from "../utils/printableReport";
+import { isPastDate } from "../utils/date";
+import { fetchWithAuthRetry } from "../lib/api";
 
 const emptyOrder = {
   patientMrn: "",
@@ -58,14 +65,6 @@ const emptyOrder = {
   preferredDate: "",
   preferredTimeWindow: "",
   contactPhone: "",
-};
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
-
-const getCsrfToken = (): string | null => {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
 };
 
 // status tones now handled in StatusBadge
@@ -85,11 +84,19 @@ const DoctorPortal = () => {
   const user = useAppSelector(selectCurrentUser);
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("cases");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() => {
+    const requestedTab = searchParams.get("tab");
+    return ["cases", "reports", "order", "notifications", "messages"].includes(requestedTab || "")
+      ? requestedTab!
+      : "cases";
+  });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [selectedCaseKey, setSelectedCaseKey] = useState<string | null>(null);
-  const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
+  const [selectedCaseKey, setSelectedCaseKey] = useState<string | null>(() => searchParams.get("entityId"));
+  const [selectedExamId, setSelectedExamId] = useState<string | null>(() => (
+    searchParams.get("tab") === "reports" ? searchParams.get("entityId") : null
+  ));
   const [orderForm, setOrderForm] = useState(emptyOrder);
   const [messageForm, setMessageForm] = useState({
     subject: "",
@@ -97,7 +104,7 @@ const DoctorPortal = () => {
     appointmentId: "",
     examId: "",
   });
-  const deferredSearch = useDeferredValue(search);
+  const debouncedSearch = useDebounce(search, 300);
   const locale = i18n.language?.startsWith("ar") ? "ar-EG" : "en-GB";
 
   const {
@@ -106,7 +113,7 @@ const DoctorPortal = () => {
     isFetching: casesFetching,
     refetch: refetchCases,
   } = useGetDoctorCasesQuery({
-    search: deferredSearch || undefined,
+    search: debouncedSearch || undefined,
     status: statusFilter || undefined,
     limit: 100,
   });
@@ -118,76 +125,32 @@ const DoctorPortal = () => {
   const { data: unreadData } = useGetDoctorUnreadCountQuery(undefined);
   const { data: notificationUnreadData } = useGetDoctorNotificationUnreadCountQuery(undefined, {
     pollingInterval: 15000,
+    skipPollingIfUnfocused: true,
   });
   const { data: rawCenterSettings } = useGetCenterSettingsQuery(undefined);
   const [sendMessage, { isLoading: isSending }] = useSendDoctorMessageMutation();
   const [createOrder, { isLoading: isOrdering }] = useCreateDoctorOrderMutation();
 
-  // Global SSE listener for Doctor Portal
-  useEffect(() => {
-    const token = sessionStorage.getItem("token");
-    if (!token) return;
-
-    let eventSource: EventSource;
-    let isCancelled = false;
-
-    // Fetch a short-lived SSE session token so the access JWT is not placed in the URL.
-    const csrfToken = getCsrfToken();
-    fetch(`${API_BASE_URL}/realtime/session`, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
-      },
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((sseSession) => {
-        if (isCancelled || !sseSession?.token) return;
-        eventSource = new EventSource(
-          `${API_BASE_URL}/realtime/stream?token=${encodeURIComponent(sseSession.token)}`,
-        );
-
-        eventSource.onmessage = (event) => {
-          try {
-            const parsed = JSON.parse(event.data);
-            if (parsed.type === "PING" || parsed.type === "CONNECTED") return;
-
-            const { event: sseEvent, data } = parsed;
-
-            if (sseEvent === "NEW_DOCTOR_PORTAL_MESSAGE") {
-              dispatch(api.util.invalidateTags(["DoctorMessages"]));
-              toast.success(
-                t("doctor.messages.newReply", { defaultValue: "New message reply from staff." }),
-              );
-            } else if (sseEvent === "NEW_NOTIFICATION") {
-              dispatch(api.util.invalidateTags(["DoctorCases", "DoctorNotifications"]));
-              toast.success(
-                data.content ||
-                  t("doctor.notifications.newUpdate", { defaultValue: "New portal update." }),
-              );
-            }
-          } catch (err) {
-            console.error("Failed to parse SSE payload in doctor portal", err);
-          }
-        };
-
-        eventSource.onerror = (error) => {
-          console.error("Doctor Portal SSE connection error:", error);
-          eventSource.close();
-        };
-      })
-      .catch((err) => {
-        console.error("Failed to establish SSE session in doctor portal", err);
+  usePortalRealtime(Boolean(user), ({ event: realtimeEvent, data }) => {
+    if (realtimeEvent === "NEW_DOCTOR_PORTAL_MESSAGE") {
+      dispatch(api.util.invalidateTags(["DoctorMessages"]));
+      toast.success(
+        t("doctor.messages.newReply", { defaultValue: "New message reply from staff." }),
+      );
+    } else if (realtimeEvent === "NEW_NOTIFICATION") {
+      dispatch(api.util.invalidateTags(["DoctorNotifications"]));
+      toast(data?.content || t("doctor.notifications.newUpdate", { defaultValue: "New portal update." }), {
+        icon: <Bell size={16} />,
       });
+    }
+  });
 
-    return () => {
-      isCancelled = true;
-      if (eventSource) {
-        eventSource.close();
-      }
-    };
-  }, [dispatch, t]);
+  const openPortalTab = (tab: string, entityId?: string | null) => {
+    setActiveTab(tab);
+    if (entityId && tab === "reports") setSelectedExamId(entityId);
+    if (entityId && tab === "cases") setSelectedCaseKey(entityId);
+    setSearchParams(entityId ? { tab, entityId } : { tab }, { replace: true });
+  };
 
   const centerSettings = useMemo(
     () => normalizeCenterSettings(rawCenterSettings || {}, language),
@@ -239,6 +202,19 @@ const DoctorPortal = () => {
     () => sortedCases.filter((item: any) => isToday(item.start_time)),
     [sortedCases],
   );
+
+  useEffect(() => {
+    document.title = `${centerName} · ${t("doctor.product")}`;
+  }, [centerName, t]);
+
+  const handleCloseReportDetail = () => {
+    setSelectedExamId(null);
+    if (searchParams.has("entityId")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("entityId");
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   const tabs = [
     { id: "cases", label: t("doctor.tabs.cases"), icon: Briefcase, count: activeCases.length },
@@ -335,6 +311,10 @@ const DoctorPortal = () => {
       toast.error(t("doctor.order.detailsRequired"));
       return;
     }
+    if (isPastDate(orderForm.preferredDate)) {
+      toast.error(t("doctor.order.pastDate", { defaultValue: "The preferred date cannot be in the past." }));
+      return;
+    }
     try {
       await createOrder({
         ...orderForm,
@@ -366,12 +346,12 @@ const DoctorPortal = () => {
         onLogout={handleLogout}
         tabs={tabs}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={openPortalTab}
       >
         {selectedExamId && (
           <ReportDetail
             examId={selectedExamId}
-            onClose={() => setSelectedExamId(null)}
+            onClose={handleCloseReportDetail}
             locale={locale}
             t={t}
           />
@@ -477,7 +457,7 @@ const DoctorPortal = () => {
                 setSearch("");
                 setStatusFilter("");
               }}
-              queryPending={search !== deferredSearch || casesFetching}
+              queryPending={search !== debouncedSearch || casesFetching}
               onSelect={(item: any) => setSelectedCaseKey(getCaseKey(item))}
               onReport={setSelectedExamId}
               onMessage={startCaseMessage}
@@ -546,7 +526,7 @@ const DoctorPortal = () => {
                 defaultValue: "Track case status changes, report completion, and center updates.",
               })}
             />
-            <PortalNotificationsView role="doctor" locale={locale} t={t} />
+            <PortalNotificationsView role="doctor" locale={locale} t={t} onNavigate={openPortalTab} />
           </div>
         )}
 
@@ -602,38 +582,70 @@ const ReportDetail = ({
       : "-";
   const sections = normalizeReportSections(report);
   const dialogRef = useRef<HTMLElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  useFocusTrap(dialogRef, true);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
     };
+    previouslyFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", handleKeyDown);
-    window.requestAnimationFrame(() => dialogRef.current?.focus());
+    window.requestAnimationFrame(() => {
+      if (dialogRef.current) {
+        const firstFocusable = dialogRef.current.querySelector<HTMLElement>(
+          'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]), textarea, input, select',
+        );
+        (firstFocusable || dialogRef.current).focus();
+      }
+    });
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
+      previouslyFocusedRef.current?.focus();
     };
-  }, [onClose]);
+  }, []);
+
+  const printReport = async () => {
+    try {
+      const response = await fetchWithAuthRetry(
+        `/doctor-portal/reports/${encodeURIComponent(examId)}/pdf`,
+      );
+      if (!response.ok) throw new Error();
+      const htmlText = await response.text();
+      openPrintableReport(htmlText, {
+        printImmediately: true,
+        fallbackFileName: `report_${examId}.html`,
+      });
+    } catch {
+      toast.error(t("doctor.report.downloadError"));
+    }
+  };
 
   const downloadPdf = async () => {
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
-      const response = await fetch(`${baseUrl}/doctor-portal/reports/${examId}/pdf`, {
-        credentials: "include",
-        headers: { authorization: `Bearer ${sessionStorage.getItem("token") || ""}` },
-      });
+      const response = await fetchWithAuthRetry(
+        `/doctor-portal/reports/${encodeURIComponent(examId)}/pdf?format=pdf&disposition=attachment`,
+      );
       if (!response.ok) throw new Error();
-      const htmlText = await response.text();
-      const url = URL.createObjectURL(new Blob([htmlText], { type: "text/html;charset=utf-8" }));
-      const popup = window.open(url, "_blank", "noopener,noreferrer");
-      if (!popup) {
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `report_${examId}.html`;
-        anchor.click();
-      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const orderNum = report?.order_number || examId;
+      link.download = `Diagnostic-Report-${orderNum}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
       toast.success(t("doctor.report.downloaded"));
     } catch {
       toast.error(t("doctor.report.downloadError"));
@@ -674,14 +686,26 @@ const ReportDetail = ({
           </div>
           <div className="flex items-center gap-2">
             {report && (
-              <button
-                type="button"
-                onClick={downloadPdf}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary-700 px-3 text-xs font-black text-white transition hover:bg-primary-800 sm:px-4"
-              >
-                <Download size={15} />
-                <span className="hidden sm:inline">{t("doctor.report.download")}</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={printReport}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-black text-foreground transition hover:bg-surface sm:px-4"
+                  title={t("records.printReport", "Print Report")}
+                >
+                  <Printer size={15} />
+                  <span className="hidden sm:inline">{t("records.printReport", "Print")}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={downloadPdf}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary-700 px-3 text-xs font-black text-white transition hover:bg-primary-800 sm:px-4"
+                  title={t("doctor.report.download", "Download PDF")}
+                >
+                  <Download size={15} />
+                  <span className="hidden sm:inline">{t("doctor.report.download", "Download PDF")}</span>
+                </button>
+              </>
             )}
             <button
               type="button"

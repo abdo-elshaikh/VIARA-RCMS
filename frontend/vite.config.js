@@ -44,7 +44,11 @@ export default defineConfig({
     build: {
         rollupOptions: {
             output: {
+                onlyExplicitManualChunks: true,
                 manualChunks(id) {
+                    const normalizedId = id.replaceAll('\\', '/');
+                    if (normalizedId.includes('/src/i18n/locales/ar/')) return 'translations-ar';
+                    if (normalizedId.includes('/src/i18n/locales/en/')) return 'translations-en';
                     if (!id.includes('node_modules')) return undefined;
                     if (id.includes('recharts') || id.includes('d3-')) return 'charts';
                     if (id.includes('framer-motion')) return 'motion';
@@ -55,7 +59,7 @@ export default defineConfig({
                     if (id.includes('@tanstack')) return 'data-table';
                     if (id.includes('axios')) return 'http';
                     if (id.includes('jspdf') || id.includes('html2canvas')) return 'pdf-export';
-                    if (['/docx/', '/jszip/', '/hash.js/', '/nanoid/', '/xml-js/', '/xml/'].some((dependency) => id.replaceAll('\\', '/').includes(dependency))) return 'word-export';
+                    if (normalizedId.includes('/node_modules/docx/')) return 'word-export';
                     return 'vendor';
                 },
             },

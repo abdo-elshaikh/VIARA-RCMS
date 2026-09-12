@@ -54,3 +54,13 @@ backend/backups/
 *.zip
 *.7z
 desktop.ini
+
+# Scratch, local caches, and test artifacts
+scratch/
+portal/unused-images/
+pacs-worklists/*.wl
+!pacs-worklists/.gitkeep
+/ChatGPT Image*
+
+
+scratch/

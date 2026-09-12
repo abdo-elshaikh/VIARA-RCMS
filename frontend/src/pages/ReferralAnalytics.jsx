@@ -123,6 +123,8 @@ const ReferralAnalytics = () => {
                         <Download size={16} aria-hidden="true" /> {t('analytics.exportReferrals', 'Export Doctor Revenue')}
                     </button>
                 }
+                metrics={kpis.map(item => ({ ...item, label: item.label, detail: item.note, loading: isLoading, error: isError }))}
+                metricsLabel={t('analytics.kpis.label', 'Referral record indicators')}
             />
 
             {/* Filter Bar */}

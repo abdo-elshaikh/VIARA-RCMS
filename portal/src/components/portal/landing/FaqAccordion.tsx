@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, HelpCircle, Phone } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { usePortalIdentity } from '../../../lib/portal-identity';
+import { useLandingContent } from '../../../hooks/use-landing-content';
 
 interface FaqItem {
   q: string;
@@ -23,8 +23,8 @@ const FAQS_EN: FaqItem[] = [
     a: 'Available reports and imaging studies can be opened securely through the patient portal. Your treating physician can also access shared studies when the appropriate permissions are provided.',
   },
   {
-    q: 'Do you offer home imaging services?',
-    a: 'Selected mobile services may be available by location, including digital X-ray, ultrasound, Doppler, ECG, and sample collection. Contact the support team to confirm availability for your area.',
+    q: 'How can I confirm whether a home service is available?',
+    a: 'Home-service availability depends on the center, examination, and location. Submit an appointment request or contact the center to confirm whether the requested service covers your area.',
   },
   {
     q: 'Are examinations covered by health insurance?',
@@ -46,8 +46,8 @@ const FAQS_AR: FaqItem[] = [
     a: 'يمكن فتح التقارير والصور المتاحة بأمان من خلال بوابة المريض، كما يمكن مشاركة الدراسة مع الطبيب المعالج بعد منح الصلاحيات المناسبة.',
   },
   {
-    q: 'هل تتوفر خدمة إجراء الفحوصات المنزلية؟',
-    a: 'قد تتوفر خدمات متنقلة مختارة حسب المنطقة، مثل الأشعة الرقمية والسونار والدوبلر ورسم القلب وسحب العينات. تواصل مع فريق الدعم للتأكد من التغطية في منطقتك.',
+    q: 'كيف أتأكد من توفر خدمة منزلية؟',
+    a: 'يعتمد توفر الخدمة المنزلية على المركز ونوع الفحص والمنطقة. أرسل طلب موعد أو تواصل مع المركز للتأكد من تغطية الخدمة المطلوبة لموقعك.',
   },
   {
     q: 'هل يغطي التأمين الصحي تكلفة الفحص؟',
@@ -59,9 +59,10 @@ export const FaqAccordion = () => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith('ar');
   const reduceMotion = useReducedMotion();
-  const identity = usePortalIdentity();
-  const phone = identity.contacts.hotline || identity.contacts.phone || '19999';
-  const faqs = isRtl ? FAQS_AR : FAQS_EN;
+  const { faqs: managedFaqs, contactPhone } = useLandingContent();
+  // Curated FAQs from homepage_settings win; otherwise the built-in generic,
+  // carefully hedged guidance is used. No fabricated operational claims.
+  const faqs = managedFaqs.length ? managedFaqs : (isRtl ? FAQS_AR : FAQS_EN);
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
@@ -82,11 +83,17 @@ export const FaqAccordion = () => {
 
             <div className="mt-8 border-t border-[#DCE8E5] pt-6 dark:border-border">
               <span className="block text-xs text-muted-foreground">{isRtl ? 'هل لديك سؤال آخر؟' : 'Still have a question?'}</span>
-              <a href={`tel:${phone.replace(/\s/g, '')}`} className="mt-2 inline-flex items-center gap-2 text-sm font-bold text-[#0B2348] transition hover:text-primary dark:text-white">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#E7F5F1] text-primary dark:bg-primary-soft"><Phone className="h-4 w-4" /></span>
-                <span>{isRtl ? 'تحدث مع فريق الدعم' : 'Talk to patient support'}</span>
-                <span dir="ltr" className="text-primary">{phone}</span>
-              </a>
+              {contactPhone ? (
+                <a href={`tel:${contactPhone.replace(/\s/g, '')}`} className="mt-2 inline-flex items-center gap-2 text-sm font-bold text-[#0B2348] transition hover:text-primary dark:text-white">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#E7F5F1] text-primary dark:bg-primary-soft"><Phone className="h-4 w-4" /></span>
+                  <span>{isRtl ? 'تحدث مع فريق الدعم' : 'Talk to patient support'}</span>
+                  <span dir="ltr" className="text-primary">{contactPhone}</span>
+                </a>
+              ) : (
+                <p className="mt-2 text-sm font-medium text-muted-foreground">
+                  {isRtl ? 'تواصل معنا من صفحة الاتصال وسنجيب على استفساراتك.' : 'Reach us from the contact details below and we will answer your questions.'}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -104,7 +111,7 @@ export const FaqAccordion = () => {
                   aria-controls={answerId}
                   className="group flex w-full items-center gap-4 py-5 text-start sm:py-6"
                 >
-                  <span className={`text-[11px] font-bold tabular-nums transition-colors ${isOpen ? 'text-primary' : 'text-muted-foreground'}`}>{String(index + 1).padStart(2, '0')}</span>
+                  <span className={`text-xs font-bold tabular-nums transition-colors ${isOpen ? 'text-primary' : 'text-muted-foreground'}`}>{String(index + 1).padStart(2, '0')}</span>
                   <span className={`flex-1 text-sm font-bold transition-colors sm:text-base ${isOpen ? 'text-primary' : 'text-[#0B2348] group-hover:text-primary dark:text-white'}`}>{faq.q}</span>
                   <motion.span animate={{ rotate: isOpen ? 180 : 0 }} transition={{ duration: 0.25 }} className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${isOpen ? 'bg-primary text-white' : 'bg-white text-muted-foreground dark:bg-background'}`}>
                     <ChevronDown className="h-4 w-4" />

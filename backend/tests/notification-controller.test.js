@@ -1,15 +1,19 @@
 jest.mock('../src/services/notificationService', () => ({
     dispatch: jest.fn(),
-    notifyClients: jest.fn()
+    notifyClients: jest.fn(),
+    computeActionUrl: jest.fn(item => item.action_url || null)
 }));
 
 const {
     getNotifications,
     getUnreadCount,
     markNotificationRead,
+    getStaffPreferences,
+    unsubscribe,
     handleTwilioWebhook
 } = require('../src/controllers/notificationController');
 const { notifyClients } = require('../src/services/notificationService');
+const { createUnsubscribeToken } = require('../src/utils/notificationUnsubscribeToken');
 
 const buildRes = () => {
     const res = {};
@@ -108,7 +112,7 @@ describe('notification controller hardening', () => {
         expect(res.json).toHaveBeenCalledWith({ unreadCount: 7 });
     });
 
-    test('unread count falls back to legacy read state when read receipts migration is missing', async () => {
+    test('unread count fails closed when read receipts migration is missing', async () => {
         const missingReadsError = new Error('relation "notification_reads" does not exist');
         missingReadsError.code = '42P01';
         const db = {
@@ -124,9 +128,87 @@ describe('notification controller hardening', () => {
 
         await getUnreadCount(db)(req, res, next);
 
+        expect(next).toHaveBeenCalledWith(missingReadsError);
+        expect(db.query).toHaveBeenCalledTimes(1);
+        expect(res.json).not.toHaveBeenCalled();
+    });
+
+    test('staff preference defaults match database defaults when no row exists', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+        const res = buildRes();
+
+        await getStaffPreferences(db)(
+            { user: { user_id: 'staff-1', role: 'Receptionist' } },
+            res,
+            jest.fn()
+        );
+
+        expect(db.query).toHaveBeenCalledWith(expect.stringContaining('staff_user_id = $1'), ['staff-1']);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            inapp_enabled: true,
+            notify_security_event: true,
+            notify_staff_lifecycle: true,
+            notify_payment_update: true,
+            quiet_hours_enabled: false,
+            quiet_hours_start: 22,
+            quiet_hours_end: 7
+        }));
+    });
+
+    test('invalid unsubscribe token returns the generic response without querying patients', async () => {
+        const db = { query: jest.fn() };
+        const res = buildRes();
+        const next = jest.fn();
+
+        await unsubscribe(db)(
+            { body: { email: 'patient@example.com', token: 'invalid-token-value-long-enough' } },
+            res,
+            next
+        );
+
+        expect(db.query).not.toHaveBeenCalled();
         expect(next).not.toHaveBeenCalled();
-        expect(db.query.mock.calls[1][0]).toContain('COALESCE(n.is_read, FALSE) = FALSE');
-        expect(res.json).toHaveBeenCalledWith({ unreadCount: 3 });
+        expect(res.json).toHaveBeenCalledWith({
+            message: 'If the unsubscribe request was valid, marketing preferences have been updated.'
+        });
+    });
+
+    test('valid unsubscribe is marketing-only and keeps the response enumeration resistant', async () => {
+        const email = 'Patient@Example.com';
+        const token = createUnsubscribeToken({ contact: email, channel: 'Email' });
+        const db = {
+            query: jest.fn().mockResolvedValue({ rows: [] })
+        };
+        const res = buildRes();
+        const next = jest.fn();
+
+        await unsubscribe(db)({ body: { email, token } }, res, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(db.query).toHaveBeenCalledTimes(1);
+        expect(db.query.mock.calls[0][0]).toContain('email_hash = $1');
+        expect(db.query.mock.calls[0][0]).toContain('consent_marketing = FALSE');
+        expect(db.query.mock.calls[0][0]).not.toContain('consent_email');
+        expect(db.query.mock.calls[0][0]).toContain('notify_marketing');
+        expect(db.query.mock.calls[0][0]).not.toContain('email_enabled');
+        expect(res.json).toHaveBeenCalledWith({
+            message: 'If the unsubscribe request was valid, marketing preferences have been updated.'
+        });
+    });
+
+    test('valid unsubscribe for an unknown contact uses the same response and performs no writes', async () => {
+        const phone = '+15555550123';
+        const token = createUnsubscribeToken({ contact: phone, channel: 'SMS' });
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+        const res = buildRes();
+
+        await unsubscribe(db)({ body: { phone, token } }, res, jest.fn());
+
+        expect(db.query).toHaveBeenCalledTimes(1);
+        expect(db.query.mock.calls[0][0]).toContain('phone_hash = $1');
+        expect(res.json).toHaveBeenCalledWith({
+            message: 'If the unsubscribe request was valid, marketing preferences have been updated.'
+        });
     });
 
     test('Twilio webhook maps delivered receipts and notifies connected clients', async () => {

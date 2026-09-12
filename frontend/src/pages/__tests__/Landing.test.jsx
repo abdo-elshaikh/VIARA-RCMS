@@ -1,10 +1,17 @@
 /* eslint-disable no-undef */
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { Provider } from 'react-redux';
+import { I18nextProvider } from 'react-i18next';
+import { createInstance } from 'i18next';
 import { configureStore } from '@reduxjs/toolkit';
-import i18n from '../../i18n';
-import preferencesReducer from '../../store/preferencesSlice';
+import landingEn from '../../i18n/locales/en/landing.json';
+import landingAr from '../../i18n/locales/ar/landing.json';
+import commonEn from '../../i18n/locales/en/common.json';
+import commonAr from '../../i18n/locales/ar/common.json';
+import authEn from '../../i18n/locales/en/auth.json';
+import authAr from '../../i18n/locales/ar/auth.json';
+import preferencesReducer, { DEFAULT_PREFERENCES } from '../../store/preferencesSlice';
 import Landing from '../Landing';
 
 vi.mock('../../store/api', () => ({
@@ -36,13 +43,20 @@ vi.mock('../../store/api', () => ({
     }),
 }));
 
+let landingI18n;
+
 const renderLanding = () => {
-    const store = configureStore({ reducer: { preferences: preferencesReducer } });
+    const store = configureStore({
+        reducer: { preferences: preferencesReducer },
+        preloadedState: { preferences: { ...DEFAULT_PREFERENCES } },
+    });
     const result = render(
         <Provider store={store}>
-            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-                <Landing />
-            </BrowserRouter>
+            <I18nextProvider i18n={landingI18n}>
+                <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                    <Landing />
+                </BrowserRouter>
+            </I18nextProvider>
         </Provider>,
     );
     return { ...result, store };
@@ -56,12 +70,33 @@ describe('VIARA landing preferences', () => {
             addEventListener: vi.fn(),
             removeEventListener: vi.fn(),
         })));
-        await act(() => i18n.changeLanguage('en'));
+        landingI18n = createInstance();
+        await landingI18n.init({
+            lng: 'en',
+            fallbackLng: 'en',
+            ns: ['landing', 'common', 'auth'],
+            defaultNS: 'landing',
+            resources: {
+                en: { landing: landingEn, common: commonEn, auth: authEn },
+                ar: { landing: landingAr, common: commonAr, auth: authAr },
+            },
+            interpolation: { escapeValue: false },
+        });
+        landingI18n.on('languageChanged', (language) => {
+            const code = String(language || 'en').split('-')[0];
+            document.documentElement.setAttribute('lang', code);
+            document.documentElement.setAttribute('dir', code === 'ar' ? 'rtl' : 'ltr');
+        });
+        document.documentElement.setAttribute('lang', 'en');
+        document.documentElement.setAttribute('dir', 'ltr');
     });
 
     afterEach(() => {
+        landingI18n?.off('languageChanged');
         vi.unstubAllGlobals();
         document.documentElement.classList.remove('dark');
+        document.documentElement.setAttribute('lang', 'en');
+        document.documentElement.setAttribute('dir', 'ltr');
     });
 
     it('renders live center metrics and the four command scenes', () => {
@@ -108,8 +143,10 @@ describe('VIARA landing preferences', () => {
             fireEvent.click(screen.getByRole('button', { name: /Switch to Arabic/i }));
         });
 
+        await waitFor(() => expect(landingI18n.resolvedLanguage).toBe('ar'));
+
         expect(store.getState().preferences.language).toBe('ar');
-        expect(i18n.resolvedLanguage).toBe('ar');
+        expect(landingI18n.resolvedLanguage).toBe('ar');
         expect(document.documentElement).toHaveAttribute('dir', 'rtl');
         expect(JSON.parse(localStorage.getItem('VIARA_preferences')).language).toBe('ar');
         expect(localStorage.getItem('VIARA_lang')).toBe('ar');

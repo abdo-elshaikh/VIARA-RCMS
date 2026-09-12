@@ -88,7 +88,7 @@ const RoleBasedDashboard = ({ activeTab, onTabChange, t }) => {
                 </span>
                 <div>
                     <h3 className="text-sm font-black text-slate-950 dark:text-white">
-                        {t('dashboard.welcome', { defaultValue: 'Welcome, {{name}}' }, { name: user?.name || user?.fullName || t('fallback.staff') })}
+                        {t('dashboard.welcome', { defaultValue: 'Welcome, {{name}}', name: user?.name || user?.fullName || t('fallback.staff') })}
                     </h3>
                     <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
                         {t('dashboard.role', { defaultValue: 'Role:' })} {user?.role || 'Staff'}

@@ -78,7 +78,8 @@ const LiveScanTimer = ({ startedAt }) => {
     const [seconds, setSeconds] = useState(0);
 
     useEffect(() => {
-        const startTime = startedAt ? new Date(startedAt).getTime() : Date.now();
+        const parsedStartTime = startedAt ? new Date(startedAt).getTime() : NaN;
+        const startTime = Number.isFinite(parsedStartTime) ? parsedStartTime : Date.now();
         const update = () => {
             const now = Date.now();
             setSeconds(Math.max(0, Math.floor((now - startTime) / 1000)));
@@ -252,6 +253,13 @@ const Technician = () => {
                         <span>{tr(t, 'actions.refresh', 'Refresh Queue', 'تحديث القائمة', isAr)}</span>
                     </button>
                 }
+                metrics={[
+                    { key: 'checked-in', icon: Timer, tone: 'amber', label: tr(t, 'technician.checkedIn', 'Waiting / Checked-In', ar.checkedIn, isAr), value: metrics.checkedIn, onClick: () => setViewFilter(viewFilter === 'checked_in' ? 'all' : 'checked_in'), loading: isLoading },
+                    { key: 'scanning', icon: ScanLine, tone: 'blue', label: tr(t, 'technician.scanning', 'In acquisition', ar.scanning, isAr), value: metrics.scanning, onClick: () => setViewFilter(viewFilter === 'scanning' ? 'all' : 'scanning'), loading: isLoading },
+                    { key: 'priority', icon: AlertTriangle, tone: 'rose', label: tr(t, 'technician.priority', 'Priority cases', ar.priority, isAr), value: metrics.statCount, loading: isLoading },
+                    { key: 'total', icon: Activity, tone: 'teal', label: tr(t, 'technician.totalQueue', 'Assigned studies', 'إجمالي قائمة الفني', isAr), value: metrics.total, loading: isLoading },
+                ]}
+                metricsLabel={isAr ? 'مؤشرات سجل فحوص الفني' : 'Technician work record indicators'}
             />
 
             {/* Top Telemetry Metric HUD */}

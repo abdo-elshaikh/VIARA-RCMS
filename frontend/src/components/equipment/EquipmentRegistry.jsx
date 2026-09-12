@@ -22,6 +22,7 @@ import {
     useGetEquipmentDowntimeQuery,
     useGetEquipmentMaintenanceQuery,
     useGetMachinesQuery,
+    useGetRoomsQuery,
     useGetServiceContractsQuery,
     useUpdateMachineMutation,
 } from '../../store/api';
@@ -53,6 +54,7 @@ const EquipmentRegistry = () => {
     }, []);
 
     const { data: machines = [], isLoading, isError, isFetching, refetch } = useGetMachinesQuery();
+    const { data: rooms = [] } = useGetRoomsQuery();
     const { data: maintenance = [] } = useGetEquipmentMaintenanceQuery(undefined, { skip: !canViewMaintenance });
     const { data: downtime = [] } = useGetEquipmentDowntimeQuery();
     const { data: contracts = [] } = useGetServiceContractsQuery(undefined, { skip: !canViewContracts });
@@ -291,7 +293,29 @@ const EquipmentRegistry = () => {
                     <div className="grid gap-4 sm:grid-cols-2">
                         <Field label={copy('name')}><input required maxLength={50} value={form.name} onChange={event => setField('name', event.target.value)} className={inputClass} /></Field>
                         <Field label={copy('type')}><select required value={form.type} onChange={event => setField('type', event.target.value)} className={inputClass}>{machineTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></Field>
-                        <Field label={copy('roomNumber')}><input maxLength={20} value={form.roomNumber} onChange={event => setField('roomNumber', event.target.value)} className={inputClass} /></Field>
+                        <Field label={copy('roomNumber')}>
+                            <select
+                                value={form.roomId || (rooms.find(r => r.room_number === form.roomNumber)?.room_id || '')}
+                                onChange={event => {
+                                    const selectedId = event.target.value;
+                                    const foundRoom = rooms.find(r => r.room_id === selectedId);
+                                    setForm(prev => ({
+                                        ...prev,
+                                        roomId: selectedId,
+                                        roomNumber: foundRoom ? foundRoom.room_number : prev.roomNumber,
+                                        location: foundRoom?.floor ? (i18n.language.startsWith('ar') ? `الطابق ${foundRoom.floor}` : `Floor ${foundRoom.floor}`) : prev.location
+                                    }));
+                                }}
+                                className={inputClass}
+                            >
+                                <option value="">{i18n.language.startsWith('ar') ? '— غير محدد / غرفة مخصصة —' : '— Unassigned / Custom Room —'}</option>
+                                {rooms.map(r => (
+                                    <option key={r.room_id} value={r.room_id}>
+                                        {r.name} ({r.room_number}) [{r.type}]
+                                    </option>
+                                ))}
+                            </select>
+                        </Field>
                         <Field label={copy('location')}><input maxLength={255} value={form.location} onChange={event => setField('location', event.target.value)} className={inputClass} /></Field>
                         <Field label={copy('manufacturer')}><input maxLength={100} value={form.manufacturer} onChange={event => setField('manufacturer', event.target.value)} className={inputClass} /></Field>
                         <Field label={copy('model')}><input maxLength={100} value={form.model} onChange={event => setField('model', event.target.value)} className={inputClass} /></Field>

@@ -1,28 +1,48 @@
-import { Cpu, FileText, MapPin, Stethoscope } from 'lucide-react';
+import { Cpu, FileText, MapPin, ShieldCheck, Activity, CheckCircle2, Timer, Database } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { usePortalIdentity } from '../../../lib/portal-identity';
+import { useLandingContent } from '../../../hooks/use-landing-content';
 
+/**
+ * Trust section. The bottom metrics band renders ONLY real, live numbers from
+ * the public landing overview (active equipment, today's studies, completion
+ * rate, average imaging time). When the overview is unavailable the band is
+ * omitted entirely — no invented "3.0T / 128-slice / 24-7" style claims.
+ */
 export const WhyViaraSection = () => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith('ar');
   const reduceMotion = useReducedMotion();
   const identity = usePortalIdentity();
   const centerName = identity.center.name || (isRtl ? 'مركز الأشعة' : 'Radiology Center');
+  const { overview, overviewLoaded, branches } = useLandingContent();
 
   const reasons = [
-    { icon: Stethoscope, titleAr: 'استشاريون متخصصون', titleEn: 'Specialist consultants', descAr: 'مراجعة دقيقة لكل فحص وربط النتائج بالسياق الطبي.', descEn: 'Careful review of each exam within its clinical context.' },
-    { icon: Cpu, titleAr: 'تقنيات تصوير متقدمة', titleEn: 'Advanced imaging', descAr: 'تفاصيل أوضح مع بروتوكولات تراعي الراحة والأمان.', descEn: 'Clearer detail with protocols built around comfort and safety.' },
-    { icon: FileText, titleAr: 'نتائج رقمية في مكان واحد', titleEn: 'Digital results in one place', descAr: 'التقرير والصور متاحان بأمان للمريض والطبيب.', descEn: 'Secure reports and images for both patient and physician.' },
-    { icon: MapPin, titleAr: 'رعاية أقرب إليك', titleEn: 'Care closer to you', descAr: 'فروع متعددة وخيارات حجز ووصول أكثر سهولة.', descEn: 'Multiple centers with simpler booking and access.' },
+    { icon: ShieldCheck, titleAr: 'وصول محمي للنتائج', titleEn: 'Protected result access', descAr: 'لا تظهر حالة الفحص أو التقرير إلا بعد رمز تحقق قصير العمر.', descEn: 'Case status and reports appear only after short-lived verification.' },
+    { icon: Cpu, titleAr: 'خدمات مرتبطة بسجل المركز', titleEn: 'Center-managed services', descAr: 'تعرض الصفحة أنواع التصوير المسجلة كنشطة لدى المركز فقط.', descEn: 'The page lists only imaging types marked active by the center.' },
+    { icon: FileText, titleAr: 'رحلة رقمية واضحة', titleEn: 'A clear digital journey', descAr: 'طلب موعد برقم متابعة وحالة فحص معروضة خطوة بخطوة.', descEn: 'Trackable appointment requests and step-by-step case status.' },
+    ...(branches.length > 1
+      ? [{ icon: MapPin, titleAr: 'رعاية أقرب إليك', titleEn: 'Care closer to you', descAr: 'أكثر من موقع وخيارات حجز ووصول أكثر سهولة.', descEn: 'Multiple locations with simpler booking and access.' }]
+      : []),
   ];
 
-  const facts = [
-    { value: '3.0T', ar: 'رنين عالي المجال', en: 'High-field MRI' },
-    { value: '128', ar: 'شريحة مقطعية', en: 'CT slices' },
-    { value: '24/7', ar: 'دعم المركز الرئيسي', en: 'Flagship support' },
-    { value: 'DICOM', ar: 'صور وتقارير رقمية', en: 'Digital studies' },
-  ];
+  const facts = overview
+    ? [
+        ...(overview.activeModalities != null
+          ? [{ icon: Database, value: String(overview.activeModalities), ar: 'أجهزة تصوير نشطة', en: 'active imaging systems' }]
+          : []),
+        ...(overview.studiesToday != null
+          ? [{ icon: Activity, value: String(overview.studiesToday), ar: 'دراسات اليوم', en: 'studies today' }]
+          : []),
+        ...(overview.completionRate != null
+          ? [{ icon: CheckCircle2, value: `${overview.completionRate}%`, ar: 'نسبة إنجاز دراسات اليوم', en: "today's completion rate" }]
+          : []),
+        ...(overview.imagingMinutes != null
+          ? [{ icon: Timer, value: `~${overview.imagingMinutes}`, ar: 'دقيقة متوسط زمن التصوير', en: 'min average imaging time' }]
+          : []),
+      ]
+    : [];
 
   return (
     <section id="why-viara" className="bg-[#F2F8FB] py-16 dark:bg-[#0A1729] sm:py-20 lg:py-24">
@@ -34,7 +54,7 @@ export const WhyViaraSection = () => {
             className="relative min-h-[420px] overflow-hidden rounded-[28px]"
             dir={isRtl ? 'rtl' : 'ltr'}
           >
-            <img src="/images/viara-doctor-patient.jpg" alt="Radiologist speaking with a patient" decoding="async" className="absolute inset-0 h-full w-full object-cover" />
+            <img src="/images/viara-doctor-patient.jpg" alt="Radiologist speaking with a patient" loading="lazy" decoding="async" width="1200" height="900" className="absolute inset-0 h-full w-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-[#0B2348]/72 via-transparent to-transparent" />
             <p className="absolute bottom-6 inset-x-6 max-w-sm text-sm font-semibold leading-7 text-white">
               {isRtl ? 'الوضوح التشخيصي يبدأ من التقنية، ويكتمل بخبرة الطبيب واهتمام الفريق.' : 'Diagnostic clarity starts with technology and is completed by medical expertise and attentive care.'}
@@ -69,14 +89,20 @@ export const WhyViaraSection = () => {
           </div>
         </div>
 
-        <div className="mt-12 grid grid-cols-2 border-y border-[#DCE8E8] py-6 sm:grid-cols-4 dark:border-border">
-          {facts.map((fact, index) => (
-            <div key={fact.value} className={`px-3 text-center ${index > 0 ? 'border-s border-[#DCE8E8] dark:border-border' : ''}`}>
-              <strong className="block text-2xl font-bold text-[#0B2348] dark:text-white sm:text-3xl">{fact.value}</strong>
-              <span className="mt-1 block text-[11px] font-medium text-muted-foreground">{isRtl ? fact.ar : fact.en}</span>
-            </div>
-          ))}
-        </div>
+        {overviewLoaded && facts.length > 0 && (
+          <div className="mt-12 grid grid-cols-2 border-y border-[#DCE8E8] py-6 sm:grid-cols-4 dark:border-border">
+            {facts.map((fact, index) => {
+              const Icon = fact.icon;
+              return (
+                <div key={fact.en} className={`px-3 text-center ${index > 0 ? 'border-s border-[#DCE8E8] dark:border-border' : ''}`}>
+                  <Icon className="mx-auto h-4 w-4 text-primary" aria-hidden="true" />
+                  <strong className="mt-1.5 block text-2xl font-bold text-[#0B2348] dark:text-white sm:text-3xl">{fact.value}</strong>
+                  <span className="mt-1 block text-xs font-medium text-muted-foreground">{isRtl ? fact.ar : fact.en}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );

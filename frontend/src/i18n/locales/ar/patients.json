@@ -37,7 +37,13 @@
       "page": "{{page}} / {{pages}}",
       "previous": "صفحة المرضى السابقة",
       "next": "صفحة المرضى التالية"
-    }
+    },
+    "selectPatient": "اختر مريضاً",
+    "emptyTitle": "لم يتم العثور على سجلات مرضى",
+    "selectPage": "تحديد الصفحة",
+    "contact": "بيانات الاتصال",
+    "demographics": "البيانات الديموغرافية",
+    "statusAndRegistration": "الحالة وتاريخ التسجيل"
   },
   "filters": {
     "title": "البحث وتقسيم السجلات",
@@ -46,13 +52,17 @@
     "all": "كل السجلات",
     "recent": "الأحدث",
     "missingContact": "بدون وسيلة تواصل",
-    "missingEmail": "بدون بريد إلكتروني"
+    "missingEmail": "بدون بريد إلكتروني",
+    "clearSearch": "مسح البحث",
+    "quick": "تصفية سريعة"
   },
   "genderFilter": {
-    "all": "كل الأجناس"
+    "all": "كل الأجناس",
+    "label": "التصفية حسب الجنس"
   },
   "statusFilter": {
-    "all": "كل الحالات"
+    "all": "كل الحالات",
+    "label": "التصفية حسب الحالة"
   },
   "gender": {
     "Male": "ذكر",
@@ -104,7 +114,11 @@
     "unnamed": "مريض بدون اسم",
     "noPhone": "لا يوجد هاتف",
     "noEmail": "لا يوجد بريد",
-    "noDob": "لا يوجد تاريخ ميلاد"
+    "noDob": "لا يوجد تاريخ ميلاد",
+    "contact": "الاتصال والتواصل",
+    "demographics": "البيانات الديموغرافية",
+    "age": "العمر",
+    "registered": "مسجل"
   },
   "fallback": {
     "na": "غير متوفر",
@@ -192,6 +206,7 @@
       "firstName": "الاسم الأول",
       "lastName": "اسم العائلة",
       "dateOfBirth": "تاريخ الميلاد",
+      "age": "العمر",
       "gender": "الجنس",
       "nationalId": "الرقم القومي",
       "passportNumber": "رقم جواز السفر",
@@ -218,7 +233,29 @@
     },
     "cancel": "إلغاء",
     "save": "حفظ",
-    "saving": "جارٍ الحفظ..."
+    "saving": "جارٍ الحفظ...",
+    "editTitle": "تعديل سجل المريض",
+    "description": "حدّث الهوية والبيانات الطبية الأساسية وجهة الطوارئ وموافقات التواصل.",
+    "close": "إغلاق نموذج المريض",
+    "consentsTitle": "موافقات التواصل",
+    "placeholders": {
+      "firstName": "مثال: سارة",
+      "lastName": "مثال: محمود",
+      "nationalId": "الرقم القومي أو المدني",
+      "passportNumber": "رقم جواز السفر",
+      "phone": "+20 100 000 0000",
+      "email": "patient@example.com",
+      "address": "الشارع، المبنى، الحي",
+      "allergies": "صبغة، بنسلين، لاتكس...",
+      "chronicDiseases": "سكري، ضغط، ربو...",
+      "priorSurgeries": "استئصال زائدة (2018)، دعامة (2021)...",
+      "implantsDevices": "منظم ضربات قلب، شرائح معدنية...",
+      "renalFunctionNotes": "نسبة الكرياتينين الأخيرة أو جدول الغسيل...",
+      "emergencyName": "اسم القريب أو جهة الاتصال",
+      "relationship": "أخ، زوج/زوجة، والد...",
+      "emergencyAddress": "عنوان جهة اتصال الطوارئ",
+      "preferredLanguage": "اختر اللغة المفضلة"
+    }
   },
   "confirm": {
     "deleteOneTitle": "حذف سجل المريض؟",
@@ -243,5 +280,18 @@
     "partialDelete": "تم حذف {{deleted}} من السجلات، وتعذّر حذف {{failed}}.",
     "merged": "تم دمج سجلات المرضى.",
     "mergeFailed": "تعذّر دمج سجلات المرضى."
+  },
+  "yearsOld": "{{age}} سنة",
+  "mrnCopied": "تم نسخ الرقم الطبي إلى الحافظة",
+  "copyFailed": "تعذر نسخ الرقم الطبي",
+  "clickToCopy": "انقر لنسخ الرقم الطبي",
+  "view": {
+    "label": "طريقة العرض",
+    "table": "عرض جدول",
+    "grid": "عرض شبكي"
+  },
+  "selection": {
+    "export": "تصدير المحدد",
+    "clear": "إلغاء التحديد"
   }
 }

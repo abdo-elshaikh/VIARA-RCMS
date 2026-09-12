@@ -63,7 +63,7 @@ describe('AuthService', () => {
         it('should generate a valid JWT and save refresh token to DB', async () => {
             const userPayload = { id: 1, role: 'Admin' };
             const ownerId = 123;
-            
+
             const result = await AuthService.generateTokens(mockDb, userPayload, ownerId, false);
 
             // Verify JWT Generation
@@ -73,15 +73,20 @@ describe('AuthService', () => {
                 { expiresIn: '1h' }
             );
 
-            // Verify session ownership update and refresh-token insertion
-            expect(mockDb.query).toHaveBeenCalledTimes(2);
+            // Verify session ownership update, emergency-grant expiry, and
+            // refresh-token insertion (staff logins create a new session, so any
+            // active break-glass grant from the previous session is expired).
+            expect(mockDb.query).toHaveBeenCalledTimes(3);
             expect(mockDb.query.mock.calls[0][0]).toContain('UPDATE users SET current_session_id');
             expect(mockDb.query.mock.calls[0][1]).toEqual(['session-uuid', ownerId]);
-            expect(mockDb.query.mock.calls[1][0]).toContain('INSERT INTO refresh_tokens');
-            expect(mockDb.query.mock.calls[1][0]).toContain('user_id');
-            
+            expect(mockDb.query.mock.calls[1][0]).toContain('UPDATE emergency_access_logs');
+            expect(mockDb.query.mock.calls[1][0]).toContain("SET status = 'Expired'");
+            expect(mockDb.query.mock.calls[1][1]).toEqual([ownerId]);
+            expect(mockDb.query.mock.calls[2][0]).toContain('INSERT INTO refresh_tokens');
+            expect(mockDb.query.mock.calls[2][0]).toContain('user_id');
+
             // Verify DB Parameters
-            const queryParams = mockDb.query.mock.calls[1][1];
+            const queryParams = mockDb.query.mock.calls[2][1];
             expect(queryParams[0]).toBe(123); // ownerId
             expect(queryParams[1]).toBe('mocked-hash-digest'); // refreshHash
             expect(queryParams[2]).toBeInstanceOf(Date); // expiresAt
@@ -89,6 +94,16 @@ describe('AuthService', () => {
             // Verify Return Format
             expect(result).toHaveProperty('token', 'mocked.jwt.token');
             expect(result).toHaveProperty('refreshToken', '6d6f636b65642d72616e646f6d2d6279746573'); // hex of 'mocked-random-bytes'
+        });
+
+        it('should not expire emergency grants for patient or doctor logins', async () => {
+            await AuthService.generateTokens(mockDb, { patientId: 1 }, 999, true);
+            await AuthService.generateTokens(mockDb, { doctorId: 1 }, 888, 'doctor');
+
+            const emergencyCalls = mockDb.query.mock.calls.filter(
+                ([text]) => text.includes('emergency_access_logs')
+            );
+            expect(emergencyCalls).toHaveLength(0);
         });
     });
 });

@@ -125,13 +125,6 @@ const InventoryCatalog = () => {
 
     return (
         <div className="space-y-6">
-            {/* Top Metric Strip */}
-            <section className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-                <Metric label={copy('totalItems')} value={inventory.length} />
-                <Metric label={copy('lowStock')} value={lowCount} danger={lowCount > 0} />
-                <Metric label={copy('visibleItems')} value={visibleItems.length} wide />
-            </section>
-
             {/* Catalog Main Panel */}
             <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
                 <header className="flex flex-col gap-4 border-b border-slate-100/80 bg-slate-50/50 p-5 dark:border-white/5 dark:bg-white/5 lg:flex-row lg:items-center lg:justify-between">
@@ -162,11 +155,10 @@ const InventoryCatalog = () => {
                             type="button"
                             onClick={() => setLowOnly(value => !value)}
                             aria-pressed={lowOnly}
-                            className={`min-h-10 rounded-2xl border px-4 text-xs font-bold transition-all ${
-                                lowOnly
+                            className={`min-h-10 rounded-2xl border px-4 text-xs font-bold transition-all ${lowOnly
                                     ? 'border-rose-300/80 bg-rose-50 text-rose-800 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300'
                                     : 'border-slate-200/80 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300'
-                            }`}
+                                }`}
                         >
                             <AlertTriangle size={15} className="me-1.5 inline" />
                             {copy('lowOnly')}
@@ -269,11 +261,10 @@ const InventoryCatalog = () => {
             {/* Adjust Stock Modal */}
             <Modal isOpen={Boolean(adjustment)} onClose={closeAdjustment} title={copy(adjustment?.direction > 0 ? 'addTitle' : 'deductTitle', { item: adjustment?.item?.name || '' })} size="sm">
                 <form onSubmit={handleAdjustment} className="space-y-4">
-                    <div className={`rounded-2xl border p-4 text-xs font-semibold ${
-                        adjustment?.direction > 0
+                    <div className={`rounded-2xl border p-4 text-xs font-semibold ${adjustment?.direction > 0
                             ? 'border-emerald-200/80 bg-emerald-50/90 text-emerald-900 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300'
                             : 'border-rose-200/80 bg-rose-50/90 text-rose-900 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300'
-                    }`}>
+                        }`}>
                         {copy('currentStock', { quantity: adjustment?.item?.quantity || 0, unit: adjustment?.item?.unit || '' })}
                     </div>
 
@@ -327,9 +318,8 @@ const InventoryCatalog = () => {
                         <button
                             type="submit"
                             disabled={isAdjusting}
-                            className={`rounded-xl px-5 py-2.5 text-xs font-bold text-white shadow-md disabled:opacity-50 ${
-                                adjustment?.direction > 0 ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
-                            }`}
+                            className={`rounded-xl px-5 py-2.5 text-xs font-bold text-white shadow-md disabled:opacity-50 ${adjustment?.direction > 0 ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
+                                }`}
                         >
                             {isAdjusting ? copy('adjusting') : copy('confirmAdjustment')}
                         </button>
@@ -357,11 +347,10 @@ const InventoryCatalog = () => {
 };
 
 const Metric = ({ label, value, danger, wide }) => (
-    <article className={`rounded-3xl border p-5 shadow-lg shadow-slate-200/30 backdrop-blur-xl transition-all dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none ${
-        danger
+    <article className={`rounded-3xl border p-5 shadow-lg shadow-slate-200/30 backdrop-blur-xl transition-all dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none ${danger
             ? 'border-rose-300/80 bg-rose-50/90 dark:border-rose-500/20 dark:bg-rose-500/10'
             : 'border-slate-200/80 bg-white/80'
-    } ${wide ? 'col-span-2 lg:col-span-1' : ''}`}>
+        } ${wide ? 'col-span-2 lg:col-span-1' : ''}`}>
         <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
         <p className={`mt-2 font-mono text-2xl font-black ${danger ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>{value}</p>
     </article>
@@ -427,11 +416,10 @@ const BatchList = ({ item, copy, formatDate }) => (
 const ItemCard = ({ item, copy, formatDate, onAdjust, onEditPrice, adjusting }) => {
     const low = Number(item.quantity) <= Number(item.min_level);
     return (
-        <article className={`rounded-3xl border p-5 transition-all ${
-            low
+        <article className={`rounded-3xl border p-5 transition-all ${low
                 ? 'border-rose-300/80 bg-rose-50/60 dark:border-rose-500/20 dark:bg-rose-950/20'
                 : 'border-slate-200/80 bg-white/80 dark:border-white/10 dark:bg-slate-900/60'
-        }`}>
+            }`}>
             <div className="flex items-start justify-between gap-3">
                 <div>
                     <h3 className="font-black text-slate-900 dark:text-white text-sm">{item.name}</h3>

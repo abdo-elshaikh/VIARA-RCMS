@@ -14,4 +14,9 @@ ALTER TABLE examinations DROP CONSTRAINT IF EXISTS chk_examinations_renal_safety
 ALTER TABLE examinations DROP CONSTRAINT IF EXISTS chk_examinations_current_station;
 
 -- examinations_exam_id_not_null is redundant with the PRIMARY KEY on exam_id
-ALTER TABLE examinations DROP CONSTRAINT IF EXISTS examinations_exam_id_not_null;
+DO $$
+BEGIN
+    ALTER TABLE examinations DROP CONSTRAINT IF EXISTS examinations_exam_id_not_null;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;

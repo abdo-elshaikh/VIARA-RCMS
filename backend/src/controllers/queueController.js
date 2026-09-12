@@ -1,9 +1,23 @@
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 const { assertInvoiceFullyPaid, assertInvoiceTransactionAllowed } = require('../services/partialPaymentExceptionService');
+const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 const { validateEnum, validateUUID, VALID_QUEUE_STAGES, VALID_STATIONS, VALID_PRIORITIES } = require('../utils/queryValidator');
 const { decrypt } = require('../utils/crypto');
 const { getPagination } = require('../utils/pagination');
+const realtimeService = require('../services/realtimeService');
+const { completeReceptionTask } = require('../services/receptionTaskService');
+const {
+    ROLE_CONFIG,
+    roleForStation,
+    assignmentFromRow,
+    markTaskStarted,
+    markTaskAvailable,
+    completeTask,
+    claimTask,
+    assignTask,
+    releaseTask
+} = require('../services/clinicalTaskAssignmentService');
 
 const QUEUE_STAGES = [
     'Registered',
@@ -107,6 +121,62 @@ const canRoleTransition = (role, toStage) => {
     return allowed.includes(toStage);
 };
 
+const hasEmergencyTaskVisibility = (user = {}) => Boolean(
+    user.emergencyAccessId
+    && Array.isArray(user.elevatedPermissions)
+    && user.elevatedPermissions.includes('VIEW_EXAMS')
+    && Number(user.breakGlassExpiry) > Date.now()
+);
+
+const publishTaskAssignment = (event, assignment) => {
+    const payload = {
+        exam_id: assignment.exam_id,
+        task_role: assignment.task_role,
+        assignment_status: assignment.assignment_status,
+        assignment_version: Number(assignment.assignment_version || 0)
+    };
+    realtimeService.sendToRole(assignment.task_role, event, payload);
+    if (assignment.previous_user_id) realtimeService.sendToUser(assignment.previous_user_id, event, payload);
+    if (assignment.assigned_user_id) realtimeService.sendToUser(assignment.assigned_user_id, event, payload);
+};
+
+const publishQueueTaskChange = (row, event = 'CLINICAL_TASK_UPDATED') => {
+    const taskRole = roleForStation(row.current_station);
+    const assignment = taskRole ? assignmentFromRow(row, taskRole) : null;
+    const payload = {
+        exam_id: row.exam_id,
+        appointment_id: row.appointment_id,
+        task_role: taskRole,
+        assignment_status: !assignment?.assignedUserId
+            ? 'Unassigned'
+            : row.is_on_hold
+                ? 'On Hold'
+                : assignment?.startedAt
+                    ? 'In Progress'
+                    : 'Assigned',
+        assignment_version: assignment?.version || 0,
+        queue_stage: row.queue_stage,
+        current_station: row.current_station
+    };
+    if (taskRole) realtimeService.sendToRole(taskRole, event, payload);
+    if (assignment?.assignedUserId) realtimeService.sendToUser(assignment.assignedUserId, event, payload);
+    realtimeService.sendToRole('Receptionist', 'QUEUE_UPDATED', payload);
+    realtimeService.sendToRole('Cashier', 'QUEUE_UPDATED', payload);
+    realtimeService.sendToRole('Admin', 'QUEUE_UPDATED', payload);
+    realtimeService.sendToRole('Developer', 'QUEUE_UPDATED', payload);
+};
+
+const notifyClinicalTask = (db, role, assigneeId, payload) => {
+    if (assigneeId) {
+        return triggerEvent(db, 'ExamStatusChanged', {
+            ...payload,
+            staffId: assigneeId,
+            staffRole: role
+        });
+    }
+    return triggerEventForRole(db, 'ExamStatusChanged', role, payload);
+};
+
 const getQueue = (db) => async (req, res, next) => {
     try {
         const {
@@ -114,7 +184,8 @@ const getQueue = (db) => async (req, res, next) => {
             station,
             priority,
             date,
-            includeDelivered = 'false'
+            includeDelivered = 'false',
+            scope = 'all'
         } = req.query;
         const { limit, offset } = getPagination(req.query, 200);
 
@@ -134,29 +205,126 @@ const getQueue = (db) => async (req, res, next) => {
                 WHERE event_type = 'Transition'
                   AND from_stage IS DISTINCT FROM to_stage
                 ORDER BY exam_id, created_at DESC
+            ),
+            hold_totals AS (
+                SELECT exam_id, queue_stage,
+                       COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(released_at, NOW()) - started_at))), 0) AS hold_seconds
+                FROM clinical_task_hold_intervals
+                GROUP BY exam_id, queue_stage
             )
-            SELECT e.exam_id, e.appointment_id, e.status, e.queue_stage, e.current_station,
+            SELECT e.exam_id, e.appointment_id, e.modality_id, e.status, e.queue_stage, e.current_station,
                    e.arrived_at, e.prep_started_at, e.prep_completed_at, e.exam_started_at,
                    e.exam_completed_at, e.reporting_started_at, e.report_finalized_at, e.delivered_at,
                    e.is_on_hold, e.hold_started_at, e.hold_released_at, e.hold_reason,
                    e.order_number, e.priority, e.clinical_indication, e.body_part, e.contrast_required,
                    e.pregnancy_safety_status, e.implant_safety_status, e.renal_safety_status,
                    e.is_follow_up, e.prior_exam_id, e.follow_up_reason,
-                   e.report_content,
-                   e.created_at,
-                   a.start_time, a.end_time, a.preparation_status,
-                   p.mrn, p.gender, p.first_name_enc, p.last_name_enc,
-                   m.name as modality_name, m.type as modality_type,
-                   et.name as exam_type_name, et.preparation_instructions,
+                    e.report_content, e.report_status,
+                    e.created_at,
+                    a.start_time, a.end_time, a.preparation_status,
+                    a.nurse_id, a.nurse_assigned_at, a.nurse_task_available_at, a.nurse_assignment_version,
+                    a.technician_id, a.technician_assigned_at, a.technician_task_available_at, a.technician_assignment_version,
+                    e.performing_radiologist_id, e.radiologist_assigned_at, e.radiologist_task_available_at, e.radiologist_assignment_version,
+                    CASE e.current_station
+                        WHEN 'Nurse' THEN a.nurse_id
+                        WHEN 'Modality' THEN a.technician_id
+                        WHEN 'Radiologist' THEN e.performing_radiologist_id
+                        ELSE NULL
+                    END AS task_assignee_id,
+                    CASE e.current_station
+                        WHEN 'Nurse' THEN a.nurse_assigned_at
+                        WHEN 'Modality' THEN a.technician_assigned_at
+                        WHEN 'Radiologist' THEN e.radiologist_assigned_at
+                        ELSE NULL
+                    END AS task_assigned_at,
+                    CASE e.current_station
+                        WHEN 'Nurse' THEN a.nurse_task_available_at
+                        WHEN 'Modality' THEN a.technician_task_available_at
+                        WHEN 'Radiologist' THEN e.radiologist_task_available_at
+                        ELSE NULL
+                    END AS task_available_at,
+                    CASE e.current_station
+                        WHEN 'Nurse' THEN a.nurse_task_started_at
+                        WHEN 'Modality' THEN a.technician_task_started_at
+                        WHEN 'Radiologist' THEN e.radiologist_task_started_at
+                        ELSE NULL
+                    END AS task_started_at,
+                    CASE e.current_station
+                        WHEN 'Nurse' THEN a.nurse_assignment_version
+                        WHEN 'Modality' THEN a.technician_assignment_version
+                        WHEN 'Radiologist' THEN e.radiologist_assignment_version
+                        ELSE 0
+                    END AS task_assignment_version,
+                    CASE e.current_station
+                        WHEN 'Nurse' THEN 'Nurse'
+                        WHEN 'Modality' THEN 'Technician'
+                        WHEN 'Radiologist' THEN 'Radiologist'
+                        ELSE NULL
+                    END AS task_role,
+                    p.mrn, p.gender, p.first_name_enc, p.last_name_enc,
+                    m.name as modality_name, m.type as modality_type,
+                    m.room_number as room_number, m.status as machine_status,
+                    rec.full_name as receptionist_name, a.receptionist_id, a.receptionist_desk,
+                    a.receptionist_assigned_at, a.receptionist_assignment_version,
+                    et.name as exam_type_name, et.preparation_instructions,
                    tech.full_name as technician_name,
                    nurse.full_name as nurse_name,
-                   rad.full_name as radiologist_name,
-                   COALESCE(le.last_event_at, e.arrived_at, e.created_at) as stage_started_at,
-                   CASE
-                       WHEN e.queue_stage IN ('Delivered', 'Cancelled') THEN 0
-                       ELSE ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(le.last_event_at, e.arrived_at, e.created_at))) / 60)
-                   END as waiting_minutes,
-                   ROUND(EXTRACT(EPOCH FROM (COALESCE(e.delivered_at, e.report_finalized_at, NOW()) - e.created_at)) / 60) as turnaround_minutes,
+                    rad.full_name as radiologist_name,
+                    li.invoice_id,
+                    li.invoice_number,
+                    li.invoice_status,
+                    COALESCE(ip.paid_amount, 0) AS invoice_paid_amount,
+                    GREATEST(
+                        COALESCE(li.patient_payable_amount, 0)
+                        - COALESCE(ip.credited_amount, 0)
+                        - COALESCE(ip.paid_amount, 0)
+                        + COALESCE(ip.refunded_amount, 0),
+                        0
+                    ) AS invoice_balance_amount,
+                    ppe.exception_id AS payment_exception_id,
+                    CASE
+                        WHEN ppe.status = 'Approved' AND ppe.expires_at IS NOT NULL AND ppe.expires_at <= NOW() THEN 'Expired'
+                        ELSE ppe.status
+                    END AS payment_exception_status,
+                    ppe.reason AS payment_exception_reason,
+                    ppe.review_notes AS payment_exception_review_notes,
+                    ppe.requested_at AS payment_exception_requested_at,
+                    ppe.reviewed_at AS payment_exception_reviewed_at,
+                    ppe.expires_at AS payment_exception_expires_at,
+                    ppe.metadata->>'targetStage' AS payment_exception_target_stage,
+                    exception_requester.full_name AS payment_exception_requested_by_name,
+                    exception_reviewer.full_name AS payment_exception_reviewed_by_name,
+                    CASE
+                        WHEN e.queue_stage = 'Scheduled' THEN a.start_time
+                        ELSE COALESCE(le.last_event_at, e.arrived_at, e.created_at)
+                    END as stage_started_at,
+                    CASE
+                        WHEN e.queue_stage IN ('Delivered', 'Cancelled') THEN 0
+                        ELSE GREATEST(0, ROUND(EXTRACT(EPOCH FROM (NOW() - CASE
+                            WHEN e.queue_stage = 'Scheduled' THEN a.start_time
+                            ELSE COALESCE(le.last_event_at, e.arrived_at, e.created_at)
+                        END)) / 60))
+                    END as stage_elapsed_minutes,
+                    CASE
+                        WHEN e.queue_stage IN ('Delivered', 'Cancelled') THEN 0
+                        ELSE GREATEST(0, ROUND((EXTRACT(EPOCH FROM (NOW() - CASE
+                            WHEN e.queue_stage = 'Scheduled' THEN a.start_time
+                            ELSE COALESCE(le.last_event_at, e.arrived_at, e.created_at)
+                        END)) - COALESCE(ht.hold_seconds, 0)) / 60))
+                    END as active_stage_minutes,
+                    CASE
+                        WHEN e.queue_stage IN ('Delivered', 'Cancelled') THEN 0
+                        ELSE GREATEST(0, ROUND((EXTRACT(EPOCH FROM (NOW() - CASE
+                            WHEN e.queue_stage = 'Scheduled' THEN a.start_time
+                            ELSE COALESCE(le.last_event_at, e.arrived_at, e.created_at)
+                        END)) - COALESCE(ht.hold_seconds, 0)) / 60))
+                    END as waiting_minutes,
+                    CASE
+                        WHEN e.delivered_at IS NULL AND e.report_finalized_at IS NULL THEN NULL
+                        WHEN COALESCE(e.delivered_at, e.report_finalized_at) < e.created_at THEN NULL
+                        ELSE GREATEST(0, ROUND(EXTRACT(EPOCH FROM (COALESCE(e.delivered_at, e.report_finalized_at) - e.created_at)) / 60))
+                    END as turnaround_minutes,
+                    GREATEST(0, ROUND(COALESCE(ht.hold_seconds, 0) / 60)) AS paused_minutes,
                    prior_e.order_number AS prior_order_number,
                    prior_e.report_status AS prior_report_status,
                    COALESCE(prior_a.start_time, prior_e.created_at) AS prior_exam_time,
@@ -169,7 +337,44 @@ const getQueue = (db) => async (req, res, next) => {
             LEFT JOIN users tech ON a.technician_id = tech.user_id
             LEFT JOIN users nurse ON a.nurse_id = nurse.user_id
             LEFT JOIN users rad ON e.performing_radiologist_id = rad.user_id
-            LEFT JOIN last_event le ON le.exam_id = e.exam_id
+            LEFT JOIN users rec ON a.receptionist_id = rec.user_id
+            LEFT JOIN LATERAL (
+                SELECT i.invoice_id, i.invoice_number, i.invoice_status, i.patient_payable_amount
+                FROM invoices i
+                WHERE i.invoice_status <> 'Voided'
+                  AND (i.exam_id = e.exam_id OR i.appointment_id = e.appointment_id)
+                ORDER BY i.generated_at DESC
+                LIMIT 1
+            ) li ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT
+                    COALESCE(SUM(payment.amount) FILTER (WHERE payment.payment_status = 'Completed'), 0) AS paid_amount,
+                    COALESCE((SELECT SUM(refund.amount) FROM refunds refund
+                              WHERE refund.invoice_id = li.invoice_id AND refund.status = 'Processed'), 0) AS refunded_amount,
+                    COALESCE((SELECT SUM(note.patient_amount) FROM credit_notes note
+                              WHERE note.invoice_id = li.invoice_id AND note.reversed_at IS NULL), 0) AS credited_amount
+                FROM payments payment
+                WHERE payment.invoice_id = li.invoice_id
+            ) ip ON li.invoice_id IS NOT NULL
+            LEFT JOIN LATERAL (
+                SELECT exception.*
+                FROM partial_payment_exceptions exception
+                WHERE exception.invoice_id = li.invoice_id
+                  AND exception.transaction_type = 'ClinicalQueueTransition'
+                ORDER BY
+                    CASE
+                        WHEN exception.status = 'Pending' THEN 0
+                        WHEN exception.status = 'Approved'
+                             AND (exception.expires_at IS NULL OR exception.expires_at > NOW()) THEN 1
+                        ELSE 2
+                    END,
+                    exception.requested_at DESC
+                LIMIT 1
+            ) ppe ON TRUE
+            LEFT JOIN users exception_requester ON exception_requester.user_id = ppe.requested_by
+            LEFT JOIN users exception_reviewer ON exception_reviewer.user_id = ppe.reviewed_by
+             LEFT JOIN last_event le ON le.exam_id = e.exam_id
+             LEFT JOIN hold_totals ht ON ht.exam_id = e.exam_id AND ht.queue_stage = e.queue_stage
             LEFT JOIN examinations prior_e ON prior_e.exam_id = e.prior_exam_id
             LEFT JOIN appointments prior_a ON prior_a.appointment_id = prior_e.appointment_id
             LEFT JOIN examination_types prior_et ON prior_et.type_id = prior_e.exam_type_id
@@ -203,22 +408,54 @@ const getQueue = (db) => async (req, res, next) => {
             query += ` AND e.queue_stage != 'Delivered'`;
         }
 
-        if (req.user.role === 'Nurse') {
-            query += ` AND (a.nurse_id = $${param} OR a.nurse_id IS NULL)`;
-            values.push(req.user.user_id);
-            param++;
-        } else if (req.user.role === 'Technician') {
-            query += ` AND (a.technician_id = $${param} OR a.technician_id IS NULL)`;
-            values.push(req.user.user_id);
-            param++;
-        } else if (req.user.role === 'Radiologist') {
-            query += ` AND (e.performing_radiologist_id = $${param} OR e.performing_radiologist_id IS NULL)`;
-            values.push(req.user.user_id);
-            param++;
+        const clinicalTaskConfig = ROLE_CONFIG[req.user.role];
+        if (clinicalTaskConfig) {
+            if (station && station !== clinicalTaskConfig.station) {
+                return next(new AppError('Queue station is not available for this clinical role', 403, true, 'ROLE_NOT_ELIGIBLE'));
+            }
+            if (!station) {
+                query += ` AND e.current_station = $${param++}`;
+                values.push(clinicalTaskConfig.station);
+            }
+
+            const assignmentColumn = clinicalTaskConfig.table === 'appointments'
+                ? `a.${clinicalTaskConfig.assigneeColumn}`
+                : `e.${clinicalTaskConfig.assigneeColumn}`;
+            const emergencyVisibility = hasEmergencyTaskVisibility(req.user);
+
+            if (scope === 'mine') {
+                query += ` AND ${assignmentColumn} = $${param++}`;
+                values.push(req.user.user_id);
+            } else if (scope === 'available') {
+                query += ` AND ${assignmentColumn} IS NULL`;
+            } else if (!emergencyVisibility) {
+                query += ` AND (${assignmentColumn} = $${param++} OR ${assignmentColumn} IS NULL)`;
+                values.push(req.user.user_id);
+            }
+        } else if (['Receptionist', 'Cashier', 'Admin', 'Developer'].includes(req.user.role)) {
+            // Receptionists, Cashiers, and Admins can see all cases across clinical stations for holistic workflow tracking
+            if (scope === 'mine') {
+                query += ` AND a.receptionist_id = $${param++}`;
+                values.push(req.user.user_id);
+            }
+        } else {
+            if (scope !== 'all') {
+                return next(new AppError('Personal clinical task scopes are not available for this role', 403, true, 'ROLE_NOT_ELIGIBLE'));
+            }
+            // Non-clinical operational views may see the shared pool, but not a
+            // private task already owned by a clinical user.
+            query += ` AND (
+                e.current_station NOT IN ('Nurse', 'Modality', 'Radiologist')
+                OR (e.current_station = 'Nurse' AND a.nurse_id IS NULL)
+                OR (e.current_station = 'Modality' AND a.technician_id IS NULL)
+                OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL)
+            )`;
         }
 
         const filteredQuery = query;
         const filterValues = [...values];
+        const kpiValues = [...filterValues, req.user.user_id];
+        const currentUserParam = `$${kpiValues.length}`;
         const kpiQuery = `
             WITH filtered_queue AS (
                 ${filteredQuery}
@@ -230,9 +467,24 @@ const getQueue = (db) => async (req, res, next) => {
             )
             SELECT
                 COUNT(*)::integer AS total,
-                COUNT(*) FILTER (WHERE is_on_hold)::integer AS on_hold,
+                COUNT(*) FILTER (WHERE task_assignee_id = ${currentUserParam}::uuid)::integer AS assigned_to_me,
+                COUNT(*) FILTER (WHERE task_assignee_id IS NULL)::integer AS available,
+                COUNT(*) FILTER (
+                    WHERE task_assignee_id = ${currentUserParam}::uuid
+                      AND NOT is_on_hold
+                      AND task_started_at IS NULL
+                )::integer AS pending,
+                COUNT(*) FILTER (
+                    WHERE task_assignee_id = ${currentUserParam}::uuid
+                      AND NOT is_on_hold
+                      AND task_started_at IS NOT NULL
+                )::integer AS in_progress,
+                COUNT(*) FILTER (
+                    WHERE task_assignee_id = ${currentUserParam}::uuid AND is_on_hold
+                )::integer AS on_hold,
                 COUNT(*) FILTER (
                     WHERE queue_stage NOT IN ('Delivered', 'Cancelled')
+                      AND NOT is_on_hold
                       AND COALESCE(waiting_minutes, 0) > CASE queue_stage
                         WHEN 'Registered' THEN 15
                         WHEN 'Scheduled' THEN 60
@@ -249,7 +501,7 @@ const getQueue = (db) => async (req, res, next) => {
                 COALESCE(ROUND(AVG(COALESCE(waiting_minutes, 0)) FILTER (
                     WHERE queue_stage NOT IN ('Delivered', 'Cancelled')
                 )), 0)::integer AS average_waiting_minutes,
-                COALESCE(ROUND(AVG(COALESCE(turnaround_minutes, 0))), 0)::integer AS average_turnaround_minutes,
+                COALESCE(ROUND(AVG(turnaround_minutes) FILTER (WHERE turnaround_minutes IS NOT NULL)), 0)::integer AS average_turnaround_minutes,
                 COALESCE(
                     (SELECT jsonb_object_agg(queue_stage, stage_count) FROM stage_counts),
                     '{}'::jsonb
@@ -268,13 +520,24 @@ const getQueue = (db) => async (req, res, next) => {
 
         const [result, kpiResult] = await Promise.all([
             db.query(query, values),
-            db.query(kpiQuery, filterValues)
+            db.query(kpiQuery, kpiValues)
         ]);
         const rows = result.rows.map(row => {
             const mapped = {
                 ...row,
+                assignment_status: !row.task_assignee_id
+                    ? 'Unassigned'
+                    : row.is_on_hold
+                        ? 'On Hold'
+                        : row.task_started_at
+                            ? 'In Progress'
+                            : 'Assigned',
+                is_assigned_to_me: String(row.task_assignee_id || '') === String(req.user.user_id),
                 is_overdue: !['Delivered', 'Cancelled'].includes(row.queue_stage)
-                    && Number(row.waiting_minutes || 0) > (OVERDUE_MINUTES[row.queue_stage] ?? 60)
+                    && !row.is_on_hold
+                    && Number(row.waiting_minutes || 0) > (OVERDUE_MINUTES[row.queue_stage] ?? 60),
+                sla_threshold_minutes: OVERDUE_MINUTES[row.queue_stage] ?? 60,
+                timing_basis: 'active_stage'
             };
             if (row.first_name_enc || row.last_name_enc) {
                 mapped.patient_name = [decrypt(row.first_name_enc), decrypt(row.last_name_enc)]
@@ -289,6 +552,10 @@ const getQueue = (db) => async (req, res, next) => {
         const aggregate = kpiResult.rows[0] || {};
         const kpis = {
             total: Number(aggregate.total || 0),
+            assignedToMe: Number(aggregate.assigned_to_me || 0),
+            available: Number(aggregate.available || 0),
+            pending: Number(aggregate.pending || 0),
+            inProgress: Number(aggregate.in_progress || 0),
             onHold: Number(aggregate.on_hold || 0),
             overdue: Number(aggregate.overdue || 0),
             averageWaitingMinutes: Number(aggregate.average_waiting_minutes || 0),
@@ -318,11 +585,18 @@ const transitionQueue = (db) => async (req, res, next) => {
         await client.query('BEGIN');
 
         const existingResult = await client.query(`
-            SELECT e.*, a.technician_id, a.nurse_id
+            SELECT e.*,
+                   a.technician_id, a.technician_assigned_at, a.technician_task_available_at,
+                   a.technician_task_started_at, a.technician_assignment_version,
+                   a.nurse_id, a.nurse_assigned_at, a.nurse_task_available_at,
+                   a.nurse_task_started_at, a.nurse_assignment_version,
+                                     a.receptionist_id, a.receptionist_desk, a.receptionist_assignment_version,
+                   p.first_name_enc, p.last_name_enc
             FROM examinations e
             JOIN appointments a ON e.appointment_id = a.appointment_id
+            JOIN patients p ON e.patient_id = p.patient_id
             WHERE e.exam_id = $1
-            FOR UPDATE
+            FOR UPDATE OF e, a
         `, [examId]);
 
         if (existingResult.rows.length === 0) {
@@ -332,17 +606,104 @@ const transitionQueue = (db) => async (req, res, next) => {
 
         const existing = existingResult.rows[0];
 
-        // Apply the worklist's row-level assignment rule to mutations too.
-        const assignedToAnotherUser = (
-            (req.user.role === 'Nurse' && existing.nurse_id && existing.nurse_id !== req.user.user_id)
-            || (req.user.role === 'Technician' && existing.technician_id && existing.technician_id !== req.user.user_id)
-            || (req.user.role === 'Radiologist'
-                && existing.performing_radiologist_id
-                && existing.performing_radiologist_id !== req.user.user_id)
-        );
-        if (assignedToAnotherUser) {
+        // Reception work is single-owner: every reception-stage action must
+        // come from the receptionist who claimed the appointment.
+        const isReceptionStage = existing.current_station === 'Reception';
+        if (isReceptionStage && existing.receptionist_id
+            && String(existing.receptionist_id) !== String(req.user.user_id)
+            && !['Admin', 'Developer'].includes(req.user.role)) {
+            await client.query('ROLLBACK');
+            return next(new AppError('Queue item is assigned to another receptionist', 409, true, 'TASK_ALREADY_CLAIMED', {
+                claimedBy: existing.receptionist_id,
+                desk: existing.receptionist_desk,
+                version: existing.receptionist_assignment_version
+            }));
+        }
+        if (isReceptionStage && !existing.receptionist_id) {
+            // Auto-assign to the acting receptionist if unassigned to prevent workflow blockage
+            const newVersion = (existing.receptionist_assignment_version || 0) + 1;
+            const actorDesk = req.headers['x-workstation-desk'] || req.body?.desk || 'الاستقبال';
+            await client.query(`
+                UPDATE appointments
+                SET receptionist_id = $1,
+                    receptionist_assigned_at = CURRENT_TIMESTAMP,
+                    receptionist_desk = COALESCE(receptionist_desk, $2),
+                    receptionist_assignment_version = $3
+                WHERE appointment_id = $4
+            `, [req.user.user_id, actorDesk, newVersion, existing.appointment_id]);
+            existing.receptionist_id = req.user.user_id;
+            existing.receptionist_desk = actorDesk;
+            existing.receptionist_assignment_version = newVersion;
+        }
+
+        if (toStage && !canRoleTransition(req.user.role, toStage)) {
+            await client.query('ROLLBACK');
+            return next(new AppError('Your role cannot move an item to this queue stage', 403));
+        }
+
+        const activeTaskRole = roleForStation(existing.current_station);
+        const activeAssignment = activeTaskRole ? assignmentFromRow(existing, activeTaskRole) : null;
+        if (activeTaskRole && activeAssignment?.assignedUserId
+            && (req.user.role !== activeTaskRole
+                || String(activeAssignment.assignedUserId) !== String(req.user.user_id))) {
             await client.query('ROLLBACK');
             return next(new AppError('Queue item not found or assigned to another user', 404));
+        }
+        if (activeTaskRole && !activeAssignment?.assignedUserId) {
+            await client.query('ROLLBACK');
+            return next(new AppError('Accept this task before taking action', 409, true, 'TASK_NOT_ASSIGNED'));
+        }
+
+        const startsClinicalTask = activeTaskRole === 'Technician' && toStage === 'In Exam';
+        if (startsClinicalTask) {
+            const taskStartedAt = await markTaskStarted(client, existing, activeTaskRole);
+            existing[ROLE_CONFIG[activeTaskRole].startedAtColumn] = taskStartedAt;
+        }
+
+        if (action === 'start_task') {
+            if (!activeTaskRole || !activeAssignment?.assignedUserId) {
+                await client.query('ROLLBACK');
+                return next(new AppError('Accept this task before starting work', 409, true, 'TASK_NOT_ASSIGNED'));
+            }
+            if (activeAssignment.startedAt) {
+                await client.query('ROLLBACK');
+                return next(new AppError('Clinical task has already started', 409, true, 'TASK_ALREADY_STARTED'));
+            }
+
+            const taskStartedAt = await markTaskStarted(client, existing, activeTaskRole);
+            existing[ROLE_CONFIG[activeTaskRole].startedAtColumn] = taskStartedAt;
+            await client.query(`
+                INSERT INTO queue_events (
+                    exam_id, appointment_id, from_stage, to_stage, from_station, to_station,
+                    event_type, notes, changed_by
+                ) VALUES ($1, $2, $3, $3, $4, $4, 'Start_Task', $5, $6)
+            `, [
+                examId,
+                existing.appointment_id,
+                existing.queue_stage,
+                existing.current_station,
+                `${activeTaskRole} task started`,
+                req.user.user_id
+            ]);
+            await client.query('COMMIT');
+            publishQueueTaskChange(existing);
+            await logAction(client, {
+                userId: req.user.user_id,
+                action: 'CLINICAL_TASK_STARTED',
+                resourceId: examId,
+                resourceTable: 'examinations',
+                ipAddress: req.ip,
+                details: {
+                    taskRole: activeTaskRole,
+                    queueStage: existing.queue_stage,
+                    taskStartedAt
+                }
+            });
+            return res.json({
+                ...existing,
+                task_started_at: taskStartedAt,
+                assignment_status: 'In Progress'
+            });
         }
 
         if (action === 'update_complaint') {
@@ -378,6 +739,7 @@ const transitionQueue = (db) => async (req, res, next) => {
             ]);
 
             await client.query('COMMIT');
+            publishQueueTaskChange({ ...existing, ...result.rows[0] });
             await logAction(client, {
                 userId: req.user.user_id,
                 action: 'QUEUE_COMPLAINT_UPDATED',
@@ -415,16 +777,16 @@ const transitionQueue = (db) => async (req, res, next) => {
 
             let resultRow = existing;
             if (fields.length > 0) {
-                values.push(examId);
+                const examValues = [...values, examId];
                 const updateRes = await client.query(`
                     UPDATE examinations SET ${fields.join(', ')} WHERE exam_id = $${paramIdx} RETURNING *
-                `, values);
+                `, examValues);
                 resultRow = updateRes.rows[0];
 
-                values[values.length - 1] = existing.appointment_id;
+                const appointmentValues = [...values, existing.appointment_id];
                 await client.query(`
                     UPDATE appointments SET ${fields.join(', ')} WHERE appointment_id = $${paramIdx}
-                `, values);
+                `, appointmentValues);
             }
 
             await client.query(`
@@ -446,6 +808,7 @@ const transitionQueue = (db) => async (req, res, next) => {
             ]);
 
             await client.query('COMMIT');
+            publishQueueTaskChange({ ...existing, ...resultRow });
             await logAction(client, {
                 userId: req.user.user_id,
                 action: 'QUEUE_SAFETY_UPDATED',
@@ -469,6 +832,14 @@ const transitionQueue = (db) => async (req, res, next) => {
             }
 
             const isHold = action === 'hold';
+            if (isHold && existing.is_on_hold) {
+                await client.query('ROLLBACK');
+                return next(new AppError('Queue item is already on hold', 409));
+            }
+            if (!isHold && !existing.is_on_hold) {
+                await client.query('ROLLBACK');
+                return next(new AppError('Queue item is not on hold', 409));
+            }
             const result = await client.query(`
                 UPDATE examinations
                 SET is_on_hold = $1,
@@ -478,6 +849,26 @@ const transitionQueue = (db) => async (req, res, next) => {
                 WHERE exam_id = $3
                 RETURNING *
             `, [isHold, reason || null, examId]);
+
+            if (isHold) {
+                await client.query(`
+                    INSERT INTO clinical_task_hold_intervals (
+                        exam_id, task_role, queue_stage, started_at, reason, created_by
+                    ) VALUES ($1, $2, $3, NOW(), $4, $5)
+                `, [examId, activeTaskRole || null, existing.queue_stage, reason || null, req.user.user_id]);
+            } else {
+                await client.query(`
+                    UPDATE clinical_task_hold_intervals
+                    SET released_at = NOW()
+                    WHERE hold_id = (
+                        SELECT hold_id
+                        FROM clinical_task_hold_intervals
+                        WHERE exam_id = $1 AND released_at IS NULL
+                        ORDER BY started_at DESC
+                        LIMIT 1
+                    )
+                `, [examId]);
+            }
 
             await client.query(`
                 INSERT INTO queue_events (
@@ -499,6 +890,7 @@ const transitionQueue = (db) => async (req, res, next) => {
             ]);
 
             await client.query('COMMIT');
+            publishQueueTaskChange({ ...existing, ...result.rows[0] });
             await logAction(client, {
                 userId: req.user.user_id,
                 action: isHold ? 'QUEUE_ITEM_HELD' : 'QUEUE_ITEM_RELEASED',
@@ -518,11 +910,6 @@ const transitionQueue = (db) => async (req, res, next) => {
         if (existing.is_on_hold && toStage !== 'Cancelled') {
             await client.query('ROLLBACK');
             return next(new AppError('Release this queue item before moving it forward', 409));
-        }
-
-        if (!canRoleTransition(req.user.role, toStage)) {
-            await client.query('ROLLBACK');
-            return next(new AppError('Your role cannot move an item to this queue stage', 403));
         }
 
         const allowedNextStages = VALID_TRANSITIONS[existing.queue_stage] || [];
@@ -652,6 +1039,12 @@ const transitionQueue = (db) => async (req, res, next) => {
                     transactionType: 'QueueFinalDelivery',
                     transactionLabel: 'final delivery'
                 });
+                await client.query(`
+                    UPDATE partial_payment_exceptions
+                    SET status = 'Used',
+                        metadata = metadata || jsonb_build_object('usedAt', NOW(), 'deliveredAt', NOW(), 'deliveryChannel', 'QueueFinalDelivery')
+                    WHERE invoice_id = $1 AND status = 'Approved'
+                `, [invoiceResult.rows[0].invoice_id]);
             } catch (error) {
                 await client.query('ROLLBACK');
                 return next(error);
@@ -715,6 +1108,25 @@ const transitionQueue = (db) => async (req, res, next) => {
             req.user.user_id
         ]);
 
+        let completedTask = null;
+        if (activeTaskRole && toStation !== existing.current_station) {
+            completedTask = await completeTask(client, existing, activeTaskRole, req.user.user_id);
+        }
+
+        let completedReceptionTask = null;
+        if (existing.current_station === 'Reception' && toStation !== existing.current_station) {
+            completedReceptionTask = await completeReceptionTask(client, {
+                appointmentId: existing.appointment_id,
+                userId: req.user.user_id
+            });
+        }
+
+        const nextTaskRole = roleForStation(toStation);
+        let nextTaskAvailability = null;
+        if (nextTaskRole && toStation !== existing.current_station) {
+            nextTaskAvailability = await markTaskAvailable(client, existing, nextTaskRole);
+        }
+
         await client.query(`
             INSERT INTO order_status_history (
                 appointment_id, exam_id, old_status, new_status, event_type, notes, changed_by
@@ -730,8 +1142,66 @@ const transitionQueue = (db) => async (req, res, next) => {
         ]);
 
         await client.query('COMMIT');
+        const publishedRow = { ...existing, ...updateResult.rows[0] };
+        if (nextTaskRole && nextTaskAvailability) {
+            const nextConfig = ROLE_CONFIG[nextTaskRole];
+            publishedRow[nextConfig.availableAtColumn] = nextTaskAvailability.task_available_at;
+            publishedRow[nextConfig.startedAtColumn] = null;
+            publishedRow[nextConfig.versionColumn] = nextTaskAvailability.assignment_version;
+        }
+        publishQueueTaskChange(publishedRow);
+        if (completedTask) publishTaskAssignment('CLINICAL_TASK_COMPLETED', completedTask);
+        if (completedReceptionTask) {
+            realtimeService.sendToRole('Receptionist', 'RECEPTION_TASK_RELEASED', completedReceptionTask);
+            realtimeService.sendToRole('Admin', 'RECEPTION_TASK_RELEASED', completedReceptionTask);
+            realtimeService.sendToRole('Developer', 'RECEPTION_TASK_RELEASED', completedReceptionTask);
+        }
 
-        await logAction(client, {
+        // Fire role-based notifications outside transaction
+        const patientName = existing.first_name_enc || existing.last_name_enc
+            ? [decrypt(existing.first_name_enc), decrypt(existing.last_name_enc)].filter(Boolean).join(' ')
+            : (existing.order_number || '');
+
+        const notificationPayload = {
+            entityType: 'Exam',
+            entityId: examId,
+            channels: ['InApp'],
+            priority: action === 'hold' ? 'Warning' : 'Normal',
+            variables: {
+                order_number: existing.order_number || '',
+                patient_name: patientName,
+                from_stage: existing.queue_stage,
+                to_stage: toStage || existing.queue_stage,
+                station: toStation || existing.current_station,
+                reason: reason || notes || ''
+            }
+        };
+
+        if (action === 'hold') {
+            triggerEventForRole(db, 'ExamStatusChanged', 'Admin', notificationPayload).catch(() => {});
+            triggerEventForRole(db, 'ExamStatusChanged', 'Radiologist', notificationPayload).catch(() => {});
+            triggerEventForRole(db, 'ExamStatusChanged', 'Nurse', notificationPayload).catch(() => {});
+        } else if (action === 'release') {
+            triggerEventForRole(db, 'ExamStatusChanged', 'Technician', notificationPayload).catch(() => {});
+            triggerEventForRole(db, 'ExamStatusChanged', 'Nurse', notificationPayload).catch(() => {});
+        } else {
+            if (toStage === 'Arrived') {
+                triggerEventForRole(db, 'ExamStatusChanged', 'Accountant', notificationPayload).catch(() => {});
+                triggerEventForRole(db, 'ExamStatusChanged', 'Nurse', notificationPayload).catch(() => {});
+            } else if (toStage === 'Payment Pending') {
+                triggerEventForRole(db, 'ExamStatusChanged', 'Accountant', notificationPayload).catch(() => {});
+            } else if (toStage === 'Prep Pending') {
+                notifyClinicalTask(db, 'Nurse', existing.nurse_id, notificationPayload).catch(() => {});
+            } else if (toStage === 'Ready for Exam') {
+                notifyClinicalTask(db, 'Technician', existing.technician_id, notificationPayload).catch(() => {});
+            } else if (toStage === 'Reporting') {
+                notifyClinicalTask(db, 'Radiologist', existing.performing_radiologist_id, notificationPayload).catch(() => {});
+            } else if (toStage === 'Finalized') {
+                triggerEventForRole(db, 'ExamStatusChanged', 'Receptionist', notificationPayload).catch(() => {});
+            }
+        }
+
+        await logAction(db, {
             userId: req.user.user_id,
             action: 'QUEUE_TRANSITION',
             resourceId: examId,
@@ -748,6 +1218,8 @@ const transitionQueue = (db) => async (req, res, next) => {
             }
         });
 
+        publishQueueTaskChange(updateResult.rows[0], 'QUEUE_TRANSITION');
+
         res.json(updateResult.rows[0]);
     } catch (error) {
         if (client) {
@@ -759,7 +1231,129 @@ const transitionQueue = (db) => async (req, res, next) => {
     }
 };
 
+const rollbackQuietly = async (client) => {
+    if (!client) return;
+    try {
+        await client.query('ROLLBACK');
+    } catch {
+        // Preserve the original operational error.
+    }
+};
+
+const claimQueueTask = (db) => async (req, res, next) => {
+    let client;
+    try {
+        validateUUID(req.params.examId, 'examId');
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const assignment = await claimTask(client, {
+            examId: req.params.examId,
+            user: req.user
+        });
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'CLINICAL_TASK_CLAIMED',
+            resourceId: req.params.examId,
+            resourceTable: 'examinations',
+            ipAddress: req.ip,
+            details: {
+                taskRole: assignment.task_role,
+                assignmentVersion: assignment.assignment_version
+            }
+        });
+        await client.query('COMMIT');
+
+        publishTaskAssignment('CLINICAL_TASK_CLAIMED', assignment);
+        res.json(assignment);
+    } catch (error) {
+        await rollbackQuietly(client);
+        next(error);
+    } finally {
+        client?.release();
+    }
+};
+
+const assignQueueTask = (db) => async (req, res, next) => {
+    let client;
+    try {
+        validateUUID(req.params.examId, 'examId');
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const assignment = await assignTask(client, {
+            examId: req.params.examId,
+            targetUserId: req.body.userId,
+            actor: req.user,
+            reason: req.body.reason
+        });
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: assignment.previous_user_id ? 'CLINICAL_TASK_TRANSFERRED' : 'CLINICAL_TASK_ASSIGNED',
+            resourceId: req.params.examId,
+            resourceTable: 'examinations',
+            ipAddress: req.ip,
+            details: {
+                taskRole: assignment.task_role,
+                previousUserId: assignment.previous_user_id || null,
+                newUserId: assignment.assigned_user_id,
+                reason: req.body.reason || null,
+                assignmentVersion: assignment.assignment_version
+            }
+        });
+        await client.query('COMMIT');
+
+        publishTaskAssignment('CLINICAL_TASK_ASSIGNED', assignment);
+        res.json(assignment);
+    } catch (error) {
+        await rollbackQuietly(client);
+        next(error);
+    } finally {
+        client?.release();
+    }
+};
+
+const releaseQueueTaskAssignment = (db) => async (req, res, next) => {
+    let client;
+    try {
+        validateUUID(req.params.examId, 'examId');
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const assignment = await releaseTask(client, {
+            examId: req.params.examId,
+            actor: req.user,
+            reason: req.body.reason
+        });
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'CLINICAL_TASK_RELEASED',
+            resourceId: req.params.examId,
+            resourceTable: 'examinations',
+            ipAddress: req.ip,
+            details: {
+                taskRole: assignment.task_role,
+                previousUserId: assignment.previous_user_id,
+                reason: req.body.reason,
+                assignmentVersion: assignment.assignment_version
+            }
+        });
+        await client.query('COMMIT');
+
+        publishTaskAssignment('CLINICAL_TASK_RELEASED', assignment);
+        res.json(assignment);
+    } catch (error) {
+        await rollbackQuietly(client);
+        next(error);
+    } finally {
+        client?.release();
+    }
+};
+
 module.exports = {
     getQueue,
-    transitionQueue
+    transitionQueue,
+    claimQueueTask,
+    assignQueueTask,
+    releaseQueueTaskAssignment
 };

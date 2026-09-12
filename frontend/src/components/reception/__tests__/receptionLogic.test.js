@@ -8,6 +8,7 @@ import {
     getNextStageAfterPayment,
     getPaymentValidation,
     getValidQueueTransitions,
+    isActionableCashierItem,
     shiftLocalDateInput,
     toLocalDateInput
 } from '../receptionLogic';
@@ -26,7 +27,9 @@ describe('receptionLogic', () => {
         const permissions = buildPermissionModel({
             role: 'Receptionist',
             permissions: ['PROCESS_PAYMENTS'],
-            elevatedPermissions: ['APPLY_DISCOUNTS']
+            emergencyAccessId: '1a19df4f-c08a-47e3-ae6d-b0a2ea9ef9ac',
+            elevatedPermissions: ['APPLY_DISCOUNTS'],
+            breakGlassExpiry: Date.now() + 60_000
         });
 
         expect(permissions.canProcessPayments).toBe(true);
@@ -117,5 +120,22 @@ describe('receptionLogic', () => {
         expect(canTransitionQueue('Delivered', 'Arrived')).toBe(false);
         expect(canTransitionQueue('Finalized', 'Delivered')).toBe(true);
         expect(canTransitionQueue('Ready for Exam', 'Prep Pending')).toBe(false);
+    });
+
+    it('identifies actionable cashier items when supplies are added during later workflow stages', () => {
+        // Missing invoice in Payment Pending
+        expect(isActionableCashierItem({ queue_stage: 'Payment Pending' }, null)).toBe(true);
+
+        // Paid invoice in In Exam (0 balance)
+        expect(isActionableCashierItem({ queue_stage: 'In Exam' }, { invoice_status: 'Paid', balance_amount: 0 })).toBe(false);
+
+        // In Exam after adding new supplies (balance > 0) -> REAPPEARS in Cashier!
+        expect(isActionableCashierItem({ queue_stage: 'In Exam' }, { invoice_status: 'Partial', balance_amount: 250 })).toBe(true);
+
+        // Prep Pending with outstanding contrast supply balance
+        expect(isActionableCashierItem({ queue_stage: 'Prep Pending' }, { invoice_status: 'Partial', balance_amount: 120 })).toBe(true);
+
+        // Voided invoice is never actionable
+        expect(isActionableCashierItem({ queue_stage: 'In Exam' }, { invoice_status: 'Voided', balance_amount: 250 })).toBe(false);
     });
 });

@@ -14,6 +14,7 @@ const DoctorLogin = lazy(() => import('./pages/DoctorLogin'));
 const DoctorPortal = lazy(() => import('./pages/DoctorPortal'));
 const PortalLanding = lazy(() => import('./pages/PortalLanding'));
 const PortalPasswordChange = lazy(() => import('./pages/PortalPasswordChange'));
+const PublicReportVerify = lazy(() => import('./pages/PublicReportVerify'));
 
 const PATIENT_ROLES = ['Patient'] satisfies readonly PortalRole[];
 const DOCTOR_ROLES = ['Doctor'] satisfies readonly PortalRole[];
@@ -89,6 +90,8 @@ const App = () => {
             <Routes>
                 {/* Default route opens the public portal landing page. */}
                 <Route path="/" element={<PortalLanding />} />
+                <Route path="/verify" element={<PublicReportVerify />} />
+                <Route path="/verify-report" element={<PublicReportVerify />} />
                 <Route path="/portal" element={<Navigate to="/patient" replace />} />
                 <Route path="/portal/login" element={<Navigate to="/patient/login" replace />} />
                 <Route path="/portal/dashboard" element={<Navigate to="/patient/dashboard" replace />} />

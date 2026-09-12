@@ -37,7 +37,13 @@
       "page": "{{page}} / {{pages}}",
       "previous": "Previous patient page",
       "next": "Next patient page"
-    }
+    },
+    "selectPatient": "Select Patient",
+    "emptyTitle": "No patient records found",
+    "selectPage": "Select page",
+    "contact": "Contact Information",
+    "demographics": "Demographics",
+    "statusAndRegistration": "Status & Registration"
   },
   "filters": {
     "title": "Find and segment records",
@@ -46,13 +52,17 @@
     "all": "All records",
     "recent": "Recent",
     "missingContact": "Missing contact",
-    "missingEmail": "Missing email"
+    "missingEmail": "Missing email",
+    "clearSearch": "Clear search",
+    "quick": "Quick Filters"
   },
   "genderFilter": {
-    "all": "All genders"
+    "all": "All genders",
+    "label": "Filter by Gender"
   },
   "statusFilter": {
-    "all": "All statuses"
+    "all": "All statuses",
+    "label": "Filter by Status"
   },
   "gender": {
     "Male": "Male",
@@ -104,7 +114,11 @@
     "unnamed": "Unnamed Patient",
     "noPhone": "No phone",
     "noEmail": "No email",
-    "noDob": "No DOB"
+    "noDob": "No DOB",
+    "contact": "Contact & Communications",
+    "demographics": "Demographics",
+    "age": "Age",
+    "registered": "Registered"
   },
   "fallback": {
     "na": "N/A",
@@ -192,6 +206,7 @@
       "firstName": "First Name",
       "lastName": "Last Name",
       "dateOfBirth": "Date of Birth",
+      "age": "Age",
       "gender": "Gender",
       "nationalId": "National ID",
       "passportNumber": "Passport Number",
@@ -218,7 +233,29 @@
     },
     "cancel": "Cancel",
     "save": "Save",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "editTitle": "Edit Patient Record",
+    "description": "Maintain identity, clinical basics, emergency contact, and communication consent.",
+    "close": "Close patient form",
+    "consentsTitle": "Communication consents",
+    "placeholders": {
+      "firstName": "e.g. Sarah",
+      "lastName": "e.g. Miller",
+      "nationalId": "National ID or civil number",
+      "passportNumber": "Passport number",
+      "phone": "+20 100 000 0000",
+      "email": "patient@example.com",
+      "address": "Street, building, area",
+      "allergies": "Contrast, Penicillin, Latex...",
+      "chronicDiseases": "Diabetes, Hypertension, Asthma...",
+      "priorSurgeries": "Appendectomy (2018), Stent (2021)...",
+      "implantsDevices": "Pacemaker, metallic clips, cochlear implant...",
+      "renalFunctionNotes": "Recent creatinine or dialysis schedule...",
+      "emergencyName": "Relative or contact name",
+      "relationship": "Brother, Spouse, Parent...",
+      "emergencyAddress": "Emergency contact address",
+      "preferredLanguage": "Select preferred language"
+    }
   },
   "confirm": {
     "deleteOneTitle": "Delete patient record?",
@@ -243,5 +280,18 @@
     "partialDelete": "{{deleted}} records were deleted; {{failed}} could not be deleted.",
     "merged": "Patient records merged.",
     "mergeFailed": "Patient records could not be merged."
+  },
+  "yearsOld": "{{age}} years old",
+  "mrnCopied": "MRN copied to clipboard",
+  "copyFailed": "Failed to copy MRN",
+  "clickToCopy": "Click to copy MRN",
+  "view": {
+    "label": "View Layout",
+    "table": "Table View",
+    "grid": "Grid View"
+  },
+  "selection": {
+    "export": "Export Selected",
+    "clear": "Clear Selection"
   }
 }

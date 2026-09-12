@@ -3,7 +3,10 @@
  * Compatible with Node/Express & PostgreSQL backend running at http://localhost:3000/api
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+import type { PortalNotificationEnvelope, PortalNotificationPageParams } from "../store/api";
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
 
 export class ApiError extends Error {
   status: number;
@@ -32,6 +35,89 @@ export function clearAuthToken() {
     sessionStorage.removeItem("token");
     sessionStorage.removeItem("user");
   }
+}
+
+let refreshPromise: Promise<string | null> | null = null;
+
+async function performRefreshRequest(): Promise<string | null> {
+  try {
+    const csrfMatch =
+      typeof document === "undefined" ? null : document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    const csrfToken = csrfMatch ? decodeURIComponent(csrfMatch[1]) : null;
+    const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
+      },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data?.token === "string" && data.token ? data.token : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Single-flight token refresh shared by raw fetches and the RTK Query reauth
+ * flow, so concurrent 401s can never rotate the single-use refresh cookie more
+ * than once (the backend revokes the whole session family on reuse).
+ *
+ * Returns the fresh access token on success (persisted to sessionStorage) or
+ * null on failure (persisted session cleared). Callers that own the store
+ * should additionally update the Redux token / auth state from the result.
+ */
+export function refreshSessionToken(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = performRefreshRequest()
+      .then((token) => {
+        if (token) {
+          setAuthToken(token);
+        } else {
+          clearAuthToken();
+        }
+        return token;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+/** Convenience boolean wrapper used by raw fetches (report HTML, downloads). */
+export async function refreshAuthTokenSilently(): Promise<boolean> {
+  return (await refreshSessionToken()) !== null;
+}
+
+/**
+ * Fetch from the API, retrying once after a silent token refresh when the
+ * first attempt is rejected with 401 (matching the RTK Query reauth flow).
+ */
+export async function fetchWithAuthRetry(endpoint: string, init: RequestInit = {}): Promise<Response> {
+  const isAuthEndpoint =
+    endpoint.endsWith("/login") ||
+    endpoint.endsWith("/auth/refresh") ||
+    endpoint.endsWith("/auth/logout") ||
+    endpoint.endsWith("/auth/change-password");
+
+  const buildRequest = (): RequestInit => {
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+      ...(init.headers as Record<string, string>),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+    if (init.body) headers["Content-Type"] = "application/json";
+    return { ...init, credentials: "include", headers };
+  };
+
+  let res = await fetch(`${API_BASE_URL}${endpoint}`, buildRequest());
+  if (res.status === 401 && !isAuthEndpoint && (await refreshAuthTokenSilently())) {
+    res = await fetch(`${API_BASE_URL}${endpoint}`, buildRequest());
+  }
+  return res;
 }
 
 export type PortalIdentity = {
@@ -210,8 +296,12 @@ export async function submitAppointmentRequest(payload: AppointmentRequestPayloa
 
 // ─── Patient Notifications & Chat API ─────────────────────────────────────
 
-export async function fetchPatientNotifications() {
-  return request<any[]>("/portal/notifications");
+export async function fetchPatientNotifications(params: PortalNotificationPageParams = {}) {
+  const search = new URLSearchParams();
+  if (params.limit !== undefined) search.set("limit", String(params.limit));
+  if (params.offset !== undefined) search.set("offset", String(params.offset));
+  const query = search.toString();
+  return request<PortalNotificationEnvelope>(`/portal/notifications${query ? `?${query}` : ""}`);
 }
 
 export async function fetchPatientNotificationUnreadCount() {
@@ -354,8 +444,14 @@ export async function fetchDoctorMessagesUnreadCount() {
   }
 }
 
-export async function fetchDoctorNotifications() {
-  return request<any[]>("/doctor-portal/notifications");
+export async function fetchDoctorNotifications(params: PortalNotificationPageParams = {}) {
+  const search = new URLSearchParams();
+  if (params.limit !== undefined) search.set("limit", String(params.limit));
+  if (params.offset !== undefined) search.set("offset", String(params.offset));
+  const query = search.toString();
+  return request<PortalNotificationEnvelope>(
+    `/doctor-portal/notifications${query ? `?${query}` : ""}`,
+  );
 }
 
 export async function fetchDoctorNotificationUnreadCount() {

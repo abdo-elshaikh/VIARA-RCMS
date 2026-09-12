@@ -20,14 +20,15 @@ import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { useGetMyAuditLogsQuery } from '../../store/api';
 import { formatRelativeTime } from '../../utils/dateFormat';
+import Pagination from '../ui/Pagination';
 
 const csvValue = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
-const AuditSettings = () => {
-    const { t } = useTranslation(['settings', 'common']);
+const AuditSettings = ({ embedded = false }) => {
+    const { t, i18n } = useTranslation(['settings', 'common']);
     const [page, setPage] = useState(1);
     const pageSize = 50;
-    const { data: logData, isLoading, isFetching, isError, refetch } = useGetMyAuditLogsQuery({ limit: pageSize, offset: (page - 1) * pageSize });
+    const { data: logData, isLoading, isError, refetch } = useGetMyAuditLogsQuery({ limit: pageSize, offset: (page - 1) * pageSize });
     const logs = useMemo(() => logData?.logs || [], [logData?.logs]);
     const [query, setQuery] = useState('');
     const pageCount = Math.max(1, Math.ceil(Number(logData?.total || 0) / pageSize));
@@ -70,7 +71,7 @@ const AuditSettings = () => {
     };
 
     return (
-        <div className="space-y-6">
+        <div className={embedded ? 'space-y-5 pb-0' : 'space-y-6'}>
             {/* Top Account Audit Hero Command Deck */}
             <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8">
                 <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
@@ -173,11 +174,7 @@ const AuditSettings = () => {
                     ) : null}
                     {!isLoading && !isError && visibleLogs.map(log => <AuditRow key={log.id} log={log} t={t} />)}
                     {!isLoading && !isError && stats.total > pageSize ? (
-                        <div className="flex items-center justify-center gap-3 border-t border-slate-200 p-4 text-xs font-bold text-slate-600 dark:border-slate-800 dark:text-slate-300">
-                            <button type="button" disabled={isFetching || page === 1} onClick={() => setPage(value => Math.max(1, value - 1))} className="rounded-lg border border-slate-200 px-3 py-1.5 disabled:opacity-40 dark:border-slate-700">{t('common.previous', { defaultValue: 'Previous' })}</button>
-                            <span>{page} / {pageCount}</span>
-                            <button type="button" disabled={isFetching || page >= pageCount} onClick={() => setPage(value => Math.min(pageCount, value + 1))} className="rounded-lg border border-slate-200 px-3 py-1.5 disabled:opacity-40 dark:border-slate-700">{t('common.next', { defaultValue: 'Next' })}</button>
-                        </div>
+                        <Pagination currentPage={page} pageCount={pageCount} onPageChange={setPage} isRtl={i18n.language?.startsWith('ar')} />
                     ) : null}
                 </div>
             </section>

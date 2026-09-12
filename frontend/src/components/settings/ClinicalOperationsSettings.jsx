@@ -1,852 +1,322 @@
-import { useMemo, useState } from 'react';
-import { Plus } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+    DoorClosed,
+    Server,
+    FileSpreadsheet,
+    Wrench,
+    Network,
+    ExternalLink,
+    CheckCircle2,
+    Plus,
+    Trash2,
+    Pencil,
+    Clock3,
+    AlertTriangle,
+    Sparkles,
+    Layers,
+    ShieldCheck
+} from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'react-hot-toast';
-
 import {
-  useCreateExamTypeMutation,
-  useCreateMachineMutation,
-  useDeleteExamTypeMutation,
-  useDeleteMachineMutation,
-  useGetExamTypesQuery,
-  useGetMachinesQuery,
-  useUpdateExamTypeMutation,
-  useUpdateMachineMutation,
+    useGetClinicalHierarchyMatrixQuery,
+    useGetRoomsQuery,
+    useGetMachinesQuery,
+    useGetExamTypesQuery,
+    useGetEquipmentMaintenanceQuery,
+    useGetEquipmentDowntimeQuery,
+    useGetCenterSettingsQuery,
+    useUpdateCenterSettingsMutation
 } from '../../store/api';
-import ConfirmDialog from '../ui/ConfirmDialog';
-import { getErrorMessage } from '../../utils/getErrorMessage';
-import ClinicalFilterPanel from './clinical/ClinicalFilterPanel';
-import ClinicalHeader from './clinical/ClinicalHeader';
-import ClinicalImportModal from './clinical/ClinicalImportModal';
-import { ExamDialog, emptyExam } from './clinical/ExamManagement';
-import { MachineDialog, emptyMachine } from './clinical/MachineManagement';
-import MachineExplorer from './clinical/MachineExplorer';
-import ProcedureList from './clinical/ProcedureList';
-import ProcedurePreviewModal from './clinical/ProcedurePreviewModal';
-import { CatalogState } from './clinical/SharedComponents';
-import {
-  buildExamForm,
-  buildMachineForm,
-  downloadBlob,
-  makeCsvFile,
-  toExamPayload,
-  toMachinePayload,
-} from './clinical/clinicalCatalogUtils';
-
-const machineIdOf = (machine) => machine?.modality_id || machine?.id;
-const examIdOf = (exam) => exam?.type_id || exam?.id;
-const idKey = (value) => String(value ?? '');
-const sameId = (left, right) => idKey(left) === idKey(right);
-const includesId = (ids, id) => ids.some((item) => sameId(item, id));
-const isActiveExam = (exam) => exam?.active ?? exam?.is_active !== false;
-const isNotFoundError = (error) => {
-  if (error?.status === 404) return true;
-  const message = String(error?.data?.message || error?.data?.error || error?.message || '').toLowerCase();
-  return message.includes('not found');
-};
-
-const normalizeMachine = (machine) => ({
-  ...machine,
-  id: machineIdOf(machine),
-  machineType: machine.type || machine.machineType || 'Other',
-  roomNumber: machine.room_number || machine.roomNumber || '',
-  serialNumber: machine.serial_number || machine.serialNumber || '',
-});
-
-const normalizeExam = (exam) => ({
-  ...exam,
-  id: examIdOf(exam),
-  modality: exam.modality_type || exam.modality || '',
-  machineType: exam.modality_type || exam.machineType || '',
-  machineName: exam.modality_name || exam.machineName || '',
-  anatomy: exam.body_part || exam.bodyPart || '',
-  durationMinutes: exam.duration_minutes || exam.durationMinutes || 0,
-  requiresContrast: Boolean(exam.contrast_required ?? exam.contrastRequired),
-  active: isActiveExam(exam),
-  preparationInstructions: exam.preparation_instructions || exam.preparationInstructions || '',
-  clinicalNotes: exam.clinical_notes || exam.clinicalNotes || '',
-});
+import { readWorkstationPresets, saveWorkstationPresets } from '../reception/workstationPresets';
 
 const ClinicalOperationsSettings = () => {
-  const { t, i18n } = useTranslation('settings');
+    const { t, i18n } = useTranslation('settings');
+    const isArabic = i18n.language?.startsWith('ar');
 
-  const [selectedMachineId, setSelectedMachineId] = useState('all');
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [machineStatusFilter, setMachineStatusFilter] = useState('All');
-  const [selectedAnatomy, setSelectedAnatomy] = useState('all');
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [contrastFilter, setContrastFilter] = useState('All');
-  const [sortBy, setSortBy] = useState('name-asc');
-  const [selectedExamIds, setSelectedExamIds] = useState([]);
-  const [localMachines, setLocalMachines] = useState([]);
-  const [machineOverridesById, setMachineOverridesById] = useState({});
-  const [deletedMachineIds, setDeletedMachineIds] = useState([]);
-  const [localExams, setLocalExams] = useState([]);
-  const [deletedExamIds, setDeletedExamIds] = useState([]);
-  const [examOverridesById, setExamOverridesById] = useState({});
+    const { data: rooms = [], isLoading: roomsLoading } = useGetRoomsQuery();
+    const { data: machines = [], isLoading: machinesLoading } = useGetMachinesQuery();
+    const { data: exams = [], isLoading: examsLoading } = useGetExamTypesQuery({ includeInactive: true });
+    const { data: maintenance = [] } = useGetEquipmentMaintenanceQuery();
+    const { data: downtime = [] } = useGetEquipmentDowntimeQuery();
+    const { data: centerSettings, isLoading: centerSettingsLoading } = useGetCenterSettingsQuery();
+    const [updateCenterSettings, { isLoading: isSavingWorkstations }] = useUpdateCenterSettingsMutation();
+    const [workstationPresets, setWorkstationPresets] = useState(readWorkstationPresets);
+    const [editingPresetId, setEditingPresetId] = useState(null);
+    const [presetDraft, setPresetDraft] = useState({ label: '', roomIds: [] });
 
-  const [machineEditor, setMachineEditor] = useState(null);
-  const [examEditor, setExamEditor] = useState(null);
-  const [procedurePreview, setProcedurePreview] = useState(null);
-  const [importModalTarget, setImportModalTarget] = useState(null);
-  const [confirmAction, setConfirmAction] = useState(null);
-  const [machineForm, setMachineForm] = useState(() => ({ ...emptyMachine }));
-  const [examForm, setExamForm] = useState(() => ({ ...emptyExam }));
+    const activeRooms = rooms.filter(r => r.status === 'Active').length;
+    const activeMachines = machines.filter(m => (m.status || 'Active') === 'Active').length;
+    const scheduledMaintenance = maintenance.filter(m => !['Completed', 'Cancelled'].includes(m.status)).length;
+    const activeDowntime = downtime.filter(d => d.status !== 'Resolved').length;
 
-  const { data: machines = [], isLoading: machinesLoading, isError: machinesError, refetch: refetchMachines } = useGetMachinesQuery();
-  const { data: exams = [], isLoading: examsLoading, isError: examsError, refetch: refetchExams } = useGetExamTypesQuery({ includeInactive: true });
-
-  const [createMachine, { isLoading: creatingMachine }] = useCreateMachineMutation();
-  const [updateMachine, { isLoading: updatingMachine }] = useUpdateMachineMutation();
-  const [deleteMachine, { isLoading: deletingMachine }] = useDeleteMachineMutation();
-  const [createExam, { isLoading: creatingExam }] = useCreateExamTypeMutation();
-  const [updateExam, { isLoading: updatingExam }] = useUpdateExamTypeMutation();
-  const [deleteExam, { isLoading: deletingExam }] = useDeleteExamTypeMutation();
-
-  const busy = creatingMachine || updatingMachine || deletingMachine || creatingExam || updatingExam || deletingExam;
-  const normalizedQuery = query.trim().toLocaleLowerCase(i18n.resolvedLanguage || 'en');
-
-  const normalizedMachines = useMemo(() => {
-    const merged = [...machines];
-    localMachines.forEach((localMachine) => {
-      if (!merged.some((machine) => sameId(machineIdOf(machine), machineIdOf(localMachine)))) {
-        merged.push(localMachine);
-      }
-    });
-
-    return merged
-      .map((machine) => ({ ...machine, ...(machineOverridesById[idKey(machineIdOf(machine))] || {}) }))
-      .map(normalizeMachine)
-      .filter((machine) => !includesId(deletedMachineIds, machine.id));
-  }, [machines, localMachines, machineOverridesById, deletedMachineIds]);
-  const normalizedExams = useMemo(() => {
-    const merged = [...exams];
-    localExams.forEach((localExam) => {
-      if (!merged.some((exam) => sameId(examIdOf(exam), examIdOf(localExam)))) {
-        merged.push(localExam);
-      }
-    });
-
-    return merged
-      .map((exam) => ({ ...exam, ...(examOverridesById[idKey(examIdOf(exam))] || {}) }))
-      .map(normalizeExam)
-      .filter((exam) => !includesId(deletedExamIds, exam.id));
-  }, [exams, localExams, deletedExamIds, examOverridesById]);
-
-  const machinesByCategory = useMemo(() => {
-    return normalizedMachines.reduce((groups, machine) => {
-      const category = machine.machineType || 'Other';
-      return {
-        ...groups,
-        [category]: [...(groups[category] || []), machine],
-      };
-    }, {});
-  }, [normalizedMachines]);
-
-  const categoriesList = useMemo(() => Object.keys(machinesByCategory).sort(), [machinesByCategory]);
-
-  const examCountsByMachine = useMemo(() => {
-    return normalizedExams.reduce((counts, exam) => {
-      const modalityId = exam.modality_id || exam.modalityId;
-      if (!modalityId) return counts;
-      return { ...counts, [idKey(modalityId)]: (counts[idKey(modalityId)] || 0) + 1 };
-    }, {});
-  }, [normalizedExams]);
-
-  const visibleMachines = useMemo(() => {
-    return normalizedMachines.filter((machine) => {
-      const machineStatus = machine.status || 'Active';
-      if (selectedCategory !== 'all' && machine.machineType !== selectedCategory) return false;
-      if (machineStatusFilter === 'Attention' && machineStatus === 'Active') return false;
-      if (!['All', 'Attention'].includes(machineStatusFilter) && machineStatus !== machineStatusFilter) return false;
-      if (!normalizedQuery) return true;
-
-      return [
-        machine.name,
-        machine.machineType,
-        machine.room_number,
-        machine.roomNumber,
-        machine.location,
-        machine.manufacturer,
-        machine.model,
-      ].some((value) => String(value || '').toLocaleLowerCase(i18n.resolvedLanguage || 'en').includes(normalizedQuery));
-    });
-  }, [normalizedMachines, selectedCategory, machineStatusFilter, normalizedQuery, i18n.resolvedLanguage]);
-
-  const selectedMachine = useMemo(() => {
-    if (selectedMachineId === 'all') return null;
-    return normalizedMachines.find((machine) => sameId(machine.id, selectedMachineId)) || null;
-  }, [normalizedMachines, selectedMachineId]);
-
-  const anatomiesList = useMemo(() => {
-    const parts = new Set();
-    normalizedExams.forEach((exam) => {
-      const primary = String(exam.anatomy || '').split('/')[0].trim();
-      if (primary) parts.add(primary);
-    });
-    return Array.from(parts).sort();
-  }, [normalizedExams]);
-
-  const visibleExams = useMemo(() => {
-    return normalizedExams
-      .filter((exam) => {
-        if (selectedMachineId !== 'all' && !sameId(exam.modality_id || exam.modalityId, selectedMachineId)) return false;
-        if (selectedCategory !== 'all' && exam.machineType !== selectedCategory) return false;
-        if (selectedAnatomy !== 'all' && !String(exam.anatomy).toLowerCase().includes(selectedAnatomy.toLowerCase())) return false;
-
-        if (normalizedQuery) {
-          const matches = [exam.name, exam.code, exam.anatomy, exam.machineName, exam.machineType]
-            .some((value) => String(value || '').toLocaleLowerCase(i18n.resolvedLanguage || 'en').includes(normalizedQuery));
-          if (!matches) return false;
+    useEffect(() => {
+        if (Array.isArray(centerSettings?.workstation_presets) && centerSettings.workstation_presets.length > 0) {
+            setWorkstationPresets(centerSettings.workstation_presets);
         }
+    }, [centerSettings?.workstation_presets]);
 
-        if (statusFilter === 'Active' && !exam.active) return false;
-        if (statusFilter === 'Inactive' && exam.active) return false;
-        if (contrastFilter === 'contrast' && !exam.requiresContrast) return false;
-        if (contrastFilter === 'no-contrast' && exam.requiresContrast) return false;
+    const openPresetEditor = (preset = null) => {
+        setEditingPresetId(preset?.id || 'new');
+        setPresetDraft({ label: preset?.label || '', roomIds: preset?.roomIds || [] });
+    };
 
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortBy === 'name-desc') return String(b.name || '').localeCompare(String(a.name || ''));
-        if (sortBy === 'duration-asc') return Number(a.durationMinutes || 0) - Number(b.durationMinutes || 0);
-        if (sortBy === 'duration-desc') return Number(b.durationMinutes || 0) - Number(a.durationMinutes || 0);
-        return String(a.name || '').localeCompare(String(b.name || ''));
-      });
-  }, [
-    normalizedExams,
-    selectedMachineId,
-    selectedCategory,
-    selectedAnatomy,
-    normalizedQuery,
-    i18n.resolvedLanguage,
-    statusFilter,
-    contrastFilter,
-    sortBy,
-  ]);
+    const savePresetDraft = () => {
+        const label = presetDraft.label.trim();
+        if (!label) return;
+        setWorkstationPresets((current) => editingPresetId === 'new'
+            ? [...current, { id: `custom-${Date.now()}`, label, icon: '🩺', descAr: 'محطة استقبال مخصصة', descEn: 'Custom reception workstation', roomIds: [], scope: 'all' }]
+            : current.map((preset) => preset.id === editingPresetId ? { ...preset, label } : preset));
+        setEditingPresetId(null);
+    };
 
-  const visibleExamIds = useMemo(() => visibleExams.map((exam) => exam.id), [visibleExams]);
-  const selectedVisibleExamIds = useMemo(() => visibleExamIds.filter((id) => includesId(selectedExamIds, id)), [selectedExamIds, visibleExamIds]);
-  const allVisibleExamsSelected = visibleExamIds.length > 0 && selectedVisibleExamIds.length === visibleExamIds.length;
-  const someVisibleExamsSelected = selectedVisibleExamIds.length > 0 && !allVisibleExamsSelected;
+    const deletePreset = (presetId) => {
+        if (workstationPresets.length <= 1) return;
+        setWorkstationPresets((current) => current.filter((preset) => preset.id !== presetId));
+    };
 
-  const metrics = useMemo(() => ({
-    machines: normalizedMachines.length,
-    activeMachines: normalizedMachines.filter((machine) => (machine.status || 'Active') === 'Active').length,
-    exams: normalizedExams.length,
-    activeExams: normalizedExams.filter((exam) => exam.active).length,
-    contrastExams: normalizedExams.filter((exam) => exam.requiresContrast).length,
-    avgDuration: normalizedExams.length
-      ? Math.round(normalizedExams.reduce((sum, exam) => sum + Number(exam.durationMinutes || 0), 0) / normalizedExams.length)
-      : 0,
-  }), [normalizedMachines, normalizedExams]);
-
-  const maintenanceMachines = useMemo(
-    () => normalizedMachines.filter((machine) => (machine.status || 'Active') !== 'Active'),
-    [normalizedMachines]
-  );
-
-  const resetFilters = () => {
-    setSelectedMachineId('all');
-    setSelectedCategory('all');
-    setMachineStatusFilter('All');
-    setSelectedAnatomy('all');
-    setStatusFilter('All');
-    setContrastFilter('All');
-    setSortBy('name-asc');
-    setQuery('');
-    setSelectedExamIds([]);
-  };
-
-  const openMachine = (machine) => {
-    setMachineEditor(machine || 'new');
-    setMachineForm(machine ? buildMachineForm(machine) : { ...emptyMachine });
-  };
-
-  const applyMachineOverride = (machineId, savedMachine, payload) => {
-    setMachineOverridesById((prev) => ({
-      ...prev,
-      [idKey(machineId)]: {
-        ...savedMachine,
-        name: payload.name !== undefined ? payload.name : savedMachine?.name,
-        type: payload.type !== undefined ? payload.type : savedMachine?.type,
-        room_number: payload.roomNumber !== undefined ? payload.roomNumber : savedMachine?.room_number,
-        serial_number: payload.serialNumber !== undefined ? payload.serialNumber : savedMachine?.serial_number,
-        manufacturer: payload.manufacturer !== undefined ? payload.manufacturer : savedMachine?.manufacturer,
-        model: payload.model !== undefined ? payload.model : savedMachine?.model,
-        installation_date: payload.installationDate !== undefined ? payload.installationDate : savedMachine?.installation_date,
-        location: payload.location !== undefined ? payload.location : savedMachine?.location,
-        status: payload.status !== undefined ? payload.status : savedMachine?.status,
-      },
-    }));
-  };
-
-  const removeMachineLocally = (id) => {
-    setDeletedMachineIds((prev) => (includesId(prev, id) ? prev : [...prev, id]));
-    setLocalMachines((prev) => prev.filter((machine) => !sameId(machineIdOf(machine), id)));
-    setMachineOverridesById((prev) => {
-      const next = { ...prev };
-      delete next[idKey(id)];
-      return next;
-    });
-    setSelectedMachineId((current) => (sameId(current, id) ? 'all' : current));
-  };
-
-  const removeExamLocally = (id) => {
-    setDeletedExamIds((prev) => (includesId(prev, id) ? prev : [...prev, id]));
-    setLocalExams((prev) => prev.filter((exam) => !sameId(examIdOf(exam), id)));
-    setExamOverridesById((prev) => {
-      const next = { ...prev };
-      delete next[idKey(id)];
-      return next;
-    });
-    setSelectedExamIds((prev) => prev.filter((selectedId) => !sameId(selectedId, id)));
-  };
-
-  const removeExamsByMachineLocally = (machineId) => {
-    const linkedExamIds = normalizedExams
-      .filter((exam) => sameId(exam.modality_id || exam.modalityId, machineId))
-      .map((exam) => exam.id);
-
-    if (linkedExamIds.length === 0) return;
-    setDeletedExamIds((prev) => {
-      const next = new Set(prev.map(idKey));
-      linkedExamIds.forEach((id) => next.add(idKey(id)));
-      return Array.from(next);
-    });
-    setLocalExams((prev) => prev.filter((exam) => !linkedExamIds.some((id) => sameId(examIdOf(exam), id))));
-    setExamOverridesById((prev) => {
-      const next = { ...prev };
-      linkedExamIds.forEach((id) => {
-        delete next[idKey(id)];
-      });
-      return next;
-    });
-    setSelectedExamIds((prev) => prev.filter((id) => !linkedExamIds.some((linkedId) => sameId(linkedId, id))));
-  };
-
-  const openExam = (exam, presetModalityId) => {
-    const defaultModalityId = presetModalityId
-      || (selectedMachineId !== 'all' ? selectedMachineId : normalizedMachines.find((machine) => machine.status === 'Active')?.id || normalizedMachines[0]?.id || '');
-
-    setExamEditor(exam || 'new');
-    setExamForm(exam ? buildExamForm(exam) : buildExamForm(null, { ...emptyExam, modalityId: defaultModalityId }));
-  };
-
-  const applyExamOverride = (examId, savedExam, payload) => {
-    const assignedMachine = normalizedMachines.find((machine) => sameId(machine.id, payload.modalityId || savedExam?.modality_id));
-
-    setExamOverridesById((prev) => ({
-      ...prev,
-      [idKey(examId)]: {
-        ...savedExam,
-        modality_id: payload.modalityId || savedExam?.modality_id,
-        modality_name: assignedMachine?.name || savedExam?.modality_name,
-        modality_type: assignedMachine?.machineType || savedExam?.modality_type,
-        code: payload.code !== undefined ? payload.code : savedExam?.code,
-        name: payload.name !== undefined ? payload.name : savedExam?.name,
-        price: payload.price !== undefined ? payload.price : savedExam?.price,
-        duration_minutes: payload.durationMinutes !== undefined ? payload.durationMinutes : savedExam?.duration_minutes,
-        body_part: payload.bodyPart !== undefined ? payload.bodyPart : savedExam?.body_part,
-        preparation_instructions: payload.preparationInstructions !== undefined ? payload.preparationInstructions : savedExam?.preparation_instructions,
-        contrast_required: payload.contrastRequired !== undefined ? payload.contrastRequired : savedExam?.contrast_required,
-        is_active: payload.isActive !== undefined ? payload.isActive : savedExam?.is_active,
-      },
-    }));
-  };
-
-  const findExamByPayload = (records, payload) => {
-    const payloadName = String(payload.name || '').trim().toLocaleLowerCase(i18n.resolvedLanguage || 'en');
-    const payloadCode = String(payload.code || '').trim().toLocaleUpperCase(i18n.resolvedLanguage || 'en');
-    return records.find((exam) => {
-      const sameMachine = !payload.modalityId || sameId(exam.modality_id || exam.modalityId, payload.modalityId);
-      const sameName = payloadName && String(exam.name || '').trim().toLocaleLowerCase(i18n.resolvedLanguage || 'en') === payloadName;
-      const sameCode = !payloadCode || String(exam.code || '').trim().toLocaleUpperCase(i18n.resolvedLanguage || 'en') === payloadCode;
-      return sameMachine && sameName && sameCode;
-    });
-  };
-
-  const refetchExamCatalog = async (confirmedExamId) => {
-    const refreshed = await refetchExams();
-    const refreshedExams = refreshed?.data || [];
-    if (confirmedExamId && refreshedExams.some((exam) => sameId(examIdOf(exam), confirmedExamId))) {
-      setLocalExams((prev) => prev.filter((exam) => !sameId(examIdOf(exam), confirmedExamId)));
-      setDeletedExamIds((prev) => prev.filter((id) => !sameId(id, confirmedExamId)));
-    }
-    return refreshedExams;
-  };
-
-  const saveMachine = async (event) => {
-    event.preventDefault();
-    try {
-      const payload = toMachinePayload(machineForm, { mode: machineEditor === 'new' ? 'create' : 'update' });
-      if (machineEditor === 'new') {
-        const savedMachine = await createMachine(payload).unwrap();
-        const savedMachineId = machineIdOf(savedMachine);
-        setLocalMachines((prev) => [savedMachine, ...prev.filter((machine) => !sameId(machineIdOf(machine), savedMachineId))]);
-        setDeletedMachineIds((prev) => prev.filter((id) => !sameId(id, savedMachineId)));
-        setSelectedMachineId(savedMachineId || 'all');
-        setSelectedCategory(payload.type || 'all');
-        setMachineStatusFilter('All');
-        toast.success(t('settings.clinical.messages.machineCreated', { defaultValue: 'Machine registered successfully' }));
-      } else {
-        const machineId = machineIdOf(machineEditor);
-        const savedMachine = await updateMachine({ id: machineId, ...payload }).unwrap();
-        applyMachineOverride(machineId, savedMachine, payload);
-        setSelectedMachineId(machineId);
-        if (payload.type) setSelectedCategory(payload.type);
-        setMachineStatusFilter('All');
-        toast.success(t('settings.clinical.messages.machineUpdated', { defaultValue: 'Machine configuration updated' }));
-      }
-      await Promise.all([refetchMachines(), refetchExams()]);
-      setMachineEditor(null);
-    } catch (error) {
-      toast.error(getErrorMessage(error, t('settings.clinical.messages.saveFailed', { defaultValue: 'Failed to save changes' })));
-    }
-  };
-
-  const saveExam = async (event) => {
-    event.preventDefault();
-    try {
-      const payload = toExamPayload(examForm, { mode: examEditor === 'new' ? 'create' : 'update' });
-      let confirmedExamId = null;
-      if (examEditor === 'new') {
-        const savedExam = await createExam(payload).unwrap();
-        const savedExamId = examIdOf(savedExam);
-        confirmedExamId = savedExamId;
-        setLocalExams((prev) => [savedExam, ...prev.filter((exam) => !sameId(examIdOf(exam), savedExamId))]);
-        setDeletedExamIds((prev) => prev.filter((id) => !sameId(id, savedExamId)));
-        applyExamOverride(savedExamId, savedExam, payload);
-        toast.success(t('settings.clinical.messages.examCreated', { defaultValue: 'Examination type created successfully' }));
-      } else {
-        const examId = examIdOf(examEditor);
-        let savedExam;
+    const handleSaveWorkstationPresets = async () => {
         try {
-          savedExam = await updateExam({ id: examId, ...payload }).unwrap();
+            const payload = workstationPresets.map(({ modalityTypes, ...preset }) => ({
+                ...preset,
+                roomIds: Array.isArray(preset.roomIds) ? preset.roomIds : [],
+            }));
+            const saved = await updateCenterSettings({ workstation_presets: payload }).unwrap();
+            const persistedPresets = saved?.workstation_presets || workstationPresets;
+            setWorkstationPresets(persistedPresets);
+            saveWorkstationPresets(persistedPresets);
+            toast.success(isArabic ? 'تم حفظ محطات الاستقبال والغرف على الخادم' : 'Workstations and rooms saved to the server');
         } catch (error) {
-          if (!isNotFoundError(error)) throw error;
-          const refreshedExams = await refetchExamCatalog();
-          const refreshedExam = refreshedExams.find((exam) => sameId(examIdOf(exam), examId)) || findExamByPayload(refreshedExams, payload);
-          const refreshedExamId = examIdOf(refreshedExam);
-          if (!refreshedExamId || sameId(refreshedExamId, examId)) throw error;
-          savedExam = await updateExam({ id: refreshedExamId, ...payload }).unwrap();
+            toast.error(isArabic ? 'تعذر حفظ إعدادات المحطات على الخادم' : 'Could not save workstation settings to the server');
         }
-        confirmedExamId = examIdOf(savedExam) || examId;
-        applyExamOverride(confirmedExamId, savedExam, payload);
-        toast.success(t('settings.clinical.messages.examUpdated', { defaultValue: 'Examination type updated' }));
-      }
-      await refetchExamCatalog(confirmedExamId);
-      setExamEditor(null);
-    } catch (error) {
-      toast.error(getErrorMessage(error, t('settings.clinical.messages.saveFailed', { defaultValue: 'Failed to save changes' })));
-    }
-  };
+    };
 
-  const handleMachineStatusChange = async (machine, newStatus) => {
-    try {
-      await updateMachine({
-        id: machineIdOf(machine),
-        ...toMachinePayload(buildMachineForm(machine, { status: newStatus }), { mode: 'update' }),
-        status: newStatus,
-      }).unwrap();
-      applyMachineOverride(machineIdOf(machine), machine, { status: newStatus });
-      await Promise.all([refetchMachines(), refetchExams()]);
-      toast.success(t('settings.clinical.messages.machineStatusUpdated', { defaultValue: 'Machine status updated.' }));
-    } catch (error) {
-      toast.error(getErrorMessage(error, t('settings.clinical.messages.machineStatusFailed', { defaultValue: 'Failed to update machine status' })));
-    }
-  };
-
-  const handleToggleExamActive = async (exam) => {
-    try {
-      const examId = examIdOf(exam);
-      const payload = { isActive: !isActiveExam(exam) };
-      const savedExam = await updateExam({ id: examId, ...payload }).unwrap();
-      applyExamOverride(examId, savedExam, payload);
-      await refetchExams();
-      toast.success(t('settings.clinical.messages.examStatusUpdated', { defaultValue: 'Procedure status updated.' }));
-    } catch (error) {
-      toast.error(getErrorMessage(error, t('settings.clinical.messages.examStatusFailed', { defaultValue: 'Failed to update procedure status' })));
-    }
-  };
-
-  const requestDeleteMachine = (id) => {
-    const machine = normalizedMachines.find((item) => sameId(item.id, id));
-    setConfirmAction({
-      type: 'deleteMachine',
-      id,
-      title: t('settings.clinical.machines.deleteTitle', { defaultValue: 'Delete machine?' }),
-      message: t('settings.clinical.machines.confirmDelete', {
-        defaultValue: `Delete machine "${machine?.name || id}"? Its procedures will also be removed from the active catalog.`,
-        name: machine?.name || id,
-      }),
-      confirmLabel: t('settings.clinical.machines.deleteAction', { defaultValue: 'Delete machine' }),
-      variant: 'danger',
-    });
-  };
-
-  const executeDeleteMachine = async (id) => {
-    try {
-      await deleteMachine(id).unwrap();
-      removeMachineLocally(id);
-      removeExamsByMachineLocally(id);
-      await Promise.all([refetchMachines(), refetchExams()]);
-      toast.success(t('settings.clinical.machines.deleteSuccess', { defaultValue: 'Machine deleted successfully' }));
-      return true;
-    } catch (error) {
-      const message = getErrorMessage(error, '');
-      if (error?.status === 404 || /machine not found/i.test(message)) {
-        removeMachineLocally(id);
-        removeExamsByMachineLocally(id);
-        await Promise.all([refetchMachines(), refetchExams()]);
-        toast.success(t('settings.clinical.machines.alreadyRemoved', { defaultValue: 'Machine was already removed. The list has been refreshed.' }));
-        return true;
-      }
-      toast.error(getErrorMessage(error, t('settings.clinical.machines.deleteError', { defaultValue: 'Failed to delete machine' })));
-      return false;
-    }
-  };
-
-  const requestDeleteExam = (id) => {
-    const exam = normalizedExams.find((item) => sameId(item.id, id));
-    setConfirmAction({
-      type: 'deleteExam',
-      id,
-      title: t('settings.clinical.exams.deleteTitle', { defaultValue: 'Delete procedure?' }),
-      message: t('settings.clinical.exams.confirmDelete', {
-        defaultValue: `Delete procedure "${exam?.name || id}" from the active clinical catalog?`,
-        name: exam?.name || id,
-      }),
-      confirmLabel: t('settings.clinical.exams.deleteAction', { defaultValue: 'Delete procedure' }),
-      variant: 'danger',
-    });
-  };
-
-  const executeDeleteExam = async (id) => {
-    try {
-      await deleteExam(id).unwrap();
-      removeExamLocally(id);
-      await refetchExams();
-      toast.success(t('settings.clinical.exams.deleteSuccess', { defaultValue: 'Procedure deleted successfully' }));
-      return true;
-    } catch (error) {
-      toast.error(getErrorMessage(error, t('settings.clinical.exams.deleteError', { defaultValue: 'Failed to delete procedure' })));
-      return false;
-    }
-  };
-
-  const handleToggleExamSelection = (id, checked) => {
-    setSelectedExamIds((prev) => {
-      if (checked) return includesId(prev, id) ? prev : [...prev, id];
-      return prev.filter((selectedId) => !sameId(selectedId, id));
-    });
-  };
-
-  const handleToggleVisibleExamSelection = (checked) => {
-    setSelectedExamIds((prev) => {
-      if (!checked) return prev.filter((id) => !includesId(visibleExamIds, id));
-      const next = new Map(prev.map((id) => [idKey(id), id]));
-      visibleExamIds.forEach((id) => next.set(idKey(id), id));
-      return Array.from(next.values());
-    });
-  };
-
-  const handleBulkToggleActive = async (activate) => {
-    if (selectedExamIds.length === 0) return;
-
-    try {
-      const results = await Promise.allSettled(
-        selectedExamIds.map((id) => updateExam({ id, isActive: activate }).unwrap())
-      );
-
-      let successCount = 0;
-      let failureCount = 0;
-
-      results.forEach((res, index) => {
-        if (res.status === 'fulfilled') {
-          successCount++;
-          applyExamOverride(selectedExamIds[index], res.value, { isActive: activate });
-        } else {
-          failureCount++;
+    const quickLinks = [
+        {
+            to: '/equipment?tab=matrix',
+            icon: Network,
+            titleAr: 'الخريطة السريرية الهرمية',
+            titleEn: 'Operational Hierarchy Matrix',
+            descAr: 'استعراض هرمي تفاعلي يربط الغرف بالأجهزة بالفحوصات الطبية',
+            descEn: 'Interactive tree connecting rooms, installed equipment, and procedures',
+            tone: 'border-teal-200 bg-teal-50/50 dark:border-teal-900/60 dark:bg-teal-950/20 text-teal-700 dark:text-teal-300'
+        },
+        {
+            to: '/equipment?tab=rooms',
+            icon: DoorClosed,
+            titleAr: 'الأجنحة والغرف السريرية',
+            titleEn: 'Clinical Suites & Rooms',
+            descAr: 'إدارة أجنحة الأشعة، غرف التحضير، الإفاقة، وتجهيزاتها',
+            descEn: 'Configure imaging bays, recovery suites, floors, and facilities',
+            tone: 'border-cyan-200 bg-cyan-50/50 dark:border-cyan-900/60 dark:bg-cyan-950/20 text-cyan-700 dark:text-cyan-300'
+        },
+        {
+            to: '/equipment?tab=registry',
+            icon: Server,
+            titleAr: 'سجل الأجهزة والمعدات الإشعاعية',
+            titleEn: 'Equipment & Modalities Fleet',
+            descAr: 'إدارة أسطول الأجهزة، أرقام السيريال، ومحطات ربط الـ DICOM',
+            descEn: 'Manage modality fleet, serial numbers, models, and PACS stations',
+            tone: 'border-indigo-200 bg-indigo-50/50 dark:border-indigo-900/60 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-300'
+        },
+        {
+            to: '/equipment?tab=procedures',
+            icon: FileSpreadsheet,
+            titleAr: 'كتالوج الفحوصات الطبية',
+            titleEn: 'Clinical Procedures Catalog',
+            descAr: 'تحديد المدد الزمنية الإلزامية للفحوصات، الأسعار، وتعليمات الصيام',
+            descEn: 'Procedure pricing, mandatory durations, and prep guidelines',
+            tone: 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/60 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300'
+        },
+        {
+            to: '/equipment?tab=maintenance',
+            icon: Wrench,
+            titleAr: 'الصيانة الدورية والمعايرة',
+            titleEn: 'Preventive Maintenance',
+            descAr: 'متابعة جداول الصيانة الوقائية وعقود الخدمة الدورية للأجهزة',
+            descEn: 'Service contracts, preventive calibration logs, and providers',
+            tone: 'border-amber-200 bg-amber-50/50 dark:border-amber-900/60 dark:bg-amber-950/20 text-amber-700 dark:text-amber-300'
+        },
+        {
+            to: '/equipment?tab=downtime',
+            icon: AlertTriangle,
+            titleAr: 'سجلات الأعطال والطوارئ',
+            titleEn: 'Downtime & Incident Logs',
+            descAr: 'تسجيل انقطاع الخدمة المفاجئ وتحديد المواعيد المتأثرة فورياً',
+            descEn: 'Track outages, impacted patient bookings, and recovery logs',
+            tone: 'border-rose-200 bg-rose-50/50 dark:border-rose-900/60 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300'
         }
-      });
+    ];
 
-      if (successCount > 0) {
-        toast.success(
-          t('settings.clinical.messages.bulkStatusUpdated', {
-            defaultValue: `Updated ${successCount} procedure(s)${failureCount > 0 ? `, ${failureCount} failed` : ''}.`,
-            count: successCount
-          })
-        );
-        setSelectedExamIds([]);
-        await refetchExams();
-      } else {
-        toast.error(t('settings.clinical.messages.bulkStatusFailed', { defaultValue: 'Failed to update selected procedures' }));
-      }
-    } catch (error) {
-      toast.error(getErrorMessage(error, t('settings.clinical.messages.bulkStatusFailed', { defaultValue: 'Failed to update selected procedures' })));
-    }
-  };
+    return (
+        <div className="space-y-6">
+            {/* Notice Banner */}
+            <div className="rounded-3xl border border-teal-500/30 bg-gradient-to-br from-teal-900 via-slate-900 to-slate-950 p-6 text-white shadow-xl">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-bold text-teal-300 backdrop-blur-md">
+                            <Sparkles size={14} />
+                            {isArabic ? 'مركز العمليات الموحد' : 'Centralized Management'}
+                        </div>
+                        <h2 className="mt-3 text-xl font-black text-white sm:text-2xl">
+                            {isArabic ? 'إدارة المعدات، الغرف، والعمليات السريرية' : 'Equipment, Suites & Clinical Procedures'}
+                        </h2>
+                        <p className="mt-1.5 max-w-2xl text-xs font-semibold leading-relaxed text-slate-300">
+                            {isArabic
+                                ? 'تم توحيد ودمج إدارة الأجنحة السريرية وأسطول الأجهزة وكتالوج الفحوصات وجداول الصيانة بالكامل في مركز إدارة موحد شامل لتسهيل العمليات ومنع تشتت الشاشات.'
+                                : 'All clinical suites, equipment fleets, procedure catalogs, and maintenance schedules have been unified into the dedicated Equipment Hub for seamless clinical operations.'}
+                        </p>
+                    </div>
 
-  const requestBulkDeleteExams = () => {
-    if (selectedExamIds.length === 0) return;
+                    <Link
+                        to="/equipment"
+                        className="inline-flex items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 px-5 py-3 text-xs font-black text-slate-950 shadow-lg shadow-teal-500/20 transition-all hover:brightness-110 shrink-0"
+                    >
+                        <span>{isArabic ? 'فتح مركز إدارة المعدات والغرف الشامل' : 'Open Equipment & Suites Hub'}</span>
+                        <ExternalLink size={15} />
+                    </Link>
+                </div>
 
-    const ids = [...selectedExamIds];
-    setConfirmAction({
-      type: 'bulkDeleteExams',
-      ids,
-      title: t('settings.clinical.bulkDeleteTitle', { defaultValue: 'Delete selected procedures?' }),
-      message: t('settings.clinical.confirmBulkDelete', {
-        defaultValue: 'Delete {{count}} selected procedure(s) from the active clinical catalog?',
-        count: ids.length,
-      }),
-      confirmLabel: t('settings.clinical.bulkDelete', { defaultValue: 'Delete' }),
-      variant: 'danger',
-    });
-  };
+                {/* Quick KPI Overview */}
+                <div className="mt-6 grid grid-cols-2 gap-3 border-t border-white/10 pt-5 sm:grid-cols-4">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-md">
+                        <div className="text-[11px] font-bold text-slate-400">
+                            {isArabic ? 'الأجنحة والغرف' : 'Suites & Rooms'}
+                        </div>
+                        <div className="mt-1 text-2xl font-black text-white">
+                            {roomsLoading ? '...' : `${activeRooms}/${rooms.length}`}
+                        </div>
+                    </div>
 
-  const executeBulkDeleteExams = async (ids) => {
-    if (!ids?.length) return true;
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-md">
+                        <div className="text-[11px] font-bold text-slate-400">
+                            {isArabic ? 'الأجهزة والوحدات' : 'Modalities Fleet'}
+                        </div>
+                        <div className="mt-1 text-2xl font-black text-white">
+                            {machinesLoading ? '...' : `${activeMachines}/${machines.length}`}
+                        </div>
+                    </div>
 
-    const deletedIds = [];
-    const failed = [];
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-md">
+                        <div className="text-[11px] font-bold text-slate-400">
+                            {isArabic ? 'الفحوصات المعتمدة' : 'Clinical Exams'}
+                        </div>
+                        <div className="mt-1 text-2xl font-black text-white">
+                            {examsLoading ? '...' : exams.length}
+                        </div>
+                    </div>
 
-    for (const id of ids) {
-      try {
-        await deleteExam(id).unwrap();
-        deletedIds.push(id);
-      } catch (error) {
-        const exam = normalizedExams.find((item) => sameId(item.id, id));
-        failed.push({ name: exam?.name || id, message: getErrorMessage(error, 'Delete failed') });
-      }
-    }
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-md">
+                        <div className="text-[11px] font-bold text-slate-400">
+                            {isArabic ? 'الصيانة والأعطال' : 'Open Issues'}
+                        </div>
+                        <div className="mt-1 text-2xl font-black text-white">
+                            {scheduledMaintenance + activeDowntime}
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-    deletedIds.forEach(removeExamLocally);
-    await refetchExams();
+            {/* Quick Links Grid */}
+            <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white mb-3">
+                    {isArabic ? 'الوصول المباشر لأقسام المركز التشغيلي' : 'Quick Access to Operations Sections'}
+                </h3>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {quickLinks.map((link, idx) => {
+                        const Icon = link.icon;
+                        return (
+                            <Link
+                                key={idx}
+                                to={link.to}
+                                className={`group flex flex-col justify-between rounded-2xl border p-4 shadow-sm transition-all hover:shadow-md hover:border-slate-400 dark:hover:border-slate-600 ${link.tone}`}
+                            >
+                                <div>
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-sm">
+                                            <Icon size={18} />
+                                        </span>
+                                        <ExternalLink size={14} className="opacity-40 group-hover:opacity-100 transition-opacity" />
+                                    </div>
+                                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                                        {isArabic ? link.titleAr : link.titleEn}
+                                    </h4>
+                                    <p className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 leading-relaxed">
+                                        {isArabic ? link.descAr : link.descEn}
+                                    </p>
+                                </div>
+                                <span className="mt-3 text-[11px] font-black text-teal-600 dark:text-teal-400 inline-flex items-center gap-1 group-hover:underline">
+                                    {isArabic ? 'فتح القسم' : 'Open Section'} &rarr;
+                                </span>
+                            </Link>
+                        );
+                    })}
+                </div>
+            </div>
 
-    if (deletedIds.length > 0) {
-      toast.success(t('settings.clinical.messages.bulkDeleteSuccess', { defaultValue: 'Selected procedures deleted.', count: deletedIds.length }));
-    }
-    if (failed.length > 0) {
-      toast.error(`${t('settings.clinical.messages.bulkDeleteFailed', { defaultValue: 'Some selected procedures could not be deleted.', count: failed.length })} ${failed[0].name}: ${failed[0].message}`);
-    }
-    return failed.length === 0;
-  };
-
-  const executeConfirmAction = async () => {
-    if (!confirmAction) return true;
-
-    if (confirmAction.type === 'deleteMachine') {
-      return executeDeleteMachine(confirmAction.id);
-    }
-    if (confirmAction.type === 'deleteExam') {
-      return executeDeleteExam(confirmAction.id);
-    }
-    if (confirmAction.type === 'bulkDeleteExams') {
-      return executeBulkDeleteExams(confirmAction.ids);
-    }
-    return true;
-  };
-
-  const handleExportData = (type) => {
-    if (type === 'machines') {
-      const header = ['Machine Name', 'Modality Class', 'Room Number', 'Serial Number', 'Manufacturer', 'Model', 'Facility Location', 'Status', 'Installation Date'];
-      const rows = visibleMachines.map((machine) => [
-        machine.name,
-        machine.machineType,
-        machine.room_number || machine.roomNumber || '',
-        machine.serial_number || machine.serialNumber || '',
-        machine.manufacturer || '',
-        machine.model || '',
-        machine.location || '',
-        machine.status || 'Active',
-        machine.installation_date ? machine.installation_date.slice(0, 10) : '',
-      ]);
-      downloadBlob(makeCsvFile(header, rows), `VIARA_modality_machines_${new Date().toISOString().slice(0, 10)}.csv`);
-      toast.success(t('settings.clinical.messages.machinesExported', { defaultValue: 'Machines exported.', count: visibleMachines.length }));
-      return;
-    }
-
-    const header = ['Procedure Code', 'Procedure Name', 'Modality Machine', 'Price', 'Duration Minutes', 'Body Part', 'Contrast Required', 'Status', 'Preparation Instructions'];
-    const rows = visibleExams.map((exam) => [
-      exam.code || '',
-      exam.name,
-      exam.machineName || '',
-      Number(exam.price || 0).toFixed(2),
-      exam.durationMinutes || 30,
-      exam.anatomy || '',
-      exam.requiresContrast ? 'Yes' : 'No',
-      exam.active ? 'Active' : 'Inactive',
-      exam.preparationInstructions || '',
-    ]);
-    downloadBlob(makeCsvFile(header, rows), `VIARA_procedure_catalog_${new Date().toISOString().slice(0, 10)}.csv`);
-    toast.success(t('settings.clinical.messages.examsExported', { defaultValue: 'Procedures exported.', count: visibleExams.length }));
-  };
-
-
-  const closeImportModal = async () => {
-    setImportModalTarget(null);
-    await Promise.all([refetchMachines(), refetchExams()]);
-  };
-
-  return (
-    <div className="mx-auto max-w-[1600px] space-y-3">
-      <ClinicalHeader
-        t={t}
-        metrics={metrics}
-        maintenanceMachines={maintenanceMachines}
-        onFilterMaintenance={() => {
-          setSelectedMachineId('all');
-          setSelectedCategory('all');
-          setMachineStatusFilter('Attention');
-        }}
-        onExport={() => handleExportData(selectedMachineId === 'all' ? 'machines' : 'exams')}
-        onImport={() => setImportModalTarget(selectedMachineId === 'all' ? 'machines' : 'exams')}
-        onAddMachine={() => openMachine()}
-        onAddExam={() => openExam(null, selectedMachineId !== 'all' ? selectedMachineId : undefined)}
-      />
-
-      <MachineExplorer
-        t={t}
-        machines={normalizedMachines}
-        visibleMachines={visibleMachines}
-        categoriesList={categoriesList}
-        selectedCategory={selectedCategory}
-        machineStatusFilter={machineStatusFilter}
-        selectedMachineId={selectedMachineId}
-        examCountsByMachine={examCountsByMachine}
-        machinesByCategory={machinesByCategory}
-        onCategoryChange={(category) => {
-          setSelectedCategory(category);
-          setSelectedExamIds([]);
-        }}
-        onMachineStatusFilterChange={(status) => {
-          setMachineStatusFilter(status);
-          setSelectedMachineId('all');
-          setSelectedExamIds([]);
-        }}
-        onSelectMachine={(id) => {
-          setSelectedMachineId(id);
-          setSelectedExamIds([]);
-        }}
-        onStatusChange={handleMachineStatusChange}
-        onEditMachine={openMachine}
-        onDeleteMachine={requestDeleteMachine}
-        onAddMachine={() => openMachine()}
-      />
-
-      <ClinicalFilterPanel
-        t={t}
-        query={query}
-        selectedAnatomy={selectedAnatomy}
-        statusFilter={statusFilter}
-        contrastFilter={contrastFilter}
-        sortBy={sortBy}
-        anatomiesList={anatomiesList}
-        onQueryChange={(value) => {
-          setQuery(value);
-          setSelectedExamIds([]);
-        }}
-        onAnatomyChange={(value) => {
-          setSelectedAnatomy(value);
-          setSelectedExamIds([]);
-        }}
-        onStatusFilterChange={(value) => {
-          setStatusFilter(value);
-          setSelectedExamIds([]);
-        }}
-        onContrastFilterChange={(value) => {
-          setContrastFilter(value);
-          setSelectedExamIds([]);
-        }}
-        onSortByChange={setSortBy}
-        onClear={resetFilters}
-      />
-
-      <CatalogState
-        loading={examsLoading || machinesLoading}
-        error={examsError || machinesError}
-        empty={visibleExams.length === 0}
-        retry={() => Promise.all([refetchMachines(), refetchExams()])}
-        t={t}
-      >
-        <ProcedureList
-          t={t}
-          exams={visibleExams}
-          selectedExamIds={selectedExamIds}
-          allVisibleExamsSelected={allVisibleExamsSelected}
-          someVisibleExamsSelected={someVisibleExamsSelected}
-          onToggleVisibleSelection={handleToggleVisibleExamSelection}
-          onToggleExamSelection={handleToggleExamSelection}
-          onBulkActiveChange={handleBulkToggleActive}
-          onBulkDelete={requestBulkDeleteExams}
-          onToggleActive={handleToggleExamActive}
-          onEditExam={openExam}
-          onDeleteExam={requestDeleteExam}
-          onPreviewExam={setProcedurePreview}
-        />
-      </CatalogState>
-
-      <MachineDialog
-        open={Boolean(machineEditor)}
-        editing={machineEditor !== 'new'}
-        form={machineForm}
-        setForm={setMachineForm}
-        onClose={() => !busy && setMachineEditor(null)}
-        onSave={saveMachine}
-        busy={busy}
-        t={t}
-      />
-
-      <ExamDialog
-        open={Boolean(examEditor)}
-        editing={examEditor !== 'new'}
-        form={examForm}
-        setForm={setExamForm}
-        machines={normalizedMachines}
-      />
-
-      <ExamDialog
-        open={Boolean(examEditor)}
-        editing={examEditor !== 'new'}
-        form={examForm}
-        setForm={setExamForm}
-        machines={normalizedMachines}
-        onClose={() => !busy && setExamEditor(null)}
-        onSave={saveExam}
-        busy={busy}
-        t={t}
-      />
-
-      <ProcedurePreviewModal exam={procedurePreview} t={t} onClose={() => setProcedurePreview(null)} />
-
-      <ConfirmDialog
-        isOpen={Boolean(confirmAction)}
-        onClose={() => !busy && setConfirmAction(null)}
-        onConfirm={executeConfirmAction}
-        title={confirmAction?.title}
-        message={confirmAction?.message}
-        confirmLabel={confirmAction?.confirmLabel}
-        cancelLabel={t('settings.clinical.cancel', { defaultValue: 'Cancel' })}
-        variant={confirmAction?.variant || 'danger'}
-        isLoading={busy}
-      />
-
-      <ClinicalImportModal
-        isOpen={Boolean(importModalTarget)}
-        onClose={closeImportModal}
-        targetType={importModalTarget || 'exams'}
-        machines={normalizedMachines}
-        exams={normalizedExams}
-        onImportMachines={async (data) => createMachine(data).unwrap()}
-        onUpdateMachine={async (id, data) => updateMachine({ id, ...data }).unwrap()}
-        onImportExams={async (data) => createExam(data).unwrap()}
-        onUpdateExam={async (id, data) => updateExam({ id, ...data }).unwrap()}
-        isImporting={creatingMachine || updatingMachine || creatingExam || updatingExam}
-      />
-    </div>
-  );
+             <section className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="workstation-mappings-title">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h3 id="workstation-mappings-title" className="text-sm font-black text-slate-900 dark:text-white">
+                            {isArabic ? 'تخصيص محطات الاستقبال والغرف' : 'Reception Workstations & Room Mapping'}
+                        </h3>
+                        <p className="mt-1 max-w-3xl text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400">
+                            {isArabic ? 'أضف أو احذف المحطات واربط كل محطة بالغرف التي ستظهر لها في الاستقبال.' : 'Add or remove desks and assign the clinical rooms each workstation should receive.'}
+                        </p>
+                    </div>
+                    <button type="button" onClick={handleSaveWorkstationPresets} disabled={isSavingWorkstations || centerSettingsLoading} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-teal-600 px-3.5 text-xs font-black text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60">
+                        <CheckCircle2 size={14} />
+                        {isArabic ? 'حفظ التخصيص' : 'Save Configuration'}
+                    </button>
+                    <button type="button" onClick={() => openPresetEditor()} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl border border-teal-200 px-3.5 text-xs font-black text-teal-700 hover:bg-teal-50 dark:border-teal-800 dark:text-teal-300 dark:hover:bg-teal-950/30">
+                        <Plus size={14} />{isArabic ? 'إضافة محطة' : 'Add Workstation'}
+                    </button>
+                </div>
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    {workstationPresets.map((preset) => (
+                        <div key={preset.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/30">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">{preset.icon}</span>
+                                <div className="min-w-0">
+                                    <p className="truncate text-xs font-black text-slate-900 dark:text-white">{preset.label}</p>
+                                    <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">{isArabic ? preset.descAr : preset.descEn}</p>
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 gap-1">
+                                <button type="button" onClick={() => openPresetEditor(preset)} aria-label={isArabic ? 'تعديل المحطة' : 'Edit workstation'} className="rounded-lg p-1.5 text-slate-500 hover:bg-white hover:text-teal-700 dark:hover:bg-slate-800"><Pencil size={13} /></button>
+                                <button type="button" onClick={() => deletePreset(preset.id)} aria-label={isArabic ? 'حذف المحطة' : 'Delete workstation'} className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30"><Trash2 size={13} /></button>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                                {rooms.map((room) => {
+                                    const roomId = String(room.id || room.room_id || room.room_number || room.name);
+                                    const checked = (preset.roomIds || []).map(String).includes(roomId);
+                                    return (
+                                        <label key={roomId} className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${checked ? 'border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-300' : 'border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400'}`}>
+                                            <input type="checkbox" checked={checked} onChange={() => setWorkstationPresets((current) => current.map((item) => item.id === preset.id ? { ...item, roomIds: checked ? item.roomIds.filter((id) => String(id) !== roomId) : [...(item.roomIds || []), roomId], scope: 'rooms' } : item))} className="rounded text-teal-600 focus:ring-teal-500" />
+                                            {room.name || room.room_number || roomId}
+                                        </label>
+                                    );
+                                })}
+                                {rooms.length === 0 && <span className="text-xs text-slate-400">{isArabic ? 'لا توجد غرف متاحة' : 'No rooms available'}</span>}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                {editingPresetId && <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-50/60 p-4 dark:border-teal-900 dark:bg-teal-950/20">
+                    <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                        <input value={presetDraft.label} onChange={(event) => setPresetDraft((draft) => ({ ...draft, label: event.target.value }))} placeholder={isArabic ? 'اسم محطة الاستقبال' : 'Workstation name'} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold outline-none focus:border-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white" autoFocus />
+                        <div className="flex gap-2"><button type="button" onClick={savePresetDraft} className="rounded-xl bg-teal-600 px-4 text-xs font-black text-white">{isArabic ? 'تأكيد' : 'Confirm'}</button><button type="button" onClick={() => setEditingPresetId(null)} className="rounded-xl border border-slate-200 px-4 text-xs font-black text-slate-600 dark:border-slate-700 dark:text-slate-300">{isArabic ? 'إلغاء' : 'Cancel'}</button></div>
+                    </div>
+                </div>}
+                <p className="mt-3 text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                    {isArabic ? 'ملاحظة: يسري التغيير على هذا المتصفح بعد الحفظ، ويجب تغيير المحطة خارج الوردية المفتوحة.' : 'Note: Changes apply in this browser after saving. Switch desks only when no reception shift is open.'}
+                </p>
+            </section>
+        </div>
+    );
 };
 
 export default ClinicalOperationsSettings;

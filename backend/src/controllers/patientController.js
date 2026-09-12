@@ -50,17 +50,31 @@ const clinicalPatientScope = (role, patientAlias, parameter) => {
     if (role === 'Radiologist') {
         return `EXISTS (SELECT 1 FROM examinations scope_exam
                         WHERE scope_exam.patient_id = ${patientAlias}.patient_id
-                          AND (scope_exam.performing_radiologist_id = ${parameter} OR scope_exam.performing_radiologist_id IS NULL))`;
+                          AND (
+                              scope_exam.performing_radiologist_id = ${parameter}
+                              OR (scope_exam.current_station = 'Radiologist'
+                                  AND scope_exam.performing_radiologist_id IS NULL)
+                          ))`;
     }
     if (role === 'Technician') {
         return `EXISTS (SELECT 1 FROM appointments scope_appt
+                        JOIN examinations scope_exam ON scope_exam.appointment_id = scope_appt.appointment_id
                         WHERE scope_appt.patient_id = ${patientAlias}.patient_id
-                          AND (scope_appt.technician_id = ${parameter} OR scope_appt.technician_id IS NULL))`;
+                          AND (
+                              scope_appt.technician_id = ${parameter}
+                              OR (scope_exam.current_station = 'Modality'
+                                  AND scope_appt.technician_id IS NULL)
+                          ))`;
     }
     if (role === 'Nurse') {
         return `EXISTS (SELECT 1 FROM appointments scope_appt
+                        JOIN examinations scope_exam ON scope_exam.appointment_id = scope_appt.appointment_id
                         WHERE scope_appt.patient_id = ${patientAlias}.patient_id
-                          AND (scope_appt.nurse_id = ${parameter} OR scope_appt.nurse_id IS NULL))`;
+                          AND (
+                              scope_appt.nurse_id = ${parameter}
+                              OR (scope_exam.current_station = 'Nurse'
+                                  AND scope_appt.nurse_id IS NULL)
+                          ))`;
     }
     return null;
 };
@@ -431,21 +445,17 @@ const getPatientHistory = (db) => async (req, res, next) => {
         const { id } = req.params;
 
         // 1. Fetch Basic Patient Info
+        const patientValues = [id];
+        const patientScope = clinicalPatientScope(req.user.role, 'p', `$${patientValues.length + 1}`);
+        if (patientScope) patientValues.push(req.user.user_id);
         const patientQuery = `
             SELECT p.*, manager.full_name as assigned_manager_name
             FROM patients p
             LEFT JOIN users manager ON p.assigned_manager_id = manager.user_id
             WHERE p.patient_id = $1
-              AND ($2::uuid IS NULL OR EXISTS (
-                    SELECT 1 FROM examinations assigned_exam
-                    WHERE assigned_exam.patient_id = p.patient_id
-                      AND (assigned_exam.performing_radiologist_id = $2 OR assigned_exam.performing_radiologist_id IS NULL)
-              ))
+              ${patientScope ? `AND ${patientScope}` : ''}
         `;
-        const patientResult = await db.query(patientQuery, [
-            id,
-            req.user.role === 'Radiologist' ? req.user.user_id : null
-        ]);
+        const patientResult = await db.query(patientQuery, patientValues);
 
         if (patientResult.rows.length === 0) {
             return next(new AppError('Patient not found', 404));

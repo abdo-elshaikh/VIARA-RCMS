@@ -45,6 +45,8 @@ import toast from 'react-hot-toast';
 import { useGetCaseReportsQuery, useGetWorklistQuery } from '../store/api';
 import { formatDateTime, formatLocalizedDate } from '../utils/localizedDate';
 import { authenticatedFetch } from '../utils/authenticatedFetch';
+import PageHeader from '../components/ui/PageHeader';
+import { printWhenReady } from '../utils/printDocument';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const STATUS_ORDER = ['Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Finalized'];
@@ -433,7 +435,7 @@ const CaseDetailsPage = () => {
             window.setTimeout(() => URL.revokeObjectURL(url), 60000);
         } catch {
             toast.error(isAr ? ar.printError : 'Could not open report PDF.');
-            window.print();
+            await printWhenReady();
         } finally {
             setIsPrintingReport(false);
         }
@@ -458,6 +460,19 @@ const CaseDetailsPage = () => {
 
     return (
         <div className="space-y-4 pb-12" dir={isRtl ? 'rtl' : 'ltr'}>
+            <PageHeader
+                icon={FileSearch}
+                eyebrow={tr(t, 'caseDetails.eyebrow', 'Case File', ar.eyebrow, isAr)}
+                title={examTitle}
+                description={`${patientName} · ${exam.mrn || '-'} · #${exam.order_number || examId}`}
+                metrics={[
+                    { key: 'status', icon: Activity, label: isAr ? 'حالة الفحص' : 'Exam status', value: translatedStatus, tone: status === 'Finalized' ? 'emerald' : 'teal' },
+                    { key: 'priority', icon: ShieldAlert, label: isAr ? 'الأولوية' : 'Priority', value: translatedPriority, tone: priority === 'Routine' ? 'slate' : 'rose' },
+                    { key: 'report', icon: FileCheck2, label: isAr ? 'حالة التقرير' : 'Report status', value: isReportComplete ? (isAr ? 'متاح' : 'Available') : (isAr ? 'قيد الإعداد' : 'In progress'), tone: isReportComplete ? 'emerald' : 'amber' },
+                    { key: 'radiologist', icon: Stethoscope, label: isAr ? 'طبيب الأشعة' : 'Radiologist', value: radiologist || (isAr ? 'غير معيّن' : 'Unassigned'), tone: radiologist ? 'blue' : 'slate' }
+                ]}
+                metricsLabel={isAr ? 'مؤشرات سجل الحالة' : 'Case record indicators'}
+            />
             {/* Top Navigation & Action Command Bar */}
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-4">
                 <div className="flex items-center gap-2.5">
@@ -479,9 +494,9 @@ const CaseDetailsPage = () => {
                                 #{exam.order_number || examId}
                             </span>
                         </div>
-                        <h1 className="text-sm font-black text-slate-900 dark:text-white sm:text-base">
+                        <h2 className="text-sm font-black text-slate-900 dark:text-white sm:text-base">
                             {examTitle}
-                        </h1>
+                        </h2>
                     </div>
                 </div>
 

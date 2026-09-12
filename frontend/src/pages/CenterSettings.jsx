@@ -379,20 +379,20 @@ const CenterSettings = ({ embedded = false }) => {
         : navSections;
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-28">
+        <div className={embedded ? 'space-y-5 pb-0' : 'mx-auto max-w-7xl space-y-6 pb-28'}>
             {/* VIARA Hero Command Deck */}
-            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8 space-y-6">
-                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
-                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
+            <div className="cs-hero sm:p-8 space-y-6">
+                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-[rgba(var(--VIARA-accent-rgb),.07)] blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-[rgba(var(--VIARA-accent-rgb),.04)] blur-3xl" />
 
                 <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex items-start gap-4 sm:items-center min-w-0">
-                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-sky-500/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
+                        <div className="cs-hero-icon">
                             <Building2 size={26} strokeWidth={2} />
                         </div>
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                                <span className="cs-hero-badge">
                                     <BadgeCheck size={11} />
                                     <span>Facility & Clinical Brand Identity</span>
                                 </span>
@@ -408,10 +408,10 @@ const CenterSettings = ({ embedded = false }) => {
                                     </span>
                                 )}
                             </div>
-                            <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                            <h1 className="mt-1 break-words text-2xl font-black text-[var(--VIARA-ink)] sm:text-3xl">
                                 {t('header.title', { defaultValue: 'Facility & Center Settings' })}
                             </h1>
-                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
+                            <p className="mt-1 break-words text-xs font-semibold leading-5 text-[var(--VIARA-muted)] sm:text-sm">
                                 {t('header.description', { defaultValue: 'Maintain healthcare organization identity, branch overrides, brand colors, document templates, and print defaults.' })}
                             </p>
                         </div>
@@ -422,7 +422,7 @@ const CenterSettings = ({ embedded = false }) => {
                             <button
                                 type="button"
                                 onClick={reset}
-                                className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 px-4 text-xs font-bold text-slate-700 shadow-2xs backdrop-blur-md transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800"
+                                className="ds-btn-secondary"
                             >
                                 <RotateCcw size={14} />
                                 <span>{t('actions.discard', { defaultValue: 'Discard' })}</span>
@@ -432,7 +432,7 @@ const CenterSettings = ({ embedded = false }) => {
                             type="button"
                             onClick={handleSave}
                             disabled={!dirty || !hoursValid || updateState.isLoading}
-                            className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 text-xs font-bold text-white shadow-sm transition hover:bg-teal-500 disabled:opacity-50"
+                            className="ds-btn-primary"
                         >
                             <Save size={14} />
                             <span>{updateState.isLoading ? t('actions.saving', { defaultValue: 'Saving...' }) : t('actions.save', { defaultValue: 'Save Changes' })}</span>
@@ -442,43 +442,43 @@ const CenterSettings = ({ embedded = false }) => {
 
                 {/* Telemetry Facts HUD */}
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-slate-100/80 px-4 py-3 shadow-2xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-300">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
-                            <Building2 size={16} className="text-teal-600 dark:text-teal-400" />
+                    <div className="cs-hero-stat">
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">Primary Entity</p>
+                            <p className="font-mono text-sm font-black text-[var(--VIARA-ink)] truncate">{form.center_name || form.legal_name || 'VIARA Radiology'}</p>
                         </div>
-                        <div className="min-w-0">
-                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Primary Entity</p>
-                            <p className="font-mono text-sm font-black text-slate-900 dark:text-white truncate">{form.center_name || form.legal_name || 'VIARA Radiology'}</p>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-emerald-800 dark:text-emerald-300">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
-                            <Building size={16} className="text-emerald-600 dark:text-emerald-400" />
-                        </div>
-                        <div className="min-w-0">
-                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">Active Branch</p>
-                            <p className="font-mono text-sm font-black text-emerald-900 dark:text-white truncate">{form.branch_code || form.center_id || 'MAIN'}</p>
+                        <div className="cs-hero-stat-icon">
+                            <Building2 size={16} className="text-[var(--VIARA-accent-text)]" />
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3 rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-sky-800 dark:text-sky-300">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
-                            <Phone size={16} className="text-sky-600 dark:text-sky-400" />
+                    <div className="cs-hero-stat">
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">Active Branch</p>
+                            <p className="font-mono text-sm font-black text-[var(--VIARA-ink)] truncate">{form.branch_code || form.center_id || 'MAIN'}</p>
                         </div>
-                        <div className="min-w-0">
-                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">Direct Hotline</p>
-                            <p className="font-mono text-sm font-black text-sky-900 dark:text-white truncate">{form.hotline || form.phone || '+20 (0)2-2345678'}</p>
+                        <div className="cs-hero-stat-icon">
+                            <Building size={16} className="text-[var(--VIARA-accent-text)]" />
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 shadow-2xs backdrop-blur-md text-amber-800 dark:text-amber-300">
-                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/80 dark:bg-slate-900/80 shadow-2xs">
-                            <Clock3 size={16} className="text-amber-600 dark:text-amber-400" />
+                    <div className="cs-hero-stat">
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">Direct Hotline</p>
+                            <p className="font-mono text-sm font-black text-[var(--VIARA-ink)] truncate">{form.hotline || form.phone || '+20 (0)2-2345678'}</p>
                         </div>
-                        <div className="min-w-0">
-                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">Clinical Hours</p>
-                            <p className="font-mono text-sm font-black text-amber-900 dark:text-white truncate">{`${form.working_hours?.start ?? 8}:00 - ${form.working_hours?.end ?? 22}:00`}</p>
+                        <div className="cs-hero-stat-icon">
+                            <Phone size={16} className="text-[var(--VIARA-info)]" />
+                        </div>
+                    </div>
+
+                    <div className="cs-hero-stat">
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">Clinical Hours</p>
+                            <p className="font-mono text-sm font-black text-[var(--VIARA-ink)] truncate">{`${form.working_hours?.start ?? 8}:00 - ${form.working_hours?.end ?? 22}:00`}</p>
+                        </div>
+                        <div className="cs-hero-stat-icon">
+                            <Clock3 size={16} className="text-[var(--VIARA-warning)]" />
                         </div>
                     </div>
                 </div>
@@ -578,7 +578,7 @@ const CenterSettings = ({ embedded = false }) => {
                                             }}
                                             className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
                                                 active
-                                                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 ring-1 ring-emerald-500'
+                                                    ? 'bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)] shadow-md ring-1 ring-[rgba(var(--VIARA-accent-rgb),.5)]'
                                                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
                                             }`}
                                         >
@@ -1154,17 +1154,17 @@ const HeaderSignal = ({ icon: Icon, label }) => (
 );
 
 const SettingsSection = ({ id, icon: Icon, title, description, children }) => (
-    <section id={id} className="scroll-mt-8 rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
-        <div className="flex items-start gap-3.5 border-b border-slate-100 p-4 dark:border-slate-800/80 sm:p-5">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-900/50">
+    <section id={id} className="settings-section">
+        <div className="settings-section-header">
+            <span className="settings-section-icon">
                 <Icon size={19} />
             </span>
             <div>
-                <h2 className="text-base font-black text-slate-900 dark:text-white sm:text-lg">{title}</h2>
-                <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</p>
+                <h2 className="text-base font-black text-[var(--VIARA-ink)] sm:text-lg">{title}</h2>
+                <p className="mt-0.5 text-xs leading-5 text-[var(--VIARA-muted)]">{description}</p>
             </div>
         </div>
-        <div className="p-4 sm:p-5">{children}</div>
+        <div className="settings-section-body">{children}</div>
     </section>
 );
 
@@ -1184,16 +1184,16 @@ const Field = ({ label, hint, required, icon: Icon, counter, className = '', chi
 );
 
 const ToggleField = ({ label, checked, onChange, className = '' }) => (
-    <label className={`flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3.5 py-2.5 transition hover:bg-slate-100/70 dark:border-slate-800/80 dark:bg-slate-950/40 dark:hover:bg-slate-900 ${className}`}>
-        <span className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
-            <ToggleLeft size={16} className={checked ? 'text-emerald-600' : 'text-slate-400'} />
+    <label className={`flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3.5 py-2.5 transition hover:bg-[var(--VIARA-surface-hover)] ${className}`}>
+        <span className="flex items-center gap-2 text-xs font-bold text-[var(--VIARA-ink)]">
+            <ToggleLeft size={16} className={checked ? 'text-[var(--VIARA-accent-text)]' : 'text-[var(--VIARA-muted)]'} />
             {label}
         </span>
         <input
             type="checkbox"
             checked={checked}
             onChange={(event) => onChange(event.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+            className="ds-checkbox"
         />
     </label>
 );

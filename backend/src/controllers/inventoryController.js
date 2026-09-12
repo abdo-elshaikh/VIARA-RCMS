@@ -135,6 +135,7 @@ const defaultConsumeStockSchema = z.object({
 
 const consumeStock = (db) => async (req, res, next) => {
     let client;
+    let supplyNotificationPayload = null;
     try {
         const schema = typeof consumeStockSchema !== 'undefined' && consumeStockSchema ? consumeStockSchema : defaultConsumeStockSchema;
         const data = schema.parse(req.body);
@@ -236,12 +237,16 @@ const consumeStock = (db) => async (req, res, next) => {
         // If consumed for an exam, check if an active invoice already exists and auto-append the item
         if (data.referenceType === 'Exam' && data.referenceId) {
             const existingInvoice = await client.query(`
-                SELECT invoice_id, subtotal_amount, total_amount, patient_payable_amount
-                FROM invoices
-                WHERE exam_id = $1 AND invoice_status <> 'Voided'
-                ORDER BY generated_at DESC
+                SELECT i.invoice_id, i.invoice_number, i.subtotal_amount, i.total_amount, i.patient_payable_amount,
+                       p.first_name_enc, p.last_name_enc, p.mrn, e.exam_id
+                FROM invoices i
+                LEFT JOIN examinations e ON i.exam_id = e.exam_id OR i.appointment_id = e.appointment_id
+                LEFT JOIN patients p ON i.patient_id = p.patient_id
+                WHERE (i.exam_id = $1 OR e.exam_id = $1 OR i.appointment_id = (SELECT appointment_id FROM examinations WHERE exam_id = $1))
+                  AND i.invoice_status <> 'Voided'
+                ORDER BY i.generated_at DESC
                 LIMIT 1
-                FOR UPDATE
+                FOR UPDATE OF i
             `, [data.referenceId]);
 
             if (existingInvoice.rows.length > 0) {
@@ -263,11 +268,45 @@ const consumeStock = (db) => async (req, res, next) => {
                     totalAmount
                 ]);
 
-                await recalculateInvoiceAfterItemChange(client, inv.invoice_id, userId);
+                const updatedInvoice = await recalculateInvoiceAfterItemChange(client, inv.invoice_id, userId);
+                const balanceResult = await client.query(`
+                    SELECT GREATEST(
+                        i.patient_payable_amount
+                        - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.invoice_id AND p.payment_status = 'Completed'), 0)
+                        + COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0)
+                        - COALESCE((SELECT SUM(c.patient_amount) FROM credit_notes c WHERE c.invoice_id = i.invoice_id AND c.reversed_at IS NULL), 0),
+                        0
+                    ) AS balance_amount
+                    FROM invoices i
+                    WHERE i.invoice_id = $1
+                `, [inv.invoice_id]);
+
+                // Dispatch notification to Cashier and Accountant
+                const patName = [decrypt(inv.first_name_enc), decrypt(inv.last_name_enc)].filter(Boolean).join(' ') || 'المريض';
+                supplyNotificationPayload = {
+                    priority: 'Action',
+                    entityType: 'Invoice',
+                    entityId: inv.invoice_id,
+                    variables: {
+                        patient_name: patName,
+                        mrn: inv.mrn || '',
+                        invoice_number: inv.invoice_number || '',
+                        item_name: itemName,
+                        item_amount: totalAmount,
+                        balance_amount: balanceResult.rows[0]?.balance_amount ?? updatedInvoice?.patient_payable_amount ?? totalAmount,
+                        exam_id: data.referenceId
+                    }
+                };
             }
         }
 
         await client.query('COMMIT');
+        if (supplyNotificationPayload) {
+            triggerEventForRole(db, 'SUPPLY_ADDED_PAYMENT_DUE', 'Accountant', supplyNotificationPayload)
+                .catch(err => req.log?.warn?.({ err }, 'Failed to notify Accountant about supply charge'));
+            triggerEventForRole(db, 'SUPPLY_ADDED_PAYMENT_DUE', 'Cashier', supplyNotificationPayload)
+                .catch(err => req.log?.warn?.({ err }, 'Failed to notify Cashier about supply charge'));
+        }
         res.json({ message: 'Stock consumed successfully', quantity: data.quantity, unitPrice, totalAmount });
     } catch (error) {
         if (client) await client.query('ROLLBACK');

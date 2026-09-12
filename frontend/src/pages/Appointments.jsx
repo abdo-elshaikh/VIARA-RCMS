@@ -6,7 +6,7 @@ import {
     FilterX, Gauge, ListChecks, Plus, RotateCw, Search,
     SlidersHorizontal, Sparkles, UserPlus, UserX, X, Zap, XCircle,
     Grid3X3, Table2, Eye, EyeOff, FileSpreadsheet, Printer,
-    Clock4, Users, Building2
+    Clock4, Users, Building2, BarChart3
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -34,6 +34,7 @@ import useDebounce from '../hooks/useDebounce';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
 import Scheduler from '../components/ui/Scheduler';
 import PageHeader from '../components/ui/PageHeader';
+import Pagination from '../components/ui/Pagination';
 import MetricCard from '../components/ui/MetricCard';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
@@ -194,6 +195,22 @@ const statusConfig = {
         border: 'border-cyan-200 dark:border-cyan-900/50',
         text: 'text-cyan-700 dark:text-cyan-400',
         icon: Clock4
+    },
+    'Checked-in': {
+        rail: '#06b6d4',
+        dot: 'bg-cyan-500',
+        bg: 'bg-cyan-50 dark:bg-cyan-950/30',
+        border: 'border-cyan-200 dark:border-cyan-900/50',
+        text: 'text-cyan-700 dark:text-cyan-400',
+        icon: Clock4
+    },
+    Arrived: {
+        rail: '#0d9488',
+        dot: 'bg-teal-500',
+        bg: 'bg-teal-50 dark:bg-teal-950/30',
+        border: 'border-teal-200 dark:border-teal-900/50',
+        text: 'text-teal-700 dark:text-teal-400',
+        icon: Clock4
     }
 };
 
@@ -206,6 +223,43 @@ const AVATAR_SHADES = [
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
+
+const STATUS_LABELS_AR = {
+    all: 'كل الحالات',
+    Scheduled: 'مجدول',
+    Confirmed: 'مؤكد',
+    Arrived: 'حاضر بالمركز',
+    'Checked-In': 'تم الوصول',
+    'Checked-in': 'تم الوصول',
+    'In-Progress': 'قيد التنفيذ',
+    'In Progress': 'قيد التنفيذ',
+    Completed: 'مكتمل',
+    Cancelled: 'ملغي',
+    'No-Show': 'لم يحضر'
+};
+
+const getStatusDisplayLabel = (status, t, lng = 'ar') => {
+    if (status === 'all') return lng?.startsWith('ar') ? 'كل الحالات' : t('filters.allStatuses', 'All');
+    if (lng?.startsWith('ar') && STATUS_LABELS_AR[status]) {
+        return STATUS_LABELS_AR[status];
+    }
+    return t(`status.${status}`, status);
+};
+
+const PRIORITY_LABELS_AR = {
+    all: 'كل الأولويات',
+    Routine: 'روتيني',
+    Urgent: 'عاجل',
+    Emergency: 'طارئ'
+};
+
+const getPriorityDisplayLabel = (priority, t, lng = 'ar') => {
+    if (priority === 'all') return lng?.startsWith('ar') ? 'كل الأولويات' : t('filters.allPriorities', 'All Priorities');
+    if (lng?.startsWith('ar') && PRIORITY_LABELS_AR[priority]) {
+        return PRIORITY_LABELS_AR[priority];
+    }
+    return t(`priority.${priority}`, priority);
+};
 
 const getAvatarShade = (name = '') => {
     const index = name ? name.charCodeAt(0) % AVATAR_SHADES.length : 0;
@@ -305,6 +359,8 @@ const Appointments = () => {
     const [showWaitlistForm, setShowWaitlistForm] = useState(false);
     const [showFilters, setShowFilters] = useState(true);
     const [showMetrics, setShowMetrics] = useState(true);
+    const [showOperationalInsights, setShowOperationalInsights] = useState(false);
+    const [showSidePanel, setShowSidePanel] = useState(false);
     const [focusedAppointment, setFocusedAppointment] = useState(null);
 
     const range = useMemo(() => getRange(date, viewMode), [date, viewMode]);
@@ -397,7 +453,8 @@ const Appointments = () => {
         };
     }, [availability, machineAppointments, machines.length, range.endDate, range.startDate, selectedMachineId, viewMode]);
 
-    const hasActiveFilters = Boolean(searchTerm || statusFilter !== 'all' || priorityFilter !== 'all');
+    const activeFilterCount = (searchTerm ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0) + (priorityFilter !== 'all' ? 1 : 0) + (selectedMachineId !== 'all' ? 1 : 0);
+    const hasActiveFilters = Boolean(activeFilterCount > 0);
     const isToday = date === toDateInput();
     const language = i18n.language;
     const rangeLabel = {
@@ -467,7 +524,12 @@ const Appointments = () => {
         !appt.radiologist_name && !appt.technician_name && !appt.nurse_name
     ).length, [machineAppointments]);
 
-    const clearFilters = () => { setSearchTerm(''); setStatusFilter('all'); setPriorityFilter('all'); };
+    const clearFilters = () => {
+        setSearchTerm('');
+        setStatusFilter('all');
+        setPriorityFilter('all');
+        setSelectedMachineId('all');
+    };
 
     const exportSchedule = () => {
         const headers = [
@@ -576,40 +638,65 @@ const Appointments = () => {
     });
 
     return (
-        <div className="space-y-5 sm:space-y-6">
+        <div className="space-y-3.5 sm:space-y-4">
             <PageHeader
+                compact={true}
                 icon={CalendarRange}
                 eyebrowIcon={Activity}
-                eyebrow={t('command.eyebrow', 'Scheduling command center')}
-                title={t('title', 'Appointment Management')}
-                description={t('subtitle', 'Schedule, track, and manage all patient appointments')}
+                eyebrow={t('command.eyebrow', 'مركز قيادة الجدولة')}
+                title={t('title', 'منصة الجدولة')}
+                description={t('subtitle', 'أدوات التقويم وتوفر الغرف وحمل الطاقم وقائمة الانتظار وإعادة الجدولة')}
+                metrics={[
+                    {
+                        key: 'booked',
+                        label: t('overview.booked', 'Booked studies'),
+                        value: scheduleStats.active,
+                        icon: CalendarCheck2,
+                        tone: 'teal',
+                        detail: t('overview.bookedDetail', 'Total appointments in range')
+                    },
+                    {
+                        key: 'confirmed',
+                        label: t('overview.confirmed', 'Ready to run'),
+                        value: scheduleStats.confirmed,
+                        icon: ListChecks,
+                        tone: 'emerald',
+                        detail: t('overview.confirmedDetail', 'Confirmed & scheduled')
+                    },
+                    {
+                        key: 'urgent',
+                        label: t('overview.urgent', 'Priority studies'),
+                        value: scheduleStats.urgent,
+                        icon: Zap,
+                        tone: 'amber',
+                        detail: t('overview.urgentDetail', 'Urgent & emergency cases')
+                    },
+                    {
+                        key: 'utilization',
+                        label: t('overview.utilization', 'Room utilization'),
+                        value: `${scheduleStats.utilization}%`,
+                        icon: Gauge,
+                        tone: 'violet',
+                        detail: t('overview.utilizationDetail', 'Booked minutes vs capacity')
+                    },
+                ]}
+                metricsLabel={t('overview.metricsLabel', 'نظرة عامة على أداء الجدول')}
                 meta={
-                    <div className="grid w-full gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                        <CommandFact
-                            icon={Calendar}
-                            label={t('command.period', 'Period')}
-                            value={viewMode === 'day' ? formatDateOnly(date, language) : `${rangeLabel.start} - ${rangeLabel.end}`}
-                        />
-                        <CommandFact
-                            icon={Building2}
-                            label={t('command.roomScope', 'Room scope')}
-                            value={selectedMachineName}
-                        />
-                        <CommandFact
-                            icon={ListChecks}
-                            label={t('command.visible', 'Visible')}
-                            value={t('filters.results', {
-                                shown: formatNumber(visibleAppointments.length, language),
-                                total: formatNumber(machineAppointments.length, language)
-                            })}
-                        />
-                        <CommandFact
-                            icon={Clock}
-                            label={t('command.next', 'Next appointment')}
-                            value={nextAppointment
-                                ? `${formatTime(nextAppointment.start_time, language)} - ${nextAppointment.patient_name || nextAppointment.mrn}`
-                                : t('command.noNext', 'No upcoming appointment')}
-                        />
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                            <Calendar size={12} className="text-teal-600 dark:text-teal-400" />
+                            <span>{viewMode === 'day' ? formatDateOnly(date, language) : `${rangeLabel.start} - ${rangeLabel.end}`}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                            <Building2 size={12} className="text-teal-600 dark:text-teal-400" />
+                            <span>{selectedMachineName}</span>
+                        </span>
+                        {nextAppointment && (
+                            <span className="hidden md:inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                                <Clock size={12} className="text-teal-600 dark:text-teal-400" />
+                                <span>{t('command.next', 'القادم:')} {formatTime(nextAppointment.start_time, language)} - {nextAppointment.patient_name || nextAppointment.mrn}</span>
+                            </span>
+                        )}
                     </div>
                 }
                 actions={
@@ -617,30 +704,33 @@ const Appointments = () => {
                         {isFetchingAppointments && (
                             <span className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-bold text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
                                 <RotateCw size={14} className="animate-spin" />
-                                {t('status.refreshing', 'Refreshing')}
+                                <span>{t('status.refreshing', 'تحديث...')}</span>
                             </span>
                         )}
                         <button
                             type="button"
-                            onClick={() => setShowMetrics(!showMetrics)}
-                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-teal-700 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface-hover)]"
+                            onClick={() => setShowOperationalInsights(!showOperationalInsights)}
+                            className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition ${showOperationalInsights
+                                ? 'border-teal-400 bg-teal-50 text-teal-800 ring-1 ring-teal-400/20 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                            }`}
                         >
-                            {showMetrics ? <EyeOff size={14} /> : <Eye size={14} />}
-                            {showMetrics ? t('metrics.hide', 'Hide Metrics') : t('metrics.show', 'Show Metrics')}
+                            <BarChart3 size={15} />
+                            <span>{showOperationalInsights ? t('analytics.hide', 'إخفاء التحليلات') : t('analytics.show', 'التحليلات والتدفق')}</span>
                         </button>
                         <button
                             type="button"
                             onClick={exportSchedule}
                             disabled={visibleAppointments.length === 0}
-                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface-hover)]"
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
                         >
                             <FileSpreadsheet size={15} />
-                            {t('actions.exportSchedule', 'Export CSV')}
+                            <span>{t('actions.exportSchedule', 'تصدير الجدول')}</span>
                         </button>
                         <button
                             type="button"
                             onClick={() => window.print()}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-teal-700 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface-hover)]"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
                             title={t('actions.print', 'Print')}
                             aria-label={t('actions.print', 'Print')}
                         >
@@ -648,235 +738,324 @@ const Appointments = () => {
                         </button>
                         <Link
                             to="/appointments/new"
-                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-xs font-black text-white shadow-sm transition hover:bg-teal-800 active:scale-[0.98] dark:bg-white dark:text-slate-950 dark:hover:bg-teal-100"
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-xs font-black text-white shadow-sm transition hover:bg-teal-800 active:scale-[0.98] dark:bg-teal-600 dark:text-white dark:hover:bg-teal-500"
                         >
                             <Plus size={16} />
-                            {t('actions.newAppointment', 'New Appointment')}
+                            <span>{t('actions.newAppointment', 'حجز موعد جديد')}</span>
                         </Link>
                     </>
                 }
             />
 
-            {hasAnyError && (
-                <div className="flex flex-col items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-950/20">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-red-700 dark:text-red-300">
-                        <AlertCircle size={16} />
-                        {t('error.loadFailed', 'Failed to load appointment data')}
-                    </div>
+            {/* Compact Interactive KPI Command Strip */}
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/70 bg-slate-50/60 p-2 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)]/60">
+                {/* Total Booked */}
+                <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold transition hover:border-teal-300 hover:shadow-2xs dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]"
+                    title={t('overview.bookedTooltip', 'عرض كافة المواعيد')}
+                >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-400">
+                        <CalendarRange size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('overview.booked', 'إجمالي المواعيد')}</span>
+                    <span className="font-mono text-xs font-black text-slate-900 dark:text-white">{formatNumber(scheduleStats.total, language)}</span>
+                </button>
+
+                {/* Ready / Confirmed */}
+                <button
+                    type="button"
+                    onClick={() => { setStatusFilter(statusFilter === 'Confirmed' ? 'all' : 'Confirmed'); setPriorityFilter('all'); }}
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition hover:shadow-2xs ${statusFilter === 'Confirmed'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-500/20 dark:bg-emerald-950/40 dark:text-emerald-200'
+                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-emerald-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                    }`}
+                >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
+                        <CheckCircle2 size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('overview.confirmed', 'جاهزة ومؤكدة')}</span>
+                    <span className="font-mono text-xs font-black text-emerald-700 dark:text-emerald-400">{formatNumber(scheduleStats.confirmed, language)}</span>
+                </button>
+
+                {/* Arrived */}
+                <button
+                    type="button"
+                    onClick={() => { setStatusFilter(statusFilter === 'Arrived' ? 'all' : 'Arrived'); setPriorityFilter('all'); }}
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition hover:shadow-2xs ${statusFilter === 'Arrived'
+                        ? 'border-amber-500 bg-amber-50 text-amber-900 ring-1 ring-amber-500/20 dark:bg-amber-950/40 dark:text-amber-200'
+                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-amber-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                    }`}
+                >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400">
+                        <Clock4 size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('status.Arrived', 'حاضر بالمركز')}</span>
+                    <span className="font-mono text-xs font-black text-amber-700 dark:text-amber-400">{formatNumber(statusCounts.Arrived || 0, language)}</span>
+                </button>
+
+                {/* Urgent / Priority */}
+                <button
+                    type="button"
+                    onClick={() => { setPriorityFilter(priorityFilter === 'Urgent' ? 'all' : 'Urgent'); }}
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition hover:shadow-2xs ${priorityFilter === 'Urgent'
+                        ? 'border-rose-500 bg-rose-50 text-rose-900 ring-1 ring-rose-500/20 dark:bg-rose-950/40 dark:text-rose-200'
+                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-rose-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                    }`}
+                >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400">
+                        <AlertCircle size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('overview.urgent', 'حالات عاجلة')}</span>
+                    <span className="font-mono text-xs font-black text-rose-700 dark:text-rose-400">{formatNumber(scheduleStats.urgent, language)}</span>
+                </button>
+
+                {/* Room Utilization */}
+                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-cyan-50 text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-400">
+                        <Gauge size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('overview.utilization', 'إشغال الغرف')}</span>
+                    <span className="font-mono text-xs font-black text-cyan-700 dark:text-cyan-400">{formatNumber(scheduleStats.utilization, language)}%</span>
+                </div>
+
+                {/* Waitlist */}
+                <button
+                    type="button"
+                    onClick={() => setShowSidePanel(true)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold transition hover:border-teal-300 hover:shadow-2xs dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]"
+                >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-400">
+                        <Users size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('command.waitingPressure', 'قائمة الانتظار')}</span>
+                    <span className="font-mono text-xs font-black text-violet-700 dark:text-violet-400">{formatNumber(waitingList.length, language)}</span>
+                </button>
+
+                {/* Disruptions (No-show & Cancelled) */}
+                {(scheduleStats.noShow > 0 || scheduleStats.cancelled > 0) && (
                     <button
                         type="button"
-                        onClick={retryAll}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-red-700 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-red-800"
+                        onClick={() => { setStatusFilter(statusFilter === 'No-Show' ? 'Cancelled' : statusFilter === 'Cancelled' ? 'all' : 'No-Show'); }}
+                        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition hover:shadow-2xs ${['No-Show', 'Cancelled'].includes(statusFilter)
+                            ? 'border-slate-500 bg-slate-100 text-slate-900 ring-1 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-100'
+                            : 'border-slate-200/80 bg-white text-slate-700 hover:border-slate-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                        }`}
                     >
-                        <RotateCw size={12} />
-                        {t('actions.retry', 'Retry')}
+                        <span className="flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            <UserX size={12} />
+                        </span>
+                        <span className="text-slate-500 dark:text-slate-400">{t('overview.disruptions', 'غياب / ملغي')}</span>
+                        <span className="font-mono text-xs font-black text-slate-700 dark:text-slate-300">{formatNumber(scheduleStats.noShow + scheduleStats.cancelled, language)}</span>
                     </button>
-                </div>
+                )}
+
+                {/* Active Filters Clear Button */}
+                {hasActiveFilters && (
+                    <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="ms-auto inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-black text-rose-700 transition hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300"
+                    >
+                        <FilterX size={12} />
+                        <span>{t('filters.reset', 'إلغاء التصفيات')}</span>
+                        <span className="grid h-4 w-4 place-items-center rounded-full bg-rose-600 font-mono text-[9px] text-white">
+                            {activeFilterCount}
+                        </span>
+                    </button>
+                )}
+            </div>
+
+            {/* Optional Collapsible Operational Insights Drawer */}
+            {showOperationalInsights && (
+                <section className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,.75fr)] transition-all animate-fadeIn">
+                    <div className={`${cardBase} p-4 sm:p-5`}>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <p className={sectionHeadingClass}>{t('command.readiness', 'Schedule readiness')}</p>
+                                <h2 className="mt-1 text-base font-black tracking-tight text-slate-950 dark:text-white">
+                                    {t('command.operationalControl', 'التحكم التشغيلي اليومي')}
+                                </h2>
+                            </div>
+                            <span className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-400">
+                                <Gauge size={12} />
+                                {formatNumber(scheduleStats.activeMachines, language)} {t('command.activeRooms', 'غرفة نشطة')}
+                            </span>
+                        </div>
+
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                            <OperationSignal icon={CheckCircle2} label={t('command.completionRate', 'معدل الإكمال')} value={`${formatNumber(completionRate, language)}%`} detail={t('command.completedOfActive', { completed: formatNumber(scheduleStats.completed, language), active: formatNumber(scheduleStats.active, language), defaultValue: '{{completed}} من {{active}} مكتمل' })} tone="emerald" />
+                            <OperationSignal icon={AlertCircle} label={t('command.disruptionRate', 'معدل التعطيل')} value={`${formatNumber(disruptionRate, language)}%`} detail={t('command.cancelNoShow', { count: formatNumber(scheduleStats.cancelled + scheduleStats.noShow, language), defaultValue: '{{count}} ملغي أو لم يحضر' })} tone={disruptionRate > 15 ? 'rose' : 'slate'} />
+                            <OperationSignal icon={Users} label={t('command.waitingPressure', 'ضغط قائمة الانتظار')} value={formatNumber(waitingList.length, language)} detail={t('waitlist.activeRequests', { count: formatNumber(waitingList.length, language) })} tone={waitingList.length > 0 ? 'amber' : 'slate'} />
+                            <OperationSignal icon={Building2} label={t('command.busiestRoom', 'أكثر الغرف انشغالاً')} value={busiestRoom?.name || '-'} detail={busiestRoom ? t('availability.bookedSlots', { count: formatNumber(busiestRoom.booked, language) }) : t('availability.noMachines', 'لا توجد أجهزة نشطة')} tone="cyan" />
+                        </div>
+
+                        <div className="mt-4 border-t border-slate-100 pt-3 dark:border-[var(--VIARA-line)]">
+                            <ProgressBar label={t('command.visibleShare', 'نسبة المعروض')} value={`${formatNumber(filteredShare, language)}%`} percent={filteredShare} tone="teal" />
+                        </div>
+                    </div>
+
+                    <div className={`${cardBase} p-4 sm:p-5`}>
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <p className={sectionHeadingClass}>{t('command.patientFlow', 'تدفق المرضى')}</p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                    {t('command.patientFlowDetail', 'الجدول الحالي حسب حالة سير العمل')}
+                                </p>
+                            </div>
+                            <span className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-black text-slate-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                                {formatNumber(scheduleStats.total, language)}
+                            </span>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                            {flowStages.map(stage => (
+                                <StageRow key={stage.key} stage={stage} total={Math.max(1, scheduleStats.total)} language={language} t={t} />
+                            ))}
+                        </div>
+                    </div>
+                </section>
             )}
 
-            {/* Metrics Grid */}
-            {showMetrics && (
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-                    <MetricCard
-                        icon={CalendarRange}
-                        tone="cyan"
-                        label={t('overview.booked', 'Total Booked')}
-                        value={formatNumber(scheduleStats.total, language)}
-                        detail={t('overview.bookedDetail', 'Appointments in period')}
-                        loading={isLoading}
-                    />
-                    <MetricCard
-                        icon={CheckCircle2}
-                        tone="emerald"
-                        label={t('overview.confirmed', 'Confirmed')}
-                        value={formatNumber(scheduleStats.confirmed, language)}
-                        detail={t('overview.confirmedDetail', { count: formatNumber(scheduleStats.completed, language) })}
-                        loading={isLoading}
-                    />
-                    <MetricCard
-                        icon={Gauge}
-                        tone="cyan"
-                        label={t('overview.utilization', 'Utilization')}
-                        value={`${formatNumber(scheduleStats.utilization, language)}%`}
-                        detail={t('overview.utilizationDetail', 'Resource usage')}
-                        loading={isLoading}
-                    />
-                    <MetricCard
-                        icon={AlertCircle}
-                        tone="amber"
-                        label={t('overview.urgent', 'Urgent')}
-                        value={formatNumber(scheduleStats.urgent, language)}
-                        detail={t('overview.urgentDetail', 'High-priority cases')}
-                        loading={isLoading}
-                    />
-                    <MetricCard
-                        icon={UserX}
-                        tone="rose"
-                        label={t('overview.noShow', 'No-Shows')}
-                        value={formatNumber(scheduleStats.noShow, language)}
-                        detail={t('overview.noShowDetail', 'Missed appointments')}
-                        loading={isLoading}
-                    />
-                    <MetricCard
-                        icon={XCircle}
-                        tone="blue"
-                        label={t('overview.cancelled', 'Cancelled')}
-                        value={formatNumber(scheduleStats.cancelled, language)}
-                        detail={t('overview.cancelledDetail', 'Cancelled appointments')}
-                        loading={isLoading}
-                    />
-                </div>
-            )}
-
-            <section className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,.75fr)]">
-                <div className={`${cardBase} p-4 sm:p-5`}>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                            <p className={sectionHeadingClass}>{t('command.readiness', 'Schedule readiness')}</p>
-                            <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 dark:text-white">
-                                {t('command.operationalControl', 'Daily operating control')}
-                            </h2>
-                        </div>
-                        <span className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-400">
-                            <Gauge size={12} />
-                            {formatNumber(scheduleStats.activeMachines, language)} {t('command.activeRooms', 'Active rooms')}
-                        </span>
-                    </div>
-
-                    <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                        <OperationSignal icon={CheckCircle2} label={t('command.completionRate', 'Completion rate')} value={`${formatNumber(completionRate, language)}%`} detail={t('command.completedOfActive', { completed: formatNumber(scheduleStats.completed, language), active: formatNumber(scheduleStats.active, language), defaultValue: '{{completed}} of {{active}} active studies' })} tone="emerald" />
-                        <OperationSignal icon={AlertCircle} label={t('command.disruptionRate', 'Disruption rate')} value={`${formatNumber(disruptionRate, language)}%`} detail={t('command.cancelNoShow', { count: formatNumber(scheduleStats.cancelled + scheduleStats.noShow, language), defaultValue: '{{count}} cancelled or no-show' })} tone={disruptionRate > 15 ? 'rose' : 'slate'} />
-                        <OperationSignal icon={Users} label={t('command.waitingPressure', 'Waiting pressure')} value={formatNumber(waitingList.length, language)} detail={t('waitlist.activeRequests', { count: formatNumber(waitingList.length, language) })} tone={waitingList.length > 0 ? 'amber' : 'slate'} />
-                        <OperationSignal icon={Building2} label={t('command.busiestRoom', 'Busiest room')} value={busiestRoom?.name || '-'} detail={busiestRoom ? t('availability.bookedSlots', { count: formatNumber(busiestRoom.booked, language) }) : t('availability.noMachines', 'No active modalities found')} tone="cyan" />
-                    </div>
-
-                    <div className="mt-4 border-t border-slate-100 pt-3 dark:border-[var(--VIARA-line)]">
-                        <ProgressBar label={t('command.visibleShare', 'Visible share')} value={`${formatNumber(filteredShare, language)}%`} percent={filteredShare} tone="teal" />
-                    </div>
-                </div>
-
-                <div className={`${cardBase} p-4 sm:p-5`}>
-                    <div className="flex items-start justify-between gap-3">
-                        <div>
-                            <p className={sectionHeadingClass}>{t('command.patientFlow', 'Patient flow')}</p>
-                            <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                {t('command.patientFlowDetail', 'Current schedule by workflow state')}
-                            </p>
-                        </div>
-                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-black text-slate-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
-                            {formatNumber(scheduleStats.total, language)}
-                        </span>
-                    </div>
-                    <div className="mt-4 space-y-3">
-                        {flowStages.map(stage => (
-                            <StageRow key={stage.key} stage={stage} total={Math.max(1, scheduleStats.total)} language={language} t={t} />
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            <section className={`${cardBase} overflow-hidden`}>
-                <div className="grid gap-4 border-b border-slate-100 bg-slate-50/60 p-4 dark:border-white/5 dark:bg-[var(--VIARA-surface)] 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-center">
-                    <div className="grid gap-3 xl:grid-cols-[auto_minmax(220px,.6fr)_auto] xl:items-center">
-                        <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setDate(shiftAnchorDate(date, viewMode, -1))}
-                                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-teal-300 hover:text-teal-700 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-400 dark:hover:bg-[var(--VIARA-surface-hover)]"
-                                aria-label={t('navigation.previous', 'Previous period')}
-                            >
-                                <ChevronLeft size={16} className="rtl-flip" />
-                            </button>
-                            <input
-                                type="date"
-                                value={date}
-                                onChange={e => setDate(e.target.value)}
-                                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold tabular-nums text-slate-800 outline-none transition focus:border-teal-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-200"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setDate(shiftAnchorDate(date, viewMode, 1))}
-                                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-teal-300 hover:text-teal-700 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-400 dark:hover:bg-[var(--VIARA-surface-hover)]"
-                                aria-label={t('navigation.next', 'Next period')}
-                            >
-                                <ChevronRight size={16} className="rtl-flip" />
-                            </button>
+            <section className={`${cardBase} overflow-hidden shadow-sm`}>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 p-3 sm:p-4 dark:border-white/5 dark:bg-[var(--VIARA-surface)]">
+                    <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
+                        {/* Unified Atomic Date Capsule */}
+                        <div className="flex items-center gap-1.5 shrink-0">
                             <button
                                 type="button"
                                 onClick={() => setDate(toDateInput())}
-                                className={`h-10 shrink-0 rounded-xl border px-4 text-xs font-black transition ${isToday
-                                    ? 'border-teal-600 bg-teal-700 text-white'
-                                    : 'border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:text-teal-700 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-300'
-                                    }`}
+                                className={`h-10 shrink-0 rounded-xl border px-3.5 text-xs font-black transition ${isToday
+                                    ? 'border-teal-600 bg-teal-700 text-white shadow-2xs'
+                                    : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:text-teal-700 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-300'
+                                }`}
                             >
-                                {t('navigation.today', 'Today')}
+                                {t('navigation.today', 'اليوم')}
                             </button>
+                            <div className="flex items-center rounded-xl border border-slate-200 bg-white dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] p-0.5 shadow-2xs">
+                                <button
+                                    type="button"
+                                    onClick={() => setDate(shiftAnchorDate(date, viewMode, -1))}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-teal-700 dark:text-slate-400 dark:hover:bg-[var(--VIARA-surface-hover)]"
+                                    aria-label={t('navigation.previous', 'السابق')}
+                                >
+                                    <ChevronLeft size={16} className="rtl:rotate-180" />
+                                </button>
+                                <input
+                                    type="date"
+                                    value={date}
+                                    onChange={e => setDate(e.target.value)}
+                                    className="h-9 border-0 bg-transparent px-2.5 text-xs font-bold tabular-nums text-slate-800 outline-none dark:text-slate-200"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setDate(shiftAnchorDate(date, viewMode, 1))}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-teal-700 dark:text-slate-400 dark:hover:bg-[var(--VIARA-surface-hover)]"
+                                    aria-label={t('navigation.next', 'التالي')}
+                                >
+                                    <ChevronRight size={16} className="rtl:rotate-180" />
+                                </button>
+                            </div>
                         </div>
 
-                        <div className="relative min-w-0">
-                            <Search className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                        {/* Search input */}
+                        <div className="relative min-w-[200px] flex-1 max-w-sm">
+                            <Search className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                             <input
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
-                                placeholder={t('filters.searchPlaceholder', 'Search patients, MRN, rooms...')}
-                                className="h-10 w-full rounded-xl border border-slate-200 bg-white ps-10 pe-9 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-100"
+                                placeholder={t('filters.searchPlaceholder', 'ابحث بالاسم أو الرقم الطبي أو الغرفة...')}
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white ps-9 pe-8 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-100"
                             />
                             {searchTerm && (
                                 <button
                                     type="button"
                                     onClick={() => setSearchTerm('')}
-                                    className="absolute end-3 top-1/2 -translate-y-1/2 rounded-lg p-0.5 text-slate-400 transition hover:text-slate-700 dark:hover:text-slate-100"
+                                    className="absolute end-2.5 top-1/2 -translate-y-1/2 rounded-lg p-0.5 text-slate-400 transition hover:text-slate-700 dark:hover:text-slate-100"
                                     aria-label={t('filters.clearSearch', 'Clear search')}
                                 >
-                                    <X size={14} />
+                                    <X size={13} />
                                 </button>
                             )}
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                            <select
-                                value={selectedMachineId}
-                                onChange={e => setSelectedMachineId(e.target.value)}
-                                className="h-10 min-w-[170px] rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-teal-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-300"
-                            >
-                                <option value="all">{t('allRooms', 'All Rooms')}</option>
-                                {machines.filter(m => m.status === 'Active').map(m => (
-                                    <option key={m.modality_id} value={m.modality_id}>{m.name}</option>
-                                ))}
-                            </select>
-                            <button
-                                type="button"
-                                onClick={() => setShowFilters(v => !v)}
-                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-teal-300 hover:text-teal-700 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-300 dark:hover:bg-[var(--VIARA-surface-hover)]"
-                            >
-                                <SlidersHorizontal size={14} />
-                                {showFilters ? t('filters.hide', 'Hide filters') : t('filters.show', 'Show filters')}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={retryAll}
-                                disabled={isFetchingAppointments}
-                                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-teal-300 hover:text-teal-700 disabled:opacity-40 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-400 dark:hover:bg-[var(--VIARA-surface-hover)]"
-                                title={t('actions.refresh', 'Refresh')}
-                                aria-label={t('actions.refresh', 'Refresh')}
-                            >
-                                <RotateCw size={14} className={isFetchingAppointments ? 'animate-spin' : ''} />
-                            </button>
-                        </div>
+                        {/* Room Scope dropdown */}
+                        <select
+                            value={selectedMachineId}
+                            onChange={e => setSelectedMachineId(e.target.value)}
+                            className="h-10 min-w-[150px] rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-teal-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-300"
+                        >
+                            <option value="all">{t('allRooms', 'كل الغرف/الأجهزة')}</option>
+                            {machines.filter(m => m.status === 'Active').map(m => (
+                                <option key={m.modality_id} value={m.modality_id}>{m.name}</option>
+                            ))}
+                        </select>
+
+                        {/* Filter Toggle */}
+                        <button
+                            type="button"
+                            onClick={() => setShowFilters(v => !v)}
+                            className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition shadow-2xs ${showFilters || activeFilterCount > 0
+                                ? 'border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-700 dark:bg-teal-950/40 dark:text-teal-300'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-teal-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-300'
+                            }`}
+                        >
+                            <SlidersHorizontal size={13} />
+                            <span>{showFilters ? t('filters.hide', 'إخفاء الفلاتر') : t('filters.show', 'عرض الفلاتر')}</span>
+                            {activeFilterCount > 0 && (
+                                <span className="grid h-4 w-4 place-items-center rounded-full bg-teal-700 font-mono text-[9px] text-white">
+                                    {activeFilterCount}
+                                </span>
+                            )}
+                        </button>
+
+                        {/* Side Panel Toggle Button */}
+                        <button
+                            type="button"
+                            onClick={() => setShowSidePanel(!showSidePanel)}
+                            className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition shadow-2xs ${showSidePanel
+                                ? 'border-teal-500 bg-teal-50 text-teal-800 ring-1 ring-teal-500/20 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300'
+                                : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                            }`}
+                        >
+                            <Users size={14} className="text-teal-600 dark:text-teal-400" />
+                            <span>{showSidePanel ? t('waitlist.hide', 'إخفاء الشريط') : t('waitlist.show', 'الانتظار والغرف')}</span>
+                            {waitingList.length > 0 && (
+                                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-teal-700 px-1 font-mono text-[9px] text-white dark:bg-teal-400 dark:text-slate-950">
+                                    {waitingList.length}
+                                </span>
+                            )}
+                        </button>
+
+                        {/* Refresh button */}
+                        <button
+                            type="button"
+                            onClick={retryAll}
+                            disabled={isFetchingAppointments}
+                            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-teal-300 hover:text-teal-700 disabled:opacity-40 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-400 shadow-2xs"
+                            title={t('actions.refresh', 'تحديث')}
+                            aria-label={t('actions.refresh', 'تحديث')}
+                        >
+                            <RotateCw size={14} className={isFetchingAppointments ? 'animate-spin' : ''} />
+                        </button>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 2xl:justify-end">
+                    {/* View mode & Layout mode segmented controls */}
+                    <div className="flex items-center gap-2 shrink-0">
                         <SegmentedControl
                             ariaLabel={t('viewMode', 'View mode')}
-                            items={['day', 'week', 'month'].map(mode => ({ key: mode, label: t(`view.${mode}`, mode) }))}
+                            items={['day', 'week', 'month'].map(mode => ({
+                                key: mode,
+                                label: mode === 'day' ? 'يوم' : mode === 'week' ? 'أسبوع' : 'شهر'
+                            }))}
                             value={viewMode}
                             onChange={setViewMode}
                         />
                         <SegmentedControl
                             ariaLabel={t('layoutMode', 'Layout mode')}
                             items={[
-                                { key: 'list', label: t('layout.list', 'List'), icon: Table2 },
-                                { key: 'calendar', label: t('layout.calendar', 'Calendar'), icon: Grid3X3 },
+                                { key: 'list', label: 'قائمة', icon: Table2 },
+                                { key: 'calendar', label: 'تقويم', icon: Grid3X3 },
                             ]}
                             value={layoutMode}
                             onChange={setLayoutMode}
@@ -887,8 +1066,8 @@ const Appointments = () => {
                 {showFilters && (
                     <div className="space-y-3 p-4">
                         <div className="flex flex-wrap items-center gap-2">
-                            <span className={sectionHeadingClass}>{t('filters.status', 'Status')}</span>
-                            {['all', 'Scheduled', 'Confirmed', 'Completed', 'Cancelled', 'No-Show'].map(s => {
+                            <span className={sectionHeadingClass}>{t('filters.status', 'الحالة')}</span>
+                            {['all', 'Scheduled', 'Confirmed', 'Arrived', 'Completed', 'Cancelled', 'No-Show'].map(s => {
                                 const active = statusFilter === s;
                                 return (
                                     <button
@@ -900,7 +1079,7 @@ const Appointments = () => {
                                             : 'border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:text-teal-700 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300 dark:hover:bg-[var(--VIARA-surface-hover)]'
                                             }`}
                                     >
-                                        <span>{s === 'all' ? t('filters.allStatuses', 'All') : t(`status.${s}`, s)}</span>
+                                        <span>{getStatusDisplayLabel(s, t, language)}</span>
                                         <span className={`rounded-lg bg-black/5 px-1.5 py-0.5 font-mono text-[10px] ${active ? 'bg-white/20 text-white' : 'text-slate-400 dark:bg-white/10 dark:text-slate-400'}`}>
                                             {formatNumber(statusCounts[s] || 0, language)}
                                         </span>
@@ -909,7 +1088,7 @@ const Appointments = () => {
                             })}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                            <span className={sectionHeadingClass}>{t('filters.priority', 'Priority')}</span>
+                            <span className={sectionHeadingClass}>{t('filters.priority', 'الأولوية')}</span>
                             {['all', 'Routine', 'Urgent', 'Emergency'].map(priority => {
                                 const active = priorityFilter === priority;
                                 return (
@@ -922,7 +1101,7 @@ const Appointments = () => {
                                             : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300 dark:hover:bg-[var(--VIARA-surface-hover)]'
                                             }`}
                                     >
-                                        <span>{priority === 'all' ? t('filters.allPriorities', 'All priorities') : t(`priority.${priority}`, priority)}</span>
+                                        <span>{getPriorityDisplayLabel(priority, t, language)}</span>
                                         <span className={`rounded-lg bg-black/5 px-1.5 py-0.5 font-mono text-[10px] ${active ? 'bg-white/20' : 'text-slate-400 dark:bg-white/10 dark:text-slate-400'}`}>
                                             {formatNumber(priorityCounts[priority] || 0, language)}
                                         </span>
@@ -945,13 +1124,13 @@ const Appointments = () => {
             </section>
 
             {/* Main Content Grid */}
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
+            <div className={`grid grid-cols-1 gap-5 transition-all duration-300 ${showSidePanel ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''}`}>
                 {/* Appointments List/Calendar */}
                 <section className={`${cardBase} flex flex-col overflow-hidden`}>
                     <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-4 dark:border-white/5 dark:bg-[var(--VIARA-surface)] sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
                             <h2 className="text-base font-black text-slate-900 dark:text-white">
-                                {t('calendar.title', 'Scheduled Appointments')}
+                                {t('calendar.title', 'التقويم والمواعيد المجدولة')}
                             </h2>
                             <p className={`mt-0.5 ${subHeadingClass}`}>
                                 {t('calendar.range', rangeLabel)}
@@ -1010,9 +1189,10 @@ const Appointments = () => {
                                     onPrevDate={() => setDate(shiftAnchorDate(date, viewMode, -1))}
                                     onNextDate={() => setDate(shiftAnchorDate(date, viewMode, 1))}
                                     onToday={() => setDate(toDateInput())}
-                                    onSelectEvent={setFocusedAppointment}
+                                    onSelectEvent={appt => { setFocusedAppointment(appt); setShowSidePanel(true); }}
                                     t={t}
                                     locale={i18n.language}
+                                    integrated={true}
                                 />
                             )}
                         </div>
@@ -1028,7 +1208,7 @@ const Appointments = () => {
                             onReschedule={openReschedule}
                             onNoShow={handleNoShow}
                             onCancel={setCancelAppt}
-                            onSelect={setFocusedAppointment}
+                            onSelect={appt => { setFocusedAppointment(appt); setShowSidePanel(true); }}
                             isMarkingNoShow={isMarkingNoShow}
                             language={language}
                             t={t}
@@ -1048,7 +1228,7 @@ const Appointments = () => {
                             </p>
                             <div className="flex flex-wrap items-center gap-2">
                                 <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-                                    {t('calendar.pagination.rowsPerPage', 'Rows')}
+                                    {t('calendar.pagination.rowsPerPage', 'الصفوف')}
                                     <select
                                         value={pageSize}
                                         onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
@@ -1057,41 +1237,34 @@ const Appointments = () => {
                                         {[20, 50, 100].map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 </label>
-                                <span className={`min-w-16 text-center text-xs font-semibold text-slate-500 tabular-nums`}>
-                                    {t('calendar.pagination.page', { page: formatNumber(pagination.currentPage, language), pages: formatNumber(pagination.pageCount, language) })}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setPage(c => Math.max(1, c - 1))}
-                                    disabled={pagination.currentPage === 1}
-                                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 disabled:opacity-40 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]"
-                                >
-                                    <ChevronLeft size={14} className="rtl-flip" />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setPage(c => Math.min(pagination.pageCount, c + 1))}
-                                    disabled={pagination.currentPage === pagination.pageCount}
-                                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 disabled:opacity-40 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]"
-                                >
-                                    <ChevronRight size={14} className="rtl-flip" />
-                                </button>
+                                <Pagination
+                                    compact
+                                    currentPage={pagination.currentPage}
+                                    pageCount={pagination.pageCount}
+                                    onPageChange={setPage}
+                                    isRtl={language?.startsWith('ar')}
+                                    ariaLabel={t('calendar.pagination.aria', 'ترقيم صفحات المواعيد')}
+                                    previousLabel={t('calendar.pagination.previous')}
+                                    nextLabel={t('calendar.pagination.next')}
+                                />
                             </div>
                         </div>
                     )}
                 </section>
 
-                {/* Side Panel */}
-                <aside className="space-y-5">
+                {/* Side Panel (Responsive drawer on mobile/tablet, expandable column on desktop) */}
+                <aside className={`space-y-5 transition-all duration-200 ${showSidePanel ? 'block' : 'hidden'}`}>
                     {focusedAppointment && (
-                        <FocusedAppointmentCard
-                            appointment={focusedAppointment}
-                            language={language}
-                            onClose={() => setFocusedAppointment(null)}
-                            onRemind={() => handleRemind(focusedAppointment)}
-                            onReschedule={() => openReschedule(focusedAppointment)}
-                            t={t}
-                        />
+                        <div className="hidden xl:block">
+                            <FocusedAppointmentCard
+                                appointment={focusedAppointment}
+                                language={language}
+                                onClose={() => setFocusedAppointment(null)}
+                                onRemind={() => handleRemind(focusedAppointment)}
+                                onReschedule={() => openReschedule(focusedAppointment)}
+                                t={t}
+                            />
+                        </div>
                     )}
                     <AvailabilityPanel availability={availability} t={t} />
                     <WaitingListPanel
@@ -1111,6 +1284,27 @@ const Appointments = () => {
                     />
                 </aside>
             </div>
+
+            {/* Mobile Focused Appointment Modal */}
+            {focusedAppointment && (
+                <div className="xl:hidden">
+                    <Modal
+                        isOpen={Boolean(focusedAppointment)}
+                        onClose={() => setFocusedAppointment(null)}
+                        title={t('focused.title', 'Selected appointment')}
+                        size="md"
+                    >
+                        <FocusedAppointmentCard
+                            appointment={focusedAppointment}
+                            language={language}
+                            onClose={() => setFocusedAppointment(null)}
+                            onRemind={() => handleRemind(focusedAppointment)}
+                            onReschedule={() => openReschedule(focusedAppointment)}
+                            t={t}
+                        />
+                    </Modal>
+                </div>
+            )}
 
             {/* Modals */}
             <RescheduleModal
@@ -1404,33 +1598,33 @@ const AppointmentTable = ({
     }
 
     return (
-        <div className="overflow-x-auto" role="region" aria-label={t('table.appointmentList', 'Appointment list')}>
-            <table className="min-w-[1120px] w-full table-fixed border-collapse text-start text-sm" role="grid" aria-label={t('table.appointmentTable', 'Appointments')}>
+        <div className="overflow-x-auto" role="region" aria-label={t('table.appointmentList', 'قائمة المواعيد')}>
+            <table className="w-full border-collapse text-start text-sm" role="grid" aria-label={t('table.appointmentTable', 'Appointments')}>
                 <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 backdrop-blur dark:border-[var(--VIARA-line)] dark:bg-[#0b1426]/95">
                     <tr>
-                        <th className="w-12 px-4 py-3">
+                        <th className="w-12 px-4 py-3.5">
                             <input
                                 type="checkbox"
                                 checked={allPageSelected}
                                 onChange={onToggleSelectAll}
                                 className="h-4 w-4 rounded border-slate-300 text-teal-700 transition focus:ring-teal-600"
-                                aria-label={t('table.selectAll', 'Select all appointments on this page')}
+                                aria-label={t('table.selectAll', 'تحديد كافة المواعيد في هذه الصفحة')}
                             />
                         </th>
-                        <th className="w-[30%] px-4 py-3 text-start text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                            {t('table.patient', 'Patient')}
+                        <th className="px-4 py-3.5 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                            {t('table.patient', 'المريض')}
                         </th>
-                        <th className="hidden w-[22%] px-4 py-3 text-start text-[10px] font-bold uppercase tracking-widest text-slate-400 md:table-cell">
-                            {t('table.details', 'Details')}
+                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400 md:table-cell">
+                            {t('table.details', 'الغرفة والفحص')}
                         </th>
-                        <th className="hidden w-[170px] px-4 py-3 text-start text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:table-cell">
-                            {t('table.time', 'Time')}
+                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400 lg:table-cell">
+                            {t('table.time', 'الوقت')}
                         </th>
-                        <th className="hidden w-[185px] px-4 py-3 text-start text-[10px] font-bold uppercase tracking-widest text-slate-400 sm:table-cell">
-                            {t('table.status', 'Status')}
+                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400 sm:table-cell">
+                            {t('table.status', 'الحالة')}
                         </th>
-                        <th className="w-[170px] px-4 py-3 text-end text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                            {t('table.actions', 'Actions')}
+                        <th className="w-36 px-4 py-3.5 text-end text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                            {t('table.actions', 'إجراءات')}
                         </th>
                     </tr>
                 </thead>
@@ -1520,17 +1714,17 @@ const AppointmentRow = React.memo(({
                     </div>
                 </div>
             </td>
-            <td className="hidden px-4 py-4 md:table-cell">
-                <div className="min-w-0">
-                    <div className="truncate text-xs font-bold text-slate-900 dark:text-white">
+            <td className="hidden px-4 py-3.5 md:table-cell">
+                <div className="min-w-0 max-w-sm">
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">
                         {appt.machine_name}
                     </div>
-                    <div className="truncate text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-                        {appt.exam_type_name || t('table.noExamType', 'General Exam')}
+                    <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                        {appt.exam_type_name || t('table.noExamType', 'فحص عام')}
                     </div>
                 </div>
             </td>
-            <td className="hidden whitespace-nowrap px-4 py-4 lg:table-cell">
+            <td className="hidden whitespace-nowrap px-4 py-3.5 lg:table-cell">
                 <div className="text-xs font-bold text-slate-700 dark:text-slate-300 tabular-nums">
                     {dateLabel}
                 </div>
@@ -1538,15 +1732,15 @@ const AppointmentRow = React.memo(({
                     {timeLabel}
                 </div>
             </td>
-            <td className="hidden px-4 py-4 sm:table-cell">
-                <div className="flex flex-col items-start gap-1.5">
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${sc.bg} ${sc.border} ${sc.text}`}>
+            <td className="hidden px-4 py-3.5 sm:table-cell">
+                <div className="flex flex-col items-start gap-1">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${sc.bg} ${sc.border} ${sc.text}`}>
                         <StatusIcon size={12} />
-                        {t(`status.${appt.status}`, appt.status)}
+                        <span>{getStatusDisplayLabel(appt.status, t, language)}</span>
                     </span>
                     {appt.radiologist_name && (
-                        <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                            {t('table.radiologist', 'Rad')}: {appt.radiologist_name}
+                        <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-[160px]">
+                            {appt.radiologist_name}
                         </span>
                     )}
                 </div>
@@ -1610,8 +1804,9 @@ const AppointmentRow = React.memo(({
 });
 
 const AvailabilityPanel = ({ availability, t }) => {
-    const [isCollapsed, setIsCollapsed] = useState(false);
-    const maxBookings = Math.max(1, ...(availability?.machines || []).map(m => m.appointments?.length || 0));
+    const [isCollapsed, setIsCollapsed] = useState(true);
+    const workdayHours = Math.max(1, (availability?.workingHours?.end ?? 22) - (availability?.workingHours?.start ?? 6));
+    const standardDailySlots = workdayHours * 2;
 
     return (
         <section className={`${cardBase} flex flex-col overflow-hidden`}>
@@ -1625,10 +1820,10 @@ const AvailabilityPanel = ({ availability, t }) => {
                         <Gauge size={15} />
                     </div>
                     <div>
-                        <h2 className={sectionHeadingClass}>{t('availability.title', 'Modality Room Load')}</h2>
+                        <h2 className={sectionHeadingClass}>{t('availability.title', 'حمل غرف الفحص والأجهزة')}</h2>
                         <p className={subHeadingClass}>
                             {t('availability.workingHours', {
-                                start: availability?.workingHours?.start ?? 6,
+                                start: availability?.workingHours?.start ?? 8,
                                 end: availability?.workingHours?.end ?? 22
                             })}
                         </p>
@@ -1640,21 +1835,22 @@ const AvailabilityPanel = ({ availability, t }) => {
             {!isCollapsed && (
                 <div className="space-y-3 p-4">
                     {(availability?.machines || []).length === 0 ? (
-                        <p className="py-3 text-center text-xs text-slate-400">{t('availability.noMachines', 'No active modalities found')}</p>
+                        <p className="py-3 text-center text-xs text-slate-400">{t('availability.noMachines', 'لا توجد أجهزة نشطة')}</p>
                     ) : (
                         (availability?.machines || []).map((machine) => {
                             const count = machine.appointments?.length || 0;
-                            const pct = Math.round((count / maxBookings) * 100);
-                            const barColor = pct >= 80 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-500' : 'bg-emerald-500';
+                            const capacity = machine.daily_capacity || standardDailySlots || 20;
+                            const pct = Math.min(100, Math.round((count / capacity) * 100));
+                            const barColor = pct >= 85 ? 'bg-rose-500' : pct >= 60 ? 'bg-amber-500' : 'bg-emerald-500';
                             return (
                                 <div key={machine.modality_id} className="space-y-1.5">
                                     <div className="flex items-center justify-between text-xs font-semibold">
-                                        <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
-                                            <span className={`h-1.5 w-1.5 rounded-full ${machine.is_schedulable ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                                            {machine.name}
+                                        <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200 truncate">
+                                            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${machine.is_schedulable ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                                            <span className="truncate">{machine.name}</span>
                                         </span>
-                                        <span className={`font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400 tabular-nums`}>
-                                            {pct}%
+                                        <span className="font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400 tabular-nums shrink-0 ms-2">
+                                            {count} حجز ({pct}%)
                                         </span>
                                     </div>
                                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">

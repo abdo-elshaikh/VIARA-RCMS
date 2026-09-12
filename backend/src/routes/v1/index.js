@@ -12,6 +12,9 @@ const backupRoutes = require('../backupRoutes');
 const safetyRoutes = require('../safetyRoutes');
 const importRoutes = require('../importRoutes');
 const pacsRoutes = require('../pacsRoutes');
+const displayRoutes = require('../displayRoutes');
+const receptionRoutes = require('../receptionRoutes');
+const roomRoutes = require('../roomRoutes');
 
 module.exports = (pool, authenticateToken, authorizeRole) => {
     const router = express.Router();
@@ -27,6 +30,9 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     router.use('/clinical', safetyRoutes(pool, authenticateToken, authorizeRole));
     router.use('/import', importRoutes(pool, authenticateToken, authorizeRole));
     router.use('/pacs', pacsRoutes(pool, authenticateToken, authorizeRole));
+    router.use('/display', displayRoutes(pool, authenticateToken, authorizeRole));
+    router.use('/reception', receptionRoutes(pool, authenticateToken, authorizeRole));
+    router.use('/rooms', roomRoutes(pool, authenticateToken, authorizeRole));
 
     router.get('/health', async (req, res) => {
         try {

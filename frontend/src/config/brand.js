@@ -6,7 +6,9 @@ export const VIARA_BRAND = {
     logoUrl: import.meta.env.VITE_APP_LOGO_URL || '/logo.png',
     // Theme-specific logos: light_logo.png for use on dark backgrounds,
     // dark_logo.png for use on light backgrounds.
-    lightLogoUrl: import.meta.env.VITE_APP_LIGHT_LOGO_URL || '/logo.png',
-    darkLogoUrl: import.meta.env.VITE_APP_DARK_LOGO_URL || '/logo.png',
+    lightLogoUrl: import.meta.env.VITE_APP_LIGHT_LOGO_URL || '/light_logo.png',
+    darkLogoUrl: import.meta.env.VITE_APP_DARK_LOGO_URL || '/dark_logo.png',
     iconUrl: import.meta.env.VITE_APP_ICON_URL || '/logo.png',
+    centerLogoUrl: import.meta.env.VITE_APP_CENTER_LOGO_URL || '/center-logo.png',
 };
+

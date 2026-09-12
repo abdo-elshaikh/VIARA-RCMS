@@ -13,21 +13,21 @@ const Button = ({
     type = 'button',
     ...props
 }) => {
-    const baseStyles = 'inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-200 focus:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(var(--VIARA-accent-rgb),0.20)] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none';
+    const baseStyles = 'ds-button';
 
     const variants = {
-        primary: 'bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)] shadow-sm hover:bg-[var(--VIARA-accent-dark)] hover:shadow-md hover:-translate-y-0.5',
-        secondary: 'border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-muted)] dark:text-[var(--VIARA-ink)] dark:hover:bg-[var(--VIARA-surface-hover)]',
-        success: 'bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 hover:-translate-y-0.5',
-        danger: 'bg-red-700 text-white shadow-sm hover:bg-red-800 hover:-translate-y-0.5',
-        outline: 'border border-[rgba(var(--VIARA-accent-rgb),0.45)] bg-white text-[var(--VIARA-accent)] hover:bg-[var(--VIARA-accent-soft)] dark:border-[rgba(var(--VIARA-accent-rgb),0.45)] dark:bg-transparent dark:text-[var(--VIARA-accent-text)] dark:hover:bg-[rgba(var(--VIARA-accent-rgb),0.12)]',
-        ghost: 'text-slate-700 hover:bg-slate-100 dark:text-[var(--VIARA-ink)] dark:hover:bg-[var(--VIARA-surface-hover)]',
+        primary: 'ds-button-primary',
+        secondary: 'ds-button-secondary',
+        success: 'ds-button-success',
+        danger: 'ds-button-danger',
+        outline: 'ds-button-outline',
+        ghost: 'ds-button-ghost',
     };
 
     const sizes = {
-        sm: 'px-3 py-1.5 text-sm',
-        md: 'px-4 py-2',
-        lg: 'px-6 py-3 text-lg',
+        sm: 'ds-button-sm',
+        md: 'ds-button-md',
+        lg: 'ds-button-lg',
     };
 
     return (
@@ -35,7 +35,7 @@ const Button = ({
             type={type}
             disabled={disabled || loading}
             aria-busy={loading || undefined}
-            className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
+            className={`${baseStyles} ${variants[variant] || variants.primary} ${sizes[size] || sizes.md} ${className}`}
             {...props}
         >
             {loading && (

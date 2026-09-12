@@ -24,7 +24,7 @@ vi.mock('../../components/settings/AiProviderSettings', () => ({ default: () => 
 vi.mock('../CenterSettings', () => ({ default: () => <div>Facility panel</div> }));
 
 const renderSettings = () => render(
-    <MemoryRouter>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Settings />
     </MemoryRouter>
 );
@@ -39,13 +39,13 @@ describe('Settings workspace', () => {
         renderSettings();
 
         expect(screen.getByText('Settings & preferences')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Clinical operations Machines and examination catalog/i })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Team Members and access roles/i })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Integrations Connected clinical services/i })).toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: /Clinical operations Machines and examination catalog/i }).length).toBeGreaterThan(0);
+        expect(screen.getAllByRole('button', { name: /Team Members and access roles/i }).length).toBeGreaterThan(0);
+        expect(screen.getAllByRole('button', { name: /Integrations Connected clinical services/i }).length).toBeGreaterThan(0);
 
         fireEvent.change(screen.getByLabelText('Search settings'), { target: { value: 'API credentials' } });
         expect(screen.queryByRole('button', { name: /Profile Identity and contact details/i })).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: /Developer API credentials and webhooks/i }));
+        fireEvent.click(screen.getAllByRole('button', { name: /Developer API credentials and webhooks/i })[0]);
         expect(screen.getByText('Developer panel')).toBeInTheDocument();
     });
 
@@ -57,16 +57,28 @@ describe('Settings workspace', () => {
         expect(screen.queryByRole('button', { name: /Security Password, 2FA, and sessions/i })).not.toBeInTheDocument();
     });
 
-    it('supports compact responsive navigation without hiding section details', () => {
+    it('supports responsive card navigation without a dropdown', () => {
         renderSettings();
 
-        const sectionPicker = screen.getByRole('combobox', { name: 'Settings sections' });
-        expect(sectionPicker).toHaveValue('appearance');
+        expect(screen.queryByRole('combobox', { name: 'Settings sections' })).not.toBeInTheDocument();
+        const developerCards = screen.getAllByRole('button', { name: /Developer API credentials and webhooks/i });
+        fireEvent.click(developerCards[developerCards.length - 1]);
 
-        fireEvent.change(sectionPicker, { target: { value: 'developer' } });
-
-        expect(sectionPicker).toHaveValue('developer');
         expect(screen.getAllByText('API credentials and webhooks').length).toBeGreaterThan(0);
         expect(screen.getByText('Developer panel')).toBeInTheDocument();
+    });
+
+    it('hides administrative sections that are not granted by explicit RBAC claims', () => {
+        currentUser = {
+            fullName: 'Scoped Administrator',
+            role: 'Admin',
+            permissions: ['MANAGE_SETTINGS'],
+            mustChangePassword: false,
+        };
+        renderSettings();
+
+        expect(screen.getAllByRole('button', { name: /Branch & printing Branch details, logos, report identity, and printing settings/i }).length).toBeGreaterThan(0);
+        expect(screen.queryByRole('button', { name: /Imaging \(PACS\) Modality connections, DICOMweb, and imaging archive controls/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Backups Database backups, restore readiness, and retention/i })).not.toBeInTheDocument();
     });
 });

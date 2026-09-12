@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-    AlertCircle, ArrowUpDown, Banknote, CalendarClock, CalendarDays, Check,
-    CheckCircle2, ChevronRight, CircleDollarSign, Clock3, FileKey2, FileText, Inbox,
+    AlertCircle, ArrowLeftRight, ArrowUpDown, Banknote, CalendarClock, CalendarDays, Check,
+    CheckCircle2, ChevronRight, CircleDollarSign, Clock3, DoorOpen, FileKey2, FileText, Inbox,
     MinusCircle, RefreshCw, RotateCcw, Scale, Search, Settings2, ShieldAlert, ShieldCheck, UserRound,
     UserCog, WalletCards, X,
 } from 'lucide-react';
@@ -13,6 +13,7 @@ import PageHeader from '../components/ui/PageHeader';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
 import {
+    useGetAttendancePermissionsQuery,
     useGetClaimsQuery,
     useGetCashierReconciliationQuery,
     useGetInsuranceApprovalsQuery,
@@ -25,12 +26,14 @@ import {
     useGetPortalReviewRequestsQuery,
     useGetPrivacyRequestsQuery,
     useGetRefundsQuery,
+    useGetShiftRequestsQuery,
     useReviewCashierClosureMutation,
     useReviewPartialPaymentExceptionMutation,
     useReviewPortalAppointmentRequestMutation,
     useReviewPortalProfileUpdateRequestMutation,
     useResolvePrivacyRequestMutation,
     useReviewRefundMutation,
+    useUpdateAttendancePermissionStatusMutation,
     useUpdateClaimStatusMutation,
     useUpdateInsuranceApprovalStatusMutation,
     useUpdateLeaveStatusMutation,
@@ -38,6 +41,7 @@ import {
     useUpdatePayrollPenaltyStatusMutation,
     useUpdatePayrollRuleStatusMutation,
     useUpdatePayrollRunStatusMutation,
+    useUpdateShiftRequestStatusMutation,
 } from '../store/api';
 import { selectCurrentUser } from '../store/authSlice';
 import { getErrorMessage } from '../utils/getErrorMessage';
@@ -64,6 +68,8 @@ const SOURCE_PENDING_APPROVAL_STATUSES = Object.freeze({
     partialPayment: new Set(['Pending']),
     portalAppointment: new Set(['Pending']),
     profileUpdate: new Set(['Pending']),
+    attendancePermission: new Set(['Pending']),
+    shiftRequest: new Set(['Pending']),
 });
 
 const getRequestSourceStatus = (source, raw = {}) => {
@@ -181,6 +187,18 @@ const SOURCE_STYLES = {
         iconBox: 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
         active: 'border-teal-300 bg-teal-50/70 shadow-teal-100/50 dark:border-teal-700/70 dark:bg-teal-950/25',
     },
+    attendancePermission: {
+        icon: DoorOpen,
+        badge: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/35 dark:text-emerald-300',
+        iconBox: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+        active: 'border-emerald-300 bg-emerald-50/70 shadow-emerald-100/50 dark:border-emerald-700/70 dark:bg-emerald-950/25',
+    },
+    shiftRequest: {
+        icon: ArrowLeftRight,
+        badge: 'border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/60 dark:bg-purple-950/35 dark:text-purple-300',
+        iconBox: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+        active: 'border-purple-300 bg-purple-50/70 shadow-purple-100/50 dark:border-purple-700/70 dark:bg-purple-950/25',
+    },
 };
 
 const riskRank = { critical: 3, high: 2, routine: 1 };
@@ -249,6 +267,8 @@ const PendingRequests = () => {
     const canReviewProfileUpdates = hasPermission('EDIT_PATIENTS');
     const canReviewPortal = canReviewPortalAppointments || canReviewProfileUpdates;
     const canReviewPartialPayment = hasPermission('APPROVE_PARTIAL_PAYMENT_EXCEPTION');
+    const canReviewAttendancePermissions = elevated || user?.role === 'HR' || hasPermission('MANAGE_ATTENDANCE') || hasPermission('MANAGE_LEAVE');
+    const canReviewShiftRequests = elevated || user?.role === 'HR' || hasPermission('MANAGE_SHIFTS') || hasPermission('MANAGE_ATTENDANCE') || hasPermission('MANAGE_LEAVE');
 
     const leaveQuery = useGetLeaveRequestsQuery({}, {
         skip: !canReviewLeave,
@@ -298,6 +318,14 @@ const PendingRequests = () => {
         skip: !canReviewPortal,
         pollingInterval: 30000,
     });
+    const attendancePermissionQuery = useGetAttendancePermissionsQuery({ status: 'Pending' }, {
+        skip: !canReviewAttendancePermissions,
+        pollingInterval: 30000,
+    });
+    const shiftRequestsQuery = useGetShiftRequestsQuery({ status: 'Pending' }, {
+        skip: !canReviewShiftRequests,
+        pollingInterval: 30000,
+    });
 
     const [updateLeaveStatus, leaveMutation] = useUpdateLeaveStatusMutation();
     const [resolvePrivacyRequest, privacyMutation] = useResolvePrivacyRequestMutation();
@@ -312,6 +340,8 @@ const PendingRequests = () => {
     const [reviewPartialPaymentException, partialPaymentMutation] = useReviewPartialPaymentExceptionMutation();
     const [reviewPortalAppointment, portalAppointmentMutation] = useReviewPortalAppointmentRequestMutation();
     const [reviewPortalProfileUpdate, profileUpdateMutation] = useReviewPortalProfileUpdateRequestMutation();
+    const [updateAttendancePermissionStatus, attendancePermissionMutation] = useUpdateAttendancePermissionStatusMutation();
+    const [updateShiftRequestStatus, shiftRequestMutation] = useUpdateShiftRequestStatusMutation();
 
     const [search, setSearch] = useState('');
     const [sourceFilter, setSourceFilter] = useState('all');
@@ -334,6 +364,8 @@ const PendingRequests = () => {
         portalAppointment: t('sources.portalAppointment'),
         profileUpdate: t('sources.profileUpdate'),
         authorization: t('sources.authorization'),
+        attendancePermission: t('sources.attendancePermission', { defaultValue: 'Departure & Attendance' }),
+        shiftRequest: t('sources.shiftRequest', { defaultValue: 'Shift Swaps & Modifications' }),
     }), [t]);
     const availableSources = useMemo(() => [
         canReviewLeave && 'leave',
@@ -349,11 +381,13 @@ const PendingRequests = () => {
         canReviewPortalAppointments && 'portalAppointment',
         canReviewProfileUpdates && 'profileUpdate',
         canReviewAuthorization && 'authorization',
+        canReviewAttendancePermissions && 'attendancePermission',
+        canReviewShiftRequests && 'shiftRequest',
     ].filter(Boolean), [
         canApprovePayroll, canReviewClaims, canReviewLeave, canReviewPrivacy,
         canReviewRefund, canReviewVariance, canReviewPartialPayment, canReviewPortalAppointments,
-        canReviewProfileUpdates, canReviewAuthorization,
-        canUsePayrollQueue,
+        canReviewProfileUpdates, canReviewAuthorization, canReviewAttendancePermissions,
+        canReviewShiftRequests, canUsePayrollQueue,
     ]);
 
     const items = useMemo(() => {
@@ -773,16 +807,95 @@ const PendingRequests = () => {
                 });
         }
 
+        if (canReviewAttendancePermissions) {
+            (attendancePermissionQuery.data || [])
+                .filter((request) => isPendingApprovalSourceRequest('attendancePermission', request)
+                    && (String(request.user_id) !== String(user?.user_id)))
+                .forEach((request) => {
+                    const permKey = request.permission_type ? (request.permission_type.charAt(0).toLowerCase() + request.permission_type.slice(1)) : '';
+                    const permTypeLabel = t(`attendancePermissionTypes.${permKey}`, {
+                        defaultValue: request.permission_type === 'EarlyDeparture'
+                            ? (locale === 'ar-EG' ? 'إذن انصراف مبكر' : 'Early Departure')
+                            : request.permission_type === 'LateArrival'
+                                ? (locale === 'ar-EG' ? 'إذن حضور متأخر' : 'Late Arrival')
+                                : (locale === 'ar-EG' ? 'إذن دخول طارئ للنظام' : 'Emergency Access'),
+                    });
+                    normalized.push({
+                        key: `attendancePermission:${request.permission_id}`,
+                        id: request.permission_id,
+                        source: 'attendancePermission',
+                        title: request.employee_name || t('fallback.staffMember'),
+                        subtitle: t('item.attendancePermissionSubtitle', {
+                            type: permTypeLabel,
+                            minutes: request.minutes_granted || 0,
+                            date: formatLocalizedDate(request.effective_date, locale),
+                            defaultValue: `${permTypeLabel} (${request.minutes_granted || 0} min) · ${formatLocalizedDate(request.effective_date, locale)}`,
+                        }),
+                        requester: request.employee_name || t('fallback.unknown'),
+                        submittedAt: request.created_at || request.updated_at,
+                        risk: getAgeHours(request.created_at) >= 48 ? 'high' : 'routine',
+                        reason: request.reason,
+                        reference: request.permission_id,
+                        link: '/hr?tab=attendance',
+                        approveLabel: t('actions.approve'),
+                        facts: [
+                            [t('facts.effectiveDate', { defaultValue: 'Effective date' }), formatLocalizedDate(request.effective_date, locale)],
+                            [t('facts.permissionType', { defaultValue: 'Permission type' }), permTypeLabel],
+                            [t('facts.allowedTime', { defaultValue: 'Allowed time' }), request.allowed_time || '—'],
+                            [t('facts.minutesGranted', { defaultValue: 'Minutes granted' }), `${request.minutes_granted || 0} ${t('facts.minutes', { defaultValue: 'minutes' })}`],
+                            ...(request.shift_start ? [[t('facts.shift', { defaultValue: 'Shift' }), `${request.shift_start.slice(0, 5)} – ${request.shift_end?.slice(0, 5)}`]] : []),
+                        ],
+                        raw: request,
+                    });
+                });
+        }
+
+        if (canReviewShiftRequests) {
+            (shiftRequestsQuery.data || [])
+                .filter((request) => isPendingApprovalSourceRequest('shiftRequest', request)
+                    && (String(request.user_id) !== String(user?.user_id)))
+                .forEach((request) => {
+                    const isSwap = request.request_type === 'Swap';
+                    const typeLabel = isSwap
+                        ? (locale === 'ar-EG' ? 'طلب تبديل وردية' : 'Shift Swap Request')
+                        : (locale === 'ar-EG' ? 'طلب تعديل وردية' : 'Shift Modification Request');
+                    normalized.push({
+                        key: `shiftRequest:${request.request_id}`,
+                        id: request.request_id,
+                        source: 'shiftRequest',
+                        title: request.requester_name || t('fallback.staffMember'),
+                        subtitle: isSwap
+                            ? `${typeLabel} · مع ${request.target_user_name || 'زميل'}`
+                            : `${typeLabel} · ${formatLocalizedDate(request.proposed_start_time, locale)}`,
+                        requester: request.requester_name || t('fallback.unknown'),
+                        submittedAt: request.created_at || request.updated_at,
+                        risk: getAgeHours(request.created_at) >= 48 ? 'high' : 'routine',
+                        reason: request.reason,
+                        reference: request.request_id,
+                        link: '/hr',
+                        approveLabel: t('actions.approve'),
+                        facts: [
+                            [t('facts.requestType', { defaultValue: 'نوع الطلب' }), typeLabel],
+                            [t('facts.currentShift', { defaultValue: 'الوردية الأصلية' }), request.current_start_time ? formatLocalizedDate(request.current_start_time, locale) : '—'],
+                            ...(isSwap ? [[t('facts.targetColleague', { defaultValue: 'الزميل المراد التبديل معه' }), request.target_user_name || '—']] : []),
+                            ...(!isSwap && request.proposed_start_time ? [[t('facts.proposedTime', { defaultValue: 'الموعد المقترح' }), `${new Date(request.proposed_start_time).toLocaleTimeString()} - ${new Date(request.proposed_end_time).toLocaleTimeString()}`]] : []),
+                            [t('facts.reason', { defaultValue: 'السبب' }), request.reason || '—'],
+                        ],
+                        raw: request,
+                    });
+                });
+        }
+
         return normalized.map((item) => markPendingApproval(item, sourceLabels, t));
     }, [
         canAnonymizePatientData, canExportPatientData,
         authorizationQuery.data, canApprovePayroll, canUsePayrollQueue,
         canReviewAuthorization, canReviewClaims, canReviewLeave,
         canReviewPrivacy, canReviewRefund, canReviewVariance, canReviewPartialPayment,
-        canReviewPortalAppointments, canReviewProfileUpdates, claimQuery.data, elevated,
+        canReviewPortalAppointments, canReviewProfileUpdates, canReviewShiftRequests, canReviewAttendancePermissions, claimQuery.data, elevated,
         deductionQuery.data, leaveQuery.data, locale, partialPaymentQuery.data, payrollPermissions, payrollQuery.data, penaltyQuery.data, privacyQuery.data,
         portalQuery.data, refundQuery.data, sourceLabels, t, user?.role, user?.user_id,
-        varianceQuery.data, ruleQuery.data,
+        varianceQuery.data, ruleQuery.data, attendancePermissionQuery.data, shiftRequestsQuery.data,
     ]);
 
     const counts = useMemo(() => items.reduce((result, item) => {
@@ -833,6 +946,8 @@ const PendingRequests = () => {
         canReviewVariance && varianceQuery,
         canReviewPartialPayment && partialPaymentQuery,
         canReviewPortal && portalQuery,
+        canReviewAttendancePermissions && attendancePermissionQuery,
+        canReviewShiftRequests && shiftRequestsQuery,
     ].filter(Boolean);
     const loading = enabledQueries.some((query) => query.isLoading);
     const fetching = enabledQueries.some((query) => query.isFetching);
@@ -849,7 +964,9 @@ const PendingRequests = () => {
         || varianceMutation.isLoading
         || partialPaymentMutation.isLoading
         || portalAppointmentMutation.isLoading
-        || profileUpdateMutation.isLoading;
+        || profileUpdateMutation.isLoading
+        || attendancePermissionMutation.isLoading
+        || shiftRequestMutation.isLoading;
     const highRiskCount = items.filter((item) => item.risk !== 'routine').length;
     const oldestHours = items.length
         ? items.reduce((max, item) => Math.max(max, getAgeHours(item.submittedAt) || 0), 0)
@@ -868,6 +985,8 @@ const PendingRequests = () => {
         if (canReviewVariance) varianceQuery.refetch();
         if (canReviewPartialPayment) partialPaymentQuery.refetch();
         if (canReviewPortal) portalQuery.refetch();
+        if (canReviewAttendancePermissions) attendancePermissionQuery.refetch();
+        if (canReviewShiftRequests) shiftRequestsQuery.refetch();
     };
 
     const executeDecision = async (notes = '') => {
@@ -976,6 +1095,18 @@ const PendingRequests = () => {
                     status: approved ? 'Approved' : 'Rejected',
                     staffNotes: notes,
                 }).unwrap();
+            } else if (item.source === 'attendancePermission') {
+                await updateAttendancePermissionStatus({
+                    id: item.id,
+                    status: approved ? 'Approved' : 'Rejected',
+                    reviewNotes: notes || undefined,
+                }).unwrap();
+            } else if (item.source === 'shiftRequest') {
+                await updateShiftRequestStatus({
+                    id: item.id,
+                    status: approved ? 'Approved' : 'Rejected',
+                    reviewNotes: notes || undefined,
+                }).unwrap();
             }
 
             toast.success(t(approved ? 'messages.approved' : 'messages.rejected', {
@@ -1043,6 +1174,13 @@ const PendingRequests = () => {
                             <HeaderPill icon={CheckCircle2} label={t('header.decisionReady')} />
                         </div>
                     }
+                    metrics={[
+                        { key: 'pending', label: t('summary.pending'), value: items.length, icon: Inbox, tone: 'cyan' },
+                        { key: 'priority', label: t('summary.priority'), value: highRiskCount, icon: ShieldAlert, tone: 'rose' },
+                        { key: 'oldest', label: t('summary.oldest'), value: formatAge(oldestHours, t), icon: Clock3, tone: 'amber' },
+                        { key: 'sources', label: t('summary.sources'), value: Object.values(counts).filter(Boolean).length, icon: WalletCards, tone: 'slate' },
+                    ]}
+                    metricsLabel={t('summary.label')}
                     actions={
                         <button
                             type="button"

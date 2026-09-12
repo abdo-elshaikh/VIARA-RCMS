@@ -1,4 +1,4 @@
-import { CalendarCheck, Check, ChevronDown, FileText, MapPin, ShieldCheck, Stethoscope, Zap } from 'lucide-react';
+import { CalendarCheck, Check, ChevronDown, FileText, MapPin, ShieldCheck, ListChecks, RefreshCw } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { usePortalIdentity } from '../../../lib/portal-identity';
@@ -16,9 +16,9 @@ export const HeroSection = ({ onBook, onCheckResults, onFindBranch }: HeroSectio
   const identity = usePortalIdentity();
 
   const trustItems = [
-    { icon: Stethoscope, ar: 'استشاريون متخصصون', en: 'Specialist radiologists' },
-    { icon: ShieldCheck, ar: 'تقنيات تصوير متقدمة', en: 'Advanced imaging' },
-    { icon: Zap, ar: 'نتائج رقمية سريعة', en: 'Fast digital results' },
+    { icon: ListChecks, ar: 'طلب موعد واضح', en: 'Clear appointment requests' },
+    { icon: ShieldCheck, ar: 'تحقق آمن للنتائج', en: 'Secure result verification' },
+    { icon: RefreshCw, ar: 'بيانات محدثة من المركز', en: 'Center-managed information' },
   ];
 
   const quickActions = [
@@ -34,7 +34,6 @@ export const HeroSection = ({ onBook, onCheckResults, onFindBranch }: HeroSectio
           src="/images/viara-hero-mri-room.jpg"
           alt={`${identity.center.name} diagnostic imaging suite`}
           className="h-full w-full object-cover object-center"
-          fetchPriority="high"
           decoding="async"
           initial={reduceMotion ? false : { scale: 1.02 }}
           animate={reduceMotion ? undefined : { scale: 1.045 }}
@@ -53,7 +52,7 @@ export const HeroSection = ({ onBook, onCheckResults, onFindBranch }: HeroSectio
         >
           <span className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-white/82 px-4 py-2 text-xs font-semibold text-primary shadow-sm backdrop-blur-md dark:bg-surface/80">
             <Check className="h-3.5 w-3.5" />
-            {isRtl ? 'أعلى معايير الدقة والرعاية' : 'Higher standards of clarity and care'}
+            {isRtl ? 'من طلب الموعد إلى النتيجة في مسار واضح' : 'A clear path from appointment request to results'}
           </span>
 
           <h1 className="mt-7 max-w-[760px] break-words text-[34px] font-extrabold leading-[1.12] text-[#0B2348] sm:text-[56px] lg:text-[70px] dark:text-white">
@@ -66,8 +65,8 @@ export const HeroSection = ({ onBook, onCheckResults, onFindBranch }: HeroSectio
 
           <p className="mt-6 max-w-2xl text-base font-medium leading-8 text-[#5F7187] sm:text-lg dark:text-muted-foreground">
             {isRtl
-              ? 'تقنية متقدمة وخبرة طبية تمنح طبيبك صورة أوضح وتمنحك تجربة أكثر راحة واطمئناناً.'
-              : 'Advanced technology and medical expertise give your physician clearer answers and give you a calmer experience.'}
+              ? 'تعرّف على الخدمات المتاحة، أرسل طلب موعد، وتابع حالة التقرير بعد تحقق يحمي خصوصيتك.'
+              : 'See available services, request an appointment, and track report status after privacy-protecting verification.'}
           </p>
 
           <div className="mt-8 flex w-full max-w-lg flex-col justify-center gap-3 sm:flex-row">
@@ -107,7 +106,7 @@ export const HeroSection = ({ onBook, onCheckResults, onFindBranch }: HeroSectio
                 <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${item.primary ? 'bg-primary text-white' : 'bg-[#EDF8F4] text-primary dark:bg-primary-soft'}`}><Icon className="h-5 w-5" /></span>
                 <span className="min-w-0">
                   <strong className="block text-sm font-bold text-[#0B2348] transition group-hover:text-primary dark:text-white">{item.title}</strong>
-                  <small className="mt-1 block text-[11px] font-medium leading-5 text-muted-foreground">{item.desc}</small>
+                  <small className="mt-1 block text-xs font-medium leading-5 text-muted-foreground">{item.desc}</small>
                 </span>
               </button>
             );

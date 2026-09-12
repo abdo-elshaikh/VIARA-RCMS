@@ -2,6 +2,7 @@ import React, { FormEvent, ChangeEvent } from "react";
 import { Plus, RefreshCw, Send, ClipboardList } from "lucide-react";
 import { Field } from "../ui/FormElements";
 import { inputClass } from "../../utils/designTokens";
+import { todayLocalISO } from "../../utils/date";
 
 const MODALITIES = ["MRI", "CT", "X-Ray", "Ultrasound", "Mammography", "Fluoroscopy", "PET/CT"];
 
@@ -97,7 +98,7 @@ export const OrderView = ({ form, setForm, onSubmit, loading = false, t }: Order
                 type="date"
                 value={form.preferredDate}
                 onChange={update("preferredDate")}
-                min={new Date().toISOString().split("T")[0]}
+                min={todayLocalISO()}
                 className={inputClass}
               />
             </Field>

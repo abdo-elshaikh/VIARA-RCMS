@@ -13,7 +13,7 @@ export const PortalFooter = ({ isRtl }: PortalFooterProps) => {
   const identity = usePortalIdentity();
   const isArabic = isRtl ?? i18n.language?.startsWith('ar');
   const centerName = identity.center.name || (isArabic ? 'مركز الأشعة' : 'Radiology Center');
-  const phone = identity.contacts.hotline || identity.contacts.phone || '19999';
+  const phone = identity.contacts.hotline || identity.contacts.phone;
 
   const groups = [
     {
@@ -63,7 +63,7 @@ export const PortalFooter = ({ isRtl }: PortalFooterProps) => {
           <p className="mx-auto mt-4 max-w-sm text-xs font-normal leading-6 text-emerald-50/70 lg:mx-0">
             {isArabic ? 'تصوير تشخيصي أكثر وضوحاً وراحة، بخبرة طبية وتقنيات تدعم القرار الصحيح.' : 'Clearer, more comfortable diagnostic imaging supported by medical expertise and purposeful technology.'}
           </p>
-          <a href={`tel:${phone.replace(/\s/g, '')}`} className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-white transition hover:text-emerald-200"><Phone className="h-4 w-4 text-emerald-300" /><span dir="ltr">{phone}</span></a>
+          {phone && <a href={`tel:${phone.replace(/\s/g, '')}`} className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-white transition hover:text-emerald-200"><Phone className="h-4 w-4 text-emerald-300" /><span dir="ltr">{phone}</span></a>}
           </div>
 
           <div className="grid grid-cols-2 gap-x-7 gap-y-9 sm:grid-cols-4">

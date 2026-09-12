@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
     Activity,
-    AlertTriangle,
     ArrowUpRight,
     BellRing,
     CheckCircle2,
@@ -13,13 +12,11 @@ import {
     KeyRound,
     ListTodo,
     RefreshCw,
-    RotateCcw,
     Server,
     Settings as SettingsIcon,
     ShieldCheck,
     Sparkles,
     Terminal,
-    Trash2,
     Users,
     Zap
 } from 'lucide-react';
@@ -38,7 +35,7 @@ import {
 } from '../../store/api';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 
-const AdminSettings = () => {
+const AdminSettings = ({ embedded = false }) => {
     const { t, i18n } = useTranslation(['settings', 'common']);
     const isRtl = i18n.dir() === 'rtl';
     const navigate = useNavigate();
@@ -50,9 +47,7 @@ const AdminSettings = () => {
     const { data: backups = [], isLoading: isLoadingBackups, refetch: refetchBackups } = useGetBackupsQuery();
     const [generateBackup, { isLoading: isGeneratingBackup }] = useGenerateBackupMutation();
 
-    const { data: telemetry, isLoading: isLoadingTelemetry, refetch: refetchTelemetry } = useGetAdminTelemetryQuery(undefined, {
-        pollingInterval: 30000
-    });
+    const { data: telemetry, isLoading: isLoadingTelemetry, refetch: refetchTelemetry } = useGetAdminTelemetryQuery();
 
     const { data: govData, isLoading: isLoadingGov } = useGetGovernancePoliciesQuery();
     const [updateGovernancePolicies, { isLoading: isSavingGov }] = useUpdateGovernancePoliciesMutation();
@@ -83,7 +78,7 @@ const AdminSettings = () => {
             toast.success(res.message || t('settings.adminHub.optimizeSuccess', { defaultValue: 'Database indexes re-aligned and space optimized.' }));
             refetchTelemetry();
         } catch (error) {
-            toast.error(getErrorMessage(error, 'Database vacuum failed'));
+            toast.error(getErrorMessage(error, t('settings.adminHub.vacuumFailed', { defaultValue: 'Database vacuum failed' })));
         }
     };
 
@@ -93,7 +88,7 @@ const AdminSettings = () => {
             toast.success(res.message || t('settings.adminHub.cacheCleared', { defaultValue: 'System memory cache and RBAC maps flushed.' }));
             refetchTelemetry();
         } catch (error) {
-            toast.error(getErrorMessage(error, 'Cache flush failed'));
+            toast.error(getErrorMessage(error, t('settings.adminHub.cacheFlushFailed', { defaultValue: 'Cache flush failed' })));
         }
     };
 
@@ -102,16 +97,16 @@ const AdminSettings = () => {
             const res = await updateGovernancePolicies({ retentionDays, sessionTimeoutMins }).unwrap();
             toast.success(res.message || t('settings.adminHub.policySaved', { defaultValue: 'Governance retention policies updated.' }));
         } catch (error) {
-            toast.error(getErrorMessage(error, 'Failed to save governance policy'));
+            toast.error(getErrorMessage(error, t('settings.adminHub.policySaveFailed', { defaultValue: 'Failed to save governance policy' })));
         }
     };
 
     const defaultServices = [
-        { id: 'notifications', name: 'Notification Dispatch Worker', interval: '60s', status: 'active', icon: BellRing, lastRun: '10 seconds ago' },
-        { id: 'pacs_mwl', name: 'PACS Modality Worklist Sync', interval: '300s', status: 'active', icon: Server, lastRun: '2 minutes ago' },
-        { id: 'pacs_ai', name: 'DICOM AI Job Queue Processor', interval: 'Event Driven', status: 'active', icon: Zap, lastRun: 'Live / Standby' },
-        { id: 'backup_cron', name: 'Automated DB Vault Backup', interval: 'Daily 02:00', status: 'active', icon: DatabaseBackup, lastRun: 'Today 02:00 AM' },
-        { id: 'inventory_alert', name: 'Inventory Alert & Reorder Watcher', interval: '3600s', status: 'active', icon: Activity, lastRun: '45 minutes ago' }
+        { id: 'notifications', name: t('settings.adminHub.serviceNames.notifications', { defaultValue: 'Notification Dispatch Worker' }), interval: '60s', status: 'active', icon: BellRing, lastRun: '10s ago' },
+        { id: 'pacs_mwl', name: t('settings.adminHub.serviceNames.pacs_mwl', { defaultValue: 'PACS Modality Worklist Sync' }), interval: '300s', status: 'active', icon: Server, lastRun: '2m ago' },
+        { id: 'pacs_ai', name: t('settings.adminHub.serviceNames.pacs_ai', { defaultValue: 'DICOM AI Job Queue Processor' }), interval: 'Event Driven', status: 'active', icon: Zap, lastRun: 'Live' },
+        { id: 'backup_cron', name: t('settings.adminHub.serviceNames.backup_cron', { defaultValue: 'Automated DB Vault Backup' }), interval: 'Daily 02:00', status: 'active', icon: DatabaseBackup, lastRun: 'Today 02:00' },
+        { id: 'inventory_alert', name: t('settings.adminHub.serviceNames.inventory_alert', { defaultValue: 'Inventory Alert & Reorder Watcher' }), interval: '3600s', status: 'active', icon: Activity, lastRun: '45m ago' }
     ];
 
     const backgroundServices = (telemetry?.services || defaultServices).map((s) => ({
@@ -120,12 +115,13 @@ const AdminSettings = () => {
     }));
 
     const quickLinks = [
-        { id: 'team', label: t('settings.adminHub.quickLinks.team', { defaultValue: 'Manage team access' }), description: t('settings.adminHub.quickLinks.teamDesc', { defaultValue: 'Review staff roles and account access.' }), icon: Users },
-        { id: 'roles', label: t('settings.adminHub.quickLinks.roles', { defaultValue: 'Review permissions' }), description: t('settings.adminHub.quickLinks.rolesDesc', { defaultValue: 'Maintain role-based permissions.' }), icon: KeyRound },
-        { id: 'auditLogs', label: t('settings.adminHub.quickLinks.audit', { defaultValue: 'Open audit logs' }), description: t('settings.adminHub.quickLinks.auditDesc', { defaultValue: 'Investigate administrative activity.' }), icon: FileText },
-        { id: 'backups', label: t('settings.adminHub.quickLinks.backups', { defaultValue: 'Manage backups' }), description: t('settings.adminHub.quickLinks.backupsDesc', { defaultValue: 'Review backup history and recovery tools.' }), icon: DatabaseBackup },
-        { id: 'integrations', label: t('settings.adminHub.quickLinks.integrations', { defaultValue: 'Configure integrations' }), description: t('settings.adminHub.quickLinks.integrationsDesc', { defaultValue: 'Check connected clinical services.' }), icon: Server },
-        { id: 'pacs', label: t('settings.adminHub.quickLinks.pacs', { defaultValue: 'Open PACS settings' }), description: t('settings.adminHub.quickLinks.pacsDesc', { defaultValue: 'Manage DICOM endpoints and archive health.' }), icon: HardDrive }
+        { id: 'team', label: t('settings.adminHub.quickLinks.team', { defaultValue: 'Manage team access' }), description: t('settings.adminHub.quickLinks.teamDesc', { defaultValue: 'Review staff roles and account access.' }), icon: Users, path: '/users' },
+        { id: 'userActivity', label: t('settings.adminHub.quickLinks.userActivity', { defaultValue: 'User Activity Tracker' }), description: t('settings.adminHub.quickLinks.userActivityDesc', { defaultValue: 'Track employee operations and movements in real time.' }), icon: Activity, path: '/user-activity' },
+        { id: 'roles', label: t('settings.adminHub.quickLinks.roles', { defaultValue: 'Review permissions' }), description: t('settings.adminHub.quickLinks.rolesDesc', { defaultValue: 'Maintain role-based permissions.' }), icon: KeyRound, path: '/settings?tab=roles' },
+        { id: 'auditLogs', label: t('settings.adminHub.quickLinks.audit', { defaultValue: 'Open audit logs' }), description: t('settings.adminHub.quickLinks.auditDesc', { defaultValue: 'Investigate administrative activity.' }), icon: FileText, path: '/settings?tab=auditLogs' },
+        { id: 'backups', label: t('settings.adminHub.quickLinks.backups', { defaultValue: 'Manage backups' }), description: t('settings.adminHub.quickLinks.backupsDesc', { defaultValue: 'Review backup history and recovery tools.' }), icon: DatabaseBackup, path: '/settings?tab=backups' },
+        { id: 'integrations', label: t('settings.adminHub.quickLinks.integrations', { defaultValue: 'Configure integrations' }), description: t('settings.adminHub.quickLinks.integrationsDesc', { defaultValue: 'Check connected clinical services.' }), icon: Server, path: '/settings?tab=integrations' },
+        { id: 'pacs', label: t('settings.adminHub.quickLinks.pacs', { defaultValue: 'Open PACS settings' }), description: t('settings.adminHub.quickLinks.pacsDesc', { defaultValue: 'Manage DICOM endpoints and archive health.' }), icon: HardDrive, path: '/settings?tab=pacs' }
     ];
 
 
@@ -136,7 +132,7 @@ const AdminSettings = () => {
     ];
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-10" dir={isRtl ? 'rtl' : 'ltr'}>
+        <div className={embedded ? 'space-y-5 pb-0' : 'mx-auto max-w-7xl space-y-6 pb-10'} dir={isRtl ? 'rtl' : 'ltr'}>
             {/* VIARA Hero Command Deck */}
             <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8 space-y-6">
                 <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
@@ -149,9 +145,9 @@ const AdminSettings = () => {
                         </div>
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
                                     <ShieldCheck size={11} />
-                                    <span>System Administration & Superuser Controls</span>
+                                    <span>{t('settings.adminHub.adminOnly', { defaultValue: 'Admin only' })}</span>
                                 </span>
                                 <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
                                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -196,8 +192,8 @@ const AdminSettings = () => {
                             <Activity size={16} className="text-teal-600 dark:text-teal-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Background Schedulers</p>
-                            <p className="font-mono text-base font-black text-slate-900 dark:text-white">{backgroundServices.length} Active</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('settings.adminHub.activeWorkers', { defaultValue: 'Active schedulers' })}</p>
+                            <p className="font-mono text-base font-black text-slate-900 dark:text-white">{t('settings.adminHub.workersCount', { count: backgroundServices.length, defaultValue: '{{count}} Active' })}</p>
                         </div>
                     </div>
 
@@ -206,10 +202,10 @@ const AdminSettings = () => {
                             <Server size={16} className="text-emerald-600 dark:emerald-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">DB Latency</p>
-                            <p className="font-mono text-base font-black text-emerald-900 dark:text-white">
-                                {isLoadingTelemetry ? 'Testing...' : telemetry?.dbLatencyMs ? `${telemetry.dbLatencyMs.toFixed(1)} ms` : 'Live (Healthy)'}
-                            </p>
+                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">{t('settings.adminHub.dbPoolStatus', { defaultValue: 'DB pool health' })}</p>
+                <p className="font-mono text-base font-black text-emerald-900 dark:text-white">
+                    {isLoadingTelemetry ? t('settings.adminHub.dbTesting', { defaultValue: 'Testing...' }) : telemetry?.dbLatencyMs ? `${telemetry.dbLatencyMs.toFixed(1)} ms` : t('settings.adminHub.dbHealthy', { defaultValue: 'Live (Healthy)' })}
+                </p>
                         </div>
                     </div>
 
@@ -218,7 +214,7 @@ const AdminSettings = () => {
                             <DatabaseBackup size={16} className="text-sky-600 dark:text-sky-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">System Backups</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">{t('settings.adminHub.lastBackup', { defaultValue: 'Backups created' })}</p>
                             <p className="font-mono text-base font-black text-sky-900 dark:text-white">{isLoadingBackups ? '—' : backups.length}</p>
                         </div>
                     </div>
@@ -228,8 +224,8 @@ const AdminSettings = () => {
                             <ShieldCheck size={16} className="text-amber-600 dark:text-amber-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">Audit Integrity</p>
-                            <p className="font-mono text-base font-black text-amber-900 dark:text-white">Protected</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">{t('settings.adminHub.auditVault', { defaultValue: 'Audit log status' })}</p>
+                            <p className="font-mono text-base font-black text-amber-900 dark:text-white">{t('settings.adminHub.protected', { defaultValue: 'Protected' })}</p>
                         </div>
                     </div>
                 </div>
@@ -239,10 +235,10 @@ const AdminSettings = () => {
             <section className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-slate-950 p-6 text-white shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-[#07111f] space-y-4" aria-labelledby="admin-quick-links-title">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-300">
-                            <SettingsIcon size={11} />
-                            <span>Administrative Directory</span>
-                        </span>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-300">
+                                    <SettingsIcon size={11} />
+                                    <span>{t('settings.adminHub.controlCenter', { defaultValue: 'Control center' })}</span>
+                                </span>
                         <h2 id="admin-quick-links-title" className="mt-1 text-lg font-black">{t('settings.adminHub.quickLinksTitle', { defaultValue: 'Privileged Workspace Navigation' })}</h2>
                         <p className="mt-1 text-xs leading-5 text-slate-300">{t('settings.adminHub.quickLinksDesc', { defaultValue: 'Instant administrative shortcuts to configure roles, PACS pipelines, audit journals, and backups.' })}</p>
                     </div>
@@ -257,7 +253,7 @@ const AdminSettings = () => {
                             <button
                                 key={link.id}
                                 type="button"
-                                onClick={() => navigate(`/settings?tab=${link.id}`)}
+                                onClick={() => navigate(link.path || `/settings?tab=${link.id}`)}
                                 className="group flex min-h-[82px] items-center gap-3.5 rounded-2xl border border-white/10 bg-white/[.05] p-3.5 text-start transition hover:border-teal-400/50 hover:bg-teal-400/10 focus:outline-none focus:ring-2 focus:ring-teal-400/50"
                             >
                                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-400/15 text-teal-200 transition group-hover:bg-teal-400 group-hover:text-slate-950 shadow-2xs">
@@ -308,7 +304,7 @@ const AdminSettings = () => {
             {activeSubTab === 'notifications' && (
                 <div className="space-y-6">
                     <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                        <header className="flex items-start gap-3 border-b border-slate-200/80 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-955/50">
+                        <header className="flex items-start gap-3 border-b border-slate-200/80 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/50">
                             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
                                 <Zap size={18} aria-hidden="true" />
                             </span>
@@ -323,7 +319,7 @@ const AdminSettings = () => {
                     </section>
 
                     <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                        <header className="flex items-start gap-3 border-b border-slate-200/80 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-955/50">
+                        <header className="flex items-start gap-3 border-b border-slate-200/80 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/50">
                             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
                                 <ListTodo size={18} aria-hidden="true" />
                             </span>
@@ -342,7 +338,7 @@ const AdminSettings = () => {
             {/* Tab 2: System Schedulers & Health */}
             {activeSubTab === 'schedulers' && (
                 <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                    <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200/80 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-955/50">
+                    <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200/80 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/50">
                         <div className="flex items-start gap-3">
                             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
                                 <Activity size={18} aria-hidden="true" />
@@ -380,9 +376,9 @@ const AdminSettings = () => {
                                             <p className="break-words text-sm font-bold text-slate-950 dark:text-white">{service.name}</p>
                                             <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                                                 <Clock size={13} />
-                                                <span>Interval: <span className="font-semibold text-slate-700 dark:text-slate-300">{service.interval}</span></span>
+                                                <span>{t('settings.adminHub.interval', { defaultValue: 'Interval' })}: <span className="font-semibold text-slate-700 dark:text-slate-300">{service.interval}</span></span>
                                                 <span>·</span>
-                                                <span>Last run: <span>{service.lastRun}</span></span>
+                                                <span>{t('settings.adminHub.lastRun', { defaultValue: 'Last run' })}: <span>{service.lastRun}</span></span>
                                             </p>
                                         </div>
                                     </div>
@@ -390,7 +386,7 @@ const AdminSettings = () => {
                                     <div className="flex items-center gap-3 shrink-0">
                                         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-xs font-bold text-emerald-800 dark:text-emerald-300">
                                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                            Running
+                                            {t('settings.adminHub.statusRunning', { defaultValue: 'Running' })}
                                         </span>
                                     </div>
                                 </div>
@@ -405,7 +401,7 @@ const AdminSettings = () => {
                 <div className="grid gap-6 md:grid-cols-2">
                     {/* Retention Settings */}
                     <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                        <header className="flex items-start gap-3 border-b border-slate-200/80 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-955/50">
+                        <header className="flex items-start gap-3 border-b border-slate-200/80 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/50">
                             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
                                 <Database size={18} aria-hidden="true" />
                             </span>
@@ -423,24 +419,24 @@ const AdminSettings = () => {
                                     onChange={(e) => setRetentionDays(e.target.value)}
                                     className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-800 outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                                 >
-                                    <option value="90">90 Days (Recommended)</option>
-                                    <option value="180">180 Days (6 Months)</option>
-                                    <option value="365">365 Days (1 Year)</option>
-                                    <option value="infinite">Indefinite Retention</option>
+                                    <option value="90">{t('settings.adminHub.retentionOpts.90', { defaultValue: '90 Days (Recommended)' })}</option>
+                                    <option value="180">{t('settings.adminHub.retentionOpts.180', { defaultValue: '180 Days (6 Months)' })}</option>
+                                    <option value="365">{t('settings.adminHub.retentionOpts.365', { defaultValue: '365 Days (1 Year)' })}</option>
+                                    <option value="infinite">{t('settings.adminHub.retentionOpts.infinite', { defaultValue: 'Indefinite Retention' })}</option>
                                 </select>
                             </label>
 
                             <label className="block space-y-2">
-                                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('settings.adminHub.sessionTimeout', { defaultValue: 'Inactivity Session Lock' })}</span>
+                                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('settings.adminHub.sessionTimeout', { defaultValue: 'Session Timeout' })}</span>
                                 <select
                                     value={sessionTimeoutMins}
                                     onChange={(e) => setSessionTimeoutMins(e.target.value)}
                                     className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-800 outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                                 >
-                                    <option value="15">15 Minutes</option>
-                                    <option value="30">30 Minutes (Standard)</option>
-                                    <option value="60">60 Minutes</option>
-                                    <option value="120">120 Minutes</option>
+                                    <option value="15">{t('settings.adminHub.sessionOpts.15', { defaultValue: '15 Minutes' })}</option>
+                                    <option value="30">{t('settings.adminHub.sessionOpts.30', { defaultValue: '30 Minutes (Standard)' })}</option>
+                                    <option value="60">{t('settings.adminHub.sessionOpts.60', { defaultValue: '60 Minutes' })}</option>
+                                    <option value="120">{t('settings.adminHub.sessionOpts.120', { defaultValue: '120 Minutes' })}</option>
                                 </select>
                             </label>
 
@@ -450,14 +446,14 @@ const AdminSettings = () => {
                                 disabled={isSavingGov}
                                 className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 text-xs font-bold text-white shadow-sm transition hover:bg-teal-500 disabled:opacity-50"
                             >
-                                <ShieldCheck size={15} /> <span>{isSavingGov ? 'Saving...' : 'Save Policy Settings'}</span>
+                                <ShieldCheck size={15} /> <span>{isSavingGov ? t('settings.adminHub.saving', { defaultValue: 'Saving...' }) : t('settings.adminHub.savePolicy', { defaultValue: 'Save Policy Settings' })}</span>
                             </button>
                         </div>
                     </section>
 
                     {/* Database Vacuum & Maintenance */}
                     <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                        <header className="flex items-start gap-3 border-b border-slate-200/80 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-955/50">
+                        <header className="flex items-start gap-3 border-b border-slate-200/80 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/50">
                             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
                                 <HardDrive size={18} aria-hidden="true" />
                             </span>
@@ -469,7 +465,7 @@ const AdminSettings = () => {
 
                         <div className="p-6 space-y-4">
                             <div className="rounded-2xl border border-teal-500/20 bg-teal-500/10 p-4 text-xs leading-5 text-teal-900 dark:text-teal-200">
-                                Vacuuming reclaims unused space from deleted audit rows and optimizes query planning across large tables.
+                                    {t('settings.adminHub.vacuumHelp', { defaultValue: 'Vacuum reclaims unused space from deleted audit rows and optimizes query planning across large tables.' })}
                             </div>
 
                             <button
@@ -479,7 +475,7 @@ const AdminSettings = () => {
                                 className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-teal-500/30 bg-teal-500/10 px-4 text-xs font-bold text-teal-900 transition hover:bg-teal-500/20 dark:border-teal-500/30 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-900/50 disabled:opacity-50"
                             >
                                 <RefreshCw size={15} className={isOptimizing ? 'animate-spin' : ''} />
-                                <span>{isOptimizing ? 'Optimizing Database...' : 'Run Storage Vacuum & Index Alignment'}</span>
+                                <span>{isOptimizing ? t('settings.adminHub.optimizing', { defaultValue: 'Optimizing Database...' }) : t('settings.adminHub.maintenanceAction', { defaultValue: 'Run Storage Vacuum & Index Alignment' })}</span>
                             </button>
                         </div>
                     </section>

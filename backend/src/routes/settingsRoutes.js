@@ -41,7 +41,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
 
     // Admin Superuser Maintenance & Governance
     router.post('/admin/maintenance/vacuum', authenticateToken, authorizeRole(['Admin', 'Developer']), vacuumDatabase(pool));
-    router.post('/admin/maintenance/clear-cache', authenticateToken, authorizeRole(['Admin', 'Developer']), flushServerCache(pool));
+    router.post('/admin/maintenance/clear-cache', authenticateToken, authorizeRole(['Admin', 'Developer']), hasPermission(pool, 'MANAGE_SETTINGS'), flushServerCache(pool));
     router.get('/admin/telemetry', authenticateToken, authorizeRole(['Admin', 'Developer']), getSystemTelemetry(pool));
     router.get('/admin/governance', authenticateToken, authorizeRole(['Admin', 'Developer']), getGovernancePolicies(pool));
     router.put('/admin/governance', authenticateToken, authorizeRole(['Admin', 'Developer']), updateGovernancePolicies(pool));

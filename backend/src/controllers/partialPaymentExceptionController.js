@@ -1,7 +1,7 @@
 const { AppError } = require('../middleware/errorHandler');
 const { decrypt } = require('../utils/crypto');
 const { getInvoicePaymentPosition } = require('../services/partialPaymentExceptionService');
-const { triggerEventForRole } = require('../services/notificationJobService');
+const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 
 const getUserId = (req) => req.user?.user_id || req.user?.userId || null;
 
@@ -14,6 +14,17 @@ const withPatientName = (row) => {
             .join(' ')
     };
 };
+
+const getExceptionVariables = (request, status, reviewNotes) => ({
+    invoice_number: request.invoice_number || request.invoice_id || '',
+    patient_name: request.patient_name || '',
+    order_number: request.order_number || '',
+    amount: request.requested_balance_amount || request.balance_amount || 0,
+    reason: request.reason || '',
+    status,
+    review_notes: reviewNotes || '',
+    target_stage: request.metadata?.targetStage || '',
+});
 
 const getPartialPaymentExceptions = (db) => async (req, res, next) => {
     try {
@@ -111,29 +122,41 @@ const requestPartialPaymentException = (db) => async (req, res, next) => {
         await client.query('COMMIT');
         res.status(201).json(result.rows[0]);
 
+        const requestVariables = getExceptionVariables(withPatientName({
+            ...position,
+            ...result.rows[0],
+        }), 'Pending');
+
         triggerEventForRole(db, 'PartialPaymentException', 'Accountant', {
             priority: 'Warning',
-            variables: {
-                invoice_number: position.invoice_number || '',
-                patient_name: '',
-                amount: position.balance_amount || 0,
-                reason: req.body.reason || ''
-            }
+            entityType: 'PartialPaymentException',
+            entityId: result.rows[0].exception_id,
+            occurrenceKey: `partial-payment-exception:${result.rows[0].exception_id}:pending:accountant`,
+            variables: requestVariables,
         }).catch(() => {});
 
         triggerEventForRole(db, 'PartialPaymentException', 'Admin', {
             priority: 'Warning',
-            variables: {
-                invoice_number: position.invoice_number || '',
-                patient_name: '',
-                amount: position.balance_amount || 0,
-                reason: req.body.reason || ''
-            }
+            entityType: 'PartialPaymentException',
+            entityId: result.rows[0].exception_id,
+            occurrenceKey: `partial-payment-exception:${result.rows[0].exception_id}:pending:admin`,
+            variables: requestVariables,
         }).catch(() => {});
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         if (error.code === '23505') {
-            return next(new AppError('A pending exception already exists for this invoice and transaction', 409));
+            return next(new AppError(
+                'A pending exception already exists for this invoice and transaction',
+                409,
+                true,
+                'PARTIAL_PAYMENT_EXCEPTION_PENDING',
+                {
+                    status: 'Pending',
+                    invoiceId: req.params.id,
+                    transactionType: req.body.transactionType,
+                    targetStage: req.body.targetStage
+                }
+            ));
         }
         next(error);
     } finally {
@@ -149,9 +172,21 @@ const reviewPartialPaymentException = (db) => async (req, res, next) => {
         await client.query('BEGIN');
 
         const existing = await client.query(`
-            SELECT *
-            FROM partial_payment_exceptions
-            WHERE exception_id = $1
+            SELECT ppe.*,
+                   i.invoice_number,
+                   requester.role::text AS requested_by_role,
+                   p.first_name_enc,
+                   p.last_name_enc,
+                   a.nurse_id,
+                   a.technician_id,
+                   e.order_number
+            FROM partial_payment_exceptions ppe
+            JOIN invoices i ON i.invoice_id = ppe.invoice_id
+            LEFT JOIN users requester ON requester.user_id = ppe.requested_by
+            LEFT JOIN patients p ON p.patient_id = ppe.patient_id
+            LEFT JOIN appointments a ON a.appointment_id = ppe.appointment_id
+            LEFT JOIN examinations e ON e.exam_id = ppe.exam_id
+            WHERE ppe.exception_id = $1
             FOR UPDATE
         `, [req.params.id]);
 
@@ -159,7 +194,7 @@ const reviewPartialPaymentException = (db) => async (req, res, next) => {
             throw new AppError('Partial payment exception request not found', 404);
         }
 
-        const request = existing.rows[0];
+        const request = withPatientName(existing.rows[0]);
         if (request.status !== 'Pending') {
             throw new AppError('This partial payment exception has already been reviewed', 409);
         }
@@ -190,25 +225,52 @@ const reviewPartialPaymentException = (db) => async (req, res, next) => {
         await client.query('COMMIT');
         res.json(result.rows[0]);
 
-        triggerEventForRole(db, 'PartialPaymentException', 'Accountant', {
+        const variables = getExceptionVariables(request, req.body.status, req.body.reviewNotes);
+        const notificationBase = {
             priority: 'Warning',
-            variables: {
-                invoice_number: request.invoice_id || '',
-                patient_name: '',
-                amount: request.requested_balance_amount || 0,
-                reason: `Status changed to ${req.body.status}: ${req.body.reviewNotes || ''}`
-            }
-        }).catch(() => {});
+            entityType: 'PartialPaymentException',
+            entityId: request.exception_id,
+            variables,
+        };
 
-        triggerEventForRole(db, 'PartialPaymentException', 'Admin', {
-            priority: 'Warning',
-            variables: {
-                invoice_number: request.invoice_id || '',
-                patient_name: '',
-                amount: request.requested_balance_amount || 0,
-                reason: `Status changed to ${req.body.status}: ${req.body.reviewNotes || ''}`
+        if (request.requested_by && request.requested_by_role) {
+            triggerEvent(db, 'PartialPaymentException', {
+                ...notificationBase,
+                staffId: request.requested_by,
+                staffRole: request.requested_by_role,
+                occurrenceKey: `partial-payment-exception:${request.exception_id}:${req.body.status}:requester`,
+            }).catch(() => {});
+        }
+
+        if (req.body.status === 'Approved') {
+            const targetStage = request.metadata?.targetStage;
+            const destinationRole = targetStage === 'Prep Pending'
+                ? 'Nurse'
+                : ['Ready for Exam', 'In Exam'].includes(targetStage)
+                    ? 'Technician'
+                    : null;
+            const destinationUserId = destinationRole === 'Nurse'
+                ? request.nurse_id
+                : destinationRole === 'Technician'
+                    ? request.technician_id
+                    : null;
+
+            if (destinationRole && String(destinationUserId || '') !== String(request.requested_by || '')) {
+                const destinationPayload = {
+                    ...notificationBase,
+                    occurrenceKey: `partial-payment-exception:${request.exception_id}:approved:${destinationRole.toLowerCase()}`,
+                };
+                if (destinationUserId) {
+                    triggerEvent(db, 'PartialPaymentException', {
+                        ...destinationPayload,
+                        staffId: destinationUserId,
+                        staffRole: destinationRole,
+                    }).catch(() => {});
+                } else {
+                    triggerEventForRole(db, 'PartialPaymentException', destinationRole, destinationPayload).catch(() => {});
+                }
             }
-        }).catch(() => {});
+        }
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         next(error);

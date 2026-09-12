@@ -27,7 +27,8 @@
     "privacy": "الخصوصية",
     "refund": "الاستردادات",
     "claim": "المطالبات",
-    "rule": "قواعد الرواتب"
+    "rule": "قواعد الرواتب",
+    "attendancePermission": "أذونات الانصراف والحضور"
   },
   "risk": {
     "critical": "حرج",
@@ -81,7 +82,8 @@
     "leaveSubtitle_other": "إجازة {{type}} · {{count}} أيام",
     "privacySubtitle": "طلب {{type}}",
     "refundSubtitle": "استرداد للفاتورة {{invoice}}",
-    "payrollRuleSubtitle": "قاعدة رواتب {{type}}"
+    "payrollRuleSubtitle": "قاعدة رواتب {{type}}",
+    "attendancePermissionSubtitle": "{{type}} ({{minutes}} دقيقة) · بتاريخ {{date}}"
   },
   "facts": {
     "penaltyType": "نوع الجزاء",
@@ -114,6 +116,11 @@
     "days": "{{count}} يوم",
     "days_other": "{{count}} أيام",
     "leaveType": "نوع الإجازة",
+    "permissionType": "نوع الإذن",
+    "permittedMinutes": "المدة المصرح بها",
+    "targetTime": "الوقت المحدد",
+    "effectiveDate": "تاريخ السريان",
+    "employee": "الموظف",
     "patient": "المريض",
     "mrn": "رقم الملف الطبي",
     "requestType": "نوع الطلب",
@@ -211,5 +218,10 @@
     "insuranceTeam": "فريق التأمين",
     "dateUnavailable": "وقت التقديم غير متاح",
     "payrollRule": "قاعدة رواتب"
+  },
+  "attendancePermissionTypes": {
+    "earlyDeparture": "إذن انصراف مبكر",
+    "lateArrival": "إذن حضور متأخر",
+    "emergencyAccess": "دخول طارئ للنظام"
   }
 }

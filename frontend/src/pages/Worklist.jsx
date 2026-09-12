@@ -40,11 +40,15 @@ import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import { PageHeader, Scheduler } from '../components/ui';
+import { TextPromptDialog } from '../components/ui';
 import Pagination from '../components/ui/Pagination';
+import ClinicalTaskScope, { AssignmentBadge } from '../components/clinical/ClinicalTaskScope';
 import { selectCurrentUser } from '../store/authSlice';
 import {
     useGetAppointmentsQuery,
+    useClaimQueueTaskMutation,
     useGetQueueQuery,
+    useReleaseQueueTaskAssignmentMutation,
     useTransitionQueueMutation
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
@@ -80,6 +84,8 @@ const roleReadyStages = {
 };
 
 const defaultStageOptions = [
+    'Scheduled',
+    'Registered',
     'Arrived',
     'Payment Pending',
     'Prep Pending',
@@ -87,7 +93,8 @@ const defaultStageOptions = [
     'In Exam',
     'Reporting',
     'Finalized',
-    'Delivered'
+    'Delivered',
+    'Cancelled'
 ];
 
 // ─── Color System & Semantic Tokens ─────────────────────────────────
@@ -105,6 +112,8 @@ const priorityPillSolid = {
 };
 
 const stageStyles = {
+    Scheduled: 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300',
+    Registered: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300',
     Arrived: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300',
     'Payment Pending': 'border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300',
     'Prep Pending': 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
@@ -112,7 +121,8 @@ const stageStyles = {
     'In Exam': 'border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300',
     Reporting: 'border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300',
     Finalized: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-    Delivered: 'border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
+    Delivered: 'border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400',
+    Cancelled: 'border-rose-300/60 bg-rose-50 text-rose-500 line-through dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-300'
 };
 
 const metricTones = {
@@ -338,58 +348,72 @@ const DensityToggle = React.memo(({ value, onChange, t }) => (
 
 // ─── Telemetry Insight Panel ────────────────────────────────────────
 
-const QueueInsightPanel = React.memo(({ metrics, nextCase, locale, t, onOpen, isArabic }) => (
-    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[repeat(4,minmax(0,1fr))_minmax(320px,1.3fr)]">
-        {[
-            [t('roleCommand.metrics.assigned', { defaultValue: 'Active Queue' }), formatCount(metrics.total, locale), Activity, 'teal', 'bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-500/30'],
-            [t('roleCommand.metrics.priority', { defaultValue: 'Urgent / STAT' }), formatCount(metrics.priority, locale), AlertTriangle, metrics.priority ? 'amber' : 'slate', metrics.priority ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30 ring-1 ring-amber-500/20' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700'],
-            [t('focus.overdue', { defaultValue: 'SLA Overdue' }), formatCount(metrics.overdue, locale), TimerReset, metrics.overdue ? 'rose' : 'slate', metrics.overdue ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30 ring-1 ring-rose-500/20' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700'],
-            [t('roleCommand.metrics.averageWait', { defaultValue: 'Average Wait' }), formatDuration(metrics.averageWait, locale), Clock3, metrics.overdue ? 'rose' : 'sky', 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30']
-        ].map(([label, value, Icon, tone, badgeStyle]) => (
-            <div
-                key={label}
-                className="group relative flex min-h-[76px] items-center gap-3.5 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl transition-all duration-200 hover:shadow-md hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-slate-700"
-            >
-                <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl border ${badgeStyle}`}>
-                    <Icon size={20} />
-                </div>
-                <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</p>
-                    <p className="mt-0.5 text-lg font-black tabular-nums text-slate-900 dark:text-white sm:text-xl">{value}</p>
-                </div>
-            </div>
-        ))}
+const QueueInsightPanel = React.memo(({ metrics, nextCase, locale, t, onOpen, onFocus, activeFocus, isArabic }) => {
+    const metricItems = [
+        { key: 'all', label: t('roleCommand.metrics.assigned'), value: formatCount(metrics.total, locale), icon: Activity, style: 'bg-teal-500/10 text-teal-700 ring-teal-500/20 dark:text-teal-300' },
+        { key: 'priority', label: t('roleCommand.metrics.priority'), value: formatCount(metrics.priority, locale), icon: AlertTriangle, style: metrics.priority ? 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300' : 'bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700' },
+        { key: 'overdue', label: t('focus.overdue'), value: formatCount(metrics.overdue, locale), icon: TimerReset, style: metrics.overdue ? 'bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:text-rose-300' : 'bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700' },
+        { key: null, label: t('roleCommand.metrics.averageWait'), value: formatDuration(metrics.averageWait, locale), icon: Clock3, style: 'bg-sky-500/10 text-sky-700 ring-sky-500/20 dark:text-sky-300' }
+    ];
 
-        {nextCase && (
-            <button
-                type="button"
-                onClick={() => onOpen(nextCase)}
-                className="group relative flex min-h-[76px] items-center justify-between gap-3 rounded-2xl border border-teal-500/40 bg-gradient-to-br from-teal-50/90 via-emerald-50/50 to-white/90 p-4 text-start shadow-sm backdrop-blur-xl transition-all duration-200 hover:shadow-md hover:border-teal-500 dark:border-teal-800/60 dark:from-teal-950/40 dark:via-slate-900/80 dark:to-slate-900"
-            >
-                <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
-                        <Zap size={14} className="text-teal-600 animate-pulse" />
-                        <span>{t('insights.nextBest', { defaultValue: 'Next Recommended Case' })}</span>
+    return (
+        <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90" aria-label={t('insights.title')}>
+            <div className="grid xl:grid-cols-[minmax(0,1fr)_minmax(300px,.72fr)]">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4">
+                    {metricItems.map(({ key, label, value, icon: Icon, style }) => {
+                        const Component = key ? 'button' : 'div';
+                        const active = key && activeFocus === key;
+                        return (
+                            <Component
+                                key={label}
+                                {...(key ? { type: 'button', onClick: () => onFocus(key), 'aria-pressed': active } : {})}
+                                className={`flex min-w-0 items-center gap-3 border-b border-slate-200/70 p-4 text-start transition last:border-b-0 dark:border-slate-800 sm:[&:nth-child(odd)]:border-e sm:[&:nth-last-child(-n+2)]:border-b-0 lg:border-b-0 lg:border-e lg:last:border-e-0 ${key ? 'hover:bg-slate-50 dark:hover:bg-slate-800/50' : ''} ${active ? 'bg-teal-50/70 dark:bg-teal-950/20' : ''}`}
+                            >
+                                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ring-1 ${style}`}>
+                                    <Icon size={17} />
+                                </span>
+                                <span className="min-w-0">
+                                    <span className="block truncate text-[9px] font-black uppercase tracking-[.1em] text-slate-400 dark:text-slate-500">{label}</span>
+                                    <span className="mt-0.5 block text-lg font-black tabular-nums text-slate-950 dark:text-white">{value}</span>
+                                </span>
+                            </Component>
+                        );
+                    })}
+                </div>
+
+                {nextCase ? (
+                    <button
+                        type="button"
+                        onClick={() => onOpen(nextCase)}
+                        className="group flex min-h-[84px] items-center justify-between gap-3 border-t border-teal-500/20 bg-gradient-to-br from-teal-50/90 via-emerald-50/50 to-white/90 p-4 text-start transition hover:bg-teal-50 dark:border-teal-500/20 dark:from-teal-950/40 dark:via-slate-900/80 dark:to-slate-900 xl:border-s xl:border-t-0"
+                    >
+                        <span className="min-w-0">
+                            <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[.1em] text-teal-700 dark:text-teal-300">
+                                <Zap size={13} className="animate-pulse" />
+                                {t('insights.nextBest')}
+                            </span>
+                            <span className="mt-1 block truncate text-sm font-black text-slate-950 dark:text-white">{nextCase.patient_name || t('fallback.patient')}</span>
+                            <span className="block truncate text-[10px] font-semibold text-slate-500 dark:text-slate-400">{nextCase.exam_type_name || nextCase.modality_name || t('fallback.unspecifiedExam')}</span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2">
+                            <span className={`rounded-lg border px-2 py-0.5 text-[9px] font-black ${priorityToneStyles[nextCase.priority] || priorityToneStyles.Routine}`}>
+                                {t(`priorities.${nextCase.priority || 'Routine'}`)}
+                            </span>
+                            <span className="grid h-8 w-8 place-items-center rounded-xl bg-teal-600 text-white transition-transform group-hover:scale-105">
+                                <ChevronRight size={16} className={isArabic ? 'rotate-180' : ''} />
+                            </span>
+                        </span>
+                    </button>
+                ) : (
+                    <div className="flex min-h-[84px] items-center gap-3 border-t border-slate-200/70 p-4 text-slate-500 dark:border-slate-800 dark:text-slate-400 xl:border-s xl:border-t-0">
+                        <CheckCircle2 size={18} className="text-emerald-500" />
+                        <span className="text-xs font-bold">{t('insights.empty')}</span>
                     </div>
-                    <p className="mt-1 truncate text-sm font-black text-slate-900 dark:text-white">
-                        {nextCase.patient_name || t('fallback.patient')}
-                    </p>
-                    <p className="truncate text-xs font-semibold text-slate-600 dark:text-slate-400">
-                        {nextCase.exam_type_name || nextCase.modality_name || t('fallback.unspecifiedExam')}
-                    </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                    <span className={`rounded-lg border px-2 py-0.5 font-mono text-[9px] font-black uppercase ${priorityToneStyles[nextCase.priority] || priorityToneStyles.Routine}`}>
-                        {t(`priorities.${nextCase.priority || 'Routine'}`)}
-                    </span>
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-teal-600 text-white shadow-xs transition-transform group-hover:scale-105">
-                        <ChevronRight size={17} className={isArabic ? 'rotate-180' : ''} />
-                    </span>
-                </div>
-            </button>
-        )}
-    </section>
-));
+                )}
+            </div>
+        </section>
+    );
+});
 
 const DataCell = React.memo(({ icon: Icon, label, value, alert = false }) => (
     <div className="min-w-0">
@@ -405,7 +429,7 @@ const DataCell = React.memo(({ icon: Icon, label, value, alert = false }) => (
 
 // ─── Patient Block ──────────────────────────────────────────────────
 
-const PatientBlock = React.memo(({ item, t, onClick, compact = false }) => {
+const PatientBlock = React.memo(({ item, t, onClick, compact = false, showExam = true }) => {
     return (
         <button
             type="button"
@@ -434,9 +458,11 @@ const PatientBlock = React.memo(({ item, t, onClick, compact = false }) => {
                         </span>
                     )}
                 </div>
-                <p className="mt-0.5 truncate text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    {item.exam_type_name || item.modality_name || t('fallback.unspecifiedExam')}
-                </p>
+                {showExam && (
+                    <p className="mt-0.5 truncate text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        {item.exam_type_name || item.modality_name || t('fallback.unspecifiedExam')}
+                    </p>
+                )}
                 <p className="mt-0.5 font-mono text-[10px] font-semibold text-slate-400 dark:text-slate-500">
                     MRN: {item.mrn || '—'} · #{item.order_number || item.exam_id}
                 </p>
@@ -453,7 +479,11 @@ const QueueRow = React.memo(({
     locale,
     t,
     isMoving,
+    isClaiming,
+    isReleasingAssignment,
     onAdvance,
+    onClaim,
+    onReturn,
     onOpen,
     onViewCase,
     onNavigate,
@@ -474,6 +504,12 @@ const QueueRow = React.memo(({
                 return { stage: 'In Exam', label: t('roleCommand.actions.In Exam') };
             if (item.queue_stage === 'In Exam')
                 return { stage: 'Reporting', label: t('roleCommand.actions.Reporting') };
+        }
+        if (['Receptionist', 'Admin', 'Developer'].includes(role)) {
+            if (item.queue_stage === 'Scheduled')
+                return { stage: 'Arrived', label: t('roleCommand.actions.Arrived', { defaultValue: t('roleCommand.stages.Arrived') }) };
+            if (item.queue_stage === 'Registered')
+                return { stage: 'Scheduled', label: t('roleCommand.actions.Scheduled', { defaultValue: t('roleCommand.stages.Scheduled') }) };
         }
         return null;
     }, [role, item.queue_stage, t]);
@@ -506,7 +542,7 @@ const QueueRow = React.memo(({
 
             <div className={rowPadding}>
                 {/* Mobile: stacked layout */}
-                <div className="flex flex-col gap-4 lg:hidden">
+                <div className="flex flex-col gap-4 xl:hidden">
                     <PatientBlock item={item} t={t} onClick={() => onOpen(item)} compact={compact} />
 
                     <div className="grid grid-cols-2 gap-3">
@@ -521,6 +557,7 @@ const QueueRow = React.memo(({
                             {t(`roleCommand.stages.${item.queue_stage}`, { defaultValue: item.queue_stage })}
                         </span>
                         <SafetySummary item={item} t={t} />
+                        <AssignmentBadge status={item.assignment_status} t={t} />
                         {isReadyForRole(item, role) && (
                             <Badge tone="info">
                                 <ClipboardCheck size={12} />
@@ -528,7 +565,7 @@ const QueueRow = React.memo(({
                             </Badge>
                         )}
                         <div className="ms-auto flex items-center gap-1.5">
-                            {item.exam_id && hasImages && (
+                            {item.assignment_status !== 'Unassigned' && item.exam_id && hasImages && (
                                 <button
                                     type="button"
                                     onClick={() => onNavigate(`/pacs/viewer?examId=${item.exam_id}`)}
@@ -539,17 +576,27 @@ const QueueRow = React.memo(({
                                     <span>DICOM</span>
                                 </button>
                             )}
-                            <button
+                            {item.assignment_status !== 'Unassigned' && <button
                                 type="button"
                                 onClick={() => onViewCase(item)}
                                 className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 transition"
-                                title={t('caseReports.row.viewCase', { defaultValue: 'Open Case Details' })}
-                            >
-                                <Activity size={13} className="text-teal-600 dark:text-teal-400" />
-                                <span>{isArabic ? 'الحالة' : 'Case'}</span>
-                            </button>
+                                    title={t('caseReports.row.viewCase', { defaultValue: 'Open Case Details' })}
+                                >
+                                    <Activity size={13} className="text-teal-600 dark:text-teal-400" />
+                                    <span>{t('caseReports.row.caseFile')}</span>
+                                </button>}
                             <IconButton icon={Eye} label={t('modal.details')} onClick={() => onOpen(item)} />
-                            {(nextAction || canReport) && (
+                            {item.assignment_status === 'Unassigned' ? (
+                                <button
+                                    type="button"
+                                    disabled={isClaiming}
+                                    onClick={() => onClaim(item)}
+                                    className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-amber-500 px-3 text-xs font-black text-white shadow-xs transition hover:bg-amber-400 disabled:opacity-50"
+                                >
+                                    <UserRound size={13} />
+                                    <span>{t('taskScope.accept')}</span>
+                                </button>
+                            ) : (nextAction || canReport) && (
                                 <button
                                     type="button"
                                     disabled={isMoving || item.is_on_hold}
@@ -571,35 +618,54 @@ const QueueRow = React.memo(({
                     )}
                 </div>
 
-                {/* Desktop: multi-column layout */}
-                <div className="hidden lg:grid lg:grid-cols-[minmax(260px,1.2fr)_minmax(330px,1.3fr)_minmax(260px,1fr)] lg:items-center lg:gap-4">
+                {/* Desktop: clear patient, study, SLA, and action columns */}
+                <div className="hidden xl:grid xl:grid-cols-[minmax(240px,1.05fr)_minmax(210px,.8fr)_minmax(240px,.9fr)_minmax(190px,.72fr)] xl:items-center xl:gap-4">
                     {/* Patient identity column */}
-                    <PatientBlock item={item} t={t} onClick={() => onOpen(item)} compact={compact} />
+                    <PatientBlock item={item} t={t} onClick={() => onOpen(item)} compact={compact} showExam={false} />
 
-                    {/* Operational telemetry column */}
-                    <div className="grid grid-cols-4 gap-x-3 gap-y-1.5">
-                        <DataCell icon={Monitor} label={t('roleCommand.machine')} value={item.modality_name || item.modality_type || t('fallback.unassigned')} />
-                        <DataCell icon={Clock3} label={t('roleCommand.scheduled')} value={formatTime(item.start_time, locale)} />
-                        <DataCell icon={Activity} label={t('roleCommand.bodyPart')} value={item.body_part} />
-                        <DataCell icon={TimerReset} label={t('roleCommand.waiting', { defaultValue: 'Waiting' })} value={formatDuration(item.waiting_minutes || 0, locale)} alert={item.is_overdue} />
+                    {/* Study context column */}
+                    <div className="min-w-0">
+                        <p className="truncate text-xs font-black text-slate-900 dark:text-white">
+                            {item.exam_type_name || item.modality_name || t('fallback.unspecifiedExam')}
+                        </p>
+                        <p className="mt-1 flex items-center gap-1.5 truncate text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                            <Monitor size={11} className="shrink-0 text-teal-600 dark:text-teal-300" />
+                            {item.modality_name || item.modality_type || t('fallback.unassigned')}
+                            <span aria-hidden="true">·</span>
+                            {item.body_part || t('fallback.unassigned')}
+                        </p>
+                        <p className="mt-1 flex items-center gap-1.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                            <Clock3 size={11} />
+                            {formatTime(item.start_time, locale)}
+                        </p>
                     </div>
 
-                    {/* Actions column */}
-                    <div className="flex flex-wrap items-center justify-end gap-1.5">
-                        <span className={`inline-flex items-center rounded-xl border px-2.5 py-0.5 text-[10.5px] font-black ${stageStyles[item.queue_stage] || stageStyles.Delivered}`}>
-                            {t(`roleCommand.stages.${item.queue_stage}`, { defaultValue: item.queue_stage })}
-                        </span>
-                        <SafetySummary item={item} t={t} />
-                        {isReadyForRole(item, role) && (
-                            <Badge tone="info">
-                                <ClipboardCheck size={12} />
-                                <span>{t('focus.ready')}</span>
-                            </Badge>
-                        )}
-                        <div className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
+                    {/* Queue state and SLA column */}
+                    <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <span className={`inline-flex items-center rounded-xl border px-2.5 py-0.5 text-[10px] font-black ${stageStyles[item.queue_stage] || stageStyles.Delivered}`}>
+                                {t(`roleCommand.stages.${item.queue_stage}`, { defaultValue: item.queue_stage })}
+                            </span>
+                            <SafetySummary item={item} t={t} />
+                            <AssignmentBadge status={item.assignment_status} t={t} />
+                        </div>
+                        <div className="mt-2 flex items-center gap-2 text-[10px] font-bold">
+                            <span className={`inline-flex items-center gap-1 ${item.is_overdue ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                                <TimerReset size={11} />
+                                {formatDuration(item.waiting_minutes || 0, locale)}
+                            </span>
+                            {isReadyForRole(item, role) && (
+                                <span className="inline-flex items-center gap-1 text-teal-700 dark:text-teal-300">
+                                    <ClipboardCheck size={11} />
+                                    {t('focus.ready')}
+                                </span>
+                            )}
+                        </div>
+                    </div>
 
-                        {/* 1-Click DICOM Viewer */}
-                        {item.exam_id && hasImages && (
+                    {/* Focused actions column */}
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        {item.assignment_status !== 'Unassigned' && item.exam_id && hasImages && (
                             <button
                                 type="button"
                                 onClick={() => onNavigate(`/pacs/viewer?examId=${item.exam_id}`)}
@@ -611,20 +677,21 @@ const QueueRow = React.memo(({
                             </button>
                         )}
 
-                        {/* Case Details */}
-                        <button
-                            type="button"
-                            onClick={() => onViewCase(item)}
-                            className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 transition"
-                            title={t('caseReports.row.viewCase', { defaultValue: 'Open Case Details' })}
-                        >
-                            <Activity size={13} className="text-teal-600 dark:text-teal-400" />
-                            <span>{isArabic ? 'الحالة' : 'Case'}</span>
-                        </button>
-
+                        {item.assignment_status !== 'Unassigned' && <IconButton icon={Activity} label={t('caseReports.row.viewCase')} onClick={() => onViewCase(item)} />}
                         <IconButton icon={Eye} label={t('modal.details')} onClick={() => onOpen(item)} />
 
                         {/* Primary Action Button (Report or Advance Stage) */}
+                        {item.assignment_status === 'Unassigned' ? (
+                            <button
+                                type="button"
+                                disabled={isClaiming}
+                                onClick={() => onClaim(item)}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-amber-500 px-3 text-xs font-black text-white shadow-xs transition hover:bg-amber-400 disabled:opacity-50"
+                            >
+                                <UserRound size={13} />
+                                <span>{t('taskScope.accept')}</span>
+                            </button>
+                        ) : <>
                         {(nextAction || canReport) && (
                             <button
                                 type="button"
@@ -636,12 +703,21 @@ const QueueRow = React.memo(({
                                 <span>{canReport ? t('reporting.report') : nextAction.label}</span>
                             </button>
                         )}
+                        <button
+                            type="button"
+                            disabled={isReleasingAssignment}
+                            onClick={() => onReturn(item)}
+                            className="inline-flex h-8 items-center rounded-xl border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                            {t('taskScope.return')}
+                        </button>
+                        </>}
                     </div>
                 </div>
 
                 {/* On-hold banner (desktop) */}
                 {item.is_on_hold && (
-                    <div className="mt-3 hidden items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-800 dark:text-amber-300 lg:flex">
+                    <div className="mt-3 hidden items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-800 dark:text-amber-300 xl:flex">
                         <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                         <span>{t('roleCommand.onHold', { defaultValue: 'On Hold' })}{item.hold_reason ? ` · ${item.hold_reason}` : ''}</span>
                     </div>
@@ -672,15 +748,18 @@ const QueueSkeleton = () => (
 const QueueTable = React.memo((props) => (
     <section className="rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 overflow-hidden">
         {/* Desktop Header */}
-        <div className="hidden border-b border-slate-100 bg-slate-50/80 px-6 py-2.5 lg:grid lg:grid-cols-[minmax(260px,1.2fr)_minmax(330px,1.3fr)_minmax(260px,1fr)] lg:gap-4 dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="hidden border-b border-slate-100 bg-slate-50/80 px-6 py-2.5 xl:grid xl:grid-cols-[minmax(240px,1.05fr)_minmax(210px,.8fr)_minmax(240px,.9fr)_minmax(190px,.72fr)] xl:gap-4 dark:border-slate-800 dark:bg-slate-950/40">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                {props.t('patient', { defaultValue: 'Patient & Exam Details' })}
+                {props.t('table.patient')}
             </span>
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                {props.t('details.exam', { defaultValue: 'Equipment & Waiting SLA' })}
+                {props.t('table.study')}
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                {props.t('table.queueState')}
             </span>
             <span className="text-end text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                {props.t('actions', { defaultValue: 'Actions & Transitions' })}
+                {props.t('table.actions')}
             </span>
         </div>
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -781,12 +860,10 @@ const AppointmentDetails = ({
         (item.pacs_status && !['No Images', 'Not Received', 'Pending', 'No Study', 'None'].includes(item.pacs_status))
     );
 
-    const isArabic = locale?.startsWith('ar');
-
     const safetyChecks = [
-        { label: isArabic ? 'فحص الحمل' : 'Pregnancy', status: item.pregnancy_safety_status },
-        { label: isArabic ? 'الغرسات المعدنية' : 'Metallic Implant', status: item.implant_safety_status },
-        { label: isArabic ? 'وظائف الكلى' : 'Renal Function', status: item.renal_safety_status }
+        { label: t('drawer.safety.pregnancy'), status: item.pregnancy_safety_status },
+        { label: t('drawer.safety.implant'), status: item.implant_safety_status },
+        { label: t('drawer.safety.renal'), status: item.renal_safety_status }
     ];
 
     return createPortal(
@@ -850,9 +927,9 @@ const AppointmentDetails = ({
                     {/* Drawer Sub-Tabs */}
                     <div className="flex gap-1 border-t border-slate-100 pt-3 dark:border-slate-800">
                         {[
-                            { id: 'overview', label: isArabic ? 'نظرة عامة' : 'Overview', icon: FileText },
-                            { id: 'safety', label: isArabic ? 'السلامة والتحضير' : 'Safety & Prep', icon: ShieldCheck },
-                            { id: 'clinical', label: isArabic ? 'البيانات السريرية' : 'Clinical & Team', icon: Stethoscope }
+                            { id: 'overview', label: t('drawer.tabs.overview'), icon: FileText },
+                            { id: 'safety', label: t('drawer.tabs.safety'), icon: ShieldCheck },
+                            { id: 'clinical', label: t('drawer.tabs.clinical'), icon: Stethoscope }
                         ].map((tab) => {
                             const Icon = tab.icon;
                             const isActive = detailTab === tab.id;
@@ -929,7 +1006,7 @@ const AppointmentDetails = ({
                     {detailTab === 'safety' && (
                         <div className="space-y-4">
                             {/* Safety Checklist Deck */}
-                            <DetailSection title={isArabic ? 'موانع ومحاذير السلامة' : 'Safety Screenings'} icon={ShieldCheck}>
+                            <DetailSection title={t('drawer.safety.title')} icon={ShieldCheck}>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                     {safetyChecks.map((chk) => {
                                         const isAtRisk = chk.status === 'At Risk';
@@ -945,7 +1022,7 @@ const AppointmentDetails = ({
                                                 {isAtRisk ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}
                                                 <div>
                                                     <p className="text-[10px] font-black uppercase">{chk.label}</p>
-                                                    <p className="text-xs font-bold">{isAtRisk ? (isArabic ? 'عالي الخطورة' : 'At Risk') : (isArabic ? 'سليم وآمن' : 'Clear')}</p>
+                                                    <p className="text-xs font-bold">{isAtRisk ? t('drawer.safety.atRisk') : t('drawer.safety.clear')}</p>
                                                 </div>
                                             </div>
                                         );
@@ -955,7 +1032,7 @@ const AppointmentDetails = ({
 
                             <DetailSection title={t('details.preparation')} icon={ClipboardCheck}>
                                 <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700 dark:text-slate-300">
-                                    {item.preparation_instructions || item.notes || (isArabic ? 'لا توجد تعليمات تحضير خاصة مسجلة.' : 'No preparation instructions recorded.')}
+                                    {item.preparation_instructions || item.notes || t('drawer.emptyPreparation')}
                                 </p>
                             </DetailSection>
                         </div>
@@ -965,7 +1042,7 @@ const AppointmentDetails = ({
                         <div className="space-y-4">
                             <DetailSection title={t('details.clinical')} icon={Stethoscope}>
                                 <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700 dark:text-slate-300">
-                                    {item.clinical_indication || (isArabic ? 'لم يتم تقديم أي دلالات سريرية من الطبيب المحول.' : 'No clinical indication provided.')}
+                                    {item.clinical_indication || t('drawer.emptyClinical')}
                                 </p>
                             </DetailSection>
 
@@ -987,7 +1064,7 @@ const AppointmentDetails = ({
                 <footer className="sticky bottom-0 z-10 border-t border-slate-100 bg-white/95 p-4 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                         {/* 1-Click DICOM Viewer (Only if images exist) */}
-                        {item.exam_id && hasImages && onNavigate && (
+                        {item.assignment_status !== 'Unassigned' && item.exam_id && hasImages && onNavigate && (
                             <button
                                 type="button"
                                 onClick={() => onNavigate(`/pacs/viewer?examId=${item.exam_id}`)}
@@ -1000,26 +1077,26 @@ const AppointmentDetails = ({
                         )}
 
                         {/* View Full Case Details */}
-                        {item.exam_id && onViewCase && (
+                        {item.assignment_status !== 'Unassigned' && item.exam_id && onViewCase && (
                             <button
                                 type="button"
                                 onClick={() => onViewCase(item)}
                                 className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 transition"
                             >
                                 <Activity size={14} className="text-teal-600 dark:text-teal-400" />
-                                <span>{isArabic ? 'ملف الحالة' : 'Case File'}</span>
+                                <span>{t('caseReports.row.caseFile')}</span>
                             </button>
                         )}
 
                         {/* Write / Edit Report Button */}
-                        {item.exam_id && onOpenReport && (
+                        {item.assignment_status !== 'Unassigned' && item.exam_id && onOpenReport && (
                             <button
                                 type="button"
                                 onClick={() => onOpenReport(item, true)}
                                 className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 text-xs font-black text-white hover:bg-teal-500 shadow-xs transition"
                             >
                                 <PenLine size={14} />
-                                <span>{isArabic ? 'كتابة التقرير' : 'Report'}</span>
+                                <span>{t('reporting.report')}</span>
                             </button>
                         )}
                     </div>
@@ -1029,7 +1106,7 @@ const AppointmentDetails = ({
                         onClick={onClose}
                         className="inline-flex h-9 items-center rounded-xl border border-slate-200 px-4 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                     >
-                        {isArabic ? 'إغلاق' : 'Close'}
+                        {t('modal.close')}
                     </button>
                 </footer>
             </aside>
@@ -1074,7 +1151,7 @@ const LoadingState = React.memo(({ t }) => (
     </div>
 ));
 
-const EmptyQueue = React.memo(({ role, t, hasFilters = false, onClearFilters }) => (
+const EmptyQueue = React.memo(({ role, t, hasFilters = false, onClearFilters, taskScope = 'mine' }) => (
     <div className="flex min-h-[340px] flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white/90 p-8 text-center shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
         <div className={`grid h-16 w-16 place-items-center rounded-2xl border ${
             hasFilters
@@ -1086,7 +1163,9 @@ const EmptyQueue = React.memo(({ role, t, hasFilters = false, onClearFilters }) 
         <p className="mt-4 text-base font-black text-slate-900 dark:text-white">
             {hasFilters
                 ? t('roleCommand.noFilteredResults', { defaultValue: 'No matching cases' })
-                : t(`roleCommand.${role}.empty`, { defaultValue: t('reporting.empty') })}
+                : t(`taskScope.${taskScope === 'all' ? 'allEmpty' : taskScope === 'available' ? 'availableEmpty' : 'myEmpty'}`, {
+                    defaultValue: t(`roleCommand.${role}.empty`, { defaultValue: t('reporting.empty') })
+                })}
         </p>
         <p className="mt-1.5 max-w-sm text-xs text-slate-500 dark:text-slate-400">
             {hasFilters
@@ -1110,11 +1189,11 @@ const EmptyQueue = React.memo(({ role, t, hasFilters = false, onClearFilters }) 
 
 const ViewTabs = React.memo(({ tab, onChange, counts, t, role }) => {
     return (
-        <div className="inline-flex rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1 dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="flex w-full overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1 dark:border-slate-800 dark:bg-slate-950/40 xl:w-auto">
             <button
                 type="button"
                 onClick={() => onChange('queue')}
-                className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-black transition-all ${
+                className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-black transition-all ${
                     tab === 'queue'
                         ? 'bg-teal-600 text-white shadow-xs'
                         : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
@@ -1132,7 +1211,7 @@ const ViewTabs = React.memo(({ tab, onChange, counts, t, role }) => {
             <button
                 type="button"
                 onClick={() => onChange('schedule')}
-                className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-black transition-all ${
+                className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-black transition-all ${
                     tab === 'schedule'
                         ? 'bg-teal-600 text-white shadow-xs'
                         : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
@@ -1164,7 +1243,7 @@ const Worklist = () => {
     const locale = isArabic ? 'ar-EG' : 'en-US';
 
     // View States
-    const [tab, setTab] = useState(role === 'Radiologist' ? 'queue' : 'schedule');
+    const [tab, setTab] = useState('queue');
     const [viewMode, setViewMode] = useState('day');
     const [date, setDate] = useState(toDateInput());
     const [search, setSearch] = useState('');
@@ -1174,12 +1253,16 @@ const Worklist = () => {
     const [priority, setPriority] = useState('all');
     const [modality, setModality] = useState('all');
     const [stage, setStage] = useState('all');
-    const [focusMode, setFocusMode] = useState('all');
+    const [focusMode, setFocusMode] = useState(role === 'Radiologist' ? 'ready' : 'all');
     const [sortMode, setSortMode] = useState('risk');
     const [density, setDensity] = useState('comfortable');
     const [showFilters, setShowFilters] = useState(false);
     const [selected, setSelected] = useState(null);
-    const [allCenter, setAllCenter] = useState(true);
+    const isClinicalTaskRole = ['Radiologist', 'Technician', 'Nurse'].includes(role);
+    const [taskScope, setTaskScope] = useState('all');
+    const [releaseAssignmentItem, setReleaseAssignmentItem] = useState(null);
+    const canSwitchScope = ['Developer', 'Admin'].includes(role);
+    const [allCenter, setAllCenter] = useState(canSwitchScope);
     const [focusedRowIndex, setFocusedRowIndex] = useState(-1);
 
     // Queue pagination
@@ -1209,12 +1292,20 @@ const Worklist = () => {
     } = useGetQueueQuery({ includeDelivered: 'false', limit: 500 }, { pollingInterval: 30000 });
 
     const [transitionQueue, { isLoading: isMoving }] = useTransitionQueueMutation();
+    const [claimQueueTask, { isLoading: isClaiming }] = useClaimQueueTaskMutation();
+    const [releaseAssignment, { isLoading: isReleasingAssignment }] = useReleaseQueueTaskAssignmentMutation();
 
     const queue = useMemo(() => queueResponse?.data || [], [queueResponse?.data]);
+    const taskKpis = queueResponse?.kpis || {};
+    const scopedQueue = useMemo(() => !isClinicalTaskRole || taskScope === 'all'
+        ? queue
+        : queue.filter((item) => taskScope === 'available'
+            ? item.assignment_status === 'Unassigned'
+            : item.is_assigned_to_me), [isClinicalTaskRole, queue, taskScope]);
 
     const queueWithScores = useMemo(
-        () => queue.map((item) => ({ ...item, __riskScore: riskScore(item, role) })),
-        [queue, role]
+        () => scopedQueue.map((item) => ({ ...item, __riskScore: riskScore(item, role) })),
+        [scopedQueue, role]
     );
 
     const normalizedSearch = debouncedSearch.trim().toLowerCase();
@@ -1239,7 +1330,7 @@ const Worklist = () => {
             ...defaultStageOptions,
             ...queue.map((i) => i.queue_stage).filter(Boolean)
         ])
-    ].filter((s) => queue.some((q) => q.queue_stage === s) || ['Arrived', 'Prep Pending', 'Ready for Exam', 'In Exam', 'Reporting'].includes(s)), [queue]);
+    ].filter((s) => queue.some((q) => q.queue_stage === s) || ['Scheduled', 'Registered', 'Arrived', 'Prep Pending', 'Ready for Exam', 'In Exam', 'Reporting'].includes(s)), [queue]);
 
     const visibleAppointments = useMemo(() => appointments.filter((item) => {
         if (!matchesSearch(item, normalizedSearch)) return false;
@@ -1300,9 +1391,20 @@ const Worklist = () => {
     const nextBestCase = useMemo(() => [...visibleQueue].sort((a, b) => b.__riskScore - a.__riskScore)[0], [visibleQueue]);
 
     const hasFilters = Boolean(search || status !== 'all' || priority !== 'all' || modality !== 'all' || stage !== 'all' || focusMode !== 'all' || sortMode !== 'risk');
+    const activeFilterCount = [
+        search.trim(),
+        status !== 'all',
+        priority !== 'all',
+        modality !== 'all',
+        stage !== 'all',
+        focusMode !== 'all',
+        sortMode !== 'risk'
+    ].filter(Boolean).length;
 
     // Reset queue page on filter/sort change
-    useEffect(() => { setQueuePage(1); }, [normalizedSearch, priority, stage, focusMode, modality, sortMode, pageSize]);
+    useEffect(() => { setQueuePage(1); }, [normalizedSearch, priority, stage, focusMode, modality, sortMode, pageSize, taskScope]);
+    useEffect(() => { setAllCenter(canSwitchScope); }, [canSwitchScope]);
+    useEffect(() => { setFocusMode(role === 'Radiologist' ? 'ready' : 'all'); }, [role]);
 
     // Reset keyboard focus
     useEffect(() => { setFocusedRowIndex(-1); }, [queuePage]);
@@ -1314,6 +1416,16 @@ const Worklist = () => {
     const pagedQueue = useMemo(() => visibleQueue.slice(queueStart, queueEnd), [visibleQueue, queueStart, queueEnd]);
 
     // Actions
+    const selectFocus = useCallback((mode) => {
+        setFocusMode(mode);
+        setStage('all');
+    }, []);
+
+    const selectStage = useCallback((nextStage) => {
+        setStage(nextStage);
+        if (nextStage !== 'all') setFocusMode('all');
+    }, []);
+
     const clearFilters = useCallback(() => {
         setSearch('');
         setDebouncedSearch('');
@@ -1339,6 +1451,30 @@ const Worklist = () => {
         }
     }, [transitionQueue, t]);
 
+    const claim = useCallback(async (item) => {
+        try {
+            await claimQueueTask(item.exam_id).unwrap();
+            setTaskScope('mine');
+            toast.success(t('taskScope.claimed'));
+        } catch (error) {
+            toast.error(error?.data?.code === 'TASK_ALREADY_ASSIGNED'
+                ? t('taskScope.claimConflict')
+                : getErrorMessage(error, t('roleCommand.transitionError')));
+        }
+    }, [claimQueueTask, t]);
+
+    const returnToPool = useCallback(async (reason) => {
+        try {
+            await releaseAssignment({ examId: releaseAssignmentItem.exam_id, reason }).unwrap();
+            setReleaseAssignmentItem(null);
+            toast.success(t('taskScope.released'));
+            return true;
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('roleCommand.transitionError')));
+            return false;
+        }
+    }, [releaseAssignment, releaseAssignmentItem, t]);
+
     const openItem = useCallback((item, report = false) => {
         if (report || (role === 'Radiologist' && item.exam_id && item.queue_stage === 'Reporting')) {
             navigate(`/reports/editor/${item.exam_id}`, { state: { exam: item } });
@@ -1359,6 +1495,8 @@ const Worklist = () => {
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+            // Never hijack browser/system combos (Ctrl+R reload, Ctrl+F find, ...)
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
 
             switch (e.key.toLowerCase()) {
                 case '/':
@@ -1415,32 +1553,69 @@ const Worklist = () => {
     }, [refresh, tab, pagedQueue.length]);
 
     return (
-        <div className="space-y-4 pb-12" dir={isArabic ? 'rtl' : 'ltr'}>
-            {/* Header Deck */}
+        <main className="mx-auto max-w-[1540px] space-y-4 pb-12" dir={isArabic ? 'rtl' : 'ltr'}>
             <PageHeader
                 icon={RoleIcon}
                 eyebrow={t(`roleCommand.${role}.eyebrow`, { defaultValue: t('header.title') })}
                 title={roleTitle}
                 description={roleDescription}
-                meta={
-                    <Badge tone="success">
-                        <span className="relative flex h-2 w-2">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
-                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                meta={(
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${scheduleError || queueError ? 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>
+                            {scheduleError || queueError ? <AlertTriangle size={12} /> : <span className="h-2 w-2 rounded-full bg-emerald-500" />}
+                            {scheduleError || queueError ? t('roleCommand.loadError') : t('overview.live')}
                         </span>
-                        <span>{t('overview.live')}</span>
-                    </Badge>
-                }
-                actions={
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                            <ListChecks size={12} className="text-teal-600 dark:text-teal-300" />
+                            {t('roleCommand.metrics.visible', { count: formatCount(queueMetrics.visible, locale) })}
+                        </span>
+                    </div>
+                )}
+                actions={(
                     <button
                         type="button"
                         onClick={refresh}
-                        className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 transition"
+                        className={secondaryBtn}
                     >
                         <RefreshCcw size={15} strokeWidth={2} />
                         <span>{t('roleCommand.refresh', { defaultValue: 'Refresh' })}</span>
                     </button>
-                }
+                )}
+                metricsLabel={t('overview.label')}
+                metrics={[
+                    {
+                        key: 'assigned',
+                        icon: ListChecks,
+                        tone: 'teal',
+                        value: formatCount(isClinicalTaskRole ? taskKpis.assignedToMe : queueMetrics.total, locale),
+                        label: t('roleCommand.metrics.assigned'),
+                        detail: t('roleCommand.metrics.visible', { count: formatCount(queueMetrics.visible, locale) })
+                    },
+                    {
+                        key: 'ready',
+                        icon: CheckCircle2,
+                        tone: 'emerald',
+                        value: formatCount(isClinicalTaskRole ? taskKpis.pending : queueMetrics.ready, locale),
+                        label: isClinicalTaskRole ? t('taskScope.status.Assigned') : t('roleCommand.metrics.ready'),
+                        detail: isClinicalTaskRole ? t('taskScope.myEmpty') : t('roleCommand.metrics.readyHelp')
+                    },
+                    {
+                        key: 'priority',
+                        icon: AlertTriangle,
+                        tone: 'amber',
+                        value: formatCount(isClinicalTaskRole ? taskKpis.inProgress : queueMetrics.priority, locale),
+                        label: isClinicalTaskRole ? t('taskScope.status.In Progress') : t('roleCommand.metrics.priority'),
+                        detail: isClinicalTaskRole ? t('roleCommand.metrics.active') : t('roleCommand.metrics.priorityHelp')
+                    },
+                    {
+                        key: 'wait',
+                        icon: Clock3,
+                        tone: 'sky',
+                        value: formatCount(isClinicalTaskRole ? taskKpis.available : queueMetrics.averageWait, locale),
+                        label: isClinicalTaskRole ? t('taskScope.available') : t('roleCommand.metrics.averageWait'),
+                        detail: isClinicalTaskRole ? t('taskScope.availableEmpty') : t('roleCommand.metrics.averageWaitHelp')
+                    }
+                ]}
             />
 
             {/* Error Notice */}
@@ -1489,6 +1664,7 @@ const Worklist = () => {
                     <button
                         type="button"
                         onClick={() => setShowFilters((c) => !c)}
+                        aria-expanded={showFilters}
                         className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold transition ${
                             showFilters || hasFilters
                                 ? 'border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-300'
@@ -1497,23 +1673,36 @@ const Worklist = () => {
                     >
                         <SlidersHorizontal size={15} strokeWidth={2} />
                         <span>{t('filters.title')}</span>
-                        {hasFilters && <span className="h-2 w-2 rounded-full bg-teal-500" />}
+                        {activeFilterCount > 0 && (
+                            <span className="grid h-5 min-w-5 place-items-center rounded-full bg-teal-600 px-1 font-mono text-[9px] text-white dark:bg-teal-400 dark:text-slate-950">
+                                {formatCount(activeFilterCount, locale)}
+                            </span>
+                        )}
                     </button>
 
                     {/* Scope toggle (Center-Wide vs My Cases) */}
-                    <button
-                        type="button"
-                        onClick={() => setAllCenter((prev) => !prev)}
-                        className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold transition ${
-                            allCenter
-                                ? 'border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-300'
-                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
-                        }`}
-                        title={allCenter ? t('filters.showingAllCenter', { defaultValue: 'Showing all center cases' }) : t('filters.showingMyCases', { defaultValue: 'Showing my cases only' })}
-                    >
-                        <Users size={15} strokeWidth={2} />
-                        <span>{allCenter ? (isArabic ? 'حالات المركز ككل' : 'Center Cases') : (isArabic ? 'حالاتي فقط' : 'My Cases')}</span>
-                    </button>
+                    {canSwitchScope ? (
+                        <button
+                            type="button"
+                            onClick={() => setAllCenter((prev) => !prev)}
+                            className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-bold transition ${
+                                allCenter
+                                    ? 'border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-300'
+                                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                            }`}
+                            title={allCenter ? t('filters.showingAllCenter') : t('filters.showingMyCases')}
+                        >
+                            <Users size={15} strokeWidth={2} />
+                            <span>{allCenter ? t('filters.centerCases') : t('filters.myCases')}</span>
+                        </button>
+                    ) : isClinicalTaskRole ? (
+                        <ClinicalTaskScope value={taskScope} onChange={setTaskScope} assignedCount={taskKpis.assignedToMe || 0} availableCount={taskKpis.available || 0} t={t} />
+                    ) : (
+                        <span className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300">
+                            <UserRound size={15} strokeWidth={2} />
+                            {t('filters.assignedCases')}
+                        </span>
+                    )}
 
                     {tab === 'queue' && <DensityToggle value={density} onChange={setDensity} t={t} />}
                 </div>
@@ -1540,7 +1729,7 @@ const Worklist = () => {
                         <FilterSelect
                             label={t('filters.stage')}
                             value={stage}
-                            onChange={setStage}
+                            onChange={selectStage}
                             options={['all', ...stageOptions]}
                             t={t}
                             translation="roleCommand.stages"
@@ -1605,26 +1794,28 @@ const Worklist = () => {
                         locale={locale}
                         t={t}
                         onOpen={openItem}
+                        onFocus={selectFocus}
+                        activeFocus={focusMode}
                         isArabic={isArabic}
                     />
 
                     {/* Focus & Stage Filter Chips */}
                     <section className="rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 space-y-2.5">
                         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                            <FocusChips value={focusMode} onChange={setFocusMode} counts={focusCounts} t={t} />
+                            <FocusChips value={focusMode} onChange={selectFocus} counts={focusCounts} t={t} />
                             <Badge tone="neutral" className="self-start lg:self-auto">
                                 <ArrowDownUp size={12} strokeWidth={2} />
                                 <span>{t(`filters.sortOptions.${sortMode}`, { defaultValue: sortMode })}</span>
                             </Badge>
                         </div>
-                        <StageTabs options={stageOptions} counts={stageCounts} value={stage} onChange={setStage} t={t} />
+                        <StageTabs options={stageOptions} counts={stageCounts} value={stage} onChange={selectStage} t={t} />
                     </section>
 
                     {/* Queue Master Table */}
                     {queueLoading ? (
                         <QueueSkeleton />
                     ) : visibleQueue.length === 0 ? (
-                        <EmptyQueue role={role} t={t} hasFilters={hasFilters} onClearFilters={clearFilters} />
+                        <EmptyQueue role={role} t={t} hasFilters={hasFilters} onClearFilters={clearFilters} taskScope={taskScope} />
                     ) : (
                         <>
                             <QueueTable
@@ -1633,7 +1824,11 @@ const Worklist = () => {
                                 locale={locale}
                                 t={t}
                                 isMoving={isMoving}
+                                isClaiming={isClaiming}
+                                isReleasingAssignment={isReleasingAssignment}
                                 onAdvance={advance}
+                                onClaim={claim}
+                                onReturn={setReleaseAssignmentItem}
                                 onOpen={openItem}
                                 onViewCase={onViewCase}
                                 onNavigate={onNavigate}
@@ -1645,15 +1840,13 @@ const Worklist = () => {
                             {/* Pagination and page size bar */}
                             <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:flex-row sm:items-center sm:justify-between">
                                 <div className="flex items-center gap-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                    <span>
-                                        {isArabic ? (
-                                            <>عرض <strong className="text-slate-900 dark:text-white">{queueStart + 1} - {Math.min(queueEnd, visibleQueue.length)}</strong> من إجمالي <strong className="text-slate-900 dark:text-white">{visibleQueue.length}</strong> حالة</>
-                                        ) : (
-                                            <>Showing <strong className="text-slate-900 dark:text-white">{queueStart + 1} - {Math.min(queueEnd, visibleQueue.length)}</strong> of <strong className="text-slate-900 dark:text-white">{visibleQueue.length}</strong> cases</>
-                                        )}
-                                    </span>
+                                    <span>{t('pagination.showing', {
+                                        start: formatCount(queueStart + 1, locale),
+                                        end: formatCount(Math.min(queueEnd, visibleQueue.length), locale),
+                                        total: formatCount(visibleQueue.length, locale)
+                                    })}</span>
                                     <div className="flex items-center gap-1.5">
-                                        <span className="text-[11px] font-bold uppercase">{isArabic ? 'لكل صفحة:' : 'Per page:'}</span>
+                                        <span className="text-[11px] font-bold uppercase">{t('pagination.perPage')}</span>
                                         {[10, 20, 50, 100].map((size) => (
                                             <button
                                                 key={size}
@@ -1697,7 +1890,22 @@ const Worklist = () => {
                 onOpenReport={openItem}
                 isMoving={isMoving}
             />
-        </div>
+            <TextPromptDialog
+                isOpen={Boolean(releaseAssignmentItem)}
+                onClose={() => setReleaseAssignmentItem(null)}
+                onConfirm={returnToPool}
+                title={t('taskScope.releaseTitle')}
+                message={t('taskScope.releaseDescription')}
+                label={t('taskScope.releaseReason')}
+                placeholder={t('taskScope.releasePlaceholder')}
+                confirmLabel={t('taskScope.releaseConfirm')}
+                cancelLabel={t('modal.close')}
+                validationMessage={t('taskScope.releaseRequired')}
+                validate={(value) => value.length < 3 ? t('taskScope.releaseRequired') : ''}
+                inputProps={{ minLength: 3, maxLength: 1000 }}
+                isLoading={isReleasingAssignment}
+            />
+        </main>
     );
 };
 

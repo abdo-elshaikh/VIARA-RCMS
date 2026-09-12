@@ -8,6 +8,22 @@ const {
     createDowntimeSchema, updateDowntimeSchema
 } = require('../schemas/equipmentSchema');
 const { getWorkingHours } = require('../services/schedulingService');
+const { decrypt } = require('../utils/crypto');
+const { triggerEventForRole } = require('../services/notificationJobService');
+
+const occurrenceKeyFor = (record, timestampField) => {
+    const timestamp = record?.[timestampField];
+    const parsed = timestamp ? new Date(timestamp) : null;
+    return parsed && !Number.isNaN(parsed.getTime())
+        ? parsed.toISOString()
+        : `${record?.maintenance_id || record?.downtime_id}:${timestampField}`;
+};
+
+const notifyEquipmentRoles = async (db, eventType, roles, payload) => {
+    // The database transaction is already committed. A delivery provider failure
+    // must not turn a successfully persisted equipment change into an API error.
+    await Promise.allSettled(roles.map(role => triggerEventForRole(db, eventType, role, payload)));
+};
 
 // ─── Modalities (Registry) ───────────────────────────────────────────────────
 
@@ -18,12 +34,20 @@ const getMachines = (db) => async (req, res, next) => {
             ? ', serial_number, aet, ip_address, port, dicom_role'
             : '';
         const result = await db.query(`
-            SELECT modality_id, name, type, room_number, manufacturer, model,
-                   installation_date, location, status, dicom_synced, created_at, updated_at
+            SELECT m.modality_id, m.name, m.type, m.room_id, m.manufacturer, m.model,
+                   m.installation_date, m.location, m.status, m.dicom_synced, m.created_at, m.updated_at,
+                   COALESCE(r.name, m.room_number) AS room_name,
+                   COALESCE(r.room_number, m.room_number) AS room_number,
+                   r.status AS room_status,
+                   COUNT(et.type_id) FILTER (WHERE et.deleted_at IS NULL AND et.is_active = TRUE)::int AS active_procedures_count,
+                   COUNT(et.type_id) FILTER (WHERE et.deleted_at IS NULL)::int AS total_procedures_count
                    ${infrastructureFields}
-            FROM modalities
-            WHERE deleted_at IS NULL
-            ORDER BY name
+            FROM modalities m
+            LEFT JOIN rooms r ON m.room_id = r.room_id
+            LEFT JOIN examination_types et ON m.modality_id = et.modality_id
+            WHERE m.deleted_at IS NULL
+            GROUP BY m.modality_id, r.name, r.room_number, r.status
+            ORDER BY m.name
         `);
         res.json(result.rows);
     } catch (error) {
@@ -36,14 +60,18 @@ const getMachineById = (db) => async (req, res, next) => {
         const { id } = req.params;
         const includeInfrastructure = ['Developer', 'Admin', 'Technician'].includes(req.user.role);
         const infrastructureFields = includeInfrastructure
-            ? ', serial_number, aet, ip_address, port, dicom_role'
+            ? ', m.serial_number, m.aet, m.ip_address, m.port, m.dicom_role'
             : '';
         const result = await db.query(`
-            SELECT modality_id, name, type, room_number, manufacturer, model,
-                   installation_date, location, status, dicom_synced, created_at, updated_at
+            SELECT m.modality_id, m.name, m.type, m.room_id, m.manufacturer, m.model,
+                   m.installation_date, m.location, m.status, m.dicom_synced, m.created_at, m.updated_at,
+                   COALESCE(r.name, m.room_number) AS room_name,
+                   COALESCE(r.room_number, m.room_number) AS room_number,
+                   r.status AS room_status
                    ${infrastructureFields}
-            FROM modalities
-            WHERE modality_id = $1 AND deleted_at IS NULL
+            FROM modalities m
+            LEFT JOIN rooms r ON m.room_id = r.room_id
+            WHERE m.modality_id = $1 AND m.deleted_at IS NULL
         `, [id]);
         if (result.rows.length === 0) return next(new AppError('Machine not found', 404));
         res.json(result.rows[0]);
@@ -61,13 +89,31 @@ const createMachine = (db) => async (req, res, next) => {
         const duplicate = await client.query('SELECT 1 FROM modalities WHERE LOWER(name) = LOWER($1) AND deleted_at IS NULL', [data.name]);
         if (duplicate.rows.length) throw new AppError('A machine with this name already exists', 409);
 
+        let roomId = null;
+        if (data.roomId) {
+            roomId = data.roomId;
+        } else if (data.roomNumber) {
+            const rMatch = await client.query('SELECT room_id FROM rooms WHERE LOWER(room_number) = LOWER($1)', [data.roomNumber]);
+            if (rMatch.rows.length) {
+                roomId = rMatch.rows[0].room_id;
+            } else {
+                const newRoom = await client.query(`
+                    INSERT INTO rooms (name, room_number, type, floor, status)
+                    VALUES ($1, $2, 'Imaging', $3, 'Active')
+                    ON CONFLICT (room_number) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+                    RETURNING room_id
+                `, [`جناح ${data.roomNumber}`, data.roomNumber, data.location || null]);
+                roomId = newRoom.rows[0].room_id;
+            }
+        }
+
         const query = `
-            INSERT INTO modalities (name, type, room_number, serial_number, manufacturer, model, installation_date, location, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO modalities (name, type, room_number, room_id, serial_number, manufacturer, model, installation_date, location, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *
         `;
         const result = await client.query(query, [
-            data.name, data.type, data.roomNumber, data.serialNumber, 
+            data.name, data.type, data.roomNumber, roomId, data.serialNumber,
             data.manufacturer, data.model, data.installationDate || null, data.location, data.status
         ]);
         await logAction(client, {
@@ -122,15 +168,59 @@ const updateMachine = (db) => async (req, res, next) => {
             status: data.status ?? curr.status
         };
 
+        let roomId = curr.room_id;
+        if (data.roomId !== undefined) {
+            roomId = data.roomId;
+        } else if (updated.roomNumber && updated.roomNumber !== curr.room_number) {
+            const rMatch = await client.query('SELECT room_id FROM rooms WHERE LOWER(room_number) = LOWER($1)', [updated.roomNumber]);
+            if (rMatch.rows.length) {
+                roomId = rMatch.rows[0].room_id;
+            } else {
+                const newRoom = await client.query(`
+                    INSERT INTO rooms (name, room_number, type, floor, status)
+                    VALUES ($1, $2, 'Imaging', $3, 'Active')
+                    ON CONFLICT (room_number) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+                    RETURNING room_id
+                `, [`جناح ${updated.roomNumber}`, updated.roomNumber, updated.location || null]);
+                roomId = newRoom.rows[0].room_id;
+            }
+        }
+
         const result = await client.query(`
-            UPDATE modalities 
-            SET name = $1, type = $2, room_number = $3, serial_number = $4, manufacturer = $5, model = $6, 
-                installation_date = $7, location = $8, status = $9, updated_at = CURRENT_TIMESTAMP
-            WHERE modality_id = $10 RETURNING *
+            UPDATE modalities
+            SET name = $1, type = $2, room_number = $3, room_id = $4, serial_number = $5, manufacturer = $6, model = $7,
+                installation_date = $8, location = $9, status = $10, updated_at = CURRENT_TIMESTAMP
+            WHERE modality_id = $11 RETURNING *
         `, [
-            updated.name, updated.type, updated.roomNumber, updated.serialNumber, updated.manufacturer, updated.model,
+            updated.name, updated.type, updated.roomNumber, roomId, updated.serialNumber, updated.manufacturer, updated.model,
             updated.installationDate || null, updated.location, updated.status, id
         ]);
+
+        let impactedAppointments = [];
+        if (['Under Maintenance', 'Out of Service'].includes(updated.status) && curr.status !== updated.status) {
+            const apptQuery = await client.query(`
+                SELECT a.appointment_id, a.start_time, a.end_time, a.status, a.order_number,
+                       p.mrn, p.first_name_enc, p.last_name_enc, p.phone,
+                       et.name AS exam_type_name
+                FROM appointments a
+                JOIN patients p ON a.patient_id = p.patient_id
+                LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
+                WHERE a.modality_id = $1
+                  AND a.start_time > NOW()
+                  AND a.status NOT IN ('Completed', 'Cancelled', 'No-Show')
+                ORDER BY a.start_time ASC
+                LIMIT 50
+            `, [id]);
+            impactedAppointments = apptQuery.rows.map(row => {
+                const mapped = { ...row };
+                if (row.first_name_enc || row.last_name_enc) {
+                    mapped.patient_name = [decrypt(row.first_name_enc), decrypt(row.last_name_enc)].filter(Boolean).join(' ');
+                }
+                delete mapped.first_name_enc;
+                delete mapped.last_name_enc;
+                return mapped;
+            });
+        }
 
         const pacsIdentityChanged =
             (Object.prototype.hasOwnProperty.call(data, 'name') && updated.name !== curr.name) ||
@@ -155,12 +245,17 @@ const updateMachine = (db) => async (req, res, next) => {
             details: {
                 changedFields: Object.keys(data),
                 status: result.rows[0].status,
+                impactedAppointmentsCount: impactedAppointments.length,
                 pacsRegistrationMarkedStale: Boolean(curr.dicom_synced && pacsIdentityChanged)
             },
             required: true
         });
         await client.query('COMMIT');
-        res.json(result.rows[0]);
+        res.json({
+            ...result.rows[0],
+            impactedAppointmentsCount: impactedAppointments.length,
+            impactedAppointments
+        });
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) {
@@ -263,37 +358,68 @@ const getMaintenanceRecords = (db) => async (req, res, next) => {
 };
 
 const createMaintenance = (db) => async (req, res, next) => {
+    let client;
     try {
         const data = createMaintenanceSchema.parse(req.body);
-        const result = await db.query(`
-            INSERT INTO equipment_maintenance (modality_id, maintenance_type, scheduled_date, completed_date, performed_by, cost, status, notes)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *
+        client = await db.connect();
+        await client.query('BEGIN');
+        const result = await client.query(`
+            WITH created AS (
+                INSERT INTO equipment_maintenance (modality_id, maintenance_type, scheduled_date, completed_date, performed_by, cost, status, notes)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *
+            )
+            SELECT created.*, m.name AS modality_name
+            FROM created
+            JOIN modalities m ON m.modality_id = created.modality_id
         `, [data.modalityId, data.maintenanceType, data.scheduledDate, data.completedDate || null, data.performedBy, data.cost, data.status, data.notes]);
-        res.status(201).json(result.rows[0]);
+        const maintenance = result.rows[0];
+        await client.query('COMMIT');
+
+        await notifyEquipmentRoles(db, 'EquipmentMaintenanceCreated', ['Technician', 'Admin'], {
+            entityType: 'EquipmentMaintenance',
+            entityId: maintenance.maintenance_id,
+            occurrenceKey: occurrenceKeyFor(maintenance, 'created_at'),
+            priority: 'Normal',
+            variables: {
+                maintenance_id: maintenance.maintenance_id,
+                modality_id: maintenance.modality_id,
+                modality_name: maintenance.modality_name,
+                maintenance_type: maintenance.maintenance_type,
+                scheduled_date: maintenance.scheduled_date,
+                status: maintenance.status
+            }
+        });
+        res.status(201).json(maintenance);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
 const updateMaintenance = (db) => async (req, res, next) => {
+    let client;
     try {
         const { id } = req.params;
         const data = updateMaintenanceSchema.parse(req.body);
-        const existing = await db.query('SELECT * FROM equipment_maintenance WHERE maintenance_id = $1', [id]);
-        if (!existing.rows[0]) return next(new AppError('Maintenance record not found', 404));
+        client = await db.connect();
+        await client.query('BEGIN');
+        const existing = await client.query('SELECT * FROM equipment_maintenance WHERE maintenance_id = $1 FOR UPDATE', [id]);
+        if (!existing.rows[0]) throw new AppError('Maintenance record not found', 404);
         const nextScheduledDate = data.scheduledDate ?? existing.rows[0].scheduled_date;
         const nextCompletedDate = data.completedDate !== undefined ? data.completedDate : existing.rows[0].completed_date;
         const nextStatus = data.status ?? existing.rows[0].status;
         if (nextCompletedDate && nextCompletedDate < nextScheduledDate) {
-            return next(new AppError('Completion date cannot be before the scheduled date', 400));
+            throw new AppError('Completion date cannot be before the scheduled date', 400);
         }
         if (nextStatus === 'Completed' && !nextCompletedDate) {
-            return next(new AppError('Completed maintenance requires a completion date', 400));
+            throw new AppError('Completed maintenance requires a completion date', 400);
         }
         
         const keys = Object.keys(data);
-        if (keys.length === 0) return res.status(400).json({ message: 'No data provided' });
+        if (keys.length === 0) throw new AppError('No data provided', 400);
         
         const setClauses = keys.map((k, i) => {
             const dbKey = k.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
@@ -302,16 +428,41 @@ const updateMaintenance = (db) => async (req, res, next) => {
         const values = Object.values(data);
         values.push(id);
         
-        const result = await db.query(`
-            UPDATE equipment_maintenance 
-            SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
-            WHERE maintenance_id = $${values.length} RETURNING *
+        const result = await client.query(`
+            WITH updated AS (
+                UPDATE equipment_maintenance
+                SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
+                WHERE maintenance_id = $${values.length} RETURNING *
+            )
+            SELECT updated.*, m.name AS modality_name
+            FROM updated
+            JOIN modalities m ON m.modality_id = updated.modality_id
         `, values);
-        
-        res.json(result.rows[0]);
+        const maintenance = result.rows[0];
+        await client.query('COMMIT');
+
+        await notifyEquipmentRoles(db, 'EquipmentMaintenanceUpdated', ['Technician', 'Admin'], {
+            entityType: 'EquipmentMaintenance',
+            entityId: maintenance.maintenance_id,
+            occurrenceKey: occurrenceKeyFor(maintenance, 'updated_at'),
+            priority: 'Action',
+            variables: {
+                maintenance_id: maintenance.maintenance_id,
+                modality_id: maintenance.modality_id,
+                modality_name: maintenance.modality_name,
+                maintenance_type: maintenance.maintenance_type,
+                scheduled_date: maintenance.scheduled_date,
+                status: maintenance.status,
+                changed_fields: keys.join(', ')
+            }
+        });
+        res.json(maintenance);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
@@ -351,11 +502,33 @@ const createDowntime = (db) => async (req, res, next) => {
         if (overlap.rows.length) throw new AppError('This downtime window overlaps an existing unresolved record', 409);
 
         const result = await client.query(`
-            INSERT INTO equipment_downtime (modality_id, start_time, end_time, reason, status, resolution_notes, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
+            WITH created AS (
+                INSERT INTO equipment_downtime (modality_id, start_time, end_time, reason, status, resolution_notes, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
+            )
+            SELECT created.*, m.name AS modality_name
+            FROM created
+            JOIN modalities m ON m.modality_id = created.modality_id
         `, [data.modalityId, data.startTime, data.endTime, data.reason, data.status, data.resolutionNotes, userId]);
+        const downtime = result.rows[0];
         await client.query('COMMIT');
-        res.status(201).json(result.rows[0]);
+
+        await notifyEquipmentRoles(db, 'EquipmentDowntimeCreated', ['Technician', 'Receptionist', 'Admin'], {
+            entityType: 'EquipmentDowntime',
+            entityId: downtime.downtime_id,
+            occurrenceKey: occurrenceKeyFor(downtime, 'created_at'),
+            priority: downtime.status === 'Unplanned' ? 'Critical' : 'Action',
+            variables: {
+                downtime_id: downtime.downtime_id,
+                modality_id: downtime.modality_id,
+                modality_name: downtime.modality_name,
+                start_time: downtime.start_time,
+                end_time: downtime.end_time,
+                reason: downtime.reason,
+                status: downtime.status
+            }
+        });
+        res.status(201).json(downtime);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
@@ -400,7 +573,7 @@ const updateDowntime = (db) => async (req, res, next) => {
         }
 
         const keys = Object.keys(data);
-        if (keys.length === 0) return res.status(400).json({ message: 'No data provided' });
+        if (keys.length === 0) throw new AppError('No data provided', 400);
         
         const setClauses = keys.map((k, i) => {
             const dbKey = k.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
@@ -410,12 +583,42 @@ const updateDowntime = (db) => async (req, res, next) => {
         values.push(id);
         
         const result = await client.query(`
-            UPDATE equipment_downtime 
-            SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
-            WHERE downtime_id = $${values.length} RETURNING *
+            WITH updated AS (
+                UPDATE equipment_downtime
+                SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP
+                WHERE downtime_id = $${values.length} RETURNING *
+            )
+            SELECT updated.*, m.name AS modality_name
+            FROM updated
+            JOIN modalities m ON m.modality_id = updated.modality_id
         `, values);
+        const downtime = result.rows[0];
         await client.query('COMMIT');
-        res.json(result.rows[0]);
+
+        const resolved = downtime.status === 'Resolved';
+        await notifyEquipmentRoles(
+            db,
+            resolved ? 'EquipmentDowntimeResolved' : 'EquipmentDowntimeUpdated',
+            ['Technician', 'Receptionist', 'Admin'],
+            {
+                entityType: 'EquipmentDowntime',
+                entityId: downtime.downtime_id,
+                occurrenceKey: occurrenceKeyFor(downtime, 'updated_at'),
+                priority: resolved ? 'Normal' : 'Warning',
+                variables: {
+                    downtime_id: downtime.downtime_id,
+                    modality_id: downtime.modality_id,
+                    modality_name: downtime.modality_name,
+                    start_time: downtime.start_time,
+                    end_time: downtime.end_time,
+                    reason: downtime.reason,
+                    status: downtime.status,
+                    resolution_notes: downtime.resolution_notes,
+                    changed_fields: keys.join(', ')
+                }
+            }
+        );
+        res.json(downtime);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));

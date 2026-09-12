@@ -30,7 +30,9 @@
   },
   "run": {
     "title": "Employee run preview",
-    "empty": "Calculate a selected period to preview employee payroll items."
+    "empty": "Calculate a selected period to preview employee payroll items.",
+    "skippedTitle": "Skipped employees (no active compensation profile)",
+    "skippedHelp": "These employees were excluded from the calculation. Add their compensation profiles and recalculate if they should be paid."
   },
   "setup": {
     "compensation": "Compensation",

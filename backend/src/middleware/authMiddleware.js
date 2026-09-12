@@ -1,5 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { getActiveEmergencyGrant } = require('../services/emergencyAccessService');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 let authDatabase;
@@ -112,6 +113,22 @@ const authenticateToken = async (req, res, next) => {
             }
         }
 
+        if (user.emergencyAccessId && authDatabase) {
+            const emergencyGrant = await getActiveEmergencyGrant(authDatabase, user);
+            if (!emergencyGrant) {
+                delete user.emergencyAccessId;
+                delete user.elevatedPermissions;
+                delete user.breakGlassExpiry;
+            } else {
+                user.elevatedPermissions = emergencyGrant.permissions;
+                user.breakGlassExpiry = new Date(emergencyGrant.expires_at).getTime();
+                req.emergencyAccessVerified = {
+                    grantId: emergencyGrant.grant_id,
+                    permissions: emergencyGrant.permissions
+                };
+            }
+        }
+
         req.user = user;
         req.authType = 'jwt';
         return enforcePasswordChange(req, res, next);
@@ -134,6 +151,16 @@ const authorizeRole = (roles) => (req, res, next) => {
         return next();
     }
     return res.status(403).json({ error: 'Access Denied: Insufficient Permissions' });
+};
+
+const authorizeStaffIdentity = (req, res, next) => {
+    if (!req.user) {
+        return res.status(401).json({ error: 'Access Denied: User not authenticated' });
+    }
+    if (req.user.user_id && req.user.role !== 'Patient' && req.user.role !== 'Doctor') {
+        return next();
+    }
+    return res.status(403).json({ error: 'Access Denied: Staff identity required' });
 };
 
 /**
@@ -191,4 +218,12 @@ const authenticateDicomWeb = async (req, res, next) => {
     }
 };
 
-module.exports = { authenticateToken, authenticateDicomWeb, authorizeRole, configureAuthDatabase, JWT_SECRET, getJwtSecret };
+module.exports = {
+    authenticateToken,
+    authenticateDicomWeb,
+    authorizeRole,
+    authorizeStaffIdentity,
+    configureAuthDatabase,
+    JWT_SECRET,
+    getJwtSecret
+};

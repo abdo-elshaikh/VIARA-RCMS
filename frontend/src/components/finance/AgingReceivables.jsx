@@ -1,4 +1,13 @@
-import { AlertCircle, Clock3, ShieldCheck, TrendingUp } from 'lucide-react';
+import { useState } from 'react';
+import { 
+    AlertCircle, 
+    Clock3, 
+    Filter, 
+    ShieldAlert, 
+    ShieldCheck, 
+    TrendingUp, 
+    UserCheck 
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGetReceivablesAgingQuery } from '../../store/api';
 import { formatFinancialCurrency } from '../../utils/financialFormat';
@@ -13,6 +22,7 @@ const BUCKETS = [
 
 const AgingReceivables = () => {
     const { t, i18n } = useTranslation('workspace');
+    const isAr = i18n.language?.startsWith('ar');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
     const { data: aging, isLoading, isError } = useGetReceivablesAgingQuery();
 
@@ -64,14 +74,14 @@ const AgingReceivables = () => {
             <div className="p-5 sm:p-7">
                 {/* Metric Cards Grid */}
                 <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-                    <article className="col-span-2 flex min-h-[120px] flex-col justify-between rounded-2xl bg-slate-950 p-5 text-white shadow-xl shadow-slate-950/20 dark:border dark:border-white/10 dark:bg-slate-900 lg:col-span-1">
+                    <article className="col-span-2 flex min-h-[120px] flex-col justify-between rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 p-5 text-white shadow-xl shadow-slate-950/20 dark:border dark:border-white/10 dark:bg-slate-900 lg:col-span-1">
                         <div className="flex items-center justify-between">
                             <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
                                 {t('finance.receivables.totalOutstanding')}
                             </p>
                             <TrendingUp size={16} className="text-indigo-400" />
                         </div>
-                        <p className="mt-3 break-all font-mono text-2xl font-black text-white">
+                        <p className="mt-3 whitespace-nowrap font-mono text-xl sm:text-2xl font-black text-white">
                             {money(total)}
                         </p>
                         <p className="mt-1 text-[11px] text-slate-400 font-semibold">
@@ -95,7 +105,7 @@ const AgingReceivables = () => {
                                         {percent.toFixed(1)}%
                                     </span>
                                 </div>
-                                <p className="mt-4 break-all font-mono text-xl font-black text-slate-900 dark:text-white">
+                                <p className="mt-4 whitespace-nowrap font-mono text-lg sm:text-xl font-black text-slate-900 dark:text-white">
                                     {money(amount)}
                                 </p>
                             </article>

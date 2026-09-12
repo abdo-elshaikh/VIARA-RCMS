@@ -1,14 +1,82 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { setAccessToken, logOut } from './authSlice';
+import { refreshSessionToken } from '../lib/api';
 
-const getCsrfToken = (): string | null => {
+export interface PortalNotificationAction {
+    type: 'portal_deep_link';
+    target: string;
+    label: string;
+    url: string;
+    entityId: string | null;
+}
+
+export interface PortalNotification {
+    notification_id: string;
+    channel: string;
+    event_type: string | null;
+    entity_id: string | null;
+    subject: string | null;
+    content: string | null;
+    status: string | null;
+    priority: 'Normal' | 'Action' | 'Warning' | 'Critical';
+    category: string;
+    is_read: boolean;
+    read_at: string | null;
+    created_at: string;
+    acknowledgement_status: 'Pending' | 'Acknowledged' | 'Superseded' | null;
+    acknowledgement_due_at: string | null;
+    escalated_at: string | null;
+    action: PortalNotificationAction | null;
+    action_url: string | null;
+}
+
+export interface PortalNotificationEnvelope {
+    items: PortalNotification[];
+    unreadCount: number;
+    pagination: {
+        limit: number;
+        offset: number;
+        total: number;
+        hasMore: boolean;
+        nextOffset: number | null;
+    };
+}
+
+export interface PortalNotificationPageParams {
+    limit?: number;
+    offset?: number;
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+export const getCsrfToken = (): string | null => {
     if (typeof document === 'undefined') return null;
     const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
     return match ? decodeURIComponent(match[1]) : null;
 };
 
+let csrfBootstrapPromise: Promise<string | null> | null = null;
+
+export const ensureCsrfToken = async (): Promise<string | null> => {
+    const existing = getCsrfToken();
+    if (existing) return existing;
+    if (!csrfBootstrapPromise) {
+        csrfBootstrapPromise = fetch(`${API_BASE_URL}/csrf-token`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: { Accept: 'application/json' },
+        })
+            .then(() => getCsrfToken())
+            .catch(() => null)
+            .finally(() => {
+                csrfBootstrapPromise = null;
+            });
+    }
+    return csrfBootstrapPromise;
+};
+
 const baseQuery = fetchBaseQuery({
-    baseUrl: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
+    baseUrl: API_BASE_URL,
     credentials: 'include',
     prepareHeaders: (headers, { getState }: { getState: () => any }) => {
         const state = getState();
@@ -24,7 +92,7 @@ const baseQueryWithCsrf = async (args: any, apiInstance: any, extraOptions: any)
     const requestArgs = typeof args === 'string' ? { url: args } : { ...args };
     const method = String(requestArgs.method || 'GET').toUpperCase();
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-        const csrfToken = getCsrfToken();
+        const csrfToken = await ensureCsrfToken();
         if (csrfToken) {
             requestArgs.headers = {
                 ...(requestArgs.headers || {}),
@@ -36,36 +104,42 @@ const baseQueryWithCsrf = async (args: any, apiInstance: any, extraOptions: any)
     return baseQuery(requestArgs, apiInstance, extraOptions) as Promise<any>;
 };
 
-let refreshPromise: Promise<string | null> | null = null;
+const AUTH_ONLY_ENDPOINTS = new Set([
+    '/auth/login',
+    '/auth/logout',
+    '/auth/refresh',
+    '/auth/change-password',
+    '/portal/login',
+    '/doctor-portal/login',
+    '/public/case-status',
+    '/public/case-status/verify',
+    '/public/appointment-requests',
+    '/public/final-report',
+]);
 
-const refreshAccessToken = (apiInstance: any, extraOptions: any): Promise<string | null> => {
-    if (!refreshPromise) {
-        refreshPromise = (baseQueryWithCsrf({
-            url: '/auth/refresh',
-            method: 'POST'
-        }, apiInstance, extraOptions) as Promise<any>)
-            .then((refreshResult) => {
-                const token = refreshResult.data?.token;
-                if (token) {
-                    apiInstance.dispatch(setAccessToken(token));
-                    return token;
-                }
-
-                apiInstance.dispatch(logOut());
-                return null;
-            })
-            .finally(() => {
-                refreshPromise = null;
-            });
+/**
+ * Uses the single-flight refresh from lib/api (shared with raw fetches so a
+ * report download and an RTK query can never rotate the refresh cookie twice),
+ * then reconciles the Redux auth state with the outcome.
+ */
+const refreshAccessToken = async (apiInstance: any): Promise<string | null> => {
+    const token = await refreshSessionToken();
+    if (token) {
+        apiInstance.dispatch(setAccessToken(token));
+    } else {
+        // Session is gone — clear the persisted session AND the RTK cache so
+        // mounted polling subscriptions stop retrying with a dead token.
+        apiInstance.dispatch(logOut());
+        apiInstance.dispatch(api.util.resetApiState());
     }
-
-    return refreshPromise;
+    return token;
 };
 
 const baseQueryWithReauth = async (args: any, apiInstance: any, extraOptions: any) => {
+    const url = typeof args === 'string' ? args : args?.url;
     let result = await baseQueryWithCsrf(args, apiInstance, extraOptions);
-    if (result.error && result.error.status === 401 && args.url !== '/auth/login' && args.url !== '/portal/login' && args.url !== '/doctor-portal/login') {
-        const token = await refreshAccessToken(apiInstance, extraOptions);
+    if (result.error && result.error.status === 401 && !AUTH_ONLY_ENDPOINTS.has(url)) {
+        const token = await refreshAccessToken(apiInstance);
         if (token) {
             result = await baseQueryWithCsrf(args, apiInstance, extraOptions);
         }
@@ -79,7 +153,7 @@ export const api = createApi({
     tagTypes: [
         'Profile', 'MyRecords', 'PortalInvoices', 'PortalDocuments', 'PortalRequests',
         'DoctorCases', 'DoctorMessages', 'Settings', 'PublicSettings', 'PatientMessages',
-        'PortalNotifications', 'DoctorNotifications'
+        'PortalNotifications', 'DoctorNotifications', 'PublicLandingOverview'
     ],
     endpoints: (builder) => ({
         logout: builder.mutation<any, undefined>({
@@ -173,8 +247,8 @@ export const api = createApi({
         }),
 
         // ─── Patient Portal Notifications ───────────────────────────────
-        getMyPortalNotifications: builder.query<any, void>({
-            query: () => '/portal/notifications',
+        getMyPortalNotifications: builder.query<PortalNotificationEnvelope, PortalNotificationPageParams>({
+            query: (params) => ({ url: '/portal/notifications', params }),
             providesTags: ['PortalNotifications'],
         }),
         getMyPortalNotificationUnreadCount: builder.query<any, void>({
@@ -250,8 +324,8 @@ export const api = createApi({
             },
             invalidatesTags: ['DoctorMessages'],
         }),
-        getDoctorNotifications: builder.query<any, void>({
-            query: () => '/doctor-portal/notifications',
+        getDoctorNotifications: builder.query<PortalNotificationEnvelope, PortalNotificationPageParams>({
+            query: (params) => ({ url: '/doctor-portal/notifications', params }),
             providesTags: ['DoctorNotifications'],
         }),
         getDoctorNotificationUnreadCount: builder.query<any, void>({
@@ -269,6 +343,14 @@ export const api = createApi({
             query: () => ({
                 url: '/doctor-portal/notifications/mark-all-read',
                 method: 'PUT',
+            }),
+            invalidatesTags: ['DoctorNotifications'],
+        }),
+        acknowledgeDoctorCriticalResult: builder.mutation<any, { id: string; notes?: string }>({
+            query: ({ id, notes }) => ({
+                url: `/doctor-portal/notifications/${id}/critical-result/acknowledge`,
+                method: 'POST',
+                body: { notes },
             }),
             invalidatesTags: ['DoctorNotifications'],
         }),
@@ -290,9 +372,42 @@ export const api = createApi({
             query: () => '/settings/public/home',
             providesTags: ['PublicSettings'],
         }),
-        lookupPublicCaseStatus: builder.mutation<any, { mrn: string }>({
+        getPublicLandingOverview: builder.query<any, void>({
+            query: () => '/public/landing-overview',
+            providesTags: ['PublicLandingOverview'],
+        }),
+        lookupPublicCaseStatus: builder.mutation<any, { mrn: string; language?: 'ar' | 'en'; resend?: boolean }>({
             query: (body) => ({
                 url: '/public/case-status',
+                method: 'POST',
+                body,
+            }),
+        }),
+        verifyPublicCaseStatus: builder.mutation<any, { challengeId: string; code: string }>({
+            query: (body) => ({
+                url: '/public/case-status/verify',
+                method: 'POST',
+                body,
+            }),
+        }),
+        refreshPublicCaseStatus: builder.mutation<any, { statusToken: string }>({
+            query: (body) => ({
+                url: '/public/case-status/status',
+                method: 'POST',
+                body,
+            }),
+        }),
+        createPublicAppointmentRequest: builder.mutation<any, {
+            name: string;
+            phone: string;
+            mode: 'center' | 'home' | 'consult';
+            service: string;
+            preferredDate?: string | null;
+            consent: true;
+            website?: string;
+        }>({
+            query: (body) => ({
+                url: '/public/appointment-requests',
                 method: 'POST',
                 body,
             }),
@@ -320,16 +435,23 @@ export const {
     useCreateDoctorOrderMutation,
     useGetCenterSettingsQuery,
     useGetPublicCenterSettingsQuery,
+    useGetPublicLandingOverviewQuery,
     useLookupPublicCaseStatusMutation,
+    useVerifyPublicCaseStatusMutation,
+    useRefreshPublicCaseStatusMutation,
+    useCreatePublicAppointmentRequestMutation,
     useLogoutMutation,
     useGetMyMessagesQuery,
     useSendPortalMessageMutation,
     useGetMyPortalNotificationsQuery,
+    useLazyGetMyPortalNotificationsQuery,
     useGetMyPortalNotificationUnreadCountQuery,
     useMarkMyPortalNotificationReadMutation,
     useMarkAllMyPortalNotificationsReadMutation,
     useGetDoctorNotificationsQuery,
+    useLazyGetDoctorNotificationsQuery,
     useGetDoctorNotificationUnreadCountQuery,
     useMarkDoctorNotificationReadMutation,
     useMarkAllDoctorNotificationsReadMutation,
+    useAcknowledgeDoctorCriticalResultMutation,
 } = api;

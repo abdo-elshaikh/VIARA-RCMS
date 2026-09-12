@@ -3,8 +3,6 @@ import {
     AlertTriangle,
     BookOpen,
     CheckCircle2,
-    ChevronLeft,
-    ChevronRight,
     Download,
     Filter,
     RefreshCw,
@@ -19,6 +17,7 @@ import {
     useGetTrialBalanceQuery
 } from '../../store/api';
 import { formatFinancialCurrency, formatFinancialDate, toFinancialDateInput } from '../../utils/financialFormat';
+import Pagination from '../ui/Pagination';
 
 const monthStart = () => toFinancialDateInput(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 const today = () => toFinancialDateInput();
@@ -230,10 +229,10 @@ const GeneralLedger = () => {
         trialBalanceQuery.refetch();
         ledgerQuery.refetch();
     };
-    const canPrevious = filters.offset > 0;
-    const canNext = filters.offset + filters.limit < totalCount;
     const pageStart = totalCount > 0 ? filters.offset + 1 : 0;
     const pageEnd = Math.min(filters.offset + filters.limit, totalCount);
+    const currentPage = Math.floor(filters.offset / filters.limit) + 1;
+    const pageCount = Math.max(1, Math.ceil(totalCount / filters.limit));
 
     const exportCsv = () => {
         const headers = ['business_date', 'posted_at', 'source_type', 'source_id', 'account_code', 'account_name', 'description', 'debit', 'credit'];
@@ -372,24 +371,15 @@ const GeneralLedger = () => {
                                 <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                                     {text.pageRange.replace('{{start}}', count(pageStart, language)).replace('{{end}}', count(pageEnd, language)).replace('{{total}}', count(totalCount, language))}
                                 </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setField('offset', Math.max(0, filters.offset - filters.limit), false)}
-                                    disabled={!canPrevious}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-                                    title={text.previous}
-                                >
-                                    {isArabic ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setField('offset', filters.offset + filters.limit, false)}
-                                    disabled={!canNext}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-                                    title={text.next}
-                                >
-                                    {isArabic ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
-                                </button>
+                                <Pagination
+                                    currentPage={currentPage}
+                                    pageCount={pageCount}
+                                    onPageChange={(nextPage) => setField('offset', (nextPage - 1) * filters.limit, false)}
+                                    isRtl={isArabic}
+                                    previousLabel={text.previous}
+                                    nextLabel={text.next}
+                                    compact
+                                />
                             </div>
                         </div>
                         <div className="max-h-[620px] overflow-auto">

@@ -7,17 +7,19 @@ import {
     ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import {
-    Activity, AlertTriangle, ArrowUpRight, ArrowDownRight, CalendarCheck2, CalendarDays,
+    Activity, AlertTriangle, ArrowUpRight, CalendarCheck2, CalendarDays,
     CheckCircle2, CircleDollarSign, ClipboardList, Clock3, FileSearch, Gauge,
     LayoutDashboard, ListChecks, Package, RefreshCw, ShieldCheck,
     ScanLine, Stethoscope, UserPlus, UsersRound, WalletCards, ChevronRight,
     Zap, Sparkles, UserRound, ArrowRight, Search, Radio, Monitor, Check, Filter
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/authSlice';
+import { selectPreferences } from '../store/preferencesSlice';
 import { useGetDashboardStatsQuery } from '../store/api';
 import { formatDuration } from '../utils/dateFormat';
-import { AccessibleChartData, PagePanel } from '../components/ui';
+import { AccessibleChartData, PageHeader, PagePanel } from '../components/ui';
 import { canAccessRoute } from '../config/routes';
+import { getEffectivePermissions } from '../utils/effectivePermissions';
 
 const chartTooltipStyle = {
     background: 'rgba(15, 23, 42, 0.95)',
@@ -37,17 +39,30 @@ const toNumber = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 
 const DashboardHome = () => {
     const user = useSelector(selectCurrentUser);
+    const preferences = useSelector(selectPreferences);
     const { t, i18n } = useTranslation('dashboard');
     const { data: stats = {}, isLoading, isFetching, isError, error, refetch } = useGetDashboardStatsQuery(undefined, {
         skip: !user, refetchOnMountOrArgChange: true, pollingInterval: 60000,
     });
 
     if (isLoading) return <DashboardSkeleton />;
-    if (isError) return <DashboardError error={error} onRetry={refetch} />;
+    if (isError && Object.keys(stats).length === 0) return <DashboardError error={error} onRetry={refetch} />;
 
-    const shared = { user, stats, isFetching, refetch, language: i18n.language, t };
+    const shared = {
+        user,
+        stats,
+        isFetching,
+        syncError: isError ? error : null,
+        refetch,
+        language: i18n.language,
+        timezone: preferences.timezone,
+        t
+    };
 
     if (user?.role === 'Receptionist') return <ReceptionDashboard {...shared} />;
+    if (['Cashier', 'Accountant'].includes(user?.role)) return <FinanceDashboard {...shared} />;
+    if (user?.role === 'HR') return <HRDashboard {...shared} />;
+    if (user?.role === 'Insurance_Staff') return <InsuranceDashboard {...shared} />;
     if (['Radiologist', 'Technician', 'Nurse'].includes(user?.role)) return <ClinicalDashboard {...shared} />;
     return <ExecutiveDashboard {...shared} />;
 };
@@ -58,21 +73,27 @@ const DashboardShell = ({
     user,
     stats,
     isFetching,
+    syncError,
     refetch,
     language,
+    timezone,
     eyebrow,
     title,
     subtitle,
     primaryAction,
+    metrics = [],
     priorityItems = [],
+    showModalities = false,
+    showTurnaround = false,
+    showPatientSearch = true,
     children
 }) => {
     const { t } = useTranslation('dashboard');
     const navigate = useNavigate();
-    const isArabic = language?.startsWith('ar');
     const userName = user?.full_name || user?.name || stats.userName || t('common.teamMember');
     const role = t(`roles.${user?.role}`, user?.role || t('roles.Admin'));
     const [searchQuery, setSearchQuery] = useState('');
+    const canSearchPatients = showPatientSearch && canAccessRoute('/patients', user);
 
     const handleSearch = (e) => {
         e.preventDefault();
@@ -81,211 +102,162 @@ const DashboardShell = ({
     };
 
     return (
-        <div className="space-y-6">
-            <h2 className="sr-only">{title}</h2>
-            {/* Top Command Deck */}
-            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8">
-                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
-                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
-
-                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                    {/* Greeting & Identity */}
-                    <div className="flex items-start gap-4 sm:items-center">
-                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-teal-600/30 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
-                            <LayoutDashboard size={26} />
-                        </div>
-                        <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
-                                    <Sparkles size={11} />
-                                    <span>{role}</span>
-                                </span>
-                                {eyebrow && (
-                                    <span className="text-xs font-bold text-slate-400 dark:text-slate-500">
-                                        · {eyebrow}
-                                    </span>
-                                )}
-                            </div>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
-                                {t('common.welcome', { name: userName })}
-                            </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
-                                {subtitle || title}
-                            </p>
-                        </div>
+        <main className="mx-auto max-w-[var(--VIARA-workspace-max)] space-y-[var(--VIARA-density-section-gap)] pb-12">
+            <PageHeader
+                icon={LayoutDashboard}
+                eyebrowIcon={Sparkles}
+                eyebrow={(
+                    <>
+                        <span>{role}</span>
+                        {eyebrow && <span aria-hidden="true">·</span>}
+                        {eyebrow && <span>{eyebrow}</span>}
+                    </>
+                )}
+                title={title}
+                description={`${t('common.welcome', { name: userName })} — ${subtitle || title}`}
+                meta={
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"><CalendarDays size={13} className="text-teal-600" />{formatDashboardDate(language, timezone)}</span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-500" />{t('common.liveData')} · <time dateTime={stats.timestamp}>{formatUpdatedAt(stats.timestamp, language, timezone, t)}</time></span>
                     </div>
-
-                    {/* Telemetry Actions & Search */}
-                    <div className="flex flex-wrap items-center gap-3">
-                        {/* Quick Patient Finder */}
-                        <form onSubmit={handleSearch} className="relative min-w-[220px]">
-                            <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input
-                                type="search"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder={isArabic ? 'بحث سريع عن مريض / MRN...' : 'Quick patient / MRN lookup...'}
-                                className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/80 ps-9 pe-3 text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-hidden dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
-                            />
-                        </form>
-
-                        <div className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/80 px-3.5 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
-                            <CalendarDays size={15} className="text-teal-600 dark:text-teal-400" />
-                            <span>{formatDashboardDate(language)}</span>
-                        </div>
-
-                        <div className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 text-xs font-black text-emerald-700 dark:text-emerald-300">
-                            <span className="relative flex h-2 w-2">
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                            </span>
-                            <span>{t('common.liveData')}</span>
-                            <span className="h-3 w-px bg-emerald-500/30" />
-                            <time dateTime={stats.timestamp} className="font-mono text-[11px]">
-                                {formatUpdatedAt(stats.timestamp, language, t)}
-                            </time>
-                        </div>
-
-                        <button
-                            type="button"
-                            onClick={refetch}
-                            disabled={isFetching}
-                            aria-label={isFetching ? t('common.refreshing') : t('common.refresh')}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-xs transition hover:bg-slate-50 hover:text-teal-600 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                            title={t('common.refresh')}
-                        >
-                            <RefreshCw size={15} className={isFetching ? 'animate-spin text-teal-500' : ''} />
-                        </button>
-
+                }
+                actions={
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                        {canSearchPatients && (
+                            <form onSubmit={handleSearch} className="relative min-w-[220px] flex-1" role="search">
+                                <label htmlFor="dashboard-patient-search" className="sr-only">{t('common.patientSearchLabel')}</label>
+                                <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                                <input id="dashboard-patient-search" type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder={t('common.patientSearchPlaceholder')} className="min-h-[var(--VIARA-control-min-height)] w-full rounded-xl border border-slate-200 bg-slate-50/80 ps-9 pe-3 text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-hidden dark:border-slate-700 dark:bg-slate-950/50 dark:text-white" />
+                            </form>
+                        )}
+                        <button type="button" onClick={refetch} disabled={isFetching} aria-label={isFetching ? t('common.refreshing') : t('common.refresh')} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-teal-500/40 hover:text-teal-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300" title={t('common.refresh')}><RefreshCw size={15} className={isFetching ? 'animate-spin text-teal-500' : ''} /></button>
                         {primaryAction}
                     </div>
+                }
+                metrics={metrics}
+                metricsLabel={t('common.dashboardMetrics', { defaultValue: 'Dashboard record indicators' })}
+            />
+
+            {syncError && (
+                <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    <span>{t('error.staleData')}</span>
+                    <button type="button" onClick={refetch} className="rounded-xl border border-amber-500/30 px-3 py-1.5 font-bold hover:bg-amber-500/10">{t('error.retry')}</button>
                 </div>
-            </div>
+            )}
 
             {/* Operational Priority Cards */}
             <PriorityStrip items={priorityItems} />
 
-            {/* Live Modalities & Equipment Occupancy HUD */}
-            <ModalityLiveDeck language={language} isArabic={isArabic} />
+            {showModalities && <ModalityLiveDeck modalities={stats.liveModalities} language={language} />}
+
+            {showTurnaround && <TurnaroundPipeline stages={stats.turnaroundStages} language={language} />}
 
             {/* Main Content Areas */}
             {children}
-        </div>
+        </main>
     );
 };
 
 // ─── Modality Live Occupancy Deck ─────────────────────────────────────
 
-const ModalityLiveDeck = ({ isArabic }) => {
-    const modalities = [
-        { id: 'mri', name: 'MRI 3.0T Skyra', type: 'MRI', status: 'in_use', currentPatient: 'MRN-8492 · Brain with Contrast', duration: '14 min left' },
-        { id: 'ct', name: 'CT Revolution 128', type: 'CT', status: 'in_use', currentPatient: 'MRN-9120 · Chest Low Dose', duration: '6 min left' },
-        { id: 'us', name: 'Ultrasound Voluson E10', type: 'US', status: 'ready', currentPatient: isArabic ? 'متاح ومستعد للاستقبال' : 'Ready for next patient', duration: isArabic ? 'جاهز' : 'Idle' },
-        { id: 'xr', name: 'Digital X-Ray Multix', type: 'XR', status: 'ready', currentPatient: isArabic ? 'متاح ومستعد للاستقبال' : 'Ready for next patient', duration: isArabic ? 'جاهز' : 'Idle' },
-    ];
+const ModalityLiveDeck = ({ modalities = [], language }) => {
+    const { t } = useTranslation('dashboard');
 
     return (
-        <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+        <section className="rounded-3xl border border-slate-200/80 bg-white/90 [padding:var(--VIARA-density-card-padding)] shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90" aria-labelledby="dashboard-modalities-title">
             <div className="flex items-center justify-between gap-4 mb-3.5">
                 <div className="flex items-center gap-2">
                     <Radio size={16} className="text-teal-600 dark:text-teal-400 animate-pulse" />
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                        {isArabic ? 'الحالة الحية لغرف وأجهزة الفحص' : 'Live Modalities & Scanner Status'}
+                    <h3 id="dashboard-modalities-title" className="text-sm font-black text-slate-800 dark:text-slate-200">
+                        {t('operations.modalitiesTitle')}
                     </h3>
                 </div>
                 <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500">
-                    {isArabic ? 'تحديث فوري' : 'Real-time telemetry'}
+                    {t('operations.measuredStatus')}
                 </span>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {modalities.length > 0 ? <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {modalities.map(m => {
                     const isInUse = m.status === 'in_use';
+                    const isReady = m.status === 'ready';
+                    const statusTone = isInUse ? 'border-sky-500/30 bg-sky-500/5' : isReady ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5';
                     return (
                         <div
                             key={m.id}
-                            className={`flex flex-col justify-between rounded-2xl border p-3.5 transition-all ${
-                                isInUse
-                                    ? 'border-sky-500/30 bg-sky-500/5 dark:bg-[var(--VIARA-surface-raised)]'
-                                    : 'border-emerald-500/30 bg-emerald-500/5 dark:bg-[var(--VIARA-surface-raised)]'
-                            }`}
+                            className={`flex flex-col justify-between rounded-2xl border p-3.5 transition-all overflow-hidden dark:bg-[var(--VIARA-surface-raised)] ${statusTone}`}
                         >
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-white dark:bg-slate-800 text-xs font-black text-slate-700 dark:text-slate-300 shadow-xs">
+                            <div className="flex items-center justify-between gap-2 min-w-0">
+                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white dark:bg-slate-800 text-xs font-black text-slate-700 dark:text-slate-300 shadow-xs ring-1 ring-slate-200/60 dark:ring-slate-700">
                                         {m.type}
                                     </span>
-                                    <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                                    <span className="truncate text-xs font-black text-slate-900 dark:text-white" title={m.name}>
                                         {m.name}
                                     </span>
                                 </div>
-                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
-                                    isInUse
-                                        ? 'bg-sky-500/20 text-sky-700 dark:text-sky-300'
-                                        : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                                <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase whitespace-nowrap ${
+                                    isInUse ? 'bg-sky-500/20 text-sky-700 dark:text-sky-300' : isReady ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
                                 }`}>
-                                    <span className={`h-1.5 w-1.5 rounded-full ${isInUse ? 'bg-sky-500 animate-ping' : 'bg-emerald-500'}`} />
-                                    <span>{isInUse ? (isArabic ? 'قيد الفحص' : 'Scanning') : (isArabic ? 'جاهز' : 'Available')}</span>
+                                    <span className={`h-1.5 w-1.5 rounded-full ${isInUse ? 'bg-sky-500' : isReady ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                    <span>{t(`operations.modalityStatus.${m.status}`, { defaultValue: m.equipmentStatus || m.status })}</span>
                                 </span>
                             </div>
-                            <div className="mt-2.5 flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                                <span className="truncate">{m.currentPatient}</span>
-                                <span className="shrink-0 font-mono font-bold text-slate-500 dark:text-slate-400">{m.duration}</span>
+                            <div className="mt-2.5 flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-400 min-w-0">
+                                <span className="truncate text-slate-500 dark:text-slate-400">{m.equipmentStatus || 'Active'}</span>
+                                <span className="shrink-0 font-bold text-slate-500 dark:text-slate-400">{m.elapsedMinutes === null ? t('operations.noActiveExam') : t('operations.elapsed', { duration: formatDashboardDuration(m.elapsedMinutes, language) })}</span>
                             </div>
                         </div>
                     );
                 })}
-            </div>
+            </div> : <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-5 text-center text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-400">{t('operations.noModalities')}</p>}
         </section>
     );
 };
 
 // ─── Turnaround SLA Pipeline Gauge ───────────────────────────────────
 
-const TurnaroundPipeline = ({ isArabic }) => {
-    const stages = [
-        { label: isArabic ? 'الاستقبال والتسجيل' : 'Check-In', time: '6 min', target: '< 10 min', status: 'optimal' },
-        { label: isArabic ? 'التحضير السريري' : 'Clinical Prep', time: '8 min', target: '< 15 min', status: 'optimal' },
-        { label: isArabic ? 'إجراء الفحص الإشعاعي' : 'Acquisition', time: '18 min', target: '< 25 min', status: 'optimal' },
-        { label: isArabic ? 'كتابة التقرير والذكاء الاصطناعي' : 'Reporting & AI', time: '24 min', target: '< 45 min', status: 'optimal' },
-        { label: isArabic ? 'الاعتماد النهائي' : 'Verification', time: '10 min', target: '< 20 min', status: 'optimal' },
-    ];
+const TurnaroundPipeline = ({ stages = [], language }) => {
+    const { t } = useTranslation('dashboard');
+    const measuredStages = stages.filter(stage => stage.sampleSize > 0 && stage.averageMinutes !== null);
+    const allWithinTarget = measuredStages.length > 0 && measuredStages.every(stage => stage.withinTarget);
 
     return (
-        <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+        <section className="rounded-3xl border border-slate-200/80 bg-white/90 [padding:var(--VIARA-density-card-padding)] shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90" aria-labelledby="dashboard-turnaround-title">
             <div className="flex items-center justify-between gap-4 mb-3.5">
                 <div className="flex items-center gap-2">
                     <Clock3 size={16} className="text-teal-600 dark:text-teal-400" />
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                        {isArabic ? 'متوسط زمن الإنجاز لمراحل الفحص (SLA Pipeline)' : 'Clinical Turnaround Time Stages (SLA Pipeline)'}
+                    <h3 id="dashboard-turnaround-title" className="text-sm font-black text-slate-800 dark:text-slate-200">
+                        {t('operations.turnaroundTitle')}
                     </h3>
                 </div>
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 size={13} />
-                    <span>{isArabic ? 'ضمن المعدل القياسي' : 'Within SLA Targets'}</span>
-                </span>
+                {measuredStages.length > 0 && <span className={`inline-flex items-center gap-1 text-xs font-bold ${allWithinTarget ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-300'}`}>
+                    {allWithinTarget ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+                    <span>{allWithinTarget ? t('operations.withinTargets') : t('operations.targetAttention')}</span>
+                </span>}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                {stages.map((st, i) => (
-                    <div key={st.label} className="relative rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
+            {measuredStages.length > 0 ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {measuredStages.map((st, i) => (
+                    <div key={`${st.key || st.label || 'stage'}-${i}`} className="relative rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
                         <div className="flex items-center justify-between gap-2">
                             <span className="grid h-6 w-6 place-items-center rounded-lg bg-teal-500/10 text-teal-700 dark:text-teal-300 text-[10px] font-black">
                                 {i + 1}
                             </span>
-                            <span className="font-mono text-[10px] font-bold text-slate-400">
-                                {st.target}
+                            <span className="text-xs font-bold text-slate-400">
+                                {t('operations.target', { duration: formatDashboardDuration(st.targetMinutes, language) })}
                             </span>
                         </div>
                         <p className="mt-2 text-xs font-black text-slate-900 dark:text-white truncate">
-                            {st.label}
+                            {t(`operations.stages.${st.key}`)}
                         </p>
                         <p className="mt-0.5 text-base font-black text-teal-600 dark:text-teal-400 tabular-nums">
-                            {st.time}
+                            {formatDashboardDuration(st.averageMinutes, language)}
                         </p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{t('operations.samples', { count: formatNumber(st.sampleSize, language) })}</p>
                     </div>
                 ))}
-            </div>
+            </div> : <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-5 text-center text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-400">{t('operations.noTurnaround')}</p>}
         </section>
     );
 };
@@ -295,8 +267,6 @@ const TurnaroundPipeline = ({ isArabic }) => {
 const ReceptionDashboard = props => {
     const { user, stats, language, t } = props;
     const navigate = useNavigate();
-    const isArabic = language?.startsWith('ar');
-
     const flow = (stats.patientFlowData || []).map(item => ({
         ...item,
         waiting: toNumber(item.waiting),
@@ -339,6 +309,13 @@ const ReceptionDashboard = props => {
             title={t('reception.title')}
             subtitle={t('reception.subtitle')}
             priorityItems={getReceptionPriorityItems(stats, language, t)}
+            showModalities
+            metrics={[
+                { key: 'checkIns', icon: UserPlus, tone: 'cyan', label: t('reception.todayCheckIns'), value: formatNumber(stats.todayCheckIns, language), badge: stats.checkInsChange, detail: t('common.vsPreviousDay') },
+                { key: 'appointments', icon: CalendarCheck2, tone: 'blue', label: t('reception.appointments'), value: formatNumber(stats.appointments, language), detail: t('reception.pendingAppointments', { count: formatNumber(stats.appointmentsPending, language) }), onClick: appointmentsAction?.onClick },
+                { key: 'waiting', icon: Clock3, tone: 'amber', label: t('reception.waitingRoom'), value: formatNumber(stats.waitingRoom, language), detail: t('reception.averageWait', { duration: formatDashboardDuration(stats.averageWaitMinutes, language) }) },
+                { key: 'completed', icon: CheckCircle2, tone: 'emerald', label: t('reception.completedToday'), value: formatNumber(stats.completed, language), badge: stats.completedChange, detail: t('common.vsPreviousDay') },
+            ]}
             primaryAction={registerAction && (
                 <PrimaryAction
                     icon={registerAction.icon}
@@ -347,40 +324,6 @@ const ReceptionDashboard = props => {
                 />
             )}
         >
-            <MetricGrid>
-                <MetricCardV2
-                    icon={UserPlus}
-                    tone="cyan"
-                    label={t('reception.todayCheckIns')}
-                    value={formatNumber(stats.todayCheckIns, language)}
-                    change={stats.checkInsChange}
-                    detail={t('common.vsPreviousDay')}
-                />
-                <MetricCardV2
-                    icon={CalendarCheck2}
-                    tone="blue"
-                    label={t('reception.appointments')}
-                    value={formatNumber(stats.appointments, language)}
-                    detail={t('reception.pendingAppointments', { count: formatNumber(stats.appointmentsPending, language) })}
-                    onClick={appointmentsAction?.onClick}
-                />
-                <MetricCardV2
-                    icon={Clock3}
-                    tone="amber"
-                    label={t('reception.waitingRoom')}
-                    value={formatNumber(stats.waitingRoom, language)}
-                    detail={t('reception.averageWait', { duration: formatDashboardDuration(stats.averageWaitMinutes, language) })}
-                />
-                <MetricCardV2
-                    icon={CheckCircle2}
-                    tone="emerald"
-                    label={t('reception.completedToday')}
-                    value={formatNumber(stats.completed, language)}
-                    change={stats.completedChange}
-                    detail={t('common.vsPreviousDay')}
-                />
-            </MetricGrid>
-
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.85fr)]">
                 <PagePanel
                     title={t('reception.patientFlow')}
@@ -431,7 +374,7 @@ const ReceptionDashboard = props => {
                     <ChartLegend items={[[t('flow.waiting'), '#f59e0b'], [t('flow.inProgress'), '#3b82f6'], [t('flow.completed'), '#10b981']]} />
                 </PagePanel>
 
-                <ActivityPanel activities={stats.recentActivity} language={language} />
+                <ActivityPanel activities={stats.recentActivity} language={language} kind="reception" />
             </div>
 
             <QuickActions actions={quickActions} />
@@ -445,7 +388,8 @@ const ClinicalDashboard = props => {
     const { user, stats, language, t } = props;
     const navigate = useNavigate();
     const isArabic = language?.startsWith('ar');
-    const distribution = normalizeDistribution(stats.modalityDistribution);
+    const stageDistribution = normalizeDistribution(Object.entries(stats.stageDistribution || {}).map(([name, value]) => ({ name, value })));
+    const distribution = stageDistribution.length > 0 ? stageDistribution : normalizeDistribution(stats.modalityDistribution);
     const cycleMetric = stats.cycleMetric || ({ Radiologist: 'report', Technician: 'scan', Nurse: 'preparation' }[user?.role] || 'report');
     const metricCopy = key => t(`clinical.metrics.${cycleMetric}.${key}`);
 
@@ -454,7 +398,7 @@ const ClinicalDashboard = props => {
         label: t('actions.openWorklist'),
         description: t('actions.openWorklistDescription'),
         to: '/worklist',
-        permissions: ['VIEW_REPORTS', 'WRITE_REPORTS', 'PERFORM_EXAMS', 'MANAGE_QUEUE'],
+        permissions: ['VIEW_EXAMS'],
     });
 
     const quickActions = [
@@ -482,6 +426,15 @@ const ClinicalDashboard = props => {
             title={t('clinical.title')}
             subtitle={metricCopy('subtitle')}
             priorityItems={getClinicalPriorityItems(stats, language, t, cycleMetric)}
+            showModalities
+            showTurnaround
+            metrics={[
+                { key: 'assigned', icon: ListChecks, tone: 'cyan', label: t('clinical.taskMetrics.totalAssigned'), value: formatNumber(stats.totalAssigned, language), detail: t('clinical.taskMetrics.available', { count: formatNumber(stats.availableTasks, language) }), onClick: worklistAction?.onClick },
+                { key: 'pending', icon: ClipboardList, tone: 'amber', label: t('clinical.taskMetrics.pending'), value: formatNumber(stats.pending, language), detail: metricCopy('pending'), onClick: worklistAction?.onClick },
+                { key: 'inProgress', icon: Activity, tone: 'blue', label: t('clinical.taskMetrics.inProgress'), value: formatNumber(stats.inProgress, language), detail: t('clinical.taskMetrics.onHold', { count: formatNumber(stats.onHold, language) }), onClick: worklistAction?.onClick },
+                { key: 'completedToday', icon: CheckCircle2, tone: 'emerald', label: metricCopy('completedToday'), value: formatNumber(stats.completedToday, language), badge: stats.completedTodayChange, detail: t('common.vsPreviousDay') },
+                { key: 'averageCycle', icon: Clock3, tone: 'violet', label: metricCopy('averageCycle'), value: formatDashboardDuration((stats.averageTurnaroundHours || 0) * 60, language), detail: t(`clinical.metrics.${cycleMetric}.oldest`, { hours: formatDecimal(stats.oldestPendingHours, language) }) },
+            ]}
             primaryAction={worklistAction && (
                 <PrimaryAction
                     icon={worklistAction.icon}
@@ -490,40 +443,6 @@ const ClinicalDashboard = props => {
                 />
             )}
         >
-            <MetricGrid>
-                <MetricCardV2
-                    icon={ClipboardList}
-                    tone="amber"
-                    label={metricCopy('pending')}
-                    value={formatNumber(stats.pendingReports, language)}
-                    detail={t(`clinical.metrics.${cycleMetric}.urgent`, { count: formatNumber(stats.urgentCases, language) })}
-                    onClick={worklistAction?.onClick}
-                />
-                <MetricCardV2
-                    icon={CheckCircle2}
-                    tone="emerald"
-                    label={metricCopy('completedToday')}
-                    value={formatNumber(stats.completedToday, language)}
-                    change={stats.completedTodayChange}
-                    detail={t('common.vsPreviousDay')}
-                />
-                <MetricCardV2
-                    icon={ScanLine}
-                    tone="blue"
-                    label={metricCopy('completedWeek')}
-                    value={formatNumber(stats.thisWeek, language)}
-                    change={stats.weekChange}
-                    detail={t('common.vsPreviousWeek')}
-                />
-                <MetricCardV2
-                    icon={Clock3}
-                    tone="violet"
-                    label={metricCopy('averageCycle')}
-                    value={formatDashboardDuration((stats.averageTurnaroundHours || 0) * 60, language)}
-                    detail={t(`clinical.metrics.${cycleMetric}.oldest`, { hours: formatDecimal(stats.oldestPendingHours, language) })}
-                />
-            </MetricGrid>
-
             {/* High-Acuity Alert Banner */}
             {toNumber(stats.urgentCases) > 0 && worklistAction && (
                 <button
@@ -551,19 +470,152 @@ const ClinicalDashboard = props => {
                 </button>
             )}
 
-            {/* Turnaround SLA Pipeline */}
-            <TurnaroundPipeline isArabic={isArabic} />
-
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
                 <DistributionPanel
                     data={distribution}
-                    title={t('clinical.workloadDistribution')}
-                    description={metricCopy('workloadDescription')}
+                    title={stageDistribution.length > 0 ? t('clinical.taskMetrics.stageDistribution') : t('clinical.workloadDistribution')}
+                    description={stageDistribution.length > 0 ? t('clinical.taskMetrics.stageDistributionDescription') : metricCopy('workloadDescription')}
                 />
                 <ActivityPanel activities={stats.recentActivity} language={language} />
             </div>
 
             <QuickActions actions={quickActions} />
+        </DashboardShell>
+    );
+};
+
+// ─── Finance, HR, and Insurance role dashboards ──────────────────────
+
+const FinanceDashboard = props => {
+    const { user, stats, language, t } = props;
+    const navigate = useNavigate();
+    const isCashier = user?.role === 'Cashier';
+    const workspaceAction = buildNavAction(user, navigate, isCashier ? {
+        icon: WalletCards,
+        label: t('actions.openCashierWorkspace'),
+        description: t('actions.openCashierWorkspaceDescription'),
+        to: '/reception',
+        permissions: ['VIEW_INVOICES', 'PROCESS_PAYMENTS'],
+    } : {
+        icon: WalletCards,
+        label: t('actions.financials'),
+        description: t('actions.financialsDescription'),
+        to: '/financials',
+        permissions: ['VIEW_FINANCIALS'],
+    });
+    const insuranceAction = buildNavAction(user, navigate, {
+        icon: ShieldCheck,
+        label: t('actions.insurance'),
+        description: t('actions.insuranceDescription'),
+        to: '/insurance',
+        permissions: ['VIEW_INSURANCE'],
+    });
+    const quickActions = [workspaceAction, insuranceAction].filter(Boolean);
+
+    return (
+        <DashboardShell
+            {...props}
+            eyebrow={t(`finance.${isCashier ? 'cashierEyebrow' : 'accountingEyebrow'}`)}
+            title={t(`finance.${isCashier ? 'cashierTitle' : 'accountingTitle'}`)}
+            subtitle={t(`finance.${isCashier ? 'cashierSubtitle' : 'accountingSubtitle'}`)}
+            priorityItems={[
+                { key: 'outstanding', icon: WalletCards, tone: toNumber(stats.outstandingAmount) > 0 ? 'amber' : 'emerald', label: t('finance.outstanding'), value: formatCurrency(stats.outstandingAmount, language), detail: t('finance.openInvoicesDetail', { count: formatNumber(stats.openInvoices, language) }) },
+                { key: 'refunds', icon: RefreshCw, tone: toNumber(stats.pendingRefunds) > 0 ? 'rose' : 'emerald', label: t('finance.pendingRefunds'), value: formatNumber(stats.pendingRefunds, language), detail: t('finance.requiresReview') },
+                { key: 'shift', icon: ShieldCheck, tone: stats.shiftOpen ? 'emerald' : 'cyan', label: isCashier ? t('finance.shiftStatus') : t('finance.todayTransactions'), value: isCashier ? t(stats.shiftOpen ? 'finance.shiftOpen' : 'finance.shiftClosed') : formatNumber(stats.transactionsToday, language), detail: isCashier ? t('finance.shiftStatusDetail') : t('finance.transactionsDetail') },
+            ]}
+            metrics={[
+                { key: 'today', icon: CircleDollarSign, tone: 'emerald', label: t('finance.collectedToday'), value: formatCurrency(stats.collectedToday, language), detail: t('common.today') },
+                { key: 'week', icon: WalletCards, tone: 'cyan', label: t('finance.collectedWeek'), value: formatCurrency(stats.collectedWeek, language), detail: t('common.currentWeek') },
+                { key: 'transactions', icon: ClipboardList, tone: 'blue', label: t('finance.transactionsToday'), value: formatNumber(stats.transactionsToday, language), detail: t('common.today') },
+                { key: 'openInvoices', icon: FileSearch, tone: 'amber', label: t('finance.openInvoices'), value: formatNumber(stats.openInvoices, language), detail: formatCurrency(stats.outstandingAmount, language), onClick: workspaceAction?.onClick },
+            ]}
+            primaryAction={workspaceAction && <PrimaryAction icon={workspaceAction.icon} label={workspaceAction.label} onClick={workspaceAction.onClick} />}
+        >
+            <QuickActions actions={quickActions} />
+        </DashboardShell>
+    );
+};
+
+const HRDashboard = props => {
+    const { user, stats, language, t } = props;
+    const navigate = useNavigate();
+    const hrAction = buildNavAction(user, navigate, {
+        icon: UsersRound,
+        label: t('actions.openHR'),
+        description: t('actions.openHRDescription'),
+        to: '/hr',
+        permissions: ['VIEW_STAFF'],
+    });
+    const usersAction = buildNavAction(user, navigate, {
+        icon: UserRound,
+        label: t('actions.manageStaff'),
+        description: t('actions.manageStaffDescription'),
+        to: '/users',
+        permissions: ['VIEW_USERS'],
+    });
+
+    return (
+        <DashboardShell
+            {...props}
+            eyebrow={t('hr.eyebrow')}
+            title={t('hr.title')}
+            subtitle={t('hr.subtitle')}
+            priorityItems={[
+                { key: 'attendance', icon: CheckCircle2, tone: 'emerald', label: t('hr.presentToday'), value: formatNumber(stats.presentToday, language), detail: t('common.today') },
+                { key: 'leave', icon: CalendarDays, tone: toNumber(stats.onLeaveToday) > 0 ? 'violet' : 'cyan', label: t('hr.onLeaveToday'), value: formatNumber(stats.onLeaveToday, language), detail: t('common.today') },
+                { key: 'pending', icon: ClipboardList, tone: toNumber(stats.pendingLeave) > 0 ? 'amber' : 'emerald', label: t('hr.pendingLeave'), value: formatNumber(stats.pendingLeave, language), detail: t('hr.pendingLeaveDetail') },
+            ]}
+            metrics={[
+                { key: 'active', icon: UsersRound, tone: 'cyan', label: t('hr.activeStaff'), value: formatNumber(stats.activeStaff, language), detail: t('hr.activeStaffDetail') },
+                { key: 'present', icon: CheckCircle2, tone: 'emerald', label: t('hr.presentToday'), value: formatNumber(stats.presentToday, language), detail: t('common.today') },
+                { key: 'leave', icon: CalendarDays, tone: 'violet', label: t('hr.onLeaveToday'), value: formatNumber(stats.onLeaveToday, language), detail: t('common.today') },
+                { key: 'pending', icon: ClipboardList, tone: 'amber', label: t('hr.pendingLeave'), value: formatNumber(stats.pendingLeave, language), detail: t('hr.pendingLeaveDetail'), onClick: hrAction?.onClick },
+            ]}
+            primaryAction={hrAction && <PrimaryAction icon={hrAction.icon} label={hrAction.label} onClick={hrAction.onClick} />}
+        >
+            <QuickActions actions={[hrAction, usersAction].filter(Boolean)} />
+        </DashboardShell>
+    );
+};
+
+const InsuranceDashboard = props => {
+    const { user, stats, language, t } = props;
+    const navigate = useNavigate();
+    const insuranceAction = buildNavAction(user, navigate, {
+        icon: ShieldCheck,
+        label: t('actions.openInsurance'),
+        description: t('actions.openInsuranceDescription'),
+        to: '/insurance',
+        permissions: ['VIEW_INSURANCE'],
+    });
+    const approvalsAction = buildNavAction(user, navigate, {
+        icon: ClipboardList,
+        label: t('actions.openApprovals'),
+        description: t('actions.openApprovalsDescription'),
+        to: '/approvals',
+        permissions: ['MANAGE_INSURANCE_APPROVALS'],
+    });
+
+    return (
+        <DashboardShell
+            {...props}
+            eyebrow={t('insurance.eyebrow')}
+            title={t('insurance.title')}
+            subtitle={t('insurance.subtitle')}
+            priorityItems={[
+                { key: 'approvals', icon: ClipboardList, tone: toNumber(stats.pendingApprovals) > 0 ? 'amber' : 'emerald', label: t('insurance.pendingApprovals'), value: formatNumber(stats.pendingApprovals, language), detail: t('insurance.requiresDecision') },
+                { key: 'rejected', icon: AlertTriangle, tone: toNumber(stats.rejectedClaims) > 0 ? 'rose' : 'emerald', label: t('insurance.rejectedClaims'), value: formatNumber(stats.rejectedClaims, language), detail: t('insurance.requiresFollowUp') },
+                { key: 'outstanding', icon: WalletCards, tone: 'cyan', label: t('insurance.outstandingClaims'), value: formatCurrency(stats.outstandingClaims, language), detail: t('insurance.openClaimsDetail', { count: formatNumber(stats.openClaims, language) }) },
+            ]}
+            metrics={[
+                { key: 'approvals', icon: ClipboardList, tone: 'amber', label: t('insurance.pendingApprovals'), value: formatNumber(stats.pendingApprovals, language), detail: t('insurance.requiresDecision'), onClick: approvalsAction?.onClick },
+                { key: 'openClaims', icon: FileSearch, tone: 'cyan', label: t('insurance.openClaims'), value: formatNumber(stats.openClaims, language), detail: t('insurance.inProgress') },
+                { key: 'outstanding', icon: WalletCards, tone: 'violet', label: t('insurance.outstandingClaims'), value: formatCurrency(stats.outstandingClaims, language), detail: t('insurance.openClaimsDetail', { count: formatNumber(stats.openClaims, language) }) },
+                { key: 'received', icon: CircleDollarSign, tone: 'emerald', label: t('insurance.receivedWeek'), value: formatCurrency(stats.receivedWeek, language), detail: t('common.currentWeek') },
+            ]}
+            primaryAction={insuranceAction && <PrimaryAction icon={insuranceAction.icon} label={insuranceAction.label} onClick={insuranceAction.onClick} />}
+        >
+            <QuickActions actions={[insuranceAction, approvalsAction].filter(Boolean)} />
         </DashboardShell>
     );
 };
@@ -574,7 +626,6 @@ const ExecutiveDashboard = props => {
     const { user, stats, language, t } = props;
     const navigate = useNavigate();
     const isArabic = language?.startsWith('ar');
-
     const performance = (stats.scanVolumeData || []).map(item => ({
         ...item,
         name: item.date ? formatWeekday(item.date, language) : item.name,
@@ -605,7 +656,7 @@ const ExecutiveDashboard = props => {
         label: t('actions.openWorklist'),
         description: t('actions.openWorklistDescription'),
         to: '/worklist',
-        permissions: ['VIEW_REPORTS', 'WRITE_REPORTS', 'PERFORM_EXAMS', 'MANAGE_QUEUE'],
+        permissions: ['VIEW_EXAMS'],
     });
 
     const staffAction = buildNavAction(user, navigate, {
@@ -635,7 +686,14 @@ const ExecutiveDashboard = props => {
             eyebrow={t('executive.eyebrow')}
             title={t('executive.title')}
             subtitle={t('executive.subtitle')}
-            priorityItems={getExecutivePriorityItems(stats, language, t)}
+            priorityItems={getExecutivePriorityItems(stats, language, t, { worklistAction, financialsAction, staffAction })}
+            showPatientSearch={false}
+            metrics={[
+                { key: 'scans', icon: ScanLine, tone: 'cyan', label: t('executive.weeklyScans'), value: formatNumber(stats.totalScans, language), badge: stats.scansChange, detail: t('common.vsPreviousWeek') },
+                { key: 'today', icon: Zap, tone: 'emerald', label: isArabic ? 'إنتاج اليوم' : 'Today throughput', value: formatNumber(stats.scansToday, language), detail: isArabic ? 'فحوص مكتملة اليوم' : 'Completed scans today' },
+                { key: 'openWork', icon: ClipboardList, tone: 'amber', label: t('executive.openWork'), value: formatNumber(stats.openWork, language), detail: t('executive.scansToday', { count: formatNumber(stats.scansToday, language) }), onClick: worklistAction?.onClick },
+                { key: 'completion', icon: CheckCircle2, tone: 'violet', label: isArabic ? 'معدل الإنجاز' : 'Completion rate', value: `${formatNumber(stats.completionRate, language)}%`, detail: isArabic ? 'كفاءة إغلاق دورة العمل' : 'Workflow completion efficiency' },
+            ]}
             primaryAction={analyticsAction && (
                 <PrimaryAction
                     icon={analyticsAction.icon}
@@ -644,46 +702,18 @@ const ExecutiveDashboard = props => {
                 />
             )}
         >
-            <MetricGrid>
-                <MetricCardV2
-                    icon={ScanLine}
-                    tone="cyan"
-                    label={t('executive.weeklyScans')}
-                    value={formatNumber(stats.totalScans, language)}
-                    change={stats.scansChange}
-                    detail={t('common.vsPreviousWeek')}
-                />
-                <MetricCardV2
-                    icon={CircleDollarSign}
-                    tone="emerald"
-                    label={t('executive.weeklyRevenue')}
-                    value={formatCurrency(stats.revenueAmount, language)}
-                    change={stats.revenueChange}
-                    detail={t('common.vsPreviousWeek')}
-                    onClick={financialsAction?.onClick}
-                />
-                <MetricCardV2
-                    icon={ClipboardList}
-                    tone="amber"
-                    label={t('executive.openWork')}
-                    value={formatNumber(stats.openWork, language)}
-                    detail={t('executive.scansToday', { count: formatNumber(stats.scansToday, language) })}
-                    onClick={worklistAction?.onClick}
-                />
-                <MetricCardV2
-                    icon={UsersRound}
-                    tone="violet"
-                    label={t('executive.activeStaff')}
-                    value={formatNumber(stats.activeStaff, language)}
-                    detail={t('executive.staffOnLeave', { count: formatNumber(stats.staffOnLeave, language) })}
-                    onClick={staffAction?.onClick}
-                />
-            </MetricGrid>
+            <section className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-label={isArabic ? 'اختصارات القيادة التشغيلية' : 'Operational command shortcuts'}>
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="me-auto text-xs font-black text-slate-800 dark:text-slate-200">{isArabic ? 'انتقل مباشرة إلى منطقة العمل' : 'Go directly to work'}</span>
+                    {quickActions.map(action => (
+                        <button key={action.label} type="button" onClick={action.onClick} className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-700 transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-teal-800 dark:hover:bg-teal-950/30">
+                            <action.icon size={14} />{action.label}
+                        </button>
+                    ))}
+                </div>
+            </section>
 
-            {/* Turnaround SLA Pipeline */}
-            <TurnaroundPipeline isArabic={isArabic} />
-
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(340px,0.8fr)]">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,0.55fr)]">
                 <PagePanel
                     title={t('executive.weeklyPerformance')}
                     description={t('executive.performanceDescription')}
@@ -700,7 +730,7 @@ const ExecutiveDashboard = props => {
                             ]}
                             t={t}
                         >
-                            <div className="h-80 w-full">
+                            <div className="h-64 w-full">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <ComposedChart data={performance} margin={{ top: 10, right: 4, left: -18, bottom: 0 }}>
                                         <CartesianGrid strokeDasharray="4 4" stroke="currentColor" className="text-slate-100 dark:text-slate-800" vertical={false} />
@@ -721,105 +751,41 @@ const ExecutiveDashboard = props => {
                     <ChartLegend items={[[t('executive.scans'), '#0ea5e9'], [t('executive.revenue'), '#10b981']]} />
                 </PagePanel>
 
-                <DistributionPanel
-                    data={distribution}
-                    title={t('executive.modalityMix')}
-                    description={t('executive.modalityDescription')}
-                />
+                <PagePanel title={isArabic ? 'نبض الإنتاجية' : 'Productivity pulse'} description={isArabic ? 'قراءة سريعة للحجم والعمل المفتوح دون مؤشرات مشتتة.' : 'A concise reading of throughput and unresolved work.'}>
+                    <div className="space-y-3">
+                        <ProductivityRow label={isArabic ? 'إنتاج اليوم' : 'Today throughput'} value={formatNumber(stats.scansToday, language)} total={Math.max(toNumber(stats.totalScans), toNumber(stats.scansToday), 1)} current={toNumber(stats.scansToday)} tone="emerald" />
+                        <ProductivityRow label={isArabic ? 'العمل المفتوح' : 'Open work'} value={formatNumber(stats.openWork, language)} total={Math.max(toNumber(stats.totalScans), toNumber(stats.openWork), 1)} current={toNumber(stats.openWork)} tone="amber" />
+                        <ProductivityRow label={isArabic ? 'معدل الإنجاز' : 'Completion rate'} value={`${formatNumber(stats.completionRate, language)}%`} total={100} current={toNumber(stats.completionRate)} tone="cyan" />
+                    </div>
+                </PagePanel>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
-                <QuickActions actions={quickActions} />
-                <ActivityPanel activities={stats.recentActivity} language={language} />
-            </div>
+            <details className="group rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black text-slate-800 marker:hidden dark:text-slate-200">
+                    <span>{isArabic ? 'التفاصيل التشغيلية والتحليل المساند' : 'Operational detail and supporting analysis'}</span>
+                    <ChevronRight size={16} className="transition-transform group-open:rotate-90 rtl:rotate-180 rtl:group-open:rotate-90" />
+                </summary>
+                <div className="space-y-5 border-t border-slate-100 p-4 dark:border-slate-800">
+                    <ModalityLiveDeck modalities={stats.liveModalities} language={language} />
+                    <TurnaroundPipeline stages={stats.turnaroundStages} language={language} />
+                    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.7fr)]">
+                        <DistributionPanel data={distribution} title={t('executive.modalityMix')} description={t('executive.modalityDescription')} />
+                        <ActivityPanel activities={stats.recentActivity} language={language} />
+                    </div>
+                </div>
+            </details>
         </DashboardShell>
     );
 };
 
-// ─── Metric Grid & MetricCard Component ───────────────────────────────
-
-const MetricGrid = ({ children }) => (
-    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {children}
-    </section>
-);
-
-const metricToneMap = {
-    cyan: {
-        badge: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/30',
-        glow: 'from-cyan-500/10'
-    },
-    blue: {
-        badge: 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30',
-        glow: 'from-sky-500/10'
-    },
-    emerald: {
-        badge: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
-        glow: 'from-emerald-500/10'
-    },
-    amber: {
-        badge: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30',
-        glow: 'from-amber-500/10'
-    },
-    violet: {
-        badge: 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30',
-        glow: 'from-purple-500/10'
-    },
-    rose: {
-        badge: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30',
-        glow: 'from-rose-500/10'
-    },
-};
-
-const MetricCardV2 = ({ icon: Icon, tone = 'cyan', label, value, change, detail, onClick }) => {
-    const toneConfig = metricToneMap[tone] || metricToneMap.cyan;
-    const isPositiveChange = change !== undefined && toNumber(change) >= 0;
-    const isNegativeChange = change !== undefined && toNumber(change) < 0;
-
-    const CardTag = onClick ? 'button' : 'div';
-
+const ProductivityRow = ({ label, value, current, total, tone }) => {
+    const width = Math.min(100, Math.max(0, (toNumber(current) / Math.max(toNumber(total), 1)) * 100));
+    const color = tone === 'amber' ? 'bg-amber-500' : tone === 'cyan' ? 'bg-cyan-500' : 'bg-emerald-500';
     return (
-        <CardTag
-            type={onClick ? 'button' : undefined}
-            onClick={onClick}
-            className={`group relative flex flex-col justify-between overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-5 text-start shadow-sm backdrop-blur-xl transition-all duration-200 hover:shadow-md hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-slate-700 ${
-                onClick ? 'cursor-pointer active:scale-[0.99]' : ''
-            }`}
-        >
-            <div className={`pointer-events-none absolute -end-8 -top-8 h-28 w-28 rounded-full bg-gradient-to-bl ${toneConfig.glow} to-transparent blur-xl opacity-60 group-hover:opacity-100 transition-opacity`} />
-
-            <div className="flex items-start justify-between gap-3">
-                <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl border ${toneConfig.badge}`}>
-                    <Icon size={22} />
-                </div>
-                {change !== undefined && (
-                    <span
-                        className={`inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[11px] font-black tabular-nums ${
-                            isPositiveChange
-                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                                : 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                        }`}
-                    >
-                        {isPositiveChange ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
-                        <span>{Math.abs(toNumber(change))}%</span>
-                    </span>
-                )}
-            </div>
-
-            <div className="mt-4 min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 truncate">
-                    {label}
-                </p>
-                <p className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl tabular-nums">
-                    {value || '0'}
-                </p>
-                {detail && (
-                    <p className="mt-1.5 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        {detail}
-                    </p>
-                )}
-            </div>
-        </CardTag>
+        <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+            <div className="flex items-center justify-between gap-3 text-xs font-bold text-slate-600 dark:text-slate-300"><span>{label}</span><strong className="text-sm font-black tabular-nums text-slate-950 dark:text-white">{value}</strong></div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800" aria-hidden="true"><div className={`h-full rounded-full ${color}`} style={{ width: `${width}%` }} /></div>
+        </div>
     );
 };
 
@@ -840,17 +806,20 @@ const PriorityStrip = ({ items }) => {
 
     return (
         <section className="grid gap-3.5 md:grid-cols-3" aria-label={t('priorities.title', { defaultValue: 'Operational priorities' })}>
-            {visibleItems.map(({ key, icon: Icon, tone = 'cyan', label, value, detail }) => (
-                <article
+            {visibleItems.map(({ key, icon: Icon, tone = 'cyan', label, value, detail, onClick }) => {
+                const Element = onClick ? 'button' : 'article';
+                return <Element
                     key={key}
-                    className={`group relative flex min-h-[92px] items-center gap-3.5 rounded-2xl border p-4 shadow-sm backdrop-blur-xl transition-all hover:shadow-md ${
+                    type={onClick ? 'button' : undefined}
+                    onClick={onClick}
+                    className={`group relative flex min-h-[84px] items-center gap-3.5 rounded-2xl border p-3.5 text-start shadow-sm backdrop-blur-xl transition-all hover:shadow-md ${
                         priorityToneStyles[tone] || priorityToneStyles.cyan
                     }`}
                 >
                     <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/80 dark:bg-slate-900/80 shadow-xs ring-1 ring-black/5 dark:ring-white/10">
                         <Icon size={20} className="text-current" />
                     </span>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                         <p className="text-[10.5px] font-black uppercase tracking-wider opacity-75 truncate">
                             {label}
                         </p>
@@ -861,8 +830,9 @@ const PriorityStrip = ({ items }) => {
                             {detail}
                         </p>
                     </div>
-                </article>
-            ))}
+                    {onClick && <ArrowUpRight size={15} className="shrink-0 opacity-60" />}
+                </Element>;
+            })}
         </section>
     );
 };
@@ -932,25 +902,31 @@ const DistributionPanel = ({ data, title, description }) => {
 
 // ─── Activity Timeline Panel with Sub-Tabs ────────────────────────────
 
-const ActivityPanel = ({ activities = [], language }) => {
+const ActivityPanel = ({ activities = [], language, kind = 'clinical' }) => {
     const { t } = useTranslation('dashboard');
     const isArabic = language?.startsWith('ar');
     const [activityFilter, setActivityFilter] = useState('all');
 
+    const availableFilters = useMemo(() => {
+        const types = new Set(activities.map(activity => activity.type));
+        return [
+            { id: 'all', label: isArabic ? 'الكل' : 'All' },
+            (types.has('report') || types.has('scan') || types.has('preparation')) && { id: 'clinical', label: isArabic ? 'السريري' : 'Clinical' },
+            types.has('checkin') && { id: 'checkin', label: isArabic ? 'الاستقبال' : 'Arrivals' },
+        ].filter(Boolean);
+    }, [activities, isArabic]);
+
     const filteredActivities = useMemo(() => {
         if (activityFilter === 'all') return activities;
-        return activities.filter(a => {
-            const msg = (a.message || '').toLowerCase();
-            if (activityFilter === 'reports') return msg.includes('report') || msg.includes('تقرير') || msg.includes('finalized');
-            if (activityFilter === 'checkin') return msg.includes('arrived') || msg.includes('check') || msg.includes('وصول');
-            return true;
-        });
+        if (activityFilter === 'clinical') return activities.filter(activity => ['report', 'scan', 'preparation'].includes(activity.type));
+        if (activityFilter === 'checkin') return activities.filter(activity => activity.type === 'checkin');
+        return activities;
     }, [activities, activityFilter]);
 
     return (
         <PagePanel
-            title={t('activity.title')}
-            description={t('activity.description')}
+            title={t(kind === 'reception' ? 'activity.receptionTitle' : 'activity.title')}
+            description={t(kind === 'reception' ? 'activity.receptionDescription' : 'activity.description')}
             action={
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -960,15 +936,12 @@ const ActivityPanel = ({ activities = [], language }) => {
         >
             {/* Filter Pills */}
             <div className="flex gap-1.5 border-b border-slate-100 pb-3 dark:border-slate-800">
-                {[
-                    { id: 'all', label: isArabic ? 'الكل' : 'All' },
-                    { id: 'reports', label: isArabic ? 'التقارير' : 'Reports' },
-                    { id: 'checkin', label: isArabic ? 'الاستقبال' : 'Arrivals' }
-                ].map(f => (
+                {availableFilters.map(f => (
                     <button
                         key={f.id}
                         type="button"
                         onClick={() => setActivityFilter(f.id)}
+                        aria-pressed={activityFilter === f.id}
                         className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition ${
                             activityFilter === f.id
                                 ? 'bg-teal-600 text-white'
@@ -989,7 +962,13 @@ const ActivityPanel = ({ activities = [], language }) => {
                                     <CheckCircle2 size={12} />
                                 </span>
                                 <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-snug">
-                                    {activity.message || t('activity.scanFinalized', { modality: activity.modality || t('common.imagingStudy'), mrn: activity.mrn || '-' })}
+                                    {activity.message || t(
+                                        activity.type === 'checkin' ? 'activity.patientArrived'
+                                            : activity.type === 'preparation' ? 'activity.preparationCompleted'
+                                                : activity.type === 'scan' ? 'activity.scanCompleted'
+                                                    : 'activity.scanFinalized',
+                                        { modality: activity.modality || t('common.imagingStudy'), mrn: activity.mrn || '-' }
+                                    )}
                                 </p>
                                 <time className="mt-1 block font-mono text-[10px] font-semibold text-slate-400 dark:text-slate-500" dateTime={activity.timestamp}>
                                     {formatRelativeTime(activity.timestamp, language, activity.time)}
@@ -1003,8 +982,8 @@ const ActivityPanel = ({ activities = [], language }) => {
                     <span className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500">
                         <Activity size={24} />
                     </span>
-                    <p className="mt-3 text-sm font-bold text-slate-900 dark:text-white">{t('activity.empty')}</p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('activity.emptyDescription')}</p>
+                    <p className="mt-3 text-sm font-bold text-slate-900 dark:text-white">{t(kind === 'reception' ? 'activity.receptionEmpty' : 'activity.empty')}</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t(kind === 'reception' ? 'activity.receptionEmptyDescription' : 'activity.emptyDescription')}</p>
                 </div>
             )}
         </PagePanel>
@@ -1114,7 +1093,8 @@ const ChartEmpty = ({ label }) => {
 };
 
 const DashboardSkeleton = () => (
-    <div className="space-y-6 animate-pulse">
+    <div className="space-y-6 animate-pulse" role="status" aria-live="polite" aria-busy="true">
+        <span className="sr-only">Loading dashboard data…</span>
         <div className="h-44 rounded-3xl bg-slate-200/60 dark:bg-slate-800/60" />
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[0, 1, 2, 3].map(i => (
@@ -1165,12 +1145,12 @@ const hasAnyUserPermission = (user, permissions = []) => {
     const required = Array.isArray(permissions) ? permissions : [permissions];
     if (required.length === 0) return true;
     if (user?.role === 'Developer') return true;
-    const effectivePermissions = new Set([...(user?.permissions || []), ...(user?.elevatedPermissions || [])]);
+    const effectivePermissions = getEffectivePermissions(user);
     return required.some(permission => effectivePermissions.has(permission));
 };
 
 const canUseAction = (user, { to, permissions }) => (
-    (!to || canAccessRoute(to, user?.role)) && hasAnyUserPermission(user, permissions)
+    (!to || canAccessRoute(to, user)) && hasAnyUserPermission(user, permissions)
 );
 
 const buildNavAction = (user, navigate, action) => (
@@ -1210,28 +1190,28 @@ const getClinicalPriorityItems = (stats, language, t, cycleMetric) => [
         icon: AlertTriangle,
         tone: toNumber(stats.urgentCases) > 0 ? 'rose' : 'emerald',
         label: t('priorities.urgentWork', { defaultValue: 'Aged work' }),
-        value: formatNumber(stats.urgentCases, language),
-        detail: t(`clinical.metrics.${cycleMetric}.urgent`, { count: formatNumber(stats.urgentCases, language) }),
+        value: formatNumber(stats.overdueTasks ?? stats.urgentCases, language),
+        detail: t('clinical.taskMetrics.overdueDetail'),
     },
     {
         key: 'oldest',
         icon: Clock3,
         tone: toNumber(stats.oldestPendingHours) >= 24 ? 'amber' : 'cyan',
-        label: t('priorities.oldestOpen', { defaultValue: 'Oldest open' }),
-        value: t('common.hoursValue', { value: formatDecimal(stats.oldestPendingHours, language) }),
-        detail: t(`clinical.metrics.${cycleMetric}.oldest`, { hours: formatDecimal(stats.oldestPendingHours, language) }),
+        label: t('clinical.taskMetrics.slaCompliance'),
+        value: `${formatNumber(stats.slaCompliance, language)}%`,
+        detail: t('clinical.taskMetrics.startDelay', { minutes: formatNumber(stats.averageStartDelayMinutes, language) }),
     },
     {
         key: 'completed',
         icon: CheckCircle2,
         tone: 'emerald',
-        label: t('priorities.completedToday', { defaultValue: 'Completed today' }),
-        value: formatNumber(stats.completedToday, language),
-        detail: t('common.vsPreviousDay'),
+        label: t('clinical.taskMetrics.completionRate'),
+        value: `${formatNumber(stats.completionRate, language)}%`,
+        detail: t('clinical.taskMetrics.weeklyProgress', { completed: formatNumber(stats.thisWeek, language), reassigned: formatNumber(stats.reassignmentsWeek, language) }),
     },
 ];
 
-const getExecutivePriorityItems = (stats, language, t) => [
+const getExecutivePriorityItems = (stats, language, t, actions = {}) => [
     {
         key: 'openWork',
         icon: ListChecks,
@@ -1239,6 +1219,7 @@ const getExecutivePriorityItems = (stats, language, t) => [
         label: t('priorities.openWork', { defaultValue: 'Open work' }),
         value: formatNumber(stats.openWork, language),
         detail: t('executive.scansToday', { count: formatNumber(stats.scansToday, language) }),
+        onClick: actions.worklistAction?.onClick,
     },
     {
         key: 'collections',
@@ -1247,6 +1228,7 @@ const getExecutivePriorityItems = (stats, language, t) => [
         label: t('priorities.collections', { defaultValue: 'Collections' }),
         value: formatCurrency(stats.revenueAmount, language),
         detail: t('common.vsPreviousWeek'),
+        onClick: actions.financialsAction?.onClick,
     },
     {
         key: 'staffing',
@@ -1255,32 +1237,35 @@ const getExecutivePriorityItems = (stats, language, t) => [
         label: t('priorities.staffing', { defaultValue: 'Staffing' }),
         value: formatNumber(stats.activeStaff, language),
         detail: t('executive.staffOnLeave', { count: formatNumber(stats.staffOnLeave, language) }),
+        onClick: actions.staffAction?.onClick,
     },
 ];
 
-const formatNumber = (value, language = 'en') => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 }).format(toNumber(value));
-const formatDecimal = (value, language = 'en') => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 }).format(toNumber(value));
+const dashboardLocale = language => language?.startsWith('ar') ? 'ar-EG' : 'en-US';
+const resolvedTimezone = timezone => timezone && timezone !== 'auto' ? timezone : Intl.DateTimeFormat().resolvedOptions().timeZone;
+const formatNumber = (value, language = 'en') => new Intl.NumberFormat(dashboardLocale(language), { maximumFractionDigits: 0 }).format(toNumber(value));
+const formatDecimal = (value, language = 'en') => new Intl.NumberFormat(dashboardLocale(language), { maximumFractionDigits: 1 }).format(toNumber(value));
 const formatDashboardDuration = (minutes, language = 'en') => {
     const normalizedMinutes = toNumber(minutes);
-    if (language === 'ar') return formatDuration(normalizedMinutes, 'ar-EG');
+    if (language?.startsWith('ar')) return formatDuration(normalizedMinutes, 'ar-EG');
     if (normalizedMinutes < 60) return `${formatDecimal(normalizedMinutes, 'en')} min`;
     return `${formatDecimal(normalizedMinutes / 60, 'en')} hr`;
 };
-const formatCurrency = (value, language = 'en') => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: 'EGP', maximumFractionDigits: 0 }).format(toNumber(value));
+const formatCurrency = (value, language = 'en') => new Intl.NumberFormat(dashboardLocale(language), { style: 'currency', currency: 'EGP', maximumFractionDigits: 0 }).format(toNumber(value));
 
 const formatWeekday = (value, language = 'en') => {
     const datePart = String(value).slice(0, 10);
-    return new Intl.DateTimeFormat(language === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'short' }).format(new Date(`${datePart}T12:00:00`));
+    return new Intl.DateTimeFormat(dashboardLocale(language), { weekday: 'short' }).format(new Date(`${datePart}T12:00:00`));
 };
 
-const formatDashboardDate = (language = 'en') => new Intl.DateTimeFormat(
-    language === 'ar' ? 'ar-EG' : 'en-US',
-    { weekday: 'short', month: 'short', day: 'numeric' },
+const formatDashboardDate = (language = 'en', timezone = 'auto') => new Intl.DateTimeFormat(
+    dashboardLocale(language),
+    { weekday: 'short', month: 'short', day: 'numeric', timeZone: resolvedTimezone(timezone) },
 ).format(new Date());
 
-const formatUpdatedAt = (timestamp, language, t) => {
+const formatUpdatedAt = (timestamp, language, timezone, t) => {
     if (!timestamp) return t('common.awaitingSync');
-    return new Intl.DateTimeFormat(language === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp));
+    return new Intl.DateTimeFormat(dashboardLocale(language), { hour: '2-digit', minute: '2-digit', timeZone: resolvedTimezone(timezone) }).format(new Date(timestamp));
 };
 
 const formatRelativeTime = (timestamp, language = 'en', fallback = '') => {
@@ -1288,7 +1273,7 @@ const formatRelativeTime = (timestamp, language = 'en', fallback = '') => {
     const seconds = Math.round((new Date(timestamp).getTime() - Date.now()) / 1000);
     const absolute = Math.abs(seconds);
     const [divisor, unit] = absolute < 60 ? [1, 'second'] : absolute < 3600 ? [60, 'minute'] : absolute < 86400 ? [3600, 'hour'] : [86400, 'day'];
-    return new Intl.RelativeTimeFormat(language === 'ar' ? 'ar-EG' : 'en-US', { numeric: 'auto' }).format(Math.round(seconds / divisor), unit);
+    return new Intl.RelativeTimeFormat(dashboardLocale(language), { numeric: 'auto' }).format(Math.round(seconds / divisor), unit);
 };
 
 export default DashboardHome;

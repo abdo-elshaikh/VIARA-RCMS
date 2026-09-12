@@ -45,18 +45,21 @@ const calculateCoverage = async (db, {
         FROM insurance_coverage_rules
         WHERE provider_id = $1
           AND is_active = true
-          AND contract_id IS NOT DISTINCT FROM $2::uuid
+          AND (
+              contract_id IS NOT DISTINCT FROM $2::uuid
+              OR ($2::uuid IS NOT NULL AND contract_id IS NULL)
+          )
           AND (exam_type_id = $3 OR exam_type_id IS NULL)
           AND (modality_type = $4 OR modality_type IS NULL)
           AND (effective_from IS NULL OR effective_from <= $5::date)
           AND (effective_to IS NULL OR effective_to >= $5::date)
         ORDER BY
+          CASE WHEN contract_id IS NOT DISTINCT FROM $2::uuid THEN 1 ELSE 2 END,
           CASE WHEN exam_type_id = $3 THEN 1 ELSE 2 END,
           CASE WHEN modality_type = $4 THEN 1 ELSE 2 END,
           created_at DESC
         LIMIT 1
     `, [providerId, contractId || null, examTypeId || null, modalityType || null, calculationDate]);
-
     const rule = result.rows[0] || null;
     if (!rule) {
         return {

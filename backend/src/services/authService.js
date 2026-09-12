@@ -43,6 +43,20 @@ class AuthService {
         const tableName = userCol === 'patient_id' ? 'patients' : userCol === 'doctor_id' ? 'referring_doctors' : 'users';
         await db.query(`UPDATE ${tableName} SET current_session_id = $1 WHERE ${userCol} = $2`, [sessionId, ownerId]);
 
+        // 2b. A fresh staff login invalidates the previous session. Any active
+        // emergency access grant is bound to that dead session and can never be
+        // used again, so expire it now instead of leaving it orphaned until its
+        // natural expiry. Grants survive token refreshes (same session) — only
+        // a new login kills them.
+        if (userCol === 'user_id') {
+            await db.query(
+                `UPDATE emergency_access_logs
+                 SET status = 'Expired'
+                 WHERE user_id = $1 AND status = 'Active'`,
+                [ownerId]
+            );
+        }
+
         // 3. Generate JWT with the new session_id
         const enrichedPayload = { ...userPayload, session_id: sessionId };
         const token = jwt.sign(

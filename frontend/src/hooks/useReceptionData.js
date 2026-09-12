@@ -14,6 +14,7 @@ import {
     buildScheduleSummary,
     canTransitionQueue,
     getNextStageAfterPayment,
+    isActionableCashierItem,
 } from '../components/reception/receptionLogic';
 import { getErrorMessage } from '../utils/getErrorMessage';
 
@@ -38,20 +39,20 @@ const isValidUuid = (value) => typeof value === 'string' && UUID_PATTERN.test(va
  *   isRefreshing: boolean,
  *   refreshWorkspace: () => Promise<void>,
  *   createAppointmentInvoice: (appointment: object) => Promise<void>,
+ *   deliverFinalResult: (exam: object) => Promise<void>,
  *   moveQueue: (item: object, toStage: string, reason?: string) => Promise<void>,
- *   confirmPickup: (recipientName: string) => Promise<boolean>,
- *   pickupTarget: object | null,
- *   setPickupTarget: (item: object | null) => void,
+ *   dataErrors: array,
+ *   isDeliveringResult: boolean,
  * }}
  */
-export const useReceptionData = ({ selectedDate }) => {
+export const useReceptionData = ({ selectedDate, canAccessCashierReconciliation }) => {
     const { t } = useTranslation('reception');
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [pickupTarget, setPickupTarget] = useState(null);
     // Queries
     const {
         data: appointments,
-        isLoading: appLoading,
+        isLoading: isAppointmentsLoading,
         isFetching: isAppointmentsFetching,
         isError: isAppointmentsError,
         error: appointmentsError,
@@ -60,6 +61,7 @@ export const useReceptionData = ({ selectedDate }) => {
 
     const {
         data: queueResponse,
+        isLoading: isQueueLoading,
         isFetching: isQueueFetching,
         isError: isQueueError,
         error: queueError,
@@ -68,10 +70,13 @@ export const useReceptionData = ({ selectedDate }) => {
 
     const {
         data: rawInvoices,
+        isLoading: isInvoicesLoading,
         isError: isInvoicesError,
         error: invoicesError,
         refetch: refetchInvoices,
     } = useGetInvoicesQuery({ appointmentDate: selectedDate, limit: 500 }, { pollingInterval: 30_000 });
+
+    const appLoading = isAppointmentsLoading || isQueueLoading || isInvoicesLoading;
     // Mutations
     const [transitionQueue] = useTransitionQueueMutation();
     const [updateAppointment] = useUpdateAppointmentMutation();
@@ -82,16 +87,48 @@ export const useReceptionData = ({ selectedDate }) => {
     const queueItems = useMemo(() => queueResponse?.data || [], [queueResponse?.data]);
     const queueKpis = useMemo(() => queueResponse?.kpis || {}, [queueResponse?.kpis]);
     const cashierPending = useMemo(
-        () => queueItems.filter((item) => {
-            const stage = item.queue_stage || item.queueStage;
-            if (!['Arrived', 'Payment Pending'].includes(stage)) return false;
-            const invoice = invoices.find(inv => inv.exam_id === item.exam_id || inv.appointment_id === item.appointment_id);
-            if (stage === 'Payment Pending') {
-                return !invoice || (invoice.invoice_status !== 'Voided' && Number(invoice.balance_amount || 0) > 0);
-            }
-            return invoice && invoice.invoice_status !== 'Voided' && Number(invoice.balance_amount || 0) > 0;
-        }),
-        [queueItems, invoices]
+        () => {
+            const matchedExamIds = new Set();
+            const list = [];
+
+            // 1. Check active queue items
+            (queueItems || []).forEach((item) => {
+                const invoice = invoices.find(inv => (item.exam_id && inv.exam_id === item.exam_id) || (item.appointment_id && inv.appointment_id === item.appointment_id));
+                if (isActionableCashierItem(item, invoice)) {
+                    list.push(item);
+                    if (item.exam_id) matchedExamIds.add(item.exam_id);
+                    if (item.appointment_id) matchedExamIds.add(item.appointment_id);
+                }
+            });
+
+            // 2. Also check any invoices for today with an outstanding balance (e.g. newly added supplies on an exam)
+            (invoices || []).forEach((inv) => {
+                if (inv.invoice_status === 'Voided' || Number(inv.balance_amount || 0) <= 0.005) return;
+                const matchExam = inv.exam_id && matchedExamIds.has(inv.exam_id);
+                const matchAppt = inv.appointment_id && matchedExamIds.has(inv.appointment_id);
+                if (matchExam || matchAppt) return;
+
+                const appt = (appointments || []).find(a => (inv.appointment_id && a.appointment_id === inv.appointment_id) || (inv.exam_id && a.exam_id === inv.exam_id));
+                list.push({
+                    exam_id: inv.exam_id || inv.appointment_id,
+                    appointment_id: inv.appointment_id || inv.exam_id,
+                    patient_id: inv.patient_id,
+                    patient_name: inv.patient_name || (appt ? appt.patient_name : null),
+                    mrn: inv.mrn || (appt ? appt.mrn : null),
+                    exam_type_name: inv.items?.[0]?.description || appt?.exam_type_name || 'فحص طبي',
+                    modality_name: appt?.machine_name || appt?.modality_name || '',
+                    priority: appt?.priority || 'Routine',
+                    queue_stage: appt?.queue_stage || 'Payment Pending',
+                    waiting_minutes: 0,
+                    invoice: inv
+                });
+                if (inv.exam_id) matchedExamIds.add(inv.exam_id);
+                if (inv.appointment_id) matchedExamIds.add(inv.appointment_id);
+            });
+
+            return list;
+        },
+        [queueItems, invoices, appointments]
     );
     const scheduleSummary = useMemo(
         () => buildScheduleSummary(appointments || [], queueItems),

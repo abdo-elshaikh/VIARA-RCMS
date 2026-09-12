@@ -4,10 +4,10 @@ import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import {
-    Activity, AlertTriangle, ArrowLeft, ArrowRight, CalendarDays, CheckCircle2,
+    Activity, AlertTriangle, ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, Clock, History,
     ClipboardList, Contact, Copy, Database, Edit3, FileText, HeartPulse, KeyRound,
     Mail, MapPin, Phone, Plus, Receipt, RefreshCw, ShieldCheck, Stethoscope,
-    UserRound, Printer, Download, Eye, EyeOff,
+    UserRound, Printer, Download, Eye, EyeOff, Send,
 } from 'lucide-react';
 import {
     useCreateInsurancePolicyMutation, useCreateInvoiceMutation,
@@ -358,6 +358,28 @@ const PatientDetailPage = () => {
             setIsExportingWord(false);
         }
     };
+
+    const downloadPdf = async (item) => {
+        try {
+            const response = await authenticatedFetch(`${API_BASE}/exams/${item.exam_id}/report/pdf?format=pdf&disposition=attachment`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            const patientStem = String(item?.patient_name || patient?.first_name || 'Patient').replace(/[^a-zA-Z0-9_\u0600-\u06FF]+/g, '_');
+            const examStem = String(item?.exam_type_name || 'Report').replace(/[^a-zA-Z0-9_\u0600-\u06FF]+/g, '_');
+            const orderStem = String(item?.order_number || item?.mrn || item.exam_id).replace(/[^a-zA-Z0-9_\u0600-\u06FF]+/g, '_');
+            anchor.download = `${patientStem}_${examStem}_${orderStem}.pdf`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+            toast.success(t('messages.pdfDownloaded', { defaultValue: 'PDF downloaded successfully' }));
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('visitDetail.toasts.downloadFailed', 'Failed to download report PDF')));
+        }
+    };
     const { data, isLoading, isFetching, error, refetch } = useGetPatientHistoryQuery(patientId, { skip: !patientId });
     const actualData = data?.data || data || {};
     const patient = actualData.patient || {};
@@ -431,6 +453,13 @@ const PatientDetailPage = () => {
             eyebrow={t('page.record')}
             title={fullName}
             description={`${t('detail.registered', { ns: 'patients' })} ${formatDate(patient.created_at)}`}
+            metrics={[
+                { key: 'visits', label: t('visitDetail.metrics.totalVisits'), value: history.length, icon: History, tone: 'cyan' },
+                { key: 'reports', label: t('visitDetail.metrics.finalizedReports'), value: finalizedReports, icon: FileText, tone: 'emerald' },
+                { key: 'pending', label: t('visitDetail.metrics.pendingReports'), value: pendingReports, icon: Clock, tone: 'amber' },
+                { key: 'delivered', label: t('visitDetail.metrics.deliveredReports'), value: deliveredReports, icon: Send, tone: 'violet' },
+            ]}
+            metricsLabel={t('visitDetail.metrics.label')}
             meta={(
                 <>
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--VIARA-accent-soft)] text-sm font-black text-[var(--VIARA-accent)] ring-1 ring-[rgba(var(--VIARA-accent-rgb),.2)]">{getInitials(patient)}</span>
@@ -701,6 +730,18 @@ const PatientDetailPage = () => {
                                                                 >
                                                                     <Printer size={12} />
                                                                     <span>{t('visitDetail.print')}</span>
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        downloadPdf(item);
+                                                                    }}
+                                                                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10px] font-bold text-[var(--VIARA-ink)] shadow-sm transition-all hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:text-[var(--VIARA-accent)] active:scale-95"
+                                                                    title="Download PDF"
+                                                                >
+                                                                    <Download size={12} />
+                                                                    <span>PDF</span>
                                                                 </button>
                                                                 <button
                                                                     type="button"

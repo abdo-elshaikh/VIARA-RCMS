@@ -78,6 +78,31 @@ describe('theme palette', () => {
         SEMANTIC_COLOR_KEYS.forEach((key) => expect(key).toBeTruthy());
     });
 
+    it.each(['light', 'dark'])('derives accessible %s status foregrounds, soft surfaces, and borders', (mode) => {
+        const root = document.createElement('div');
+        applyThemePalette(root, {
+            brandColor: '#087F5B',
+            mode,
+            colorOverrides: {
+                [mode]: {
+                    success: '#E5F5EE',
+                    warning: '#FFF4D6',
+                    danger: '#FCE8E8',
+                    info: '#E5F2F5',
+                },
+            },
+        });
+
+        ['success', 'warning', 'danger', 'info'].forEach((key) => {
+            const foreground = root.style.getPropertyValue(`--VIARA-${key}`);
+            const soft = root.style.getPropertyValue(`--VIARA-${key}-soft`);
+            expect(foreground).toMatch(/^#[0-9A-F]{6}$/);
+            expect(root.style.getPropertyValue(`--VIARA-${key}-border`)).toMatch(/^#[0-9A-F]{6}$/);
+            expect(contrast(foreground, soft)).toBeGreaterThanOrEqual(4.5);
+            expect(contrast(foreground, root.style.getPropertyValue(`--VIARA-${key}-contrast`))).toBeGreaterThanOrEqual(4.5);
+        });
+    });
+
     it('lightens a dark brand color before using it as dark-mode text', () => {
         const root = document.createElement('div');
         applyThemePalette(root, { brandColor: '#000000', mode: 'dark' });

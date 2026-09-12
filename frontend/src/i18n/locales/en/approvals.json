@@ -27,7 +27,8 @@
     "partialPayment": "Partial payment exceptions",
     "portalAppointment": "Portal appointments",
     "profileUpdate": "Profile changes",
-    "authorization": "Pre-authorizations"
+    "authorization": "Pre-authorizations",
+    "attendancePermission": "Departure & Attendance Permissions"
   },
   "risk": {
     "critical": "Critical",
@@ -81,7 +82,8 @@
     "partialPaymentSubtitle": "{{transaction}} exception for invoice {{invoice}}",
     "portalAppointmentSubtitle": "Patient portal appointment request",
     "profileUpdateSubtitle": "Patient portal profile-change request",
-    "authorizationSubtitle": "Insurance pre-authorization request"
+    "authorizationSubtitle": "Insurance pre-authorization request",
+    "attendancePermissionSubtitle": "{{type}} ({{minutes}} mins) on {{date}}"
   },
   "facts": {
     "requestedBy": "Requested by",
@@ -125,7 +127,12 @@
     "requestedAmount": "Requested amount",
     "approvalNumber": "Approval number",
     "fields": "{{count}} field",
-    "fields_other": "{{count}} fields"
+    "fields_other": "{{count}} fields",
+    "permissionType": "Permission type",
+    "permittedMinutes": "Permitted minutes",
+    "targetTime": "Target time",
+    "effectiveDate": "Effective date",
+    "employee": "Employee"
   },
   "privacyTypes": {
     "Export": "Data export",
@@ -211,5 +218,10 @@
     "payrollTeam": "Payroll team",
     "cashier": "Cashier",
     "notSpecified": "Not specified"
+  },
+  "attendancePermissionTypes": {
+    "earlyDeparture": "Early Departure",
+    "lateArrival": "Late Arrival",
+    "emergencyAccess": "Emergency System Access"
   }
 }

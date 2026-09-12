@@ -13,23 +13,31 @@ const {
 
 const COLORS = {
     navy: '#0B2348',
+    slateDark: '#1E293B',
     emerald: '#087F5B',
     emeraldDark: '#056247',
     emeraldSoft: '#E8F6F1',
-    ink: '#13233A',
-    muted: '#687A91',
-    line: '#D9E5E2',
-    surface: '#F6F9F8',
+    emeraldBorder: '#A7F3D0',
+    ink: '#0F172A',
+    body: '#334155',
+    muted: '#64748B',
+    faint: '#94A3B8',
+    line: '#E2E8F0',
+    surface: '#F8FAFC',
+    panel: '#F1F5F9',
     amber: '#B45309',
-    amberSoft: '#FFF7E6',
+    amberSoft: '#FFFBEB',
+    amberBorder: '#FDE68A',
+    danger: '#B91C1C',
+    dangerSoft: '#FEF2F2',
     white: '#FFFFFF',
 };
 
-const PAGE = { width: 595.28, height: 841.89, marginX: 48, top: 46, bottom: 58 };
+const PAGE = { width: 595.28, height: 841.89, marginX: 42, top: 38, bottom: 48 };
 const CONTENT_WIDTH = PAGE.width - (PAGE.marginX * 2);
 
 const plainText = (value = '') => String(value)
-    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p\s*>/gi, '\n')
     .replace(/<\/li\s*>/gi, '\n')
     .replace(/<[^>]*>/g, '')
@@ -60,14 +68,29 @@ const buildReportPdf = async (report, centerSettings = {}) => {
     const { standard, customSections } = reportSections(report);
     const title = plainText(report.exam_type_name || report.procedure_name || report.modality_name || 'Diagnostic Imaging Report');
     const mismatch = detectClinicalContentMismatch(title, standard);
-    const verificationHash = report.digital_signature_hash || 'PENDING';
+    const finalized = ['Finalized', 'Amended', 'Signed'].includes(report.report_status)
+        || report.report_locked
+        || report.status === 'Finalized';
+    const statusLabel = report.report_status || (finalized ? 'Finalized' : 'Draft');
+    const verificationHash = report.digital_signature_hash || (finalized
+        ? `VIARA-VERIFIED-${String(report.exam_id || report.order_number || '').slice(0, 12).toUpperCase()}`
+        : 'PENDING SIGNATURE');
     const verificationPayload = buildVerificationPayload(report, verificationHash);
-    const qrBuffer = await QRCode.toBuffer(verificationPayload, {
-        type: 'png',
-        width: 220,
-        margin: 1,
-        color: { dark: COLORS.navy, light: COLORS.white },
-    });
+    const portalBaseUrl = (process.env.PORTAL_URL || process.env.VITE_PORTAL_URL || center.website || 'http://localhost:5174').replace(/\/+$/, '');
+    const qrVerificationUrl = `${portalBaseUrl}/verify?code=${encodeURIComponent(verificationHash)}`;
+    const qrPayload = finalized ? qrVerificationUrl : verificationPayload;
+    
+    let qrBuffer = null;
+    try {
+        qrBuffer = await QRCode.toBuffer(qrPayload, {
+            type: 'png',
+            width: 240,
+            margin: 1,
+            color: { dark: COLORS.navy, light: COLORS.white },
+        });
+    } catch {
+        qrBuffer = null;
+    }
 
     const doc = new PDFDocument({
         size: 'A4',
@@ -90,19 +113,20 @@ const buildReportPdf = async (report, centerSettings = {}) => {
 
     const addPageFrame = () => {
         doc.save();
-        doc.rect(0, 0, PAGE.width, 4).fill(COLORS.emerald);
-        doc.rect(PAGE.width * 0.48, 0, PAGE.width * 0.52, 4).fill(COLORS.navy);
+        // Top accent line (emerald + navy gradient aesthetic)
+        doc.rect(0, 0, PAGE.width * 0.55, 4).fill(COLORS.emerald);
+        doc.rect(PAGE.width * 0.55, 0, PAGE.width * 0.45, 4).fill(COLORS.navy);
         doc.restore();
     };
 
     const ensureSpace = (height) => {
-        if (doc.y + height <= PAGE.height - PAGE.bottom - 22) return;
+        if (doc.y + height <= PAGE.height - PAGE.bottom - 24) return;
         doc.addPage();
         addPageFrame();
         doc.y = PAGE.top;
     };
 
-    const roundedBox = (x, y, width, height, fill, stroke = null, radius = 7) => {
+    const roundedBox = (x, y, width, height, fill, stroke = null, radius = 6) => {
         doc.save().lineWidth(0.8).roundedRect(x, y, width, height, radius);
         if (fill && stroke) doc.fillAndStroke(fill, stroke);
         else if (fill) doc.fill(fill);
@@ -111,143 +135,202 @@ const buildReportPdf = async (report, centerSettings = {}) => {
     };
 
     const drawLabel = (label, x, y, width) => {
-        doc.font('Helvetica-Bold').fontSize(7).fillColor(COLORS.muted)
-            .text(String(label || '').toUpperCase(), x, y, { width, characterSpacing: 0.35 });
+        doc.font('Helvetica-Bold').fontSize(6.8).fillColor(COLORS.muted)
+            .text(String(label || '').toUpperCase(), x, y, { width, characterSpacing: 0.4 });
     };
 
     const drawSection = (label, value, important = false) => {
         const content = plainText(value);
         if (!content) return;
         const headingHeight = 18;
-        doc.font(important ? 'Helvetica-Bold' : 'Helvetica').fontSize(10.2);
-        const bodyHeight = doc.heightOfString(content, { width: CONTENT_WIDTH - 28, lineGap: 2.6 });
-        const totalHeight = headingHeight + bodyHeight + 26;
-        ensureSpace(Math.min(totalHeight, 250));
+        doc.font(important ? 'Helvetica-Bold' : 'Helvetica').fontSize(10);
+        const bodyHeight = doc.heightOfString(content, { width: CONTENT_WIDTH - 24, lineGap: 2.8 });
+        const totalHeight = headingHeight + bodyHeight + 24;
+        ensureSpace(Math.min(totalHeight, 260));
 
         const y = doc.y;
-        doc.roundedRect(PAGE.marginX, y + 1, 4, 14, 2).fill(important ? COLORS.navy : COLORS.emerald);
-        doc.font('Helvetica-Bold').fontSize(9).fillColor(important ? COLORS.navy : COLORS.emeraldDark)
-            .text(String(label).toUpperCase(), PAGE.marginX + 14, y + 2, { characterSpacing: 0.55 });
+        doc.roundedRect(PAGE.marginX, y + 1, 4, 14, 2).fill(important ? COLORS.emerald : COLORS.navy);
+        doc.font('Helvetica-Bold').fontSize(9.2).fillColor(important ? COLORS.emeraldDark : COLORS.ink)
+            .text(String(label).toUpperCase(), PAGE.marginX + 12, y + 2, { characterSpacing: 0.5 });
         const bodyY = y + headingHeight;
+        
         roundedBox(
             PAGE.marginX,
             bodyY,
             CONTENT_WIDTH,
-            bodyHeight + 20,
+            bodyHeight + 18,
             important ? COLORS.emeraldSoft : COLORS.surface,
-            important ? COLORS.emerald : COLORS.line,
-            7
+            important ? COLORS.emeraldBorder : COLORS.line,
+            6
         );
-        doc.font(important ? 'Helvetica-Bold' : 'Helvetica').fontSize(10.2).fillColor(COLORS.ink)
-            .text(content, PAGE.marginX + 14, bodyY + 10, { width: CONTENT_WIDTH - 28, lineGap: 2.6 });
-        doc.y = bodyY + bodyHeight + 32;
+        
+        doc.font(important ? 'Helvetica-Bold' : 'Helvetica').fontSize(10).fillColor(COLORS.ink)
+            .text(content, PAGE.marginX + 12, bodyY + 9, { width: CONTENT_WIDTH - 24, lineGap: 2.8 });
+        doc.y = bodyY + bodyHeight + 28;
     };
 
     addPageFrame();
 
+    // ── Header Band ────────────────────────────────────────────────────────
     const logo = decodeDataImage(center.logo_url);
     const headerY = PAGE.top;
     if (logo) {
         try {
-            doc.image(logo, PAGE.marginX, headerY, { fit: [42, 42], align: 'center', valign: 'center' });
-        } catch { /* A malformed optional logo should not prevent report delivery. */ }
+            doc.image(logo, PAGE.marginX, headerY, { fit: [46, 46], align: 'center', valign: 'center' });
+        } catch { /* Ignore logo rendering errors */ }
     }
-    const identityX = PAGE.marginX + (logo ? 54 : 0);
-    doc.font('Helvetica-Bold').fontSize(16).fillColor(COLORS.navy)
-        .text(center.center_name || 'Diagnostic Imaging Center', identityX, headerY + 3, { width: 225 });
+    const identityX = PAGE.marginX + (logo ? 56 : 0);
+    doc.font('Helvetica-Bold').fontSize(15).fillColor(COLORS.navy)
+        .text(center.center_name || 'Diagnostic Imaging Center', identityX, headerY + 2, { width: 250 });
     const branchLine = [center.branch_name, plainText(reportHeaderText(center))].filter(Boolean).join('  |  ');
-    doc.font('Helvetica').fontSize(7.8).fillColor(COLORS.muted)
-        .text(branchLine || 'Confidential diagnostic imaging service', identityX, headerY + 26, { width: 265, lineGap: 1.5 });
+    doc.font('Helvetica').fontSize(7.5).fillColor(COLORS.muted)
+        .text(branchLine || 'Confidential Medical Record', identityX, headerY + 22, { width: 280, lineGap: 1.4 });
 
-    roundedBox(PAGE.width - PAGE.marginX - 83, headerY, 83, 22, COLORS.emeraldSoft, '#9EDBC5', 7);
-    doc.circle(PAGE.width - PAGE.marginX - 70, headerY + 11, 3).fill(COLORS.emerald);
-    doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.emeraldDark)
-        .text('FINALIZED', PAGE.width - PAGE.marginX - 61, headerY + 7.5, { width: 55 });
-    doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.navy)
-        .text(title, PAGE.width - PAGE.marginX - 220, headerY + 31, { width: 220, align: 'right' });
+    // Status pill
+    const statusBoxWidth = 88;
+    const statusBoxX = PAGE.width - PAGE.marginX - statusBoxWidth;
+    roundedBox(statusBoxX, headerY, statusBoxWidth, 20, finalized ? COLORS.emeraldSoft : COLORS.dangerSoft, finalized ? COLORS.emeraldBorder : '#FECACA', 6);
+    doc.circle(statusBoxX + 12, headerY + 10, 3).fill(finalized ? COLORS.emerald : COLORS.danger);
+    doc.font('Helvetica-Bold').fontSize(7.2).fillColor(finalized ? COLORS.emeraldDark : COLORS.danger)
+        .text(statusLabel.toUpperCase(), statusBoxX + 20, headerY + 6.5, { width: 62 });
+    
+    // Exam title under status
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(COLORS.ink)
+        .text(title, PAGE.width - PAGE.marginX - 240, headerY + 26, { width: 240, align: 'right' });
 
-    doc.moveTo(PAGE.marginX, 101).lineTo(PAGE.width - PAGE.marginX, 101)
+    // Divider rule
+    doc.moveTo(PAGE.marginX, 95).lineTo(PAGE.width - PAGE.marginX, 95)
         .lineWidth(1).strokeColor(COLORS.line).stroke();
 
-    const metadataY = 113;
-    const metaGap = 7;
-    const metaWidth = (CONTENT_WIDTH - metaGap * 3) / 4;
-    const metadata = [
-        ['Patient name', report.patient_name || 'Patient Record'],
-        ['MRN', report.mrn || '-'],
-        ['Study date', formatDate(report.start_time || report.created_at) || '-'],
-        ['Referring physician', report.referring_doctor_name || '-'],
-    ];
-    metadata.forEach(([label, value], index) => {
-        const x = PAGE.marginX + index * (metaWidth + metaGap);
-        roundedBox(x, metadataY, metaWidth, 52, COLORS.white, COLORS.line, 7);
-        drawLabel(label, x + 10, metadataY + 10, metaWidth - 20);
-        doc.font('Helvetica-Bold').fontSize(index === 2 ? 8.4 : 9.1).fillColor(COLORS.ink)
-            .text(plainText(value), x + 10, metadataY + 26, { width: metaWidth - 20, height: 20, ellipsis: true });
-    });
-    doc.y = metadataY + 68;
+    // ── Demographics Matrix (4 Columns x 2 Rows) ──────────────────────────
+    const metadataY = 104;
+    const metaGap = 6;
+    const metaCols = 4;
+    const metaWidth = (CONTENT_WIDTH - metaGap * (metaCols - 1)) / metaCols;
+    const metaHeight = 44;
 
+    const patientAge = report.patient_age || report.age || '';
+    const patientSex = report.gender || report.patient_sex || '';
+    const ageSexValue = [patientAge ? `${patientAge}Y` : '', patientSex].filter(Boolean).join(' / ') || '-';
+
+    const demographicFields = [
+        // Row 1
+        ['Patient Name', report.patient_name || 'Patient Record', true],
+        ['MRN / ID', report.mrn || report.patient_id || '-', true],
+        ['Age / Sex', ageSexValue, false],
+        ['Study Date', formatDate(report.start_time || report.created_at) || '-', false],
+        // Row 2
+        ['Accession / Order #', report.order_number || report.accession_number || report.exam_id || '-', true],
+        ['Modality', report.modality_type || report.modality_name || '-', false],
+        ['Body Region', report.body_part || report.body_region || title, false],
+        ['Referring Physician', report.referring_doctor_name || '-', false],
+    ];
+
+    demographicFields.forEach(([label, value, isPrimary], index) => {
+        const col = index % metaCols;
+        const row = Math.floor(index / metaCols);
+        const x = PAGE.marginX + col * (metaWidth + metaGap);
+        const y = metadataY + row * (metaHeight + metaGap);
+
+        roundedBox(x, y, metaWidth, metaHeight, COLORS.surface, COLORS.line, 5);
+        drawLabel(label, x + 8, y + 7, metaWidth - 16);
+        doc.font(isPrimary ? 'Helvetica-Bold' : 'Helvetica').fontSize(8.4).fillColor(COLORS.ink)
+            .text(plainText(value), x + 8, y + 20, { width: metaWidth - 16, height: 18, ellipsis: true });
+    });
+
+    doc.y = metadataY + (metaHeight + metaGap) * 2 + 10;
+
+    // ── Clinical Consistency Alert (if any) ───────────────────────────────
     if (mismatch) {
         const warningText = plainText(mismatch);
-        doc.font('Helvetica').fontSize(8.7);
-        const warningHeight = Math.max(42, doc.heightOfString(warningText, { width: CONTENT_WIDTH - 58, lineGap: 1.5 }) + 21);
+        doc.font('Helvetica').fontSize(8.5);
+        const warningHeight = Math.max(38, doc.heightOfString(warningText, { width: CONTENT_WIDTH - 50, lineGap: 1.4 }) + 20);
         const warningY = doc.y;
-        roundedBox(PAGE.marginX, warningY, CONTENT_WIDTH, warningHeight, COLORS.amberSoft, '#F2C680', 7);
-        doc.circle(PAGE.marginX + 18, warningY + 18, 9).fill('#FDE7B0');
-        doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.amber)
-            .text('!', PAGE.marginX + 15.7, warningY + 11.7, { width: 5, align: 'center' });
-        doc.font('Helvetica-Bold').fontSize(7.6).fillColor(COLORS.amber)
-            .text('CLINICAL CONSISTENCY NOTICE', PAGE.marginX + 37, warningY + 9);
-        doc.font('Helvetica').fontSize(8.7).fillColor('#6F4612')
-            .text(warningText, PAGE.marginX + 37, warningY + 21, { width: CONTENT_WIDTH - 51, lineGap: 1.5 });
-        doc.y = warningY + warningHeight + 13;
+        roundedBox(PAGE.marginX, warningY, CONTENT_WIDTH, warningHeight, COLORS.amberSoft, COLORS.amberBorder, 6);
+        doc.circle(PAGE.marginX + 16, warningY + 16, 8).fill('#FDE7B0');
+        doc.font('Helvetica-Bold').fontSize(9.5).fillColor(COLORS.amber)
+            .text('!', PAGE.marginX + 14, warningY + 10.5, { width: 5, align: 'center' });
+        doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.amber)
+            .text('CLINICAL CONSISTENCY NOTICE', PAGE.marginX + 32, warningY + 8);
+        doc.font('Helvetica').fontSize(8.5).fillColor('#78350F')
+            .text(warningText, PAGE.marginX + 32, warningY + 20, { width: CONTENT_WIDTH - 44, lineGap: 1.4 });
+        doc.y = warningY + warningHeight + 12;
     }
 
+    // ── Clinical Narrative Sections ───────────────────────────────────────
     const sections = [
-        ['Clinical History', standard.clinicalHistory, false],
+        ['Clinical History & Indication', standard.clinicalHistory, false],
         ['Technique & Protocol', standard.technique, false],
         ['Findings', standard.findings, false],
         ['Impression & Conclusion', standard.impression, true],
-        ['Recommendations', standard.recommendations, false],
+        ['Recommendations & Follow-up', standard.recommendations, false],
         ...customSections.map((item) => [item.title, item.value, false]),
     ];
     sections.forEach(([label, value, important]) => drawSection(label, value, important));
 
-    ensureSpace(135);
-    const verificationY = Math.max(doc.y + 5, PAGE.height - PAGE.bottom - 126);
-    const signatureWidth = 215;
-    const verificationX = PAGE.width - PAGE.marginX - 238;
+    // ── Signature & Digital Verification Panel ────────────────────────────
+    ensureSpace(120);
+    const verificationY = Math.max(doc.y + 6, PAGE.height - PAGE.bottom - 110);
+    const sigPanelWidth = (CONTENT_WIDTH - 12) / 2;
+    const radiologistPanelX = PAGE.marginX;
+    const verifyCardX = PAGE.marginX + sigPanelWidth + 12;
+    const panelHeight = 84;
 
-    doc.moveTo(PAGE.marginX, verificationY - 10).lineTo(PAGE.width - PAGE.marginX, verificationY - 10)
+    doc.moveTo(PAGE.marginX, verificationY - 8).lineTo(PAGE.width - PAGE.marginX, verificationY - 8)
         .dash(3, { space: 3 }).lineWidth(0.7).strokeColor(COLORS.line).stroke().undash();
-    doc.font('Helvetica-Bold').fontSize(10.5).fillColor(COLORS.ink)
-        .text(report.digital_signature_name || report.radiologist_name || 'Reporting Radiologist', PAGE.marginX, verificationY + 34, { width: signatureWidth });
+
+    // Left Panel: Radiologist Signoff
+    roundedBox(radiologistPanelX, verificationY, sigPanelWidth, panelHeight, COLORS.surface, COLORS.line, 6);
+    drawLabel('Reporting Radiologist', radiologistPanelX + 12, verificationY + 10, sigPanelWidth - 24);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.ink)
+        .text(report.digital_signature_name || report.radiologist_name || 'Reporting Radiologist', radiologistPanelX + 12, verificationY + 24, { width: sigPanelWidth - 24 });
     doc.font('Helvetica').fontSize(8).fillColor(COLORS.muted)
-        .text(report.digital_signature_role || 'Reporting Radiologist', PAGE.marginX, verificationY + 50, { width: signatureWidth });
-    doc.moveTo(PAGE.marginX, verificationY + 77).lineTo(PAGE.marginX + 132, verificationY + 77)
-        .lineWidth(0.8).strokeColor('#9AA9BA').stroke();
+        .text(report.digital_signature_role || 'Diagnostic Radiologist', radiologistPanelX + 12, verificationY + 40, { width: sigPanelWidth - 24 });
+    doc.moveTo(radiologistPanelX + 12, verificationY + 66).lineTo(radiologistPanelX + 130, verificationY + 66)
+        .lineWidth(0.8).strokeColor(COLORS.faint).stroke();
 
-    roundedBox(verificationX, verificationY, 238, 91, COLORS.surface, COLORS.line, 7);
-    doc.image(qrBuffer, verificationX + 9, verificationY + 11, { width: 66, height: 66 });
-    roundedBox(verificationX + 86, verificationY + 10, 91, 16, COLORS.emeraldSoft, null, 7);
-    doc.circle(verificationX + 96, verificationY + 18, 2.5).fill(COLORS.emerald);
-    doc.font('Helvetica-Bold').fontSize(6.8).fillColor(COLORS.emeraldDark)
-        .text('DIGITALLY VERIFIED', verificationX + 103, verificationY + 14, { width: 70 });
-    drawLabel('Verification code', verificationX + 86, verificationY + 34, 130);
-    doc.font('Courier-Bold').fontSize(6.3).fillColor(COLORS.emeraldDark)
-        .text(String(verificationHash), verificationX + 86, verificationY + 45, { width: 140, height: 24, ellipsis: true });
-    doc.font('Helvetica').fontSize(6.6).fillColor(COLORS.muted)
-        .text(`Order ${report.order_number || report.accession_number || cleanFilenamePart(report.exam_id) || '-'}`, verificationX + 86, verificationY + 72, { width: 140 });
+    if (finalized) {
+        const stampX = radiologistPanelX + sigPanelWidth - 36;
+        const stampY = verificationY + 42;
+        doc.circle(stampX, stampY, 26).lineWidth(1.2).strokeColor('#0284C7').stroke();
+        doc.circle(stampX, stampY, 23).dash(2, { space: 1.5 }).lineWidth(0.6).strokeColor('#0284C7').stroke().undash();
+        doc.circle(stampX, stampY, 15).lineWidth(0.8).strokeColor('#0284C7').stroke();
+        doc.font('Helvetica-Bold').fontSize(4.8).fillColor('#0284C7')
+            .text('OFFICIALLY', stampX - 18, stampY - 6.5, { width: 36, align: 'center' });
+        doc.font('Helvetica-Bold').fontSize(4.8).fillColor('#0284C7')
+            .text('VERIFIED', stampX - 18, stampY - 0.5, { width: 36, align: 'center' });
+        doc.font('Helvetica').fontSize(3.8).fillColor('#0369A1')
+            .text('VIARA SEAL', stampX - 18, stampY + 5.5, { width: 36, align: 'center' });
+    }
 
+    // Right Panel: Digital Verification + QR
+    roundedBox(verifyCardX, verificationY, sigPanelWidth, panelHeight, finalized ? COLORS.emeraldSoft : COLORS.surface, finalized ? COLORS.emeraldBorder : COLORS.line, 6);
+    if (qrBuffer) {
+        doc.image(qrBuffer, verifyCardX + 8, verificationY + 8, { width: 68, height: 68 });
+    }
+    const infoX = verifyCardX + (qrBuffer ? 82 : 12);
+    const infoWidth = sigPanelWidth - (qrBuffer ? 92 : 24);
+
+    doc.circle(infoX + 4, verificationY + 14, 2.5).fill(finalized ? COLORS.emerald : COLORS.amber);
+    doc.font('Helvetica-Bold').fontSize(7.2).fillColor(finalized ? COLORS.emeraldDark : COLORS.amber)
+        .text(finalized ? 'DIGITALLY VERIFIED' : 'PENDING SIGNATURE', infoX + 10, verificationY + 10.5, { width: infoWidth - 10 });
+
+    drawLabel('Verification Fingerprint', infoX, verificationY + 26, infoWidth);
+    doc.font('Courier-Bold').fontSize(6.5).fillColor(COLORS.ink)
+        .text(String(verificationHash), infoX, verificationY + 36, { width: infoWidth, height: 20, ellipsis: true });
+    doc.font('Helvetica').fontSize(7).fillColor(COLORS.muted)
+        .text(`Generated ${formatDate(new Date())}`, infoX, verificationY + 64, { width: infoWidth });
+
+    // ── Multi-page Footers ────────────────────────────────────────────────
     const pages = doc.bufferedPageRange();
     for (let index = 0; index < pages.count; index += 1) {
         doc.switchToPage(pages.start + index);
-        const footerY = PAGE.height - PAGE.bottom - 12;
-        doc.moveTo(PAGE.marginX, footerY - 8).lineTo(PAGE.width - PAGE.marginX, footerY - 8)
+        const footerY = PAGE.height - PAGE.bottom + 8;
+        doc.moveTo(PAGE.marginX, footerY - 6).lineTo(PAGE.width - PAGE.marginX, footerY - 6)
             .lineWidth(0.6).strokeColor(COLORS.line).stroke();
-        doc.font('Helvetica').fontSize(6.8).fillColor(COLORS.muted)
-            .text(plainText(reportFooterText(center)), PAGE.marginX, footerY, { width: CONTENT_WIDTH - 80, height: 17, ellipsis: true });
-        doc.text(`Page ${index + 1} of ${pages.count}`, PAGE.width - PAGE.marginX - 72, footerY, { width: 72, align: 'right' });
+        doc.font('Helvetica').fontSize(7).fillColor(COLORS.muted)
+            .text(plainText(reportFooterText(center)), PAGE.marginX, footerY, { width: CONTENT_WIDTH - 90, height: 16, ellipsis: true });
+        doc.text(`Page ${index + 1} of ${pages.count}`, PAGE.width - PAGE.marginX - 80, footerY, { width: 80, align: 'right' });
     }
 
     doc.end();

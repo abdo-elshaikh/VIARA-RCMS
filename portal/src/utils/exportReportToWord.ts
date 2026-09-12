@@ -25,6 +25,7 @@ import {
 
 const COLORS = {
     ink: '0F172A',
+    slateDark: '1E293B',
     body: '334155',
     muted: '64748B',
     faint: '94A3B8',
@@ -32,19 +33,27 @@ const COLORS = {
     panel: 'F1F5F9',
     border: 'CBD5E1',
     softBorder: 'E2E8F0',
+    brandTeal: '0F766E',
+    brandTealDark: '115E59',
+    brandTealSoft: 'F0FDFA',
+    brandEmerald: '047857',
     danger: 'B91C1C',
     dangerFill: 'FEF2F2',
+    dangerBorder: 'FECACA',
+    warning: 'B45309',
+    warningFill: 'FFFBEB',
     success: '047857',
-    successFill: 'ECFDF5'
+    successFill: 'ECFDF5',
+    successBorder: 'A7F3D0'
 };
 
-const STATUS_TONES: Record<string, { fill: string; color: string }> = {
-    Finalized: { fill: 'DCFCE7', color: '166534' },
-    Amended: { fill: 'FFEDD5', color: '9A3412' },
-    Approved: { fill: 'CCFBF1', color: '0F766E' },
-    Reviewed: { fill: 'FEF3C7', color: '92400E' },
-    Typed: { fill: 'DBEAFE', color: '1D4ED8' },
-    Draft: { fill: 'FEE2E2', color: '991B1B' }
+const STATUS_TONES: Record<string, { fill: string; color: string; label: string }> = {
+    Finalized: { fill: 'DCFCE7', color: '166534', label: 'FINALIZED' },
+    Amended: { fill: 'FFEDD5', color: '9A3412', label: 'AMENDED' },
+    Approved: { fill: 'CCFBF1', color: '0F766E', label: 'APPROVED' },
+    Reviewed: { fill: 'FEF3C7', color: '92400E', label: 'REVIEWED' },
+    Typed: { fill: 'DBEAFE', color: '1D4ED8', label: 'TYPED' },
+    Draft: { fill: 'FEE2E2', color: '991B1B', label: 'DRAFT' }
 };
 
 const NO_BORDERS = {
@@ -61,15 +70,6 @@ const border = (color = COLORS.softBorder, size = 1) => ({
     size,
     color
 });
-
-const GRID_BORDERS = {
-    top: border(),
-    bottom: border(),
-    left: border(),
-    right: border(),
-    insideHorizontal: border(),
-    insideVertical: border()
-};
 
 const ROW_RULES = {
     top: border(COLORS.softBorder, 4),
@@ -94,8 +94,8 @@ const safeFilename = (value: any) => String(value || 'report')
     .filter((character) => character.charCodeAt(0) >= 32)
     .join('')
     .replace(/[<>:"/\\|?*]/g, '-')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
     .slice(0, 100);
 
 const colorHex = (value: any, fallback = '0F766E') => {
@@ -103,7 +103,7 @@ const colorHex = (value: any, fallback = '0F766E') => {
     return /^[0-9A-F]{6}$/.test(clean) ? clean : fallback;
 };
 
-const tintHex = (value: any, amount = 0.92) => {
+const tintHex = (value: any, amount = 0.93) => {
     const hex = colorHex(value);
     const channels = [0, 2, 4].map((index) => parseInt(hex.slice(index, index + 2), 16));
     return channels
@@ -143,7 +143,7 @@ const loadLogoRun = async (logoUrl: string | null | undefined) => {
         return new ImageRun({
             type,
             data: await response.arrayBuffer(),
-            transformation: { width: 68, height: 42 },
+            transformation: { width: 72, height: 44 },
             altText: {
                 title: 'Facility logo',
                 description: 'Facility logo',
@@ -183,8 +183,8 @@ export const exportReportToWord = async ({
     const reportFooter = String(
         documentSettings.reportFooter || buildReportFooter(center) || ''
     ).trim().replace(/\s*\r?\n\s*/g, ' | ');
-    const themeColor = colorHex(center.print_settings?.themeColor);
-    const font = center.print_settings?.fontFamily || 'Aptos';
+    const themeColor = colorHex(center.print_settings?.themeColor, '0F766E');
+    const font = rtl ? (center.print_settings?.fontFamily || 'Segoe UI') : (center.print_settings?.fontFamily || 'Aptos');
     const reportStatus = exam.report_status || (exam.report_locked ? 'Finalized' : 'Draft');
     const finalized = Boolean(exam.report_locked || ['Finalized', 'Amended'].includes(reportStatus));
     const includeHeader = documentSettings.includeHeader !== false;
@@ -192,45 +192,47 @@ export const exportReportToWord = async ({
     const includeSignature = documentSettings.includeSignature !== false;
     const statusTone = STATUS_TONES[reportStatus] || STATUS_TONES.Draft;
     const logoRun = includeHeader ? await loadLogoRun(center.logo_url) : null;
-    const logoText = String(center.center_name || 'RC').trim().slice(0, 4).toUpperCase();
+    const logoText = String(center.center_name || 'VIARA').trim().slice(0, 4).toUpperCase();
     const tr = (key: string, fallback: string) => typeof t === 'function'
         ? t(key, { defaultValue: fallback })
         : fallback;
 
     const labels = {
-        subtitle: tr('editor.word.subtitle', 'Diagnostic Imaging Report'),
-        confidential: tr('editor.word.confidential', 'Confidential medical record'),
-        draft: tr('editor.word.draft', 'DRAFT - NOT YET SIGNED'),
-        patient: tr('details.patientName', 'Patient name'),
-        mrn: tr('details.mrn', 'MRN'),
-        dob: tr('editor.word.dob', 'Date of birth'),
-        age: tr('details.age', 'Age'),
-        gender: tr('editor.word.gender', 'Gender'),
-        accession: tr('details.accessionNumber', 'Accession / order'),
-        examination: tr('details.examination', 'Examination'),
-        modality: tr('details.modality', 'Modality'),
-        bodyPart: tr('details.bodyPart', 'Body part'),
-        studyDate: tr('details.studyDate', 'Study date'),
-        priority: tr('details.priority', 'Priority'),
-        referrer: tr('details.referrer', 'Referring doctor'),
-        radiologist: tr('details.radiologist', 'Radiologist'),
-        clinicalHistory: tr('sections.clinicalHistory', 'Clinical History'),
-        technique: tr('sections.technique', 'Technique'),
-        findings: tr('sections.findings', 'Findings'),
-        impression: tr('sections.impression', 'Impression'),
-        recommendations: tr('sections.recommendations', 'Recommendations'),
-        authentication: tr('editor.word.signature', 'Authentication'),
-        signedBy: tr('editor.word.signedBy', 'Reported by'),
-        signedAt: tr('editor.word.signedAt', 'Signed at'),
-        verification: tr('editor.word.electronic', 'Electronic verification'),
-        verified: tr('editor.word.verified', 'Digitally signed and verified'),
-        notSigned: tr('editor.word.notSigned', 'This report is not final and has not been signed.'),
-        generated: tr('editor.word.generated', 'Generated'),
-        page: tr('editor.word.page', 'Page'),
-        of: tr('editor.word.of', 'of')
+        subtitle: tr('editor.word.subtitle', rtl ? 'تقرير الفحص الشعاعي التشخيصي' : 'Diagnostic Imaging Report'),
+        confidential: tr('editor.word.confidential', rtl ? 'سجل طبي سري ومحمي قانونياً' : 'Confidential Medical Record'),
+        draft: tr('editor.word.draft', rtl ? 'مسودة غير معتمدة — لم يتم التوقيع بعد' : 'DRAFT - NOT YET SIGNED'),
+        patient: tr('details.patientName', rtl ? 'اسم المريض' : 'Patient Name'),
+        mrn: tr('details.mrn', rtl ? 'الرقم الطبي (MRN)' : 'MRN'),
+        nationalId: tr('details.nationalId', rtl ? 'الرقم القومي / الهوية' : 'National ID'),
+        dob: tr('editor.word.dob', rtl ? 'تاريخ الميلاد' : 'Date of Birth'),
+        age: tr('details.age', rtl ? 'العمر' : 'Age'),
+        gender: tr('editor.word.gender', rtl ? 'الجنس' : 'Gender'),
+        accession: tr('details.accessionNumber', rtl ? 'رقم الطلب / الفحص' : 'Accession / Order #'),
+        examination: tr('details.examination', rtl ? 'نوع الفحص' : 'Examination'),
+        modality: tr('details.modality', rtl ? 'الجهاز / التقنية' : 'Modality'),
+        bodyPart: tr('details.bodyPart', rtl ? 'العضو / المنطقة' : 'Body Region'),
+        studyDate: tr('details.studyDate', rtl ? 'تاريخ الفحص' : 'Study Date'),
+        priority: tr('details.priority', rtl ? 'الأولوية' : 'Priority'),
+        referrer: tr('details.referrer', rtl ? 'الطبيب المعالج' : 'Referring Physician'),
+        radiologist: tr('details.radiologist', rtl ? 'طبيب الأشعة المشخص' : 'Reporting Radiologist'),
+        clinicalHistory: tr('sections.clinicalHistory', rtl ? 'التاريخ المرضي والشكوى السريرية' : 'Clinical History & Indication'),
+        technique: tr('sections.technique', rtl ? 'التقنية والبروتوكول المستخدم' : 'Technique & Protocol'),
+        comparison: tr('sections.comparison', rtl ? 'المقارنة مع دراسات سابقة' : 'Comparison Studies'),
+        findings: tr('sections.findings', rtl ? 'النتائج والمشاهدات التفصيلية' : 'Findings & Observations'),
+        impression: tr('sections.impression', rtl ? 'الخلاصة والتشخيص النهائي' : 'Impression & Conclusion'),
+        recommendations: tr('sections.recommendations', rtl ? 'التوصيات والمتابعة' : 'Recommendations & Follow-up'),
+        authentication: tr('editor.word.signature', rtl ? 'الاعتماد والتوقيع الإلكتروني' : 'Electronic Authentication & Verification'),
+        signedBy: tr('editor.word.signedBy', rtl ? 'طبيب الأشعة المعتمد' : 'Reported By'),
+        signedAt: tr('editor.word.signedAt', rtl ? 'تاريخ ووقت الاعتماد' : 'Signed At'),
+        verification: tr('editor.word.electronic', rtl ? 'حالة التوثيق الرقمي' : 'Digital Verification'),
+        verified: tr('editor.word.verified', rtl ? 'تم التحقق والتوقيع الرقمي بنجاح' : 'Digitally signed and verified'),
+        notSigned: tr('editor.word.notSigned', rtl ? 'هذا التقرير مسودة أولية وغير موقع بعد.' : 'This report is a preliminary draft and has not been finalized or signed.'),
+        generated: tr('editor.word.generated', rtl ? 'تاريخ الإصدار' : 'Generated'),
+        page: tr('editor.word.page', rtl ? 'صفحة' : 'Page'),
+        of: tr('editor.word.of', rtl ? 'من' : 'of')
     };
 
-    const statusText = tr(`statuses.${reportStatus}`, reportStatus);
+    const statusText = tr(`statuses.${reportStatus}`, statusTone.label);
     const priorityText = tr(`priorities.${exam.priority || 'Routine'}`, exam.priority || 'Routine');
     const examinationName = exam.exam_type_name || exam.modality_name || labels.subtitle;
     const radiologistName = exam.digital_signature_name || exam.radiologist_name || '-';
@@ -273,26 +275,19 @@ export const exportReportToWord = async ({
     const cell = (children: any, options: any = {}) => new TableCell({
         width: options.width ? { size: options.width, type: WidthType.PERCENTAGE } : undefined,
         columnSpan: options.columnSpan,
-        borders: options.borders || GRID_BORDERS,
+        borders: options.borders || NO_BORDERS,
         shading: options.fill ? { fill: options.fill, type: ShadingType.CLEAR } : undefined,
-        margins: options.margins || { top: 125, bottom: 125, left: 150, right: 150 },
+        margins: options.margins || { top: 120, bottom: 120, left: 140, right: 140 },
         verticalAlign: options.verticalAlign,
         children: Array.isArray(children) ? children : [children]
     });
 
-    const multilineRuns = (value: any, options: any = {}) => {
-        const lines = String(value || '').split(/\r?\n/).filter(Boolean);
-        return (lines.length ? lines : ['-']).map((line, index) => run(line, {
-            ...options,
-            break: index > 0 ? 1 : undefined
-        }));
-    };
-
     const richLineRuns = (value: any, options: any = {}) => {
         let line = String(value || '').trim();
-        const isBullet = /^(?:\u2022|[-*])\s+/.test(line);
-        if (isBullet) line = line.replace(/^(?:\u2022|[-*])\s+/, '');
-        const output: any[] = isBullet ? [run('\u2022 ', { ...options, bold: true })] : [];
+        const isBullet = /^(?:•|[-*])\s+/.test(line);
+        if (isBullet) line = line.replace(/^(?:•|[-*])\s+/, '');
+        const output = isBullet ? [run('•  ', { ...options, bold: true, color: themeColor })] : [];
+
         const parts = line.split('**');
         parts.forEach((part, index) => {
             if (part) output.push(run(part, { ...options, bold: options.bold || index % 2 === 1 }));
@@ -302,54 +297,61 @@ export const exportReportToWord = async ({
 
     const infoCell = (label: string, value: any, options: any = {}) => cell([
         paragraph(run(label, { size: 14, color: COLORS.muted, bold: true, allCaps: true }), {
-            spacing: { after: 30 },
+            spacing: { after: 25 },
             keepNext: true
         }),
         paragraph(run(value, {
             size: options.compact ? 18 : 19,
             color: options.valueColor || COLORS.ink,
-            bold: options.bold
+            bold: options.bold != null ? options.bold : true
         }), { spacing: { after: 0 }, keepLines: true })
     ], {
         width: options.width || 25,
         columnSpan: options.columnSpan,
         fill: options.fill,
         borders: options.borders || NO_BORDERS,
-        margins: options.margins || { top: 110, bottom: 110, left: 0, right: 150 }
+        margins: options.margins || { top: 100, bottom: 100, left: 0, right: 140 }
     });
 
     const sectionHeading = (title: string, important = false) => paragraph(
-        run(title, {
-            size: 18,
-            color: important ? themeColor : COLORS.ink,
-            bold: true,
-            allCaps: true
-        }),
+        [
+            run(title, {
+                size: 19,
+                color: important ? themeColor : COLORS.ink,
+                bold: true,
+                allCaps: true
+            })
+        ],
         {
-            spacing: { before: 230, after: 65 },
+            spacing: { before: 240, after: 70 },
             keepNext: true,
             border: {
-                bottom: border(important ? themeColor : COLORS.softBorder, important ? 8 : 4)
+                bottom: border(important ? themeColor : COLORS.softBorder, important ? 10 : 4)
             }
         }
     );
 
     const sectionBlock = (title: string, value: any, options: any = {}) => {
         if (!String(value || '').trim()) return [];
-        const lines = String(value).trim().split(/\r?\n/);
+        const lines = String(value).trim().split(/\r?\n/).filter(line => line.trim().length > 0);
         const content = lines.map((line) => paragraph(
             richLineRuns(line, {
                 size: options.important ? 22 : 21,
                 color: options.important ? COLORS.ink : COLORS.body,
-                bold: false
+                bold: options.important && lines.length === 1
             }),
             {
-                spacing: { after: 75, line: 330 },
+                spacing: { after: 70, line: 320 },
                 keepLines: true
             }
         ));
 
-        if (!options.important) return [sectionHeading(title), ...content];
+        if (!options.important) {
+            return [
+                sectionHeading(title),
+                ...content
+            ];
+        }
 
         return [
             sectionHeading(title, true),
@@ -359,14 +361,14 @@ export const exportReportToWord = async ({
                 rows: [new TableRow({
                     children: [cell(content, {
                         width: 100,
-                        fill: tintHex(themeColor),
+                        fill: tintHex(themeColor, 0.94),
                         borders: {
                             top: { style: BorderStyle.NONE },
                             bottom: { style: BorderStyle.NONE },
-                            left: rtl ? { style: BorderStyle.NONE } : border(themeColor, 18),
-                            right: rtl ? border(themeColor, 18) : { style: BorderStyle.NONE }
+                            left: rtl ? { style: BorderStyle.NONE } : border(themeColor, 20),
+                            right: rtl ? border(themeColor, 20) : { style: BorderStyle.NONE }
                         },
-                        margins: { top: 150, bottom: 140, left: 200, right: 200 }
+                        margins: { top: 150, bottom: 140, left: 180, right: 180 }
                     })]
                 })]
             })
@@ -395,28 +397,32 @@ export const exportReportToWord = async ({
                         width: 12,
                         fill: logoRun ? 'FFFFFF' : themeColor,
                         borders: NO_BORDERS,
-                        margins: { top: 125, bottom: 125, left: 80, right: 80 }
+                        margins: { top: 110, bottom: 110, left: 60, right: 60 }
                     }),
                     cell([
                         paragraph(run(facilityName, { size: 24, color: COLORS.ink, bold: true }), {
-                            spacing: { after: headerDetails ? 28 : 0 },
+                            spacing: { after: headerDetails ? 24 : 0 },
                             keepLines: true
                         }),
-                        ...(headerDetails ? [paragraph(multilineRuns(headerDetails, { size: 15, color: COLORS.muted }), {
-                            spacing: { after: 0, line: 230 },
-                            keepLines: true
-                        })] : [])
+                        ...(headerDetails ? [paragraph(
+                            headerDetails.split('\n').map((line, idx) => run(line, {
+                                size: 15,
+                                color: COLORS.muted,
+                                break: idx > 0 ? 1 : undefined
+                            })),
+                            { spacing: { after: 0, line: 220 }, keepLines: true }
+                        )] : [])
                     ], {
                         width: 60,
                         borders: NO_BORDERS,
-                        margins: { top: 70, bottom: 80, left: 150, right: 150 }
+                        margins: { top: 70, bottom: 70, left: 140, right: 140 }
                     }),
                     cell([
                         paragraph(run(labels.subtitle, { size: 14, color: COLORS.muted, bold: true, allCaps: true }), {
                             alignment: endAlignment,
-                            spacing: { after: 35 }
+                            spacing: { after: 30 }
                         }),
-                        paragraph(run(exam.order_number || exam.exam_id, { size: 18, color: themeColor, bold: true }), {
+                        paragraph(run(exam.order_number || exam.accession_number || exam.exam_id, { size: 18, color: themeColor, bold: true }), {
                             alignment: endAlignment,
                             spacing: { after: 0 },
                             keepLines: true
@@ -425,7 +431,7 @@ export const exportReportToWord = async ({
                         width: 28,
                         fill: COLORS.surface,
                         borders: NO_BORDERS,
-                        margins: { top: 115, bottom: 115, left: 130, right: 130 }
+                        margins: { top: 100, bottom: 100, left: 120, right: 120 }
                     })
                 ]
             })]
@@ -447,7 +453,7 @@ export const exportReportToWord = async ({
                     }), {
                         width: 72,
                         borders: NO_BORDERS,
-                        margins: { top: 95, bottom: 0, left: 0, right: 120 }
+                        margins: { top: 90, bottom: 0, left: 0, right: 120 }
                     }),
                     cell(paragraph([
                         run(`${labels.page} `, { size: 14, color: COLORS.muted }),
@@ -460,7 +466,7 @@ export const exportReportToWord = async ({
                     }), {
                         width: 28,
                         borders: NO_BORDERS,
-                        margins: { top: 95, bottom: 0, left: 120, right: 0 }
+                        margins: { top: 90, bottom: 0, left: 120, right: 0 }
                     })
                 ]
             })]
@@ -474,19 +480,19 @@ export const exportReportToWord = async ({
             children: [
                 cell([
                     paragraph(run(examinationName, { size: 30, color: COLORS.ink, bold: true }), {
-                        spacing: { after: 40 },
+                        spacing: { after: 30 },
                         keepLines: true
                     }),
                     paragraph(run(labels.confidential, { size: 15, color: COLORS.muted }), {
                         spacing: { after: 0 }
                     })
                 ], {
-                    width: 73,
+                    width: 74,
                     borders: NO_BORDERS,
-                    margins: { top: 120, bottom: 110, left: 0, right: 160 }
+                    margins: { top: 120, bottom: 100, left: 0, right: 160 }
                 }),
                 cell(paragraph([
-                    run('● ', { size: 12, color: statusTone.color }),
+                    run('● ', { size: 13, color: statusTone.color }),
                     run(statusText, {
                         size: 16,
                         color: statusTone.color,
@@ -498,10 +504,10 @@ export const exportReportToWord = async ({
                     spacing: { after: 0 },
                     keepLines: true
                 }), {
-                    width: 27,
+                    width: 26,
                     fill: statusTone.fill,
                     borders: NO_BORDERS,
-                    margins: { top: 120, bottom: 120, left: 100, right: 100 }
+                    margins: { top: 110, bottom: 110, left: 80, right: 80 }
                 })
             ]
         })]
@@ -543,10 +549,10 @@ export const exportReportToWord = async ({
                 children: [
                     cell([
                         paragraph(run(labels.signedBy, { size: 15, color: COLORS.muted, bold: true, allCaps: true }), {
-                            spacing: { after: 40 }
+                            spacing: { after: 35 }
                         }),
                         paragraph(run(radiologistName, { size: 21, color: COLORS.ink, bold: true }), {
-                            spacing: { after: exam.digital_signature_role ? 28 : 0 },
+                            spacing: { after: exam.digital_signature_role ? 25 : 0 },
                             keepLines: true
                         }),
                         ...(exam.digital_signature_role ? [paragraph(run(exam.digital_signature_role, {
@@ -557,22 +563,22 @@ export const exportReportToWord = async ({
                         width: 48,
                         fill: 'FFFFFF',
                         borders: NO_BORDERS,
-                        margins: { top: 150, bottom: 150, left: 170, right: 170 }
+                        margins: { top: 140, bottom: 140, left: 160, right: 160 }
                     }),
                     cell([
                         paragraph(run(labels.verification, { size: 15, color: COLORS.muted, bold: true, allCaps: true }), {
-                            spacing: { after: 40 }
+                            spacing: { after: 35 }
                         }),
                         paragraph(run(finalized ? labels.verified : labels.notSigned, {
                             size: 18,
                             color: finalized ? COLORS.success : COLORS.danger,
                             bold: true
-                        }), { spacing: { after: finalized ? 35 : 0 }, keepLines: true }),
+                        }), { spacing: { after: finalized ? 30 : 0 }, keepLines: true }),
                         ...(finalized ? [
                             paragraph(run(`${labels.signedAt}: ${formatDate(signedAt, locale)}`, {
                                 size: 15,
                                 color: COLORS.muted
-                            }), { spacing: { after: 30 } }),
+                            }), { spacing: { after: 25 } }),
                             paragraph(run(formatSignatureHash(exam.digital_signature_hash), {
                                 size: 13,
                                 color: COLORS.faint,
@@ -583,12 +589,28 @@ export const exportReportToWord = async ({
                         width: 52,
                         fill: finalized ? COLORS.successFill : COLORS.dangerFill,
                         borders: NO_BORDERS,
-                        margins: { top: 150, bottom: 150, left: 170, right: 170 }
+                        margins: { top: 140, bottom: 140, left: 160, right: 160 }
                     })
                 ]
             })]
         })
     ] : [];
+
+    const customSectionBlocks: any[] = [];
+    const standardKeys = ['clinicalHistory', 'technique', 'comparison', 'findings', 'impression', 'recommendations'];
+    const mergedSections = {
+        ...(exam.report_sections || {}),
+        ...(sections || {})
+    };
+    Object.entries(mergedSections).forEach(([key, val]) => {
+        if (!standardKeys.includes(key) && val && String(val).trim()) {
+            const readableTitle = key
+                .replace(/([A-Z])/g, ' $1')
+                .replace(/^./, str => str.toUpperCase())
+                .trim();
+            customSectionBlocks.push(...sectionBlock(readableTitle, val));
+        }
+    });
 
     const documentChildren = [
         ...(!finalized ? [new Table({
@@ -618,11 +640,13 @@ export const exportReportToWord = async ({
         })] : []),
         titleBlock,
         identityGrid,
-        ...sectionBlock(labels.clinicalHistory, sections.clinicalHistory || exam.clinical_indication),
-        ...sectionBlock(labels.technique, sections.technique),
-        ...sectionBlock(labels.findings, sections.findings),
-        ...sectionBlock(labels.impression, sections.impression, { important: true }),
-        ...sectionBlock(labels.recommendations, sections.recommendations),
+        ...sectionBlock(labels.clinicalHistory, mergedSections.clinicalHistory || exam.clinical_indication),
+        ...sectionBlock(labels.technique, mergedSections.technique),
+        ...sectionBlock(labels.comparison, mergedSections.comparison),
+        ...sectionBlock(labels.findings, mergedSections.findings),
+        ...sectionBlock(labels.impression, mergedSections.impression, { important: true }),
+        ...sectionBlock(labels.recommendations, mergedSections.recommendations),
+        ...customSectionBlocks,
         ...signatureChildren
     ];
 
@@ -657,7 +681,7 @@ export const exportReportToWord = async ({
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `${safeFilename(exam.order_number || exam.mrn || exam.exam_id)}-${safeFilename(labels.subtitle)}.docx`;
+    anchor.download = `${safeFilename(exam.patient_name || 'Patient')}_${safeFilename(exam.exam_type_name || labels.subtitle)}_${safeFilename(exam.order_number || exam.mrn || exam.exam_id)}.docx`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();

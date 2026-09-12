@@ -11,6 +11,7 @@ import {
 } from '../../store/api';
 import { selectCurrentUser } from '../../store/authSlice';
 import { getErrorMessage } from '../../utils/getErrorMessage';
+import { getEffectivePermissions } from '../../utils/effectivePermissions';
 import { useTranslation } from 'react-i18next';
 
 const emptyCampaign = { name: '', messageSubject: '', messageBody: '', targetSegment: '', channel: 'SMS', budget: '', startDate: '', endDate: '' };
@@ -22,7 +23,7 @@ const CampaignManager = () => {
     const copy = (key, options) => t(`marketing.campaigns.${key}`, options);
     const locale = i18n.language?.startsWith('ar') ? 'ar-EG' : 'en-EG';
     const user = useSelector(selectCurrentUser);
-    const effectivePermissions = new Set([...(user?.permissions || []), ...(user?.elevatedPermissions || [])]);
+    const effectivePermissions = getEffectivePermissions(user);
     const canManage = ['Developer', 'Admin'].includes(user?.role) || effectivePermissions.has('MANAGE_CRM');
     const { data: campaigns = [], isLoading, isError, refetch, isFetching } = useGetCampaignsQuery();
     const { data: segments = [], isLoading: segmentsLoading } = useGetSegmentsQuery();
@@ -113,7 +114,10 @@ const CampaignManager = () => {
     };
 
     const formatDate = value => value ? new Date(value).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' }) : copy('notSet');
-    const formatMoney = value => new Intl.NumberFormat(locale, { style: 'currency', currency: 'EGP', maximumFractionDigits: 0 }).format(Number(value || 0));
+    const formatMoney = value => {
+        const formatted = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EGP', maximumFractionDigits: 0 }).format(Number(value || 0));
+        return formatted.replace(/\s+/g, '\u00A0');
+    };
 
     return (
         <div className="space-y-5">
@@ -185,7 +189,7 @@ const CampaignManager = () => {
 
 const toneClass = { pink: 'bg-pink-50 text-pink-700 dark:bg-pink-400/10 dark:text-pink-300', emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300', amber: 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300', blue: 'bg-blue-50 text-blue-700 dark:bg-blue-400/10 dark:text-blue-300', rose: 'bg-rose-50 text-rose-700 dark:bg-rose-400/10 dark:text-rose-300' };
 const statusClass = { Active: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300', Completed: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300', Cancelled: 'bg-rose-50 text-rose-700 dark:bg-rose-400/10 dark:text-rose-300', Draft: 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300' };
-const Metric = ({ icon: Icon, label, value, tone }) => <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950"><div className="flex items-start justify-between gap-2"><p className="text-[10px] font-black uppercase leading-4 tracking-wider text-slate-400">{label}</p><span className={`hidden h-9 w-9 items-center justify-center rounded-xl sm:flex ${toneClass[tone]}`}><Icon size={17} /></span></div><p className="mt-2 text-2xl font-black text-slate-950 dark:text-white">{value}</p></article>;
+const Metric = ({ icon: Icon, label, value, tone }) => <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950"><div className="flex items-start justify-between gap-2"><p className="text-[10px] font-black uppercase leading-4 tracking-wider text-slate-400">{label}</p><span className={`hidden h-9 w-9 items-center justify-center rounded-xl sm:flex ${toneClass[tone]}`}><Icon size={17} /></span></div><p className="mt-2 font-mono text-2xl font-black text-slate-950 dark:text-white whitespace-nowrap">{value}</p></article>;
 const Field = ({ label, children }) => <label className="block"><span className="mb-1.5 block text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</span>{children}</label>;
 const Preview = ({ copy, form }) => {
     const body = form.messageBody.trim() || copy('messagePreviewEmpty');

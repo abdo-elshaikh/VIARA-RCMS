@@ -162,6 +162,13 @@ export default function DoctorDetailPage() {
                         </button>
                     </>
                 )}
+                metrics={[
+                    { key: 'appointments', icon: Users, tone: 'cyan', label: t('doctors.totalReferrals', { defaultValue: 'Total appointments' }), value: appointmentCount.toLocaleString(locale), detail: t('doctors.totalReferralsDetail', { defaultValue: 'Appointments attributed to this partner' }), loading: isLoading, error: isError },
+                    { key: 'exams', icon: FileText, tone: 'blue', label: t('doctors.examCount', { defaultValue: 'Completed exams' }), value: examCount.toLocaleString(locale), detail: t('doctors.examCountDetail', { rate: conversionRate, defaultValue: '{{rate}}% appointment-to-exam completion' }), loading: isLoading, error: isError },
+                    { key: 'revenue', icon: DollarSign, tone: 'emerald', label: t('doctors.revenue', { defaultValue: 'Generated revenue' }), value: formatCurrency(stats.total_revenue, locale), detail: t('doctors.revenueDetail', { defaultValue: 'Recorded referral revenue' }), loading: isLoading, error: isError },
+                    { key: 'commission', icon: Percent, tone: 'amber', label: t('doctors.commission', { defaultValue: 'Estimated commission' }), value: formatCurrency(stats.commission_est, locale), detail: t('doctors.commissionDetail', { percent: Number(doctor.commission_percentage || 0), defaultValue: '{{percent}}% configured commission' }), loading: isLoading, error: isError },
+                ]}
+                metricsLabel={t('doctors.performanceSummary', { defaultValue: 'Doctor referral performance summary' })}
             />
 
             <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label={t('doctors.performanceSummary', { defaultValue: 'Doctor referral performance summary' })}>

@@ -5,12 +5,28 @@ const { logSecurityEvent } = require('../services/securityEventService');
 const { triggerEventForRole } = require('../services/notificationJobService');
 
 const SALT_ROUNDS = 10;
+const WRITE_TOKEN_PERMISSION = 'MANAGE_DATABASE_CONFIG';
 
 // Generate a random token
 // Format: VIARA_[env]_[random32]
 const generateTokenString = () => {
     const randomHex = crypto.randomBytes(32).toString('hex');
     return `VIARA_live_${randomHex}`;
+};
+
+const roleHasPermission = async (db, role, permission) => {
+    if (!role || !permission) return false;
+    if (role === 'Developer') return true;
+
+    const result = await db.query(`
+        SELECT 1
+        FROM role_permissions rp
+        JOIN permissions p ON p.permission_id = rp.permission_id
+        WHERE rp.role_name = $1 AND p.name = $2
+        LIMIT 1
+    `, [role, permission]);
+
+    return result.rows.length > 0;
 };
 
 const getTokens = (db) => async (req, res, next) => {
@@ -39,6 +55,22 @@ const createToken = (db) => async (req, res, next) => {
         if (normalizedName.length > 100) return next(new AppError('Token name must be 100 characters or fewer', 400));
         if (!['read', 'read_write'].includes(accessLevel)) return next(new AppError('Invalid token access level', 400));
 
+        if (accessLevel === 'read_write') {
+            const canCreateWriteToken = await roleHasPermission(db, req.user?.role, WRITE_TOKEN_PERMISSION);
+            if (!canCreateWriteToken) {
+                await logSecurityEvent(db, {
+                    eventType: 'API_TOKEN_WRITE_SCOPE_DENIED',
+                    severity: 'warning',
+                    userId,
+                    ipAddress: req.ip,
+                    userAgent: req.get('user-agent'),
+                    details: { tokenName: normalizedName, requestedAccessLevel: accessLevel }
+                });
+                triggerEventForRole(db, 'API_TOKEN_WRITE_SCOPE_DENIED', 'Admin', { priority: 'Warning' }).catch(() => {});
+                return next(new AppError('Write API tokens require developer authorization', 403));
+            }
+        }
+
         // Generate new token
         const rawToken = generateTokenString();
         const prefix = rawToken.substring(0, 15) + '...'; // VIARA_live_xx...
@@ -57,7 +89,8 @@ const createToken = (db) => async (req, res, next) => {
             severity: 'info',
             userId: userId,
             ipAddress: req.ip,
-            details: { tokenName: normalizedName, tokenId: result.rows[0].id }
+            userAgent: req.get('user-agent'),
+            details: { tokenName: normalizedName, tokenId: result.rows[0].id, accessLevel }
         });
 
         // We only return the raw token ONCE upon creation
@@ -90,6 +123,7 @@ const revokeToken = (db) => async (req, res, next) => {
             severity: 'info',
             userId: userId,
             ipAddress: req.ip,
+            userAgent: req.get('user-agent'),
             details: { tokenName: result.rows[0].name, tokenId: result.rows[0].token_id }
         });
 

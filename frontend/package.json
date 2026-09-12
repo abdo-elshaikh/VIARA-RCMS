@@ -9,7 +9,7 @@
         "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
         "preview": "vite preview",
         "test": "vitest",
-        "test:ci": "vitest run"
+        "test:ci": "vitest run --pool=forks --maxWorkers=2"
     },
     "dependencies": {
         "@reduxjs/toolkit": "^2.0.1",

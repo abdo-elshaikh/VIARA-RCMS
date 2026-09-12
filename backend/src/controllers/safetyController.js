@@ -19,18 +19,19 @@ const submitSafetyResponse = (db) => async (req, res, next) => {
         const { templateId, answers } = req.body;
         const userId = req.user.user_id;
 
-        const hasFullSafetyScope = ['Developer', 'Admin'].includes(req.user.role);
-        const assignmentClause = hasFullSafetyScope
-            ? ''
-            : req.user.role === 'Nurse'
-                ? 'AND a.nurse_id = $2'
-                : 'AND a.technician_id = $2';
+        // Safety screening is a write action tied to the assigned nurse or
+        // technician; emergency (break-glass) elevation is read-only by design
+        // and must never unlock submitting safety responses.
         const examCheck = await db.query(`
             SELECT e.status
             FROM examinations e
             JOIN appointments a ON a.appointment_id = e.appointment_id
-            WHERE e.exam_id = $1 ${assignmentClause}
-        `, hasFullSafetyScope ? [examId] : [examId, userId]);
+            WHERE e.exam_id = $1
+              AND (
+                    ($2::text = 'Nurse' AND a.nurse_id = $3::uuid)
+                    OR ($2::text = 'Technician' AND a.technician_id = $3::uuid)
+              )
+        `, [examId, req.user.role, userId]);
         if (examCheck.rows.length === 0) return next(new AppError('Exam not found', 404));
 
         const templateCheck = await db.query(`
@@ -68,13 +69,21 @@ const getExamSafetyResponses = (db) => async (req, res, next) => {
             JOIN appointments a ON a.appointment_id = e.appointment_id
             WHERE r.exam_id = $1
               AND (
-                    $2::text IN ('Developer', 'Admin')
+                    $4::boolean
                     OR ($2::text = 'Radiologist' AND e.performing_radiologist_id = $3::uuid)
                     OR ($2::text = 'Nurse' AND a.nurse_id = $3::uuid)
                     OR ($2::text = 'Technician' AND a.technician_id = $3::uuid)
               )
             ORDER BY r.created_at DESC
-        `, [examId, req.user.role, req.user.user_id]);
+        `, [
+            examId,
+            req.user.role,
+            req.user.user_id,
+            Boolean(req.user.emergencyAccessId
+                && Array.isArray(req.user.elevatedPermissions)
+                && req.user.elevatedPermissions.includes('VIEW_EXAMS')
+                && Number(req.user.breakGlassExpiry) > Date.now())
+        ]);
         
         res.json(result.rows);
     } catch (error) {

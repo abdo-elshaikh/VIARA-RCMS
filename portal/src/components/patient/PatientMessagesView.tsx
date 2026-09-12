@@ -27,7 +27,7 @@ export default function PatientMessagesView({ onRequestAppointment }: PatientMes
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const dateLocale = (i18n.resolvedLanguage || i18n.language || "en").startsWith("ar")
     ? "ar-EG"
-    : undefined;
+    : "en-GB";
   const maxLength = 1500;
   const quickMessages = [
     {
@@ -57,6 +57,7 @@ export default function PatientMessagesView({ onRequestAppointment }: PatientMes
     refetch,
   } = useGetMyMessagesQuery(undefined, {
     pollingInterval: 8000,
+    skipPollingIfUnfocused: true,
   });
   const sortedMessages = useMemo(
     () =>
@@ -89,17 +90,42 @@ export default function PatientMessagesView({ onRequestAppointment }: PatientMes
   );
   const [sendPortalMessage, { isLoading: isSending }] = useSendPortalMessageMutation();
 
-  useEffect(() => {
-    if (!query.trim()) messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [query, sortedMessages]);
+  // Auto-scroll that never yanks the reader away from history they scrolled up to read.
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  const isNearBottomRef = useRef(true);
+  const lastMessageIdRef = useRef<string | null>(null);
+  const didInitialScrollRef = useRef(false);
+
+  const handleThreadScroll = () => {
+    const container = threadRef.current;
+    if (!container) return;
+    isNearBottomRef.current =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 160;
+  };
 
   useEffect(() => {
-    const handleMessageUpdate = () => {
-      refetch();
-    };
-    window.addEventListener("SSE_PATIENT_MESSAGE_UPDATE", handleMessageUpdate);
-    return () => window.removeEventListener("SSE_PATIENT_MESSAGE_UPDATE", handleMessageUpdate);
-  }, [refetch]);
+    if (didInitialScrollRef.current) return;
+    didInitialScrollRef.current = true;
+    const container = threadRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
+  }, []);
+
+  useEffect(() => {
+    const container = threadRef.current;
+    const last = sortedMessages[sortedMessages.length - 1];
+    const lastId = last ? String(last.message_id ?? last.created_at) : null;
+    const isNewMessage = lastId !== lastMessageIdRef.current;
+    lastMessageIdRef.current = lastId;
+    if (!container || !last || !isNewMessage || query.trim()) return;
+
+    const isNearBottom =
+      isNearBottomRef.current ||
+      container.scrollHeight - container.scrollTop - container.clientHeight < 160;
+    const ownLatest = last.sender_role === "Patient";
+    if (isNearBottom || ownLatest) {
+      messageEndRef.current?.scrollIntoView({ behavior: ownLatest ? "auto" : "smooth" });
+    }
+  }, [sortedMessages, query]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,6 +209,7 @@ export default function PatientMessagesView({ onRequestAppointment }: PatientMes
                     onClick={() => setQuery("")}
                     className="absolute top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:bg-primary-50 hover:text-primary-800 end-2"
                     title={t("chat.clearSearch", "Clear search")}
+                    aria-label={t("chat.clearSearch", "Clear search")}
                   >
                     <X size={13} />
                   </button>
@@ -222,7 +249,11 @@ export default function PatientMessagesView({ onRequestAppointment }: PatientMes
           </div>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto bg-background p-5">
+        <div
+          ref={threadRef}
+          onScroll={handleThreadScroll}
+          className="flex-1 space-y-4 overflow-y-auto bg-background p-5"
+        >
           {filteredMessages.length === 0 ? (
             <div className="flex min-h-[22rem] flex-col items-center justify-center text-center text-muted-foreground">
               <MessageSquare size={32} className="mb-3 text-primary-600 opacity-70" />
@@ -305,6 +336,7 @@ export default function PatientMessagesView({ onRequestAppointment }: PatientMes
                 maxLength={maxLength}
                 rows={3}
                 placeholder={t("chat.placeholder", "Type your message...")}
+                aria-label={t("chat.placeholder", "Type your message...")}
                 className="h-auto min-h-[5rem] w-full resize-none rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-foreground outline-none transition focus:border-primary-600 focus:ring-4 focus:ring-primary-600/15"
               />
               <p className="mt-1 text-end text-[10px] font-semibold text-muted-foreground">

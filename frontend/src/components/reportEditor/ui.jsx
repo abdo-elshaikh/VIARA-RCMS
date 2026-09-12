@@ -40,6 +40,7 @@ import {
     Monitor,
     MoreHorizontal,
     PenLine,
+    Printer,
     RefreshCw,
     RotateCcw,
     Save,
@@ -1753,6 +1754,7 @@ export const ReportExportDialog = memo(({
     onClose,
     onExportWord,
     onExportPdf,
+    onDownloadPdf,
     isExportingWord = false,
     isOpeningPdf = false,
     locked = false,
@@ -1767,7 +1769,7 @@ export const ReportExportDialog = memo(({
     const completedSections = SECTION_CONFIG.filter(({ key }) => String(sections[key] || '').trim()).length;
 
     useEffect(() => {
-        if (open) setFormat(locked ? 'pdf' : 'word');
+        if (open) setFormat(locked ? 'pdf_preview' : 'word');
     }, [locked, open]);
 
     useEffect(() => {
@@ -1782,7 +1784,18 @@ export const ReportExportDialog = memo(({
     if (!open) return null;
 
     const exportSelected = async () => {
-        const completed = format === 'pdf' ? await onExportPdf() : await onExportWord();
+        let completed = false;
+        if (format === 'word') {
+            completed = await onExportWord();
+        } else if (format === 'pdf_preview' || format === 'pdf') {
+            completed = await onExportPdf();
+        } else if (format === 'pdf_download') {
+            if (typeof onDownloadPdf === 'function') {
+                completed = await onDownloadPdf();
+            } else {
+                completed = await onExportPdf();
+            }
+        }
         if (completed) onClose();
     };
 
@@ -1808,7 +1821,7 @@ export const ReportExportDialog = memo(({
                             </div>
                             <div className="min-w-0">
                                 <h2 id="report-export-title" className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                                    {t('editor.export.title', { defaultValue: 'Export Report' })}
+                                    {t('editor.export.title', { defaultValue: 'Export Diagnostic Report' })}
                                 </h2>
                                 <p className="mt-1 truncate text-sm font-semibold text-slate-500 dark:text-slate-400">
                                     {exam?.patient_name || exam?.mrn || '-'} <span className="mx-1.5 opacity-50">•</span> {exam?.order_number || exam?.exam_id || '-'}
@@ -1828,57 +1841,99 @@ export const ReportExportDialog = memo(({
                 </header>
 
                 <div className="relative overflow-y-auto px-6 py-6">
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-3">
                         <button
                             type="button"
                             onClick={() => setFormat('word')}
                             aria-pressed={format === 'word'}
-                            className={`group relative flex min-h-[100px] items-center gap-4 rounded-xl border p-4 text-start transition-all ${
+                            className={`group relative flex flex-col justify-between rounded-xl border p-4 text-start transition-all ${
                                 format === 'word' 
                                     ? 'border-blue-500 bg-blue-50/80 shadow-md shadow-blue-500/10 ring-2 ring-blue-500/20 dark:bg-blue-500/10' 
                                     : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/30 dark:border-slate-700 dark:bg-slate-800/50 dark:hover:bg-slate-800'
                             }`}
                         >
-                            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg transition-colors ${
-                                format === 'word' ? 'bg-blue-600 text-white shadow-sm' : 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 group-hover:bg-blue-200'
-                            }`}>
-                                <FileText size={22} />
+                            <div className="flex items-center justify-between">
+                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                                    format === 'word' ? 'bg-blue-600 text-white shadow-sm' : 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 group-hover:bg-blue-200'
+                                }`}>
+                                    <FileText size={20} />
+                                </div>
+                                {format === 'word' && (
+                                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white">
+                                        <Check size={12} />
+                                    </span>
+                                )}
                             </div>
-                            <div>
+                            <div className="mt-3">
                                 <span className="block text-sm font-bold text-slate-900 dark:text-slate-100">Word (.docx)</span>
                                 <span className="mt-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                                    {t('editor.export.wordDetail', { defaultValue: 'Editable clinical document' })}
+                                    {t('editor.export.wordDetail', { defaultValue: 'Editable clinical Word document' })}
                                 </span>
                             </div>
                         </button>
 
                         <button
                             type="button"
-                            onClick={() => setFormat('pdf')}
-                            aria-pressed={format === 'pdf'}
-                            className={`group relative flex min-h-[100px] items-center gap-4 rounded-xl border p-4 text-start transition-all ${
-                                format === 'pdf' 
+                            onClick={() => setFormat('pdf_preview')}
+                            aria-pressed={format === 'pdf_preview' || format === 'pdf'}
+                            className={`group relative flex flex-col justify-between rounded-xl border p-4 text-start transition-all ${
+                                format === 'pdf_preview' || format === 'pdf'
                                     ? 'border-rose-500 bg-rose-50/80 shadow-md shadow-rose-500/10 ring-2 ring-rose-500/20 dark:bg-rose-500/10' 
                                     : 'border-slate-200 bg-white hover:border-rose-300 hover:bg-rose-50/30 dark:border-slate-700 dark:bg-slate-800/50 dark:hover:bg-slate-800'
                             }`}
                         >
-                            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg transition-colors ${
-                                format === 'pdf' ? 'bg-rose-600 text-white shadow-sm' : 'bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400 group-hover:bg-rose-200'
-                            }`}>
-                                <FileCheck2 size={22} />
+                            <div className="flex items-center justify-between">
+                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                                    format === 'pdf_preview' || format === 'pdf' ? 'bg-rose-600 text-white shadow-sm' : 'bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400 group-hover:bg-rose-200'
+                                }`}>
+                                    <Printer size={20} />
+                                </div>
+                                {(format === 'pdf_preview' || format === 'pdf') && (
+                                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-600 text-white">
+                                        <Check size={12} />
+                                    </span>
+                                )}
                             </div>
-                            <div>
+                            <div className="mt-3">
                                 <span className="block text-sm font-bold text-slate-900 dark:text-slate-100">PDF / Print</span>
                                 <span className="mt-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                                    {locked
-                                        ? t('editor.export.pdfDetail', { defaultValue: 'Final print-ready report' })
-                                        : t('editor.export.pdfDraftDetail', { defaultValue: 'Print-ready draft report' })}
+                                    {t('editor.export.pdfDetail', { defaultValue: 'Interactive print preview & customizer' })}
+                                </span>
+                            </div>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setFormat('pdf_download')}
+                            aria-pressed={format === 'pdf_download'}
+                            className={`group relative flex flex-col justify-between rounded-xl border p-4 text-start transition-all ${
+                                format === 'pdf_download' 
+                                    ? 'border-emerald-500 bg-emerald-50/80 shadow-md shadow-emerald-500/10 ring-2 ring-emerald-500/20 dark:bg-emerald-500/10' 
+                                    : 'border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/30 dark:border-slate-700 dark:bg-slate-800/50 dark:hover:bg-slate-800'
+                            }`}
+                        >
+                            <div className="flex items-center justify-between">
+                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                                    format === 'pdf_download' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400 group-hover:bg-emerald-200'
+                                }`}>
+                                    <Download size={20} />
+                                </div>
+                                {format === 'pdf_download' && (
+                                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white">
+                                        <Check size={12} />
+                                    </span>
+                                )}
+                            </div>
+                            <div className="mt-3">
+                                <span className="block text-sm font-bold text-slate-900 dark:text-slate-100">PDF File (.pdf)</span>
+                                <span className="mt-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                                    {t('editor.export.pdfDownloadDetail', { defaultValue: 'Direct high-res PDF download with QR' })}
                                 </span>
                             </div>
                         </button>
                     </div>
 
-                    <div className="mt-6 rounded-xl border border-slate-200/60 bg-slate-50/50 p-4 dark:border-slate-700/60 dark:bg-slate-800/30">
+                    <div className="mt-5 rounded-xl border border-slate-200/60 bg-slate-50/50 p-4 dark:border-slate-700/60 dark:bg-slate-800/30">
                         <div className="grid grid-cols-3 divide-x divide-slate-200/60 dark:divide-slate-700/60 rtl:divide-x-reverse text-center">
                             <div className="px-3">
                                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('editor.export.status', { defaultValue: 'Status' })}</p>
@@ -1895,21 +1950,21 @@ export const ReportExportDialog = memo(({
                             <div className="px-3">
                                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('editor.export.language', { defaultValue: 'Language' })}</p>
                                 <p className="mt-1.5 text-sm font-bold text-slate-700 dark:text-slate-200">
-                                    {t('editor.export.english', { defaultValue: 'English' })}
+                                    {t('editor.export.english', { defaultValue: 'Bilingual (AR/EN)' })}
                                 </p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="mt-6">
+                    <div className="mt-5">
                         <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             {t('editor.export.contents', { defaultValue: 'Document Settings' })}
                         </h3>
                         <div className="space-y-2">
                             {[
-                                ['includeHeader', t('editor.document.includeHeader', 'Facility header')],
-                                ['includeFooter', t('editor.document.includeFooter', 'Document footer')],
-                                ['includeSignature', t('editor.document.includeSignature', 'Signature verification')]
+                                ['includeHeader', t('editor.document.includeHeader', 'Facility header & credentials')],
+                                ['includeFooter', t('editor.document.includeFooter', 'Confidentiality footer & page numbers')],
+                                ['includeSignature', t('editor.document.includeSignature', 'Signature & cryptographic QR verification')]
                             ].map(([key, label]) => (
                                 <label key={key} className="group flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-200/60 bg-white px-4 py-3 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700/60 dark:bg-slate-800 dark:hover:border-slate-600 dark:hover:bg-slate-800/80">
                                     <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{label}</span>
@@ -1931,7 +1986,7 @@ export const ReportExportDialog = memo(({
                         <div className="mt-5 flex gap-3 rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3 text-amber-800 shadow-sm dark:border-amber-900/40 dark:from-amber-950/30 dark:to-orange-950/30 dark:text-amber-300">
                             <AlertTriangle size={18} className="shrink-0 text-amber-600 dark:text-amber-500" />
                             <p className="text-xs font-semibold leading-relaxed">
-                                {t('editor.export.draftWarning', { defaultValue: 'Word export will be clearly marked as an unsigned draft. Finalize the report to export as a signed PDF.' })}
+                                {t('editor.export.draftNotice', { defaultValue: 'This report is currently in Draft. Exported documents will clearly display a preliminary draft indicator until officially finalized.' })}
                             </p>
                         </div>
                     )}
@@ -1949,13 +2004,15 @@ export const ReportExportDialog = memo(({
                     <button
                         type="button"
                         onClick={exportSelected}
-                        disabled={working || (format === 'pdf' && !locked)}
-                        className="inline-flex min-h-[44px] min-w-[160px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-6 text-sm font-bold text-white shadow-md shadow-teal-500/20 transition-all hover:from-teal-500 hover:to-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={working}
+                        className="inline-flex min-h-[44px] min-w-[170px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-6 text-sm font-bold text-white shadow-md shadow-teal-500/20 transition-all hover:from-teal-500 hover:to-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {working ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                        {format === 'pdf'
-                            ? t('editor.export.openPdf', { defaultValue: 'Open PDF / Print' })
-                            : t('editor.export.downloadWord', { defaultValue: 'Download Word' })}
+                        {format === 'word'
+                            ? t('editor.export.downloadWord', { defaultValue: 'Download Word (.docx)' })
+                            : format === 'pdf_download'
+                                ? t('editor.export.downloadPdf', { defaultValue: 'Download PDF (.pdf)' })
+                                : t('editor.export.openPdf', { defaultValue: 'Open Print Preview' })}
                     </button>
                 </footer>
             </section>
@@ -1963,8 +2020,6 @@ export const ReportExportDialog = memo(({
         document.body
     );
 });
-ReportExportDialog.displayName = 'ReportExportDialog';
-
 const aiAnalysisTone = {
     Queued: 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-900/50',
     Running: 'bg-cyan-50 text-cyan-700 ring-cyan-200 dark:bg-cyan-950/30 dark:text-cyan-300 dark:ring-cyan-900/50',

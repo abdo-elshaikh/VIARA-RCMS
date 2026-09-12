@@ -44,6 +44,14 @@ const createStaff = (db) => async (req, res, next) => {
             "INSERT INTO users (full_name, email, password_hash, role, must_change_password) VALUES ($1, $2, $3, $4, TRUE) RETURNING user_id, full_name, email, role",
             [fullName, email, hashedPassword, role]
         );
+        // Payroll, attendance, and leave all key off employee_profiles; create
+        // it in the same transaction so a new hire can never be invisible to
+        // payroll until someone remembers to fill the HR form.
+        await client.query(`
+            INSERT INTO employee_profiles (user_id, employee_id, department, job_title, hire_date, employment_status)
+            VALUES ($1, NULL, $2, $3, CURRENT_DATE, $4)
+            ON CONFLICT (user_id) DO NOTHING
+        `, [result.rows[0].user_id, data.department || null, data.jobTitle || null, data.employmentStatus || 'Full-Time']);
         await client.query('COMMIT');
 
         logAction(db, {
@@ -120,6 +128,23 @@ const updateStaff = (db) => async (req, res, next) => {
 
         const result = await client.query(query, values);
 
+        // Deactivation must stamp the termination date: payroll prorates the
+        // final period off it, and without it the employee's worked days in
+        // the open period are silently dropped. Reactivation clears it (the
+        // employee is being rehired).
+        if (isActive === false) {
+            await client.query(`
+                UPDATE employee_profiles
+                SET termination_date = COALESCE(termination_date, CURRENT_DATE), updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = $1
+            `, [id]);
+        } else if (isActive === true && targetResult.rows[0].is_active === false) {
+            await client.query(
+                'UPDATE employee_profiles SET termination_date = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1',
+                [id]
+            );
+        }
+
         if (role || isActive === false || password) {
             await client.query(`
                 UPDATE refresh_tokens
@@ -182,9 +207,16 @@ const deleteStaff = (db) => async (req, res, next) => {
         if (!targetResult.rows.length) throw new AppError('User not found', 404);
         await assertProtectedUserMutation(client, req.user, targetResult.rows[0], targetResult.rows[0].role, false);
         const result = await client.query(
-            "UPDATE users SET is_active = false WHERE user_id = $1 RETURNING user_id", 
+            "UPDATE users SET is_active = false WHERE user_id = $1 RETURNING user_id",
             [id]
         );
+        // Stamp the termination date so the final payroll period prorates the
+        // employee's actually worked days instead of dropping them.
+        await client.query(`
+            UPDATE employee_profiles
+            SET termination_date = COALESCE(termination_date, CURRENT_DATE), updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = $1
+        `, [id]);
         await client.query(`
             UPDATE refresh_tokens
             SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'staff_deactivated'

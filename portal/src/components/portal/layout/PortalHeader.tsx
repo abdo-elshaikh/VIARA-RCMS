@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Menu, X, CalendarCheck, FileText, LockKeyhole, Sparkles, LogIn } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import LanguageToggle from '../../ui/LanguageToggle';
 import ThemeToggle from '../../ui/ThemeToggle';
 import { PortalBrand } from '../ui/PortalBrand';
+import { findPreviouslyFocused, focusInitialElement, restoreFocus, useFocusTrap } from '../../../hooks/use-focus-trap';
 
 interface PortalHeaderProps {
   navLinks?: Array<{ label: string; href: string }>;
@@ -19,6 +20,8 @@ export const PortalHeader = ({ navLinks = [], isRtl = false, onBook, onCheckResu
   const [scrolled, setScrolled] = useState(false);
   const [activeHref, setActiveHref] = useState('#main-content');
   const reduceMotion = useReducedMotion();
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(mobileMenuRef, menuOpen);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -68,11 +71,20 @@ export const PortalHeader = ({ navLinks = [], isRtl = false, onBook, onCheckResu
 
   useEffect(() => {
     if (!menuOpen) return undefined;
+    const previouslyFocused = findPreviouslyFocused();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const frame = window.requestAnimationFrame(() => focusInitialElement(mobileMenuRef));
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setMenuOpen(false);
     };
     window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+      restoreFocus(previouslyFocused);
+    };
   }, [menuOpen]);
 
   const navigateToSection = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
@@ -111,6 +123,7 @@ export const PortalHeader = ({ navLinks = [], isRtl = false, onBook, onCheckResu
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface text-foreground lg:hidden"
             aria-label={isRtl ? 'فتح قائمة التنقل' : 'Toggle navigation menu'}
             aria-expanded={menuOpen}
+            aria-controls="portal-mobile-navigation"
           >
             {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -124,8 +137,8 @@ export const PortalHeader = ({ navLinks = [], isRtl = false, onBook, onCheckResu
               isRtl={isRtl}
               logoClassName="h-9 w-9 text-base sm:h-10 sm:w-10"
               textClassName="max-w-[6.5rem] sm:max-w-[9rem] lg:max-w-[11rem]"
-              nameClassName="text-[11px] sm:text-xs lg:text-sm"
-              subtitleClassName="hidden text-[9px] lg:block"
+              nameClassName="text-xs lg:text-sm"
+              subtitleClassName="hidden text-xs lg:block"
             />
           </Link>
 
@@ -205,6 +218,12 @@ export const PortalHeader = ({ navLinks = [], isRtl = false, onBook, onCheckResu
           className="pointer-events-auto fixed inset-0 z-40 bg-[#0B2348]/18 backdrop-blur-[2px] lg:hidden"
         />
         <motion.div
+          id="portal-mobile-navigation"
+          ref={mobileMenuRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={isRtl ? 'قائمة التنقل' : 'Navigation menu'}
+          tabIndex={-1}
           initial={reduceMotion ? false : { opacity: 0, y: -12, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={reduceMotion ? undefined : { opacity: 0, y: -8, scale: 0.985 }}

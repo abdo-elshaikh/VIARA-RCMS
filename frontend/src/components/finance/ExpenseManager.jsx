@@ -1,5 +1,17 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Calendar, CreditCard, Plus, Receipt, RotateCcw, Tag, X } from 'lucide-react';
+import { 
+    AlertTriangle, 
+    Calendar, 
+    CreditCard, 
+    Filter, 
+    Plus, 
+    Receipt, 
+    RotateCcw, 
+    Search, 
+    Tag, 
+    WalletCards, 
+    X 
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { useCreateExpenseMutation, useDeleteExpenseMutation, useGetExpenseCategoriesQuery, useGetExpensesQuery, useGetSuppliersQuery } from '../../store/api';
@@ -19,20 +31,40 @@ const initialForm = () => ({
 
 const ExpenseManager = () => {
     const { t, i18n } = useTranslation('workspace');
+    const isAr = i18n.language?.startsWith('ar');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
     const { data: expenses = [], isLoading, isError } = useGetExpensesQuery();
     const { data: categories = [] } = useGetExpenseCategoriesQuery();
     const { data: suppliers = [] } = useGetSuppliersQuery();
     const [createExpense, { isLoading: isCreating }] = useCreateExpenseMutation();
     const [deleteExpense, { isLoading: isReversing }] = useDeleteExpenseMutation();
+    
     const [showNew, setShowNew] = useState(false);
     const [form, setForm] = useState(initialForm);
     const [reverseDraft, setReverseDraft] = useState({ expense: null, reason: '' });
+    const [selectedCategory, setSelectedCategory] = useState('all');
+    const [searchQuery, setSearchQuery] = useState('');
 
     const totals = useMemo(() => expenses.reduce((sum, expense) => ({
         amount: sum.amount + Number(expense.amount || 0),
-        tax: sum.tax + Number(expense.tax_amount || 0)
-    }), { amount: 0, tax: 0 }), [expenses]);
+        tax: sum.tax + Number(expense.tax_amount || 0),
+        cash: sum.cash + (expense.payment_method === 'Cash' ? Number(expense.amount || 0) : 0),
+        bank: sum.bank + (expense.payment_method === 'Bank Transfer' ? Number(expense.amount || 0) : 0),
+        card: sum.card + (expense.payment_method === 'Credit Card' ? Number(expense.amount || 0) : 0)
+    }), { amount: 0, tax: 0, cash: 0, bank: 0, card: 0 }), [expenses]);
+
+    const filteredExpenses = useMemo(() => {
+        return expenses.filter(expense => {
+            const matchesCategory = selectedCategory === 'all' || expense.category_id === selectedCategory;
+            const query = searchQuery.trim().toLowerCase();
+            const matchesSearch = !query || 
+                (expense.supplier_name || '').toLowerCase().includes(query) ||
+                (expense.category_name || '').toLowerCase().includes(query) ||
+                (expense.reference_number || '').toLowerCase().includes(query) ||
+                (expense.notes || '').toLowerCase().includes(query);
+            return matchesCategory && matchesSearch;
+        });
+    }, [expenses, selectedCategory, searchQuery]);
 
     const setField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
@@ -92,18 +124,61 @@ const ExpenseManager = () => {
                     type="button"
                     onClick={() => setShowNew((value) => !value)}
                     aria-expanded={showNew}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-cyan-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-rose-600/20 transition hover:brightness-110"
                 >
                     {showNew ? <X size={16} /> : <Plus size={16} />}
-                    {showNew ? t('finance.expenses.closeForm') : t('finance.expenses.openForm')}
+                    {showNew ? t('finance.expenses.closeForm') : (isAr ? 'تسجيل مصروف جديد' : 'Record Expense')}
                 </button>
             </div>
 
-            {/* Metrics */}
-            <div className="grid grid-cols-1 gap-4 border-b border-slate-100/80 p-5 dark:border-white/5 min-[480px]:grid-cols-3">
+            {/* Metrics Breakdown */}
+            <div className="grid grid-cols-1 gap-4 border-b border-slate-100/80 p-5 dark:border-white/5 sm:grid-cols-2 lg:grid-cols-4">
                 <ExpenseMetric label={t('finance.expenses.records')} value={expenses.length.toLocaleString(i18n.language)} />
                 <ExpenseMetric label={t('finance.expenses.recordedAmount')} value={money(totals.amount)} tone="rose" />
-                <ExpenseMetric label={t('finance.expenses.includedTax')} value={money(totals.tax)} />
+                <ExpenseMetric label={isAr ? 'نقداً (خزينة)' : 'Cash Out'} value={money(totals.cash)} />
+                <ExpenseMetric label={isAr ? 'تحويل بنكي / بطاقات' : 'Bank & Cards'} value={money(totals.bank + totals.card)} />
+            </div>
+
+            {/* Category Filter Chips & Search Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100/80 p-4 dark:border-slate-800">
+                <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto">
+                    <button
+                        type="button"
+                        onClick={() => setSelectedCategory('all')}
+                        className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
+                            selectedCategory === 'all'
+                                ? 'bg-rose-600 text-white shadow-sm font-black'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                        }`}
+                    >
+                        {isAr ? 'كافة البنود' : 'All Categories'} ({expenses.length})
+                    </button>
+                    {categories.map((cat) => (
+                        <button
+                            key={cat.category_id}
+                            type="button"
+                            onClick={() => setSelectedCategory(cat.category_id)}
+                            className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
+                                selectedCategory === cat.category_id
+                                    ? 'bg-rose-600 text-white shadow-sm font-black'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                            }`}
+                        >
+                            {cat.name}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="relative w-full sm:w-64">
+                    <Search size={14} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder={isAr ? 'بحث بالمصروف أو المورد...' : 'Search expenses...'}
+                        className="h-9 w-full rounded-xl border border-slate-200 bg-white ps-8 pe-3 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    />
+                </div>
             </div>
 
             {/* Form */}
@@ -237,16 +312,18 @@ const ExpenseManager = () => {
                 <div className="animate-pulse p-12 text-center text-sm font-bold text-slate-400">{t('finance.expenses.loading')}</div>
             ) : isError ? (
                 <div role="alert" className="p-12 text-center text-sm font-bold text-rose-600 dark:text-rose-400">{t('finance.expenses.error')}</div>
-            ) : expenses.length === 0 ? (
+            ) : filteredExpenses.length === 0 ? (
                 <div className="p-12 text-center">
                     <Receipt className="mx-auto text-slate-300 dark:text-slate-600" size={40} />
-                    <p className="mt-3 font-black text-slate-700 dark:text-slate-300">{t('finance.expenses.emptyTitle')}</p>
+                    <p className="mt-3 font-black text-slate-700 dark:text-slate-300">
+                        {searchQuery ? (isAr ? 'لا توجد مصروفات تطابق البحث' : 'No matching expenses') : t('finance.expenses.emptyTitle')}
+                    </p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('finance.expenses.emptyDescription')}</p>
                 </div>
             ) : (
                 <>
                     <div className="divide-y divide-slate-100/80 dark:divide-white/5 md:hidden">
-                        {expenses.map((expense) => (
+                        {filteredExpenses.map((expense) => (
                             <ExpenseCard
                                 key={expense.expense_id}
                                 expense={expense}
@@ -265,7 +342,7 @@ const ExpenseManager = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100/80 dark:divide-white/5">
-                                {expenses.map((expense) => (
+                                {filteredExpenses.map((expense) => (
                                     <ExpenseRow
                                         key={expense.expense_id}
                                         expense={expense}
@@ -277,6 +354,8 @@ const ExpenseManager = () => {
                     </div>
                 </>
             )}
+
+            {/* Reversal Confirmation Dialog */}
             {reverseDraft.expense ? (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
                     <form onSubmit={handleReverse} className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-950">

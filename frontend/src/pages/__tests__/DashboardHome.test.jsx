@@ -13,6 +13,7 @@ const DASHBOARD_PERMISSIONS = [
     'VIEW_APPOINTMENTS',
     'VIEW_PATIENTS',
     'VIEW_REPORTS',
+    'VIEW_EXAMS',
     'WRITE_REPORTS',
     'PERFORM_EXAMS',
     'MANAGE_QUEUE',
@@ -22,6 +23,11 @@ const DASHBOARD_PERMISSIONS = [
     'MANAGE_STAFF',
     'VIEW_INVENTORY',
     'CONSUME_INVENTORY',
+    'VIEW_INVOICES',
+    'PROCESS_PAYMENTS',
+    'VIEW_INSURANCE',
+    'MANAGE_INSURANCE_APPROVALS',
+    'VIEW_USERS',
 ];
 
 vi.mock('../../store/api', () => ({
@@ -150,6 +156,80 @@ describe('DashboardHome', () => {
         expect(screen.getByRole('heading', { name: 'Front Desk Command Center' })).toBeInTheDocument();
         expect(screen.getAllByText('Average wait 14 min').length).toBeGreaterThan(0);
         expect(screen.getAllByRole('button', { name: /register patient/i })).toHaveLength(2);
+    });
+
+    it('renders cashier finance metrics without falling back to executive zeroes', () => {
+        renderDashboard('Cashier', {
+            collectedToday: 3200,
+            collectedWeek: 11750,
+            transactionsToday: 9,
+            openInvoices: 4,
+            outstandingAmount: 6800,
+            pendingRefunds: 1,
+            shiftOpen: true,
+        });
+
+        expect(screen.getByRole('heading', { name: 'Cashier Operations Dashboard' })).toBeInTheDocument();
+        expect(screen.getByText('Cashier shift')).toBeInTheDocument();
+        expect(screen.getAllByText(/3,200/).length).toBeGreaterThan(0);
+        expect(screen.queryByText('Executive Operations Dashboard')).not.toBeInTheDocument();
+    });
+
+    it('renders an accounting-only dashboard without workforce metrics', () => {
+        renderDashboard('Accountant', {
+            collectedToday: 4200,
+            collectedWeek: 18750,
+            transactionsToday: 11,
+            openInvoices: 6,
+            outstandingAmount: 12200,
+            pendingRefunds: 2,
+        });
+
+        expect(screen.getByRole('heading', { name: 'Accounting Dashboard' })).toBeInTheDocument();
+        expect(screen.getByText('Outstanding receivables')).toBeInTheDocument();
+        expect(screen.queryByText('Active staff')).not.toBeInTheDocument();
+    });
+
+    it('renders HR workforce metrics and hides patient search', () => {
+        renderDashboard('HR', {
+            activeStaff: 20,
+            presentToday: 17,
+            onLeaveToday: 2,
+            pendingLeave: 1,
+        });
+
+        expect(screen.getByRole('heading', { name: 'Human Resources Dashboard' })).toBeInTheDocument();
+        expect(screen.getAllByText('Pending leave requests').length).toBeGreaterThan(0);
+        expect(screen.queryByRole('search')).not.toBeInTheDocument();
+        expect(screen.queryByText('Collected this week')).not.toBeInTheDocument();
+    });
+
+    it('renders insurance aggregates instead of an unavailable dashboard', () => {
+        renderDashboard('Insurance_Staff', {
+            pendingApprovals: 3,
+            openClaims: 7,
+            rejectedClaims: 1,
+            outstandingClaims: 25000,
+            receivedWeek: 9000,
+        });
+
+        expect(screen.getByRole('heading', { name: 'Insurance Operations Dashboard' })).toBeInTheDocument();
+        expect(screen.getAllByText('Outstanding claim value').length).toBeGreaterThan(0);
+        expect(screen.queryByText('Dashboard data is unavailable')).not.toBeInTheDocument();
+    });
+
+    it('does not present fabricated scanner telemetry or fixed turnaround values', () => {
+        renderDashboard('Admin', {
+            scanVolumeData: [],
+            modalityData: [],
+            liveModalities: [],
+            turnaroundStages: [],
+        });
+
+        expect(screen.queryByText('MRI 3.0T Skyra')).not.toBeInTheDocument();
+        expect(screen.queryByText('Within reference targets')).not.toBeInTheDocument();
+        expect(screen.getByText('No modality status is available from the system.')).toBeInTheDocument();
+        expect(screen.getByText('No completed stage measurements are available for the current week.')).toBeInTheDocument();
     });
 
     it('refreshes live data on demand', () => {

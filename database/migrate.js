@@ -147,7 +147,50 @@ const MIGRATION_FILES = [
     '116_audit_alert_idempotency.sql',
     '117_hr_payroll_integrity.sql',
     '118_attendance_stale_session_guard.sql',
-    '119_staff_passkeys.sql'
+    '119_staff_passkeys.sql',
+    '120_waitlist_lifecycle_enhancements.sql',
+    '121_secure_chat_channels.sql',
+    '122_notification_preferences_owner_security.sql',
+    '123_notification_contract_fixes.sql',
+    '124_equipment_and_critical_notifications.sql',
+    '125_notification_retention_indexes.sql',
+    '126_portal_inapp_notification_contract.sql',
+    '127_notification_recipient_timezones.sql',
+    '128_quarantine_legacy_global_notifications.sql',
+    '129_break_glass_governance.sql',
+    '130_clinical_task_assignments.sql',
+    '131_notification_workflow_completion.sql',
+    '132_integration_failure_notification_contract.sql',
+    '133_clinical_task_assignment_audit_hardening.sql',
+    '134_integrations_hardening_and_credentials.sql',
+    '135_break_glass_legacy_reason_cleanup.sql',
+    '136_queue_timing_contract.sql',
+    '137_integration_health_governance.sql',
+    '138_queue_open_hold_backfill.sql',
+    '139_integration_disabled_health_backfill.sql',
+    '140_reception_work_items.sql',
+    '141_rooms_and_clinical_integrity.sql',
+    '142_display_board_announcements.sql',
+    '143_reception_operations_hardening.sql',
+    '144_clinical_payment_exception_workflow.sql',
+    '145_insurance_deductions_and_policies.sql',
+    '146_leave_cancellation.sql',
+    '147_payroll_branch_adjustment_integrity.sql',
+    '148_refund_hardening.sql',
+    '149_payroll_lifecycle_notifications.sql',
+    '150_shift_lifecycle_notifications.sql',
+    '151_payroll_skipped_employees.sql',
+    '152_hr_leave_balances_credentials.sql',
+    '153_shift_rooms.sql',
+    '154_shift_modality_column.sql',
+    '155_drop_shift_modality.sql',
+    '156_advanced_attendance_system.sql',
+    '157_staff_shift_requests_and_evaluations.sql',
+    '158_public_portal_security_and_booking.sql',
+    '159_attendance_auto_absent_notification.sql',
+    '160_fix_operational_role_permissions.sql',
+    '161_rbac_governance_alignment.sql',
+    '162_emergency_access_revoked_notification.sql'
 ];
 
 const SEED_FILES = [
@@ -233,8 +276,10 @@ const runMigrations = async (pool, { fresh = false } = {}) => {
             );
             if (applied.rows.length > 0) {
                 if (applied.rows[0].checksum !== migrationChecksum) {
-                    console.log(`  ℹ Updating checksum for modified migration: ${migration.filename}`);
-                    await client.query('UPDATE schema_migrations SET checksum = $2 WHERE filename = $1', [migration.filename, migrationChecksum]);
+                    throw new Error(
+                        `Applied migration checksum mismatch: ${migration.filename}. `
+                        + 'Never edit an applied migration; add a new numbered migration instead.'
+                    );
                 }
                 continue;
             }

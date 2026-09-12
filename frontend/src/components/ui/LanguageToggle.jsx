@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Languages } from 'lucide-react';
 import { useDispatch } from 'react-redux';
@@ -7,14 +8,21 @@ import { setLanguage } from '../../store/preferencesSlice';
 const LanguageToggle = ({ variant = 'default', className = '' }) => {
     const { i18n, t } = useTranslation('common');
     const dispatch = useDispatch();
+    const [isChanging, setIsChanging] = useState(false);
     const current = (i18n.resolvedLanguage || i18n.language || 'en').split('-')[0];
     const next = current === 'ar' ? 'en' : 'ar';
     const isDark = variant === 'dark';
 
-    const changeTo = (code) => {
-        if (code !== current) {
+    const changeTo = async (code) => {
+        if (code === current || isChanging) return;
+        setIsChanging(true);
+        try {
+            await i18n.changeLanguage(code);
             dispatch(setLanguage(code));
-            i18n.changeLanguage(code);
+        } catch {
+            // Keep the active language when its resource chunk cannot be loaded.
+        } finally {
+            setIsChanging(false);
         }
     };
 
@@ -24,6 +32,8 @@ const LanguageToggle = ({ variant = 'default', className = '' }) => {
             <button
                 type="button"
                 onClick={() => changeTo(next)}
+                disabled={isChanging}
+                aria-busy={isChanging || undefined}
                 title={t('language.switchTo')}
                 aria-label={`${t('language.switchTo')}: ${label}`}
                 className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--VIARA-accent)] ${isDark
@@ -46,6 +56,8 @@ const LanguageToggle = ({ variant = 'default', className = '' }) => {
                         key={language.code}
                         type="button"
                         onClick={() => changeTo(language.code)}
+                        disabled={isChanging}
+                        aria-busy={isChanging || undefined}
                         aria-pressed={active}
                         aria-label={language.label}
                         className={`h-8 rounded-lg px-2.5 text-[11px] font-extrabold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--VIARA-accent)] ${active ? 'bg-white text-[var(--VIARA-accent)] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}

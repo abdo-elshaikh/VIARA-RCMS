@@ -497,12 +497,12 @@ const DiscountReports = () => {
                                         {highestRiskRows.length ? highestRiskRows.map((row) => (
                                             <tr key={row.invoice_id || row.invoice_number} className="hover:bg-slate-50 dark:hover:bg-slate-800/45">
                                                 <td className="px-3 py-3 font-black text-slate-900 dark:text-white" dir="ltr">{row.invoice_number || '-'}</td>
-                                                <td className="px-3 py-3 font-semibold text-slate-600 dark:text-slate-300">{date(row.business_date)}</td>
-                                                <td className="px-3 py-3 font-mono font-black text-slate-800 dark:text-slate-200">
+                                                <td className="px-3 py-3 font-semibold whitespace-nowrap text-slate-600 dark:text-slate-300">{date(row.business_date)}</td>
+                                                <td className="px-3 py-3 font-mono font-black whitespace-nowrap text-slate-800 dark:text-slate-200">
                                                     <div>{money(row.discount_amount)}</div>
                                                     <div className="text-[10px] font-bold text-slate-400">{text.subtotal}: {money(row.subtotal_amount)}</div>
                                                 </td>
-                                                <td className="px-3 py-3 font-mono font-black text-slate-800 dark:text-slate-200">{percent(row.effective_rate, language)}</td>
+                                                <td className="px-3 py-3 font-mono font-black whitespace-nowrap text-slate-800 dark:text-slate-200">{percent(row.effective_rate, language)}</td>
                                                 <td className="max-w-[220px] px-3 py-3 font-semibold text-slate-600 dark:text-slate-300">{row.discount_reason || text.notProvided}</td>
                                                 <td className="px-3 py-3 font-semibold text-slate-600 dark:text-slate-300">{row.approved_by || text.unapproved}</td>
                                                 <td className="px-3 py-3">

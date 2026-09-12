@@ -51,7 +51,10 @@ vi.mock('../../store/api', () => ({
 
 const renderWithRouter = (ui, { route = '/financials' } = {}) => {
     return render(
-        <MemoryRouter initialEntries={[route]}>
+        <MemoryRouter
+            initialEntries={[route]}
+            future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
             <Routes>
                 <Route path="*" element={ui} />
             </Routes>
@@ -92,13 +95,13 @@ describe('Financials grouped navigation and action queue', () => {
     it('switches active tab when a grouped nav button is clicked', async () => {
         renderWithRouter(<Financials />);
         await waitFor(() => expect(screen.getByRole('button', { name: 'Advanced Reports' })).toBeInTheDocument());
-        fireEvent.click(screen.getByRole('button', { name: 'Expense Manager' }));
-        await waitFor(() => expect(screen.getByRole('heading', { name: 'Expense Manager' })).toBeInTheDocument());
+        fireEvent.click(screen.getByRole('button', { name: /Expense Manager/ }));
+        await waitFor(() => expect(screen.getByRole('button', { name: /Expense Manager/ })).toHaveAttribute('aria-current', 'page'));
     });
 
     it('shows action queue items when financial alerts exist', async () => {
         renderWithRouter(<Financials />);
-        await waitFor(() => expect(screen.getByText('Action queue')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText(/Action queue/)).toBeInTheDocument());
         expect(screen.getByText('Discount exceptions need review')).toBeInTheDocument();
         expect(screen.getByText('Cash variance needs reconciliation')).toBeInTheDocument();
         expect(screen.getByText('Commissions ready for payment')).toBeInTheDocument();
@@ -107,8 +110,8 @@ describe('Financials grouped navigation and action queue', () => {
 
     it('navigates to the correct tab when an action queue item is clicked', async () => {
         renderWithRouter(<Financials />);
-        await waitFor(() => expect(screen.getByText('Action queue')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText(/Action queue/)).toBeInTheDocument());
         fireEvent.click(screen.getByText('Discount exceptions need review'));
-        await waitFor(() => expect(screen.getByRole('heading', { name: 'Discount Reports' })).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByRole('button', { name: /Discount Reports/ })).toHaveAttribute('aria-current', 'page'));
     });
 });

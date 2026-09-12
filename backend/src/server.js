@@ -335,7 +335,8 @@ const {
     openShift,
     closeShift,
     getReconciliation,
-    reviewCashierClosure
+    reviewCashierClosure,
+    getCurrentCashierShift
 } = require('./controllers/cashierController');
 const {
     getPartialPaymentExceptions,
@@ -450,6 +451,14 @@ const {
     getChatMessages,
     sendChatMessage,
     getUnreadSummary,
+    getChannels,
+    createChannel,
+    updateChannel,
+    deleteChannel,
+    getChannelMembers,
+    addChannelMembers,
+    removeChannelMember,
+    updateChannelMemberRole,
     getPatientConversations,
     getPatientMessageHistory,
     replyToPatient,
@@ -1325,6 +1334,21 @@ app.get('/api/invoices/:id/pdf',
     getInvoicePdf(pool)
 );
 
+app.get('/api/cashier/shifts/current',
+    authenticateToken,
+    hasAnyPermission(pool, [
+        'PROCESS_PAYMENTS',
+        'RECONCILE_SHIFTS',
+        'APPROVE_SHIFT_VARIANCE',
+        'OPEN_CASHIER_SHIFT',
+        'CLOSE_CASHIER_SHIFT',
+        'VIEW_FINANCIAL_REPORTS',
+        'MANAGE_RECEPTION_WORKSPACE',
+        'VIEW_RECEPTION_WORKSPACE'
+    ]),
+    getCurrentCashierShift(pool)
+);
+
 app.post('/api/cashier/shifts/open',
     authenticateToken,
     hasPermission(pool, 'OPEN_CASHIER_SHIFT'),
@@ -2159,11 +2183,19 @@ app.post('/api/realtime/session', authenticateToken, (req, res) => {
 app.get('/api/realtime/stream', realtimeService.registerClient);
 
 // ─── Staff Chat Routes ────────────────────────────────────────────────────────
-app.get('/api/chat/users', authenticateToken, getChatUsers(pool));
-app.get('/api/chat/messages', authenticateToken, getChatMessages(pool));
-app.post('/api/chat/messages', authenticateToken, chatAttachmentUpload.array('attachments'), validateChatAttachments, sendChatMessage(pool));
-app.get('/api/chat/unread-summary', authenticateToken, getUnreadSummary(pool));
-app.get('/api/chat/attachments/:fileName', authenticateToken, serveChatAttachment(pool));
+app.get('/api/chat/users', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), getChatUsers(pool));
+app.get('/api/chat/messages', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), getChatMessages(pool));
+app.post('/api/chat/messages', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), chatAttachmentUpload.array('attachments'), validateChatAttachments, sendChatMessage(pool));
+app.get('/api/chat/unread-summary', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), getUnreadSummary(pool));
+app.get('/api/chat/attachments/:fileName', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), serveChatAttachment(pool));
+app.get('/api/chat/channels', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), getChannels(pool));
+app.post('/api/chat/channels', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), createChannel(pool));
+app.put('/api/chat/channels/:channelId', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), updateChannel(pool));
+app.delete('/api/chat/channels/:channelId', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), deleteChannel(pool));
+app.get('/api/chat/channels/:channelId/members', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), getChannelMembers(pool));
+app.post('/api/chat/channels/:channelId/members', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), addChannelMembers(pool));
+app.delete('/api/chat/channels/:channelId/members/:userId', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), removeChannelMember(pool));
+app.put('/api/chat/channels/:channelId/members/:userId', authenticateToken, hasPermission(pool, 'MANAGE_CHAT'), updateChannelMemberRole(pool));
 
 // ─── Patient Portal Messages (Staff Inbox) ───────────────────────────────────
 app.get('/api/messages/patients',

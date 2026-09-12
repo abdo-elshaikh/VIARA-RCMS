@@ -153,6 +153,8 @@ const BODY_REGION_TERMS = [
     { key: 'hip', label: 'hip/pelvis', terms: ['hip', 'pelvis', 'acetabul'] },
     { key: 'ankle', label: 'ankle', terms: ['ankle', 'tibiotalar'] },
     { key: 'wrist', label: 'wrist', terms: ['wrist', 'carpal'] },
+    { key: 'breast', label: 'breast/mammography', terms: ['breast', 'mammograph', 'bi-rads', 'fibroglandular', 'nipple', 'areola'] },
+    { key: 'abdomen', label: 'abdomen/pelvis/biliary', terms: ['liver', 'gallbladder', 'spleen', 'pancreas', 'biliary', 'mrcp', 'kidney', 'urinary', 'renal'] },
 ];
 
 const countTermMatches = (text, terms) => terms.reduce((total, term) => {
@@ -345,11 +347,11 @@ const sectionBlock = (id, title, value, options = {}) => {
     const hidden = options.hidden ? ' style="display:none"' : '';
     return `
         <section class="report-section ${isImportant ? 'important-section' : ''}" id="sec-${escapeHtml(id)}" data-section-id="${escapeHtml(id)}" data-section="${escapeHtml(title)}"${hidden}>
-            <h2 class="section-title">
+            <h2 class="section-title" dir="auto">
                 <span class="title-bar" aria-hidden="true"></span>
                 <span class="title-text">${escapeHtml(title)}</span>
             </h2>
-            <div class="section-body"${isImportant ? ' role="status"' : ''}>${lineBreaks(String(value).trim())}</div>
+            <div class="section-body"${isImportant ? ' role="status"' : ''} dir="auto">${lineBreaks(String(value).trim())}</div>
         </section>
     `;
 };
@@ -394,6 +396,21 @@ const parseVerificationPayload = (payload = '') => {
     const raw = String(payload || '').trim();
     if (!raw) {
         return { valid: false, errors: ['Empty payload'] };
+    }
+    if (raw.startsWith('http://') || raw.startsWith('https://') || raw.includes('/verify') || raw.includes('code=')) {
+        const codeMatch = raw.match(/[?&]code=([^&#]+)/);
+        const codeVal = codeMatch ? decodeURIComponent(codeMatch[1]) : '';
+        return {
+            valid: Boolean(codeVal),
+            version: 'URL',
+            hash: codeVal,
+            examId: '',
+            order: '',
+            mrn: '',
+            timestamp: '',
+            checksum: '',
+            errors: codeVal ? [] : ['Missing verification code in URL']
+        };
     }
     const parts = raw.split('|');
     if (parts[0] !== 'VIARA1' && parts[0] !== 'VIARA-VERIFY') {
@@ -446,17 +463,19 @@ const validateVerificationPayload = (payload, expected = {}) => {
         parsed.errors.push('Hash does not match this report');
         parsed.valid = false;
     }
-    if (expected.examId && parsed.examId && expected.examId !== parsed.examId) {
-        parsed.errors.push('Exam ID does not match this report');
-        parsed.valid = false;
-    }
-    if (expected.order && parsed.order && expected.order !== parsed.order) {
-        parsed.errors.push('Order number does not match this report');
-        parsed.valid = false;
-    }
-    if (expected.mrn && parsed.mrn && expected.mrn !== parsed.mrn) {
-        parsed.errors.push('MRN does not match this report');
-        parsed.valid = false;
+    if (parsed.version !== 'URL') {
+        if (expected.examId && parsed.examId && expected.examId !== parsed.examId) {
+            parsed.errors.push('Exam ID does not match this report');
+            parsed.valid = false;
+        }
+        if (expected.order && parsed.order && expected.order !== parsed.order) {
+            parsed.errors.push('Order number does not match this report');
+            parsed.valid = false;
+        }
+        if (expected.mrn && parsed.mrn && expected.mrn !== parsed.mrn) {
+            parsed.errors.push('MRN does not match this report');
+            parsed.valid = false;
+        }
     }
     parsed.valid = parsed.errors.length === 0;
     return parsed;
@@ -477,6 +496,9 @@ const buildReportHtml = (report, centerSettings = {}) => {
         ? `VIARA-VERIFIED-${String(report.exam_id || report.order_number || '').slice(0, 10).toUpperCase()}`
         : 'Pending Signature');
     const verifyPayload = buildVerificationPayload(report, verificationHash);
+    const portalBaseUrl = (process.env.PORTAL_URL || process.env.VITE_PORTAL_URL || center.website || 'http://localhost:5174').replace(/\/+$/, '');
+    const qrVerificationUrl = `${portalBaseUrl}/verify?code=${encodeURIComponent(verificationHash)}`;
+    const qrPayload = finalized ? qrVerificationUrl : verifyPayload;
     const statusLabel = report.report_status || report.status || (finalized ? 'Finalized' : 'Draft');
     const examTitle = report.exam_type_name || report.modality_name || 'Radiology Study';
     const generatedAt = formatDate(new Date());
@@ -521,7 +543,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
         }))
     ].filter(s => String(s.value || '').trim());
 
-    const offlineValidation = validateVerificationPayload(verifyPayload, {
+    const offlineValidation = validateVerificationPayload(qrPayload, {
         hash: verificationHash,
         examId: report.exam_id || '',
         order: report.order_number || report.accession_number || '',
@@ -546,9 +568,9 @@ const buildReportHtml = (report, centerSettings = {}) => {
     <meta name="color-scheme" content="light dark">
     <title>Diagnostic Report — ${escapeHtml(report.order_number || report.exam_id || examTitle)}</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&family=Roboto:wght@400;500;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&family=Roboto:wght@400;500;700&display=swap');
 
-        @page { size: A4; margin: 11mm 12mm 13mm; }
+        @page { size: A4 portrait; margin: 8mm 10mm 8mm 10mm; }
         * { box-sizing: border-box; }
 
         :root {
@@ -946,8 +968,16 @@ const buildReportHtml = (report, centerSettings = {}) => {
         }
         .sig-details {
             display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            position: relative;
+            min-height: 84px;
+        }
+        .sig-author {
+            display: flex;
             flex-direction: column;
             justify-content: flex-end;
+            z-index: 1;
         }
         .sig-details h4 {
             margin: 0; color: var(--text); font-size: 13.5px;
@@ -957,8 +987,22 @@ const buildReportHtml = (report, centerSettings = {}) => {
             margin: 3px 0 0; color: var(--text-muted); font-size: 11px; font-weight: 600;
         }
         .sig-line {
-            width: 180px; height: 36px; margin-top: 12px;
+            width: 170px; height: 32px; margin-top: 10px;
             border-bottom: 1.5px solid var(--text-soft);
+        }
+        .official-stamp-seal {
+            flex-shrink: 0;
+            color: #0284c7;
+            opacity: 0.88;
+            transform: rotate(-6deg);
+            pointer-events: none;
+            user-select: none;
+            margin-inline-start: 10px;
+        }
+        .official-stamp-seal svg {
+            display: block;
+            width: 82px;
+            height: 82px;
         }
 
         .verify-card {
@@ -1115,32 +1159,224 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
         @media print {
             :root {
-                --text: #0f172a !important; --text-muted: #64748b !important; --text-soft: #94a3b8 !important;
-                --surface: #ffffff !important; --card-bg: #f8fafc !important; --meta-bg: #ffffff !important;
+                --text: #0f172a !important;
+                --text-muted: #475569 !important;
+                --text-soft: #64748b !important;
+                --surface: #ffffff !important;
+                --card-bg: #f8fafc !important;
+                --meta-bg: #ffffff !important;
+                --space-1: 2px !important;
+                --space-2: 4px !important;
+                --space-3: 6px !important;
+                --space-4: 8px !important;
+                --space-5: 10px !important;
+                --space-6: 12px !important;
+                --space-7: 16px !important;
             }
-            body { background: #fff !important; font-size: 11pt !important; }
-            .page-wrapper { padding: 0 !important; }
+            html, body {
+                background: #ffffff !important;
+                color: #0f172a !important;
+                font-size: 9.5pt !important;
+                line-height: 1.4 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            .page-wrapper {
+                padding: 0 !important;
+                min-height: auto !important;
+            }
             .sheet {
-                width: 100% !important; min-height: auto !important;
-                margin: 0 !important; box-shadow: none !important; border-radius: 0 !important;
-                background: #fff !important;
+                width: 100% !important;
+                min-height: auto !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+                border: 0 !important;
+                border-radius: 0 !important;
+                background: #ffffff !important;
+                overflow: visible !important;
             }
-            .sheet-body { padding: 0 !important; }
+            .sheet-body {
+                padding: 0 !important;
+                overflow: visible !important;
+            }
             .sheet-accent {
-                height: 4px !important;
+                height: 3.5px !important;
                 margin-bottom: 0 !important;
                 background-color: var(--primary) !important;
                 background: linear-gradient(90deg, var(--primary), var(--primary-dark), #2563eb) !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
-                border-top: 4px solid var(--primary);
+                border-top: 3.5px solid var(--primary);
             }
-            .customize-panel, .VIARA-toast { display: none !important; }
-            .v-copy-btn { display: none !important; }
-            .section-body { background: #fff !important; }
-            .clinical-consistency-alert { background: #fffbeb !important; }
-            .important-section .section-body { background: #f8fafc !important; }
-            .verify-card { background: #f8fafc !important; box-shadow: none !important; }
+            .watermark {
+                opacity: 0.03 !important;
+                color: #000000 !important;
+                font-size: 60px !important;
+            }
+            .customize-panel, .VIARA-toast, .v-copy-btn, .btn-remove-custom {
+                display: none !important;
+            }
+            .zone-identity {
+                padding-bottom: 6px !important;
+                margin-bottom: 0 !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .brand-box { gap: 10px !important; }
+            .logo-img { max-height: 40px !important; }
+            .logo-avatar { width: 36px !important; height: 36px !important; font-size: 11px !important; }
+            .brand-details h1 { font-size: 13pt !important; }
+            .brand-details p { font-size: 8pt !important; margin-top: 2px !important; }
+            .doc-status { padding: 2px 7px !important; font-size: 7.5pt !important; }
+            .doc-exam-title { font-size: 10.5pt !important; margin-top: 3px !important; }
+
+            .zone-meta {
+                margin-top: 6px !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .meta-grid {
+                gap: 1px !important;
+                grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            }
+            .meta-item {
+                padding: 4px 7px !important;
+                min-height: 30px !important;
+                background: #f8fafc !important;
+            }
+            .meta-label {
+                font-size: 6.5pt !important;
+                margin-bottom: 1px !important;
+                color: #64748b !important;
+            }
+            .meta-val {
+                font-size: 8pt !important;
+                color: #0f172a !important;
+            }
+
+            .zone-clinical {
+                margin-top: 6px !important;
+            }
+            .clinical-consistency-alert {
+                padding: 5px 8px !important;
+                margin-top: 5px !important;
+                background: #fffbeb !important;
+                border: 1px solid #f59e0b !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .report-section {
+                margin-top: 5px !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .section-title {
+                font-size: 7.5pt !important;
+                margin-bottom: 2px !important;
+                break-after: avoid !important;
+                page-break-after: avoid !important;
+            }
+            .section-body {
+                padding: 5px 8px !important;
+                font-size: 8.5pt !important;
+                line-height: 1.4 !important;
+                background: #ffffff !important;
+                border: 1px solid #e2e8f0 !important;
+                border-radius: 4px !important;
+            }
+            .important-section .section-body {
+                background: #f8fafc !important;
+                border: 1.5px solid var(--primary) !important;
+                font-weight: 600 !important;
+            }
+
+            .signature-block {
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .zone-signature {
+                margin-top: 8px !important;
+                padding-top: 6px !important;
+                border-top: 1px dashed #cbd5e1 !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .sig-details {
+                min-height: 52px !important;
+                display: flex !important;
+                align-items: flex-end !important;
+                justify-content: space-between !important;
+            }
+            .sig-details h4 { font-size: 8.5pt !important; }
+            .sig-details p { font-size: 7pt !important; margin-top: 1px !important; }
+            .sig-line { width: 110px !important; height: 14px !important; margin-top: 3px !important; }
+            .official-stamp-seal {
+                opacity: 0.95 !important;
+                color: #0369a1 !important;
+                transform: rotate(-6deg) !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            .official-stamp-seal svg {
+                width: 58px !important;
+                height: 58px !important;
+            }
+
+            .verify-card {
+                padding: 5px 7px !important;
+                background: #f8fafc !important;
+                border: 1px solid #cbd5e1 !important;
+                border-radius: 6px !important;
+                gap: 7px !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .verify-qr-wrap {
+                width: 54px !important;
+                height: 54px !important;
+                padding: 2px !important;
+                border-radius: 4px !important;
+            }
+            .verify-qr-wrap canvas {
+                width: 50px !important;
+                height: 50px !important;
+            }
+            .verify-info .v-badge {
+                padding: 1px 5px !important;
+                font-size: 6.5pt !important;
+                margin-bottom: 2px !important;
+            }
+            .verify-info .v-label {
+                font-size: 6pt !important;
+            }
+            .verify-info .v-hash-row {
+                margin-top: 1px !important;
+                margin-bottom: 2px !important;
+            }
+            .verify-info .v-hash {
+                font-size: 7pt !important;
+                line-height: 1.15 !important;
+            }
+            .verify-info .v-meta {
+                gap: 3px 6px !important;
+                margin-top: 1px !important;
+            }
+            .verify-info .v-meta span {
+                font-size: 6.5pt !important;
+            }
+            .verify-offline-status {
+                margin-top: 2px !important;
+                font-size: 6.5pt !important;
+            }
+
+            .zone-footer {
+                margin-top: 6px !important;
+                padding-top: 3px !important;
+                font-size: 6.5pt !important;
+                border-top: 1px solid #e2e8f0 !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
             a { color: inherit; text-decoration: none; }
         }
         @media (prefers-reduced-motion: reduce) {
@@ -1278,13 +1514,13 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 : `<div class="logo-avatar" id="brandLogoAvatar" aria-hidden="true">${escapeHtml(logoText)}</div>`
             }
                         <div class="brand-details">
-                            <h1 id="brandTitle">${escapeHtml(facilityName)}</h1>
-                            ${headerText ? `<p id="brandSubtitle">${lineBreaks(headerText)}</p>` : ''}
+                            <h1 id="brandTitle" dir="auto">${escapeHtml(facilityName)}</h1>
+                            ${headerText ? `<p id="brandSubtitle" dir="auto">${lineBreaks(headerText)}</p>` : ''}
                         </div>
                     </div>
                     <div class="doc-meta">
                         <span class="doc-status">${escapeHtml(statusLabel)}</span>
-                        <div class="doc-exam-title">${escapeHtml(examTitle)}</div>
+                        <div class="doc-exam-title" dir="auto">${escapeHtml(examTitle)}</div>
                     </div>
                 </header>
                 ` : ''}
@@ -1294,8 +1530,8 @@ const buildReportHtml = (report, centerSettings = {}) => {
                         ${initialMetaItems.map(item => `
                             <div class="meta-item" role="listitem" data-group="${escapeHtml(item.group || 'exam')}">
                                 ${item.isCustom ? `<button type="button" class="btn-remove-custom" onclick="removeCustomExtraField('${escapeHtml(item.label)}')" aria-label="Remove field">&times;</button>` : ''}
-                                <span class="meta-label">${escapeHtml(item.label)}</span>
-                                <strong class="meta-val">${escapeHtml(item.value)}</strong>
+                                <span class="meta-label" dir="auto">${escapeHtml(item.label)}</span>
+                                <strong class="meta-val" dir="auto">${escapeHtml(item.value)}</strong>
                             </div>
                         `).join('')}
                     </div>
@@ -1324,12 +1560,39 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 <div class="signature-block">
                     <div class="zone-signature" id="zoneSignature">
                         <div class="sig-details">
-                            <h4 id="sigName">${escapeHtml(report.digital_signature_name || report.radiologist_name || 'Reporting Radiologist')}</h4>
-                            <p id="sigRole">${escapeHtml(report.digital_signature_role || 'Consultant Radiologist')}</p>
-                            <div class="sig-line" aria-hidden="true"></div>
+                            <div class="sig-author">
+                                <h4 id="sigName" dir="auto">${escapeHtml(report.digital_signature_name || report.radiologist_name || 'Reporting Radiologist')}</h4>
+                                <p id="sigRole" dir="auto">${escapeHtml(report.digital_signature_role || 'Consultant Radiologist')}</p>
+                                <div class="sig-line" aria-hidden="true"></div>
+                            </div>
+                            ${finalized ? `
+                            <div class="official-stamp-seal" title="Official Center Stamp & Digital Verification" aria-label="Official Digital Stamp">
+                                <svg viewBox="0 0 160 160" width="82" height="82" aria-hidden="true">
+                                    <defs>
+                                        <path id="stamp-arc-top" d="M 18,80 A 62,62 0 1,1 142,80" fill="none" />
+                                        <path id="stamp-arc-bottom" d="M 142,80 A 62,62 0 0,1 18,80" fill="none" />
+                                    </defs>
+                                    <circle cx="80" cy="80" r="74" fill="none" stroke="currentColor" stroke-width="2.5" />
+                                    <circle cx="80" cy="80" r="68" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4,2.5" />
+                                    <circle cx="80" cy="80" r="48" fill="none" stroke="currentColor" stroke-width="1.8" />
+                                    <text font-family="'Cairo', 'Inter', sans-serif" font-size="8" font-weight="bold" fill="currentColor" letter-spacing="1">
+                                        <textPath href="#stamp-arc-top" startOffset="50%" text-anchor="middle">★ ${escapeHtml((center.center_name || 'VIARA DIAGNOSTIC').toUpperCase().slice(0, 24))} ★</textPath>
+                                    </text>
+                                    <text font-family="'Inter', sans-serif" font-size="7" font-weight="bold" fill="currentColor" letter-spacing="0.8">
+                                        <textPath href="#stamp-arc-bottom" startOffset="50%" text-anchor="middle">OFFICIALLY VERIFIED</textPath>
+                                    </text>
+                                    <g transform="translate(80, 72) scale(0.9)">
+                                        <path d="M-12,-16 L12,-16 Q14,4 0,16 Q-14,4 -12,-16 Z" fill="none" stroke="currentColor" stroke-width="1.5" />
+                                        <path d="M-6,-2 L-2,3 L6,-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                    </g>
+                                    <text x="80" y="103" text-anchor="middle" font-family="'Cairo', sans-serif" font-size="9" font-weight="800" fill="currentColor">معتمد رسمياً</text>
+                                    <text x="80" y="115" text-anchor="middle" font-family="'Inter', sans-serif" font-size="6" font-weight="700" fill="currentColor" letter-spacing="0.5">DIGITAL SEAL</text>
+                                </svg>
+                            </div>
+                            ` : ''}
                         </div>
                         <div class="verify-card" id="verifyCard" role="group" aria-label="Digital verification">
-                            <div class="verify-qr-wrap" id="verifyQrWrap" title="Scan to verify authenticity (offline QR)">
+                            <div class="verify-qr-wrap" id="verifyQrWrap" title="Scan to verify authenticity via portal or camera">
                                 <canvas id="verifyQrCanvas" width="80" height="80" aria-label="Verification QR code"></canvas>
                             </div>
                             <div class="verify-info">
@@ -1359,7 +1622,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
                 ${center.includeFooter ? `
                 <footer class="zone-footer" id="zoneFooter">
-                    <div id="footerText">${escapeHtml(footerText)}</div>
+                    <div id="footerText" dir="auto">${escapeHtml(footerText)}</div>
                     <div>Order #${escapeHtml(report.order_number || report.exam_id || '—')}</div>
                 </footer>
                 ` : ''}
@@ -1374,7 +1637,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
         window.activeEnabledIds = ${JSON.stringify(center.enabledFields)};
         window.activeExtraFields = ${JSON.stringify(center.customFields)};
         window.activeVisibleSections = ${JSON.stringify([...visibleSet])};
-        window.VERIFY_PAYLOAD = ${JSON.stringify(verifyPayload)};
+        window.VERIFY_PAYLOAD = ${JSON.stringify(qrPayload)};
         window.VERIFY_EXPECTED = ${JSON.stringify({
                     hash: verificationHash,
                     examId: report.exam_id || '',
@@ -1451,6 +1714,21 @@ const buildReportHtml = (report, centerSettings = {}) => {
             var errors = [];
             var raw = String(payload || '').trim();
             if (!raw) return { valid: false, errors: ['Empty payload'] };
+            if (raw.indexOf('/verify') !== -1 || raw.indexOf('code=') !== -1 || raw.indexOf('http://') === 0 || raw.indexOf('https://') === 0) {
+                var codeMatch = raw.match(/[?&]code=([^&#]+)/);
+                var codeVal = codeMatch ? decodeURIComponent(codeMatch[1]) : '';
+                return {
+                    valid: !!codeVal,
+                    version: 'URL',
+                    hash: codeVal,
+                    examId: '',
+                    order: '',
+                    mrn: '',
+                    timestamp: '',
+                    checksum: '',
+                    errors: codeVal ? [] : ['Missing verification code in URL']
+                };
+            }
             var parts = raw.split('|');
             var result = {
                 valid: false, version: parts[0] || '', hash: '', examId: '',
@@ -1496,14 +1774,16 @@ const buildReportHtml = (report, centerSettings = {}) => {
             if (expected.hash && parsed.hash && expected.hash !== parsed.hash) {
                 parsed.errors.push('Hash does not match this report');
             }
-            if (expected.examId && parsed.examId && expected.examId !== parsed.examId) {
-                parsed.errors.push('Exam ID does not match this report');
-            }
-            if (expected.order && parsed.order && expected.order !== parsed.order) {
-                parsed.errors.push('Order number does not match this report');
-            }
-            if (expected.mrn && parsed.mrn && expected.mrn !== parsed.mrn) {
-                parsed.errors.push('MRN does not match this report');
+            if (parsed.version !== 'URL') {
+                if (expected.examId && parsed.examId && expected.examId !== parsed.examId) {
+                    parsed.errors.push('Exam ID does not match this report');
+                }
+                if (expected.order && parsed.order && expected.order !== parsed.order) {
+                    parsed.errors.push('Order number does not match this report');
+                }
+                if (expected.mrn && parsed.mrn && expected.mrn !== parsed.mrn) {
+                    parsed.errors.push('MRN does not match this report');
+                }
             }
             parsed.valid = parsed.errors.length === 0;
             return parsed;

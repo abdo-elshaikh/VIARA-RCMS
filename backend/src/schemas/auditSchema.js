@@ -1,12 +1,19 @@
 const { z } = require('zod');
 
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const optionalText = (max) => z.string().trim().min(1).max(max).optional();
+const optionalText = (max) => z.preprocess(
+    val => (val === '' || val === undefined || val === null ? undefined : String(val).trim()),
+    z.string().trim().min(1).max(max).optional()
+);
+const optionalUuid = z.preprocess(
+    val => (val === '' || val === undefined || val === null ? undefined : val),
+    z.string().uuid().optional()
+);
 
 const auditFilterFields = {
-    userId: z.string().uuid().optional(),
+    userId: optionalUuid,
     action: optionalText(120),
-    resourceId: z.string().uuid().optional(),
+    resourceId: optionalUuid,
     startDate: dateString.optional(),
     endDate: dateString.optional(),
     category: z.enum(['AUTH', 'RBAC', 'PHI_ACCESS', 'PRIVACY', 'BILLING', 'CONFIG', 'DATA_WRITE', 'SECURITY']).optional(),
@@ -15,13 +22,14 @@ const auditFilterFields = {
     actorType: z.enum(['USER', 'SYSTEM', 'PATIENT', 'API_TOKEN', 'INTEGRATION']).optional(),
     eventCode: optionalText(120),
     targetType: optionalText(100),
-    targetId: z.string().uuid().optional(),
-    patientId: z.string().uuid().optional(),
-    examId: z.string().uuid().optional(),
-    invoiceId: z.string().uuid().optional(),
+    targetId: optionalUuid,
+    patientId: optionalUuid,
+    examId: optionalUuid,
+    invoiceId: optionalUuid,
     requestId: optionalText(160),
     minSeverity: z.coerce.number().int().min(0).max(100).optional(),
     minRisk: z.coerce.number().int().min(0).max(100).optional(),
+    operationType: z.enum(['create', 'update', 'delete', 'query']).optional(),
 };
 
 const dateRange = (schema) => schema.refine(

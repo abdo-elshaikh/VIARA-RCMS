@@ -140,7 +140,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
 
     router.get(
         '/studies/:studyInstanceUid/export',
-        hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']),
+        hasAnyPermission(pool, ['DOWNLOAD_PACS_DICOM', 'MANAGE_PACS']),
         exportPacsStudy(pool)
     );
 
@@ -165,19 +165,19 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
 
     router.post(
         '/exams/:examId/ai-analysis',
-        hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']),
+        hasAnyPermission(pool, ['RECONCILE_STUDIES', 'MANAGE_PACS']),
         requestExamAiAnalysis(pool)
     );
 
     router.post(
         '/ai-analysis/jobs/:jobId/retry',
-        hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']),
+        hasAnyPermission(pool, ['RECONCILE_STUDIES', 'MANAGE_PACS']),
         retryPacsAiJob(pool)
     );
 
     router.post(
         '/ai-analysis/jobs/:jobId/cancel',
-        hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']),
+        hasAnyPermission(pool, ['RECONCILE_STUDIES', 'MANAGE_PACS']),
         cancelPacsAiJob(pool)
     );
 

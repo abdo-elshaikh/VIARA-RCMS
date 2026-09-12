@@ -136,9 +136,9 @@ const AttachmentCard = ({ attachment, isMe, compact, t }) => {
     );
 };
 
-export const ChatMessageContent = ({ message, isMe = false, compact = false, t }) => {
+export const ChatMessageContent = ({ message, displayBody, isMe = false, compact = false, t }) => {
     const attachments = useMemo(() => getMessageAttachments(message), [message]);
-    const body = message?.body || '';
+    const body = displayBody ?? message?.body ?? '';
     const isSticker = message?.message_kind === 'sticker';
 
     return (

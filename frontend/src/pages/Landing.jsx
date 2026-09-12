@@ -510,7 +510,9 @@ export default function Landing() {
             } else if (e.key === 'ArrowLeft') {
                 if (isRtl) nextSlide();
                 else prevSlide();
-            } else if (e.key === ' ' || e.code === 'Space') {
+            } else if ((e.key === ' ' || e.code === 'Space') && !['BUTTON', 'A', 'SELECT', 'TEXTAREA', 'INPUT'].includes(e.target.tagName) && !e.target.isContentEditable) {
+                // Never preventDefault while an interactive element has focus:
+                // Space must keep activating focused buttons/links for keyboard users.
                 e.preventDefault();
                 setIsAutoPlaying((prev) => !prev);
             } else if (e.key >= '1' && e.key <= '4') {
@@ -529,9 +531,13 @@ export default function Landing() {
         dispatch(setTheme(dark ? 'light' : 'dark'));
     };
 
-    const toggleLanguage = () => {
+    const toggleLanguage = async () => {
         const next = isRtl ? 'en' : 'ar';
-        i18n.changeLanguage(next);
+        try {
+            await i18n.changeLanguage(next);
+        } catch {
+            return;
+        }
         dispatch(setLanguage(next));
         try {
             localStorage.setItem('VIARA_lang', next);
@@ -584,7 +590,7 @@ export default function Landing() {
                         </motion.div>
                         <div className="viara-logo-text-wrap">
                             <span className="viara-logo-name">{brandName}</span>
-                            <span className="viara-logo-tagline">|{VIARA_BRAND.tagline || (isRtl ? 'نظام الأشعة الذكي' : 'Clinical OS')}</span>
+                            <span className="viara-logo-tagline">{VIARA_BRAND.tagline || (isRtl ? 'نظام الأشعة السحابي الموحد' : 'Unified Clinical OS')}</span>
                         </div>
                     </Link>
 

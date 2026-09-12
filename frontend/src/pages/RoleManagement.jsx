@@ -42,13 +42,35 @@ import {
     useUpdateRolePermissionsMutation,
     useResetRolePermissionsMutation,
     useCloneRolePermissionsMutation,
-    useGetRbacAuditLogsQuery
+    useLazyGetRbacAuditLogsQuery,
+    useGetActiveBreakGlassGrantsQuery,
+    useAdminRevokeBreakGlassMutation
 } from '../store/api';
 import { selectCurrentUser } from '../store/authSlice';
-import { ConfirmDialog, EmptyState, PageHeader, Skeleton } from '../components/ui';
+import { getEffectivePermissions } from '../utils/effectivePermissions';
+import { registerNavigationGuard } from '../utils/navigationGuard';
+import { ConfirmDialog, EmptyState, PageHeader, Skeleton, TextPromptDialog } from '../components/ui';
 
-const roleOrder = ['Developer', 'Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Technician', 'Nurse', 'Accountant', 'Insurance_Staff', 'HR', 'Marketing', 'Referring_Doctor', 'Patient'];
+const roleOrder = ['Developer', 'Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Technician', 'Nurse', 'Accountant', 'Insurance_Staff', 'HR', 'Marketing', 'Referring_Doctor'];
 const PROTECTED_ROLES = new Set(['Developer', 'Admin']);
+// Portal identities are system-governed: their grants back patient/doctor
+// portal routes, so only a Developer may change them.
+const PORTAL_ROLES = new Set(['Patient', 'Doctor', 'Referring_Doctor']);
+const AUDIT_ACTIONS = ['ROLE_PERMISSIONS_UPDATED', 'ROLE_PERMISSIONS_RESET', 'ROLE_PERMISSIONS_CLONED', 'EMERGENCY_ACCESS_GRANTED', 'EMERGENCY_ACCESS_REVOKED', 'EMERGENCY_ACCESS_DENIED'];
+// Staged edits survive in-app navigation (router has no blocker support with
+// BrowserRouter) via a sessionStorage draft stash + restore banner.
+const DRAFT_STORAGE_KEY = 'VIARA_rbac_permission_draft';
+const DEVELOPER_ONLY_PERMISSIONS = new Set([
+    'MANAGE_DEVELOPER_ROLE',
+    'MANAGE_PROTECTED_ROLES',
+    'MANAGE_DATABASE_CONFIG',
+    'VIEW_SYSTEM_DIAGNOSTICS',
+    'MANAGE_SYSTEM_RUNTIME',
+    'MANAGE_FEATURE_FLAGS',
+    'VIEW_MIGRATION_STATUS',
+    'MANAGE_SECRET_SETTINGS',
+    'RESTORE_BACKUPS'
+]);
 
 const ROLE_ICONS = {
     Developer: Terminal,
@@ -62,12 +84,11 @@ const ROLE_ICONS = {
     Insurance_Staff: BadgeCheck,
     HR: UsersRound,
     Marketing: Sparkles,
-    Referring_Doctor: Stethoscope,
-    Patient: UsersRound
+    Referring_Doctor: Stethoscope
 };
 
 const RoleManagement = ({ embedded = false }) => {
-    const { t } = useTranslation('admin');
+    const { t, i18n } = useTranslation('admin');
     const currentUser = useSelector(selectCurrentUser);
     const {
         data: allPermissions = [],
@@ -85,7 +106,9 @@ const RoleManagement = ({ embedded = false }) => {
     const [updateRolePermissions, { isLoading: isUpdating }] = useUpdateRolePermissionsMutation();
     const [resetRolePermissions, { isLoading: isResetting }] = useResetRolePermissionsMutation();
     const [cloneRolePermissions, { isLoading: isCloning }] = useCloneRolePermissionsMutation();
-    const { data: auditLogs = [], refetch: refetchAuditLogs } = useGetRbacAuditLogsQuery();
+    const [fetchAuditLogs] = useLazyGetRbacAuditLogsQuery();
+    const { data: activeEmergencyGrants = [], refetch: refetchEmergencyGrants } = useGetActiveBreakGlassGrantsQuery(undefined, { pollingInterval: 30000 });
+    const [adminRevokeBreakGlass, { isLoading: isRevokingEmergencyAccess }] = useAdminRevokeBreakGlassMutation();
 
     const [localPermissions, setLocalPermissions] = useState({});
     const [dirtyRoles, setDirtyRoles] = useState(new Set());
@@ -97,11 +120,24 @@ const RoleManagement = ({ embedded = false }) => {
     const [selectedRole, setSelectedRole] = useState('Radiologist');
     const [compareRole, setCompareRole] = useState('Receptionist');
     const [collapsedModules, setCollapsedModules] = useState(new Set());
+    const [modulesCollapsedInitialized, setModulesCollapsedInitialized] = useState(false);
     const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
     const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
     const [cloneConfirmOpen, setCloneConfirmOpen] = useState(false);
     const [auditOpen, setAuditOpen] = useState(false);
+    const [emergencyRevokeTarget, setEmergencyRevokeTarget] = useState(null);
+    const [expandedReviewRole, setExpandedReviewRole] = useState('');
     const [mounted, setMounted] = useState(false);
+    // Audit feed: paginated + filterable, fetched on demand (lazy) and
+    // accumulated locally so "load more" appends instead of replacing.
+    const [auditEntries, setAuditEntries] = useState([]);
+    const [auditHasMore, setAuditHasMore] = useState(false);
+    const [auditCursor, setAuditCursor] = useState(null);
+    const [auditRoleFilter, setAuditRoleFilter] = useState('');
+    const [auditActionFilter, setAuditActionFilter] = useState('');
+    const [auditIsLoading, setAuditIsLoading] = useState(false);
+    const [expandedAuditId, setExpandedAuditId] = useState(null);
+    const [viewMode, setViewMode] = useState('role');
     const roleScrollRef = useRef(null);
 
     const scrollRoles = (direction) => {
@@ -112,7 +148,26 @@ const RoleManagement = ({ embedded = false }) => {
     };
 
     const isDeveloper = currentUser?.role === 'Developer';
-    const canEditRole = useCallback((role) => isDeveloper || !PROTECTED_ROLES.has(role), [isDeveloper]);
+    const currentPermissions = useMemo(() => getEffectivePermissions(currentUser), [currentUser]);
+    const hasExplicitPermissionList = Array.isArray(currentUser?.permissions);
+    const canManageRbac = isDeveloper || (currentUser?.role === 'Admin'
+        && (!hasExplicitPermissionList || currentPermissions.has('MANAGE_ROLES')));
+    const canEditRole = useCallback((role) => canManageRbac
+        && (isDeveloper || (!PROTECTED_ROLES.has(role) && !PORTAL_ROLES.has(role))), [canManageRbac, isDeveloper]);
+    const isSystemGovernedRole = useCallback((role) => PROTECTED_ROLES.has(role) || PORTAL_ROLES.has(role), []);
+
+    const revokeEmergencyGrant = async (reason) => {
+        try {
+            await adminRevokeBreakGlass({ grantId: emergencyRevokeTarget.grant_id, reason }).unwrap();
+            toast.success(t('rbac.breakGlass.revokeSuccess', { defaultValue: 'Emergency access revoked successfully.' }));
+            await Promise.all([refetchEmergencyGrants()]);
+            refreshAuditLogs();
+            return true;
+        } catch (error) {
+            toast.error(error?.data?.error || t('rbac.breakGlass.revokeError', { defaultValue: 'Failed to revoke emergency access.' }));
+            return false;
+        }
+    };
 
     useEffect(() => { setMounted(true); }, []);
 
@@ -132,6 +187,22 @@ const RoleManagement = ({ embedded = false }) => {
             return firstIndex - secondIndex;
         });
     }, [rolePermissionsData]);
+
+    const handleRoleTabKeyDown = (event, currentIndex) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || roles.length === 0) return;
+        event.preventDefault();
+        let nextIndex = currentIndex;
+        if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = roles.length - 1;
+        else {
+            const visualDirection = event.key === 'ArrowRight' ? 1 : -1;
+            const direction = i18n.dir() === 'rtl' ? -visualDirection : visualDirection;
+            nextIndex = (currentIndex + direction + roles.length) % roles.length;
+        }
+        const nextRole = roles[nextIndex];
+        setSelectedRole(nextRole);
+        window.requestAnimationFrame(() => document.getElementById(roleTabId(nextRole))?.focus());
+    };
 
     useEffect(() => {
         if (rolePermissionsData && dirtyRoles.size === 0) {
@@ -158,6 +229,112 @@ const RoleManagement = ({ embedded = false }) => {
         return () => window.removeEventListener('beforeunload', warnOnLeave);
     }, [dirtyRoles.size]);
 
+    // In-app navigation protection. The app router (BrowserRouter) cannot
+    // block transitions, so staged edits are (1) confirmed against Settings
+    // tab switches via the navigation-guard registry, and (2) persisted to a
+    // sessionStorage draft stash so leaving any other way never loses work —
+    // a restore banner appears when the page is reopened.
+    const confirmDiscardChanges = useCallback(() => window.confirm(
+        t('rbac.messages.unsavedLeave', {
+            defaultValue: 'You have unsaved permission changes. Leave and discard them?'
+        })
+    ), [t]);
+
+    useEffect(() => registerNavigationGuard(() => (dirtyRoles.size === 0 || confirmDiscardChanges())),
+        [dirtyRoles.size, confirmDiscardChanges]);
+
+    const [restorableDraft, setRestorableDraft] = useState(null);
+    const draftCheckedRef = useRef(false);
+
+    // Detect a stashed draft from a previous visit (once).
+    useEffect(() => {
+        if (draftCheckedRef.current) return;
+        draftCheckedRef.current = true;
+        try {
+            const raw = sessionStorage.getItem(DRAFT_STORAGE_KEY);
+            if (!raw) return;
+            const stash = JSON.parse(raw);
+            if (Array.isArray(stash.dirtyRoles) && stash.dirtyRoles.length > 0 && stash.localPermissions) {
+                setRestorableDraft(stash);
+            }
+        } catch {
+            // Corrupt stash — ignore; it is overwritten on the next edit.
+        }
+    }, []);
+
+    // Keep the stash in sync with the staged state.
+    useEffect(() => {
+        if (dirtyRoles.size > 0) {
+            try {
+                sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({
+                    localPermissions,
+                    dirtyRoles: Array.from(dirtyRoles),
+                    savedAt: new Date().toISOString()
+                }));
+            } catch {
+                // Storage unavailable (private mode/quota) — guard degrades to
+                // the confirm dialogs only.
+            }
+        } else {
+            try { sessionStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* noop */ }
+        }
+    }, [dirtyRoles, localPermissions]);
+
+    const restoreDraft = () => {
+        if (!restorableDraft) return;
+        const nextPermissions = restorableDraft.localPermissions;
+        setLocalPermissions(nextPermissions);
+        // Recompute dirty roles against the CURRENT server state — the policy
+        // may have changed by someone else since the draft was stashed.
+        setDirtyRoles(new Set(Object.keys(nextPermissions).filter((role) => (
+            !samePermissionSet(nextPermissions[role] || [], rolePermissionsData?.[role] || [])
+        ))));
+        setRestorableDraft(null);
+    };
+
+    const discardDraft = () => {
+        try { sessionStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* noop */ }
+        setRestorableDraft(null);
+    };
+
+    // First paint: collapse all modules so the matrix opens as a compact
+    // module overview instead of ~144 raw permission rows.
+    useEffect(() => {
+        if (modulesCollapsedInitialized || allPermissions.length === 0) return;
+        setCollapsedModules(new Set(allPermissions.map((permission) => permission.module).filter(Boolean)));
+        setModulesCollapsedInitialized(true);
+    }, [allPermissions, modulesCollapsedInitialized]);
+
+    // Audit feed loader: supports filtering, reset, and cursor-based "load more".
+    const loadAuditLogs = useCallback(async ({ reset = false, before = null } = {}) => {
+        setAuditIsLoading(true);
+        try {
+            const result = await fetchAuditLogs({
+                limit: 30,
+                ...(auditRoleFilter ? { role: auditRoleFilter } : {}),
+                ...(auditActionFilter ? { action: auditActionFilter } : {}),
+                ...(before ? { before } : {})
+            }).unwrap();
+            setAuditEntries((current) => (reset ? result.logs : [...current, ...result.logs]));
+            setAuditHasMore(Boolean(result.hasMore));
+            setAuditCursor(result.nextCursor || null);
+        } catch {
+            setAuditEntries((current) => (reset ? [] : current));
+            setAuditHasMore(false);
+            setAuditCursor(null);
+        } finally {
+            setAuditIsLoading(false);
+        }
+    }, [auditRoleFilter, auditActionFilter, fetchAuditLogs]);
+
+    const refreshAuditLogs = useCallback(() => {
+        if (auditOpen) loadAuditLogs({ reset: true });
+    }, [auditOpen, loadAuditLogs]);
+
+    useEffect(() => {
+        if (auditOpen) loadAuditLogs({ reset: true });
+    }, [auditOpen, auditRoleFilter, auditActionFilter, loadAuditLogs]);
+
     // Keyboard shortcut Ctrl+S / Cmd+S
     useEffect(() => {
         const handleKeyDown = (event) => {
@@ -174,6 +351,10 @@ const RoleManagement = ({ embedded = false }) => {
 
     const modules = useMemo(() => Array.from(new Set(allPermissions.map((permission) => permission.module).filter(Boolean))).sort(), [allPermissions]);
     const actions = useMemo(() => Array.from(new Set(allPermissions.map(permissionAction))).sort(), [allPermissions]);
+    const permissionById = useMemo(() => new Map(allPermissions.map((permission) => [permission.permission_id, permission])), [allPermissions]);
+    const developerOnlyPermissionIds = useMemo(() => new Set(allPermissions
+        .filter((permission) => DEVELOPER_ONLY_PERMISSIONS.has(permission.name))
+        .map((permission) => permission.permission_id)), [allPermissions]);
 
     const filteredPermissions = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
@@ -185,13 +366,21 @@ const RoleManagement = ({ embedded = false }) => {
             if (grantFilter === 'granted' && !isGranted) return false;
             if (grantFilter === 'notGranted' && isGranted) return false;
             if (!query) return true;
-            return [permission.name, permission.description, permission.module]
+            return [
+                permission.name,
+                permission.description,
+                permission.module,
+                permissionLabel(permission, t),
+                permissionDescription(permission, t),
+                moduleLabel(permission.module, t),
+                permissionActionLabel(permissionAction(permission), t)
+            ]
                 .filter(Boolean)
                 .join(' ')
                 .toLowerCase()
                 .includes(query);
         });
-    }, [actionFilter, allPermissions, grantFilter, localPermissions, moduleFilter, riskFilter, searchQuery, selectedRole]);
+    }, [actionFilter, allPermissions, grantFilter, localPermissions, moduleFilter, riskFilter, searchQuery, selectedRole, t]);
 
     const groupedPermissions = useMemo(() => filteredPermissions.reduce((groups, permission) => {
         const moduleName = permission.module || t('rbac.values.other', { defaultValue: 'Other' });
@@ -215,6 +404,9 @@ const RoleManagement = ({ embedded = false }) => {
     }), [dirtyRoles, localPermissions, rolePermissionsData]);
 
     const pendingChangeCount = useMemo(() => changeSummary.reduce((total, change) => total + change.added.length + change.removed.length, 0), [changeSummary]);
+    const criticalChangeCount = useMemo(() => changeSummary.reduce((total, change) => (
+        total + [...change.added, ...change.removed].filter((id) => permissionRisk(permissionById.get(id)) === 'critical').length
+    ), 0), [changeSummary, permissionById]);
     const editableRoleCount = useMemo(() => roles.filter(canEditRole).length, [canEditRole, roles]);
 
     const selectedPermissionIds = useMemo(() => (localPermissions[selectedRole] || []), [localPermissions, selectedRole]);
@@ -222,6 +414,10 @@ const RoleManagement = ({ embedded = false }) => {
     const selectedSet = useMemo(() => new Set(selectedPermissionIds), [selectedPermissionIds]);
     const compareSet = useMemo(() => new Set(comparePermissionIds), [comparePermissionIds]);
     const filteredIds = useMemo(() => filteredPermissions.map((permission) => permission.permission_id), [filteredPermissions]);
+    const grantableFilteredIds = useMemo(() => filteredPermissions
+        .filter((permission) => selectedRole === 'Developer' || !DEVELOPER_ONLY_PERMISSIONS.has(permission.name))
+        .map((permission) => permission.permission_id), [filteredPermissions, selectedRole]);
+    const restrictedVisibleCount = filteredIds.length - grantableFilteredIds.length;
 
     const comparison = useMemo(() => ({
         shared: selectedPermissionIds.filter((id) => compareSet.has(id)).length,
@@ -240,13 +436,30 @@ const RoleManagement = ({ embedded = false }) => {
     const hasChanges = dirtyRoles.size > 0;
     const hasFilters = Boolean(searchQuery || moduleFilter !== 'all' || actionFilter !== 'all' || riskFilter !== 'all' || grantFilter !== 'all');
     const isError = isPermissionsError || isRolesError;
+    const canCloneSavedPolicy = canEditRole(selectedRole)
+        && Boolean(compareRole)
+        && (isDeveloper || !PROTECTED_ROLES.has(compareRole))
+        && !(compareRole === 'Developer' && selectedRole !== 'Developer');
 
     const setRolePermissionIds = (role, permissionIds) => {
         if (!canEditRole(role)) {
-            toast.error(t('rbac.messages.protectedLocked', 'Only a Developer can edit protected role permissions.'));
+            toast.error(PORTAL_ROLES.has(role)
+                ? t('rbac.messages.portalLocked', {
+                    defaultValue: 'Portal role permissions are system-governed; only a Developer may change them.'
+                })
+                : t('rbac.messages.protectedLocked', 'Only a Developer can edit protected role permissions.'));
             return;
         }
-        const nextIds = Array.from(new Set(permissionIds));
+        const uniqueIds = Array.from(new Set(permissionIds));
+        const nextIds = role === 'Developer'
+            ? uniqueIds
+            : uniqueIds.filter((id) => !developerOnlyPermissionIds.has(id));
+        if (nextIds.length !== uniqueIds.length) {
+            toast(t('rbac.messages.developerOnlyExcluded', {
+                count: uniqueIds.length - nextIds.length,
+                defaultValue: 'Developer-only permissions were excluded from this role.'
+            }));
+        }
         setLocalPermissions((current) => ({ ...current, [role]: nextIds }));
         setDirtyRoles((current) => {
             const next = new Set(current);
@@ -264,7 +477,10 @@ const RoleManagement = ({ embedded = false }) => {
     };
 
     const toggleModulePermissions = (moduleName, grantAll) => {
-        const modulePermissionIds = (groupedPermissions[moduleName] || []).map((p) => p.permission_id);
+        const visibleModulePermissions = groupedPermissions[moduleName] || [];
+        const modulePermissionIds = visibleModulePermissions
+            .filter((permission) => !grantAll || selectedRole === 'Developer' || !DEVELOPER_ONLY_PERMISSIONS.has(permission.name))
+            .map((permission) => permission.permission_id);
         const currentRolePermissions = new Set(localPermissions[selectedRole] || []);
         if (grantAll) {
             modulePermissionIds.forEach((id) => currentRolePermissions.add(id));
@@ -272,19 +488,26 @@ const RoleManagement = ({ embedded = false }) => {
             modulePermissionIds.forEach((id) => currentRolePermissions.delete(id));
         }
         setRolePermissionIds(selectedRole, Array.from(currentRolePermissions));
-        toast.success(grantAll ? `Granted all permissions in ${moduleName}` : `Revoked all permissions in ${moduleName}`);
+        toast.success(t(grantAll ? 'rbac.messages.grantedModuleVisible' : 'rbac.messages.revokedModuleVisible', {
+            count: modulePermissionIds.length,
+            module: moduleLabel(moduleName, t)
+        }));
     };
 
     const updateVisiblePermissions = (mode) => {
         const current = new Set(localPermissions[selectedRole] || []);
-        filteredIds.forEach((id) => (mode === 'grant' ? current.add(id) : current.delete(id)));
+        const affectedIds = mode === 'grant' ? grantableFilteredIds : filteredIds;
+        affectedIds.forEach((id) => (mode === 'grant' ? current.add(id) : current.delete(id)));
         setRolePermissionIds(selectedRole, Array.from(current));
-        toast.success(t(`rbac.messages.${mode}Visible`, { count: filteredIds.length, role: roleLabel(selectedRole, t) }));
+        toast.success(t(`rbac.messages.${mode}Visible`, { count: affectedIds.length, role: roleLabel(selectedRole, t) }));
     };
 
     const copyComparedRole = () => {
         if (!compareRole || !canEditRole(selectedRole)) return;
-        setRolePermissionIds(selectedRole, comparePermissionIds);
+        const safePermissionIds = selectedRole === 'Developer'
+            ? comparePermissionIds
+            : comparePermissionIds.filter((id) => !developerOnlyPermissionIds.has(id));
+        setRolePermissionIds(selectedRole, safePermissionIds);
         toast.success(t('rbac.messages.copied', { source: roleLabel(compareRole, t), target: roleLabel(selectedRole, t) }));
     };
 
@@ -302,12 +525,22 @@ const RoleManagement = ({ embedded = false }) => {
 
         if (failedRoles.length > 0) {
             setDirtyRoles(new Set(failedRoles));
-            toast.error(t('rbac.messages.partialFailure', { count: failedRoles.length }));
+            // Surface the first server-side reason instead of a bare count.
+            const firstReason = results
+                .filter((result) => result.status === 'rejected')
+                .map((result) => result.reason?.data?.error || result.reason?.error)
+                .find(Boolean);
+            toast.error(t('rbac.messages.partialFailure', {
+                count: failedRoles.length,
+                roles: failedRoles.map((role) => roleLabel(role, t)).join(', '),
+                defaultValue: `${failedRoles.length} role update(s) failed`
+            }) + (firstReason ? ` — ${firstReason}` : ''), { duration: 6000 });
         } else {
             const refreshed = await refetchRoles();
             if (refreshed.data) setLocalPermissions(refreshed.data);
             setDirtyRoles(new Set());
             toast.success(t('rbac.messages.saved'));
+            refreshAuditLogs();
         }
         setSaveConfirmOpen(false);
     };
@@ -321,7 +554,7 @@ const RoleManagement = ({ embedded = false }) => {
     const handleResetRole = async () => {
         if (!canEditRole(selectedRole)) return;
         try {
-            await resetRolePermissions(selectedRole).unwrap();
+            const result = await resetRolePermissions(selectedRole).unwrap();
             const refreshed = await refetchRoles();
             if (refreshed.data) setLocalPermissions(refreshed.data);
             setDirtyRoles((current) => {
@@ -329,11 +562,20 @@ const RoleManagement = ({ embedded = false }) => {
                 next.delete(selectedRole);
                 return next;
             });
-            refetchAuditLogs();
-            toast.success(t('rbac.messages.resetSuccess'));
+            refreshAuditLogs();
+            // The backend returns the exact applied diff — surface it so the
+            // admin sees what the reset granted/revoked, not just "done".
+            const added = Array.isArray(result?.added) ? result.added : [];
+            const removed = Array.isArray(result?.removed) ? result.removed : [];
+            toast.success(t('rbac.messages.resetSummary', {
+                role: roleLabel(selectedRole, t),
+                added: added.length,
+                removed: removed.length,
+                defaultValue: `Reset ${roleLabel(selectedRole, t)}: +${added.length} / -${removed.length} permissions`
+            }), { duration: 6000 });
             setResetConfirmOpen(false);
         } catch (error) {
-            toast.error(error.data?.error || 'Failed to reset role permissions');
+            toast.error(error?.data?.error || t('rbac.messages.resetFailed', { defaultValue: 'Failed to reset role permissions.' }));
         }
     };
 
@@ -348,11 +590,10 @@ const RoleManagement = ({ embedded = false }) => {
                 next.delete(selectedRole);
                 return next;
             });
-            refetchAuditLogs();
+            refreshAuditLogs();
             toast.success(t('rbac.messages.cloneSuccess'));
-            setCloneConfirmOpen(false);
-        } catch (error) {
-            toast.error(error.data?.error || 'Failed to clone role permissions');
+            setCloneConfirmOpen(false);        } catch (error) {
+            toast.error(error?.data?.error || t('rbac.messages.cloneFailed', { defaultValue: 'Failed to clone role permissions.' }));
         }
     };
 
@@ -376,10 +617,18 @@ const RoleManagement = ({ embedded = false }) => {
         const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
         const link = document.createElement('a');
         link.href = url;
-        link.download = `VIARA-role-permissions-${new Date().toISOString().slice(0, 10)}.csv`;
+        // Flag unsaved work in the filename so an exported "draft" can never be
+        // mistaken for the live policy.
+        link.download = `VIARA-role-permissions-${new Date().toISOString().slice(0, 10)}${hasChanges ? '-DRAFT' : ''}.csv`;
         link.click();
         URL.revokeObjectURL(url);
-        toast.success(t('rbac.messages.exported'));
+        if (hasChanges) {
+            toast(t('rbac.messages.exportedDraft', {
+                defaultValue: 'Exported the DRAFT matrix (unsaved changes included).'
+            }), { icon: '⚠' });
+        } else {
+            toast.success(t('rbac.messages.exported'));
+        }
     };
 
     const toggleModuleCollapse = (moduleName) => {
@@ -390,6 +639,9 @@ const RoleManagement = ({ embedded = false }) => {
             return next;
         });
     };
+
+    const expandAllModules = () => setCollapsedModules(new Set());
+    const collapseAllModules = () => setCollapsedModules(new Set(Object.keys(groupedPermissions)));
 
     const retry = () => {
         refetchPermissions();
@@ -458,6 +710,44 @@ const RoleManagement = ({ embedded = false }) => {
                 </p>
             </div>
 
+            {!canManageRbac && (
+                <div className="flex items-start gap-3 rounded-xl border border-sky-200/80 bg-sky-50/80 p-3.5 dark:border-sky-900/40 dark:bg-sky-950/30" role="status">
+                    <Eye size={16} className="mt-0.5 shrink-0 text-sky-600 dark:text-sky-400" />
+                    <p className="text-xs leading-relaxed text-sky-900 dark:text-sky-200">
+                        <span className="font-bold">{t('rbac.readOnly.title', { defaultValue: 'Read-only access' })}: </span>
+                        {t('rbac.readOnly.description', { defaultValue: 'You can inspect and export the permission matrix, but MANAGE_ROLES is required to change it.' })}
+                    </p>
+                </div>
+            )}
+
+            {/* Restorable draft banner — staged edits survived a navigation */}
+            {restorableDraft && dirtyRoles.size === 0 && (
+                <div role="status" className="flex flex-col gap-3 rounded-xl border border-amber-300/80 bg-amber-50/90 p-3.5 sm:flex-row sm:items-center sm:justify-between dark:border-amber-700/50 dark:bg-amber-950/30">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-100">
+                            <span className="font-bold">{t('rbac.draft.title', { defaultValue: 'Unsaved changes recovered' })}: </span>
+                            {t('rbac.draft.description', {
+                                time: restorableDraft.savedAt
+                                    ? new Date(restorableDraft.savedAt).toLocaleTimeString(i18n.language?.startsWith('ar') ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' })
+                                    : '',
+                                count: restorableDraft.dirtyRoles.length,
+                                defaultValue: 'A staged permission draft from {{time}} ({{count}} role(s)) was preserved. Restore it or discard it.'
+                            })}
+                        </p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                        <button type="button" onClick={restoreDraft} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 text-xs font-bold text-white transition hover:bg-amber-700">
+                            <RotateCcw size={13} aria-hidden="true" />
+                            {t('rbac.draft.restore', { defaultValue: 'Restore draft' })}
+                        </button>
+                        <button type="button" onClick={discardDraft} className="inline-flex min-h-9 items-center rounded-lg border border-amber-300 px-3.5 text-xs font-bold text-amber-800 transition hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40">
+                            {t('rbac.draft.discard', { defaultValue: 'Discard' })}
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Top Metrics Strip */}
             <section style={reveal(40).style} className={`grid grid-cols-2 gap-4 sm:grid-cols-4 ${reveal(40).className}`} aria-label={t('rbac.metrics.label')}>
                 <Metric icon={UsersRound} label={t('rbac.metrics.roles', { defaultValue: 'Configured Roles' })} value={roles.length} detail={t('rbac.metrics.rolesDetail')} />
@@ -471,35 +761,152 @@ const RoleManagement = ({ embedded = false }) => {
                 <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
                         <h2 className="text-xs font-black uppercase tracking-wider text-slate-500">{t('rbac.actions.auditLogs', { defaultValue: 'RBAC Policy Audit Log' })}</h2>
-                        <button type="button" onClick={() => setAuditOpen(false)} aria-label={t('rbac.filters.clearSearch')} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+                        <button type="button" onClick={() => setAuditOpen(false)} aria-label={t('rbac.audit.close', { defaultValue: 'Close audit log' })} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
                             <X size={15} />
                         </button>
                     </div>
-                    <div className="max-h-64 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
-                        {auditLogs.length === 0 ? (
-                            <div className="p-6 text-center text-xs font-medium text-slate-500">{t('rbac.actions.noAuditLogs', { defaultValue: 'No recent permission changes logged.' })}</div>
-                        ) : (
-                            auditLogs.map((log) => {
-                                const dateStr = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                                const isDenied = log.action === 'PERMISSION_DENIED';
-                                return (
-                                    <div key={log.log_id} className="flex items-center justify-between gap-4 py-2.5 text-xs">
-                                        <div className="flex min-w-0 items-center gap-2.5">
-                                            <span className={`shrink-0 rounded-md px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${isDenied ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}>
-                                                {log.action.replace('ROLE_PERMISSIONS_', '')}
-                                            </span>
-                                            <p className="truncate text-slate-600 dark:text-slate-400">
-                                                <span className="font-bold text-slate-800 dark:text-slate-200">@{log.username || 'system'}</span>
-                                                {log.action === 'ROLE_PERMISSIONS_UPDATED' && ` updated ${roleLabel(log.details?.role, t)} permissions`}
-                                                {log.action === 'ROLE_PERMISSIONS_RESET' && ` reset ${roleLabel(log.details?.role, t)} to defaults`}
-                                                {log.action === 'ROLE_PERMISSIONS_CLONED' && ` cloned ${roleLabel(log.details?.sourceRole, t)} to ${roleLabel(log.details?.targetRole, t)}`}
-                                                {log.action === 'EMERGENCY_ACCESS_GRANTED' && ' requested emergency break-glass'}
+
+                    {/* Audit filters */}
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <label className="relative">
+                            <span className="sr-only">{t('rbac.audit.filterRole', { defaultValue: 'Filter by role' })}</span>
+                            <select
+                                value={auditRoleFilter}
+                                onChange={(event) => setAuditRoleFilter(event.target.value)}
+                                className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            >
+                                <option value="">{t('rbac.audit.allRoles', { defaultValue: 'All roles' })}</option>
+                                {roles.map((role) => (
+                                    <option key={role} value={role}>{roleLabel(role, t)}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="relative">
+                            <span className="sr-only">{t('rbac.audit.filterAction', { defaultValue: 'Filter by action' })}</span>
+                            <select
+                                value={auditActionFilter}
+                                onChange={(event) => setAuditActionFilter(event.target.value)}
+                                className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            >
+                                <option value="">{t('rbac.audit.allActions', { defaultValue: 'All actions' })}</option>
+                                {AUDIT_ACTIONS.map((action) => (
+                                    <option key={action} value={action}>{auditActionLabel(action, t)}</option>
+                                ))}
+                            </select>
+                        </label>
+                    </div>
+
+                    {activeEmergencyGrants.length > 0 && (
+                        <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50/80 p-3 dark:border-rose-500/30 dark:bg-rose-500/10">
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                                <p className="flex items-center gap-2 text-xs font-black text-rose-900 dark:text-rose-100">
+                                    <ShieldAlert size={15} aria-hidden="true" />
+                                    {t('rbac.breakGlass.activeGrants', { count: activeEmergencyGrants.length, defaultValue: `Active emergency grants (${activeEmergencyGrants.length})` })}
+                                </p>
+                            </div>
+                            <div className="space-y-2">
+                                {activeEmergencyGrants.map((grant) => (
+                                    <div key={grant.grant_id} className="flex flex-col gap-2 rounded-xl border border-rose-100 bg-white/80 p-2.5 dark:border-rose-500/20 dark:bg-slate-950/30 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="min-w-0">
+                                            <p className="truncate text-xs font-bold text-slate-900 dark:text-white">{grant.full_name} · {roleLabel(grant.role, t)}</p>
+                                            <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                                                {t('rbac.breakGlass.expires', {
+                                                    date: new Date(grant.expires_at).toLocaleString(i18n.language?.startsWith('ar') ? 'ar-EG' : 'en-US'),
+                                                    defaultValue: `Expires ${new Date(grant.expires_at).toLocaleString()}`
+                                                })}
                                             </p>
                                         </div>
-                                        <span className="shrink-0 font-mono text-[10px] text-slate-400">{dateStr}</span>
+                                        <button type="button" onClick={() => setEmergencyRevokeTarget(grant)} className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-rose-600 px-3 text-[10px] font-bold text-white transition hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2">
+                                            <LockKeyhole size={12} aria-hidden="true" />
+                                            {t('rbac.breakGlass.revoke', { defaultValue: 'Revoke' })}
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="mt-3 max-h-72 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+                        {auditIsLoading && auditEntries.length === 0 ? (
+                            <div className="p-6 text-center text-xs font-medium text-slate-500">{t('rbac.audit.loading', { defaultValue: 'Loading audit entries…' })}</div>
+                        ) : auditEntries.length === 0 ? (
+                            <div className="p-6 text-center text-xs font-medium text-slate-500">{t('rbac.actions.noAuditLogs', { defaultValue: 'No recent permission changes logged.' })}</div>
+                        ) : (
+                            auditEntries.map((log) => {
+                                const dateStr = new Date(log.timestamp).toLocaleString(i18n.language?.startsWith('ar') ? 'ar-EG' : 'en-US', {
+                                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                                });
+                                const isDenied = log.action === 'EMERGENCY_ACCESS_DENIED';
+                                const hasDiff = ['ROLE_PERMISSIONS_UPDATED', 'ROLE_PERMISSIONS_RESET'].includes(log.action)
+                                    && ((log.details?.addedNames || log.details?.added || []).length > 0 || (log.details?.removedNames || log.details?.removed || []).length > 0);
+                                const isExpanded = expandedAuditId === log.log_id;
+                                return (
+                                    <div key={log.log_id} className="py-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => (hasDiff ? setExpandedAuditId(isExpanded ? null : log.log_id) : undefined)}
+                                            className={`flex w-full items-center justify-between gap-4 text-start text-xs ${hasDiff ? 'cursor-pointer' : 'cursor-default'}`}
+                                            aria-expanded={hasDiff ? isExpanded : undefined}
+                                        >
+                                            <div className="flex min-w-0 items-center gap-2.5">
+                                                <span className={`shrink-0 rounded-md px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${isDenied ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}>
+                                                    {auditActionLabel(log.action, t)}
+                                                </span>
+                                                <p className="truncate text-slate-600 dark:text-slate-400">{auditEventText(log, t)}</p>
+                                                {hasDiff && (
+                                                    <ChevronDown size={12} className={`shrink-0 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+                                                )}
+                                            </div>
+                                            <span className="shrink-0 font-mono text-[10px] text-slate-400">{dateStr}</span>
+                                        </button>
+                                        {hasDiff && isExpanded && (
+                                            <div className="mt-2 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-800/40">
+                                                {(log.details.addedNames || log.details.added || []).length > 0 && (
+                                                    <p className="flex flex-wrap items-start gap-1.5">
+                                                        <span className="shrink-0 text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400">{t('rbac.audit.added', { defaultValue: 'Added' })}</span>
+                                                        <span className="flex flex-wrap gap-1">
+                                                            {(log.details.addedNames || log.details.added).map((name) => (
+                                                                <code key={`a-${name}`} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{name}</code>
+                                                            ))}
+                                                        </span>
+                                                    </p>
+                                                )}
+                                                {(log.details.removedNames || log.details.removed || []).length > 0 && (
+                                                    <p className="flex flex-wrap items-start gap-1.5">
+                                                        <span className="shrink-0 text-[10px] font-black uppercase text-rose-600 dark:text-rose-400">{t('rbac.audit.removed', { defaultValue: 'Removed' })}</span>
+                                                        <span className="flex flex-wrap gap-1">
+                                                            {(log.details.removedNames || log.details.removed).map((name) => (
+                                                                <code key={`r-${name}`} className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{name}</code>
+                                                            ))}
+                                                        </span>
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })
+                        )}
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
+                        <span className="text-[10px] font-semibold text-slate-400">
+                            {t('rbac.audit.showing', { count: auditEntries.length, defaultValue: `${auditEntries.length} entries` })}
+                        </span>
+                        {auditHasMore ? (
+                            <button
+                                type="button"
+                                onClick={() => loadAuditLogs({ before: auditCursor })}
+                                disabled={auditIsLoading}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[10px] font-bold text-slate-600 transition hover:border-teal-500 hover:text-teal-600 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300"
+                            >
+                                <RefreshCw size={11} className={auditIsLoading ? 'animate-spin' : ''} aria-hidden="true" />
+                                {t('rbac.audit.loadMore', { defaultValue: 'Load more' })}
+                            </button>
+                        ) : (
+                            auditEntries.length > 0 && (
+                                <span className="text-[10px] font-semibold text-slate-400">{t('rbac.audit.end', { defaultValue: 'End of log' })}</span>
+                            )
                         )}
                     </div>
                 </section>
@@ -540,8 +947,8 @@ const RoleManagement = ({ embedded = false }) => {
                             <button
                                 type="button"
                                 onClick={() => scrollRoles('left')}
-                                aria-label="Scroll roles left"
-                                title="Scroll left"
+                                aria-label={t('rbac.actions.scrollRolesPrevious', { defaultValue: 'Previous roles' })}
+                                title={t('rbac.actions.scrollRolesPrevious', { defaultValue: 'Previous roles' })}
                                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
                             >
                                 <ChevronLeft size={14} className="rtl-flip" />
@@ -549,13 +956,15 @@ const RoleManagement = ({ embedded = false }) => {
 
                             <div
                                 ref={roleScrollRef}
+                                role="tablist"
+                                aria-label={t('rbac.roles.label', { defaultValue: 'System Roles' })}
                                 className="flex items-center gap-1.5 overflow-x-auto py-1 px-1 max-w-full scroll-smooth"
                                 style={{
                                     scrollbarWidth: 'thin',
                                     WebkitOverflowScrolling: 'touch'
                                 }}
                             >
-                                {roles.map((role) => (
+                                {roles.map((role, index) => (
                                     <RoleTopBarItem
                                         key={role}
                                         role={role}
@@ -564,6 +973,7 @@ const RoleManagement = ({ embedded = false }) => {
                                         total={allPermissions.length}
                                         dirty={dirtyRoles.has(role)}
                                         onClick={() => setSelectedRole(role)}
+                                        onKeyDown={(event) => handleRoleTabKeyDown(event, index)}
                                         t={t}
                                     />
                                 ))}
@@ -572,8 +982,8 @@ const RoleManagement = ({ embedded = false }) => {
                             <button
                                 type="button"
                                 onClick={() => scrollRoles('right')}
-                                aria-label="Scroll roles right"
-                                title="Scroll right"
+                                aria-label={t('rbac.actions.scrollRolesNext', { defaultValue: 'Next roles' })}
+                                title={t('rbac.actions.scrollRolesNext', { defaultValue: 'Next roles' })}
                                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
                             >
                                 <ChevronRight size={14} className="rtl-flip" />
@@ -587,7 +997,12 @@ const RoleManagement = ({ embedded = false }) => {
                 <section style={reveal(80).style} className={`grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] ${reveal(80).className}`}>
 
                     {/* Main Permissions Content Area */}
-                    <div className="space-y-5 min-w-0">
+                    <div
+                        id="rbac-permission-panel"
+                        role="tabpanel"
+                        aria-labelledby={roleTabId(selectedRole)}
+                        className="space-y-5 min-w-0"
+                    >
                         <div className="rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
                             {/* Role Header Banner */}
                             <div className="flex flex-col gap-4 border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5 xl:flex-row xl:items-center xl:justify-between">
@@ -595,7 +1010,8 @@ const RoleManagement = ({ embedded = false }) => {
                                     <div className="flex flex-wrap items-center gap-2.5">
                                         {React.createElement(ROLE_ICONS[selectedRole] || ShieldCheck, { size: 22, className: 'text-emerald-600 dark:text-emerald-400 shrink-0' })}
                                         <h2 className="break-words text-lg font-black text-slate-900 dark:text-white sm:text-xl">{roleLabel(selectedRole, t)}</h2>
-                                        {PROTECTED_ROLES.has(selectedRole) ? <StatusPill tone="amber">{t('rbac.values.protected', { defaultValue: 'Protected' })}</StatusPill> : null}
+                                         {PROTECTED_ROLES.has(selectedRole) ? <StatusPill tone="amber">{t('rbac.values.protected', { defaultValue: 'Protected' })}</StatusPill> : null}
+                                         {PORTAL_ROLES.has(selectedRole) ? <StatusPill tone="sky">{t('rbac.values.portalManaged', { defaultValue: 'Portal managed' })}</StatusPill> : null}
                                         {dirtyRoles.has(selectedRole) ? <StatusPill tone="amber">{t('rbac.values.modified', { defaultValue: 'Unsaved Changes' })}</StatusPill> : <StatusPill tone="emerald">{t('rbac.values.saved', { defaultValue: 'Saved' })}</StatusPill>}
                                     </div>
                                     <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
@@ -609,8 +1025,8 @@ const RoleManagement = ({ embedded = false }) => {
                                 </div>
                             </div>
 
-                            {/* Filter Bar */}
-                            <div className="flex flex-wrap items-center gap-2.5 border-b border-slate-100 p-3.5 dark:border-slate-800">
+                             {/* Filter Bar */}
+                             <div className="flex flex-wrap items-center gap-2.5 border-b border-slate-100 p-3.5 dark:border-slate-800">
                                 <label className="relative min-w-[200px] flex-1">
                                     <span className="sr-only">{t('rbac.filters.searchLabel')}</span>
                                     <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
@@ -632,7 +1048,7 @@ const RoleManagement = ({ embedded = false }) => {
                                 </FilterSelect>
                                 <FilterSelect value={actionFilter} onChange={setActionFilter} ariaLabel={t('rbac.filters.action')}>
                                     <option value="all">{t('rbac.filters.allActions', { defaultValue: 'All Actions' })}</option>
-                                    {actions.map((action) => <option key={action} value={action}>{humanize(action)}</option>)}
+                                    {actions.map((action) => <option key={action} value={action}>{permissionActionLabel(action, t)}</option>)}
                                 </FilterSelect>
                                 <FilterSelect value={riskFilter} onChange={setRiskFilter} ariaLabel={t('rbac.filters.risk')}>
                                     <option value="all">{t('rbac.filters.allRisks', { defaultValue: 'All Risks' })}</option>
@@ -643,28 +1059,72 @@ const RoleManagement = ({ embedded = false }) => {
                                     <option value="granted">{t('rbac.values.granted', { defaultValue: 'Granted' })}</option>
                                     <option value="notGranted">{t('rbac.values.notGranted', { defaultValue: 'Revoked' })}</option>
                                 </FilterSelect>
-                                {hasFilters && (
+                                 {hasFilters && (
                                     <button type="button" onClick={clearFilters} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
                                         <FilterX size={14} />
                                         {t('rbac.filters.reset', { defaultValue: 'Reset' })}
                                     </button>
-                                )}
-                            </div>
+                                 )}
+                                 <div className="ms-auto inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-800" role="group" aria-label={t('rbac.viewMode.label', { defaultValue: 'Permission view' })}>
+                                     <button
+                                         type="button"
+                                         aria-pressed={viewMode === 'role'}
+                                         onClick={() => setViewMode('role')}
+                                         className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] font-bold transition ${viewMode === 'role' ? 'bg-white text-teal-700 shadow-sm dark:bg-slate-700 dark:text-teal-300' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}`}
+                                     >
+                                         <UsersRound size={13} />
+                                         {t('rbac.viewMode.byRole', { defaultValue: 'By role' })}
+                                     </button>
+                                     <button
+                                         type="button"
+                                         aria-pressed={viewMode === 'permission'}
+                                         onClick={() => setViewMode('permission')}
+                                         className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] font-bold transition ${viewMode === 'permission' ? 'bg-white text-teal-700 shadow-sm dark:bg-slate-700 dark:text-teal-300' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}`}
+                                     >
+                                         <KeyRound size={13} />
+                                         {t('rbac.viewMode.byPermission', { defaultValue: 'By permission' })}
+                                     </button>
+                                 </div>
+                             </div>
 
                             {/* Batch Action Strip */}
                             <div className="flex flex-wrap items-center justify-between gap-3 p-3.5">
-                                <span className="text-xs font-semibold text-slate-500 tabular-nums">
-                                    Showing {filteredPermissions.length} of {allPermissions.length} permissions
-                                </span>
+                                <div>
+                                    <span className="text-xs font-semibold text-slate-500 tabular-nums">
+                                        {t('rbac.filters.resultsCount', { shown: filteredPermissions.length, total: allPermissions.length, defaultValue: `Showing ${filteredPermissions.length} of ${allPermissions.length} permissions` })}
+                                    </span>
+                                    {restrictedVisibleCount > 0 && selectedRole !== 'Developer' && (
+                                        <p className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                                            <LockKeyhole size={11} />
+                                            {t('rbac.values.developerOnlyVisible', { count: restrictedVisibleCount, defaultValue: `${restrictedVisibleCount} visible permissions are Developer-only` })}
+                                        </p>
+                                    )}
+                                </div>
                                 <div className="flex flex-wrap items-center gap-2">
                                     <button
                                         type="button"
+                                        onClick={expandAllModules}
+                                        className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                                    >
+                                        <ChevronDown size={13} />
+                                        {t('rbac.actions.expandAll', { defaultValue: 'Expand all' })}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={collapseAllModules}
+                                        className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                                    >
+                                        <ChevronRight size={13} className="rtl-flip" />
+                                        {t('rbac.actions.collapseAll', { defaultValue: 'Collapse all' })}
+                                    </button>
+                                    <button
+                                        type="button"
                                         onClick={() => updateVisiblePermissions('grant')}
-                                        disabled={!canEditRole(selectedRole) || filteredIds.length === 0}
+                                        disabled={!canEditRole(selectedRole) || grantableFilteredIds.length === 0}
                                         className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-emerald-500 dark:text-slate-950 dark:hover:bg-emerald-400"
                                     >
                                         <Plus size={13} />
-                                        {t('rbac.actions.grantVisible', { count: filteredIds.length, defaultValue: `Grant Visible (${filteredIds.length})` })}
+                                        {t('rbac.actions.grantVisible', { count: grantableFilteredIds.length, defaultValue: `Grant Visible (${grantableFilteredIds.length})` })}
                                     </button>
                                     <button
                                         type="button"
@@ -679,8 +1139,17 @@ const RoleManagement = ({ embedded = false }) => {
                             </div>
                         </div>
 
-                        {/* Permission Groups List */}
-                        {Object.entries(groupedPermissions).length === 0 ? (
+                         {/* Permission Groups / Ownership Matrix */}
+                         {viewMode === 'permission' ? (
+                             <PermissionOwnershipMatrix
+                                 permissions={filteredPermissions}
+                                 roles={roles}
+                                 localPermissions={localPermissions}
+                                 canEditRole={canEditRole}
+                                 onToggle={togglePermission}
+                                 t={t}
+                             />
+                         ) : Object.entries(groupedPermissions).length === 0 ? (
                             <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
                                 <FilteredEmpty t={t} onReset={clearFilters} />
                             </div>
@@ -698,6 +1167,7 @@ const RoleManagement = ({ embedded = false }) => {
                                         onToggleCollapse={() => toggleModuleCollapse(moduleName)}
                                         onToggle={togglePermission}
                                         onToggleModuleAll={(grantAll) => toggleModulePermissions(moduleName, grantAll)}
+                                        developerOnlyPermissions={DEVELOPER_ONLY_PERMISSIONS}
                                         t={t}
                                     />
                                 ))}
@@ -706,7 +1176,7 @@ const RoleManagement = ({ embedded = false }) => {
                     </div>
 
                     {/* Right Inspector & Role Comparison Column */}
-                    <div className="space-y-5 lg:col-start-2 2xl:col-start-auto 2xl:sticky 2xl:top-4 2xl:self-start">
+                    <div className="space-y-5 xl:col-start-2 xl:sticky xl:top-24 xl:self-start">
                         {/* Comparison Inspector */}
                         <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
                             <div className="flex items-center gap-2.5">
@@ -715,12 +1185,12 @@ const RoleManagement = ({ embedded = false }) => {
                                 </span>
                                 <div>
                                     <h2 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">{t('rbac.inspector.title', { defaultValue: 'Role Comparator' })}</h2>
-                                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Diff permissions against baseline role</p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('rbac.inspector.diffSubtitle', { defaultValue: 'Diff permissions against baseline role' })}</p>
                                 </div>
                             </div>
 
                             <label className="mt-4 block">
-                                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Compare with baseline role</span>
+                                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('rbac.inspector.compareWith', { defaultValue: 'Compare with baseline role' })}</span>
                                 <select
                                     value={compareRole}
                                     onChange={(event) => setCompareRole(event.target.value)}
@@ -744,12 +1214,13 @@ const RoleManagement = ({ embedded = false }) => {
                                     className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                                 >
                                     <Copy size={14} />
-                                    {t('rbac.actions.copyDraft', { defaultValue: `Copy All Permissions from ${compareRole}` })}
+                                    {t('rbac.actions.copyDraft', { source: roleLabel(compareRole, t), defaultValue: `Copy all permissions from ${roleLabel(compareRole, t)}` })}
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setCloneConfirmOpen(true)}
-                                    disabled={!canEditRole(selectedRole) || !compareRole}
+                                    disabled={!canCloneSavedPolicy}
+                                    title={!canCloneSavedPolicy ? t('rbac.inspector.cloneProtectedHint', { defaultValue: 'Cloning a saved protected-role policy requires Developer access.' }) : undefined}
                                     className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                                 >
                                     <Save size={14} />
@@ -770,29 +1241,50 @@ const RoleManagement = ({ embedded = false }) => {
                         {/* Pending Changes Summary Box */}
                         <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
                             <div className="flex items-center gap-2.5">
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                                    <AlertCircle size={16} />
+                                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${criticalChangeCount ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                    {criticalChangeCount ? <AlertTriangle size={16} /> : <AlertCircle size={16} />}
                                 </span>
                                 <div>
                                     <h2 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">{t('rbac.review.title', { defaultValue: 'Staged Changes' })}</h2>
                                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                        {hasChanges ? `${dirtyRoles.size} roles modified` : 'No unsaved edits'}
+                                        {hasChanges ? t('rbac.review.modifiedRoles', { count: dirtyRoles.size, defaultValue: `${dirtyRoles.size} roles modified` }) : t('rbac.review.noEdits', { defaultValue: 'No unsaved edits' })}
                                     </p>
                                 </div>
                             </div>
-                            <div className="mt-3.5 max-h-44 space-y-2 overflow-y-auto">
+                            {criticalChangeCount > 0 && (
+                                <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] font-bold text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300" role="alert">
+                                    {t('rbac.review.criticalChanges', { count: criticalChangeCount, defaultValue: `${criticalChangeCount} critical permission changes require careful review.` })}
+                                </div>
+                            )}
+                            <div className="mt-3.5 max-h-72 space-y-2 overflow-y-auto pe-1">
                                 {changeSummary.length === 0 ? (
                                     <div className="rounded-xl border border-dashed border-slate-200 p-3 text-center text-xs font-medium text-slate-400 dark:border-slate-800">
                                         {t('rbac.review.noChanges', { defaultValue: 'No permission modifications pending.' })}
                                     </div>
                                 ) : (
                                     changeSummary.map((change) => (
-                                        <div key={change.role} className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs dark:bg-slate-950/40">
-                                            <span className="truncate font-bold text-slate-800 dark:text-slate-200">{roleLabel(change.role, t)}</span>
-                                            <span className="flex shrink-0 gap-1.5 font-mono text-[10px] font-bold">
-                                                <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">+{change.added.length}</span>
-                                                <span className="rounded bg-rose-100 px-1.5 py-0.5 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">-{change.removed.length}</span>
-                                            </span>
+                                        <div key={change.role} className="overflow-hidden rounded-xl bg-slate-50 dark:bg-slate-950/40">
+                                            <button
+                                                type="button"
+                                                onClick={() => setExpandedReviewRole((current) => current === change.role ? '' : change.role)}
+                                                aria-expanded={expandedReviewRole === change.role}
+                                                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs"
+                                            >
+                                                <span className="flex min-w-0 items-center gap-1.5 truncate font-bold text-slate-800 dark:text-slate-200">
+                                                    {expandedReviewRole === change.role ? <ChevronDown size={13} /> : <ChevronRight size={13} className="rtl-flip" />}
+                                                    {roleLabel(change.role, t)}
+                                                </span>
+                                                <span className="flex shrink-0 gap-1.5 font-mono text-[10px] font-bold">
+                                                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">+{change.added.length}</span>
+                                                    <span className="rounded bg-rose-100 px-1.5 py-0.5 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">-{change.removed.length}</span>
+                                                </span>
+                                            </button>
+                                            {expandedReviewRole === change.role && (
+                                                <div className="space-y-1 border-t border-slate-200/70 px-3 py-2 dark:border-slate-800">
+                                                    {change.added.map((id) => <ChangeDetail key={`add-${id}`} permission={permissionById.get(id)} type="added" t={t} />)}
+                                                    {change.removed.map((id) => <ChangeDetail key={`remove-${id}`} permission={permissionById.get(id)} type="removed" t={t} />)}
+                                                </div>
+                                            )}
                                         </div>
                                     ))
                                 )}
@@ -838,9 +1330,23 @@ const RoleManagement = ({ embedded = false }) => {
                 </div>
             )}
 
-            <ConfirmDialog isOpen={saveConfirmOpen} onClose={() => setSaveConfirmOpen(false)} onConfirm={saveChanges} title={t('rbac.confirm.title', { defaultValue: 'Apply Role Permission Changes' })} message={t('rbac.confirm.message', { count: dirtyRoles.size, defaultValue: `Are you sure you want to update permissions for ${dirtyRoles.size} roles?` })} confirmText={t('rbac.actions.save', { defaultValue: 'Confirm & Save' })} isLoading={isUpdating} />
+            <ConfirmDialog isOpen={saveConfirmOpen} onClose={() => setSaveConfirmOpen(false)} onConfirm={saveChanges} title={t('rbac.confirm.title', { defaultValue: 'Apply Role Permission Changes' })} message={t('rbac.confirm.message', { roles: dirtyRoles.size, changes: pendingChangeCount, critical: criticalChangeCount, defaultValue: `Apply ${pendingChangeCount} permission changes across ${dirtyRoles.size} roles? Critical changes: ${criticalChangeCount}.` })} confirmText={t('rbac.actions.save', { defaultValue: 'Confirm & Save' })} isLoading={isUpdating} />
             <ConfirmDialog isOpen={resetConfirmOpen} onClose={() => setResetConfirmOpen(false)} onConfirm={handleResetRole} title={t('rbac.confirm.resetTitle', { defaultValue: 'Reset Role Permissions' })} message={t('rbac.confirm.resetMessage', { role: roleLabel(selectedRole, t), defaultValue: `Reset ${roleLabel(selectedRole, t)} permissions to system default policy?` })} confirmText={t('rbac.actions.reset', { defaultValue: 'Reset' })} isLoading={isResetting} />
             <ConfirmDialog isOpen={cloneConfirmOpen} onClose={() => setCloneConfirmOpen(false)} onConfirm={handleCloneRole} title={t('rbac.confirm.cloneTitle', { defaultValue: 'Clone Role Permissions' })} message={t('rbac.confirm.cloneMessage', { target: roleLabel(selectedRole, t), source: roleLabel(compareRole, t), defaultValue: `Clone permissions from ${roleLabel(compareRole, t)} to ${roleLabel(selectedRole, t)}?` })} confirmText={t('rbac.actions.clone', { defaultValue: 'Clone & Apply' })} isLoading={isCloning} />
+            <TextPromptDialog
+                isOpen={Boolean(emergencyRevokeTarget)}
+                onClose={() => setEmergencyRevokeTarget(null)}
+                onConfirm={revokeEmergencyGrant}
+                title={t('rbac.breakGlass.revokeTitle', { defaultValue: 'Revoke emergency access' })}
+                message={t('rbac.breakGlass.revokeMessage', { name: emergencyRevokeTarget?.full_name, defaultValue: `Immediately end emergency access for ${emergencyRevokeTarget?.full_name || ''}.` })}
+                label={t('rbac.breakGlass.revokeReason', { defaultValue: 'Revocation reason' })}
+                confirmLabel={t('rbac.breakGlass.confirmRevoke', { defaultValue: 'Revoke access' })}
+                cancelLabel={t('rbac.actions.cancel', { defaultValue: 'Cancel' })}
+                validationMessage={t('rbac.breakGlass.reasonRequired', { defaultValue: 'Enter at least 10 characters.' })}
+                validate={(value) => value.length < 10 ? t('rbac.breakGlass.reasonRequired', { defaultValue: 'Enter at least 10 characters.' }) : ''}
+                inputProps={{ minLength: 10, maxLength: 500 }}
+                isLoading={isRevokingEmergencyAccess}
+            />
         </div>
     );
 };
@@ -861,6 +1367,7 @@ const Metric = ({ icon: Icon, label, value, detail }) => (
 const StatusPill = ({ tone = 'slate', children }) => {
     const tones = {
         amber: 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
+        sky: 'bg-sky-100 text-sky-900 border-sky-300 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800',
         emerald: 'bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
         rose: 'bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800',
         slate: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
@@ -893,8 +1400,28 @@ const ComparisonStat = ({ label, value, emphasis }) => (
     </div>
 );
 
+const ChangeDetail = ({ permission, type, t }) => {
+    if (!permission) return null;
+    const added = type === 'added';
+    return (
+        <div className="flex items-start gap-2 text-[10px]">
+            <span className={`mt-0.5 font-mono font-black ${added ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                {added ? '+' : '−'}
+            </span>
+            <span className="min-w-0 flex-1 leading-4 text-slate-600 dark:text-slate-300">
+                <span className="font-bold">{permissionLabel(permission, t)}</span>
+                {permissionRisk(permission) === 'critical' && (
+                    <span className="ms-1 rounded bg-rose-100 px-1 py-0.5 text-[8px] font-black text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
+                        {t('rbac.risk.critical', { defaultValue: 'Critical' })}
+                    </span>
+                )}
+            </span>
+        </div>
+    );
+};
+
 const FilterSelect = ({ value, onChange, ariaLabel, children }) => (
-    <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={ariaLabel} className="input-field h-9 min-w-[135px] text-xs font-bold">
+    <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={ariaLabel} className="input-field h-9 w-full text-xs font-bold sm:w-auto sm:min-w-[135px]">
         {children}
     </select>
 );
@@ -906,14 +1433,18 @@ const LoadingState = () => (
     </section>
 );
 
-const RoleTopBarItem = ({ role, selected, assigned, total, dirty, onClick, t }) => {
+const RoleTopBarItem = ({ role, selected, assigned, dirty, onClick, onKeyDown, t }) => {
     const Icon = ROLE_ICONS[role] || ShieldCheck;
     return (
         <button
             type="button"
             role="tab"
+            id={roleTabId(role)}
             aria-selected={selected}
+            aria-controls="rbac-permission-panel"
+            tabIndex={selected ? 0 : -1}
             onClick={onClick}
+            onKeyDown={onKeyDown}
             className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${selected
                     ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 ring-1 ring-emerald-500'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
@@ -921,7 +1452,7 @@ const RoleTopBarItem = ({ role, selected, assigned, total, dirty, onClick, t }) 
         >
             <Icon size={14} className={selected ? 'text-white' : 'text-slate-400 dark:text-slate-500'} />
             <span>{roleLabel(role, t)}</span>
-            {PROTECTED_ROLES.has(role) && <LockKeyhole size={11} className={selected ? 'text-amber-300' : 'text-amber-500'} />}
+            {(PROTECTED_ROLES.has(role) || PORTAL_ROLES.has(role)) && <LockKeyhole size={11} className={selected ? 'text-amber-300' : 'text-amber-500'} aria-label={PORTAL_ROLES.has(role) ? t('rbac.values.portalManaged', { defaultValue: 'Portal managed' }) : t('rbac.values.protected', { defaultValue: 'Protected' })} />}
             {dirty && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />}
             <span className={`font-mono text-[10px] ${selected ? 'text-emerald-100' : 'text-slate-400'}`}>
                 ({assigned})
@@ -930,9 +1461,68 @@ const RoleTopBarItem = ({ role, selected, assigned, total, dirty, onClick, t }) 
     );
 };
 
-const PermissionGroup = ({ moduleName, permissions, role, assigned, locked, collapsed, onToggleCollapse, onToggle, onToggleModuleAll, t }) => {
+/**
+ * Permission ownership view: answers the operational question "who has this
+ * permission?" without forcing an administrator to click through every role.
+ * It reuses the same local staged state and toggle handler as the role view,
+ * so both views are one editor rather than two competing sources of truth.
+ */
+const PermissionOwnershipMatrix = ({ permissions, roles, localPermissions, canEditRole, onToggle, t }) => (
+    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/70">
+        <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
+            <p className="text-xs font-black text-slate-800 dark:text-slate-100">
+                {t('rbac.viewMode.ownershipTitle', { defaultValue: 'Permission ownership' })}
+            </p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                {t('rbac.viewMode.ownershipDescription', { defaultValue: 'See every role that holds a permission and adjust grants directly.' })}
+            </p>
+        </div>
+        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {permissions.length === 0 ? (
+                <p className="p-8 text-center text-xs font-semibold text-slate-500">{t('rbac.states.noFilteredPermissions', { defaultValue: 'No permissions match the current filters.' })}</p>
+            ) : permissions.map((permission) => {
+                const owners = roles.filter((role) => (localPermissions[role] || []).includes(permission.permission_id));
+                return (
+                    <div key={permission.permission_id} className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)] lg:items-center">
+                        <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{permissionLabel(permission, t)}</p>
+                                <RiskBadge permission={permission} t={t} />
+                            </div>
+                            <code dir="ltr" className="mt-1 block w-fit rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400">{permission.name}</code>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5" aria-label={t('rbac.viewMode.ownersLabel', { permission: permissionLabel(permission, t), defaultValue: `Roles with ${permissionLabel(permission, t)}` })}>
+                            {roles.map((role) => {
+                                const granted = owners.includes(role);
+                                const editable = canEditRole(role) && !(DEVELOPER_ONLY_PERMISSIONS.has(permission.name) && role !== 'Developer');
+                                return (
+                                    <button
+                                        key={role}
+                                        type="button"
+                                        aria-pressed={granted}
+                                        disabled={!editable}
+                                        onClick={() => onToggle(role, permission.permission_id)}
+                                        title={!editable ? t('rbac.values.locked', { defaultValue: 'Managed by policy' }) : undefined}
+                                        className={`inline-flex min-h-7 items-center gap-1 rounded-full border px-2.5 text-[10px] font-bold transition ${granted ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-slate-200 bg-white text-slate-400 hover:border-teal-300 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500 dark:hover:border-teal-700 dark:hover:text-teal-300'} disabled:cursor-not-allowed disabled:opacity-50`}
+                                    >
+                                        <span className={`h-1.5 w-1.5 rounded-full ${granted ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                                        {roleLabel(role, t)}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    </div>
+);
+
+const PermissionGroup = ({ moduleName, permissions, role, assigned, locked, collapsed, onToggleCollapse, onToggle, onToggleModuleAll, developerOnlyPermissions, t }) => {
     const granted = permissions.filter((permission) => assigned.includes(permission.permission_id)).length;
-    const allModuleGranted = granted === permissions.length;
+    const grantablePermissions = permissions.filter((permission) => role === 'Developer' || !developerOnlyPermissions.has(permission.name));
+    const grantableCount = grantablePermissions.length;
+    const allGrantableGranted = grantableCount > 0 && grantablePermissions.every((permission) => assigned.includes(permission.permission_id));
 
     return (
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
@@ -946,10 +1536,13 @@ const PermissionGroup = ({ moduleName, permissions, role, assigned, locked, coll
                     {!locked && (
                         <button
                             type="button"
-                            onClick={() => onToggleModuleAll(!allModuleGranted)}
-                            className="text-[10px] font-bold text-emerald-700 hover:underline dark:text-emerald-400"
+                            onClick={() => onToggleModuleAll(!allGrantableGranted)}
+                            disabled={grantableCount === 0}
+                            className="text-[10px] font-bold text-emerald-700 hover:underline disabled:cursor-not-allowed disabled:opacity-40 dark:text-emerald-400"
                         >
-                            {allModuleGranted ? 'Revoke All' : 'Grant All'}
+                            {allGrantableGranted
+                                ? t('rbac.actions.revokeModuleVisible', { count: permissions.length, defaultValue: 'Revoke visible' })
+                                : t('rbac.actions.grantModuleVisible', { count: grantableCount, defaultValue: 'Grant visible' })}
                         </button>
                     )}
                     <span className="rounded-lg border border-slate-200 bg-white px-2.5 py-0.5 font-mono text-[10px] font-bold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
@@ -962,16 +1555,22 @@ const PermissionGroup = ({ moduleName, permissions, role, assigned, locked, coll
                 <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
                     {permissions.map((permission) => {
                         const checked = assigned.includes(permission.permission_id);
+                        const developerOnly = developerOnlyPermissions.has(permission.name);
+                        const permissionLocked = locked || (developerOnly && role !== 'Developer' && !checked);
                         return (
-                            <div key={permission.permission_id} className="flex items-start justify-between gap-4 px-4 py-3 transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/30">
+                            <div key={permission.permission_id} className={`flex items-start justify-between gap-4 px-4 py-3 transition-colors ${permissionLocked ? 'bg-slate-50/50 dark:bg-slate-950/20' : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/30'}`}>
                                 <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
                                         <p className="text-xs font-bold text-slate-900 dark:text-slate-100 sm:text-sm">{permissionLabel(permission, t)}</p>
                                         <RiskBadge permission={permission} t={t} />
+                                        {developerOnly && <DeveloperOnlyBadge t={t} />}
                                     </div>
                                     <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">{permissionDescription(permission, t)}</p>
+                                    <code dir="ltr" className="mt-1 block w-fit rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400">{permission.name}</code>
                                 </div>
-                                <PermissionToggle checked={checked} disabled={locked} onChange={() => onToggle(role, permission.permission_id)} label={t('rbac.values.toggleLabel', { permission: permissionLabel(permission, t), role: roleLabel(role, t) })} />
+                                <PermissionToggle checked={checked} disabled={permissionLocked} onChange={() => onToggle(role, permission.permission_id)} label={developerOnly && role !== 'Developer' && !checked
+                                    ? t('rbac.values.developerOnlyToggleLabel', { permission: permissionLabel(permission, t), defaultValue: `${permissionLabel(permission, t)} is reserved for Developer` })
+                                    : t('rbac.values.toggleLabel', { permission: permissionLabel(permission, t), role: roleLabel(role, t) })} />
                             </div>
                         );
                     })}
@@ -989,10 +1588,17 @@ const PermissionToggle = ({ checked, disabled, onChange, label }) => (
         aria-label={label}
         onClick={onChange}
         disabled={disabled}
-        className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${checked ? (disabled ? 'bg-slate-400' : 'bg-emerald-600 dark:bg-emerald-500') : 'bg-slate-200 dark:bg-slate-700'}`}
+        className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${checked ? (disabled ? 'bg-slate-400' : 'bg-emerald-600 dark:bg-emerald-500') : 'bg-slate-200 dark:bg-slate-700'}`}
     >
-        <span aria-hidden="true" className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${checked ? 'translate-x-4 rtl:-translate-x-4' : 'translate-x-0'}`} />
+        <span aria-hidden="true" className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${checked ? 'translate-x-5 rtl:-translate-x-5' : 'translate-x-0'}`} />
     </button>
+);
+
+const DeveloperOnlyBadge = ({ t }) => (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[9px] font-bold text-violet-800 dark:border-violet-800/60 dark:bg-violet-950/40 dark:text-violet-300">
+        <LockKeyhole size={9} />
+        {t('rbac.values.developerOnly', { defaultValue: 'Developer only' })}
+    </span>
 );
 
 const RiskBadge = ({ permission, t }) => {
@@ -1028,23 +1634,77 @@ const FilteredEmpty = ({ t, onReset }) => (
 const roleLabel = (role, t) => t(`rbac.roles.${role}`, { defaultValue: humanize(role) });
 const moduleLabel = (module, t) => t(`rbac.modules.${module || 'Other'}`, { defaultValue: humanize(module || t('rbac.values.other', { defaultValue: 'Other' })) });
 const permissionLabel = (permission, t) => {
-    const [action, ...resourceParts] = String(permission?.name || '').split('_');
+    if (!permission?.name) return '';
+    const exactName = t(`rbac.permissionNames.${permission.name}`, { defaultValue: '' });
+    if (exactName) return exactName;
+
+    const [action, ...resourceParts] = String(permission.name).split('_');
     const resource = resourceParts.join('_');
     return t('rbac.values.permissionLabel', {
         action: t(`rbac.permissionActions.${action}`, { defaultValue: humanize(action) }),
         resource: t(`rbac.permissionResources.${resource}`, { defaultValue: humanize(resource) }),
-        defaultValue: humanize(permission?.name)
+        defaultValue: humanize(permission.name)
     });
 };
-const permissionDescription = (permission, t) => permission.description || t('rbac.values.noDescription', { defaultValue: 'No description specified' });
+const permissionDescription = (permission, t) => {
+    if (!permission?.name) return '';
+    const exactDesc = t(`rbac.permissionDescriptions.${permission.name}`, { defaultValue: '' });
+    if (exactDesc) return exactDesc;
+    return permission.description || t('rbac.values.noDescription', { defaultValue: 'No description specified' });
+};
 const permissionAction = (permission) => String(permission?.name || '').split('_')[0] || 'OTHER';
+const permissionActionLabel = (action, t) => t(`rbac.permissionActions.${action}`, { defaultValue: humanize(action) });
 const permissionRisk = (permission) => {
+    // Server policy first (permissions.risk_level, migration 161); the name
+    // heuristic is only a fallback for older cached payloads.
+    const serverRisk = permission?.risk_level;
+    if (serverRisk === 'critical' || serverRisk === 'sensitive' || serverRisk === 'standard') return serverRisk;
     const name = String(permission?.name || '');
-    if (/^(DELETE|MERGE|FINALIZE|AMEND|ISSUE_REFUNDS|CLOSE_|MANAGE_ROLES|MANAGE_USERS|MANAGE_BACKUPS|MANAGE_SETTINGS|MANAGE_INTEGRATIONS|ANONYMIZE)/.test(name)) return 'critical';
-    if (/^(CREATE|EDIT|PERFORM|WRITE|REVIEW|APPROVE|DELIVER|PROCESS|MANAGE|EXPORT|ADJUST|RECEIVE|APPLY|DOWNLOAD|OVERRIDE|RECONCILE|IMPORT|UPLOAD)/.test(name)) return 'sensitive';
+    if (/^(DELETE|MERGE|FINALIZE|AMEND|ISSUE_REFUNDS|CLOSE_|MANAGE_ROLES|MANAGE_USERS|MANAGE_BACKUPS|MANAGE_SETTINGS|MANAGE_INTEGRATIONS|ANONYMIZE|RESTORE_BACKUPS|MANAGE_DEVELOPER_ROLE|MANAGE_PROTECTED_ROLES|MANAGE_DATABASE_CONFIG|MANAGE_SYSTEM_RUNTIME|MANAGE_SECRET_SETTINGS|LOCK_PAYROLL|VOID_INVOICES)/.test(name)) return 'critical';
+    if (/^(CREATE|EDIT|PERFORM|WRITE|REVIEW|APPROVE|DELIVER|PROCESS|MANAGE|EXPORT|ADJUST|RECEIVE|APPLY|DOWNLOAD|OVERRIDE|RECONCILE|IMPORT|UPLOAD|CALCULATE|PAY_|POST_|SUBMIT_|REQUEST_|ASSIGN|RESOLVE)/.test(name)) return 'sensitive';
     return 'standard';
 };
 const samePermissionSet = (first = [], second = []) => first.length === second.length && first.every((id) => second.includes(id));
+const roleTabId = (role) => `rbac-role-tab-${String(role || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+const auditActionLabel = (action, t) => {
+    const keys = {
+        ROLE_PERMISSIONS_UPDATED: 'updated',
+        ROLE_PERMISSIONS_RESET: 'reset',
+        ROLE_PERMISSIONS_CLONED: 'cloned',
+        EMERGENCY_ACCESS_GRANTED: 'emergency',
+        EMERGENCY_ACCESS_REVOKED: 'emergencyRevoked',
+        EMERGENCY_ACCESS_DENIED: 'denied'
+    };
+    const key = keys[action] || 'event';
+    return t(`rbac.audit.actions.${key}`, { defaultValue: humanize(action) });
+};
+const auditEventText = (log, t) => {
+    const actor = log?.username || t('rbac.audit.systemActor', { defaultValue: 'System' });
+    if (log?.action === 'ROLE_PERMISSIONS_UPDATED') {
+        return t('rbac.audit.updated', { actor, role: roleLabel(log.details?.role, t), defaultValue: `${actor} updated ${roleLabel(log.details?.role, t)} permissions.` });
+    }
+    if (log?.action === 'ROLE_PERMISSIONS_RESET') {
+        return t('rbac.audit.reset', { actor, role: roleLabel(log.details?.role, t), defaultValue: `${actor} reset ${roleLabel(log.details?.role, t)} to defaults.` });
+    }
+    if (log?.action === 'ROLE_PERMISSIONS_CLONED') {
+        return t('rbac.audit.cloned', {
+            actor,
+            source: roleLabel(log.details?.sourceRole, t),
+            target: roleLabel(log.details?.targetRole, t),
+            defaultValue: `${actor} cloned ${roleLabel(log.details?.sourceRole, t)} to ${roleLabel(log.details?.targetRole, t)}.`
+        });
+    }
+    if (log?.action === 'EMERGENCY_ACCESS_GRANTED') {
+        return t('rbac.audit.emergency', { actor, defaultValue: `${actor} requested emergency access.` });
+    }
+    if (log?.action === 'EMERGENCY_ACCESS_REVOKED') {
+        return t('rbac.audit.emergencyRevoked', { actor, defaultValue: `${actor} revoked emergency access.` });
+    }
+    if (log?.action === 'EMERGENCY_ACCESS_DENIED') {
+        return t('rbac.audit.emergencyDenied', { actor, defaultValue: `${actor} failed emergency access verification.` });
+    }
+    return t('rbac.audit.generic', { actor, action: humanize(log?.action), defaultValue: `${actor}: ${humanize(log?.action)}` });
+};
 const csvCell = (value) => {
     let text = String(value ?? '');
     if (/^[=+\-@]/.test(text)) text = `'${text}`;

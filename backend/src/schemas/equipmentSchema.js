@@ -1,18 +1,30 @@
 const { z } = require('zod');
 const { calendarDateSchema } = require('../utils/dateValidation');
 const calendarDate = calendarDateSchema();
+const optionalTrimmedString = (max) => z.preprocess(
+    value => (value === '' || value === undefined || value === null ? undefined : String(value).trim()),
+    z.string().trim().max(max).optional()
+);
+const optionalCalendarDate = z.preprocess(
+    value => (value === '' || value === undefined || value === null ? undefined : String(value).trim()),
+    calendarDate.optional()
+);
 
 // ─── Modalities (Machines) ────────────────────────────────────────────────────
 
 const createMachineSchema = z.object({
     name: z.string().trim().min(2).max(50),
     type: z.enum(['MRI', 'CT', 'X-Ray', 'Ultrasound', 'Mammography', 'Cath Lab', 'Panoramic X-Ray', 'PET-CT', 'Fluoroscopy', 'DEXA']),
-    roomNumber: z.string().trim().max(20).optional(),
-    serialNumber: z.string().trim().max(100).optional(),
-    manufacturer: z.string().trim().max(100).optional(),
-    model: z.string().trim().max(100).optional(),
-    installationDate: calendarDate.optional(),
-    location: z.string().trim().max(255).optional(),
+    roomId: z.preprocess(
+        value => (value === '' || value === null || value === undefined ? undefined : String(value).trim()),
+        z.string().uuid().optional()
+    ),
+    roomNumber: optionalTrimmedString(20),
+    serialNumber: optionalTrimmedString(100),
+    manufacturer: optionalTrimmedString(100),
+    model: optionalTrimmedString(100),
+    installationDate: optionalCalendarDate,
+    location: optionalTrimmedString(255),
     status: z.enum(['Active', 'Out of Service', 'Under Maintenance']).optional().default('Active')
 });
 

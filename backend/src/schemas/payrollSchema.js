@@ -34,6 +34,8 @@ const createPayrollPeriodSchema = z.object({
 
 const createCompensationProfileSchema = z.object({
     userId: z.string().uuid(),
+    branchId: optionalUuid,
+    currencyCode: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).default('EGP'),
     salaryType: z.enum(['Monthly', 'Hourly']).default('Monthly'),
     baseSalary: money.default(0),
     hourlyRate: money.default(0),
@@ -62,11 +64,13 @@ const cancelPayrollPeriodSchema = z.object({
 
 const updateCompensationProfileSchema = z.object({
     effectiveTo: dateString,
-    isActive: strictBoolean(true),
+    isActive: strictBoolean(false),
     notes: optionalString(2000)
 });
 
 const createPayrollRuleSchema = z.object({
+    branchId: optionalUuid,
+    currencyCode: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).default('EGP'),
     ruleType: z.enum(['Overtime', 'Late', 'EarlyLeave', 'Absence', 'Allowance', 'Deduction', 'Penalty', 'EmployerContribution']),
     name: z.string().trim().min(2).max(120),
     calculationMethod: z.enum(['FixedAmount', 'PercentageOfBase', 'PercentageOfGross', 'HourlyMultiplier', 'PerMinute', 'PerDay']),
@@ -100,18 +104,22 @@ const createPayrollRuleSchema = z.object({
 });
 
 const updatePayrollRuleStatusSchema = z.object({
-    status: z.enum(['Approved', 'Rejected']),
+    status: z.enum(['Approved', 'Rejected', 'Cancelled']),
     notes: optionalString(2000)
 });
 
 const createDeductionSchema = z.object({
     userId: z.string().uuid(),
+    branchId: optionalUuid,
+    currencyCode: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).default('EGP'),
     name: z.string().trim().min(2).max(140),
     deductionType: z.enum(['Fixed', 'Percentage', 'Installment', 'Advance', 'Loan', 'Tax', 'SocialInsurance', 'Other']).default('Fixed'),
     amount: money.default(0),
     percentage: percentage.default(0),
     totalAmount: z.preprocess(emptyToUndefined, money.optional()),
     remainingAmount: z.preprocess(emptyToUndefined, money.optional()),
+    recurrenceType: z.enum(['OneTime', 'Recurring', 'Installment']).default('OneTime'),
+    maxOccurrences: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().max(120).optional()),
     startDate: dateString,
     endDate: z.preprocess(emptyToUndefined, dateString.optional()),
     status: z.literal('Draft').default('Draft'),
@@ -135,23 +143,46 @@ const createDeductionSchema = z.object({
         if (total <= 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['totalAmount'], message: 'Installment deductions require a positive total amount' });
         if (remaining > total) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['remainingAmount'], message: 'Remaining amount cannot exceed total amount' });
         if (data.amount > remaining) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'Installment amount cannot exceed remaining amount' });
+        if (data.recurrenceType !== 'Installment') ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['recurrenceType'], message: 'Installment, advance, and loan deductions require installment recurrence' });
+    }
+    if (data.recurrenceType === 'Installment' && !['Installment', 'Advance', 'Loan'].includes(data.deductionType)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['recurrenceType'], message: 'Installment recurrence requires an installment, advance, or loan deduction type' });
     }
 });
 
 const createPenaltySchema = z.object({
     userId: z.string().uuid(),
+    branchId: optionalUuid,
+    currencyCode: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).default('EGP'),
     attendanceId: optionalUuid,
     payrollPeriodId: optionalUuid,
     penaltyType: z.string().trim().min(2).max(60).default('Policy'),
     amount: positiveMoney,
+    incidentDate: dateString.default(() => new Date().toISOString().slice(0, 10)),
     reason: z.string().trim().min(3).max(2000),
     source: z.enum(['Manual', 'Attendance', 'Policy', 'Import']).default('Manual'),
     status: z.literal('Pending Approval').default('Pending Approval')
 });
 
 const updatePenaltyStatusSchema = z.object({
-    status: z.enum(['Approved', 'Rejected']),
+    status: z.enum(['Approved', 'Rejected', 'Cancelled']),
     notes: optionalString(2000)
+}).refine((data) => data.status !== 'Cancelled' || (data.notes?.trim().length ?? 0) >= 3, {
+    path: ['notes'],
+    message: 'Cancelled penalties require a reason'
+});
+
+const resolvePenaltyDisputeSchema = z.object({
+    status: z.enum(['Approved', 'Rejected']),
+    resolution: z.string().trim().min(3).max(2000)
+});
+
+const acknowledgePenaltySchema = z.object({
+    status: z.enum(['Acknowledged', 'Disputed']),
+    reason: optionalString(2000)
+}).refine((data) => data.status !== 'Disputed' || (data.reason?.length ?? 0) >= 3, {
+    path: ['reason'],
+    message: 'A dispute reason of at least 3 characters is required'
 });
 
 const updateDeductionStatusSchema = z.object({
@@ -189,6 +220,7 @@ const payrollQuerySchema = z.object({
     startDate: z.preprocess(emptyToUndefined, dateString.optional()),
     endDate: z.preprocess(emptyToUndefined, dateString.optional()),
     userId: optionalUuid,
+    periodId: optionalUuid,
     branchId: optionalUuid,
     currencyCode: z.preprocess(emptyToUndefined, z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).optional()),
     limit: z.coerce.number().int().min(1).max(500).default(100)
@@ -205,6 +237,8 @@ module.exports = {
     updateDeductionStatusSchema,
     createPenaltySchema,
     updatePenaltyStatusSchema,
+    acknowledgePenaltySchema,
+    resolvePenaltyDisputeSchema,
     calculatePayrollSchema,
     updatePayrollRunStatusSchema,
     payrollQuerySchema

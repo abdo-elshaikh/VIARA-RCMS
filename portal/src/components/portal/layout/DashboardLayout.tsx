@@ -1,8 +1,9 @@
-import { useEffect, useState, ReactNode } from "react";
+import { useEffect, useState, useRef, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronRight, CircleUserRound, LogOut, Menu, ShieldCheck, X } from "lucide-react";
 import LanguageToggle from "../../ui/LanguageToggle";
 import ThemeToggle from "../../ui/ThemeToggle";
+import { useFocusTrap } from "../../../hooks/use-focus-trap";
 
 interface TabItem {
   id?: string;
@@ -45,6 +46,9 @@ export const DashboardLayout = ({
   const language = (i18n.resolvedLanguage || i18n.language || "en").split("-")[0];
   const isRtl = language === "ar";
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const mobileNavRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  useFocusTrap(mobileNavRef, mobileNavOpen);
   const activeTabDetails = tabs.find(({ id, key }) => (id || key) === activeTab) || tabs[0];
   const ActiveSectionIcon = activeTabDetails?.icon;
 
@@ -61,11 +65,20 @@ export const DashboardLayout = ({
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMobileNavOpen(false);
     };
+    previouslyFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     window.addEventListener("keydown", handleKey);
     document.body.style.overflow = "hidden";
+    const animationFrame = window.requestAnimationFrame(() => {
+      mobileNavRef.current
+        ?.querySelector<HTMLElement>("button, a[href], [tabindex]:not([tabindex='-1'])")
+        ?.focus();
+    });
     return () => {
+      window.cancelAnimationFrame(animationFrame);
       window.removeEventListener("keydown", handleKey);
       document.body.style.overflow = "";
+      previouslyFocusedRef.current?.focus();
     };
   }, [mobileNavOpen]);
 
@@ -222,6 +235,7 @@ export const DashboardLayout = ({
 
       {mobileNavOpen && (
         <div
+          ref={mobileNavRef}
           className="fixed inset-0 z-[70] lg:hidden"
           role="dialog"
           aria-modal="true"

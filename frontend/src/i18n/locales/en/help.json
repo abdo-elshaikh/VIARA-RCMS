@@ -1,4 +1,4 @@
-﻿{
+{
   "eyebrow": "VIARA knowledge center",
   "title": "How can we help?",
   "description": "Practical, role-aware guidance for {{role}} workflows, security, and troubleshooting.",
@@ -9,6 +9,7 @@
   "searchPlaceholder": "Search patients, payments, reports, permissions...",
   "clearSearch": "Clear help search",
   "roles": {
+    "Developer": "Developer",
     "Admin": "Administrator",
     "Radiologist": "Radiologist",
     "Receptionist": "Reception",
@@ -18,7 +19,8 @@
     "Technician": "Technician",
     "Nurse": "Nurse",
     "Insurance_Staff": "Insurance staff",
-    "Marketing": "Marketing"
+    "Marketing": "Marketing",
+    "Referring_Doctor": "Referring doctor"
   },
   "quick": {
     "title": "Open your common workspaces",

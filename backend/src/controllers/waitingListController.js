@@ -4,7 +4,7 @@ const { validateEnum, validateUUID, VALID_WAITING_LIST_STATUSES } = require('../
 
 const getWaitingList = (db) => async (req, res, next) => {
     try {
-        const { status, active, modalityId, date, limit = 100, offset = 0 } = req.query;
+        const { status, active, modalityId, date, q, limit = 100, offset = 0 } = req.query;
 
         if (status) validateEnum(status, VALID_WAITING_LIST_STATUSES, 'status');
         if (modalityId) validateUUID(modalityId, 'modalityId');
@@ -31,14 +31,19 @@ const getWaitingList = (db) => async (req, res, next) => {
             query += ` AND wl.status = $${param++}`;
             values.push(status);
         } else if (active === 'true') {
-            query += ` AND wl.status IN ('Waiting', 'Contacted')`;
+            query += ` AND wl.status IN ('Waiting', 'Contacted', 'Offered')`;
         } else if (active === 'false') {
-            query += ` AND wl.status IN ('Scheduled', 'Cancelled')`;
+            query += ` AND wl.status IN ('Scheduled', 'Declined', 'Expired', 'Cancelled')`;
         }
 
         if (modalityId) {
             query += ` AND wl.modality_id = $${param++}`;
             values.push(modalityId);
+        }
+
+        if (date) {
+            query += ` AND (wl.preferred_date = $${param++} OR wl.preferred_date IS NULL)`;
+            values.push(date);
         }
 
         query += ` ORDER BY
@@ -50,17 +55,29 @@ const getWaitingList = (db) => async (req, res, next) => {
 
         const result = await db.query(query, values);
         
-        const mappedRows = result.rows.map(row => {
+        let mappedRows = result.rows.map(row => {
             const mapped = { ...row };
             if (row.first_name_enc || row.last_name_enc) {
                 mapped.patient_name = [decrypt(row.first_name_enc), decrypt(row.last_name_enc)]
                     .filter(Boolean)
                     .join(' ');
             }
+            delete row.first_name_enc;
+            delete row.last_name_enc;
             delete mapped.first_name_enc;
             delete mapped.last_name_enc;
             return mapped;
         });
+
+        if (q && q.trim()) {
+            const term = q.trim().toLowerCase();
+            mappedRows = mappedRows.filter(r =>
+                (r.mrn && r.mrn.toLowerCase().includes(term)) ||
+                (r.patient_name && r.patient_name.toLowerCase().includes(term)) ||
+                (r.exam_type_name && r.exam_type_name.toLowerCase().includes(term)) ||
+                (r.machine_name && r.machine_name.toLowerCase().includes(term))
+            );
+        }
 
         res.json(mappedRows);
     } catch (error) {
@@ -111,7 +128,7 @@ const createWaitingListEntry = (db) => async (req, res, next) => {
               AND preferred_date IS NOT DISTINCT FROM $4::date
               AND preferred_start_time IS NOT DISTINCT FROM $5::time
               AND preferred_end_time IS NOT DISTINCT FROM $6::time
-              AND status IN ('Waiting', 'Contacted')
+              AND status IN ('Waiting', 'Contacted', 'Offered')
             LIMIT 1
         `, [
             data.patientId,
@@ -184,10 +201,10 @@ const updateWaitingListEntry = (db) => async (req, res, next) => {
         }
 
         const existing = existingResult.rows[0];
-        if (['Scheduled', 'Cancelled'].includes(existing.status)) {
+        if (['Scheduled', 'Cancelled', 'Expired'].includes(existing.status)) {
             throw new AppError('Completed waiting list entries cannot be changed.', 409);
         }
-        if (data.status && !['Waiting', 'Contacted', 'Cancelled'].includes(data.status)) {
+        if (data.status && !['Waiting', 'Contacted', 'Offered', 'Declined', 'Cancelled'].includes(data.status)) {
             throw new AppError(`Invalid waiting list transition from ${existing.status} to ${data.status}.`, 409);
         }
 
@@ -247,11 +264,17 @@ const updateWaitingListEntry = (db) => async (req, res, next) => {
         ]);
 
         if (nextEntry.status !== existing.status) {
+            let reason = 'Status updated by staff';
+            if (nextEntry.status === 'Cancelled') reason = 'Cancelled by staff';
+            else if (nextEntry.status === 'Contacted') reason = 'Patient contacted by staff';
+            else if (nextEntry.status === 'Offered') reason = 'Slot offered to patient';
+            else if (nextEntry.status === 'Declined') reason = 'Patient declined slot offer';
+
             await client.query(
                 `INSERT INTO waiting_list_events
                  (waitlist_id, from_status, to_status, reason, changed_by)
                  VALUES ($1, $2, $3, $4, $5)`,
-                [id, existing.status, nextEntry.status, nextEntry.status === 'Cancelled' ? 'Cancelled by staff' : 'Status updated by staff', req.user.user_id]
+                [id, existing.status, nextEntry.status, reason, req.user.user_id]
             );
         }
 
@@ -268,8 +291,73 @@ const updateWaitingListEntry = (db) => async (req, res, next) => {
     }
 };
 
+const getWaitlistMatches = (db) => async (req, res, next) => {
+    try {
+        const { modalityId, examTypeId, date } = req.query;
+
+        if (modalityId) validateUUID(modalityId, 'modalityId');
+        if (examTypeId) validateUUID(examTypeId, 'examTypeId');
+
+        let query = `
+            SELECT wl.*,
+                   p.mrn, p.first_name_enc, p.last_name_enc,
+                   m.name as machine_name,
+                   et.name as exam_type_name
+            FROM waiting_list wl
+            JOIN patients p ON wl.patient_id = p.patient_id
+            LEFT JOIN modalities m ON wl.modality_id = m.modality_id
+            LEFT JOIN examination_types et ON wl.exam_type_id = et.type_id
+            WHERE wl.status IN ('Waiting', 'Contacted', 'Offered')
+        `;
+
+        const values = [];
+        let param = 1;
+
+        if (modalityId) {
+            query += ` AND (wl.modality_id = $${param++} OR wl.modality_id IS NULL)`;
+            values.push(modalityId);
+        }
+        if (examTypeId) {
+            query += ` AND (wl.exam_type_id = $${param++} OR wl.exam_type_id IS NULL)`;
+            values.push(examTypeId);
+        }
+        if (date) {
+            query += ` AND (wl.preferred_date = $${param++} OR wl.preferred_date IS NULL)`;
+            values.push(date);
+        }
+
+        query += ` ORDER BY
+            CASE wl.priority WHEN 'Emergency' THEN 1 WHEN 'Urgent' THEN 2 ELSE 3 END,
+            wl.created_at ASC
+            LIMIT 10
+        `;
+
+        const result = await db.query(query, values);
+
+        const mappedRows = result.rows.map(row => {
+            const mapped = { ...row };
+            if (row.first_name_enc || row.last_name_enc) {
+                mapped.patient_name = [decrypt(row.first_name_enc), decrypt(row.last_name_enc)]
+                    .filter(Boolean)
+                    .join(' ');
+            }
+            delete mapped.first_name_enc;
+            delete mapped.last_name_enc;
+            return mapped;
+        });
+
+        res.json({
+            count: mappedRows.length,
+            matches: mappedRows
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getWaitingList,
     createWaitingListEntry,
-    updateWaitingListEntry
+    updateWaitingListEntry,
+    getWaitlistMatches
 };

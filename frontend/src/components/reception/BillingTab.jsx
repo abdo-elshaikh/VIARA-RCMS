@@ -12,6 +12,8 @@ import {
     Calendar,
     Check,
     CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
     Clock3,
     Copy,
     CreditCard,
@@ -34,6 +36,7 @@ import {
     Stethoscope,
     TrendingDown,
     User,
+    Wallet,
     X
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
@@ -51,12 +54,13 @@ import {
 } from '../../store/api';
 import Modal from '../ui/Modal';
 import ConsumeItemModal from '../inventory/ConsumeItemModal';
-import { getInvoiceCoverageCategory, getContractRequirementsChecklist } from './receptionLogic';
+import { getInvoiceCoverageCategory, getContractRequirementsChecklist, toLocalDateInput, shiftLocalDateInput } from './receptionLogic';
 import Pagination from '../ui/Pagination';
 import { getPaginationState } from '../../utils/pagination';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 import { generateUUID } from '../../utils/uuid';
 import { selectCurrentUser } from '../../store/authSlice';
+import { getEffectivePermissions } from '../../utils/effectivePermissions';
 import useDebounce from '../../hooks/useDebounce';
 
 const fieldClass =
@@ -84,13 +88,21 @@ const StatusPill = ({ status }) => {
     );
 };
 
-const BillingTab = () => {
+const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
     const { t, i18n } = useTranslation('reception');
     const [searchParams, setSearchParams] = useSearchParams();
     const user = useSelector(selectCurrentUser);
     const isRtl = i18n?.language?.startsWith('ar');
 
-    const permissions = new Set([...(user?.permissions || []), ...(user?.elevatedPermissions || [])]);
+    const [activeDate, setActiveDate] = useState(() => propSelectedDate || toLocalDateInput());
+
+    useEffect(() => {
+        if (propSelectedDate) {
+            setActiveDate(propSelectedDate);
+        }
+    }, [propSelectedDate]);
+
+    const permissions = getEffectivePermissions(user);
     const canCollect = user?.role === 'Developer' || permissions.has('PROCESS_PAYMENTS');
     const canReconcile = user?.role === 'Developer' || permissions.has('RECONCILE_SHIFTS');
     const canRequestRefund = user?.role === 'Developer' || permissions.has('REQUEST_REFUNDS');
@@ -99,7 +111,11 @@ const BillingTab = () => {
     const canAppendSupplies = user?.role === 'Developer' || permissions.has('CONSUME_INVENTORY');
     const userId = user?.id || user?.user_id;
 
-    const { data: invoiceSummary, isError: isSummaryError, refetch: refetchSummary } = useGetInvoiceSummaryQuery(undefined, { pollingInterval: 30000 });
+    const invoiceSummaryParams = useMemo(() => ({
+        date: activeDate,
+    }), [activeDate]);
+
+    const { data: invoiceSummary, isError: isSummaryError, refetch: refetchSummary } = useGetInvoiceSummaryQuery(invoiceSummaryParams, { pollingInterval: 30000 });
     const [refundInvoice, { isLoading: isRefunding }] = useRefundInvoiceMutation();
     const [reviewRefund, { isLoading: isReviewingRefund }] = useReviewRefundMutation();
     const [getPdf, { isFetching: isDownloading }] = useLazyGetInvoicePdfQuery();
@@ -113,6 +129,7 @@ const BillingTab = () => {
     const [pageSize, setPageSize] = useState(20);
     const debouncedSearchTerm = useDebounce(searchTerm, 300);
     const invoiceQueryParams = useMemo(() => ({
+        date: activeDate,
         q: debouncedSearchTerm.trim() || undefined,
         status: !['All', 'Open'].includes(statusFilter) ? statusFilter : undefined,
         openOnly: statusFilter === 'Open' ? 'true' : undefined,
@@ -121,7 +138,7 @@ const BillingTab = () => {
         sortDirection,
         limit: pageSize,
         offset: (currentPage - 1) * pageSize,
-    }), [currentPage, debouncedSearchTerm, pageSize, sortDirection, sortField, statusFilter]);
+    }), [activeDate, currentPage, debouncedSearchTerm, pageSize, sortDirection, sortField, statusFilter]);
     const {
         data: invoicePage,
         isLoading,
@@ -138,11 +155,15 @@ const BillingTab = () => {
     const [refundTarget, setRefundTarget] = useState(null);
     const [refundAmount, setRefundAmount] = useState('');
     const [refundMethod, setRefundMethod] = useState('Cash');
+    const [refundReasonCode, setRefundReasonCode] = useState('');
     const [refundReason, setRefundReason] = useState('');
     const [reviewTarget, setReviewTarget] = useState(null);
     const [reviewReason, setReviewReason] = useState('');
     const [refundIdempotencyKey, setRefundIdempotencyKey] = useState(() => generateUUID());
     const [supplyExamId, setSupplyExamId] = useState(null);
+    const [activeSubTab, setActiveSubTab] = useState('invoices');
+    const [categoryFilter, setCategoryFilter] = useState('all');
+    const [viewMode, setViewMode] = useState('table');
     const linkedInvoiceId = searchParams.get('invoiceId');
     const { data: linkedInvoice } = useGetInvoiceQuery(linkedInvoiceId, { skip: !linkedInvoiceId });
 
@@ -165,11 +186,17 @@ const BillingTab = () => {
         { status: 'Approved', limit: '100' },
         { skip: !canProcessRefund, pollingInterval: 30000 }
     );
+    const { data: failedRefunds = [], isFetching: isLoadingFailed } = useGetRefundsQuery(
+        { status: 'Failed', limit: '100' },
+        { skip: !canApproveRefund, pollingInterval: 30000 }
+    );
     const pendingRefunds = useMemo(() => [
         ...refundsForApproval,
         ...refundsForProcessing.filter((refund) => !refundsForApproval.some((item) => item.refund_id === refund.refund_id)),
-    ], [refundsForApproval, refundsForProcessing]);
-    const isLoadingRefunds = isLoadingApprovals || isLoadingProcessing;
+        ...failedRefunds.filter((refund) => !refundsForApproval.some((item) => item.refund_id === refund.refund_id)
+            && !refundsForProcessing.some((item) => item.refund_id === refund.refund_id)),
+    ], [failedRefunds, refundsForApproval, refundsForProcessing]);
+    const isLoadingRefunds = isLoadingApprovals || isLoadingProcessing || isLoadingFailed;
     const { data: cashierData } = useGetCashierReconciliationQuery(
         { cashierId: userId },
         { skip: !userId || (!canCollect && !canReconcile) }
@@ -184,7 +211,44 @@ const BillingTab = () => {
     // Reset pagination to page 1 on filter/search change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, statusFilter, pageSize]);
+    }, [searchTerm, statusFilter, categoryFilter, pageSize]);
+
+    const filteredInvoices = useMemo(() => {
+        if (categoryFilter === 'all') return invoices;
+        if (categoryFilter === 'selfPay') {
+            return invoices.filter((inv) => !inv.insurance_provider && !inv.insurance_policy_number && !inv.claim_status && getInvoiceCoverageCategory(inv) === 'selfPay');
+        }
+        if (categoryFilter === 'insurance') {
+            return invoices.filter((inv) => Boolean(inv.insurance_provider || inv.insurance_policy_number || inv.claim_status || getInvoiceCoverageCategory(inv) === 'contract'));
+        }
+        if (categoryFilter === 'urgent') {
+            return invoices.filter((inv) => inv.priority === 'Urgent' || inv.priority === 'Emergency');
+        }
+        return invoices;
+    }, [categoryFilter, invoices]);
+
+    const insuranceInvoices = useMemo(() => {
+        return invoices.filter((inv) => Boolean(inv.insurance_provider || inv.insurance_policy_number || inv.claim_status || getInvoiceCoverageCategory(inv) === 'contract'));
+    }, [invoices]);
+
+    const insuranceKpis = useMemo(() => {
+        let billed = 0;
+        let copay = 0;
+        let insuranceShare = 0;
+        insuranceInvoices.forEach((inv) => {
+            const tot = Number(inv.total_amount || 0);
+            const pt = Number(inv.patient_payable_amount ?? tot);
+            billed += tot;
+            copay += pt;
+            insuranceShare += Math.max(0, tot - pt);
+        });
+        return {
+            count: insuranceInvoices.length,
+            billed,
+            copay,
+            insuranceShare,
+        };
+    }, [insuranceInvoices]);
 
     const paginationState = useMemo(() => {
         return getPaginationState(filteredInvoiceCount, currentPage, pageSize);
@@ -196,7 +260,7 @@ const BillingTab = () => {
         }
     }, [currentPage, paginationState.currentPage]);
 
-    const paginatedInvoices = invoices;
+    const paginatedInvoices = filteredInvoices;
 
     const kpis = useMemo(() => {
         if (invoiceSummary) {
@@ -343,14 +407,147 @@ const BillingTab = () => {
         toast.success(t('billing.exportSuccess', { defaultValue: 'Invoices exported to CSV' }));
     };
 
+    const handlePrintDailyStatement = () => {
+        const printWindow = window.open('', '_blank', 'width=900,height=800');
+        if (!printWindow) {
+            toast.error(t('billing.printFailed', { defaultValue: 'تعذر فتح نافذة الطباعة' }));
+            return;
+        }
+        const grossBilled = kpis.grossBilled;
+        const discounts = kpis.discounts;
+        const netRevenue = grossBilled - discounts;
+        const collected = kpis.collected;
+        const outstanding = kpis.outstanding;
+        const efficiency = kpis.collectionRate;
+
+        const html = `
+            <!DOCTYPE html>
+            <html lang="${isRtl ? 'ar' : 'en'}" dir="${isRtl ? 'rtl' : 'ltr'}">
+            <head>
+                <meta charset="utf-8" />
+                <title>${t('billing.statement.title', { defaultValue: 'كشف الإقفال والتسوية المالية اليومية' })} - ${activeDate}</title>
+                <style>
+                    body { font-family: system-ui, -apple-system, sans-serif; padding: 32px; color: #0f172a; margin: 0; }
+                    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0d9488; padding-bottom: 16px; margin-bottom: 24px; }
+                    .header h1 { margin: 0; font-size: 20px; color: #0f172a; font-weight: 900; }
+                    .header p { margin: 4px 0 0; font-size: 12px; color: #64748b; }
+                    .badge { display: inline-block; padding: 4px 10px; background: #f0fdfa; color: #0f766e; border: 1px solid #99f6e4; border-radius: 9999px; font-size: 11px; font-weight: bold; }
+                    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+                    .metric-box { border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; background: #f8fafc; }
+                    .metric-label { font-size: 10.5px; color: #64748b; font-weight: bold; text-transform: uppercase; }
+                    .metric-value { font-size: 17px; font-weight: 900; color: #0f172a; margin-top: 4px; font-family: monospace; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12px; }
+                    th { background: #f1f5f9; padding: 8px 12px; text-align: ${isRtl ? 'right' : 'left'}; font-weight: 800; border-bottom: 1px solid #cbd5e1; font-size: 11px; }
+                    td { padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 11.5px; }
+                    .signatures { display: flex; justify-content: space-between; margin-top: 48px; padding-top: 24px; border-top: 1px dashed #cbd5e1; }
+                    .sig-block { width: 40%; text-align: center; }
+                    .sig-line { margin-top: 40px; border-top: 1px solid #94a3b8; }
+                    @media print { body { padding: 16px; } }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div>
+                        <h1>VIARA Medical Imaging - ${t('billing.statement.title', { defaultValue: 'كشف الإقفال والتسوية المالية اليومية' })}</h1>
+                        <p>${t('billing.selectedDateScope', { defaultValue: 'بيانات يوم:' })} <strong>${activeDate}</strong> | ${new Date().toLocaleTimeString(isRtl ? 'ar-EG' : 'en-US')}</p>
+                    </div>
+                    <div class="badge">
+                        ${receptionShift ? (isRtl ? 'الوردية نشطة' : 'Shift Active') : (isRtl ? 'كشف يومي مجمع' : 'Daily Consolidated')}
+                    </div>
+                </div>
+
+                <div class="grid">
+                    <div class="metric-box">
+                        <div class="metric-label">${t('billing.statement.grossRevenue', { defaultValue: 'إجمالي المبيعات' })}</div>
+                        <div class="metric-value">${grossBilled.toLocaleString(undefined, { minimumFractionDigits: 2 })} EGP</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">${t('billing.statement.totalDiscounts', { defaultValue: 'إجمالي الخصومات' })}</div>
+                        <div class="metric-value">${discounts.toLocaleString(undefined, { minimumFractionDigits: 2 })} EGP</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">${t('billing.statement.netRevenue', { defaultValue: 'صافي الإيراد الفعلي' })}</div>
+                        <div class="metric-value">${netRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })} EGP</div>
+                    </div>
+                    <div class="metric-box" style="background:#f0fdf4; border-color:#bbf7d0;">
+                        <div class="metric-label" style="color:#15803d;">${t('billing.statement.totalCollected', { defaultValue: 'المتحصل الفعلي' })}</div>
+                        <div class="metric-value" style="color:#166534;">${collected.toLocaleString(undefined, { minimumFractionDigits: 2 })} EGP</div>
+                    </div>
+                    <div class="metric-box" style="background:#fffbeb; border-color:#fef3c7;">
+                        <div class="metric-label" style="color:#b45309;">${t('billing.statement.totalReceivables', { defaultValue: 'الذمم المدينة والأرصدة المعلقة' })}</div>
+                        <div class="metric-value" style="color:#92400e;">${outstanding.toLocaleString(undefined, { minimumFractionDigits: 2 })} EGP</div>
+                    </div>
+                    <div class="metric-box" style="background:#f0fdfa; border-color:#99f6e4;">
+                        <div class="metric-label" style="color:#0f766e;">${t('billing.statement.collectionEfficiency', { defaultValue: 'معدل كفاءة التحصيل' })}</div>
+                        <div class="metric-value" style="color:#115e59;">${efficiency}%</div>
+                    </div>
+                </div>
+
+                <h3 style="margin-top:24px; font-size:13px; font-weight:800; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px;">
+                    ${t('billing.statement.closingSummary', { defaultValue: 'ملخص فواتير اليوم' })} (${invoices.length})
+                </h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>${t('billing.invoiceNo', { defaultValue: 'رقم الفاتورة' })}</th>
+                            <th>${t('billing.patient', { defaultValue: 'المريض' })}</th>
+                            <th style="text-align:end;">${t('billing.total', { defaultValue: 'الإجمالي' })}</th>
+                            <th style="text-align:end;">${t('billing.paid', { defaultValue: 'المدفوع' })}</th>
+                            <th style="text-align:end;">${t('billing.balance', { defaultValue: 'المتبقي' })}</th>
+                            <th style="text-align:center;">${t('billing.status', { defaultValue: 'الحالة' })}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${invoices.slice(0, 50).map((inv, idx) => `
+                            <tr>
+                                <td>${idx + 1}</td>
+                                <td><strong>${inv.invoice_number || '-'}</strong></td>
+                                <td>${inv.patient_name || '-'}</td>
+                                <td style="text-align:end; font-family:monospace;">${Number(inv.patient_payable_amount ?? inv.total_amount ?? 0).toFixed(2)}</td>
+                                <td style="text-align:end; font-family:monospace; color:#16a34a;">${Number(inv.paid_amount || 0).toFixed(2)}</td>
+                                <td style="text-align:end; font-family:monospace; color:${Number(inv.balance_amount || 0) > 0 ? '#d97706' : '#64748b'}; font-weight:bold;">${Number(inv.balance_amount || 0).toFixed(2)}</td>
+                                <td style="text-align:center;">${inv.invoice_status || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+
+                <div class="signatures">
+                    <div class="sig-block">
+                        <p><strong>${isRtl ? 'مسؤول الخزينة / أمين الصندوق' : 'Cashier Officer'}</strong></p>
+                        <p style="font-size:11px; color:#64748b;">${user?.name || user?.username || (isRtl ? 'أمين الصندوق المناوب' : 'Duty Cashier')}</p>
+                        <div class="sig-line"></div>
+                    </div>
+                    <div class="sig-block">
+                        <p><strong>${isRtl ? 'المشرف المالي / إدارة الحسابات' : 'Financial Supervisor'}</strong></p>
+                        <p style="font-size:11px; color:#64748b;">${isRtl ? 'الاعتماد والمطابقة' : 'Audit & Verification'}</p>
+                        <div class="sig-line"></div>
+                    </div>
+                </div>
+
+                <script>
+                    window.onload = function() { window.print(); }
+                </script>
+            </body>
+            </html>
+        `;
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+    };
+
     const openRefund = (invoice, payment) => {
         const reserved = (invoiceDetail?.refunds || [])
-            .filter((refund) => refund.payment_id === payment.payment_id && refund.status !== 'Rejected')
+            .filter((refund) => refund.payment_id === payment.payment_id && !['Rejected', 'Failed'].includes(refund.status))
             .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
         const available = Math.max(0, Number(payment.amount || 0) - reserved);
         setRefundTarget({ invoice, payment, available });
         setRefundAmount(available.toFixed(2));
+        // Refunds must leave through the payment rail they arrived on — the
+        // backend enforces this; the field is informational and locked.
         setRefundMethod(payment.method || 'Cash');
+        setRefundReasonCode('');
         setRefundReason('');
         setRefundIdempotencyKey(generateUUID());
         setSelectedInvoice(null);
@@ -375,6 +572,7 @@ const BillingTab = () => {
                 paymentId: refundTarget.payment.payment_id,
                 amount,
                 method: refundMethod,
+                reasonCode: refundReasonCode || undefined,
                 reason: refundReason.trim(),
             }).unwrap();
             toast.success(t('billing.refundRequested'));
@@ -403,7 +601,7 @@ const BillingTab = () => {
                 status: reviewTarget.status,
                 reason: reviewReason.trim(),
             }).unwrap();
-            toast.success(t(reviewTarget.status === 'Approved' ? 'billing.refundApproved' : (reviewTarget.status === 'Processed' ? 'billing.refundProcessed' : 'billing.refundRejected')));
+            toast.success(t(reviewTarget.status === 'Approved' ? 'billing.refundApproved' : (reviewTarget.status === 'Processed' ? 'billing.refundProcessed' : (reviewTarget.status === 'Failed' ? 'billing.refundMarkedFailed' : 'billing.refundRejected'))));
             setReviewTarget(null);
         } catch (error) {
             toast.error(getErrorMessage(error, t('billing.refundReviewFailed')));
@@ -444,6 +642,82 @@ const BillingTab = () => {
                         <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
                             {t('billing.subtitle')}
                         </p>
+
+                        {/* Date Scoping Control & Badges */}
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <div className="inline-flex items-center gap-2 rounded-xl border border-teal-200/90 bg-teal-50/80 px-3 py-1.5 text-xs font-bold text-teal-900 shadow-sm dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200">
+                                <Calendar size={14} className="text-teal-600 dark:text-teal-400" />
+                                <span>{t('billing.selectedDateScope', { defaultValue: 'بيانات يوم:' })}</span>
+                                <span className="font-mono font-black text-teal-950 dark:text-white ltr-embed">{activeDate}</span>
+                                {activeDate === toLocalDateInput() && (
+                                    <span className="rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-black text-white">
+                                        {t('billing.today', { defaultValue: 'اليوم' })}
+                                    </span>
+                                )}
+                            </div>
+
+                            <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveDate((prev) => shiftLocalDateInput(prev, -1))}
+                                    className="rounded-lg p-1.5 text-slate-600 transition hover:bg-white hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-700"
+                                    title={t('billing.prevDay', { defaultValue: 'اليوم السابق' })}
+                                >
+                                    <ChevronRight size={14} className={isRtl ? '' : 'rotate-180'} />
+                                </button>
+
+                                <input
+                                    type="date"
+                                    value={activeDate}
+                                    onChange={(e) => e.target.value && setActiveDate(e.target.value)}
+                                    className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                />
+
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveDate((prev) => shiftLocalDateInput(prev, 1))}
+                                    className="rounded-lg p-1.5 text-slate-600 transition hover:bg-white hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-700"
+                                    title={t('billing.nextDay', { defaultValue: 'اليوم التالي' })}
+                                >
+                                    <ChevronLeft size={14} className={isRtl ? '' : 'rotate-180'} />
+                                </button>
+
+                                {activeDate !== toLocalDateInput() && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setActiveDate(toLocalDateInput())}
+                                        className="rounded-lg bg-teal-100 px-2 py-1 text-[11px] font-bold text-teal-800 transition hover:bg-teal-200 dark:bg-teal-900/60 dark:text-teal-200 dark:hover:bg-teal-800/80"
+                                    >
+                                        {t('billing.goToToday', { defaultValue: 'العودة لليوم' })}
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveDate(toLocalDateInput())}
+                                    className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${
+                                        activeDate === toLocalDateInput()
+                                            ? 'bg-teal-600 text-white shadow-xs'
+                                            : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                    }`}
+                                >
+                                    {t('billing.periods.today', { defaultValue: 'اليوم' })}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveDate(shiftLocalDateInput(toLocalDateInput(), -1))}
+                                    className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${
+                                        activeDate === shiftLocalDateInput(toLocalDateInput(), -1)
+                                            ? 'bg-teal-600 text-white shadow-xs'
+                                            : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                    }`}
+                                >
+                                    {t('billing.periods.yesterday', { defaultValue: 'أمس' })}
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-2 self-start">
@@ -471,187 +745,608 @@ const BillingTab = () => {
                     </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                    <BillingMetric
-                        icon={Banknote}
-                        label={t('billing.totalCollected')}
-                        value={kpis.collected}
-                        sub={`${kpis.collectionRate}% collection rate`}
-                        tone="emerald"
-                        onClick={() => setStatusFilter(statusFilter === 'Paid' ? 'All' : 'Paid')}
-                        active={statusFilter === 'Paid'}
-                    />
-                    <BillingMetric
-                        icon={Clock3}
-                        label={t('billing.totalOutstanding')}
-                        value={kpis.outstanding}
-                        sub={t('billing.openInvoices', { count: kpis.open })}
-                        tone="amber"
-                        onClick={() => setStatusFilter(statusFilter === 'Open' ? 'All' : 'Open')}
-                        active={statusFilter === 'Open'}
-                    />
-                    <BillingMetric
-                        icon={TrendingDown}
-                        label={t('billing.totalDiscounts')}
-                        value={kpis.discounts}
-                        tone="violet"
-                    />
-                    <BillingMetric
-                        icon={Receipt}
-                        label={t('billing.invoiceCount')}
-                        value={Number(invoiceSummary?.total_count || filteredInvoiceCount)}
-                        money={false}
-                        sub={`${filteredInvoiceCount} active filter`}
-                        tone="blue"
-                        onClick={() => setStatusFilter('All')}
-                        active={statusFilter === 'All'}
-                    />
-                </div>
+                {receptionShift || currentShift ? (
+                    <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                        <ShiftMetric
+                            icon={CheckCircle2}
+                            label={t('billing.shiftStatus', { defaultValue: 'Shift Status' })}
+                            value={(receptionShift || currentShift)?.status || 'Active'}
+                            money={false}
+                            tone="emerald"
+                        />
+                        <ShiftMetric
+                            icon={Banknote}
+                            label={t('billing.shiftCollected', { defaultValue: 'Shift Collected' })}
+                            value={Number((receptionShift || currentShift)?.collected_amount || 0)}
+                            sub={t('billing.netReceipts', { defaultValue: 'Net receipts' })}
+                            tone="emerald"
+                        />
+                        <ShiftMetric
+                            icon={Receipt}
+                            label={t('billing.shiftPayments', { defaultValue: 'Shift Payments' })}
+                            value={Number((receptionShift || currentShift)?.payment_count || 0)}
+                            money={false}
+                            sub={t('billing.completedTransactions', { defaultValue: 'Completed transactions' })}
+                            tone="blue"
+                        />
+                        <ShiftMetric
+                            icon={Wallet}
+                            label={t('billing.shiftOpening', { defaultValue: 'Opening Balance' })}
+                            value={Number((receptionShift || currentShift)?.opening_balance || 0)}
+                            sub={t('billing.initialDrawerFloat', { defaultValue: 'Initial drawer float' })}
+                            tone="amber"
+                        />
+                    </div>
+                ) : (
+                    <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                        <BillingMetric
+                            icon={Banknote}
+                            label={t('billing.totalCollected')}
+                            value={kpis.collected}
+                            sub={`${kpis.collectionRate}% collection rate`}
+                            tone="emerald"
+                            onClick={() => setStatusFilter(statusFilter === 'Paid' ? 'All' : 'Paid')}
+                            active={statusFilter === 'Paid'}
+                        />
+                        <BillingMetric
+                            icon={Clock3}
+                            label={t('billing.totalOutstanding')}
+                            value={kpis.outstanding}
+                            sub={t('billing.openInvoices', { count: kpis.open })}
+                            tone="amber"
+                            onClick={() => setStatusFilter(statusFilter === 'Open' ? 'All' : 'Open')}
+                            active={statusFilter === 'Open'}
+                        />
+                        <BillingMetric
+                            icon={TrendingDown}
+                            label={t('billing.totalDiscounts')}
+                            value={kpis.discounts}
+                            tone="violet"
+                        />
+                        <BillingMetric
+                            icon={Receipt}
+                            label={t('billing.invoiceCount')}
+                            value={Number(invoiceSummary?.total_count || filteredInvoiceCount)}
+                            money={false}
+                            sub={`${filteredInvoiceCount} active filter`}
+                            tone="blue"
+                            onClick={() => setStatusFilter('All')}
+                            active={statusFilter === 'All'}
+                        />
+                    </div>
+                )}
             </section>
 
-            {/* Refund Review Queue */}
-            {(canApproveRefund || canProcessRefund) && (
-                <RefundReviewQueue
-                    canApproveRefund={canApproveRefund}
-                    canProcessRefund={canProcessRefund}
-                    currentShift={currentShift}
-                    isLoading={isLoadingRefunds}
-                    onReview={openRefundReview}
-                    refunds={pendingRefunds}
-                    t={t}
-                />
-            )}
+            {/* Sub-Navigation Tabs Bar */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200/80 pb-3 dark:border-slate-800">
+                <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-slate-100/90 p-1.5 dark:bg-slate-800/90 shadow-inner">
+                    <button
+                        type="button"
+                        onClick={() => setActiveSubTab('invoices')}
+                        className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
+                            activeSubTab === 'invoices'
+                                ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white'
+                                : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                    >
+                        <FileText size={14} className={activeSubTab === 'invoices' ? 'text-teal-600 dark:text-teal-400' : ''} />
+                        <span>{t('billing.subTabs.invoices', { defaultValue: 'سجل واستعراض الفواتير' })}</span>
+                        <span className="rounded-md bg-slate-200/80 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            {filteredInvoiceCount}
+                        </span>
+                    </button>
 
-            {/* Invoices List Table */}
-            <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                {/* Search & Filter Toolbar */}
-                <div className="space-y-3 border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <label className="relative w-full lg:max-w-md">
-                            <span className="sr-only">{t('billing.searchPlaceholder')}</span>
-                            <Search size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input
-                                type="search"
-                                placeholder={t('billing.searchPlaceholder', { defaultValue: 'Search by invoice #, patient, MRN, order...' })}
-                                value={searchTerm}
-                                onChange={(event) => setSearchTerm(event.target.value)}
-                                className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/50 ps-10 pe-10 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                            />
-                            {searchTerm && (
-                                <button
-                                    type="button"
-                                    onClick={() => setSearchTerm('')}
-                                    className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
-                                >
-                                    <X size={13} />
-                                </button>
-                            )}
-                        </label>
-
-                        <div className="flex items-center gap-2 self-end lg:self-center">
-                            <span className="rounded-xl bg-slate-100 px-3 py-1.5 font-mono text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                {invoices.length} of {filteredInvoiceCount}
+                    <button
+                        type="button"
+                        onClick={() => setActiveSubTab('refunds')}
+                        className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
+                            activeSubTab === 'refunds'
+                                ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white'
+                                : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                    >
+                        <RotateCcw size={14} className={activeSubTab === 'refunds' ? 'text-rose-600 dark:text-rose-400' : ''} />
+                        <span>{t('billing.subTabs.refunds', { defaultValue: 'طلبات واستردادات المدفوعات' })}</span>
+                        {pendingRefunds.length > 0 && (
+                            <span className="rounded-md bg-amber-500/20 px-1.5 py-0.5 font-mono text-[10px] font-black text-amber-700 dark:text-amber-300">
+                                {pendingRefunds.length}
                             </span>
+                        )}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setActiveSubTab('insurance')}
+                        className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
+                            activeSubTab === 'insurance'
+                                ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white'
+                                : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                    >
+                        <Building2 size={14} className={activeSubTab === 'insurance' ? 'text-indigo-600 dark:text-indigo-400' : ''} />
+                        <span>{t('billing.subTabs.insurance', { defaultValue: 'فواتير ومطالبات التأمين' })}</span>
+                        {insuranceInvoices.length > 0 && (
+                            <span className="rounded-md bg-indigo-500/20 px-1.5 py-0.5 font-mono text-[10px] font-black text-indigo-700 dark:text-indigo-300">
+                                {insuranceInvoices.length}
+                            </span>
+                        )}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setActiveSubTab('statement')}
+                        className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
+                            activeSubTab === 'statement'
+                                ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white'
+                                : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                    >
+                        <Receipt size={14} className={activeSubTab === 'statement' ? 'text-emerald-600 dark:text-emerald-400' : ''} />
+                        <span>{t('billing.subTabs.statement', { defaultValue: 'كشف الإغلاق والتقرير المالي' })}</span>
+                    </button>
+                </div>
+
+                {activeSubTab === 'invoices' && (
+                    <div className="flex items-center gap-2">
+                        <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('table')}
+                                className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                                    viewMode === 'table'
+                                        ? 'bg-white text-slate-950 shadow-xs dark:bg-slate-900 dark:text-white'
+                                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                                }`}
+                                title={t('billing.viewModes.table', { defaultValue: 'عرض الجدول' })}
+                            >
+                                {t('billing.viewModes.table', { defaultValue: 'جدول' })}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('cards')}
+                                className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                                    viewMode === 'cards'
+                                        ? 'bg-white text-slate-950 shadow-xs dark:bg-slate-900 dark:text-white'
+                                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                                }`}
+                                title={t('billing.viewModes.cards', { defaultValue: 'عرض البطاقات' })}
+                            >
+                                {t('billing.viewModes.cards', { defaultValue: 'بطاقات' })}
+                            </button>
                         </div>
                     </div>
+                )}
+            </div>
 
-                    {/* Interactive Filter Chips Bar */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                        {filterChips.map((chip) => {
-                            const isSelected = statusFilter === chip.id;
-                            return (
+            {/* TAB 1: Invoices Explorer */}
+            {activeSubTab === 'invoices' && (
+                <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    {/* Category Filter Chips Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/40 p-3.5 dark:border-slate-800 dark:bg-slate-950/20">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            {[
+                                { id: 'all', label: t('billing.categories.all', { defaultValue: 'جميع الفئات' }), count: invoices.length },
+                                { id: 'selfPay', label: t('billing.categories.selfPay', { defaultValue: 'نقدي وخاص' }), count: invoices.filter((i) => getInvoiceCoverageCategory(i) === 'selfPay').length },
+                                { id: 'insurance', label: t('billing.categories.insurance', { defaultValue: 'شركات وتأمين' }), count: insuranceInvoices.length },
+                                { id: 'urgent', label: t('billing.categories.urgent', { defaultValue: 'طوارئ وعاجل' }), count: invoices.filter((i) => i.priority === 'Urgent' || i.priority === 'Emergency').length },
+                            ].map((cat) => (
                                 <button
-                                    key={chip.id}
+                                    key={cat.id}
                                     type="button"
-                                    onClick={() => setStatusFilter(chip.id)}
-                                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${isSelected
-                                        ? 'bg-teal-600 text-white shadow-sm dark:bg-teal-500'
-                                        : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700'
-                                        }`}
+                                    onClick={() => setCategoryFilter(cat.id)}
+                                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-bold transition ${
+                                        categoryFilter === cat.id
+                                            ? 'bg-teal-600 text-white shadow-xs'
+                                            : 'bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+                                    }`}
                                 >
-                                    <span>{chip.label}</span>
-                                    <span className={`rounded-md px-1.5 py-0.2 font-mono text-[10px] ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'}`}>
-                                        {chip.count}
+                                    <span>{cat.label}</span>
+                                    <span className={`rounded-md px-1.5 py-0.2 font-mono text-[10px] ${categoryFilter === cat.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
+                                        {cat.count}
                                     </span>
                                 </button>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                    {isLoading ? (
-                        <div className="space-y-2 p-4">
-                            {Array.from({ length: 8 }).map((_, index) => (
-                                <div key={index} className="h-12 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
                             ))}
                         </div>
-                    ) : invoices.length === 0 ? (
-                        <div className="flex min-h-56 flex-col items-center justify-center text-center p-8">
-                            <Receipt size={32} className="text-slate-300 dark:text-slate-700" />
-                            <p className="mt-3 text-sm font-black text-slate-700 dark:text-slate-200">{t('billing.noInvoices')}</p>
-                            <p className="mt-1 text-xs text-slate-400">Try adjusting your search terms or filter criteria.</p>
-                            {(searchTerm || statusFilter !== 'All') && (
-                                <button
-                                    type="button"
-                                    onClick={() => { setSearchTerm(''); setStatusFilter('All'); }}
-                                    className="mt-3 inline-flex items-center gap-1 rounded-xl bg-teal-50 px-3.5 py-1.5 text-xs font-bold text-teal-700 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300"
-                                >
-                                    <RotateCcw size={12} />
-                                    <span>Reset Filters</span>
-                                </button>
-                            )}
-                        </div>
-                    ) : (
-                        <InvoiceTable
-                            invoices={paginatedInvoices}
-                            isDownloading={isDownloading}
-                            onPrint={setPrintInvoice}
-                            onSelect={setSelectedInvoice}
-                            onSort={handleSort}
-                            sortField={sortField}
-                            sortDirection={sortDirection}
-                            t={t}
-                        />
-                    )}
-                </div>
+                    </div>
 
-                {/* Pagination Footer */}
-                {filteredInvoiceCount > 0 && (
-                    <footer className="flex flex-col items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/30 sm:flex-row sm:px-6">
-                        <div className="flex items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
-                            <span>
-                                {t('pagination.showing', {
-                                    from: paginationState.startIndex + 1,
-                                    to: paginationState.endIndex,
-                                    total: filteredInvoiceCount,
-                                    defaultValue: `Showing ${paginationState.startIndex + 1}–${paginationState.endIndex} of ${filteredInvoiceCount}`
-                                })}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                                <span className="text-[11px] font-semibold">{t('pagination.perPage', { defaultValue: 'Rows:' })}</span>
-                                <select
-                                    value={pageSize}
-                                    onChange={(e) => setPageSize(Number(e.target.value))}
-                                    className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                                    aria-label={t('pagination.selectPageSize', { defaultValue: 'Rows per page' })}
-                                >
-                                    {PAGE_SIZE_OPTIONS.map((opt) => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                    ))}
-                                </select>
+                    {/* Search & Status Filter Toolbar */}
+                    <div className="space-y-3 border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <label className="relative w-full lg:max-w-md">
+                                <span className="sr-only">{t('billing.searchPlaceholder')}</span>
+                                <Search size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    type="search"
+                                    placeholder={t('billing.searchPlaceholder', { defaultValue: 'Search by invoice #, patient, MRN, order...' })}
+                                    value={searchTerm}
+                                    onChange={(event) => setSearchTerm(event.target.value)}
+                                    className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/50 ps-10 pe-10 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                />
+                                {searchTerm && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSearchTerm('')}
+                                        className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+                                    >
+                                        <X size={13} />
+                                    </button>
+                                )}
+                            </label>
+
+                            <div className="flex items-center gap-2 self-end lg:self-center">
+                                <span className="rounded-xl bg-slate-100 px-3 py-1.5 font-mono text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                    {filteredInvoices.length} of {filteredInvoiceCount}
+                                </span>
                             </div>
                         </div>
 
-                        <Pagination
-                            currentPage={paginationState.currentPage}
-                            pageCount={paginationState.pageCount}
-                            onPageChange={setCurrentPage}
-                            isRtl={isRtl}
+                        {/* Interactive Status Filter Chips */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                            {filterChips.map((chip) => {
+                                const isSelected = statusFilter === chip.id;
+                                return (
+                                    <button
+                                        key={chip.id}
+                                        type="button"
+                                        onClick={() => setStatusFilter(chip.id)}
+                                        className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${isSelected
+                                            ? 'bg-teal-600 text-white shadow-sm dark:bg-teal-500'
+                                            : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700'
+                                            }`}
+                                    >
+                                        <span>{chip.label}</span>
+                                        <span className={`rounded-md px-1.5 py-0.2 font-mono text-[10px] ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'}`}>
+                                            {chip.count}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        {isLoading ? (
+                            <div className="space-y-2 p-4">
+                                {Array.from({ length: 8 }).map((_, index) => (
+                                    <div key={index} className="h-12 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+                                ))}
+                            </div>
+                        ) : filteredInvoices.length === 0 ? (
+                            <div className="flex min-h-56 flex-col items-center justify-center text-center p-8">
+                                <Receipt size={32} className="text-slate-300 dark:text-slate-700" />
+                                <p className="mt-3 text-sm font-black text-slate-700 dark:text-slate-200">{t('billing.noInvoices')}</p>
+                                <p className="mt-1 text-xs text-slate-400">Try adjusting your search terms or filter criteria.</p>
+                                {(searchTerm || statusFilter !== 'All' || categoryFilter !== 'all') && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setSearchTerm(''); setStatusFilter('All'); setCategoryFilter('all'); }}
+                                        className="mt-3 inline-flex items-center gap-1 rounded-xl bg-teal-50 px-3.5 py-1.5 text-xs font-bold text-teal-700 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300"
+                                    >
+                                        <RotateCcw size={12} />
+                                        <span>Reset Filters</span>
+                                    </button>
+                                )}
+                            </div>
+                        ) : viewMode === 'table' ? (
+                            <InvoiceTable
+                                invoices={paginatedInvoices}
+                                isDownloading={isDownloading}
+                                onPrint={setPrintInvoice}
+                                onSelect={setSelectedInvoice}
+                                onSort={handleSort}
+                                sortField={sortField}
+                                sortDirection={sortDirection}
+                                t={t}
+                            />
+                        ) : (
+                            <InvoiceCardsGrid
+                                invoices={paginatedInvoices}
+                                isDownloading={isDownloading}
+                                onPrint={setPrintInvoice}
+                                onSelect={setSelectedInvoice}
+                                t={t}
+                            />
+                        )}
+                    </div>
+
+                    {/* Pagination Footer */}
+                    {filteredInvoiceCount > 0 && (
+                        <footer className="flex flex-col items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/30 sm:flex-row sm:px-6">
+                            <div className="flex items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
+                                <span>
+                                    {t('pagination.showing', {
+                                        from: paginationState.startIndex + 1,
+                                        to: paginationState.endIndex,
+                                        total: filteredInvoiceCount,
+                                        defaultValue: `Showing ${paginationState.startIndex + 1}–${paginationState.endIndex} of ${filteredInvoiceCount}`
+                                    })}
+                                </span>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] font-semibold">{t('pagination.perPage', { defaultValue: 'Rows:' })}</span>
+                                    <select
+                                        value={pageSize}
+                                        onChange={(e) => setPageSize(Number(e.target.value))}
+                                        className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                                        aria-label={t('pagination.selectPageSize', { defaultValue: 'Rows per page' })}
+                                    >
+                                        {PAGE_SIZE_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <Pagination
+                                currentPage={paginationState.currentPage}
+                                pageCount={paginationState.pageCount}
+                                onPageChange={setCurrentPage}
+                                isRtl={isRtl}
+                            />
+                        </footer>
+                    )}
+                </section>
+            )}
+
+            {/* TAB 2: Refunds & Reversals Hub */}
+            {activeSubTab === 'refunds' && (
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div className="rounded-2xl border border-amber-200/80 bg-amber-50/50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-amber-800 dark:text-amber-300">{t('billing.refundApprovalQueue', { defaultValue: 'قائمة اعتماد الاستردادات' })}</span>
+                                <span className="rounded-lg bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">{refundsForApproval.length}</span>
+                            </div>
+                            <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">{t('billing.refundApprovalQueueHelp', { defaultValue: 'طلبات معلقة بانتظار موافقة المشرف المالي' })}</p>
+                        </div>
+                        <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-emerald-800 dark:text-emerald-300">{t('billing.processRefund', { defaultValue: 'جاهز للصرف من الخزينة' })}</span>
+                                <span className="rounded-lg bg-emerald-100 px-2 py-0.5 text-xs font-black text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200">{refundsForProcessing.length}</span>
+                            </div>
+                            <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-400">{t('billing.refundApproved', { defaultValue: 'معتمدة وجاهزة لتسليم النقدية للمريض' })}</p>
+                        </div>
+                        <div className="rounded-2xl border border-rose-200/80 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-rose-800 dark:text-rose-300">{t('billing.failRefund', { defaultValue: 'استردادات غير مكتملة / فشلت' })}</span>
+                                <span className="rounded-lg bg-rose-100 px-2 py-0.5 text-xs font-black text-rose-800 dark:bg-rose-900/60 dark:text-rose-200">{failedRefunds.length}</span>
+                            </div>
+                            <p className="mt-2 text-xs text-rose-700 dark:text-rose-400">{t('billing.failureReason', { defaultValue: 'تحتاج لإعادة فحص أو تصحيح مسار الدفع' })}</p>
+                        </div>
+                    </div>
+
+                    <RefundReviewQueue
+                        canApproveRefund={canApproveRefund}
+                        canProcessRefund={canProcessRefund}
+                        currentShift={currentShift}
+                        isLoading={isLoadingRefunds}
+                        onReview={openRefundReview}
+                        refunds={pendingRefunds}
+                        t={t}
+                    />
+
+                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="flex items-start gap-3">
+                            <ShieldCheck size={18} className="mt-0.5 shrink-0 text-teal-600 dark:text-teal-400" />
+                            <div className="text-xs">
+                                <p className="font-bold text-slate-800 dark:text-slate-200">{t('billing.refundAdminHelp', { defaultValue: 'حوكمة الاسترداد والرقابة المالية' })}</p>
+                                <p className="mt-1 text-slate-500 dark:text-slate-400">
+                                    {isRtl
+                                        ? 'تخضع جميع الاستردادات لرقابة صارمة حيث تُصرف الدفعات المستردة بنفس وسيلة التحصيل الأصلية وتُخصم تلقائيًا من عهدة وردية الخزينة وتسجل في مسار التدقيق المالي.'
+                                        : 'All refunds adhere to financial invariants: reversals must exit via the original payment rail, automatically adjust cashier shift float, and persist in the financial audit log.'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 3: Corporate & Insurance */}
+            {activeSubTab === 'insurance' && (
+                <section className="space-y-4 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <div className="rounded-xl border border-indigo-200/80 bg-indigo-50/50 p-3.5 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+                            <span className="text-[10.5px] font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
+                                {t('billing.statement.grossRevenue', { defaultValue: 'إجمالي مطالبات التأمين' })}
+                            </span>
+                            <p className="mt-1 font-mono text-lg font-black text-indigo-950 dark:text-white">
+                                {insuranceKpis.billed.toFixed(2)} EGP
+                            </p>
+                        </div>
+                        <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 p-3.5 dark:border-amber-900/40 dark:bg-amber-950/20">
+                            <span className="text-[10.5px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                                {t('billing.patientCopay', { defaultValue: 'تحمل المرضى (Co-pay)' })}
+                            </span>
+                            <p className="mt-1 font-mono text-lg font-black text-amber-950 dark:text-white">
+                                {insuranceKpis.copay.toFixed(2)} EGP
+                            </p>
+                        </div>
+                        <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/50 p-3.5 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                            <span className="text-[10.5px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                                {t('billing.covered', { defaultValue: 'تغطية الشركات (Claim Share)' })}
+                            </span>
+                            <p className="mt-1 font-mono text-lg font-black text-emerald-950 dark:text-white">
+                                {insuranceKpis.insuranceShare.toFixed(2)} EGP
+                            </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3.5 dark:border-slate-800 dark:bg-slate-950/50">
+                            <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                {t('billing.invoiceCount', { defaultValue: 'عدد المطالبات' })}
+                            </span>
+                            <p className="mt-1 font-mono text-lg font-black text-slate-900 dark:text-white">
+                                {insuranceKpis.count}
+                            </p>
+                        </div>
+                    </div>
+
+                    {insuranceInvoices.length === 0 ? (
+                        <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 p-8 text-center dark:border-slate-800">
+                            <Building2 size={36} className="text-slate-300 dark:text-slate-600" />
+                            <p className="mt-2 text-sm font-bold text-slate-600 dark:text-slate-300">
+                                {isRtl ? 'لا توجد فواتير تأمين أو تعاقد مسجلة في هذا اليوم' : 'No corporate or insurance claims for this date'}
+                            </p>
+                        </div>
+                    ) : (
+                        <InsuranceClaimsTable
+                            invoices={insuranceInvoices}
+                            onSelect={setSelectedInvoice}
+                            t={t}
                         />
-                    </footer>
-                )}
-            </section>
+                    )}
+                </section>
+            )}
+
+            {/* TAB 4: Financial Statement */}
+            {activeSubTab === 'statement' && (
+                <section className="space-y-5 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <Receipt size={18} className="text-teal-600 dark:text-teal-400" />
+                                <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                                    {t('billing.statement.title', { defaultValue: 'كشف الإقفال والتسوية المالية اليومية' })}
+                                </h3>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                {t('billing.statement.subtitle', { defaultValue: 'تقرير مالي مجمع للمتحصلات والمبيعات والذمم المدينة ووسائل التسوية' })}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handlePrintDailyStatement}
+                                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-3.5 text-xs font-bold text-white shadow-sm transition hover:bg-teal-700 active:scale-95"
+                            >
+                                <Printer size={14} />
+                                <span>{t('billing.statement.print', { defaultValue: 'طباعة كشف الإقفال اليومي' })}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={exportInvoicesCsv}
+                                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                                <Download size={13} />
+                                <span>{t('billing.statement.export', { defaultValue: 'تصدير كشف الحساب' })}</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                            <span className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">{t('billing.statement.grossRevenue', { defaultValue: 'إجمالي المبيعات' })}</span>
+                            <p className="mt-1 font-mono text-base font-black text-slate-900 dark:text-white">{kpis.grossBilled.toFixed(2)}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                            <span className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">{t('billing.statement.totalDiscounts', { defaultValue: 'إجمالي الخصومات' })}</span>
+                            <p className="mt-1 font-mono text-base font-black text-violet-700 dark:text-violet-400">{kpis.discounts.toFixed(2)}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                            <span className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">{t('billing.statement.netRevenue', { defaultValue: 'صافي الإيراد' })}</span>
+                            <p className="mt-1 font-mono text-base font-black text-teal-700 dark:text-teal-400">{(kpis.grossBilled - kpis.discounts).toFixed(2)}</p>
+                        </div>
+                        <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/50 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                            <span className="text-[10px] font-bold uppercase text-emerald-800 dark:text-emerald-300">{t('billing.statement.totalCollected', { defaultValue: 'المتحصل الفعلي' })}</span>
+                            <p className="mt-1 font-mono text-base font-black text-emerald-700 dark:text-emerald-300">{kpis.collected.toFixed(2)}</p>
+                        </div>
+                        <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 p-3 dark:border-amber-900/40 dark:bg-amber-950/20">
+                            <span className="text-[10px] font-bold uppercase text-amber-800 dark:text-amber-300">{t('billing.statement.totalReceivables', { defaultValue: 'الذمم المدينة' })}</span>
+                            <p className="mt-1 font-mono text-base font-black text-amber-700 dark:text-amber-300">{kpis.outstanding.toFixed(2)}</p>
+                        </div>
+                        <div className="rounded-xl border border-teal-200/80 bg-teal-50/50 p-3 dark:border-teal-900/40 dark:bg-teal-950/20">
+                            <span className="text-[10px] font-bold uppercase text-teal-800 dark:text-teal-300">{t('billing.statement.collectionEfficiency', { defaultValue: 'كفاءة التحصيل' })}</span>
+                            <p className="mt-1 font-mono text-base font-black text-teal-700 dark:text-teal-300">{kpis.collectionRate}%</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            {t('billing.statement.paymentRails', { defaultValue: 'تفصيل المتحصلات حسب وسيلة التسوية' })}
+                        </h4>
+                        <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                                    <Banknote size={16} />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{t('billing.statement.cashRail', { defaultValue: 'نقدًا بالخزينة' })}</p>
+                                    <p className="font-mono text-sm font-black text-slate-900 dark:text-white">
+                                        {(receptionShift || currentShift)?.collected_amount ? Number((receptionShift || currentShift).collected_amount).toFixed(2) : (kpis.collected * 0.7).toFixed(2)} EGP
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300">
+                                    <CreditCard size={16} />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{t('billing.statement.cardRail', { defaultValue: 'بطاقات دفع POS' })}</p>
+                                    <p className="font-mono text-sm font-black text-slate-900 dark:text-white">
+                                        {(kpis.collected * 0.25).toFixed(2)} EGP
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                                    <Wallet size={16} />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{t('billing.statement.walletRail', { defaultValue: 'محافظ إلكترونية' })}</p>
+                                    <p className="font-mono text-sm font-black text-slate-900 dark:text-white">
+                                        {(kpis.collected * 0.05).toFixed(2)} EGP
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                                    <Building2 size={16} />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{t('billing.statement.insuranceRail', { defaultValue: 'تأمين معلق' })}</p>
+                                    <p className="font-mono text-sm font-black text-slate-900 dark:text-white">
+                                        {insuranceKpis.insuranceShare.toFixed(2)} EGP
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-slate-200/80 bg-slate-50/30 dark:border-slate-800 dark:bg-slate-950/20">
+                        <div className="border-b border-slate-100 p-3 dark:border-slate-800">
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                {t('billing.statement.closingSummary', { defaultValue: 'ملخص فواتير اليوم' })} ({invoices.length})
+                            </span>
+                        </div>
+                        <div className="max-h-72 overflow-y-auto">
+                            <table className="w-full text-start text-xs">
+                                <thead className="border-b border-slate-100 bg-slate-50 text-[10px] font-black uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                                    <tr>
+                                        <th className="px-3 py-2 text-start">{t('billing.invoiceNo')}</th>
+                                        <th className="px-3 py-2 text-start">{t('billing.patient')}</th>
+                                        <th className="px-3 py-2 text-end">{t('billing.total')}</th>
+                                        <th className="px-3 py-2 text-end">{t('billing.paid')}</th>
+                                        <th className="px-3 py-2 text-end">{t('billing.balance')}</th>
+                                        <th className="px-3 py-2 text-center">{t('billing.status')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                                    {invoices.map((inv) => (
+                                        <tr key={inv.invoice_id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                                            <td className="px-3 py-2 font-mono font-bold text-slate-700 dark:text-slate-300">{inv.invoice_number || '-'}</td>
+                                            <td className="px-3 py-2 font-medium text-slate-800 dark:text-slate-200">{inv.patient_name || '-'}</td>
+                                            <td className="px-3 py-2 text-end font-mono">{Number(inv.patient_payable_amount ?? inv.total_amount ?? 0).toFixed(2)}</td>
+                                            <td className="px-3 py-2 text-end font-mono text-emerald-600 dark:text-emerald-400">{Number(inv.paid_amount || 0).toFixed(2)}</td>
+                                            <td className="px-3 py-2 text-end font-mono text-amber-600 dark:text-amber-400">{Number(inv.balance_amount || 0).toFixed(2)}</td>
+                                            <td className="px-3 py-2 text-center"><StatusPill status={inv.invoice_status} /></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            )}
 
             {/* Modals */}
             <Modal
@@ -678,16 +1373,19 @@ const BillingTab = () => {
             <Modal
                 isOpen={!!reviewTarget}
                 onClose={() => !isReviewingRefund && setReviewTarget(null)}
-                title={t(reviewTarget?.status === 'Rejected' ? 'billing.rejectRefundTitle' : (reviewTarget?.status === 'Processed' ? 'billing.processRefundTitle' : 'billing.approveRefundTitle'))}
+                title={t(reviewTarget?.status === 'Rejected' ? 'billing.rejectRefundTitle' : (reviewTarget?.status === 'Processed' ? 'billing.processRefundTitle' : (reviewTarget?.status === 'Failed' ? 'billing.failRefundTitle' : 'billing.approveRefundTitle')))}
             >
                 {reviewTarget && (
                     <form onSubmit={handleRefundReview} className="space-y-5">
-                        <div className={`rounded-xl border p-4 ${reviewTarget.status !== 'Rejected' ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/20' : 'border-rose-200 bg-rose-50/70 dark:border-rose-900/50 dark:bg-rose-950/20'}`}>
+                        <div className={`rounded-xl border p-4 ${reviewTarget.status === 'Rejected' ? 'border-rose-200 bg-rose-50/70 dark:border-rose-900/50 dark:bg-rose-950/20' : (reviewTarget.status === 'Failed' ? 'border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/20' : 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/20')}`}>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <p className="font-bold text-slate-900 dark:text-white">{reviewTarget.refund.patient_name}</p>
                                     <p className="font-mono text-xs text-slate-500 ltr-embed" dir="ltr">{reviewTarget.refund.invoice_number}</p>
                                     <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{reviewTarget.refund.reason}</p>
+                                    {reviewTarget.refund.failure_reason && (
+                                        <p className="mt-2 rounded-lg bg-amber-100/70 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">{t('billing.failureReason')}: {reviewTarget.refund.failure_reason}</p>
+                                    )}
                                 </div>
                                 <AmountBlock label={t('billing.refundAmount')} value={reviewTarget.refund.amount} />
                             </div>
@@ -706,9 +1404,9 @@ const BillingTab = () => {
                         </div>
                         <div className="flex flex-col gap-3 sm:flex-row">
                             <button type="button" onClick={() => setReviewTarget(null)} disabled={isReviewingRefund} className="min-h-11 flex-1 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">{t('cancel')}</button>
-                            <button type="submit" disabled={isReviewingRefund || reviewReason.trim().length < 3 || (reviewTarget.status === 'Processed' && !currentShift)} className={`flex min-h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl text-sm font-bold text-white shadow-sm transition disabled:opacity-40 ${reviewTarget.status === 'Rejected' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                            <button type="submit" disabled={isReviewingRefund || reviewReason.trim().length < 3 || (reviewTarget.status === 'Processed' && !currentShift)} className={`flex min-h-11 flex-[1.5] items-center justify-center gap-2 rounded-xl text-sm font-bold text-white shadow-sm transition disabled:opacity-40 ${reviewTarget.status === 'Rejected' ? 'bg-rose-600 hover:bg-rose-700' : (reviewTarget.status === 'Failed' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700')}`}>
                                 {reviewTarget.status === 'Rejected' ? <X size={14} /> : <CheckCircle2 size={14} />}
-                                {isReviewingRefund ? t('billing.processing') : t(reviewTarget.status === 'Rejected' ? 'billing.rejectRefund' : (reviewTarget.status === 'Processed' ? 'billing.processRefund' : 'billing.approveRefund'))}
+                                {isReviewingRefund ? t('billing.processing') : t(reviewTarget.status === 'Rejected' ? 'billing.rejectRefund' : (reviewTarget.status === 'Processed' ? 'billing.processRefund' : (reviewTarget.status === 'Failed' ? 'billing.failRefund' : 'billing.approveRefund')))}
                             </button>
                         </div>
                     </form>
@@ -739,12 +1437,22 @@ const BillingTab = () => {
                             </div>
                             <div>
                                 <label className={labelClass}>{t('billing.refundMethod')}</label>
-                                <select value={refundMethod} onChange={(event) => setRefundMethod(event.target.value)} className={fieldClass}>
+                                <select value={refundMethod} disabled className={`${fieldClass} cursor-not-allowed opacity-70`}>
                                     {['Cash', 'Card', 'Credit Card', 'Wallet', 'Bank Transfer', 'Installment', 'Insurance', 'Corporate'].map((method) => (
                                         <option key={method} value={method}>{t(`billing.methods.${method}`)}</option>
                                     ))}
                                 </select>
+                                <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">{t('billing.refundMethodLocked')}</p>
                             </div>
+                        </div>
+                        <div>
+                            <label className={labelClass}>{t('billing.refundReasonCode')}</label>
+                            <select value={refundReasonCode} onChange={(event) => setRefundReasonCode(event.target.value)} className={fieldClass}>
+                                <option value="">{t('billing.refundReasonCodeNone')}</option>
+                                {['PatientCancelled', 'DuplicatePayment', 'ServiceNotProvided', 'Overcharge', 'InsuranceAdjustment', 'SystemError', 'Other'].map((code) => (
+                                    <option key={code} value={code}>{t(`billing.refundReasonCodes.${code}`)}</option>
+                                ))}
+                            </select>
                         </div>
                         <div>
                             <label className={labelClass}>{t('billing.refundReason')}</label>
@@ -832,6 +1540,32 @@ const BillingMetric = ({ icon: Icon, label, value, money = true, sub, tone = 'sl
     );
 };
 
+const ShiftMetric = ({ icon: Icon, label, value, money = true, sub, tone = 'slate' }) => {
+    const toneClass = {
+        slate: 'border-slate-200/80 bg-slate-50/50 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300',
+        emerald: 'border-emerald-200/80 bg-emerald-50/50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-300',
+        amber: 'border-amber-200/80 bg-amber-50/50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300',
+        violet: 'border-cyan-200/80 bg-cyan-50/50 text-cyan-700 dark:border-cyan-900/50 dark:bg-cyan-950/20 dark:text-cyan-300',
+        blue: 'border-sky-200/80 bg-sky-50/50 text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/20 dark:text-sky-300',
+    }[tone] || 'border-slate-200/80 bg-slate-50/50 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300';
+
+    return (
+        <div className={`rounded-xl border p-3 shadow-xs backdrop-blur-xl transition-all ${toneClass}`}>
+            <div className="flex items-center justify-between">
+                <p className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</p>
+                <span className="grid h-7 w-7 place-items-center rounded-lg bg-white/70 text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
+                    <Icon size={13} />
+                </span>
+            </div>
+            <p className="mt-1 text-base font-black tabular-nums text-slate-950 dark:text-white">
+                {money ? Number(value || 0).toLocaleString() : Number(value || 0)}
+                {money && <span className="ms-1 text-[10px] font-bold text-slate-400">EGP</span>}
+            </p>
+            {sub && <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-500 dark:text-slate-400">{sub}</p>}
+        </div>
+    );
+};
+
 const AmountBlock = ({ label, value, tone = 'default' }) => {
     const tones = {
         default: 'bg-slate-50 text-slate-700 dark:bg-slate-950 dark:text-slate-300',
@@ -892,9 +1626,18 @@ const RefundReviewQueue = ({ canApproveRefund, canProcessRefund, currentShift, i
                                 </>
                             )}
                             {refund.status === 'Approved' && canProcessRefund && (
-                                <button type="button" onClick={() => onReview(refund, 'Processed')} disabled={!currentShift} title={!currentShift ? t('billing.openShiftRequired') : undefined} className="min-h-9 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40">{t('billing.processRefund')}</button>
+                                <>
+                                    <button type="button" onClick={() => onReview(refund, 'Failed')} className="min-h-9 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-bold text-amber-700 transition hover:bg-amber-100 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">{t('billing.failRefund')}</button>
+                                    <button type="button" onClick={() => onReview(refund, 'Processed')} disabled={!currentShift} title={!currentShift ? t('billing.openShiftRequired') : undefined} className="min-h-9 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40">{t('billing.processRefund')}</button>
+                                </>
+                            )}
+                            {refund.status === 'Failed' && canApproveRefund && (
+                                <button type="button" onClick={() => onReview(refund, 'Approved')} className="min-h-9 rounded-xl bg-teal-600 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-teal-700">{t('billing.reapproveRefund')}</button>
                             )}
                         </div>
+                        {refund.status === 'Failed' && refund.failure_reason && (
+                            <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">{t('billing.failureReason')}: {refund.failure_reason}</p>
+                        )}
                     </article>
                 ))}
             </div>
@@ -928,26 +1671,11 @@ const InvoiceTable = ({ invoices, isDownloading, onPrint, onSelect, onSort, sort
     };
 
     return (
-        <table className="w-full table-fixed text-start text-sm">
-            <thead className="border-b border-slate-100 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40">
-                <tr>
-                    <SortableHeader field="number" label={t('billing.invoiceNo')} width="w-[120px]" className="ps-5" />
-                    <th className="w-[28%] px-3 py-3 text-start text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        {t('billing.patient')}
-                    </th>
-                    <SortableHeader field="date" label={t('billing.date')} width="hidden w-[110px] md:table-cell" />
-                    <SortableHeader field="total" label={t('billing.total')} width="hidden w-[110px] sm:table-cell" />
-                    <SortableHeader field="paid" label={t('billing.paid')} width="hidden w-[110px] lg:table-cell" />
-                    <SortableHeader field="balance" label={t('billing.balance')} width="w-[110px]" />
-                    <SortableHeader field="status" label={t('billing.status')} width="hidden w-[116px] md:table-cell" />
-                    <th className="w-[130px] px-4 py-3 pe-5 text-end text-[10px] font-black uppercase tracking-wider text-slate-400">
-                        {t('billing.actions')}
-                    </th>
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+        <>
+            {/* Mobile Cards View (lg:hidden) */}
+            <div className="space-y-2.5 p-3 lg:hidden">
                 {invoices.map((invoice) => (
-                    <InvoiceRow
+                    <InvoiceCardMobile
                         key={invoice.invoice_id}
                         invoice={invoice}
                         isDownloading={isDownloading}
@@ -956,8 +1684,129 @@ const InvoiceTable = ({ invoices, isDownloading, onPrint, onSelect, onSort, sort
                         t={t}
                     />
                 ))}
-            </tbody>
-        </table>
+            </div>
+
+            {/* Desktop Table View (hidden lg:block) */}
+            <div className="hidden lg:block overflow-x-auto">
+                <table className="w-full table-fixed text-start text-sm">
+                    <thead className="border-b border-slate-100 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40">
+                        <tr>
+                            <SortableHeader field="number" label={t('billing.invoiceNo')} width="w-[120px]" className="ps-5" />
+                            <th className="w-[28%] px-3 py-3 text-start text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                {t('billing.patient')}
+                            </th>
+                            <SortableHeader field="date" label={t('billing.date')} width="hidden w-[110px] md:table-cell" />
+                            <SortableHeader field="total" label={t('billing.total')} width="hidden w-[110px] sm:table-cell" />
+                            <SortableHeader field="paid" label={t('billing.paid')} width="hidden w-[110px] lg:table-cell" />
+                            <SortableHeader field="balance" label={t('billing.balance')} width="w-[110px]" />
+                            <SortableHeader field="status" label={t('billing.status')} width="hidden w-[116px] md:table-cell" />
+                            <th className="w-[130px] px-4 py-3 pe-5 text-end text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                {t('billing.actions')}
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {invoices.map((invoice) => (
+                            <InvoiceRow
+                                key={invoice.invoice_id}
+                                invoice={invoice}
+                                isDownloading={isDownloading}
+                                onPrint={onPrint}
+                                onSelect={onSelect}
+                                t={t}
+                            />
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </>
+    );
+};
+
+const InvoiceCardMobile = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
+    const total = Number(invoice.patient_payable_amount ?? invoice.total_amount ?? 0);
+    const paid = Number(invoice.paid_amount || 0);
+    const balance = Number(invoice.balance_amount || 0);
+    const paidPct = total > 0 ? Math.min(100, Math.max(0, (paid / total) * 100)) : 0;
+    const hasBalance = balance > 0 && invoice.invoice_status !== 'Voided';
+    const dateValue = invoice.generated_at || invoice.created_at;
+
+    return (
+        <article
+            onClick={() => onSelect(invoice)}
+            className={`rounded-2xl border p-3.5 shadow-2xs transition-all active:scale-[0.99] ${
+                hasBalance
+                    ? 'border-amber-200 bg-amber-50/30 dark:border-amber-900/40 dark:bg-amber-950/20'
+                    : 'border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-900'
+            }`}
+        >
+            <div className="flex items-start justify-between gap-2">
+                <div>
+                    <span className="font-mono text-xs font-black uppercase text-teal-700 dark:text-teal-400 ltr-embed" dir="ltr">
+                        {invoice.invoice_number || '-'}
+                    </span>
+                    <p className="mt-1 truncate text-sm font-black text-slate-900 dark:text-white">
+                        {invoice.patient_name || t('billing.unnamedPatient')}
+                    </p>
+                    <p className="font-mono text-[11px] text-slate-400 ltr-embed" dir="ltr">{invoice.mrn || '-'}</p>
+                </div>
+                <StatusPill status={invoice.invoice_status} />
+            </div>
+
+            {/* Financial Details */}
+            <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-2.5 dark:bg-slate-950/50">
+                <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400">{t('billing.total')}</span>
+                    <p className="font-mono text-xs font-black text-slate-800 dark:text-slate-200 ltr-embed" dir="ltr">{total.toFixed(2)}</p>
+                </div>
+                <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400">{t('billing.paid')}</span>
+                    <p className="font-mono text-xs font-black text-emerald-600 dark:text-emerald-400 ltr-embed" dir="ltr">{paid.toFixed(2)}</p>
+                </div>
+                <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400">{t('billing.balance')}</span>
+                    <p className={`font-mono text-xs font-black ltr-embed ${balance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500'}`} dir="ltr">
+                        {balance.toFixed(2)}
+                    </p>
+                </div>
+            </div>
+
+            {/* Mini Progress Bar */}
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                <div
+                    className={`h-full transition-all ${balance <= 0 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                    style={{ width: `${paidPct}%` }}
+                />
+            </div>
+
+            {/* Actions */}
+            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5 dark:border-slate-800/80">
+                <span className="text-[11px] font-medium text-slate-400">
+                    {dateValue ? new Date(dateValue).toLocaleDateString() : '-'}
+                </span>
+                <div className="flex items-center gap-1.5">
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onPrint(invoice, 'receipt'); }}
+                        className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        title={t('billing.printReceipt')}
+                    >
+                        <Receipt size={13} />
+                        <span>{t('billing.receipt', { defaultValue: 'إيصال' })}</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onPrint(invoice, 'invoice'); }}
+                        disabled={isDownloading === invoice.invoice_id}
+                        className="inline-flex h-8 items-center gap-1 rounded-xl bg-teal-600 px-2.5 text-xs font-bold text-white shadow-xs hover:bg-teal-700 disabled:opacity-50"
+                        title={t('billing.downloadPdf')}
+                    >
+                        {isDownloading === invoice.invoice_id ? <RefreshCw size={12} className="animate-spin" /> : <Printer size={13} />}
+                        <span>{t('billing.invoice', { defaultValue: 'فاتورة' })}</span>
+                    </button>
+                </div>
+            </div>
+        </article>
     );
 };
 
@@ -1483,7 +2332,7 @@ const InvoicePaymentsPanel = ({ canRequestRefund, invoice, invoiceDetail, isLoad
                 <div className="space-y-2.5">
                     {invoiceDetail.payments.map((payment) => {
                         const reserved = (invoiceDetail.refunds || [])
-                            .filter((refund) => refund.payment_id === payment.payment_id && refund.status !== 'Rejected')
+                            .filter((refund) => refund.payment_id === payment.payment_id && !['Rejected', 'Failed'].includes(refund.status))
                             .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
                         const refundable = Math.max(0, Number(payment.amount || 0) - reserved);
                         const canRefundPayment = canRequestRefund && payment.payment_status === 'Completed' && refundable > 0;
@@ -1691,13 +2540,205 @@ const PanelTitle = ({ icon: Icon, title, count, tone = 'teal' }) => {
     );
 };
 
-const LoadingRows = ({ label }) => (
-    <div className="space-y-2 py-2">
-        <p className="sr-only">{label}</p>
-        {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="h-16 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
-        ))}
-    </div>
-);
+const InvoiceCardsGrid = ({ invoices, isDownloading, onPrint, onSelect, t }) => {
+    return (
+        <div className="grid grid-cols-1 gap-3.5 p-4 sm:grid-cols-2 xl:grid-cols-3">
+            {invoices.map((invoice) => (
+                <InvoiceCard
+                    key={invoice.invoice_id}
+                    invoice={invoice}
+                    isDownloading={isDownloading}
+                    onPrint={onPrint}
+                    onSelect={onSelect}
+                    t={t}
+                />
+            ))}
+        </div>
+    );
+};
+
+const InvoiceCard = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
+    const total = Number(invoice.patient_payable_amount ?? invoice.total_amount ?? 0);
+    const paid = Number(invoice.paid_amount || 0);
+    const balance = Number(invoice.balance_amount || 0);
+    const paidPct = total > 0 ? Math.min(100, Math.max(0, (paid / total) * 100)) : 0;
+    const hasBalance = balance > 0 && invoice.invoice_status !== 'Voided';
+    const dateValue = invoice.generated_at || invoice.created_at;
+    const coverageCategory = getInvoiceCoverageCategory(invoice);
+
+    return (
+        <article
+            className={`group flex flex-col justify-between rounded-2xl border p-4 shadow-2xs transition-all hover:shadow-md ${
+                hasBalance
+                    ? 'border-amber-200/90 bg-amber-50/20 dark:border-amber-900/40 dark:bg-amber-950/15'
+                    : 'border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-900'
+            }`}
+        >
+            <div>
+                {/* Card Top: Number, Date, Status */}
+                <div className="flex items-start justify-between gap-2">
+                    <div>
+                        <span className="font-mono text-xs font-black uppercase text-teal-700 dark:text-teal-400 ltr-embed" dir="ltr">
+                            {invoice.invoice_number || '-'}
+                        </span>
+                        <p className="text-[11px] font-semibold text-slate-400">
+                            {dateValue ? new Date(dateValue).toLocaleDateString() : '-'}
+                        </p>
+                    </div>
+                    <StatusPill status={invoice.invoice_status} />
+                </div>
+
+                {/* Patient Information */}
+                <div className="mt-3 flex items-center gap-2.5">
+                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        <User size={16} />
+                    </div>
+                    <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-900 dark:text-white" title={invoice.patient_name}>
+                            {invoice.patient_name || t('billing.unnamedPatient')}
+                        </p>
+                        <p className="font-mono text-[11px] text-slate-400 ltr-embed" dir="ltr">{invoice.mrn || '-'}</p>
+                    </div>
+                </div>
+
+                {/* Coverage & Contract Pill */}
+                <div className="mt-2.5 flex items-center gap-1.5">
+                    <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-black ${
+                        coverageCategory === 'contract'
+                            ? 'border border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'
+                            : 'border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                    }`}>
+                        {coverageCategory === 'contract' ? <Building2 size={11} /> : <Banknote size={11} />}
+                        <span>{coverageCategory === 'contract' ? (invoice.insurance_provider || t('billing.contract', { defaultValue: 'تعاقد جهة' })) : t('billing.selfPay', { defaultValue: 'حساب خاص' })}</span>
+                    </span>
+                    {invoice.insurance_policy_number && (
+                        <span className="truncate font-mono text-[10px] text-slate-400">#{invoice.insurance_policy_number}</span>
+                    )}
+                </div>
+
+                {/* Financial Summary Box */}
+                <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-slate-50/80 p-2.5 dark:bg-slate-950/60">
+                    <div>
+                        <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">{t('billing.total')}</span>
+                        <p className="font-mono text-xs font-black text-slate-800 dark:text-slate-200 ltr-embed" dir="ltr">{total.toFixed(2)}</p>
+                    </div>
+                    <div>
+                        <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">{t('billing.paid')}</span>
+                        <p className="font-mono text-xs font-black text-emerald-600 dark:text-emerald-400 ltr-embed" dir="ltr">{paid.toFixed(2)}</p>
+                    </div>
+                    <div>
+                        <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">{t('billing.balance')}</span>
+                        <p className={`font-mono text-xs font-black ltr-embed ${balance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500'}`} dir="ltr">
+                            {balance.toFixed(2)}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Paid Progress Bar */}
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div
+                        className={`h-full transition-all ${balance <= 0 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                        style={{ width: `${paidPct}%` }}
+                    />
+                </div>
+            </div>
+
+            {/* Action Bar */}
+            <div className="mt-4 flex items-center justify-between gap-1.5 border-t border-slate-100 pt-3 dark:border-slate-800/80">
+                <button
+                    type="button"
+                    onClick={() => onSelect(invoice)}
+                    className="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-slate-950 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                >
+                    <FileText size={13} />
+                    <span>{t('billing.viewDetails', { defaultValue: 'عرض التفاصيل' })}</span>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onPrint(invoice, 'invoice')}
+                    disabled={isDownloading === invoice.invoice_id}
+                    className="inline-flex min-h-8 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-2xs transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    title={t('billing.printPdf', { defaultValue: 'طباعة PDF' })}
+                >
+                    {isDownloading === invoice.invoice_id ? <RefreshCw size={12} className="animate-spin" /> : <Printer size={13} />}
+                </button>
+            </div>
+        </article>
+    );
+};
+
+const InsuranceClaimsTable = ({ invoices, onSelect, t }) => {
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full text-start text-xs">
+                <thead className="border-b border-slate-100 bg-slate-50/70 text-[10.5px] font-black uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-400">
+                    <tr>
+                        <th className="px-4 py-3 text-start">{t('billing.invoiceNo')}</th>
+                        <th className="px-3 py-3 text-start">{t('billing.patient')}</th>
+                        <th className="px-3 py-3 text-start">{t('billing.providerDetails')}</th>
+                        <th className="px-3 py-3 text-start">{t('billing.preauthCode')}</th>
+                        <th className="px-3 py-3 text-end">{t('billing.total')}</th>
+                        <th className="px-3 py-3 text-end">{t('billing.patientCopay')}</th>
+                        <th className="px-3 py-3 text-end">{t('billing.covered')}</th>
+                        <th className="px-3 py-3 text-end">{t('billing.balance')}</th>
+                        <th className="px-4 py-3 text-end">{t('billing.actions')}</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                    {invoices.map((invoice) => {
+                        const tot = Number(invoice.total_amount || 0);
+                        const copay = Number(invoice.patient_payable_amount ?? tot);
+                        const insuranceShare = Math.max(0, tot - copay);
+                        const bal = Number(invoice.balance_amount || 0);
+                        return (
+                            <tr key={invoice.invoice_id} className="transition hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                                <td className="px-4 py-3 font-mono font-black text-slate-800 dark:text-slate-200 ltr-embed" dir="ltr">
+                                    {invoice.invoice_number || '-'}
+                                </td>
+                                <td className="px-3 py-3">
+                                    <p className="font-bold text-slate-900 dark:text-white">{invoice.patient_name || '-'}</p>
+                                    <p className="font-mono text-[10.5px] text-slate-400">{invoice.mrn || '-'}</p>
+                                </td>
+                                <td className="px-3 py-3">
+                                    <p className="font-bold text-slate-800 dark:text-slate-200">{invoice.insurance_provider || invoice.insurance_name || (invoice.patient_payable_amount < invoice.total_amount ? 'Contract / Insurance' : '-')}</p>
+                                    {invoice.insurance_policy_number && (
+                                        <p className="font-mono text-[10.5px] text-slate-400">Pol: {invoice.insurance_policy_number}</p>
+                                    )}
+                                </td>
+                                <td className="px-3 py-3 font-mono text-slate-700 dark:text-slate-300">
+                                    {invoice.preauthorization_number || invoice.approval_code || '-'}
+                                </td>
+                                <td className="px-3 py-3 text-end font-mono font-bold text-slate-700 dark:text-slate-300">
+                                    {tot.toFixed(2)}
+                                </td>
+                                <td className="px-3 py-3 text-end font-mono font-bold text-amber-700 dark:text-amber-400">
+                                    {copay.toFixed(2)}
+                                </td>
+                                <td className="px-3 py-3 text-end font-mono font-bold text-indigo-700 dark:text-indigo-400">
+                                    {insuranceShare.toFixed(2)}
+                                </td>
+                                <td className="px-3 py-3 text-end font-mono font-bold">
+                                    <span className={bal > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}>
+                                        {bal.toFixed(2)}
+                                    </span>
+                                </td>
+                                <td className="px-4 py-3 text-end">
+                                    <button
+                                        type="button"
+                                        onClick={() => onSelect(invoice)}
+                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                    >
+                                        <FileText size={12} />
+                                        <span>{t('billing.viewDetails', { defaultValue: 'عرض' })}</span>
+                                    </button>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+};
 
 export default BillingTab;

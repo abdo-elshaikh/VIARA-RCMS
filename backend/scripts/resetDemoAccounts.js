@@ -12,6 +12,7 @@ const password = process.env.TEST_USER_PASSWORD || 'Password123!';
 const demoAccounts = [
     ['Dr. Alice Smith', 'alice@viara.com', 'Radiologist'],
     ['Lead Technician', 'tech@viara.com', 'Technician'],
+    ['Tech. Mohamed Ali (Senior MRI Tech)', 'mohamed.tech@viara.com', 'Technician'],
     ['Front Desk', 'reception@viara.com', 'Receptionist'],
     ['System Admin', 'admin@viara.com', 'Admin'],
     ['System Developer', 'developer@viara.com', 'Developer']

@@ -31,4 +31,22 @@ describe('ReceptionTabNav', () => {
         fireEvent.click(screen.getByRole('tab', { name: /Cashier 3/ }));
         expect(onTabChange).toHaveBeenCalledWith('cashier');
     });
+
+    it('renders scheduleCount badge when provided', () => {
+        const tabs = [
+            { id: 'schedule', label: 'Schedule' },
+        ];
+
+        render(
+            <ReceptionTabNav
+                activeTab="schedule"
+                scheduleCount={8}
+                onTabChange={vi.fn()}
+                tabs={tabs}
+                t={t}
+            />
+        );
+
+        expect(screen.getByRole('tab', { name: /Schedule 8/ })).toBeInTheDocument();
+    });
 });

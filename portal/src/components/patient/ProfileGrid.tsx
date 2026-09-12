@@ -4,13 +4,26 @@ export interface ProfileGridProps {
   patient: Record<string, any>;
   formatDate: (date: any) => string;
   t: any;
+  language?: string;
 }
 
-export const ProfileGrid = ({ patient, formatDate, t }: ProfileGridProps) => {
+const GENDER_LABELS: Record<string, Record<string, string>> = {
+  en: { male: 'Male', female: 'Female', other: 'Other' },
+  ar: { male: 'ذكر', female: 'أنثى', other: 'أخرى' },
+};
+
+const localizeGender = (value: string | undefined, language?: string) => {
+  if (!value) return undefined;
+  const key = value.trim().toLowerCase();
+  const labels = GENDER_LABELS[language?.toLowerCase() === 'ar' ? 'ar' : 'en'];
+  return labels[key] || value;
+};
+
+export const ProfileGrid = ({ patient, formatDate, t, language }: ProfileGridProps) => {
   const items: [string, string, string | undefined][] = [
     ['fullName', t('patient.profileInfo.fullName', 'Full name'), patient.full_name],
     ['dob', t('patient.profileInfo.dob', 'Date of birth'), formatDate(patient.date_of_birth)],
-    ['gender', t('patient.profileInfo.gender', 'Gender'), patient.gender],
+    ['gender', t('patient.profileInfo.gender', 'Gender'), localizeGender(patient.gender, language)],
     ['phone', t('patient.profileInfo.phone', 'Phone'), patient.phone],
     ['email', t('patient.profileInfo.email', 'Email'), patient.email],
     ['address', t('patient.profileInfo.address', 'Address'), patient.address],

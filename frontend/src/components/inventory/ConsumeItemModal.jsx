@@ -8,11 +8,21 @@ import Modal from '../ui/Modal';
 
 const inputClass = 'min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100';
 
-const ConsumeItemModal = ({ examId, onClose }) => {
+const ConsumeItemModal = ({
+    examId,
+    referenceId,
+    referenceType,
+    isOpen = true,
+    onClose,
+    onSuccess,
+}) => {
     const { t, i18n } = useTranslation('workspace');
     const copy = (key, options) => t(`inventory.consume.${key}`, options);
     const locale = i18n.language?.startsWith('ar') ? 'ar-EG' : 'en-EG';
     const isRtl = i18n.language?.startsWith('ar');
+
+    const effectiveExamId = examId || referenceId;
+    const effectiveReferenceType = referenceType || (effectiveExamId ? 'Exam' : 'Manual');
 
     const { data: inventory = [], isLoading, isError, refetch } = useGetInventoryQuery();
     const [consumeStock, { isLoading: isConsuming }] = useConsumeStockMutation();
@@ -59,12 +69,13 @@ const ConsumeItemModal = ({ examId, onClose }) => {
                 itemId: form.itemId,
                 quantity,
                 batchId: form.batchId || undefined,
-                referenceType: examId ? 'Exam' : 'Manual',
-                referenceId: examId || undefined,
+                referenceType: effectiveReferenceType,
+                referenceId: effectiveExamId || undefined,
                 notes: form.notes.trim() || undefined
             }).unwrap();
 
             toast.success(isRtl ? 'تم تسجيل استهلاك المستلزم بنجاح وإضافته للفاتورة' : 'Supply consumed and billed successfully');
+            onSuccess?.({ examId: effectiveExamId, itemId: form.itemId, quantity });
             onClose();
         } catch (error) {
             toast.error(getErrorMessage(error, copy('error', { defaultValue: 'فشل تسجيل استهلاك المستلزم' })));
@@ -72,7 +83,7 @@ const ConsumeItemModal = ({ examId, onClose }) => {
     };
 
     return (
-        <Modal isOpen onClose={safeClose} title={isRtl ? 'تسجيل استهلاك مستلزمات الفحص' : copy('title', { defaultValue: 'Record Exam Supply Consumption' })} size="sm">
+        <Modal isOpen={isOpen} onClose={safeClose} title={isRtl ? 'تسجيل استهلاك مستلزمات الفحص' : copy('title', { defaultValue: 'Record Exam Supply Consumption' })} size="sm">
             {/* Header info badge */}
             <div className="mb-4 flex items-start gap-3 rounded-2xl border border-teal-200/80 bg-teal-50/70 p-3.5 text-teal-950 dark:border-teal-900/50 dark:bg-teal-950/30 dark:text-teal-200">
                 <PackageMinus size={20} className="mt-0.5 shrink-0 text-teal-600 dark:text-teal-400" />

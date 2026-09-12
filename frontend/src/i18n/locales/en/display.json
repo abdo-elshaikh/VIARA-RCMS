@@ -1,0 +1,162 @@
+{
+  "title": "Case Flow Board",
+  "centerBoard": "Live Case Display",
+  "liveNow": "Live",
+  "lastUpdated": "Last updated",
+  "clock": "Time",
+  "fullscreen": "Fullscreen",
+  "exitFullscreen": "Exit fullscreen",
+  "patientLabel": "Patient",
+  "turn": "Turn",
+  "more": "+{{count}} more",
+  "emptyColumn": "None",
+  "stages": {
+    "reception": "Reception",
+    "preparation": "Preparation",
+    "ready": "Ready for exam",
+    "inExam": "In exam"
+  },
+  "phases": {
+    "scheduled": "Check-in",
+    "arrived": "Reception",
+    "preparation": "Preparation",
+    "imaging": "Imaging",
+    "reporting": "Report",
+    "completed": "Ready for pickup"
+  },
+  "room": "Room",
+  "machine": "Device",
+  "machineFlow": "Room and device flow",
+  "machineCurrent": "Now",
+  "machineNext": "Next",
+  "machineWaiting": "{{count}} waiting",
+  "machineStatus": {
+    "Active": "Operational",
+    "Under Maintenance": "Under maintenance",
+    "Out of Service": "Out of service",
+    "default": "Unknown"
+  },
+  "roomStatus": {
+    "Active": "Available",
+    "Under Maintenance": "Under maintenance",
+    "Out of Service": "Out of service"
+  },
+  "currentCase": "Current case",
+  "noCurrentCase": "No active case",
+  "onHold": "On hold",
+  "inQueue": "In queue",
+  "priorityWaiting": "Priority cases",
+  "upNext": "Up next",
+  "nextOrders": "Next numbers",
+  "elapsed": "Elapsed",
+  "minutes": "min",
+  "summary": {
+    "waiting": "Waiting now",
+    "inExam": "In exam",
+    "completedToday": "Completed today",
+    "deliveredToday": "Delivered today",
+    "averageWait": "Average wait",
+    "priorityToday": "Emergency"
+  },
+  "states": {
+    "loading": "Loading display board...",
+    "error": "Could not load the display board. Retrying automatically.",
+    "empty": "No rooms or devices registered to display"
+  },
+  "patientNotice": "Please follow your order number on this screen",
+  "orderNumber": "Order number",
+  "nowServing": "Now serving",
+  "ticker": {
+    "inRoom": "Enter the room now",
+    "getReady": "Get ready — coming up"
+  },
+  "announcements": {
+    "goTo": "Go to announcement"
+  },
+  "centerContact": {
+    "phone": "Phone",
+    "hotline": "Hotline",
+    "whatsapp": "WhatsApp",
+    "email": "Email",
+    "address": "Address",
+    "hours": "Working hours"
+  },
+  "control": {
+    "eyebrow": "Display board control unit",
+    "title": "Waiting-room display management",
+    "subtitle": "Control patient name visibility, the now-serving ticker, and announcements shown on the external waiting-room screen.",
+    "openBoard": "Open live board",
+    "metricsLabel": "Board content summary",
+    "metrics": {
+      "announcements": "Active announcements",
+      "announcementsDetail": "Currently visible on screen",
+      "hidden": "Paused announcements",
+      "hiddenDetail": "Saved but not shown"
+    },
+    "settings": {
+      "title": "Board settings",
+      "description": "Settings apply to the external screen within seconds of saving.",
+      "loading": "Loading settings...",
+      "error": "Could not load settings. Run database migration 142 and try again.",
+      "patientMode": "Patient identity visibility",
+      "patientModeHelp": "The order number is printed on the booking slip; 'order number only' offers maximum privacy.",
+      "mode": {
+        "name_and_order": "Name + order number",
+        "name_and_orderHelp": "Shows name and order number — use only on a private internal display",
+        "name": "Name only",
+        "nameHelp": "Hide order numbers and show names only",
+        "order_only": "Order number only",
+        "order_onlyHelp": "Maximum privacy — names never appear"
+      },
+      "showTicker": "Now-serving ticker",
+      "showTickerHelp": "Scrolling strip with upcoming case names and calls",
+      "boardTitle": "Custom board title (optional)",
+      "boardTitlePlaceholder": "e.g. VIARA Center — Imaging Wing",
+      "save": "Save settings",
+      "saved": "Display board settings saved",
+      "saveFailed": "Could not save settings"
+    },
+    "tones": {
+      "info": "Info",
+      "success": "Positive",
+      "warning": "Notice",
+      "urgent": "Urgent"
+    },
+    "announcements": {
+      "title": "Waiting-room announcements",
+      "description": "Active announcements rotate on screen every 10 seconds.",
+      "add": "Add announcement",
+      "empty": "No announcements yet — add the first one your waiting patients will see.",
+      "inactive": "Paused",
+      "order": "Order",
+      "edit": "Edit",
+      "delete": "Delete",
+      "activate": "Show on board",
+      "deactivate": "Pause on board",
+      "activated": "Announcement is now visible on the board",
+      "deactivated": "Announcement hidden from the board",
+      "created": "Announcement added",
+      "updated": "Announcement updated",
+      "deleted": "Announcement deleted",
+      "saveFailed": "Could not save the announcement",
+      "deleteFailed": "Could not delete the announcement",
+      "deleteTitle": "Delete announcement",
+      "deleteMessage": "Announcement \"{{title}}\" will be permanently removed from the waiting-room screen.",
+      "deleteConfirm": "Delete permanently"
+    },
+    "form": {
+      "addTitle": "New announcement",
+      "editTitle": "Edit announcement",
+      "title": "Announcement title",
+      "titlePlaceholder": "e.g. Peak-hours notice",
+      "message": "Announcement message",
+      "messagePlaceholder": "Write the text waiting patients will see...",
+      "tone": "Tone",
+      "order": "Display order",
+      "create": "Add announcement",
+      "update": "Save changes",
+      "cancel": "Cancel",
+      "invalid": "Complete the title and message (at least 2 characters each)"
+    }
+  }
+}

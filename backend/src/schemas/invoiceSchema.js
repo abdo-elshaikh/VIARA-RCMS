@@ -75,6 +75,7 @@ const getInvoicesQuerySchema = validateDateRange(z.object({
     status: z.enum(['Draft', 'Pending', 'Partial', 'Paid', 'Refunded', 'Voided']).optional(),
     patientId: z.string().uuid().optional(),
     q: z.string().trim().max(100).optional(),
+    date: dateString.optional(),
     startDate: dateString.optional(),
     endDate: dateString.optional(),
     appointmentDate: dateString.optional(),
@@ -84,6 +85,12 @@ const getInvoicesQuerySchema = validateDateRange(z.object({
     sortDirection: z.enum(['asc', 'desc']).optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
     offset: z.string().regex(/^\d+$/).transform(Number).optional()
+}));
+
+const getInvoiceSummaryQuerySchema = validateDateRange(z.object({
+    date: dateString.optional(),
+    startDate: dateString.optional(),
+    endDate: dateString.optional()
 }));
 
 const collectPaymentSchema = z.object({
@@ -108,15 +115,26 @@ const collectPaymentSchema = z.object({
     }
 });
 
+const REFUND_REASON_CODES = [
+    'PatientCancelled',
+    'DuplicatePayment',
+    'ServiceNotProvided',
+    'Overcharge',
+    'InsuranceAdjustment',
+    'SystemError',
+    'Other'
+];
+
 const refundSchema = z.object({
-    paymentId: z.string().uuid().optional(),
+    paymentId: z.string().uuid({ message: 'A specific completed payment must be selected for the refund' }),
     amount: z.coerce.number().positive(),
     method: paymentMethodSchema.optional(),
+    reasonCode: z.enum(REFUND_REASON_CODES).optional(),
     reason: z.string().trim().min(3).max(1000)
 });
 
 const getRefundsQuerySchema = validateDateRange(z.object({
-    status: z.enum(['Pending', 'Approved', 'Rejected', 'Processed']).optional(),
+    status: z.enum(['Pending', 'Approved', 'Rejected', 'Processed', 'Failed']).optional(),
     startDate: dateString.optional(),
     endDate: dateString.optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
@@ -124,16 +142,20 @@ const getRefundsQuerySchema = validateDateRange(z.object({
 }));
 
 const reviewRefundSchema = z.object({
-    status: z.enum(['Approved', 'Processed', 'Rejected']),
+    status: z.enum(['Approved', 'Processed', 'Rejected', 'Failed']),
     reason: z.string().trim().min(3).max(1000)
 });
+
+const refundReasonCodes = REFUND_REASON_CODES;
 
 module.exports = {
     createInvoiceSchema,
     updateInvoiceSchema,
     getInvoicesQuerySchema,
+    getInvoiceSummaryQuerySchema,
     collectPaymentSchema,
     refundSchema,
     getRefundsQuerySchema,
-    reviewRefundSchema
+    reviewRefundSchema,
+    refundReasonCodes
 };

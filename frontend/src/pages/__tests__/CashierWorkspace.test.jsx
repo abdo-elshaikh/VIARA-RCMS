@@ -21,6 +21,7 @@ vi.mock('react-redux', () => ({ useSelector: () => mocks.user }));
 vi.mock('../../components/reception/BillingTab', () => ({ default: () => null }));
 vi.mock('../../store/api', () => ({
     useGetCashierReconciliationQuery: (...args) => mocks.reconciliation(...args),
+    useGetCurrentCashierShiftQuery: () => ({ data: null, isFetching: false }),
     useOpenCashierShiftMutation: () => [mocks.openShift, { isLoading: false }],
     useCloseCashierShiftMutation: () => [mocks.closeShift, { isLoading: false }],
     useReviewCashierClosureMutation: () => [vi.fn(() => ({ unwrap: () => Promise.resolve({}) })), { isLoading: false }]

@@ -10,7 +10,17 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
  * @param {function} onPageChange  - called with the new page number
  * @param {boolean}  isRtl         - flip chevron direction for RTL layouts
  */
-const Pagination = ({ currentPage, pageCount, onPageChange, isRtl = false }) => {
+const Pagination = ({
+    currentPage,
+    pageCount,
+    onPageChange,
+    isRtl = false,
+    compact = false,
+    ariaLabel,
+    previousLabel,
+    nextLabel,
+    className = ''
+}) => {
     if (!pageCount || pageCount <= 1) return null;
 
     const getVisiblePages = () => {
@@ -32,8 +42,8 @@ const Pagination = ({ currentPage, pageCount, onPageChange, isRtl = false }) => 
 
     return (
         <nav
-            aria-label="Pagination"
-            className="flex items-center justify-center gap-1.5 py-3"
+            aria-label={ariaLabel || (isRtl ? 'ترقيم الصفحات' : 'Pagination')}
+            className={`flex items-center justify-center gap-1.5 ${compact ? '' : 'py-3'} ${className}`}
             dir={isRtl ? 'rtl' : 'ltr'}
         >
             <button
@@ -41,7 +51,7 @@ const Pagination = ({ currentPage, pageCount, onPageChange, isRtl = false }) => 
                 onClick={() => onPageChange(currentPage - 1)}
                 disabled={currentPage === 1}
                 className={`${btnBase} ${arrowBtn}`}
-                aria-label="Previous page"
+                aria-label={previousLabel || (isRtl ? 'الصفحة السابقة' : 'Previous page')}
             >
                 {isRtl ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
             </button>
@@ -73,7 +83,7 @@ const Pagination = ({ currentPage, pageCount, onPageChange, isRtl = false }) => 
                 onClick={() => onPageChange(currentPage + 1)}
                 disabled={currentPage === pageCount}
                 className={`${btnBase} ${arrowBtn}`}
-                aria-label="Next page"
+                aria-label={nextLabel || (isRtl ? 'الصفحة التالية' : 'Next page')}
             >
                 {isRtl ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
             </button>

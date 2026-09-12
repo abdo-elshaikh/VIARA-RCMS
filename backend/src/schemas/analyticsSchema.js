@@ -11,14 +11,18 @@ const validateRange = (schema) => schema.refine(({ startDate, endDate }) => star
 const analyticsQuerySchema = validateRange(z.object({
     startDate: dateString,
     endDate: dateString,
-    groupBy: z.enum(['date', 'modality', 'doctor', 'payer']).optional().default('date')
+    groupBy: z.enum(['date', 'modality', 'doctor', 'payer', 'room', 'reception']).optional().default('date'),
+    modalityId: z.string().uuid().optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional()
 }));
 
 const analyticsExportQuerySchema = validateRange(z.object({
-    type: z.enum(['volume', 'revenue', 'performance', 'referrals']),
+    type: z.enum(['volume', 'revenue', 'performance', 'referrals', 'peak-hours', 'equipment-utilization', 'top-procedures']),
     startDate: dateString,
     endDate: dateString,
-    groupBy: z.enum(['date', 'modality', 'doctor', 'payer']).optional().default('date')
+    groupBy: z.enum(['date', 'modality', 'doctor', 'payer', 'room', 'reception']).optional().default('date'),
+    modalityId: z.string().uuid().optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional()
 }));
 
 module.exports = {

@@ -46,7 +46,7 @@ const initials = name => (name || '?')
 
 const roleLabel = role => String(role || '').replace(/_/g, ' ');
 
-const TeamSettings = () => {
+const TeamSettings = ({ embedded = false }) => {
     const { t } = useTranslation(['settings', 'common']);
     const currentUser = useSelector(selectCurrentUser);
     const availableRoles = currentUser?.role === 'Developer'
@@ -115,7 +115,7 @@ const TeamSettings = () => {
     const canSubmit = inviteName.trim() && inviteEmail.trim() && tempPassword.length >= 12 && inviteRole && !isInviting;
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-10">
+        <div className={embedded ? 'space-y-5 pb-0' : 'mx-auto max-w-7xl space-y-6 pb-10'}>
             {/* VIARA Hero Command Deck */}
             <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8 space-y-6">
                 <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />

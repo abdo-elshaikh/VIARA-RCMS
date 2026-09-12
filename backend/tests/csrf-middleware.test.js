@@ -19,8 +19,6 @@ describe('csrfProtection middleware', () => {
         '/api/auth/login',
         '/api/portal/login',
         '/api/doctor-portal/login',
-        '/api/public/case-status',
-        '/api/public/final-report',
     ])('allows public POST %s and seeds a CSRF cookie', async (path) => {
         const req = {
             method: 'POST',
@@ -43,6 +41,22 @@ describe('csrfProtection middleware', () => {
                 path: '/',
             })
         );
+    });
+
+    test.each([
+        '/api/public/case-status',
+        '/api/public/case-status/verify',
+        '/api/public/appointment-requests',
+        '/api/public/final-report',
+    ])('protects public browser mutation %s with CSRF', (path) => {
+        const req = { method: 'POST', originalUrl: path, path, headers: {}, cookies: {} };
+        const res = createResponse();
+        const next = jest.fn();
+
+        csrfProtection()(req, res, next);
+
+        expect(next.mock.calls[0][0]).toEqual(expect.objectContaining({ statusCode: 403, code: 'CSRF_ERROR' }));
+        expect(res.cookie).not.toHaveBeenCalled();
     });
 
     test('still blocks protected POST requests without a matching CSRF token', () => {

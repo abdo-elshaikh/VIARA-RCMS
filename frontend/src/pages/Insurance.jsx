@@ -3,15 +3,17 @@ import toast from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
 import {
     Activity, AlertTriangle, BadgeCheck, Building2, Calculator,
-    ChevronDown, CircleDollarSign, ClipboardCheck, DollarSign, FileCheck2, FilePlus2,
-    FilterX, Layers, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal,
-    User, WalletCards, XCircle, Plus, CheckCircle2, Calendar, FileText
+    ChevronDown, CircleDollarSign, ClipboardCheck, DollarSign, Download,
+    Edit2, FileCheck2, FilePlus2, FileSpreadsheet, FileText, FilterX,
+    Layers, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal,
+    User, WalletCards, X, XCircle, CheckCircle2, Calendar
 } from 'lucide-react';
 import {
     useCreateCoverageRuleMutation,
     useCreateInsuranceApprovalMutation,
     useCreateInsuranceContractMutation,
     useCreateInsuranceProviderMutation,
+    useCreateInsurancePolicyMutation,
     useCreateClaimMutation,
     useGetClaimsQuery,
     useGetCoverageRulesQuery,
@@ -23,12 +25,17 @@ import {
     useGetInvoicesQuery,
     usePreviewCoverageQuery,
     useUpdateClaimStatusMutation,
+    useUpdateInsuranceProviderMutation,
+    useUpdateInsuranceContractMutation,
+    useUpdateInsurancePolicyMutation,
+    useUpdateCoverageRuleMutation,
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
 import { useTranslation } from 'react-i18next';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
 import PageHeader from '../components/ui/PageHeader';
 import { inputClass, primaryBtn, secondaryBtn } from '../utils/designTokens';
+import { downloadAuthenticatedFile } from '../utils/authenticatedFetch';
 
 const statusTones = {
     Pending: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300',
@@ -46,15 +53,15 @@ const toNumber = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 
 const Insurance = () => {
     const { t, i18n } = useTranslation('insurance');
-    const [searchParams] = useSearchParams();
-    const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'claims');
+    const [searchParams, setSearchParams] = useSearchParams();
 
     // Forms State
     const [providerForm, setProviderForm] = useState({ name: '', payerCode: '', phone: '', email: '' });
-    const [contractForm, setContractForm] = useState({ providerId: '', entityName: '', entityType: 'Insurance', contractNumber: '', startDate: '', endDate: '' });
+    const [contractForm, setContractForm] = useState({ providerId: '', entityName: '', entityType: 'Insurance', contractNumber: '', startDate: '', endDate: '', commissionPercentage: '' });
     const [ruleForm, setRuleForm] = useState({ providerId: '', contractId: '', coveragePercentage: '80', coverageCeiling: '', copayAmount: '0', modalityType: '', preauthorizationRequired: false });
     const [approvalForm, setApprovalForm] = useState({ patientId: '', providerId: '', policyId: '', appointmentId: '', examTypeId: '', status: 'Pending', requestedAmount: '', documentUrl: '' });
     const [claimForm, setClaimForm] = useState({ patientId: '', providerId: '', invoiceId: '', policyId: '', approvalId: '', claimReferenceNumber: '', expectedAmount: '' });
+    const [newPolicyForm, setNewPolicyForm] = useState({ patientId: '', providerId: '', contractId: '', policyNumber: '', memberNumber: '', planName: '', holderName: '', relationshipToHolder: 'Self', validFrom: '', validTo: '', isPrimary: true });
 
     // Interactive Calculator State
     const [calcParams, setCalcParams] = useState({ providerId: '', contractId: '', modalityType: '', amount: '1000' });
@@ -64,15 +71,35 @@ const Insurance = () => {
     const [claimStatus, setClaimStatusFilter] = useState('all');
     const [claimProvider, setClaimProvider] = useState('all');
     const [claimAction, setClaimAction] = useState(null);
+    const [isExporting, setIsExporting] = useState(false);
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const [exportParams, setExportParams] = useState({
+        providerId: 'all',
+        status: 'all',
+        startDate: '',
+        endDate: '',
+        format: 'csv'
+    });
+
+    // Edit Modals State
+    const [editingProvider, setEditingProvider] = useState(null);
+    const [editingContract, setEditingContract] = useState(null);
+    const [editingRule, setEditingRule] = useState(null);
+    const [editingPolicy, setEditingPolicy] = useState(null);
+    const [settlementClaim, setSettlementClaim] = useState(null);
+
+    // Policy Tab Search
+    const [policySearch, setPolicySearch] = useState('');
 
     // Queries
     const { data: providerData = [], isLoading: providersLoading, isError: providersError, refetch: refetchProviders } = useGetInsuranceProvidersQuery();
     const { data: contractData = [], isLoading: contractsLoading, isError: contractsError, refetch: refetchContracts } = useGetInsuranceContractsQuery();
     const { data: ruleData = [], isLoading: rulesLoading, isError: rulesError, refetch: refetchRules } = useGetCoverageRulesQuery();
     const { data: approvalData = [], isLoading: approvalsLoading, isError: approvalsError, refetch: refetchApprovals } = useGetInsuranceApprovalsQuery();
-    const { data: claimData = [], isLoading: claimsLoading, isFetching: claimsFetching, isError: claimsError, refetch: refetchClaims } = useGetClaimsQuery({ limit: 50 });
+    const { data: allPoliciesData = [], isLoading: policiesLoading, isError: policiesError, refetch: refetchPolicies } = useGetInsurancePoliciesQuery();
+    const { data: claimData = [], isLoading: claimsLoading, isFetching: claimsFetching, isError: claimsError, refetch: refetchClaims } = useGetClaimsQuery({ limit: 100 });
     const { data: rejectedClaimData = [], isLoading: rejectedLoading, isError: rejectedError, refetch: refetchRejected } = useGetClaimsQuery({ rejectedOnly: 'true', limit: 50 });
-    
+
     // Auxiliary Queries for Smart Selectors
     const { data: patientData = [] } = useGetPatientsQuery({ limit: 100 });
     const { data: invoiceData = [] } = useGetInvoicesQuery({ limit: 100 });
@@ -85,8 +112,13 @@ const Insurance = () => {
 
     // Mutations
     const [createProvider, { isLoading: isCreatingProvider }] = useCreateInsuranceProviderMutation();
+    const [updateProviderMutation, { isLoading: isUpdatingProvider }] = useUpdateInsuranceProviderMutation();
     const [createContract, { isLoading: isCreatingContract }] = useCreateInsuranceContractMutation();
+    const [updateContractMutation, { isLoading: isUpdatingContract }] = useUpdateInsuranceContractMutation();
     const [createRule, { isLoading: isCreatingRule }] = useCreateCoverageRuleMutation();
+    const [updateCoverageRuleMutation, { isLoading: isUpdatingRule }] = useUpdateCoverageRuleMutation();
+    const [createPolicy, { isLoading: isCreatingPolicy }] = useCreateInsurancePolicyMutation();
+    const [updatePolicyMutation, { isLoading: isUpdatingPolicy }] = useUpdateInsurancePolicyMutation();
     const [createApproval, { isLoading: isCreatingApproval }] = useCreateInsuranceApprovalMutation();
     const [createClaim, { isLoading: isCreatingClaim }] = useCreateClaimMutation();
     const [updateClaimStatus, { isLoading: isUpdatingClaim }] = useUpdateClaimStatusMutation();
@@ -96,6 +128,7 @@ const Insurance = () => {
     const contracts = useMemo(() => Array.isArray(contractData) ? contractData : [], [contractData]);
     const rules = useMemo(() => Array.isArray(ruleData) ? ruleData : [], [ruleData]);
     const approvals = useMemo(() => Array.isArray(approvalData) ? approvalData : [], [approvalData]);
+    const policies = useMemo(() => Array.isArray(allPoliciesData) ? allPoliciesData : [], [allPoliciesData]);
     const allClaims = useMemo(() => Array.isArray(claimData) ? claimData : [], [claimData]);
     const rejectedClaims = useMemo(() => Array.isArray(rejectedClaimData) ? rejectedClaimData : [], [rejectedClaimData]);
     const patients = useMemo(() => Array.isArray(patientData?.patients) ? patientData.patients : Array.isArray(patientData) ? patientData : [], [patientData]);
@@ -108,14 +141,16 @@ const Insurance = () => {
     const summary = useMemo(() => {
         const expected = allClaims.reduce((total, claim) => total + toNumber(claim.expected_amount), 0);
         const received = allClaims.reduce((total, claim) => total + toNumber(claim.received_amount), 0);
+        const deductions = allClaims.reduce((total, claim) => total + toNumber(claim.deduction_amount || 0), 0);
         return {
             providers: providers.length,
             activeContracts: contracts.filter(contract => contract.is_active).length,
+            totalPolicies: policies.length,
             approvalPending: approvals.filter(item => item.status === 'Pending').length,
             rejectedClaims: rejectedClaims.length,
-            outstanding: Math.max(0, expected - received),
+            outstanding: Math.max(0, expected - (received + deductions)),
         };
-    }, [allClaims, approvals, contracts, providers, rejectedClaims]);
+    }, [allClaims, approvals, contracts, policies, providers, rejectedClaims]);
 
     const claimStatuses = useMemo(() => [...new Set(allClaims.map(claim => claim.status).filter(Boolean))], [allClaims]);
     const visibleClaims = useMemo(() => {
@@ -129,14 +164,24 @@ const Insurance = () => {
         });
     }, [allClaims, claimProvider, claimSearch, claimStatus]);
 
+    const visiblePolicies = useMemo(() => {
+        const search = policySearch.trim().toLowerCase();
+        if (!search) return policies;
+        return policies.filter(pol => {
+            return [pol.policy_number, pol.member_number, pol.plan_name, pol.holder_name, pol.provider_name, pol.mrn, pol.first_name, pol.last_name]
+                .filter(Boolean).join(' ').toLowerCase().includes(search);
+        });
+    }, [policies, policySearch]);
+
     const hasClaimFilters = Boolean(claimSearch || claimStatus !== 'all' || claimProvider !== 'all');
-    const hasQueryError = providersError || contractsError || rulesError || approvalsError || claimsError || rejectedError;
+    const hasQueryError = providersError || contractsError || rulesError || approvalsError || claimsError || rejectedError || policiesError;
 
     const refreshAll = () => {
         refetchProviders();
         refetchContracts();
         refetchRules();
         refetchApprovals();
+        refetchPolicies();
         refetchClaims();
         refetchRejected();
     };
@@ -158,11 +203,59 @@ const Insurance = () => {
         }
     };
 
+    const handleUpdateProvider = async (e) => {
+        e.preventDefault();
+        if (!editingProvider) return;
+        try {
+            await updateProviderMutation({
+                id: editingProvider.provider_id,
+                name: editingProvider.name,
+                payerCode: editingProvider.payer_code,
+                phone: editingProvider.phone,
+                email: editingProvider.email,
+                address: editingProvider.address,
+                isActive: editingProvider.is_active,
+                notes: editingProvider.notes
+            }).unwrap();
+            toast.success(t('messages.providerUpdated', 'Provider details updated successfully.'));
+            setEditingProvider(null);
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('messages.providerError')));
+        }
+    };
+
     const saveContract = async () => {
         try {
-            await createContract({ ...contractForm, providerId: contractForm.providerId || undefined }).unwrap();
+            await createContract({
+                ...contractForm,
+                providerId: contractForm.providerId || undefined,
+                commissionPercentage: contractForm.commissionPercentage ? Number(contractForm.commissionPercentage) : undefined
+            }).unwrap();
             toast.success(t('messages.contractAdded'));
-            setContractForm({ providerId: '', entityName: '', entityType: 'Insurance', contractNumber: '', startDate: '', endDate: '' });
+            setContractForm({ providerId: '', entityName: '', entityType: 'Insurance', contractNumber: '', startDate: '', endDate: '', commissionPercentage: '' });
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('messages.contractError')));
+        }
+    };
+
+    const handleUpdateContract = async (e) => {
+        e.preventDefault();
+        if (!editingContract) return;
+        try {
+            await updateContractMutation({
+                id: editingContract.contract_id,
+                entityName: editingContract.entity_name,
+                entityType: editingContract.entity_type,
+                providerId: editingContract.provider_id || undefined,
+                contractNumber: editingContract.contract_number,
+                commissionPercentage: editingContract.commission_percentage !== '' ? Number(editingContract.commission_percentage) : undefined,
+                startDate: editingContract.start_date ? editingContract.start_date.slice(0, 10) : undefined,
+                endDate: editingContract.end_date ? editingContract.end_date.slice(0, 10) : undefined,
+                isActive: editingContract.is_active,
+                coverageNotes: editingContract.coverage_notes
+            }).unwrap();
+            toast.success(t('messages.contractUpdated', 'Contract updated successfully.'));
+            setEditingContract(null);
         } catch (error) {
             toast.error(getErrorMessage(error, t('messages.contractError')));
         }
@@ -182,6 +275,67 @@ const Insurance = () => {
             setRuleForm(prev => ({ ...prev, coverageCeiling: '', modalityType: '', contractId: '', preauthorizationRequired: false }));
         } catch (error) {
             toast.error(getErrorMessage(error, t('messages.ruleError')));
+        }
+    };
+
+    const handleUpdateRule = async (e) => {
+        e.preventDefault();
+        if (!editingRule) return;
+        try {
+            await updateCoverageRuleMutation({
+                id: editingRule.rule_id,
+                providerId: editingRule.provider_id,
+                contractId: editingRule.contract_id || undefined,
+                modalityType: editingRule.modality_type || undefined,
+                coveragePercentage: Number(editingRule.coverage_percentage),
+                coverageCeiling: editingRule.coverage_ceiling !== '' ? Number(editingRule.coverage_ceiling) : null,
+                copayAmount: Number(editingRule.copay_amount || 0),
+                preauthorizationRequired: Boolean(editingRule.preauthorization_required),
+                isActive: Boolean(editingRule.is_active)
+            }).unwrap();
+            toast.success(t('messages.ruleUpdated', 'Coverage rule updated successfully.'));
+            setEditingRule(null);
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('messages.ruleError')));
+        }
+    };
+
+    const savePolicy = async () => {
+        try {
+            await createPolicy({
+                ...newPolicyForm,
+                contractId: newPolicyForm.contractId || undefined,
+                validFrom: newPolicyForm.validFrom || undefined,
+                validTo: newPolicyForm.validTo || undefined,
+            }).unwrap();
+            toast.success(t('messages.policyAdded', 'Insurance policy added successfully.'));
+            setNewPolicyForm({ patientId: '', providerId: '', contractId: '', policyNumber: '', memberNumber: '', planName: '', holderName: '', relationshipToHolder: 'Self', validFrom: '', validTo: '', isPrimary: true });
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('messages.policyError', 'Failed to save policy.')));
+        }
+    };
+
+    const handleUpdatePolicy = async (e) => {
+        e.preventDefault();
+        if (!editingPolicy) return;
+        try {
+            await updatePolicyMutation({
+                id: editingPolicy.policy_id,
+                providerId: editingPolicy.provider_id,
+                contractId: editingPolicy.contract_id || undefined,
+                policyNumber: editingPolicy.policy_number,
+                memberNumber: editingPolicy.member_number,
+                planName: editingPolicy.plan_name,
+                holderName: editingPolicy.holder_name,
+                relationshipToHolder: editingPolicy.relationship_to_holder,
+                validFrom: editingPolicy.valid_from ? editingPolicy.valid_from.slice(0, 10) : undefined,
+                validTo: editingPolicy.valid_to ? editingPolicy.valid_to.slice(0, 10) : undefined,
+                isPrimary: Boolean(editingPolicy.is_primary)
+            }).unwrap();
+            toast.success(t('messages.policyUpdated', 'Insurance policy updated successfully.'));
+            setEditingPolicy(null);
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('messages.policyError', 'Failed to update policy.')));
         }
     };
 
@@ -211,7 +365,6 @@ const Insurance = () => {
             if (status === 'Submitted') payload.claimReferenceNumber = value;
             if (status === 'Resubmitted') payload.resubmissionNotes = value;
             if (status === 'Rejected') payload.rejectionReason = value;
-            if (status === 'Paid' || status === 'Partially Paid') payload.receivedAmount = Number(value);
             await updateClaimStatus(payload).unwrap();
             toast.success(status === 'Resubmitted'
                 ? t('messages.resubmitted')
@@ -220,6 +373,29 @@ const Insurance = () => {
         } catch (error) {
             toast.error(getErrorMessage(error, t('messages.claimUpdatedError')));
             return false;
+        }
+    };
+
+    const handleSettlementSubmit = async (settlementData) => {
+        if (!settlementClaim) return;
+        try {
+            const { receivedAmount, deductionAmount, deductionReason } = settlementData;
+            const expected = toNumber(settlementClaim.expected_amount);
+            const total = Number(receivedAmount) + Number(deductionAmount || 0);
+            const targetStatus = total >= expected - 0.005 ? 'Paid' : 'Partially Paid';
+
+            await updateClaimStatus({
+                id: settlementClaim.claim_id,
+                status: targetStatus,
+                receivedAmount: Number(receivedAmount),
+                deductionAmount: deductionAmount ? Number(deductionAmount) : 0,
+                deductionReason: deductionReason || undefined
+            }).unwrap();
+
+            toast.success(t('messages.claimStatus', { status: t(`statuses.${targetStatus}`, { defaultValue: targetStatus }) }));
+            setSettlementClaim(null);
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('messages.claimUpdatedError')));
         }
     };
 
@@ -246,8 +422,12 @@ const Insurance = () => {
             setClaimAction({ claim, status });
             return;
         }
-        if (['Rejected', 'Paid', 'Partially Paid'].includes(status)) {
+        if (status === 'Rejected') {
             setClaimAction({ claim, status });
+            return;
+        }
+        if (['Paid', 'Partially Paid'].includes(status)) {
+            setSettlementClaim(claim);
             return;
         }
         try {
@@ -258,26 +438,139 @@ const Insurance = () => {
         }
     };
 
+    const exportProviderClaims = async (provider, format = 'csv') => {
+        try {
+            setIsExporting(true);
+            const safeName = (provider.name || 'provider').replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
+            await downloadAuthenticatedFile(
+                `/api/claims/export?providerId=${provider.provider_id}&format=${format}`,
+                `claims-${safeName}-${new Date().toISOString().slice(0, 10)}.${format}`
+            );
+            toast.success(t('messages.exportSuccess', 'Claims exported successfully.'));
+        } catch (err) {
+            toast.error(getErrorMessage(err, t('messages.exportFailed', 'Failed to export claims.')));
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const handleCustomExport = async (e) => {
+        if (e) e.preventDefault();
+        try {
+            setIsExporting(true);
+            const params = new URLSearchParams();
+            if (exportParams.providerId && exportParams.providerId !== 'all') {
+                params.append('providerId', exportParams.providerId);
+            }
+            if (exportParams.status && exportParams.status !== 'all') {
+                params.append('status', exportParams.status);
+            }
+            if (exportParams.startDate) {
+                params.append('startDate', exportParams.startDate);
+            }
+            if (exportParams.endDate) {
+                params.append('endDate', exportParams.endDate);
+            }
+            params.append('format', exportParams.format || 'csv');
+
+            let providerName = 'all-providers';
+            if (exportParams.providerId && exportParams.providerId !== 'all') {
+                const foundProv = providers.find(p => String(p.provider_id) === String(exportParams.providerId));
+                if (foundProv?.name) {
+                    providerName = foundProv.name.replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
+                }
+            }
+
+            const filename = `claims-${providerName}-${new Date().toISOString().slice(0, 10)}.${exportParams.format || 'csv'}`;
+            await downloadAuthenticatedFile(`/api/claims/export?${params.toString()}`, filename);
+            toast.success(t('messages.exportSuccess', 'Claims exported successfully.'));
+            setIsExportModalOpen(false);
+        } catch (err) {
+            toast.error(getErrorMessage(err, t('messages.exportFailed', 'Failed to export claims.')));
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const handleExport = async (format = 'csv') => {
+        try {
+            setIsExporting(true);
+            const params = new URLSearchParams();
+            if (claimStatus !== 'all') params.append('status', claimStatus);
+            if (claimProvider !== 'all') params.append('providerId', claimProvider);
+            params.append('format', format);
+
+            let providerName = 'all-providers';
+            if (claimProvider !== 'all') {
+                const foundProv = providers.find(p => String(p.provider_id) === String(claimProvider));
+                if (foundProv?.name) {
+                    providerName = foundProv.name.replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
+                }
+            }
+
+            await downloadAuthenticatedFile(
+                `/api/claims/export?${params.toString()}`,
+                `claims-${providerName}-${new Date().toISOString().slice(0, 10)}.${format}`
+            );
+            toast.success(t('messages.exportSuccess', 'Claims exported successfully.'));
+        } catch (err) {
+            toast.error(getErrorMessage(err, t('messages.exportFailed', 'Failed to export claims.')));
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const exportPoliciesCsv = () => {
+        if (!visiblePolicies.length) {
+            toast.error(t('empty.noDataToExport', 'No policies to export'));
+            return;
+        }
+        const headers = ['Patient Name', 'MRN', 'Provider', 'Policy Number', 'Member Number', 'Plan', 'Contract', 'Valid From', 'Valid To', 'Primary'];
+        const rows = visiblePolicies.map(p => [
+            `"${(`${p.first_name || ''} ${p.last_name || ''}`).trim() || p.patient_name || 'Patient'}"`,
+            p.mrn || '',
+            `"${(p.provider_name || '').replace(/"/g, '""')}"`,
+            p.policy_number || '',
+            p.member_number || '',
+            `"${(p.plan_name || '').replace(/"/g, '""')}"`,
+            `"${(p.contract_name || p.contract_number || '').replace(/"/g, '""')}"`,
+            p.valid_from ? p.valid_from.slice(0, 10) : '',
+            p.valid_to ? p.valid_to.slice(0, 10) : '',
+            p.is_primary ? 'Yes' : 'No'
+        ]);
+        const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `patient-policies-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success(t('messages.exportSuccess', 'Policies exported successfully.'));
+    };
+
     const claimDialogType = claimAction?.status === 'Submitted'
         ? 'submit'
         : claimAction?.status === 'Resubmitted'
             ? 'resubmit'
-            : claimAction?.status === 'Rejected'
-                ? 'reject'
-                : 'payment';
-    const claimDialogIsPayment = ['Paid', 'Partially Paid'].includes(claimAction?.status);
+            : 'reject';
 
     // Tab items specification
     const tabs = [
         { id: 'claims', label: t('tabs.claims', 'Claims Workbench'), icon: WalletCards, count: visibleClaims.length },
         { id: 'providers', label: t('tabs.providers', 'Payers & Contracts'), icon: Building2, count: providers.length },
+        { id: 'policies', label: t('tabs.policies', 'Patient Policies'), icon: FileText, count: policies.length },
         { id: 'rules', label: t('tabs.rules', 'Coverage & Simulator'), icon: BadgeCheck, count: rules.length },
         { id: 'approvals', label: t('tabs.approvals', 'Pre-Authorizations'), icon: ClipboardCheck, count: approvals.length },
     ];
+    const requestedTab = searchParams.get('tab');
+    const activeTab = tabs.some((tab) => tab.id === requestedTab) ? requestedTab : 'claims';
+    const setActiveTab = (tab) => setSearchParams((current) => { const next = new URLSearchParams(current); next.set('tab', tab); return next; }, { replace: true });
 
     return (
-        <div className="space-y-6">
-            {/* Top Page Header */}
+        <main className="mx-auto max-w-[1540px] space-y-4 pb-12">
             <PageHeader
                 icon={ShieldCheck}
                 eyebrow={t('header.eyebrow')}
@@ -286,6 +579,41 @@ const Insurance = () => {
                 description={t('header.description')}
                 actions={
                     <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setExportParams({
+                                    providerId: claimProvider !== 'all' ? claimProvider : 'all',
+                                    status: claimStatus !== 'all' ? claimStatus : 'all',
+                                    startDate: '',
+                                    endDate: '',
+                                    format: 'csv'
+                                });
+                                setIsExportModalOpen(true);
+                            }}
+                            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-teal-200/80 bg-teal-50/80 px-3.5 text-xs font-bold text-teal-800 shadow-xs backdrop-blur-md transition hover:bg-teal-100 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300 dark:hover:bg-teal-900/60"
+                        >
+                            <SlidersHorizontal size={16} className="text-teal-600 dark:text-teal-400" />
+                            <span>{t('exportModal.quickExportByProvider', 'Export by Provider')}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handleExport('csv')}
+                            disabled={isExporting}
+                            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-200/80 bg-emerald-50/80 px-3.5 text-xs font-bold text-emerald-800 shadow-xs backdrop-blur-md transition hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60 disabled:opacity-50"
+                        >
+                            <FileSpreadsheet size={16} className="text-emerald-600 dark:text-emerald-400" />
+                            <span>{isExporting ? t('actions.exporting', 'Exporting...') : t('actions.exportClaimsCsv', 'Export Claims (Excel/CSV)')}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handleExport('json')}
+                            disabled={isExporting}
+                            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-cyan-200/80 bg-cyan-50/80 px-3.5 text-xs font-bold text-cyan-800 shadow-xs backdrop-blur-md transition hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/40 dark:text-cyan-300 dark:hover:bg-cyan-900/60 disabled:opacity-50"
+                        >
+                            <Download size={16} className="text-cyan-600 dark:text-cyan-400" />
+                            <span>{t('actions.exportClaimsJson', 'Export Claims (JSON)')}</span>
+                        </button>
                         <button
                             type="button"
                             onClick={refreshAll}
@@ -297,21 +625,27 @@ const Insurance = () => {
                         </button>
                     </div>
                 }
+                meta={
+                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${hasQueryError ? 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>
+                        <span className={`h-2 w-2 rounded-full ${hasQueryError ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                        {hasQueryError ? t('errors.partialStatus') : t('stats.liveStatus')}
+                    </span>
+                }
+                metrics={[
+                    { key: 'providers', icon: Building2, label: t('stats.providers'), value: formatNumber(summary.providers), tone: 'cyan', loading: providersLoading },
+                    { key: 'contracts', icon: FileCheck2, label: t('stats.contracts'), value: formatNumber(summary.activeContracts), tone: 'blue', loading: contractsLoading },
+                    { key: 'policies', icon: FileText, label: t('tabs.policies', 'Patient Policies'), value: formatNumber(summary.totalPolicies), tone: 'teal', loading: policiesLoading },
+                    { key: 'approvals', icon: ClipboardCheck, label: t('stats.approvals'), value: formatNumber(summary.approvalPending), tone: 'amber', loading: approvalsLoading },
+                    { key: 'rejected', icon: XCircle, label: t('stats.rejected'), value: formatNumber(summary.rejectedClaims), tone: summary.rejectedClaims > 0 ? 'rose' : 'emerald', loading: rejectedLoading },
+                    { key: 'outstanding', icon: CircleDollarSign, label: t('stats.outstanding'), value: formatCurrency(summary.outstanding), tone: 'violet', loading: claimsLoading },
+                ]}
+                metricsLabel={t('stats.label')}
             />
 
             {hasQueryError && <QueryError onRetry={refreshAll} t={t} />}
 
-            {/* Overall Statistics Bar */}
-            <section className="grid grid-cols-2 gap-3.5 xl:grid-cols-5" aria-label={t('stats.label')}>
-                <Stat icon={Building2} label={t('stats.providers')} value={formatNumber(summary.providers)} tone="cyan" loading={providersLoading} />
-                <Stat icon={FileCheck2} label={t('stats.contracts')} value={formatNumber(summary.activeContracts)} tone="blue" loading={contractsLoading} />
-                <Stat icon={ClipboardCheck} label={t('stats.approvals')} value={formatNumber(summary.approvalPending)} tone="amber" loading={approvalsLoading} />
-                <Stat icon={XCircle} label={t('stats.rejected')} value={formatNumber(summary.rejectedClaims)} tone="rose" loading={rejectedLoading} />
-                <Stat icon={CircleDollarSign} label={t('stats.outstanding')} value={formatCurrency(summary.outstanding)} tone="violet" loading={claimsLoading} className="col-span-2 xl:col-span-1" />
-            </section>
-
             {/* Navigation Tabs Bar */}
-            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+<div data-workspace-tabs className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:hidden">
                 <nav className="flex gap-2 overflow-x-auto p-1 scrollbar-none" aria-label="Insurance Subsystems">
                     {tabs.map(tab => {
                         const Icon = tab.icon;
@@ -349,7 +683,29 @@ const Insurance = () => {
                         icon={WalletCards}
                         title={t('panels.claims')}
                         description={t('panels.claimsDescription')}
-                        action={<CountBadge>{t('table.showing', { visible: formatNumber(visibleClaims.length), total: formatNumber(allClaims.length) })}</CountBadge>}
+                        action={
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleExport('csv')}
+                                    disabled={isExporting}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                                >
+                                    <FileSpreadsheet size={15} className="text-emerald-600" />
+                                    <span>{t('actions.exportCsv', 'Export CSV')}</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleExport('json')}
+                                    disabled={isExporting}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                                >
+                                    <Download size={15} className="text-cyan-600" />
+                                    <span>{t('actions.exportJson', 'Export JSON')}</span>
+                                </button>
+                                <CountBadge>{t('table.showing', { visible: formatNumber(visibleClaims.length), total: formatNumber(allClaims.length) })}</CountBadge>
+                            </div>
+                        }
                     >
                         {/* New Claim Form Container */}
                         <div className="rounded-2xl border border-cyan-100/70 bg-gradient-to-br from-cyan-50/40 via-white to-white dark:from-cyan-950/30 dark:via-slate-900/60 dark:to-slate-900/40 p-4 sm:p-5 shadow-xs">
@@ -363,7 +719,6 @@ const Insurance = () => {
                                 </div>
                             </div>
                             <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
-                                {/* Smart Patient Selector */}
                                 <Field label={t('fields.patient', 'Patient')}>
                                     <PatientSelect
                                         value={claimForm.patientId}
@@ -372,8 +727,6 @@ const Insurance = () => {
                                         t={t}
                                     />
                                 </Field>
-
-                                {/* Provider Select */}
                                 <Field label={t('fields.provider')}>
                                     <ProviderSelect
                                         value={claimForm.providerId}
@@ -382,8 +735,6 @@ const Insurance = () => {
                                         t={t}
                                     />
                                 </Field>
-
-                                {/* Smart Invoice Select */}
                                 <Field label={t('fields.invoice', 'Invoice')}>
                                     <InvoiceSelect
                                         value={claimForm.invoiceId}
@@ -396,8 +747,6 @@ const Insurance = () => {
                                         t={t}
                                     />
                                 </Field>
-
-                                {/* Smart Patient Policy Select */}
                                 <Field label={t('fields.policy', 'Policy')}>
                                     <PolicySelect
                                         value={claimForm.policyId}
@@ -407,7 +756,6 @@ const Insurance = () => {
                                         disabled={!claimForm.patientId}
                                     />
                                 </Field>
-
                                 <Field label={t('fields.approvalId')}>
                                     <input
                                         value={claimForm.approvalId}
@@ -448,19 +796,19 @@ const Insurance = () => {
                             </div>
                         </div>
 
-                        {/* Claims Filter Toolbar */}
-                        <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-slate-50/40 dark:bg-slate-900/50 p-3 lg:flex-row lg:items-center">
-                            <div className="relative min-w-0 flex-1">
-                                <Search size={16} className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                                <input
-                                    type="search"
-                                    value={claimSearch}
-                                    onChange={event => setClaimSearch(event.target.value)}
-                                    placeholder={t('filters.search')}
-                                    className={`${inputClass} bg-white/90 dark:bg-slate-900/80 ps-10`}
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 sm:flex">
+                        {/* Claims Filter Bar */}
+                        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-3">
+                                <label className="relative min-w-56">
+                                    <span className="sr-only">{t('filters.search')}</span>
+                                    <input
+                                        value={claimSearch}
+                                        onChange={event => setClaimSearch(event.target.value)}
+                                        placeholder={t('filters.search')}
+                                        className={`${inputClass} bg-white/90 dark:bg-slate-900/80 ps-9`}
+                                    />
+                                    <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                </label>
                                 <label className="relative">
                                     <span className="sr-only">{t('filters.status')}</span>
                                     <select
@@ -470,9 +818,7 @@ const Insurance = () => {
                                     >
                                         <option value="all">{t('filters.allStatuses')}</option>
                                         {claimStatuses.map(status => (
-                                            <option key={status} value={status}>
-                                                {t(`statuses.${status}`, { defaultValue: status })}
-                                            </option>
+                                            <option key={status} value={status}>{t(`statuses.${status}`)}</option>
                                         ))}
                                     </select>
                                     <ChevronDown size={15} className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -491,6 +837,43 @@ const Insurance = () => {
                                     </select>
                                     <ChevronDown size={15} className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-slate-400" />
                                 </label>
+                                <div className="ms-auto flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setExportParams({
+                                                providerId: claimProvider !== 'all' ? claimProvider : 'all',
+                                                status: claimStatus !== 'all' ? claimStatus : 'all',
+                                                startDate: '',
+                                                endDate: '',
+                                                format: 'csv'
+                                            });
+                                            setIsExportModalOpen(true);
+                                        }}
+                                        className="inline-flex items-center gap-1.5 rounded-xl border border-teal-200/80 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-800 shadow-xs hover:bg-teal-100 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300"
+                                    >
+                                        <SlidersHorizontal size={15} className="text-teal-600" />
+                                        <span>{t('exportModal.quickExportByProvider', 'Export by Provider')}</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleExport('csv')}
+                                        disabled={isExporting}
+                                        className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200/80 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 shadow-xs hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300 disabled:opacity-50"
+                                    >
+                                        <FileSpreadsheet size={15} className="text-emerald-600" />
+                                        <span>{isExporting ? t('actions.exporting', 'Exporting...') : 'Excel / CSV'}</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleExport('json')}
+                                        disabled={isExporting}
+                                        className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-200/80 bg-cyan-50 px-3 py-2 text-xs font-bold text-cyan-800 shadow-xs hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/40 dark:text-cyan-300 disabled:opacity-50"
+                                    >
+                                        <Download size={15} className="text-cyan-600" />
+                                        <span>JSON</span>
+                                    </button>
+                                </div>
                             </div>
                             {hasClaimFilters && (
                                 <button type="button" onClick={clearClaimFilters} className={secondaryBtn}>
@@ -519,7 +902,7 @@ const Insurance = () => {
                                         ))}
                                     </div>
                                     <div className="hidden overflow-x-auto rounded-2xl border border-slate-200/60 dark:border-slate-800/60 md:block">
-                                        <table className="w-full min-w-[820px] border-separate border-spacing-0 text-start text-sm">
+                                        <table className="w-full min-w-[860px] border-separate border-spacing-0 text-start text-sm">
                                             <thead>
                                                 <tr className="bg-slate-50/50 dark:bg-slate-900/50 text-[10px] font-bold uppercase tracking-[.14em] text-slate-400">
                                                     <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-start">{t('table.claim')}</th>
@@ -527,6 +910,7 @@ const Insurance = () => {
                                                     <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-start">{t('table.status')}</th>
                                                     <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-end">{t('table.expected')}</th>
                                                     <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-end">{t('table.received')}</th>
+                                                    <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-end">{t('forms.deductionAmount', 'Deduction')}</th>
                                                     <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-end">{t('table.actions')}</th>
                                                 </tr>
                                             </thead>
@@ -577,7 +961,36 @@ const Insurance = () => {
                             emptyTitle={t('empty.providers')}
                             emptyDescription={t('empty.providersDescription')}
                             keyFor={provider => provider.provider_id}
-                            render={provider => <RecordLine title={provider.name} meta={provider.payer_code ? `${t('fields.payerCode')}: ${provider.payer_code}` : t('empty.noPayerCode')} />}
+                            render={provider => (
+                                <RecordLine
+                                    title={provider.name}
+                                    meta={provider.payer_code ? `${t('fields.payerCode')}: ${provider.payer_code}` : t('empty.noPayerCode')}
+                                    badge={provider.is_active ? t('statuses.Active') : t('statuses.Inactive')}
+                                    badgeTone={provider.is_active ? 'emerald' : 'slate'}
+                                    action={
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => exportProviderClaims(provider, 'csv')}
+                                                disabled={isExporting}
+                                                title={t('exportModal.exportProvider', 'Export Claims for this Provider')}
+                                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300 disabled:opacity-50"
+                                            >
+                                                <FileSpreadsheet size={12} className="text-emerald-600 dark:text-emerald-400" />
+                                                <span>{t('actions.export', 'Export')}</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditingProvider({ ...provider })}
+                                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                                            >
+                                                <Edit2 size={12} />
+                                                <span>{t('actions.edit', 'Edit')}</span>
+                                            </button>
+                                        </div>
+                                    }
+                                />
+                            )}
                         />
                     </Panel>
 
@@ -623,6 +1036,16 @@ const Insurance = () => {
                                     meta={contract.provider_name ? `${contract.provider_name} · ${contract.contract_number || ''}` : contract.contract_number}
                                     badge={contract.is_active ? t('statuses.Active') : t('statuses.Inactive')}
                                     badgeTone={contract.is_active ? 'emerald' : 'slate'}
+                                    action={
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingContract({ ...contract })}
+                                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                                        >
+                                            <Edit2 size={12} />
+                                            <span>{t('actions.edit', 'Edit')}</span>
+                                        </button>
+                                    }
                                 />
                             )}
                         />
@@ -630,10 +1053,214 @@ const Insurance = () => {
                 </div>
             )}
 
-            {/* TAB 3: COVERAGE RULES & SIMULATOR */}
+            {/* TAB 3: PATIENT POLICIES */}
+            {activeTab === 'policies' && (
+                <div className="space-y-6">
+                    <Panel
+                        icon={FileText}
+                        title={t('panels.policies', 'Patient Insurance Policies')}
+                        description={t('panels.policiesDescription', 'View and manage patient insurance policies, plans, and contract links.')}
+                        action={<CountBadge>{formatNumber(visiblePolicies.length)}</CountBadge>}
+                    >
+                        {/* Add Policy Form */}
+                        <div className="rounded-2xl border border-teal-100/70 bg-gradient-to-br from-teal-50/40 via-white to-white dark:from-teal-950/30 dark:via-slate-900/60 dark:to-slate-900/40 p-4 sm:p-5 shadow-xs mb-6">
+                            <div className="mb-4 flex items-center gap-3">
+                                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white dark:bg-[#0b1426] text-teal-700 dark:text-teal-400 shadow-xs ring-1 ring-teal-100 dark:ring-teal-900/50">
+                                    <Plus size={19} />
+                                </span>
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-950 dark:text-white">{t('actions.addPolicy', 'Add Patient Policy')}</h3>
+                                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Attach patient to provider and insurance plan</p>
+                                </div>
+                            </div>
+                            <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+                                <Field label={t('fields.patient', 'Patient')}>
+                                    <PatientSelect
+                                        value={newPolicyForm.patientId}
+                                        onChange={patientId => setNewPolicyForm(prev => ({ ...prev, patientId }))}
+                                        patients={patients}
+                                        t={t}
+                                    />
+                                </Field>
+                                <Field label={t('fields.provider')}>
+                                    <ProviderSelect
+                                        value={newPolicyForm.providerId}
+                                        onChange={providerId => setNewPolicyForm(prev => ({ ...prev, providerId, contractId: '' }))}
+                                        providers={providers}
+                                        t={t}
+                                    />
+                                </Field>
+                                <Field label={t('fields.contract', 'Contract')}>
+                                    <ContractSelect
+                                        value={newPolicyForm.contractId}
+                                        onChange={contractId => setNewPolicyForm(prev => ({ ...prev, contractId }))}
+                                        contracts={contracts.filter(c => !newPolicyForm.providerId || String(c.provider_id) === String(newPolicyForm.providerId))}
+                                        t={t}
+                                    />
+                                </Field>
+                                <Field label="Policy Number">
+                                    <input
+                                        value={newPolicyForm.policyNumber}
+                                        onChange={e => setNewPolicyForm(prev => ({ ...prev, policyNumber: e.target.value }))}
+                                        placeholder="e.g. POL-12345"
+                                        className={inputClass}
+                                    />
+                                </Field>
+                                <Field label="Member Number">
+                                    <input
+                                        value={newPolicyForm.memberNumber}
+                                        onChange={e => setNewPolicyForm(prev => ({ ...prev, memberNumber: e.target.value }))}
+                                        placeholder="e.g. MEM-999"
+                                        className={inputClass}
+                                    />
+                                </Field>
+                                <Field label="Plan Name">
+                                    <input
+                                        value={newPolicyForm.planName}
+                                        onChange={e => setNewPolicyForm(prev => ({ ...prev, planName: e.target.value }))}
+                                        placeholder="e.g. Gold VIP"
+                                        className={inputClass}
+                                    />
+                                </Field>
+                                <Field label="Valid From">
+                                    <input
+                                        type="date"
+                                        value={newPolicyForm.validFrom}
+                                        onChange={e => setNewPolicyForm(prev => ({ ...prev, validFrom: e.target.value }))}
+                                        className={inputClass}
+                                    />
+                                </Field>
+                                <Field label="Valid To">
+                                    <input
+                                        type="date"
+                                        value={newPolicyForm.validTo}
+                                        onChange={e => setNewPolicyForm(prev => ({ ...prev, validTo: e.target.value }))}
+                                        className={inputClass}
+                                    />
+                                </Field>
+                                <label className="flex min-h-11 items-center gap-3 rounded-xl border border-slate-200/70 bg-slate-50/40 px-3.5 text-sm font-semibold text-slate-700 dark:border-slate-800/70 dark:bg-slate-900/50 dark:text-slate-300 sm:col-span-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={newPolicyForm.isPrimary}
+                                        onChange={e => setNewPolicyForm(prev => ({ ...prev, isPrimary: e.target.checked }))}
+                                        className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                    />
+                                    <span>Primary Insurance Policy (الوثيقة الأساسية)</span>
+                                </label>
+                                <div className="flex items-end sm:col-span-2">
+                                    <button
+                                        type="button"
+                                        onClick={savePolicy}
+                                        disabled={isCreatingPolicy || !newPolicyForm.patientId || !newPolicyForm.providerId || !newPolicyForm.policyNumber}
+                                        className={`${primaryBtn} w-full`}
+                                    >
+                                        <Plus size={17} />
+                                        <span>{isCreatingPolicy ? t('actions.saving') : t('actions.addPolicy', 'Add Patient Policy')}</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Search and Table */}
+                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <label className="relative block max-w-md flex-1">
+                                <span className="sr-only">Search policies</span>
+                                <input
+                                    value={policySearch}
+                                    onChange={e => setPolicySearch(e.target.value)}
+                                    placeholder="Search by Patient MRN, Name, Policy #, or Provider..."
+                                    className={`${inputClass} ps-9`}
+                                />
+                                <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            </label>
+                            <button
+                                type="button"
+                                onClick={exportPoliciesCsv}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                            >
+                                <FileSpreadsheet size={15} className="text-teal-600" />
+                                <span>{t('actions.exportPolicies', 'Export Policies (CSV)')}</span>
+                            </button>
+                        </div>
+
+                        {policiesLoading ? (
+                            <ClaimsLoading />
+                        ) : visiblePolicies.length === 0 ? (
+                            <EmptyState
+                                icon={FileText}
+                                title="No Insurance Policies Found"
+                                description="Patient insurance policies will appear here once added."
+                            />
+                        ) : (
+                            <div className="overflow-x-auto rounded-2xl border border-slate-200/60 dark:border-slate-800/60">
+                                <table className="w-full min-w-[850px] border-separate border-spacing-0 text-start text-sm">
+                                    <thead>
+                                        <tr className="bg-slate-50/50 dark:bg-slate-900/50 text-[10px] font-bold uppercase tracking-[.14em] text-slate-400">
+                                            <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-start">Patient</th>
+                                            <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-start">Provider</th>
+                                            <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-start">Policy #</th>
+                                            <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-start">Plan</th>
+                                            <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-start">Contract</th>
+                                            <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-start">Validity</th>
+                                            <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-start">Primary</th>
+                                            <th className="border-b border-slate-200/60 dark:border-slate-800/60 px-4 py-3 text-end">{t('table.actions')}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {visiblePolicies.map(pol => (
+                                            <tr key={pol.policy_id} className="transition hover:bg-slate-50/50 dark:hover:bg-slate-850/40">
+                                                <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 font-semibold text-slate-900 dark:text-white">
+                                                    <div>
+                                                        <span>{`${pol.first_name || ''} ${pol.last_name || ''}`.trim() || pol.patient_name || 'Patient'}</span>
+                                                        <span className="block text-[11px] font-normal text-slate-400">MRN: {pol.mrn || '—'}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-slate-700 dark:text-slate-300">
+                                                    {pol.provider_name || '—'}
+                                                </td>
+                                                <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 font-mono font-bold text-slate-800 dark:text-slate-200">
+                                                    {pol.policy_number}
+                                                    {pol.member_number && <span className="block text-[10px] font-normal text-slate-400">Mem: {pol.member_number}</span>}
+                                                </td>
+                                                <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-slate-700 dark:text-slate-300">
+                                                    {pol.plan_name || 'Standard'}
+                                                </td>
+                                                <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                                                    {pol.contract_name || pol.contract_number || '—'}
+                                                </td>
+                                                <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                                                    {pol.valid_from ? pol.valid_from.slice(0, 10) : '—'} → {pol.valid_to ? pol.valid_to.slice(0, 10) : '—'}
+                                                </td>
+                                                <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3">
+                                                    {pol.is_primary ? (
+                                                        <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">Primary</span>
+                                                    ) : (
+                                                        <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">Secondary</span>
+                                                    )}
+                                                </td>
+                                                <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-end">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setEditingPolicy({ ...pol })}
+                                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                                                    >
+                                                        <Edit2 size={13} />
+                                                        <span>{t('actions.edit', 'Edit')}</span>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </Panel>
+                </div>
+            )}
+
+            {/* TAB 4: COVERAGE RULES & SIMULATOR */}
             {activeTab === 'rules' && (
                 <div className="grid gap-6 xl:grid-cols-2">
-                    {/* Coverage Rule Creator */}
                     <Panel
                         icon={BadgeCheck}
                         title={t('panels.rules')}
@@ -649,7 +1276,6 @@ const Insurance = () => {
                                     t={t}
                                 />
                             </Field>
-                            {/* Linked Contract Selector */}
                             <Field label={t('fields.contract', 'Linked Contract')}>
                                 <ContractSelect
                                     value={ruleForm.contractId}
@@ -659,7 +1285,13 @@ const Insurance = () => {
                                 />
                             </Field>
                             <Field label={t('fields.modality')}>
-                                <input value={ruleForm.modalityType} onChange={event => setRuleForm(prev => ({ ...prev, modalityType: event.target.value }))} placeholder={t('fields.modality')} className={inputClass} />
+                                <input
+                                    value={ruleForm.modalityType}
+                                    onChange={event => setRuleForm(prev => ({ ...prev, modalityType: event.target.value }))}
+                                    placeholder="e.g. CT, MRI, X-RAY, US"
+                                    list="modality-suggestions"
+                                    className={inputClass}
+                                />
                             </Field>
                             <Field label={t('fields.coverage')}>
                                 <input type="number" min="0" max="100" value={ruleForm.coveragePercentage} onChange={event => setRuleForm(prev => ({ ...prev, coveragePercentage: event.target.value }))} placeholder={t('fields.coverage')} className={inputClass} />
@@ -691,6 +1323,16 @@ const Insurance = () => {
                                     meta={`${formatNumber(rule.coverage_percentage)}% · ${rule.modality_type || rule.exam_type_name || t('allExams')}`}
                                     badge={rule.preauthorization_required ? t('fields.preauthShort') : null}
                                     badgeTone="amber"
+                                    action={
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingRule({ ...rule })}
+                                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                                        >
+                                            <Edit2 size={12} />
+                                            <span>{t('actions.edit', 'Edit')}</span>
+                                        </button>
+                                    }
                                 />
                             )}
                         />
@@ -724,10 +1366,21 @@ const Insurance = () => {
                                     <input
                                         value={calcParams.modalityType}
                                         onChange={e => setCalcParams(prev => ({ ...prev, modalityType: e.target.value }))}
-                                        placeholder="e.g. MRI, CT, XRAY"
+                                        placeholder="e.g. CT, MRI, X-RAY, US"
+                                        list="modality-suggestions"
                                         className={inputClass}
                                     />
                                 </Field>
+                                <datalist id="modality-suggestions">
+                                    <option value="CT" />
+                                    <option value="MRI" />
+                                    <option value="X-RAY" />
+                                    <option value="US" />
+                                    <option value="MAMMO" />
+                                    <option value="PET-CT" />
+                                    <option value="FLUORO" />
+                                    <option value="DEXA" />
+                                </datalist>
                                 <Field label={t('calculator.testAmount', 'Gross Exam Price (EGP)')} className="sm:col-span-2">
                                     <input
                                         type="number"
@@ -740,7 +1393,6 @@ const Insurance = () => {
                                 </Field>
                             </div>
 
-                            {/* Calculator Results Widget */}
                             <div className="mt-5 border-t border-slate-150/70 dark:border-slate-800/70 pt-4">
                                 {calcLoading ? (
                                     <div className="h-28 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800/50" />
@@ -794,7 +1446,7 @@ const Insurance = () => {
                 </div>
             )}
 
-            {/* TAB 4: PRE-AUTHORIZATIONS & APPROVALS */}
+            {/* TAB 5: PRE-AUTHORIZATIONS & APPROVALS */}
             {activeTab === 'approvals' && (
                 <div className="grid gap-6 xl:grid-cols-2">
                     <Panel
@@ -894,33 +1546,593 @@ const Insurance = () => {
                 </div>
             )}
 
-            {/* Status Change Dialog Modal */}
+            {/* Status Change Dialog Modal (Submit / Resubmit / Reject) */}
             <TextPromptDialog
                 isOpen={Boolean(claimAction)}
                 onClose={() => setClaimAction(null)}
                 onConfirm={completeClaimAction}
                 title={t(`claimDialog.${claimDialogType}Title`)}
                 message={t(`claimDialog.${claimDialogType}Description`, { claim: claimAction?.claim?.claim_number || '—', amount: formatCurrency(claimAction?.claim?.expected_amount) })}
-                label={claimDialogType === 'submit' ? t('prompts.claimReference') : claimDialogType === 'resubmit' ? t('prompts.resubmission') : claimDialogType === 'reject' ? t('prompts.rejection') : t('prompts.received')}
-                initialValue={claimDialogIsPayment ? String(claimAction?.claim?.expected_amount || '') : ''}
-                type={claimDialogIsPayment ? 'number' : 'text'}
-                inputProps={claimDialogIsPayment ? { min: '0.01', step: '0.01', inputMode: 'decimal' } : { maxLength: 500 }}
-                validate={value => {
-                    if (!claimDialogIsPayment) return '';
-                    const amount = Number(value);
-                    if (!Number.isFinite(amount) || amount <= 0) return t('claimDialog.amountPositive');
-                    const expected = toNumber(claimAction?.claim?.expected_amount);
-                    if (expected > 0 && amount > expected) return t('claimDialog.amountExceeds');
-                    return '';
-                }}
+                label={claimDialogType === 'submit' ? t('prompts.claimReference') : claimDialogType === 'resubmit' ? t('prompts.resubmission') : t('prompts.rejection')}
+                initialValue=""
+                type="text"
+                inputProps={{ maxLength: 500 }}
                 confirmLabel={t(`claimDialog.confirm${claimDialogType[0].toUpperCase()}${claimDialogType.slice(1)}`)}
                 cancelLabel={t('claimDialog.cancel')}
                 validationMessage={t('claimDialog.required')}
                 isLoading={isUpdatingClaim}
             />
-        </div>
+
+            {/* Settle Claim Modal with Deductions */}
+            {settlementClaim && (
+                <ClaimSettlementModal
+                    claim={settlementClaim}
+                    onClose={() => setSettlementClaim(null)}
+                    onConfirm={handleSettlementSubmit}
+                    isLoading={isUpdatingClaim}
+                    t={t}
+                    currency={formatCurrency}
+                />
+            )}
+
+            {/* Edit Provider Modal */}
+            {editingProvider && (
+                <Modal title={t('actions.editProvider', 'Edit Provider')} onClose={() => setEditingProvider(null)}>
+                    <form onSubmit={handleUpdateProvider} className="space-y-4">
+                        <Field label={t('fields.providerName')}>
+                            <input
+                                value={editingProvider.name || ''}
+                                onChange={e => setEditingProvider(prev => ({ ...prev, name: e.target.value }))}
+                                className={inputClass}
+                                required
+                            />
+                        </Field>
+                        <Field label={t('fields.payerCode')}>
+                            <input
+                                value={editingProvider.payer_code || ''}
+                                onChange={e => setEditingProvider(prev => ({ ...prev, payer_code: e.target.value }))}
+                                className={inputClass}
+                            />
+                        </Field>
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label={t('fields.phone')}>
+                                <input
+                                    type="tel"
+                                    value={editingProvider.phone || ''}
+                                    onChange={e => setEditingProvider(prev => ({ ...prev, phone: e.target.value }))}
+                                    className={inputClass}
+                                />
+                            </Field>
+                            <Field label={t('fields.email')}>
+                                <input
+                                    type="email"
+                                    value={editingProvider.email || ''}
+                                    onChange={e => setEditingProvider(prev => ({ ...prev, email: e.target.value }))}
+                                    className={inputClass}
+                                />
+                            </Field>
+                        </div>
+                        <Field label="Address">
+                            <input
+                                value={editingProvider.address || ''}
+                                onChange={e => setEditingProvider(prev => ({ ...prev, address: e.target.value }))}
+                                className={inputClass}
+                            />
+                        </Field>
+                        <label className="flex items-center gap-2.5 text-sm font-bold text-slate-700 dark:text-slate-300">
+                            <input
+                                type="checkbox"
+                                checked={Boolean(editingProvider.is_active)}
+                                onChange={e => setEditingProvider(prev => ({ ...prev, is_active: e.target.checked }))}
+                                className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                            />
+                            <span>Active Provider (مقدم خدمة نشط)</span>
+                        </label>
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button type="button" onClick={() => setEditingProvider(null)} className={secondaryBtn}>
+                                Cancel
+                            </button>
+                            <button type="submit" disabled={isUpdatingProvider} className={primaryBtn}>
+                                {isUpdatingProvider ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {/* Edit Contract Modal */}
+            {editingContract && (
+                <Modal title={t('actions.editContract', 'Edit Contract')} onClose={() => setEditingContract(null)}>
+                    <form onSubmit={handleUpdateContract} className="space-y-4">
+                        <Field label={t('fields.entityName')}>
+                            <input
+                                value={editingContract.entity_name || ''}
+                                onChange={e => setEditingContract(prev => ({ ...prev, entity_name: e.target.value }))}
+                                className={inputClass}
+                                required
+                            />
+                        </Field>
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label={t('fields.contractNumber')}>
+                                <input
+                                    value={editingContract.contract_number || ''}
+                                    onChange={e => setEditingContract(prev => ({ ...prev, contract_number: e.target.value }))}
+                                    className={inputClass}
+                                />
+                            </Field>
+                            <Field label="Commission / Discount %">
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={editingContract.commission_percentage ?? ''}
+                                    onChange={e => setEditingContract(prev => ({ ...prev, commission_percentage: e.target.value }))}
+                                    className={inputClass}
+                                />
+                            </Field>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label={t('fields.startDate')}>
+                                <input
+                                    type="date"
+                                    value={editingContract.start_date ? editingContract.start_date.slice(0, 10) : ''}
+                                    onChange={e => setEditingContract(prev => ({ ...prev, start_date: e.target.value }))}
+                                    className={inputClass}
+                                />
+                            </Field>
+                            <Field label={t('fields.endDate')}>
+                                <input
+                                    type="date"
+                                    value={editingContract.end_date ? editingContract.end_date.slice(0, 10) : ''}
+                                    onChange={e => setEditingContract(prev => ({ ...prev, end_date: e.target.value }))}
+                                    className={inputClass}
+                                />
+                            </Field>
+                        </div>
+                        <Field label="Coverage Notes">
+                            <textarea
+                                value={editingContract.coverage_notes || ''}
+                                onChange={e => setEditingContract(prev => ({ ...prev, coverage_notes: e.target.value }))}
+                                rows={2}
+                                className={inputClass}
+                            />
+                        </Field>
+                        <label className="flex items-center gap-2.5 text-sm font-bold text-slate-700 dark:text-slate-300">
+                            <input
+                                type="checkbox"
+                                checked={Boolean(editingContract.is_active)}
+                                onChange={e => setEditingContract(prev => ({ ...prev, is_active: e.target.checked }))}
+                                className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                            />
+                            <span>Active Contract (عقد نشط)</span>
+                        </label>
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button type="button" onClick={() => setEditingContract(null)} className={secondaryBtn}>
+                                Cancel
+                            </button>
+                            <button type="submit" disabled={isUpdatingContract} className={primaryBtn}>
+                                {isUpdatingContract ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {/* Edit Rule Modal */}
+            {editingRule && (
+                <Modal title={t('actions.editRule', 'Edit Coverage Rule')} onClose={() => setEditingRule(null)}>
+                    <form onSubmit={handleUpdateRule} className="space-y-4">
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label={t('fields.modality')}>
+                                <input
+                                    value={editingRule.modality_type || ''}
+                                    onChange={e => setEditingRule(prev => ({ ...prev, modality_type: e.target.value }))}
+                                    list="modality-suggestions"
+                                    placeholder="e.g. CT, MRI, X-RAY, US"
+                                    className={inputClass}
+                                />
+                            </Field>
+                            <Field label={t('fields.coverage')}>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={editingRule.coverage_percentage ?? ''}
+                                    onChange={e => setEditingRule(prev => ({ ...prev, coverage_percentage: e.target.value }))}
+                                    className={inputClass}
+                                    required
+                                />
+                            </Field>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label={t('fields.ceiling')}>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={editingRule.coverage_ceiling ?? ''}
+                                    onChange={e => setEditingRule(prev => ({ ...prev, coverage_ceiling: e.target.value }))}
+                                    className={inputClass}
+                                />
+                            </Field>
+                            <Field label={t('fields.copay')}>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={editingRule.copay_amount ?? ''}
+                                    onChange={e => setEditingRule(prev => ({ ...prev, copay_amount: e.target.value }))}
+                                    className={inputClass}
+                                />
+                            </Field>
+                        </div>
+                        <label className="flex items-center gap-2.5 text-sm font-bold text-slate-700 dark:text-slate-300">
+                            <input
+                                type="checkbox"
+                                checked={Boolean(editingRule.preauthorization_required)}
+                                onChange={e => setEditingRule(prev => ({ ...prev, preauthorization_required: e.target.checked }))}
+                                className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                            />
+                            <span>{t('fields.preauth')}</span>
+                        </label>
+                        <label className="flex items-center gap-2.5 text-sm font-bold text-slate-700 dark:text-slate-300">
+                            <input
+                                type="checkbox"
+                                checked={Boolean(editingRule.is_active)}
+                                onChange={e => setEditingRule(prev => ({ ...prev, is_active: e.target.checked }))}
+                                className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                            />
+                            <span>Active Rule (قاعدة نشطة)</span>
+                        </label>
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button type="button" onClick={() => setEditingRule(null)} className={secondaryBtn}>
+                                Cancel
+                            </button>
+                            <button type="submit" disabled={isUpdatingRule} className={primaryBtn}>
+                                {isUpdatingRule ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {/* Edit Policy Modal */}
+            {editingPolicy && (
+                <Modal title={t('actions.editPolicy', 'Edit Policy')} onClose={() => setEditingPolicy(null)}>
+                    <form onSubmit={handleUpdatePolicy} className="space-y-4">
+                        <Field label={t('fields.provider')}>
+                            <ProviderSelect
+                                value={editingPolicy.provider_id || ''}
+                                onChange={providerId => setEditingPolicy(prev => ({ ...prev, provider_id: providerId }))}
+                                providers={providers}
+                                t={t}
+                            />
+                        </Field>
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label="Policy Number">
+                                <input
+                                    value={editingPolicy.policy_number || ''}
+                                    onChange={e => setEditingPolicy(prev => ({ ...prev, policy_number: e.target.value }))}
+                                    className={inputClass}
+                                    required
+                                />
+                            </Field>
+                            <Field label="Member Number">
+                                <input
+                                    value={editingPolicy.member_number || ''}
+                                    onChange={e => setEditingPolicy(prev => ({ ...prev, member_number: e.target.value }))}
+                                    className={inputClass}
+                                />
+                            </Field>
+                        </div>
+                        <Field label="Plan Name">
+                            <input
+                                value={editingPolicy.plan_name || ''}
+                                onChange={e => setEditingPolicy(prev => ({ ...prev, plan_name: e.target.value }))}
+                                className={inputClass}
+                            />
+                        </Field>
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label="Valid From">
+                                <input
+                                    type="date"
+                                    value={editingPolicy.valid_from ? editingPolicy.valid_from.slice(0, 10) : ''}
+                                    onChange={e => setEditingPolicy(prev => ({ ...prev, valid_from: e.target.value }))}
+                                    className={inputClass}
+                                />
+                            </Field>
+                            <Field label="Valid To">
+                                <input
+                                    type="date"
+                                    value={editingPolicy.valid_to ? editingPolicy.valid_to.slice(0, 10) : ''}
+                                    onChange={e => setEditingPolicy(prev => ({ ...prev, valid_to: e.target.value }))}
+                                    className={inputClass}
+                                />
+                            </Field>
+                        </div>
+                        <label className="flex items-center gap-2.5 text-sm font-bold text-slate-700 dark:text-slate-300">
+                            <input
+                                type="checkbox"
+                                checked={Boolean(editingPolicy.is_primary)}
+                                onChange={e => setEditingPolicy(prev => ({ ...prev, is_primary: e.target.checked }))}
+                                className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                            />
+                            <span>Primary Insurance Policy (الوثيقة الأساسية للمريض)</span>
+                        </label>
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button type="button" onClick={() => setEditingPolicy(null)} className={secondaryBtn}>
+                                Cancel
+                            </button>
+                            <button type="submit" disabled={isUpdatingPolicy} className={primaryBtn}>
+                                {isUpdatingPolicy ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {isExportModalOpen && (
+                <ExportClaimsModal
+                    isOpen={isExportModalOpen}
+                    onClose={() => setIsExportModalOpen(false)}
+                    exportParams={exportParams}
+                    setExportParams={setExportParams}
+                    onExport={handleCustomExport}
+                    providers={providers}
+                    isLoading={isExporting}
+                    t={t}
+                />
+            )}
+        </main>
     );
 };
+
+// Claim Settlement Dialog supporting Deductions & Live Balance
+const ClaimSettlementModal = ({ claim, onClose, onConfirm, isLoading, t, currency }) => {
+    const expected = toNumber(claim.expected_amount);
+    const prevReceived = toNumber(claim.received_amount);
+    const prevDeduction = toNumber(claim.deduction_amount || 0);
+
+    const [receivedAmount, setReceivedAmount] = useState(String(expected - prevDeduction));
+    const [deductionAmount, setDeductionAmount] = useState(String(prevDeduction));
+    const [deductionReason, setDeductionReason] = useState(claim.deduction_reason || '');
+
+    const numReceived = Number(receivedAmount) || 0;
+    const numDeduction = Number(deductionAmount) || 0;
+    const totalSettled = numReceived + numDeduction;
+    const remaining = Math.max(0, expected - totalSettled);
+    const isFullSettlement = totalSettled >= expected - 0.005;
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (numReceived <= 0 && numDeduction <= 0) {
+            toast.error(t('claimDialog.amountPositive', 'Enter an amount greater than zero.'));
+            return;
+        }
+        if (totalSettled > expected + 0.005) {
+            toast.error(t('claimDialog.amountExceeds', 'Total settled amount cannot exceed expected claim amount.'));
+            return;
+        }
+        if (numDeduction > 0 && !deductionReason.trim()) {
+            toast.error('A reason is required when recording a contractual deduction.');
+            return;
+        }
+        onConfirm({
+            receivedAmount: numReceived,
+            deductionAmount: numDeduction,
+            deductionReason: deductionReason.trim()
+        });
+    };
+
+    return (
+        <Modal title={t('settlement.title', 'Settle Claim & Record Payment')} onClose={onClose}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="rounded-xl border border-cyan-100 bg-cyan-50/60 p-3 text-xs text-cyan-900 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-200">
+                    <p className="font-bold">{claim.claim_number} — {claim.provider_name || 'Insurance Payer'}</p>
+                    <p className="mt-1">{t('settlement.description')}</p>
+                    <div className="mt-2 flex items-center justify-between border-t border-cyan-200/50 pt-2 font-mono font-bold">
+                        <span>{t('settlement.expectedAmount', 'Expected')}: {currency(expected)}</span>
+                        <span>{t('table.received')}: {currency(prevReceived)}</span>
+                    </div>
+                </div>
+
+                <Field label={t('settlement.receivedAmount', 'Received Amount (EGP)')}>
+                    <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={receivedAmount}
+                        onChange={e => setReceivedAmount(e.target.value)}
+                        className={inputClass}
+                        required
+                    />
+                </Field>
+
+                <Field label={t('settlement.deductionAmount', 'Contractual Deduction / Disallowance (EGP)')}>
+                    <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={deductionAmount}
+                        onChange={e => setDeductionAmount(e.target.value)}
+                        className={inputClass}
+                    />
+                </Field>
+
+                {numDeduction > 0 && (
+                    <Field label={t('settlement.deductionReason', 'Deduction / Disallowance Reason')}>
+                        <input
+                            type="text"
+                            value={deductionReason}
+                            onChange={e => setDeductionReason(e.target.value)}
+                            placeholder={t('settlement.deductionReasonPlaceholder')}
+                            className={inputClass}
+                            required
+                        />
+                    </Field>
+                )}
+
+                {/* Real-time Calculation Summary */}
+                <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-900/60">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+                        <span>{t('settlement.totalSettled', 'Total Settled')}:</span>
+                        <span className="font-mono text-sm font-extrabold text-teal-600 dark:text-teal-400">{currency(totalSettled)}</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                        <span>{t('settlement.remaining', 'Remaining')}:</span>
+                        <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{currency(remaining)}</span>
+                    </div>
+                    <div className="mt-2.5 flex items-center gap-2">
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black ${
+                            isFullSettlement
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                : 'bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300'
+                        }`}>
+                            {isFullSettlement ? t('settlement.settlePaid', 'Full Settlement (Paid)') : t('settlement.settlePartial', 'Partial Settlement')}
+                        </span>
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                    <button type="button" onClick={onClose} className={secondaryBtn}>
+                        {t('claimDialog.cancel', 'Cancel')}
+                    </button>
+                    <button type="submit" disabled={isLoading} className={primaryBtn}>
+                        {isLoading ? 'Processing...' : t('settlement.confirm', 'Confirm Settlement')}
+                    </button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+// Export Claims Filtered by Provider Modal
+const ExportClaimsModal = ({ isOpen, onClose, exportParams, setExportParams, onExport, providers, isLoading, t }) => {
+    if (!isOpen) return null;
+    return (
+        <Modal title={t('exportModal.title', 'Export Claims by Provider')} onClose={onClose}>
+            <form onSubmit={onExport} className="space-y-4">
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    {t('exportModal.description')}
+                </p>
+
+                <Field label={t('exportModal.provider')}>
+                    <select
+                        value={exportParams.providerId}
+                        onChange={e => setExportParams(prev => ({ ...prev, providerId: e.target.value }))}
+                        className={inputClass}
+                    >
+                        <option value="all">{t('exportModal.allProviders')}</option>
+                        {providers.map(p => (
+                            <option key={p.provider_id} value={p.provider_id}>
+                                {p.name} {p.payer_code ? `(${p.payer_code})` : ''}
+                            </option>
+                        ))}
+                    </select>
+                </Field>
+
+                <Field label={t('exportModal.status')}>
+                    <select
+                        value={exportParams.status}
+                        onChange={e => setExportParams(prev => ({ ...prev, status: e.target.value }))}
+                        className={inputClass}
+                    >
+                        <option value="all">{t('exportModal.allStatuses')}</option>
+                        <option value="Submitted">{t('statuses.Submitted')}</option>
+                        <option value="Paid">{t('statuses.Paid')}</option>
+                        <option value="Partially Paid">{t('statuses.Partially Paid')}</option>
+                        <option value="Rejected">{t('statuses.Rejected')}</option>
+                        <option value="Approved">{t('statuses.Approved')}</option>
+                        <option value="Pending Approval">{t('statuses.Pending')}</option>
+                    </select>
+                </Field>
+
+                <div className="grid grid-cols-2 gap-3">
+                    <Field label={t('exportModal.startDate')}>
+                        <input
+                            type="date"
+                            value={exportParams.startDate}
+                            onChange={e => setExportParams(prev => ({ ...prev, startDate: e.target.value }))}
+                            className={inputClass}
+                        />
+                    </Field>
+                    <Field label={t('exportModal.endDate')}>
+                        <input
+                            type="date"
+                            value={exportParams.endDate}
+                            onChange={e => setExportParams(prev => ({ ...prev, endDate: e.target.value }))}
+                            className={inputClass}
+                        />
+                    </Field>
+                </div>
+
+                <Field label={t('exportModal.format')}>
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                        <label className={`flex items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-bold cursor-pointer transition ${
+                            exportParams.format === 'csv'
+                                ? 'border-emerald-500 bg-emerald-50/80 text-emerald-800 dark:border-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300 ring-1 ring-emerald-500'
+                                : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                        }`}>
+                            <input
+                                type="radio"
+                                name="exportFormat"
+                                value="csv"
+                                checked={exportParams.format === 'csv'}
+                                onChange={() => setExportParams(prev => ({ ...prev, format: 'csv' }))}
+                                className="sr-only"
+                            />
+                            <FileSpreadsheet size={16} className={exportParams.format === 'csv' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'} />
+                            <span>Excel / CSV</span>
+                        </label>
+                        <label className={`flex items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-bold cursor-pointer transition ${
+                            exportParams.format === 'json'
+                                ? 'border-cyan-500 bg-cyan-50/80 text-cyan-800 dark:border-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-300 ring-1 ring-cyan-500'
+                                : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                        }`}>
+                            <input
+                                type="radio"
+                                name="exportFormat"
+                                value="json"
+                                checked={exportParams.format === 'json'}
+                                onChange={() => setExportParams(prev => ({ ...prev, format: 'json' }))}
+                                className="sr-only"
+                            />
+                            <Download size={16} className={exportParams.format === 'json' ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400'} />
+                            <span>JSON Data</span>
+                        </label>
+                    </div>
+                </Field>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <button type="button" onClick={onClose} className={secondaryBtn}>
+                        {t('claimDialog.cancel', 'Cancel')}
+                    </button>
+                    <button type="submit" disabled={isLoading} className={primaryBtn}>
+                        <Download size={16} />
+                        <span>{isLoading ? t('actions.exporting', 'Exporting...') : t('exportModal.download')}</span>
+                    </button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+// Generic Modal Container
+const Modal = ({ title, onClose, children }) => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150">
+        <div className="relative w-full max-w-lg rounded-3xl border border-slate-200/80 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-[#0b1426] sm:p-7">
+            <div className="mb-5 flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">{title}</h3>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                >
+                    <X size={18} />
+                </button>
+            </div>
+            {children}
+        </div>
+    </div>
+);
 
 // UI Helper Components
 
@@ -932,19 +2144,19 @@ const Panel = ({ id, icon: Icon, title, description, action, children }) => (
                     <Icon size={19} />
                 </span>
                 <div className="min-w-0">
-                    <h2 className="text-base font-bold text-slate-950 dark:text-white">{title}</h2>
-                    {description && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 leading-snug">{description}</p>}
+                    <h2 className="truncate text-base font-extrabold text-slate-950 dark:text-white">{title}</h2>
+                    {description && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{description}</p>}
                 </div>
             </div>
-            {action}
+            {action && <div className="shrink-0">{action}</div>}
         </div>
         {children}
     </section>
 );
 
-const Field = ({ label, className = '', children }) => (
-    <label className={`block min-w-0 ${className}`}>
-        <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-[.12em] text-slate-500 dark:text-slate-400">{label}</span>
+const Field = ({ label, children, className = '' }) => (
+    <label className={`block text-xs font-bold text-slate-600 dark:text-slate-300 ${className}`}>
+        <span className="mb-1.5 block">{label}</span>
         {children}
     </label>
 );
@@ -960,7 +2172,7 @@ const ProviderSelect = ({ value, onChange, providers, t }) => (
 
 const ContractSelect = ({ value, onChange, contracts, t }) => (
     <select value={value} onChange={event => onChange(event.target.value)} className={inputClass}>
-        <option value="">{t('fields.selectContract', 'Select contract (optional)')}</option>
+        <option value="">{t('fields.selectContract', 'Select Contract (Optional)')}</option>
         {contracts.map(contract => (
             <option key={contract.contract_id} value={contract.contract_id}>
                 {contract.entity_name} ({contract.contract_number || 'No #'})
@@ -1010,30 +2222,6 @@ const PolicySelect = ({ value, onChange, policies, t, disabled }) => (
     </select>
 );
 
-const statTones = {
-    cyan: 'bg-cyan-50 text-cyan-700 ring-cyan-100 dark:bg-cyan-950/40 dark:text-cyan-300 dark:ring-cyan-900/50',
-    blue: 'bg-blue-50 text-blue-700 ring-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900/50',
-    amber: 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900/50',
-    rose: 'bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-900/50',
-    violet: 'bg-violet-50 text-violet-700 ring-violet-100 dark:bg-violet-950/40 dark:text-violet-300 dark:ring-violet-900/50',
-};
-
-const Stat = ({ icon: Icon, label, value, tone, loading, className = '' }) => (
-    <article className={`group min-w-0 rounded-2xl border border-slate-200/70 bg-white/70 shadow-xs backdrop-blur-xl dark:border-slate-800/70 dark:bg-slate-900/60 p-4 transition hover:-translate-y-0.5 hover:border-cyan-200 dark:hover:border-cyan-800 sm:p-5 ${className}`}>
-        <div className="flex items-start justify-between gap-3">
-            <p className="text-[10px] font-bold uppercase leading-4 tracking-[.12em] text-slate-400 dark:text-slate-500 sm:text-[11px]">{label}</p>
-            <span className={`hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-4 sm:flex ${statTones[tone]}`}>
-                <Icon size={18} />
-            </span>
-        </div>
-        {loading ? (
-            <div className="mt-3 h-8 w-20 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800/50" />
-        ) : (
-            <p className="mt-2 truncate text-2xl font-extrabold tracking-tight text-slate-950 dark:text-white sm:text-3xl">{value}</p>
-        )}
-    </article>
-);
-
 const CountBadge = ({ children }) => (
     <span className="shrink-0 rounded-full border border-cyan-100 bg-cyan-50 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-cyan-700 dark:border-cyan-900/50 dark:bg-cyan-950/40 dark:text-cyan-300">
         {children}
@@ -1067,12 +2255,11 @@ const ClaimActions = ({ claim, t, onStatus, updating, compact = false }) => {
     }
     if (['Submitted', 'Resubmitted', 'Partially Paid'].includes(status)) {
         actions.push(
-            <button key="partial" type="button" onClick={() => onStatus(claim, 'Partially Paid')} disabled={updating} className={`${actionClass} border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 dark:border-violet-900/50 dark:bg-violet-950/40 dark:text-violet-300`}>
-                {t('actions.partialPaid')}
-            </button>,
-            <button key="paid" type="button" onClick={() => onStatus(claim, 'Paid')} disabled={updating} className={`${actionClass} border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300`}>
-                {t('actions.paid')}
-            </button>,
+            <button key="settle" type="button" onClick={() => onStatus(claim, 'Paid')} disabled={updating} className={`${actionClass} border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300`}>
+                {t('settlement.title', 'Settle / Pay')}
+            </button>
+        );
+        actions.push(
             <button key="reject" type="button" onClick={() => onStatus(claim, 'Rejected')} disabled={updating} className={`${actionClass} border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300`}>
                 {t('actions.reject')}
             </button>
@@ -1081,62 +2268,95 @@ const ClaimActions = ({ claim, t, onStatus, updating, compact = false }) => {
     if (status === 'Rejected') {
         actions.push(
             <button key="resubmit" type="button" onClick={() => onStatus(claim, 'Resubmitted')} disabled={updating} className={`${actionClass} border-cyan-200 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/40 dark:text-cyan-300`}>
-                {t('actions.resubmit', { defaultValue: 'Resubmit' })}
+                {t('actions.resubmit')}
             </button>
         );
     }
 
-    if (!actions.length) return null;
-    return <div className={`flex flex-wrap gap-2 ${compact ? '' : 'justify-end'}`}>{actions}</div>;
+    return actions.length ? (
+        <div className={`flex flex-wrap items-center gap-1.5 ${compact ? 'justify-start' : 'justify-end'}`}>
+            {actions}
+        </div>
+    ) : null;
 };
 
 const ClaimRow = ({ claim, t, currency, onStatus, updating }) => (
-    <tr className="group transition hover:bg-cyan-50/30 dark:hover:bg-cyan-950/20">
-        <td className="border-b border-slate-100 dark:border-slate-800/50 px-4 py-3.5">
-            <p className="font-bold text-slate-900 dark:text-white">{claim.claim_number || '—'}</p>
-            {claim.claim_reference_number && <p className="mt-0.5 text-xs text-slate-400">{claim.claim_reference_number}</p>}
+    <tr className="transition hover:bg-slate-50/50 dark:hover:bg-slate-850/40">
+        <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 font-semibold text-slate-900 dark:text-white">
+            <div>
+                <p className="font-bold">{claim.claim_number}</p>
+                {claim.claim_reference_number && <p className="text-[11px] font-normal text-slate-400">Ref: {claim.claim_reference_number}</p>}
+                {claim.mrn && <p className="text-[11px] font-normal text-slate-400">{claim.mrn} · {claim.invoice_number}</p>}
+            </div>
         </td>
-        <td className="border-b border-slate-100 dark:border-slate-800/50 px-4 py-3.5 font-semibold text-slate-700 dark:text-slate-300">{claim.provider_name || '—'}</td>
-        <td className="border-b border-slate-100 dark:border-slate-800/50 px-4 py-3.5"><StatusBadge status={claim.status} t={t} /></td>
-        <td className="border-b border-slate-100 dark:border-slate-800/50 px-4 py-3.5 text-end font-semibold text-slate-700 dark:text-slate-300">{currency(claim.expected_amount)}</td>
-        <td className="border-b border-slate-100 dark:border-slate-800/50 px-4 py-3.5 text-end font-bold text-emerald-600 dark:text-emerald-400">{currency(claim.received_amount)}</td>
-        <td className="border-b border-slate-100 dark:border-slate-800/50 px-4 py-3.5"><ClaimActions claim={claim} t={t} onStatus={onStatus} updating={updating} /></td>
+        <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-slate-700 dark:text-slate-300">
+            {claim.provider_name || '—'}
+        </td>
+        <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3">
+            <StatusBadge status={claim.status} t={t} />
+        </td>
+        <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-end font-mono font-bold text-slate-900 dark:text-white">
+            {currency(claim.expected_amount)}
+        </td>
+        <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-end font-mono font-bold text-emerald-600 dark:text-emerald-400">
+            {currency(claim.received_amount)}
+        </td>
+        <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-end font-mono font-bold text-violet-600 dark:text-violet-400">
+            {claim.deduction_amount > 0 ? (
+                <span title={claim.deduction_reason || 'Contractual deduction'}>
+                    {currency(claim.deduction_amount)}
+                </span>
+            ) : (
+                <span className="text-slate-400 font-normal">—</span>
+            )}
+        </td>
+        <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-end">
+            <ClaimActions claim={claim} t={t} onStatus={onStatus} updating={updating} />
+        </td>
     </tr>
 );
 
 const ClaimCard = ({ claim, t, currency, onStatus, updating }) => (
-    <article className="rounded-2xl border border-slate-200/70 bg-white/70 shadow-xs backdrop-blur-xl dark:border-slate-800/70 dark:bg-slate-900/60 p-4">
-        <div className="flex items-start justify-between gap-3">
+    <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-start justify-between gap-2">
             <div>
-                <p className="font-bold text-slate-950 dark:text-white">{claim.claim_number || '—'}</p>
-                <p className="mt-1 text-xs font-semibold text-slate-500">{claim.provider_name || '—'}</p>
+                <p className="font-bold text-slate-900 dark:text-white">{claim.claim_number}</p>
+                <p className="text-xs text-slate-500">{claim.provider_name || '—'}</p>
             </div>
             <StatusBadge status={claim.status} t={t} />
         </div>
-        <dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-slate-150/60 bg-slate-50/40 p-3 dark:border-slate-800/60 dark:bg-slate-900/40">
+        <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-100 pt-2 text-xs dark:border-slate-800 font-mono">
             <div>
-                <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('table.expected')}</dt>
-                <dd className="mt-1 text-sm font-extrabold text-slate-800 dark:text-slate-200">{currency(claim.expected_amount)}</dd>
+                <span className="text-[10px] text-slate-400 block uppercase">Exp</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{currency(claim.expected_amount)}</span>
             </div>
             <div>
-                <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('table.received')}</dt>
-                <dd className="mt-1 text-sm font-extrabold text-emerald-600 dark:text-emerald-400">{currency(claim.received_amount)}</dd>
+                <span className="text-[10px] text-slate-400 block uppercase">Rec</span>
+                <span className="font-bold text-emerald-600">{currency(claim.received_amount)}</span>
             </div>
-        </dl>
-        <div className="mt-4"><ClaimActions claim={claim} t={t} onStatus={onStatus} updating={updating} compact /></div>
-    </article>
+            <div>
+                <span className="text-[10px] text-slate-400 block uppercase">Ded</span>
+                <span className="font-bold text-violet-600">{currency(claim.deduction_amount || 0)}</span>
+            </div>
+        </div>
+        <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+            <ClaimActions claim={claim} t={t} onStatus={onStatus} updating={updating} compact />
+        </div>
+    </div>
 );
 
-const RecordList = ({ loading, rows, keyFor, render, emptyTitle, emptyDescription }) => (
-    <div className="mt-5 border-t border-slate-100 dark:border-slate-800/50 pt-4">
+const RecordList = ({ loading, rows, emptyTitle, emptyDescription, keyFor, render }) => (
+    <div className="mt-5 border-t border-slate-150/70 dark:border-slate-800/70 pt-4">
         {loading ? (
-            <div className="space-y-2">{[0, 1].map(item => <div key={item} className="h-12 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800/50" />)}</div>
-        ) : rows.length === 0 ? (
-            <EmptyState icon={FileCheck2} title={emptyTitle} description={emptyDescription} compact />
-        ) : (
             <div className="space-y-2">
+                {[0, 1, 2].map(item => <div key={item} className="h-12 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800/50" />)}
+            </div>
+        ) : rows.length === 0 ? (
+            <EmptyState icon={FileText} title={emptyTitle} description={emptyDescription} compact />
+        ) : (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-800/60 bg-white/50 dark:bg-slate-900/30">
                 {rows.map(row => (
-                    <div key={keyFor(row)} className="rounded-xl border border-slate-150/60 bg-slate-50/40 px-3.5 py-3 text-sm text-slate-700 dark:border-slate-800/60 dark:bg-slate-900/40 dark:text-slate-300">
+                    <div key={keyFor(row)} className="p-3.5 transition hover:bg-slate-50/50 dark:hover:bg-slate-850/40">
                         {render(row)}
                     </div>
                 ))}
@@ -1145,22 +2365,25 @@ const RecordList = ({ loading, rows, keyFor, render, emptyTitle, emptyDescriptio
     </div>
 );
 
-const RecordLine = ({ title, meta, badge, badgeTone = 'slate' }) => (
+const RecordLine = ({ title, meta, badge, badgeTone = 'slate', action }) => (
     <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
             <p className="truncate font-bold text-slate-800 dark:text-slate-200">{title || '—'}</p>
             {meta && <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{meta}</p>}
         </div>
-        {badge && (
-            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                badgeTone === 'emerald' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' :
-                badgeTone === 'amber' ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' :
-                badgeTone === 'rose' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' :
-                'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-            }`}>
-                {badge}
-            </span>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+            {badge && (
+                <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                    badgeTone === 'emerald' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' :
+                    badgeTone === 'amber' ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' :
+                    badgeTone === 'rose' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' :
+                    'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                }`}>
+                    {badge}
+                </span>
+            )}
+            {action}
+        </div>
     </div>
 );
 

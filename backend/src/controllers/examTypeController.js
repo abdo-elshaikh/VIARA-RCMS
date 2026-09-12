@@ -35,19 +35,28 @@ const ensureExamTypeSoftDeleteSchema = async (db) => {
 const getExamTypes = db => async (req, res, next) => {
     try {
         await ensureExamTypeSoftDeleteSchema(db);
-        const { modalityId, includeInactive = false } = req.query;
+        const { modalityId, roomId, includeInactive = false } = req.query;
         const values = [];
         const filters = ['et.deleted_at IS NULL'];
         if (modalityId) {
             values.push(modalityId);
             filters.push(`et.modality_id = $${values.length}`);
         }
+        if (roomId) {
+            values.push(roomId);
+            filters.push(`m.room_id = $${values.length}`);
+        }
         if (!includeInactive) filters.push('et.is_active = TRUE');
         const result = await db.query(`
-            SELECT et.*, m.name AS modality_name, m.type AS modality_type, m.status AS modality_status
+            SELECT et.*, m.name AS modality_name, m.type AS modality_type, m.status AS modality_status,
+                   m.room_id,
+                   COALESCE(r.name, m.room_number) AS room_name,
+                   COALESCE(r.room_number, m.room_number) AS room_number,
+                   r.status AS room_status
             FROM examination_types et
             JOIN modalities m ON m.modality_id = et.modality_id
                 AND m.deleted_at IS NULL
+            LEFT JOIN rooms r ON m.room_id = r.room_id
             ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
             ORDER BY m.name, et.name
         `, values);
@@ -133,13 +142,37 @@ const updateExamType = db => async (req, res, next) => {
         const modalityChanged = data.modalityId !== undefined && String(data.modalityId) !== String(existing.modality_id);
         if (modalityChanged) {
             await ensureModality(client, modalityId);
-            // Update active/pending appointments of this procedure to point to the new machine
+
+            const targetModality = await client.query('SELECT room_id, name FROM modalities WHERE modality_id = $1', [modalityId]);
+            const targetRoomId = targetModality.rows[0]?.room_id || null;
+            const targetMachineName = targetModality.rows[0]?.name || 'the new machine';
+
+            // Check if any active appointments of this exam collide with existing appointments on the target machine
+            const conflicts = await client.query(`
+                SELECT a1.appointment_id AS migrating_id, a1.start_time, a1.end_time,
+                       a2.appointment_id AS conflict_id
+                FROM appointments a1
+                JOIN appointments a2 ON a2.modality_id = $1
+                  AND a2.status NOT IN ('Completed', 'Cancelled', 'No-Show')
+                  AND tstzrange(a1.start_time, a1.end_time) && tstzrange(a2.start_time, a2.end_time)
+                WHERE a1.exam_type_id = $2
+                  AND a1.status NOT IN ('Completed', 'Cancelled', 'No-Show')
+                LIMIT 3
+            `, [modalityId, existing.type_id]);
+
+            if (conflicts.rows.length > 0) {
+                const dates = conflicts.rows.map(c => new Date(c.start_time).toLocaleString()).join(', ');
+                throw new AppError(`Cannot reassign procedure to ${targetMachineName}: conflicting appointments already exist on the target machine at [${dates}]. Please reschedule them first.`, 409);
+            }
+
+            // Update active/pending appointments of this procedure to point to the new machine and room
             await client.query(`
                 UPDATE appointments 
-                SET modality_id = $1 
-                WHERE exam_type_id = $2 
+                SET modality_id = $1,
+                    room_id = $2
+                WHERE exam_type_id = $3 
                   AND status NOT IN ('Completed', 'Cancelled', 'No-Show')
-            `, [modalityId, existing.type_id]);
+            `, [modalityId, targetRoomId, existing.type_id]);
         }
         const name = data.name ?? existing.name;
         const duplicate = await client.query(`

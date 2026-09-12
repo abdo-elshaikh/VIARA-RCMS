@@ -235,7 +235,6 @@ const ReferringDoctors = () => {
                 eyebrowIcon={Activity}
                 title={t('referringDoctors.title')}
                 description={t('referringDoctors.description')}
-                className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50/50 to-teal-50/40 p-6 shadow-xl shadow-slate-200/30 backdrop-blur-xl dark:border-white/10 dark:from-slate-950 dark:via-slate-900/90 dark:to-teal-950/20 dark:shadow-none"
                 meta={
                     <div className="flex flex-wrap items-center gap-2">
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-200/80 bg-teal-50/90 px-3 py-1 text-xs font-bold text-teal-800 shadow-sm dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">
@@ -283,16 +282,17 @@ const ReferringDoctors = () => {
                         <input ref={fileInputRef} type="file" accept=".csv,text/csv" onChange={importCsv} className="sr-only" aria-label={t('referringDoctors.actions.import')} />
                     </div>
                 }
+                metrics={[
+                    { key: 'network', icon: Users, label: t('referringDoctors.metrics.network'), value: summary.total, detail: t('referringDoctors.metrics.networkDetail'), tone: 'cyan', loading: isLoading, error: isError },
+                    { key: 'active', icon: UserCheck, label: t('referringDoctors.metrics.active'), value: summary.active, detail: t('referringDoctors.metrics.activeDetail'), tone: 'emerald', loading: isLoading, error: isError },
+                    { key: 'appointments', icon: CalendarCheck2, label: t('referringDoctors.metrics.appointments'), value: summary.appointments, detail: t('referringDoctors.metrics.appointmentsDetail'), tone: 'blue', loading: isLoading, error: isError },
+                    { key: 'revenue', icon: TrendingUp, label: t('referringDoctors.metrics.revenue'), value: formatCurrency(summary.revenue, locale), detail: t('referringDoctors.metrics.revenueDetail'), tone: 'emerald', loading: isLoading, error: isError },
+                    { key: 'commissions', icon: CircleDollarSign, label: t('referringDoctors.metrics.commissions'), value: formatCurrency(summary.commissions, locale), detail: t('referringDoctors.metrics.commissionsDetail'), tone: 'amber', loading: isLoading, error: isError },
+                ]}
+                metricsLabel={t('referringDoctors.metrics.label')}
             />
 
             {/* Executive Network KPI Command Signals */}
-            <section className="grid grid-cols-2 gap-4 md:grid-cols-5" aria-label={t('referringDoctors.metrics.label')}>
-                <NetworkMetric icon={Users} label={t('referringDoctors.metrics.network')} value={summary.total} detail={t('referringDoctors.metrics.networkDetail')} tone="cyan" />
-                <NetworkMetric icon={UserCheck} label={t('referringDoctors.metrics.active')} value={summary.active} detail={t('referringDoctors.metrics.activeDetail')} tone="emerald" />
-                <NetworkMetric icon={CalendarCheck2} label={t('referringDoctors.metrics.appointments')} value={summary.appointments} detail={t('referringDoctors.metrics.appointmentsDetail')} tone="indigo" />
-                <NetworkMetric icon={TrendingUp} label={t('referringDoctors.metrics.revenue')} value={formatCurrency(summary.revenue, locale)} detail={t('referringDoctors.metrics.revenueDetail')} tone="emerald" />
-                <NetworkMetric icon={CircleDollarSign} label={t('referringDoctors.metrics.commissions')} value={formatCurrency(summary.commissions, locale)} detail={t('referringDoctors.metrics.commissionsDetail')} tone="amber" className="col-span-2 md:col-span-1" />
-            </section>
 
             {/* Sticky Glassmorphic Search & Filter Toolbar */}
             <section className="sticky top-4 z-20 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-lg shadow-slate-200/40 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
@@ -517,35 +517,6 @@ const ReferringDoctors = () => {
                 credentials={credentialDialog}
                 onClose={() => setCredentialDialog(null)}
             />
-        </div>
-    );
-};
-
-/* Executive KPI Card Component */
-const NetworkMetric = ({ icon: Icon, label, value, detail, tone = 'cyan', className = '' }) => {
-    const tones = {
-        cyan: 'border-cyan-200/80 bg-cyan-50/60 text-cyan-900 dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-300',
-        emerald: 'border-emerald-200/80 bg-emerald-50/60 text-emerald-900 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300',
-        indigo: 'border-indigo-200/80 bg-indigo-50/60 text-indigo-900 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300',
-        amber: 'border-amber-200/80 bg-amber-50/60 text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300',
-    };
-    const iconStyles = {
-        cyan: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300',
-        emerald: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
-        indigo: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300',
-        amber: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
-    };
-
-    return (
-        <div className={`group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 p-5 shadow-lg shadow-slate-200/30 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none ${className}`}>
-            <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
-                <span className={`flex h-9 w-9 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-110 ${iconStyles[tone]}`}>
-                    <Icon size={18} />
-                </span>
-            </div>
-            <p className="mt-3 truncate text-xl font-black tracking-tight text-slate-900 dark:text-white sm:text-2xl">{value}</p>
-            <p className="mt-1.5 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{detail}</p>
         </div>
     );
 };

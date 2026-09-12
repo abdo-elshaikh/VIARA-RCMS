@@ -103,6 +103,7 @@ describe('audit logging resilience', () => {
     it('redacts sensitive fields recursively before audit persistence', () => {
         expect(AuditService.sanitizeForAudit({
             password: 'secret',
+            currentPassword: 'another-secret',
             profile: {
                 email: 'patient@example.com',
                 status: 'Active',
@@ -113,6 +114,7 @@ describe('audit logging resilience', () => {
             },
         })).toEqual({
             password: '[REDACTED]',
+            currentPassword: '[REDACTED]',
             profile: {
                 email: '[REDACTED]',
                 status: 'Active',

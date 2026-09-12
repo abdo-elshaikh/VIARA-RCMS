@@ -4,13 +4,18 @@ import {
     ArrowDown,
     ArrowUp,
     ArrowUpDown,
+    ArrowRight,
+    ArrowLeft,
     CheckCircle2,
     ChevronDown,
+    ChevronRight,
     Clock3,
     FileText,
+    ClipboardList,
     Filter,
     Layers,
     LockKeyhole,
+    MoreHorizontal,
     Printer,
     Search,
     SlidersHorizontal,
@@ -18,43 +23,85 @@ import {
     X,
     User,
     Activity,
-    CreditCard
+    CreditCard,
+    Banknote,
+    FlaskConical,
+    Microscope,
+    Radio,
+    Stethoscope,
+    FileCheck2,
+    PackageCheck,
+    XCircle,
+    Eye,
+    Edit3,
+    LayoutGrid,
+    List,
+    Users,
+    RotateCcw,
+    Lock,
+    Unlock,
+    DoorOpen,
+    Bell,
+    Volume2
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
+import toast from 'react-hot-toast';
 import { selectCurrentUser } from '../../store/authSlice';
+import { useClaimReceptionTaskMutation, useReleaseReceptionTaskMutation, useBroadcastPatientCallMutation } from '../../store/api';
+import { playHospitalChime } from '../../utils/audioChime';
 import PriorityBadge from '../ui/PriorityBadge';
 import StatusPill from '../ui/StatusPill';
 import EmptyState from '../ui/EmptyState';
 import Pagination from '../ui/Pagination';
 import { formatDuration } from '../../utils/dateFormat';
 import { getPaginationState } from '../../utils/pagination';
+import { getEffectivePermissions } from '../../utils/effectivePermissions';
 import { getValidQueueTransitions } from './receptionLogic';
+import {
+    findPartialPaymentException,
+    getEffectivePartialPaymentExceptionStatus,
+    hasApprovedPartialPaymentException,
+} from './partialPaymentExceptionStatus';
 
 const STAGES = [
-    'Registered', 'Scheduled', 'Arrived', 'Payment Pending', 'Prep Pending',
-    'Ready for Exam', 'In Exam', 'Reporting', 'Finalized', 'Delivered'
+    'Scheduled',
+    'Arrived',
+    'Payment Pending',
+    'Prep Pending',
+    'Ready for Exam',
+    'In Exam',
+    'Reporting',
+    'Finalized',
+    'Delivered'
 ];
+
+const PRIORITY_ORDER = {
+    Emergency: 0,
+    Urgent: 1,
+    Routine: 2
+};
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
 const STAGE_TONES = {
     Scheduled: 'bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700',
-    Arrived: 'bg-teal-50 text-teal-800 ring-teal-200 dark:bg-teal-500/15 dark:text-teal-300 dark:ring-teal-500/25',
-    'Payment Pending': 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/25',
-    'Prep Pending': 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/25',
-    'Ready for Exam': 'bg-cyan-50 text-cyan-800 ring-cyan-200 dark:bg-cyan-500/15 dark:text-cyan-300 dark:ring-cyan-500/25',
-    'In Exam': 'bg-indigo-50 text-indigo-800 ring-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-indigo-500/25',
-    Reporting: 'bg-violet-50 text-violet-800 ring-violet-200 dark:bg-violet-500/15 dark:text-violet-300 dark:ring-violet-500/25',
-    Finalized: 'bg-emerald-50 text-emerald-800 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/25',
-    Delivered: 'bg-slate-100 text-slate-800 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700'
+    Arrived: 'bg-teal-50 text-teal-700 ring-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:ring-teal-800',
+    'Payment Pending': 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800',
+    'Prep Pending': 'bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:ring-orange-800',
+    'Ready for Exam': 'bg-cyan-50 text-cyan-700 ring-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:ring-cyan-800',
+    'In Exam': 'bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:ring-indigo-800',
+    Reporting: 'bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:ring-violet-800',
+    Finalized: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800',
+    Delivered: 'bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700',
+    Cancelled: 'bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-800'
 };
 
-const PRIORITY_ORDER = { Emergency: 0, Urgent: 1, Routine: 2 };
-const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const ROLE_STAGE_PERMISSIONS = {
-    Receptionist: ['Registered', 'Scheduled', 'Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam', 'Cancelled'],
-    Accountant: ['Payment Pending', 'Prep Pending', 'Ready for Exam', 'Cancelled'],
-    Nurse: ['Prep Pending', 'Ready for Exam'],
-    Technician: ['In Exam', 'Reporting'],
-    Radiologist: ['Reporting', 'Finalized'],
+    Receptionist: ['Scheduled', 'Arrived', 'Payment Pending', 'Cancelled'],
+    Cashier: ['Prep Pending', 'Ready for Exam'],
+    Nurse: ['Ready for Exam', 'Cancelled'],
+    Technician: ['In Exam', 'Reporting', 'Cancelled'],
+    Radiologist: ['Finalized', 'Cancelled'],
 };
 
 const DailyOperationsTable = ({
@@ -68,15 +115,31 @@ const DailyOperationsTable = ({
     onMove,
     onPickup,
     onOpenPayment,
-    approvedPartialPaymentExceptions = [],
+    partialPaymentExceptions = [],
     onRequestPartialPaymentException,
     i18n,
     t,
+    onSelectCase,
+    isWaitlistOpen = false,
+    onToggleWaitlist,
+    waitlistCount = 0,
+    quickFilter = null,
+    externalDesk = null,
+    externalScope = null,
+    externalRooms = null,
+    externalModalities = null,
+    onDeskChange = null,
+    onScopeChange = null
 }) => {
     const user = useSelector(selectCurrentUser);
     const [searchTerm, setSearchTerm] = useState('');
     const [stageFilter, setStageFilter] = useState('all');
     const [priorityFilter, setPriorityFilter] = useState('all');
+    const [modalityFilter, setModalityFilter] = useState('all');
+    const [localRoomFilter, setLocalRoomFilter] = useState(() => localStorage.getItem('viara_reception_room') || 'all');
+    const [localReceptionScope, setLocalReceptionScope] = useState('all'); // 'all' | 'mine' | 'unclaimed'
+    const [localDesk, setLocalDesk] = useState(() => localStorage.getItem('viara_reception_desk') || 'شباك 1');
+    const [viewMode, setViewMode] = useState('table'); // 'table' | 'cards'
     const [sortField, setSortField] = useState('time');
     const [sortDirection, setSortDirection] = useState('asc');
     const [currentPage, setCurrentPage] = useState(1);
@@ -84,41 +147,166 @@ const DailyOperationsTable = ({
     const [stageMenu, setStageMenu] = useState(null);
     const [printMenu, setPrintMenu] = useState(null);
 
+    const activeDesk = externalDesk || localDesk;
+    const receptionScope = externalScope || localReceptionScope;
+    const roomFilter = externalRooms !== null ? externalRooms : localRoomFilter;
+
+    const [claimReceptionTask] = useClaimReceptionTaskMutation();
+    const [releaseReceptionTask] = useReleaseReceptionTaskMutation();
+    const [broadcastPatientCall] = useBroadcastPatientCallMutation();
+
+
+
+    const handleClaimTask = async (appointment, e) => {
+        e?.stopPropagation?.();
+        if (!appointment?.appointment_id) return;
+        try {
+            await claimReceptionTask({
+                appointmentId: appointment.appointment_id,
+                desk: activeDesk,
+                expectedVersion: appointment.receptionist_assignment_version
+            }).unwrap();
+            toast.success(t('reception.claimedSuccess', { defaultValue: 'تم استلام الحالة على شباكك بنجاح' }));
+        } catch (err) {
+            toast.error(err?.data?.message || t('reception.claimFailed', { defaultValue: 'تعذر استلام الحالة' }));
+        }
+    };
+
+    const handleReleaseTask = async (appointment, e) => {
+        e?.stopPropagation?.();
+        if (!appointment?.appointment_id) return;
+        try {
+            await releaseReceptionTask({
+                appointmentId: appointment.appointment_id
+            }).unwrap();
+            toast.success(t('reception.releasedSuccess', { defaultValue: 'تم تحرير الحالة وأصبحت متاحة للجميع' }));
+        } catch (err) {
+            toast.error(err?.data?.message || t('reception.releaseFailed', { defaultValue: 'تعذر تحرير الحالة' }));
+        }
+    };
+
+    // Sync quick filter from parent KPI cards
+    useEffect(() => {
+        if (quickFilter) {
+            if (quickFilter.stage !== undefined) setStageFilter(quickFilter.stage);
+            if (quickFilter.priority !== undefined) setPriorityFilter(quickFilter.priority);
+            if (quickFilter.modality !== undefined) setModalityFilter(quickFilter.modality);
+            if (quickFilter.search !== undefined) setSearchTerm(quickFilter.search);
+            setCurrentPage(1);
+        }
+    }, [quickFilter]);
+
+    const handleResetFilters = () => {
+        setSearchTerm('');
+        setStageFilter('all');
+        setPriorityFilter('all');
+        setModalityFilter('all');
+        setLocalRoomFilter('all');
+        setLocalReceptionScope('all');
+        onScopeChange?.('all');
+        localStorage.setItem('viara_reception_room', 'all');
+        setCurrentPage(1);
+    };
+
+    const hasExternalRooms = Array.isArray(roomFilter) ? roomFilter.length > 0 : (roomFilter && roomFilter !== 'all');
+    const hasExternalModalities = Array.isArray(externalModalities) && externalModalities.length > 0;
+    const isFiltered = Boolean(searchTerm.trim() || stageFilter !== 'all' || priorityFilter !== 'all' || modalityFilter !== 'all' || hasExternalRooms || hasExternalModalities || receptionScope !== 'all');
+
     const isRtl = i18n?.language?.startsWith('ar');
     const locale = isRtl ? 'ar-EG' : 'en-US';
 
-    const permissions = new Set([...(user?.permissions || []), ...(user?.elevatedPermissions || [])]);
+    const permissions = getEffectivePermissions(user);
     const has = (permission) => user?.role === 'Developer' || permissions.has(permission);
     const canMoveTo = (stage) => ['Developer', 'Admin'].includes(user?.role)
         || Boolean(ROLE_STAGE_PERMISSIONS[user?.role]?.includes(stage));
 
+    // Helper to determine the precise operational stage for any row
+    const resolveStage = (queue, appointment) => {
+        if (queue?.queue_stage) return queue.queue_stage;
+        if (appointment?.queue_stage) return appointment.queue_stage;
+        const apptStatus = appointment?.status;
+        if (apptStatus === 'Arrived' || apptStatus === 'Checked-in') return 'Arrived';
+        if (apptStatus === 'In Exam') return 'In Exam';
+        if (apptStatus === 'Completed') return 'Finalized';
+        if (apptStatus === 'Cancelled' || apptStatus === 'No Show') return 'Cancelled';
+        return 'Scheduled';
+    };
+
     // Build merged rows from appointments, queueItems, and invoices
     const rows = useMemo(() => {
-        const matched = new Set();
-        const result = appointments.map((appointment) => {
-            const queue = queueItems.find((item) => item.exam_id === appointment.exam_id || item.appointment_id === appointment.appointment_id);
-            if (queue) matched.add(queue.exam_id);
+        const matchedExamIds = new Set();
+        const matchedApptIds = new Set();
+
+        const result = (appointments || []).map((appointment) => {
+            const queue = (queueItems || []).find((item) =>
+                (item.exam_id && appointment.exam_id && item.exam_id === appointment.exam_id) ||
+                (item.appointment_id && appointment.appointment_id && item.appointment_id === appointment.appointment_id)
+            );
+            if (queue?.exam_id) matchedExamIds.add(queue.exam_id);
+            if (queue?.appointment_id) matchedApptIds.add(queue.appointment_id);
+            if (appointment.exam_id) matchedExamIds.add(appointment.exam_id);
+            if (appointment.appointment_id) matchedApptIds.add(appointment.appointment_id);
+
+            const invoice = (invoices || []).find((inv) =>
+                (appointment.appointment_id && inv.appointment_id === appointment.appointment_id) ||
+                (appointment.exam_id && inv.exam_id === appointment.exam_id) ||
+                (queue?.exam_id && inv.exam_id === queue.exam_id) ||
+                (queue?.appointment_id && inv.appointment_id === queue.appointment_id)
+            );
+
             return {
                 appointment,
                 queue,
-                invoice: invoices.find((invoice) => invoice.appointment_id === appointment.appointment_id || invoice.exam_id === appointment.exam_id)
+                invoice
             };
         });
 
-        queueItems.filter((item) => !matched.has(item.exam_id)).forEach((queue) => {
-            result.push({
-                queue,
-                invoice: invoices.find((invoice) => invoice.exam_id === queue.exam_id || invoice.appointment_id === queue.appointment_id)
-            });
+        (queueItems || []).forEach((queue) => {
+            const alreadyMatched = (queue.exam_id && matchedExamIds.has(queue.exam_id)) ||
+                (queue.appointment_id && matchedApptIds.has(queue.appointment_id));
+            if (!alreadyMatched) {
+                const invoice = (invoices || []).find((inv) =>
+                    (queue.exam_id && inv.exam_id === queue.exam_id) ||
+                    (queue.appointment_id && inv.appointment_id === queue.appointment_id)
+                );
+                result.push({
+                    queue,
+                    invoice
+                });
+            }
         });
 
         return result;
     }, [appointments, invoices, queueItems]);
 
+    // Unique modalities for filter
+    const availableModalities = useMemo(() => {
+        const set = new Set();
+        rows.forEach(({ appointment, queue }) => {
+            const mod = appointment?.machine_name || queue?.machine_name || queue?.modality_name;
+            if (mod) set.add(mod);
+        });
+        return Array.from(set).sort();
+    }, [rows]);
+
+    // Unique rooms for division
+    const availableRooms = useMemo(() => {
+        const map = new Map();
+        rows.forEach(({ appointment, queue }) => {
+            const room = appointment?.room_number || queue?.room_number;
+            const mod = appointment?.machine_name || queue?.machine_name || queue?.modality_name;
+            if (room) {
+                map.set(room, mod ? `${room} (${mod})` : room);
+            }
+        });
+        return Array.from(map.entries()).map(([room, label]) => ({ room, label }));
+    }, [rows]);
+
     // Stage counts for quick filter chips
     const filterCounts = useMemo(() => {
         const counts = {
             all: rows.length,
+            Scheduled: 0,
             Arrived: 0,
             'Payment Pending': 0,
             'Prep Pending': 0,
@@ -131,7 +319,7 @@ const DailyOperationsTable = ({
         };
 
         rows.forEach(({ appointment, queue }) => {
-            const stage = queue?.queue_stage || appointment?.queue_stage;
+            const stage = resolveStage(queue, appointment);
             if (stage && counts[stage] !== undefined) {
                 counts[stage]++;
             }
@@ -182,53 +370,116 @@ const DailyOperationsTable = ({
             );
         } else if (stageFilter !== 'all') {
             list = list.filter(({ appointment, queue }) => {
-                const stage = queue?.queue_stage || appointment?.queue_stage;
+                const stage = resolveStage(queue, appointment);
                 return stage === stageFilter;
             });
         }
 
         // 3. Priority Filter
         if (priorityFilter !== 'all') {
+            list = list.filter(({ appointment, queue }) =>
+                (appointment?.priority || queue?.priority || 'Routine') === priorityFilter
+            );
+        }
+
+        // 4. Modality Filter
+        if (Array.isArray(externalModalities) && externalModalities.length > 0) {
             list = list.filter(({ appointment, queue }) => {
-                const priority = appointment?.priority || queue?.priority;
-                return priority === priorityFilter;
+                const apptMod = appointment?.machine_name || appointment?.modality_name || appointment?.modality_type;
+                const queueMod = queue?.machine_name || queue?.modality_name || queue?.modality_type;
+                return externalModalities.some((m) => {
+                    if (!m) return false;
+                    const mLower = String(m).trim().toLowerCase();
+                    return (
+                        (apptMod && String(apptMod).trim().toLowerCase() === mLower) ||
+                        (queueMod && String(queueMod).trim().toLowerCase() === mLower) ||
+                        (appointment?.modality_id && String(appointment.modality_id) === String(m)) ||
+                        (queue?.modality_id && String(queue.modality_id) === String(m))
+                    );
+                });
+            });
+        } else if (modalityFilter !== 'all') {
+            list = list.filter(({ appointment, queue }) => {
+                const mod = appointment?.machine_name || queue?.machine_name || queue?.modality_name;
+                return mod === modalityFilter;
             });
         }
 
-        // 4. Sorting
+        // 4b. Room Filter
+        if (Array.isArray(roomFilter) && roomFilter.length > 0) {
+            list = list.filter(({ appointment, queue }) => {
+                const apptRoom = appointment?.room_number || appointment?.room_name;
+                const queueRoom = queue?.room_number || queue?.room_name;
+                return roomFilter.some((r) => {
+                    if (!r) return false;
+                    const rLower = String(r).trim().toLowerCase();
+                    return (
+                        (apptRoom && String(apptRoom).trim().toLowerCase() === rLower) ||
+                        (queueRoom && String(queueRoom).trim().toLowerCase() === rLower) ||
+                        (appointment?.room_id && String(appointment.room_id) === String(r)) ||
+                        (queue?.room_id && String(queue.room_id) === String(r))
+                    );
+                });
+            });
+        } else if (typeof roomFilter === 'string' && roomFilter && roomFilter !== 'all') {
+            list = list.filter(({ appointment, queue }) => {
+                const room = appointment?.room_number || queue?.room_number;
+                return room === roomFilter;
+            });
+        }
+
+        // 4c. Reception Work Scope (My Tasks / Unclaimed)
+        if (receptionScope === 'mine') {
+            list = list.filter(({ appointment }) => String(appointment?.receptionist_id) === String(user?.user_id));
+        } else if (receptionScope === 'unclaimed') {
+            list = list.filter(({ appointment, queue }) => {
+                const stage = resolveStage(queue, appointment);
+                return !appointment?.receptionist_id && ['Scheduled', 'Arrived'].includes(stage);
+            });
+        } else if (receptionScope === 'emergency') {
+            list = list.filter(({ appointment, queue }) =>
+                ['Emergency', 'Urgent'].includes(appointment?.priority || queue?.priority)
+            );
+        }
+
+        // 5. Sorting
         list.sort((a, b) => {
             let valA, valB;
-            const apptA = a.appointment || a.queue;
-            const apptB = b.appointment || b.queue;
 
             switch (sortField) {
                 case 'time':
-                    valA = new Date(apptA?.start_time || 0).getTime();
-                    valB = new Date(apptB?.start_time || 0).getTime();
+                    valA = new Date(a.appointment?.start_time || a.queue?.created_at || 0).getTime();
+                    valB = new Date(b.appointment?.start_time || b.queue?.created_at || 0).getTime();
                     break;
                 case 'patient':
-                    valA = (apptA?.patient_name || '').toLowerCase();
-                    valB = (apptB?.patient_name || '').toLowerCase();
-                    break;
+                    valA = (a.appointment?.patient_name || a.queue?.patient_name || '').toLocaleLowerCase();
+                    valB = (b.appointment?.patient_name || b.queue?.patient_name || '').toLocaleLowerCase();
+                    return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
                 case 'exam':
-                    valA = (apptA?.exam_type_name || apptA?.modality_name || '').toLowerCase();
-                    valB = (apptB?.exam_type_name || apptB?.modality_name || '').toLowerCase();
+                    valA = (a.appointment?.exam_type_name || a.queue?.exam_type_name || '').toLocaleLowerCase();
+                    valB = (b.appointment?.exam_type_name || b.queue?.exam_type_name || '').toLocaleLowerCase();
+                    return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                case 'priority': {
+                    const prioA = a.appointment?.priority || a.queue?.priority || 'Routine';
+                    const prioB = b.appointment?.priority || b.queue?.priority || 'Routine';
+                    valA = PRIORITY_ORDER[prioA] ?? 2;
+                    valB = PRIORITY_ORDER[prioB] ?? 2;
                     break;
-                case 'priority':
-                    valA = PRIORITY_ORDER[apptA?.priority] ?? 99;
-                    valB = PRIORITY_ORDER[apptB?.priority] ?? 99;
+                }
+                case 'stage': {
+                    const stA = resolveStage(a.queue, a.appointment);
+                    const stB = resolveStage(b.queue, b.appointment);
+                    valA = STAGES.indexOf(stA);
+                    valB = STAGES.indexOf(stB);
                     break;
+                }
                 case 'wait':
-                    valA = Number(a.queue?.waiting_minutes || 0);
-                    valB = Number(b.queue?.waiting_minutes || 0);
-                    break;
-                case 'stage':
-                    valA = (a.queue?.queue_stage || a.appointment?.queue_stage || '').toLowerCase();
-                    valB = (b.queue?.queue_stage || b.appointment?.queue_stage || '').toLowerCase();
+                    valA = a.queue?.waiting_minutes || 0;
+                    valB = b.queue?.waiting_minutes || 0;
                     break;
                 default:
-                    valA = new Date(apptA?.start_time || 0).getTime();
-                    valB = new Date(apptB?.start_time || 0).getTime();
+                    valA = 0;
+                    valB = 0;
             }
 
             if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
@@ -237,137 +488,168 @@ const DailyOperationsTable = ({
         });
 
         return list;
-    }, [rows, searchTerm, stageFilter, priorityFilter, sortField, sortDirection]);
+    }, [rows, searchTerm, stageFilter, priorityFilter, modalityFilter, externalModalities, roomFilter, receptionScope, sortField, sortDirection, user?.user_id]);
 
-    // Reset pagination to page 1 on filter/search change
+    // Reset page on filter change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, stageFilter, priorityFilter, pageSize]);
+    }, [searchTerm, stageFilter, priorityFilter, modalityFilter, externalModalities, roomFilter, receptionScope]);
 
-    // Pagination State
-    const paginationState = useMemo(() => {
-        return getPaginationState(filteredAndSorted.length, currentPage, pageSize);
-    }, [filteredAndSorted.length, currentPage, pageSize]);
+    // Pagination
+    const paginationState = useMemo(() =>
+        getPaginationState(filteredAndSorted.length, currentPage, pageSize),
+        [filteredAndSorted.length, currentPage, pageSize]
+    );
 
-    const paginatedRows = useMemo(() => {
-        return filteredAndSorted.slice(paginationState.startIndex, paginationState.endIndex);
-    }, [filteredAndSorted, paginationState.startIndex, paginationState.endIndex]);
-
-    const stageLabel = (stage) => t(`queue.stages.${stage}`, { defaultValue: stage || t('queue.notStarted', { defaultValue: 'Not started' }) });
-    const formatTime = (value) => value ? new Date(value).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) : '-';
-    const hasApprovedPaymentException = (invoiceId, targetStage) => approvedPartialPaymentExceptions.some((exception) => {
-        const metadata = typeof exception.metadata === 'string'
-            ? (() => { try { return JSON.parse(exception.metadata); } catch { return {}; } })()
-            : (exception.metadata || {});
-        const notExpired = !exception.expires_at || new Date(exception.expires_at).getTime() > Date.now();
-        return exception.invoice_id === invoiceId
-            && exception.status === 'Approved'
-            && exception.transaction_type === 'ClinicalQueueTransition'
-            && metadata.targetStage === targetStage
-            && notExpired;
-    });
+    const paginatedRows = useMemo(() =>
+        filteredAndSorted.slice(paginationState.startIndex, paginationState.endIndex),
+        [filteredAndSorted, paginationState.startIndex, paginationState.endIndex]
+    );
 
     const handleSort = (field) => {
         if (sortField === field) {
-            setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
         } else {
             setSortField(field);
             setSortDirection('asc');
         }
     };
 
+    const hasApprovedPaymentException = (invoiceId, targetStage) => {
+        return hasApprovedPartialPaymentException(partialPaymentExceptions, invoiceId, targetStage);
+    };
+
+    const stageLabel = (stage) => t(`queue.stages.${stage}`, { defaultValue: stage });
+
+    const formatTime = (isoString) => {
+        if (!isoString) return '-';
+        try {
+            return new Date(isoString).toLocaleTimeString(locale, {
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+        } catch {
+            return '-';
+        }
+    };
+
     const print = (row, type) => {
         const appointmentId = row.appointment?.appointment_id || row.queue?.appointment_id;
         if (!appointmentId) return;
-        window.open(type === 'sticker' ? `/print/sticker/${appointmentId}?copies=1` : `/print/receipt/${appointmentId}`, '_blank');
+        if (type === 'sticker') {
+            window.open(`/print/sticker/${appointmentId}?copies=1`, '_blank');
+        } else if (type === 'slip') {
+            window.open(`/print/booking-slip/${appointmentId}`, '_blank');
+        } else {
+            window.open(`/print/receipt/${appointmentId}`, '_blank');
+        }
         setPrintMenu(null);
     };
 
-    const renderStatus = (row, menuPlacement = 'top') => {
-        const { appointment, queue, invoice } = row;
-        const examId = queue?.exam_id || appointment?.exam_id;
-        const stage = queue?.queue_stage || appointment?.queue_stage;
-        const hasBalance = invoice && Number(invoice.balance_amount || 0) > 0;
-        const menuKey = examId || appointment?.appointment_id;
+    // Stage transition config: icon + action label + button colour per next-stage
+    const STAGE_TRANSITION_CONFIG = {
+        Arrived: { icon: CheckCircle2, actionKey: 'queue.arrived', btnClass: 'bg-teal-600 text-white hover:bg-teal-700 shadow-sm shadow-teal-600/20 dark:bg-teal-500 dark:hover:bg-teal-400' },
+        'Payment Pending': { icon: Banknote, actionKey: 'queue.sendToCashier', btnClass: 'bg-amber-500 text-white hover:bg-amber-600 shadow-sm shadow-amber-500/20' },
+        'Prep Pending': { icon: FlaskConical, actionKey: 'queue.prepComplete', btnClass: 'bg-cyan-600 text-white hover:bg-cyan-700 shadow-sm shadow-cyan-600/20 dark:bg-cyan-500 dark:hover:bg-cyan-400' },
+        'Ready for Exam': { icon: Stethoscope, actionKey: 'queue.readyForExam', btnClass: 'bg-cyan-600 text-white hover:bg-cyan-700 shadow-sm dark:bg-cyan-500 dark:hover:bg-cyan-400' },
+        'In Exam': { icon: Radio, actionKey: 'queue.startExam', btnClass: 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-600/20 dark:bg-indigo-500 dark:hover:bg-indigo-400' },
+        Reporting: { icon: Microscope, actionKey: 'queue.endExam', btnClass: 'bg-violet-600 text-white hover:bg-violet-700 shadow-sm shadow-violet-600/20 dark:bg-violet-500 dark:hover:bg-violet-400' },
+        Finalized: { icon: FileCheck2, actionKey: 'queue.finalize', btnClass: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-600/20' },
+        Delivered: { icon: PackageCheck, actionKey: 'queue.pickup', btnClass: 'bg-slate-700 text-white hover:bg-slate-800 shadow-sm dark:bg-slate-600 dark:hover:bg-slate-500' },
+        Cancelled: { icon: XCircle, actionKey: 'common.cancel', btnClass: 'bg-rose-50 text-rose-700 hover:bg-rose-100 ring-1 ring-rose-200 dark:bg-rose-950/30 dark:text-rose-300 dark:ring-rose-900/50' },
+    };
 
-        if (!stage) {
+    const renderFinancialStatus = (invoice) => {
+        if (!invoice) {
             return (
-                <span className="inline-flex items-center rounded-lg px-2.5 py-1 text-[10.5px] font-extrabold ring-1 bg-slate-100 text-slate-500 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700">
-                    {t('queue.notStarted', { defaultValue: 'Not started' })}
+                <span className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10.5px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                    {t('financial.noInvoice', { defaultValue: 'بدون فاتورة' })}
                 </span>
             );
         }
 
-        const validStages = getValidQueueTransitions(stage)
-            .filter((next) => STAGES.includes(next) && canMoveTo(next));
+        const balance = Number(invoice.balance_amount || 0);
+        const total = Number(invoice.total_amount || 0);
+        const paid = Number(invoice.paid_amount || 0);
 
-        if (!canManageQueue || stage === 'Finalized' || stage === 'Delivered' || validStages.length === 0) {
+        if (balance <= 0 || invoice.invoice_status === 'Paid') {
             return (
-                <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-[10.5px] font-extrabold ring-1 ${STAGE_TONES[stage] || STAGE_TONES.Scheduled}`}>
-                    {stageLabel(stage)}
+                <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-300/90 bg-emerald-50 px-2 py-0.5 text-[10.5px] font-black text-emerald-700 shadow-2xs dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                    <CheckCircle2 size={11} className="shrink-0" />
+                    {t('financial.paid', { defaultValue: 'خالص' })}
+                </span>
+            );
+        }
+
+        if (paid > 0) {
+            return (
+                <span className="inline-flex items-center gap-1 rounded-lg border border-amber-300/90 bg-amber-50 px-2 py-0.5 text-[10.5px] font-black text-amber-700 shadow-2xs dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                    <Banknote size={11} className="shrink-0" />
+                    {t('financial.balanceDue', { amount: balance.toLocaleString(), defaultValue: `متبقي ${balance} ج.م` })}
                 </span>
             );
         }
 
         return (
-            <div className="relative">
-                <button
-                    type="button"
-                    onClick={() => setStageMenu(stageMenu === menuKey ? null : menuKey)}
-                    className={`inline-flex max-w-full items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10.5px] font-extrabold ring-1 transition-all hover:brightness-95 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${STAGE_TONES[stage] || STAGE_TONES.Scheduled}`}
-                >
-                    <span className="truncate">{stageLabel(stage)}</span>
-                    <ChevronDown size={12} className="shrink-0 opacity-70" />
-                </button>
-                {stageMenu === menuKey && (
-                    <>
-                        <div className="fixed inset-0 z-30" onClick={() => setStageMenu(null)} />
-                        <div className={`absolute start-0 z-40 max-h-64 w-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-800 dark:bg-slate-900 ${menuPlacement === 'bottom' ? 'top-full mt-1' : 'bottom-full mb-1'}`}>
-                            <p className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400">
-                                {t('queue.transitionTo', { defaultValue: 'Transition to:' })}
-                            </p>
-                            {validStages.map((next) => {
-                                const requiresPayment = ['Prep Pending', 'Ready for Exam', 'In Exam'].includes(next)
-                                    && hasBalance
-                                    && appointment?.priority !== 'Emergency'
-                                    && !hasApprovedPaymentException(invoice?.invoice_id, next);
-                                return (
-                                    <button
-                                        key={next}
-                                        type="button"
-                                        disabled={requiresPayment}
-                                        title={requiresPayment ? t('billing.paymentOrExceptionRequired', { defaultValue: 'Collect payment or obtain a partial-payment exception first.' }) : undefined}
-                                        onClick={() => {
-                                            onMove({ exam_id: examId, appointment_id: appointment?.appointment_id, queue_stage: stage }, next);
-                                            setStageMenu(null);
-                                        }}
-                                        className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-start text-xs font-bold transition ${requiresPayment
-                                                ? 'text-amber-800 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/30'
-                                                : 'text-slate-700 hover:bg-teal-50 hover:text-teal-800 dark:text-slate-300 dark:hover:bg-slate-800'
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_TONES[next] ? 'bg-teal-500' : 'bg-slate-400'}`} />
-                                            <span className="truncate">{stageLabel(next)}</span>
-                                        </div>
-                                        {requiresPayment && (
-                                            <span className="text-[9px] font-black text-amber-600 dark:text-amber-400">
-                                                {isRtl ? 'سداد' : 'Pay'}
-                                            </span>
-                                        )}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </>
+            <span className="inline-flex items-center gap-1 rounded-lg border border-rose-300/90 bg-rose-50 px-2 py-0.5 text-[10.5px] font-black text-rose-700 shadow-2xs dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
+                <Banknote size={11} className="shrink-0" />
+                {t('financial.unpaid', { defaultValue: 'غير مسدد' })}
+            </span>
+        );
+    };
+
+    const renderStatus = (row) => {
+        const { appointment, queue } = row;
+        const stage = resolveStage(queue, appointment);
+
+        return (
+            <div className="flex min-w-0 items-center gap-1.5 flex-wrap">
+                {/* Current stage badge */}
+                <span className={`inline-flex shrink-0 items-center rounded-lg px-2.5 py-1 text-[10.5px] font-extrabold ring-1 ${STAGE_TONES[stage] || STAGE_TONES.Scheduled}`}>
+                    {stageLabel(stage)}
+                </span>
+
+                {/* Receptionist Ownership / Claim status */}
+                {appointment?.receptionist_name ? (
+                    <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9.5px] font-bold ${String(appointment.receptionist_id) === String(user?.user_id)
+                        ? 'bg-teal-50 text-teal-700 border border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800'
+                        : 'bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                        }`}>
+                        <User size={10} />
+                        <span>{String(appointment.receptionist_id) === String(user?.user_id) ? 'مكتبي' : appointment.receptionist_name}</span>
+                        {appointment.receptionist_desk && <span>({appointment.receptionist_desk})</span>}
+                        {String(appointment.receptionist_id) === String(user?.user_id) && (
+                            <button
+                                type="button"
+                                onClick={(e) => handleReleaseTask(appointment, e)}
+                                title="تحرير الحالة"
+                                className="ms-0.5 text-slate-400 hover:text-rose-600"
+                            >
+                                <X size={10} />
+                            </button>
+                        )}
+                    </span>
+                ) : ['Scheduled', 'Arrived'].includes(stage) && (
+                    <button
+                        type="button"
+                        onClick={(e) => handleClaimTask(appointment, e)}
+                        className="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9.5px] font-bold text-slate-600 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        title="استلام الحالة على مكتبي"
+                    >
+                        <Lock size={9} />
+                        <span>استلام</span>
+                    </button>
                 )}
             </div>
         );
     };
 
     const renderWait = (queue) => queue ? (
-        <span className={`inline-flex items-center gap-1.5 whitespace-nowrap font-black tabular-nums text-xs ${queue.is_overdue ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-400'}`}>
-            {queue.is_overdue && <AlertTriangle size={13} className="animate-pulse text-rose-500" />}
+        <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 font-mono text-[11px] font-black tabular-nums ${queue.is_overdue
+            ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-200/70 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-900/60'
+            : 'text-slate-600 dark:text-slate-400'
+            }`}>
+            {queue.is_overdue && <AlertTriangle size={11} className="animate-pulse text-rose-500" />}
             {formatDuration(queue.waiting_minutes || 0, i18n?.language)}
         </span>
     ) : (
@@ -377,7 +659,7 @@ const DailyOperationsTable = ({
     const renderActions = (row, align = 'end') => {
         const { appointment, queue, invoice } = row;
         const examId = queue?.exam_id || appointment?.exam_id;
-        const stage = queue?.queue_stage || appointment?.queue_stage;
+        const stage = resolveStage(queue, appointment);
         const appointmentId = appointment?.appointment_id || queue?.appointment_id;
         const menuKey = examId || appointmentId;
         const hasBalance = invoice && Number(invoice.balance_amount || 0) > 0;
@@ -388,6 +670,7 @@ const DailyOperationsTable = ({
             && ['Arrived', 'Payment Pending'].includes(stage);
 
         let primaryAction = null;
+        let primaryTargetStage = null;
         const queueTarget = { exam_id: examId, appointment_id: appointmentId, queue_stage: stage };
         const hasNurse = Boolean(
             queue?.nurse_name ||
@@ -396,101 +679,413 @@ const DailyOperationsTable = ({
             appointment?.nurse_id
         );
         const partialExceptionTargetStage = hasNurse ? 'Prep Pending' : 'Ready for Exam';
-        if (!invoice && appointment && !['Cancelled', 'Completed'].includes(appointment?.status) && has('CREATE_INVOICES')) {
-            primaryAction = { label: t('table.createInvoice', { defaultValue: 'Create Invoice' }), onClick: () => createAppointmentInvoice(appointment), style: 'border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 px-3' };
-        } else if (invoice && !examId && !['Cancelled', 'Completed'].includes(appointment?.status) && !stage && canManageQueue) {
-            primaryAction = { label: t('queue.arrived', { defaultValue: 'Arrive' }), onClick: () => onMove(queueTarget, 'Arrived'), style: 'bg-teal-700 text-white hover:bg-teal-800 shadow-sm dark:bg-teal-600 dark:hover:bg-teal-500 px-3.5' };
+        const existingPaymentException = findPartialPaymentException(
+            partialPaymentExceptions,
+            invoice?.invoice_id,
+            partialExceptionTargetStage
+        );
+        const exceptionStatus = getEffectivePartialPaymentExceptionStatus(existingPaymentException);
+        const exceptionStatusConfig = {
+            Pending: {
+                icon: Clock3,
+                label: t('billing.exceptionPending', { defaultValue: 'Pending review' }),
+                className: 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
+            },
+            Approved: {
+                icon: CheckCircle2,
+                label: t('billing.exceptionApproved', { defaultValue: 'Exception approved' }),
+                className: 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
+            },
+            Rejected: {
+                icon: XCircle,
+                label: t('billing.exceptionRejected', { defaultValue: 'Request rejected' }),
+                className: 'border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300',
+            },
+            Expired: {
+                icon: Clock3,
+                label: t('billing.exceptionExpired', { defaultValue: 'Approval expired' }),
+                className: 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300',
+            },
+            Used: {
+                icon: CheckCircle2,
+                label: t('billing.exceptionUsed', { defaultValue: 'Exception used' }),
+                className: 'border-cyan-300 bg-cyan-50 text-cyan-800 dark:border-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-300',
+            },
+        }[exceptionStatus];
+        const canRetryPartialException = canRequestPartialException
+            && ['Rejected', 'Expired', 'Used'].includes(exceptionStatus);
+        const ExceptionStatusIcon = exceptionStatusConfig?.icon;
+        const requestException = () => onRequestPartialPaymentException({
+            invoice,
+            transactionType: 'ClinicalQueueTransition',
+            amount: Number(invoice.balance_amount || 0),
+            targetStage: partialExceptionTargetStage,
+            notes: `Requested queue exception to move case into ${partialExceptionTargetStage}`
+        });
+        const caseHasArrived = Boolean(
+            ['Arrived', 'Checked-in'].includes(appointment?.status) ||
+            ['Arrived', 'Checked-in'].includes(queue?.status) ||
+            (stage && !['Registered', 'Scheduled'].includes(stage)) ||
+            appointment?.arrived
+        );
+
+        const validStages = getValidQueueTransitions(stage)
+            .filter((next) => STAGES.includes(next) && canMoveTo(next));
+
+        const requiresPayment = (next) =>
+            ['Prep Pending', 'Ready for Exam', 'In Exam'].includes(next)
+            && hasBalance
+            && appointment?.priority !== 'Emergency'
+            && !hasApprovedPaymentException(invoice?.invoice_id, next);
+
+        const doMove = async (next) => {
+            if (!appointment?.receptionist_id && appointmentId) {
+                try {
+                    await claimReceptionTask({
+                        appointmentId,
+                        desk: activeDesk,
+                        expectedVersion: appointment?.receptionist_assignment_version
+                    }).unwrap();
+                } catch (err) {
+                    if (err?.data?.code === 'TASK_ALREADY_CLAIMED') {
+                        toast.error(err?.data?.message || t('reception.claimFailed', { defaultValue: 'الحالة قيد الاستقبال حالياً بواسطة موظف آخر' }));
+                        return;
+                    }
+                }
+            }
+            onMove(queueTarget, next);
+            setStageMenu(null);
+        };
+
+        if (!caseHasArrived && canManageQueue) {
+            primaryTargetStage = 'Arrived';
+            primaryAction = {
+                label: t('queue.arrived', { defaultValue: 'تسجيل وصول' }),
+                onClick: async () => {
+                    if (!appointment?.receptionist_id && appointment?.appointment_id) {
+                        try {
+                            await claimReceptionTask({
+                                appointmentId: appointment.appointment_id,
+                                desk: activeDesk,
+                                expectedVersion: appointment.receptionist_assignment_version
+                            }).unwrap();
+                        } catch (err) {
+                            if (err?.status === 409) {
+                                toast.error(err?.data?.message || t('reception.conflictArrived', { defaultValue: 'الحالة قيد الاستقبال بواسطة موظف آخر' }));
+                                return;
+                            }
+                        }
+                    }
+                    onMove(queueTarget, 'Arrived');
+                },
+                style: 'bg-teal-600 text-white hover:bg-teal-700 shadow-sm dark:bg-teal-500 dark:hover:bg-teal-400 px-3'
+            };
+        } else if (!invoice && appointment && !['Cancelled', 'Completed'].includes(appointment?.status) && has('CREATE_INVOICES') && caseHasArrived) {
+            primaryAction = {
+                label: t('table.createInvoice', { defaultValue: 'إنشاء فاتورة' }),
+                onClick: () => createAppointmentInvoice(appointment),
+                style: 'bg-slate-900 text-white hover:bg-slate-800 shadow-sm dark:bg-slate-700 dark:hover:bg-slate-600 px-3'
+            };
         } else if (stage === 'Arrived' && canManageQueue) {
             const nextStage = hasBalance ? 'Payment Pending' : (hasNurse ? 'Prep Pending' : 'Ready for Exam');
-            const label = hasBalance ? t('queue.sendToCashier', { defaultValue: 'Send to Cashier' }) : (hasNurse ? t('queue.prepComplete', { defaultValue: 'Send to Prep' }) : t('queue.readyForExam', { defaultValue: 'Ready for Exam' }));
-            primaryAction = { label, onClick: () => onMove(queueTarget, nextStage), style: 'bg-teal-700 text-white hover:bg-teal-800 shadow-sm dark:bg-teal-600 dark:hover:bg-teal-500 px-3.5' };
+            if (canMoveTo(nextStage)) {
+                primaryTargetStage = nextStage;
+                const label = hasBalance ? t('queue.sendToCashier', { defaultValue: 'توجيه للخزينة' }) : (hasNurse ? t('queue.prepComplete', { defaultValue: 'تحضير' }) : t('queue.readyForExam', { defaultValue: 'جاهز للفحص' }));
+                primaryAction = {
+                    label,
+                    onClick: () => onMove(queueTarget, nextStage),
+                    style: 'bg-teal-600 text-white hover:bg-teal-700 shadow-sm dark:bg-teal-500 dark:hover:bg-teal-400 px-3'
+                };
+            }
         } else if (stage === 'Payment Pending' && canManageQueue
             && (!hasBalance || hasApprovedPaymentException(invoice?.invoice_id, partialExceptionTargetStage))) {
             const nextStage = hasNurse ? 'Prep Pending' : 'Ready for Exam';
-            primaryAction = { label: hasNurse ? t('queue.prepComplete', { defaultValue: 'Send to Prep' }) : t('queue.readyForExam', { defaultValue: 'Ready for Exam' }), onClick: () => onMove(queueTarget, nextStage), style: 'bg-teal-700 text-white hover:bg-teal-800 shadow-sm dark:bg-teal-600 dark:hover:bg-teal-500 px-3.5' };
+            primaryTargetStage = nextStage;
+            primaryAction = {
+                label: hasNurse ? t('queue.prepComplete', { defaultValue: 'تحضير' }) : t('queue.readyForExam', { defaultValue: 'جاهز للفحص' }),
+                onClick: () => onMove(queueTarget, nextStage),
+                style: 'bg-teal-600 text-white hover:bg-teal-700 shadow-sm dark:bg-teal-500 dark:hover:bg-teal-400 px-3'
+            };
         } else if (stage === 'Prep Pending' && canManageQueue) {
-            primaryAction = { label: t('queue.prepComplete', { defaultValue: 'Prep Complete' }), onClick: () => onMove(queueTarget, 'Ready for Exam'), style: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm px-3.5' };
+            primaryTargetStage = 'Ready for Exam';
+            primaryAction = {
+                label: t('queue.prepComplete', { defaultValue: 'جاهز للفحص' }),
+                onClick: () => onMove(queueTarget, 'Ready for Exam'),
+                style: 'bg-cyan-600 text-white hover:bg-cyan-700 shadow-sm px-3'
+            };
         } else if (stage === 'Ready for Exam' && canManageQueue && canMoveTo('In Exam')) {
-            primaryAction = { label: t('queue.startExam', { defaultValue: 'Start Exam' }), onClick: () => onMove(queueTarget, 'In Exam'), style: 'bg-teal-700 text-white hover:bg-teal-800 shadow-sm dark:bg-teal-600 dark:hover:bg-teal-500 px-3.5' };
+            primaryTargetStage = 'In Exam';
+            primaryAction = {
+                label: t('queue.startExam', { defaultValue: 'بدء الفحص' }),
+                onClick: () => onMove(queueTarget, 'In Exam'),
+                style: 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm px-3'
+            };
         } else if (stage === 'In Exam' && canManageQueue && canMoveTo('Reporting')) {
-            primaryAction = { label: t('queue.endExam', { defaultValue: 'End Exam' }), onClick: () => onMove(queueTarget, 'Reporting'), style: 'bg-cyan-700 text-white hover:bg-cyan-800 shadow-sm px-3.5' };
+            primaryTargetStage = 'Reporting';
+            primaryAction = {
+                label: t('queue.endExam', { defaultValue: 'إنهاء الفحص' }),
+                onClick: () => onMove(queueTarget, 'Reporting'),
+                style: 'bg-violet-600 text-white hover:bg-violet-700 shadow-sm px-3'
+            };
         } else if (stage === 'Reporting' && canManageQueue && canMoveTo('Finalized')) {
-            primaryAction = { label: t('queue.finalize', { defaultValue: 'Finalize' }), onClick: () => onMove(queueTarget, 'Finalized'), style: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm px-3.5' };
+            primaryTargetStage = 'Finalized';
+            primaryAction = {
+                label: t('queue.finalize', { defaultValue: 'اعتماد التقرير' }),
+                onClick: () => onMove(queueTarget, 'Finalized'),
+                style: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm px-3'
+            };
         } else if (finalDeliveryBlocked && onOpenPayment) {
-            primaryAction = { label: t('billing.payRemainingBalance', { defaultValue: 'Pay balance' }), onClick: () => onOpenPayment(invoice), style: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm px-3.5' };
+            primaryAction = {
+                label: t('billing.payRemainingBalance', { defaultValue: 'سداد المتبقي' }),
+                onClick: () => onOpenPayment(invoice),
+                style: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm px-3'
+            };
         } else if (stage === 'Finalized' && canDeliverResults && onPickup && examId) {
-            primaryAction = { label: t('queue.pickup', { defaultValue: 'Pickup' }), onClick: () => onPickup(queue || appointment), style: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm px-3.5' };
+            primaryTargetStage = 'Delivered';
+            primaryAction = {
+                label: t('queue.pickup', { defaultValue: 'تسليم التقرير' }),
+                onClick: () => onPickup(queue || appointment),
+                style: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm px-3'
+            };
         }
 
+        const otherTransitions = validStages.filter((s) => s !== primaryTargetStage);
+        const EDITABLE_STAGES = ['Scheduled', 'Arrived', 'Payment Pending'];
+        const canEditBooking = EDITABLE_STAGES.includes(stage) && !['Cancelled', 'Completed'].includes(appointment?.status);
+
         return (
-            <div className={`flex flex-wrap items-center gap-1.5 ${align === 'start' ? 'justify-start' : 'justify-end'}`}>
+            <div className={`flex items-center gap-1.5 ${align === 'start' ? 'justify-start' : 'justify-end'}`} aria-label={t('table.actions', { defaultValue: 'إجراءات الحالة' })}>
+                {/* Details modal trigger button */}
+                {onSelectCase && (
+                    <div className="flex items-center gap-1 rounded-xl bg-slate-50/80 p-0.5 dark:bg-slate-950/50">
+                        <button
+                            type="button"
+                            onClick={() => onSelectCase(row)}
+                            title={t('table.viewDetails', { defaultValue: 'عرض التفاصيل' })}
+                            aria-label={t('table.viewDetails', { defaultValue: 'عرض التفاصيل' })}
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-2xs transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                            <Eye size={13} />
+                        </button>
+                        {canEditBooking ? (
+                            <button
+                                type="button"
+                                onClick={() => onSelectCase(row, { editMode: true })}
+                                title={t('details.editBooking', { defaultValue: 'تعديل الحجز' })}
+                                aria-label={t('details.editBooking', { defaultValue: 'تعديل الحجز' })}
+                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-2xs transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-blue-700 dark:hover:bg-blue-950/40 dark:hover:text-blue-300"
+                            >
+                                <Edit3 size={13} />
+                            </button>
+                        ) : (
+                            <span
+                                title={t('details.cannotEditAfterNursing', { defaultValue: 'لا يمكن تعديل الحجز بعد تحويل الحالة للتجهيز السريري' })}
+                                aria-label={t('details.cannotEditAfterNursing', { defaultValue: 'لا يمكن تعديل الحجز بعد تحويل الحالة للتجهيز السريري' })}
+                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200/60 bg-slate-100 text-slate-300 cursor-not-allowed dark:border-slate-800/60 dark:bg-slate-900/40 dark:text-slate-600"
+                            >
+                                <Lock size={12} />
+                            </span>
+                        )}
+                    </div>
+                )}
+
+                {!invoice && appointment && !['Cancelled', 'Completed'].includes(appointment?.status) && has('CREATE_INVOICES') && (
+                    <button
+                        type="button"
+                        onClick={() => createAppointmentInvoice(appointment)}
+                        title={t('table.createInvoice', { defaultValue: 'إنشاء فاتورة' })}
+                        aria-label={t('table.createInvoice', { defaultValue: 'إنشاء فاتورة' })}
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-2xs transition hover:border-slate-400 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                    >
+                        <FileText size={13} className="text-slate-600 dark:text-slate-300" />
+                    </button>
+                )}
+
+                {/* Call Patient Broadcast to Waiting TVs */}
+                {caseHasArrived && !['Cancelled', 'Completed', 'Delivered'].includes(stage) && (
+                    <button
+                        type="button"
+                        onClick={async () => {
+                            playHospitalChime();
+                            const token = appointment?.order_number || queue?.order_number || '---';
+                            const patName = appointment?.patient_name || queue?.patient_name || '';
+                            const room = appointment?.room_name || queue?.room_name || appointment?.room_number || 'جناح الفحص';
+                            try {
+                                await broadcastPatientCall({
+                                    orderNumber: token,
+                                    roomName: room,
+                                    modalityId: appointment?.modality_id || queue?.modality_id || null,
+                                }).unwrap();
+                                toast.success(t('reception.calledPatient', { defaultValue: `🔔 تم إرسال نداء للمريض ${patName || token} لشاشات الانتظار` }));
+                            } catch {
+                                toast.success(t('reception.calledPatientLocal', { defaultValue: `🔔 تم نداء المريض ${patName || token}` }));
+                            }
+                        }}
+                        title={t('reception.callPatient', { defaultValue: 'نداء المريض على شاشات العرض بالصالة' })}
+                        className="inline-flex h-8 items-center gap-1 rounded-xl border border-amber-500/40 bg-amber-50 px-2 text-xs font-black text-amber-700 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/50 transition active:scale-95"
+                    >
+                        <Bell size={12} className="shrink-0" />
+                        <span className="hidden xl:inline">{t('reception.call', { defaultValue: 'نداء' })}</span>
+                    </button>
+                )}
+
                 {primaryAction && (
                     <button
                         type="button"
                         onClick={primaryAction.onClick}
-                        className={`inline-flex min-h-8 items-center justify-center rounded-lg py-1 text-xs font-black transition active:scale-95 ${primaryAction.style}`}
+                        aria-label={primaryAction.label}
+                        className={`inline-flex min-h-8 shrink-0 items-center justify-center rounded-xl px-3 py-1 text-xs font-black transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 ${primaryAction.style}`}
                     >
                         {primaryAction.label}
                     </button>
+                )}
+
+                {/* Secondary transitions menu (...) */}
+                {otherTransitions.length > 0 && canManageQueue && (
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setStageMenu(stageMenu === menuKey ? null : menuKey)}
+                            title={t('queue.moreOptions', { defaultValue: 'خيارات أخرى للمرحلة' })}
+                            className="inline-flex h-8 w-7 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-2xs transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white"
+                        >
+                            <MoreHorizontal size={13} />
+                        </button>
+
+                        {stageMenu === menuKey && (
+                            <>
+                                <div className="fixed inset-0 z-30" onClick={() => setStageMenu(null)} />
+                                <div className="absolute end-0 top-full z-40 mt-1 w-52 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+                                    <p className="border-b border-slate-100 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-slate-400 dark:border-slate-800">
+                                        {t('queue.otherOptions', { defaultValue: 'نقل إلى مرحلة أخرى' })}
+                                    </p>
+                                    <div className="p-1 space-y-0.5">
+                                        {otherTransitions.map((next) => {
+                                            const blocked = requiresPayment(next);
+                                            const cfg = STAGE_TRANSITION_CONFIG[next];
+                                            const ListIcon = cfg?.icon ?? ChevronRight;
+                                            const isCancelOpt = next === 'Cancelled';
+                                            return (
+                                                <button
+                                                    key={next}
+                                                    type="button"
+                                                    disabled={blocked}
+                                                    title={blocked ? t('billing.paymentOrExceptionRequired', { defaultValue: 'يلزم سداد المتبقي أولاً.' }) : undefined}
+                                                    onClick={() => !blocked && doMove(next)}
+                                                    className={`flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-start text-xs font-bold transition ${blocked
+                                                        ? 'cursor-not-allowed text-amber-700 opacity-60 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30'
+                                                        : isCancelOpt
+                                                            ? 'text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/30'
+                                                            : 'text-slate-700 hover:bg-teal-50 hover:text-teal-800 dark:text-slate-300 dark:hover:bg-slate-800'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-lg ${isCancelOpt ? 'bg-rose-50 text-rose-500 dark:bg-rose-950/40' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                                            <ListIcon size={11} />
+                                                        </span>
+                                                        <span className="truncate">{stageLabel(next)}</span>
+                                                    </div>
+                                                    {blocked && (
+                                                        <span className="shrink-0 text-[9px] font-black text-amber-500">
+                                                            {isRtl ? 'سداد' : 'Pay first'}
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 )}
 
                 {hasBalance && onOpenPayment && !finalDeliveryBlocked && (
                     <button
                         type="button"
                         onClick={() => onOpenPayment(invoice)}
-                        className="inline-flex min-h-8 items-center justify-center rounded-lg bg-emerald-600 px-3 py-1 text-xs font-black text-white shadow-sm transition hover:bg-emerald-700 active:scale-95"
+                        className="inline-flex min-h-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 px-2.5 py-1 text-xs font-black text-white shadow-sm transition hover:bg-emerald-700 active:scale-95"
                     >
-                        <CreditCard size={12} className="me-1" />
-                        {t('billing.collectPayment', { defaultValue: 'Pay' })}
+                        <CreditCard size={11} className="me-1" />
+                        {t('billing.collectPayment', { defaultValue: 'تحصيل' })}
                     </button>
                 )}
 
-                {canRequestPartialException && (
+                {canRequestPartialException && exceptionStatusConfig && (
+                    <div className="inline-flex shrink-0 items-center gap-1" aria-live="polite">
+                        <span
+                            className={`inline-flex min-h-8 items-center justify-center gap-1 rounded-xl border px-2.5 py-1 text-xs font-black ${exceptionStatusConfig.className}`}
+                            title={existingPaymentException?.review_notes || existingPaymentException?.reason || exceptionStatusConfig.label}
+                        >
+                            {ExceptionStatusIcon && <ExceptionStatusIcon size={12} />}
+                            {exceptionStatusConfig.label}
+                        </span>
+                        {canRetryPartialException && (
+                            <button
+                                type="button"
+                                onClick={requestException}
+                                className="inline-flex min-h-8 items-center justify-center rounded-xl border border-amber-300 bg-white px-2.5 py-1 text-xs font-black text-amber-800 transition hover:bg-amber-50 dark:border-amber-800 dark:bg-slate-900 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                            >
+                                {t('billing.retryException', { defaultValue: 'Request again' })}
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {canRequestPartialException && !existingPaymentException && (
                     <button
                         type="button"
-                        onClick={() => onRequestPartialPaymentException({
-                            invoice,
-                            transactionType: 'ClinicalQueueTransition',
-                            targetStage: partialExceptionTargetStage,
-                        })}
-                        className="inline-flex min-h-8 items-center justify-center rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-black text-red-700 transition hover:bg-red-100 active:scale-95 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300"
+                        onClick={requestException}
+                        className="inline-flex min-h-8 shrink-0 items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800 transition hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
                     >
-                        {t('billing.requestException', { defaultValue: 'Exception' })}
+                        {t('billing.requestException', { defaultValue: 'طلب استثناء' })}
                     </button>
                 )}
 
-                {(has('PRINT_LABELS') || has('PRINT_RECEIPTS')) && appointmentId && (
+                {/* Print documents menu */}
+                {(has('PRINT_LABELS') || has('PRINT_RECEIPTS')) && (
                     <div className="relative">
                         <button
                             type="button"
                             onClick={() => setPrintMenu(printMenu === menuKey ? null : menuKey)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white"
-                            title={t('queue.print', { defaultValue: 'Print documents' })}
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-2xs transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white"
+                            title={t('queue.print', { defaultValue: 'طباعة' })}
                         >
                             <Printer size={13} />
                         </button>
+
                         {printMenu === menuKey && (
                             <>
                                 <div className="fixed inset-0 z-30" onClick={() => setPrintMenu(null)} />
-                                <div className="absolute end-0 top-full z-40 mt-1 w-36 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+                                <div className="absolute end-0 top-full z-40 mt-1 w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-800 dark:bg-slate-900">
                                     {has('PRINT_LABELS') && (
                                         <button
                                             type="button"
                                             onClick={() => print(row, 'sticker')}
-                                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-start text-xs font-bold transition hover:bg-teal-50 hover:text-teal-800 dark:text-slate-300 dark:hover:bg-slate-800"
+                                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-start text-xs font-bold text-slate-700 transition hover:bg-teal-50 hover:text-teal-800 dark:text-slate-300 dark:hover:bg-slate-800"
                                         >
-                                            <Tag size={13} className="text-teal-600 dark:text-teal-400" />
-                                            {t('queue.sticker', { defaultValue: 'Sticker' })}
+                                            <Tag size={13} className="text-teal-600" />
+                                            {t('queue.sticker', { defaultValue: 'ملصق العينة' })}
                                         </button>
                                     )}
                                     {has('PRINT_RECEIPTS') && (
                                         <button
                                             type="button"
-                                            onClick={() => print(row, 'receipt')}
-                                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-start text-xs font-bold transition hover:bg-teal-50 hover:text-teal-800 dark:text-slate-300 dark:hover:bg-slate-800"
+                                            onClick={() => print(row, 'slip')}
+                                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-start text-xs font-bold text-slate-700 transition hover:bg-teal-50 hover:text-teal-800 dark:text-slate-300 dark:hover:bg-slate-800"
                                         >
-                                            <FileText size={13} className="text-cyan-600 dark:text-cyan-400" />
-                                            {t('queue.receipt', { defaultValue: 'Receipt' })}
+                                            <ClipboardList size={13} className="text-emerald-600" />
+                                            {t('queue.bookingSlip', { defaultValue: 'شيت الفحص' })}
+                                        </button>
+                                    )}
+                                    {has('PRINT_RECEIPTS') && invoice && (
+                                        <button
+                                            type="button"
+                                            onClick={() => print(row, 'receipt')}
+                                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-start text-xs font-bold text-slate-700 transition hover:bg-teal-50 hover:text-teal-800 dark:text-slate-300 dark:hover:bg-slate-800"
+                                        >
+                                            <FileText size={13} className="text-cyan-600" />
+                                            {t('queue.receipt', { defaultValue: 'إيصال السداد' })}
                                         </button>
                                     )}
                                 </div>
@@ -500,7 +1095,7 @@ const DailyOperationsTable = ({
                 )}
 
                 {!canManageQueue && !canDeliverResults && (
-                    <LockKeyhole size={14} className="text-slate-400/70" title={t('queue.readOnly', { defaultValue: 'Read only' })} />
+                    <LockKeyhole size={13} className="text-slate-400/70" title={t('queue.readOnly', { defaultValue: 'للقراءة فقط' })} />
                 )}
             </div>
         );
@@ -532,325 +1127,527 @@ const DailyOperationsTable = ({
 
     return (
         <section
-            className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90"
+            className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
             aria-labelledby="daily-operations-title"
         >
-            {/* Header & Search */}
-            <header className="border-b border-slate-100 bg-white/90 p-5 dark:border-slate-800 dark:bg-slate-900/90 sm:p-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex items-start gap-3.5">
-                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/30">
-                            <Clock3 size={20} />
-                        </span>
-                        <div className="min-w-0">
-                            <h2 id="daily-operations-title" className="text-base font-black text-slate-950 dark:text-white">
-                                {t('command.dailyView', { defaultValue: 'Daily operations' })}
-                            </h2>
-                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                                {t('queue.unifiedSummary', { count: filteredAndSorted.length, defaultValue: '{{count}} appointments and active cases in one workspace' })}
-                            </p>
+            {/* Header Toolbar */}
+            <header className="border-b border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-5 pb-0 pt-5 dark:border-slate-800 dark:from-slate-900 dark:to-slate-900">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-teal-500/10 text-teal-600 ring-1 ring-teal-500/20 dark:text-teal-300 dark:ring-teal-500/25">
+                                <Clock3 size={19} />
+                            </span>
+                            <div>
+                                <h2 id="daily-operations-title" className="text-sm font-black text-slate-900 dark:text-white">
+                                    {t('command.dailyView', { defaultValue: 'العمليات اليومية' })}
+                                </h2>
+                                <p className="mt-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                    {t('queue.unifiedSummary', {
+                                        count: filteredAndSorted.length,
+                                        defaultValue: `${filteredAndSorted.length} موعد وحالة نشطة في مساحة عمل واحدة`,
+                                    })}
+                                </p>
+                            </div>
                         </div>
+
+                        {/* Waitlist Toggle Button for Mobile / Header shortcut */}
+                        {onToggleWaitlist && (
+                            <button
+                                type="button"
+                                onClick={onToggleWaitlist}
+                                className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition xl:hidden ${isWaitlistOpen
+                                    ? 'border-teal-500 bg-teal-50 text-teal-700 dark:border-teal-700 dark:bg-teal-950/40 dark:text-teal-300'
+                                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                    }`}
+                            >
+                                <Users size={13} />
+                                <span>{t('waitlist.title', { defaultValue: 'قائمة الانتظار' })}</span>
+                                {waitlistCount > 0 && (
+                                    <span className="rounded-md bg-teal-600 px-1.5 py-0.2 text-[10px] font-black text-white">
+                                        {waitlistCount}
+                                    </span>
+                                )}
+                            </button>
+                        )}
                     </div>
 
-                    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
-                        <label className="relative w-full sm:w-72 lg:w-80">
-                            <Search size={14} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <span className="sr-only">{t('queue.search', { defaultValue: 'Search operations' })}</span>
+                    {/* Filter controls row */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        {/* Search input */}
+                        <label className="relative flex-1 min-w-[200px] sm:w-60">
+                            <Search size={13} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <span className="sr-only">{t('queue.search', { defaultValue: 'بحث' })}</span>
                             <input
                                 value={searchTerm}
-                                onChange={(event) => setSearchTerm(event.target.value)}
-                                placeholder={t('queue.searchPlaceholder', { defaultValue: 'Search patient, MRN, or exam...' })}
-                                className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 ps-9 pe-8 text-xs font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder={t('queue.searchPlaceholder', { defaultValue: 'ابحث عن المريض أو الرقم الطبي أو الفحص...' })}
+                                className="h-8 w-full rounded-xl border border-slate-200 bg-white ps-8 pe-7 text-xs font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                             />
                             {searchTerm && (
-                                 <button
-                                     type="button"
-                                     onClick={() => setSearchTerm('')}
-                                     aria-label={t('clear', { defaultValue: 'Clear search' })}
-                                     className="absolute end-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
-                                 >
-                                    <X size={12} />
+                                <button
+                                    type="button"
+                                    onClick={() => setSearchTerm('')}
+                                    className="absolute end-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                                >
+                                    <X size={11} />
                                 </button>
                             )}
                         </label>
 
+                        {/* Modality Dropdown Filter */}
+                        {availableModalities.length > 0 && (
+                            <select
+                                value={modalityFilter}
+                                onChange={(e) => setModalityFilter(e.target.value)}
+                                aria-label={t('filters.modality', { defaultValue: 'الجهاز / القسم' })}
+                                className="h-8 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                            >
+                                <option value="all">{t('filters.allModalities', { defaultValue: 'جميع الأجهزة' })}</option>
+                                {availableModalities.map((mod) => (
+                                    <option key={mod} value={mod}>{mod}</option>
+                                ))}
+                            </select>
+                        )}
+
+                        {/* Priority Dropdown */}
                         <select
                             value={priorityFilter}
                             onChange={(e) => setPriorityFilter(e.target.value)}
-                            aria-label="Filter by priority"
-                            className="h-9 rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                            aria-label={t('cashier.priorityFilter', { defaultValue: 'الأولوية' })}
+                            className="h-8 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
                         >
-                            <option value="all">{t('filters.allPriorities', { defaultValue: 'All Priorities' })}</option>
-                            <option value="Emergency">{t('priority.Emergency', { defaultValue: 'Emergency' })}</option>
-                            <option value="Urgent">{t('priority.Urgent', { defaultValue: 'Urgent' })}</option>
-                            <option value="Routine">{t('priority.Routine', { defaultValue: 'Routine' })}</option>
+                            <option value="all">{t('filters.allPriorities', { defaultValue: 'كل الأولويات' })}</option>
+                            <option value="Emergency">{t('priority.Emergency', { defaultValue: 'طارئ' })}</option>
+                            <option value="Urgent">{t('priority.Urgent', { defaultValue: 'عاجل' })}</option>
+                            <option value="Routine">{t('priority.Routine', { defaultValue: 'روتيني' })}</option>
                         </select>
+
+
+                        {/* View Switcher: Table vs Cards */}
+                        <div className="flex items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 dark:border-slate-800 dark:bg-slate-950">
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('table')}
+                                title={t('filters.viewModeTable', { defaultValue: 'جدول تفصيلي' })}
+                                className={`flex h-7 w-7 items-center justify-center rounded-lg transition ${viewMode === 'table'
+                                    ? 'bg-white text-teal-700 shadow-2xs dark:bg-slate-800 dark:text-teal-300'
+                                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                                    }`}
+                            >
+                                <List size={14} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('cards')}
+                                title={t('filters.viewModeCards', { defaultValue: 'بطاقات سريعة' })}
+                                className={`flex h-7 w-7 items-center justify-center rounded-lg transition ${viewMode === 'cards'
+                                    ? 'bg-white text-teal-700 shadow-2xs dark:bg-slate-800 dark:text-teal-300'
+                                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                                    }`}
+                            >
+                                <LayoutGrid size={14} />
+                            </button>
+                        </div>
+
+                        {/* Reset Filters Shortcut Button */}
+                        {isFiltered && (
+                            <button
+                                type="button"
+                                onClick={handleResetFilters}
+                                title={t('filters.reset', { defaultValue: 'إلغاء كافة التصفيات' })}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-2.5 text-xs font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300 transition shadow-2xs"
+                            >
+                                <RotateCcw size={12} />
+                                <span>{t('filters.reset', { defaultValue: 'إلغاء التصفيات' })}</span>
+                            </button>
+                        )}
+
+                        {/* Waitlist Toggle Button for Desktop */}
+                        {onToggleWaitlist && (
+                            <button
+                                type="button"
+                                onClick={onToggleWaitlist}
+                                className={`hidden xl:inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition shadow-2xs ${isWaitlistOpen
+                                    ? 'border-teal-500/80 bg-teal-50 text-teal-800 ring-1 ring-teal-500/20 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300'
+                                    : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                    }`}
+                            >
+                                <Users size={13} className="text-teal-600 dark:text-teal-400" />
+                                <span>{isWaitlistOpen ? t('waitlist.hide', { defaultValue: 'إخفاء الانتظار' }) : t('waitlist.show', { defaultValue: 'قائمة الانتظار' })}</span>
+                                {waitlistCount > 0 && (
+                                    <span className="rounded-md bg-teal-600 px-1.5 py-0.2 text-[10px] font-black text-white">
+                                        {waitlistCount}
+                                    </span>
+                                )}
+                            </button>
+                        )}
                     </div>
                 </div>
 
-                {/* Filter Chips Bar */}
-                <div className="mt-4 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+
+                {/* Filter Chips */}
+                <div className="mt-3.5 flex items-center gap-1.5 overflow-x-auto pb-3 scrollbar-none">
                     <FilterChip
-                        label={t('filters.all', { defaultValue: 'All' })}
+                        label={t('filters.all', { defaultValue: 'الكل' })}
                         count={filterCounts.all}
                         active={stageFilter === 'all'}
                         onClick={() => setStageFilter('all')}
                     />
-                    <FilterChip
-                        label={t('queue.stages.Arrived', { defaultValue: 'Arrived' })}
-                        count={filterCounts.Arrived}
-                        active={stageFilter === 'Arrived'}
-                        onClick={() => setStageFilter('Arrived')}
-                        dotColor="bg-teal-500"
-                    />
-                    <FilterChip
-                        label={t('queue.stages.Payment Pending', { defaultValue: 'Payment Pending' })}
-                        count={filterCounts['Payment Pending']}
-                        active={stageFilter === 'Payment Pending'}
-                        onClick={() => setStageFilter('Payment Pending')}
-                        dotColor="bg-amber-500"
-                    />
-                    <FilterChip
-                        label={t('queue.stages.Ready for Exam', { defaultValue: 'Ready' })}
-                        count={filterCounts['Ready for Exam']}
-                        active={stageFilter === 'Ready for Exam'}
-                        onClick={() => setStageFilter('Ready for Exam')}
-                        dotColor="bg-cyan-500"
-                    />
-                    <FilterChip
-                        label={t('queue.stages.In Exam', { defaultValue: 'In Exam' })}
-                        count={filterCounts['In Exam']}
-                        active={stageFilter === 'In Exam'}
-                        onClick={() => setStageFilter('In Exam')}
-                        dotColor="bg-indigo-500"
-                    />
-                    <FilterChip
-                        label={t('queue.stages.Reporting', { defaultValue: 'Reporting' })}
-                        count={filterCounts.Reporting}
-                        active={stageFilter === 'Reporting'}
-                        onClick={() => setStageFilter('Reporting')}
-                        dotColor="bg-violet-500"
-                    />
-                    <FilterChip
-                        label={t('queue.stages.Finalized', { defaultValue: 'Finalized' })}
-                        count={filterCounts.Finalized}
-                        active={stageFilter === 'Finalized'}
-                        onClick={() => setStageFilter('Finalized')}
-                        dotColor="bg-emerald-500"
-                    />
+                    {[
+                        { key: 'Scheduled', dotColor: 'bg-slate-500', labelKey: 'queue.stages.Scheduled', def: 'مجدول' },
+                        { key: 'Arrived', dotColor: 'bg-teal-500', labelKey: 'queue.stages.Arrived', def: 'وصل للمركز' },
+                        { key: 'Payment Pending', dotColor: 'bg-amber-500', labelKey: 'queue.stages.Payment Pending', def: 'انتظار الدفع' },
+                        { key: 'Prep Pending', dotColor: 'bg-orange-400', labelKey: 'queue.stages.Prep Pending', def: 'انتظار التحضير' },
+                        { key: 'Ready for Exam', dotColor: 'bg-cyan-500', labelKey: 'queue.stages.Ready for Exam', def: 'جاهز للفحص' },
+                        { key: 'In Exam', dotColor: 'bg-indigo-500', labelKey: 'queue.stages.In Exam', def: 'داخل غرفة الفحص' },
+                        { key: 'Reporting', dotColor: 'bg-violet-500', labelKey: 'queue.stages.Reporting', def: 'بانتظار كتابة التقرير' },
+                        { key: 'Finalized', dotColor: 'bg-emerald-500', labelKey: 'queue.stages.Finalized', def: 'تقرير معتمد' },
+                    ].filter(({ key }) => filterCounts[key] > 0 || stageFilter === key).map(({ key, dotColor, labelKey, def }) => (
+                        <FilterChip
+                            key={key}
+                            label={t(labelKey, { defaultValue: def })}
+                            count={filterCounts[key]}
+                            active={stageFilter === key}
+                            onClick={() => setStageFilter(stageFilter === key ? 'all' : key)}
+                            dotColor={dotColor}
+                        />
+                    ))}
                     {filterCounts.overdue > 0 && (
                         <FilterChip
-                            label={t('focus.overdue', { defaultValue: 'Overdue' })}
+                            label={t('focus.overdue', { defaultValue: 'متأخر' })}
                             count={filterCounts.overdue}
                             active={stageFilter === 'overdue'}
-                            onClick={() => setStageFilter('overdue')}
+                            onClick={() => setStageFilter(stageFilter === 'overdue' ? 'all' : 'overdue')}
                             tone="rose"
+                        />
+                    )}
+                    {filterCounts.urgent > 0 && (
+                        <FilterChip
+                            label={t('focus.urgent', { defaultValue: 'طارئ / عاجل' })}
+                            count={filterCounts.urgent}
+                            active={stageFilter === 'urgent'}
+                            onClick={() => setStageFilter(stageFilter === 'urgent' ? 'all' : 'urgent')}
+                            tone="amber"
                         />
                     )}
                 </div>
             </header>
 
-            {/* Mobile View (Cards) */}
-            <div className="lg:hidden">
-                {appLoading ? (
-                    <div className="space-y-3 p-4">
-                        {Array.from({ length: 4 }).map((_, index) => (
-                            <div key={index} className="h-36 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
-                        ))}
-                    </div>
-                ) : paginatedRows.length > 0 ? (
-                    <div className="divide-y divide-slate-100 p-2 dark:divide-slate-800">
-                        {paginatedRows.map((row) => {
-                            const { appointment, queue, invoice } = row;
-                            const examId = queue?.exam_id || appointment?.exam_id;
-                            const appointmentId = appointment?.appointment_id || queue?.appointment_id;
-                            const patient = appointment?.patient_name || queue?.patient_name || t('table.patientFallback');
+            {/* Cards View (Mobile & Grid View) */}
+            {(viewMode === 'cards') ? (
+                <div className="p-4 sm:p-5">
+                    {appLoading ? (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {Array.from({ length: 6 }).map((_, i) => (
+                                <div key={i} className="h-36 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />
+                            ))}
+                        </div>
+                    ) : paginatedRows.length > 0 ? (
+                        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+                            {paginatedRows.map((row) => {
+                                const { appointment, queue, invoice } = row;
+                                const examId = queue?.exam_id || appointment?.exam_id;
+                                const appointmentId = appointment?.appointment_id || queue?.appointment_id;
+                                const patient = appointment?.patient_name || queue?.patient_name || t('table.patientFallback');
+                                const isOverdue = queue?.is_overdue;
+                                const exam = appointment?.exam_type_name || queue?.exam_type_name || queue?.modality_name || '-';
+                                const machine = appointment?.machine_name || queue?.machine_name || queue?.modality_name || '';
 
-                            return (
-                                <article
-                                    key={examId || appointmentId}
-                                    className={`rounded-xl p-3.5 transition ${queue?.is_overdue ? 'bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/40 my-1.5' : 'bg-white dark:bg-slate-900'}`}
-                                >
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <p className="truncate font-black text-slate-950 dark:text-white text-sm">{patient}</p>
-                                            {(appointment?.is_follow_up || queue?.is_follow_up) && (
-                                                <p className="mt-0.5 text-[10px] font-black uppercase text-teal-700 dark:text-teal-300">
-                                                    {t('table.followUp', { defaultValue: 'Follow-up' })} / {appointment?.prior_order_number || queue?.prior_order_number || t('table.priorStudy', { defaultValue: 'Prior study' })}
-                                                </p>
-                                            )}
-                                            <p className="mt-0.5 font-mono text-[10px] font-bold text-slate-400 ltr-embed">
-                                                {appointment?.mrn || queue?.mrn || '-'}
-                                            </p>
-                                        </div>
-                                        <span className="shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-black tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                            {formatTime(appointment?.start_time)}
-                                        </span>
-                                    </div>
+                                const prio = appointment?.priority || queue?.priority || 'Routine';
+                                const cardBorderClass = isOverdue
+                                    ? 'border-2 border-rose-300 border-s-[6px] border-s-rose-600 bg-rose-50/20 dark:border-rose-900/60 dark:border-s-rose-500 dark:bg-rose-950/15'
+                                    : prio === 'Emergency'
+                                        ? 'border-2 border-rose-300 border-s-[6px] border-s-rose-500 bg-white hover:border-rose-400 dark:border-slate-750 dark:border-s-rose-500 dark:bg-slate-900'
+                                        : prio === 'Urgent'
+                                            ? 'border-2 border-amber-300 border-s-[6px] border-s-amber-500 bg-white hover:border-amber-400 dark:border-slate-750 dark:border-s-amber-500 dark:bg-slate-900'
+                                            : 'border-2 border-slate-200 border-s-[6px] border-s-teal-500 bg-white hover:border-teal-400 dark:border-slate-750 dark:border-s-teal-500 dark:bg-slate-900';
 
-                                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                                        <div className="rounded-lg bg-slate-50 p-2.5 dark:bg-slate-950/40">
-                                            <div className="flex items-center justify-between gap-1">
-                                                <p className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">{t('table.machineExam')}</p>
-                                                {(appointment?.contrast_required || queue?.contrast_required || invoice?.contrast_required) && (
-                                                    <span className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[8.5px] font-black text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                                                        <AlertTriangle size={9} className="text-amber-600" />
-                                                        {isRtl ? 'صبغة' : 'Contrast'}
-                                                    </span>
-                                                )}
+                                return (
+                                    <article
+                                        key={examId || appointmentId}
+                                        className={`group relative flex flex-col justify-between rounded-2xl p-4 shadow-2xs transition-all hover:shadow-md ${cardBorderClass}`}
+                                    >
+                                        <div>
+                                            {/* Header */}
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onSelectCase && onSelectCase(row)}
+                                                        className="text-start font-black text-slate-900 hover:text-teal-700 dark:text-white dark:hover:text-teal-300 text-sm"
+                                                    >
+                                                        {patient}
+                                                    </button>
+                                                    <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-slate-400">
+                                                        <span>{appointment?.mrn || queue?.mrn || '-'}</span>
+                                                        <span>·</span>
+                                                        <span>{formatTime(appointment?.start_time)}</span>
+                                                    </div>
+                                                </div>
+                                                <PriorityBadge priority={appointment?.priority || queue?.priority} />
                                             </div>
-                                            <p className="mt-1 line-clamp-2 font-bold text-slate-700 dark:text-slate-300 text-xs">
-                                                {appointment?.exam_type_name || queue?.exam_type_name || queue?.modality_name || '-'}
-                                            </p>
+
+                                            {/* Exam & Room Info */}
+                                            <div className="mt-2.5 space-y-1.5">
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                                        {exam}
+                                                    </p>
+                                                    {(appointment?.contrast_required || queue?.contrast_required || invoice?.contrast_required) && (
+                                                        <span className="inline-flex shrink-0 items-center gap-0.5 rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[8.5px] font-black text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                                            <AlertTriangle size={8} />
+                                                            {isRtl ? 'صبغة' : '+C'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    {machine && (
+                                                        <span className="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                                            {machine}
+                                                        </span>
+                                                    )}
+                                                    {(appointment?.room_number || queue?.room_number) && (
+                                                        <span className="inline-flex items-center gap-1 rounded-md bg-teal-50 border border-teal-200 px-1.5 py-0.5 text-[9.5px] font-bold text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800">
+                                                            <DoorOpen size={10} />
+                                                            <span>{appointment?.room_number || queue?.room_number}</span>
+                                                        </span>
+                                                    )}
+                                                    {appointment?.machine_status && appointment.machine_status !== 'Active' && (
+                                                        <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 border border-rose-200 px-1.5 py-0.5 text-[9.5px] font-bold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300" title={appointment.machine_status}>
+                                                            <AlertTriangle size={10} />
+                                                            <span>{appointment.machine_status === 'Under Maintenance' ? 'قيد الصيانة' : 'معطل'}</span>
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Status & Financial & Wait */}
+                                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2.5 dark:border-slate-800">
+                                                <div className="flex items-center gap-2">
+                                                    {renderFinancialStatus(invoice)}
+                                                    {renderWait(queue)}
+                                                </div>
+                                                {renderStatus(row)}
+                                            </div>
                                         </div>
-                                        <div className="rounded-lg bg-slate-50 p-2.5 dark:bg-slate-950/40">
-                                            <p className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">{t('queue.columns.wait', { defaultValue: 'Wait' })}</p>
-                                            <div className="mt-1">{renderWait(queue)}</div>
+
+                                        {/* Actions footer */}
+                                        <div className="mt-3 border-t border-slate-100 pt-2.5 dark:border-slate-800">
+                                            {renderActions(row, 'start')}
                                         </div>
-                                    </div>
-
-                                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                                        <PriorityBadge priority={appointment?.priority || queue?.priority} />
-                                        {renderStatus(row, 'bottom')}
-                                    </div>
-
-                                    <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
-                                        {renderActions(row, 'start')}
-                                    </div>
-                                </article>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    <div className="p-8">
-                        <EmptyState
-                            icon={CheckCircle2}
-                            title={t('queue.empty', { defaultValue: 'No operations found' })}
-                            subtitle={searchTerm ? t('queue.emptySearch', { defaultValue: 'Try a different search.' }) : t('empty.noAppointments')}
-                        />
-                    </div>
-                )}
-            </div>
-
-            {/* Desktop View (Table) */}
-            <div className="hidden lg:block overflow-x-auto">
-                <table className="w-full table-fixed text-start text-xs">
-                    <thead className="border-b border-slate-100 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40">
-                        <tr>
-                            <SortableHeader field="time" label={t('table.time')} width="w-[90px]" className="ps-5" />
-                            <SortableHeader field="patient" label={t('table.patient')} width="w-[20%]" />
-                            <SortableHeader field="exam" label={t('table.machineExam')} width="w-[21%]" />
-                            <SortableHeader field="priority" label={t('queue.columns.priority', { defaultValue: 'Priority' })} width="w-[11%]" />
-                            <SortableHeader field="stage" label={t('table.status')} width="w-[20%]" />
-                            <SortableHeader field="wait" label={t('queue.columns.wait', { defaultValue: 'Wait' })} width="w-[90px]" />
-                            <th className="w-[19%] px-4 py-3 pe-5 text-end text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                {t('table.actions')}
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {appLoading ? (
-                            <tr>
-                                <td colSpan={7} className="p-6">
-                                    <div className="space-y-3">
-                                        {Array.from({ length: 5 }).map((_, index) => (
-                                            <div key={index} className="h-12 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
-                                        ))}
-                                    </div>
-                                </td>
-                            </tr>
-                        ) : paginatedRows.map((row) => {
-                            const { appointment, queue, invoice } = row;
-                            const examId = queue?.exam_id || appointment?.exam_id;
-                            const patient = appointment?.patient_name || queue?.patient_name || t('table.patientFallback');
-                            const appointmentId = appointment?.appointment_id || queue?.appointment_id;
-
-                            return (
-                                <tr
-                                    key={examId || appointmentId}
-                                    className={`group transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/50 ${queue?.is_overdue ? 'bg-rose-50/50 dark:bg-rose-950/15' : 'bg-transparent'
-                                        }`}
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center p-8 text-center">
+                            <EmptyState
+                                icon={CheckCircle2}
+                                title={t('queue.empty', { defaultValue: 'لا توجد عمليات' })}
+                                subtitle={isFiltered ? t('queue.emptyFiltered', { defaultValue: 'لا توجد حالات تطابق خيارات التصفية أو البحث الحالية.' }) : t('empty.noAppointments')}
+                            />
+                            {isFiltered && (
+                                <button
+                                    type="button"
+                                    onClick={handleResetFilters}
+                                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-1.5 text-xs font-black text-teal-700 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300 transition"
                                 >
-                                    <td className="px-3 py-3.5 ps-5">
-                                        <span className="font-bold tabular-nums text-slate-800 dark:text-slate-200">
-                                            {formatTime(appointment?.start_time)}
-                                        </span>
-                                    </td>
-                                    <td className="px-3 py-3.5">
-                                        <p className="truncate font-black text-slate-900 dark:text-white text-xs">{patient}</p>
-                                        {(appointment?.is_follow_up || queue?.is_follow_up) && (
-                                            <p className="mt-0.5 truncate text-[9.5px] font-black uppercase text-teal-700 dark:text-teal-300">
-                                                {t('table.followUp', { defaultValue: 'Follow-up' })} / {appointment?.prior_order_number || queue?.prior_order_number || t('table.priorStudy', { defaultValue: 'Prior study' })}
-                                            </p>
-                                        )}
-                                        <p className="mt-0.5 truncate font-mono text-[10px] text-slate-400 ltr-embed">
-                                            {appointment?.mrn || queue?.mrn || '-'}
-                                        </p>
-                                    </td>
-                                    <td className="px-3 py-3.5">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                            <p className="truncate font-bold text-slate-800 dark:text-slate-200">
-                                                {appointment?.exam_type_name || queue?.exam_type_name || queue?.modality_name || '-'}
-                                            </p>
-                                            {(appointment?.contrast_required || queue?.contrast_required || invoice?.contrast_required) && (
-                                                <span className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-black text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                                                    <AlertTriangle size={10} className="text-amber-600" />
-                                                    {isRtl ? 'يتطلب صبغة' : 'Contrast'}
-                                                </span>
-                                            )}
+                                    <RotateCcw size={12} />
+                                    <span>{t('filters.reset', { defaultValue: 'إلغاء كافة التصفيات' })}</span>
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
+            ) : (
+                /* Desktop Dense Table View with Distinct Grid Borders */
+                <div className="overflow-x-auto border-t border-slate-200 dark:border-slate-800">
+                    <table className="w-full min-w-[1050px] border-collapse text-start text-xs">
+                        <thead>
+                            <tr className="border-b-2 border-slate-300 bg-slate-100/90 dark:border-slate-700 dark:bg-slate-950/80">
+                                <SortableHeader field="time" label={t('table.time')} width="w-[90px]" className="ps-4 border-e border-slate-200/80 dark:border-slate-800" />
+                                <SortableHeader field="patient" label={t('table.patient')} width="w-[19%]" className="border-e border-slate-200/80 dark:border-slate-800" />
+                                <SortableHeader field="exam" label={t('table.machineExam')} width="w-[21%]" className="border-e border-slate-200/80 dark:border-slate-800" />
+                                <SortableHeader field="priority" label={t('queue.columns.priority', { defaultValue: 'الأولوية' })} width="w-[90px]" className="border-e border-slate-200/80 dark:border-slate-800" />
+                                <SortableHeader field="stage" label={t('table.stage', { defaultValue: 'المرحلة التشغيلية' })} width="w-[15%]" className="border-e border-slate-200/80 dark:border-slate-800" />
+                                <th className="w-[125px] border-e border-slate-200/80 px-3 py-3 text-start text-[10.5px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-800 dark:text-slate-300">
+                                    {t('table.financialStatus', { defaultValue: 'الموقف المالي' })}
+                                </th>
+                                <SortableHeader field="wait" label={t('queue.columns.wait', { defaultValue: 'الانتظار' })} width="w-[85px]" className="border-e border-slate-200/80 dark:border-slate-800" />
+                                <th className="w-[210px] px-3 py-3 pe-4 text-end text-[10.5px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                                    {t('table.actions')}
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y-2 divide-slate-200 dark:divide-slate-800">
+                            {appLoading ? (
+                                <tr>
+                                    <td colSpan={8} className="p-6">
+                                        <div className="space-y-2">
+                                            {Array.from({ length: 6 }).map((_, i) => (
+                                                <div key={i} className="h-11 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+                                            ))}
                                         </div>
-                                        <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-400">
-                                            {appointment?.machine_name || queue?.machine_name || queue?.modality_name || ''}
-                                        </p>
-                                    </td>
-                                    <td className="px-3 py-3.5">
-                                        <PriorityBadge priority={appointment?.priority || queue?.priority} />
-                                    </td>
-                                    <td className="px-3 py-3.5">
-                                        {renderStatus(row)}
-                                    </td>
-                                    <td className="px-3 py-3.5">
-                                        {renderWait(queue)}
-                                    </td>
-                                    <td className="px-4 py-3.5 pe-5 text-end">
-                                        {renderActions(row)}
                                     </td>
                                 </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+                            ) : paginatedRows.length > 0 ? (
+                                paginatedRows.map((row) => {
+                                    const { appointment, queue, invoice } = row;
+                                    const examId = queue?.exam_id || appointment?.exam_id;
+                                    const patient = appointment?.patient_name || queue?.patient_name || t('table.patientFallback');
+                                    const appointmentId = appointment?.appointment_id || queue?.appointment_id;
+                                    const isOverdue = queue?.is_overdue;
+                                    const prio = appointment?.priority || queue?.priority || 'Routine';
+                                    const exam = appointment?.exam_type_name || queue?.exam_type_name || queue?.modality_name || '-';
+                                    const machine = appointment?.machine_name || queue?.machine_name || queue?.modality_name || '';
 
-                {!appLoading && filteredAndSorted.length === 0 && (
-                    <div className="p-10">
-                        <EmptyState
-                            icon={CheckCircle2}
-                            title={t('queue.empty', { defaultValue: 'No operations found' })}
-                            subtitle={searchTerm ? t('queue.emptySearch', { defaultValue: 'Try a different search.' }) : t('empty.noAppointments')}
-                        />
-                    </div>
-                )}
-            </div>
+                                    const rowBorderAccent = isOverdue
+                                        ? 'border-s-[5px] border-s-rose-600 bg-rose-50/40 hover:bg-rose-50/70 dark:bg-rose-950/20 dark:hover:bg-rose-950/30'
+                                        : prio === 'Emergency'
+                                            ? 'border-s-[5px] border-s-rose-500 bg-rose-50/15 hover:bg-rose-50/30 dark:bg-rose-950/10'
+                                            : prio === 'Urgent'
+                                                ? 'border-s-[5px] border-s-amber-500 bg-amber-50/15 hover:bg-amber-50/30 dark:bg-amber-950/10'
+                                                : 'border-s-[5px] border-s-slate-200 hover:border-s-teal-500 hover:bg-teal-50/40 dark:border-s-slate-800 dark:hover:border-s-teal-400 dark:hover:bg-slate-800/60';
 
-            {/* Pagination Footer */}
+                                    return (
+                                        <tr
+                                            key={examId || appointmentId}
+                                            className={`group border-b border-slate-200/90 transition-colors even:bg-slate-50/50 dark:border-slate-800 dark:even:bg-slate-900/40 ${rowBorderAccent}`}
+                                        >
+                                            {/* Time */}
+                                            <td className="border-e border-slate-200/60 px-3 py-3.5 ps-4 dark:border-slate-800/60">
+                                                <span className="font-mono text-xs font-bold tabular-nums text-slate-800 dark:text-slate-200">
+                                                    {formatTime(appointment?.start_time)}
+                                                </span>
+                                            </td>
+
+                                            {/* Patient */}
+                                            <td className="border-e border-slate-200/60 px-3 py-3.5 dark:border-slate-800/60">
+                                                <div className="flex flex-col">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onSelectCase && onSelectCase(row)}
+                                                        className="text-start font-black text-slate-900 transition hover:text-teal-700 dark:text-white dark:hover:text-teal-300"
+                                                    >
+                                                        {patient}
+                                                    </button>
+                                                    <span className="mt-0.5 font-mono text-[10.5px] font-bold text-slate-400 ltr-embed">
+                                                        {appointment?.mrn || queue?.mrn || '-'}
+                                                    </span>
+                                                </div>
+                                            </td>
+
+                                            {/* Exam & Modality & Room */}
+                                            <td className="border-e border-slate-200/60 px-3 py-3.5 dark:border-slate-800/60">
+                                                <div className="space-y-1">
+                                                    <div className="flex flex-wrap items-center gap-1.5">
+                                                        <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                                                            {exam}
+                                                        </span>
+                                                        {(appointment?.contrast_required || queue?.contrast_required || invoice?.contrast_required) && (
+                                                            <span className="inline-flex shrink-0 items-center gap-0.5 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.2 text-[8.5px] font-black text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                                                <AlertTriangle size={8} />
+                                                                {isRtl ? 'صبغة' : '+C'}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-1">
+                                                        {machine && (
+                                                            <span className="inline-block rounded bg-slate-100 px-1.5 py-0.2 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                                                {machine}
+                                                            </span>
+                                                        )}
+                                                        {(appointment?.room_number || queue?.room_number) && (
+                                                            <span className="inline-flex items-center gap-0.5 rounded bg-teal-50 border border-teal-200 px-1.5 py-0.2 text-[9.5px] font-bold text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800">
+                                                                <DoorOpen size={9} />
+                                                                <span>{appointment?.room_number || queue?.room_number}</span>
+                                                            </span>
+                                                        )}
+                                                        {appointment?.machine_status && appointment.machine_status !== 'Active' && (
+                                                            <span className="inline-flex items-center gap-0.5 rounded bg-rose-50 border border-rose-200 px-1.5 py-0.2 text-[9px] font-bold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300" title={appointment.machine_status}>
+                                                                <AlertTriangle size={9} />
+                                                                <span>{appointment.machine_status === 'Under Maintenance' ? 'صيانة' : 'معطل'}</span>
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+
+                                            {/* Priority */}
+                                            <td className="border-e border-slate-200/60 px-3 py-3.5 dark:border-slate-800/60">
+                                                <PriorityBadge priority={appointment?.priority || queue?.priority} />
+                                            </td>
+
+                                            {/* Stage & Next Progression */}
+                                            <td className="border-e border-slate-200/60 px-3 py-3.5 dark:border-slate-800/60">
+                                                {renderStatus(row)}
+                                            </td>
+
+                                            {/* Financial Status */}
+                                            <td className="border-e border-slate-200/60 px-3 py-3.5 dark:border-slate-800/60">
+                                                {renderFinancialStatus(invoice)}
+                                            </td>
+
+                                            {/* Wait Duration */}
+                                            <td className="border-e border-slate-200/60 px-3 py-3.5 dark:border-slate-800/60">
+                                                {renderWait(queue)}
+                                            </td>
+
+                                            {/* Actions */}
+                                            <td className="px-3 py-3.5 pe-4 text-end">
+                                                {renderActions(row)}
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            ) : (
+                                <tr>
+                                    <td colSpan={8} className="p-8 text-center">
+                                        <div className="flex flex-col items-center justify-center">
+                                            <EmptyState
+                                                icon={CheckCircle2}
+                                                title={t('queue.empty', { defaultValue: 'لا توجد عمليات' })}
+                                                subtitle={isFiltered ? t('queue.emptyFiltered', { defaultValue: 'لا توجد حالات تطابق خيارات التصفية أو البحث الحالية.' }) : t('empty.noAppointments')}
+                                            />
+                                            {isFiltered && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleResetFilters}
+                                                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-1.5 text-xs font-black text-teal-700 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300 transition"
+                                                >
+                                                    <RotateCcw size={12} />
+                                                    <span>{t('filters.reset', { defaultValue: 'إلغاء كافة التصفيات' })}</span>
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {/* Pagination footer */}
             {filteredAndSorted.length > 0 && (
-                <footer className="flex flex-col items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/30 sm:flex-row sm:px-6">
-                    <div className="flex items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
+                <footer className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-3 dark:border-slate-800 dark:bg-slate-950/30 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                         <span>
                             {t('pagination.showing', {
                                 from: paginationState.startIndex + 1,
                                 to: paginationState.endIndex,
                                 total: filteredAndSorted.length,
-                                defaultValue: `Showing ${paginationState.startIndex + 1}–${paginationState.endIndex} of ${filteredAndSorted.length}`
+                                defaultValue: `${paginationState.startIndex + 1}–${paginationState.endIndex} من ${filteredAndSorted.length}`,
                             })}
                         </span>
                         <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-semibold">{t('pagination.perPage', { defaultValue: 'Rows:' })}</span>
+                            <span className="text-[10px]">{t('pagination.perPage', { defaultValue: 'صفوف:' })}</span>
                             <select
                                 value={pageSize}
                                 onChange={(e) => setPageSize(Number(e.target.value))}
-                                className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                                aria-label={t('pagination.selectPageSize', { defaultValue: 'Rows per page' })}
+                                className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-700 outline-none focus:border-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                                aria-label={t('pagination.selectPageSize', { defaultValue: 'صفوف لكل صفحة' })}
                             >
                                 {PAGE_SIZE_OPTIONS.map((opt) => (
                                     <option key={opt} value={opt}>{opt}</option>
@@ -872,22 +1669,28 @@ const DailyOperationsTable = ({
 };
 
 const FilterChip = ({ active, count = 0, dotColor, label, onClick, tone = 'default' }) => {
-    const base = 'inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10.5px] font-extrabold transition-all focus-visible:outline-none';
+    const base = 'inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10.5px] font-bold transition-all focus-visible:outline-none';
     const styles = {
         default: active
-            ? 'bg-slate-900 text-white shadow-xs dark:bg-slate-100 dark:text-slate-900'
+            ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20 dark:bg-teal-500 dark:text-white'
             : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-slate-700',
         rose: active
-            ? 'bg-rose-600 text-white shadow-xs'
+            ? 'bg-rose-600 text-white shadow-sm'
             : 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300',
-    }[tone];
+        amber: active
+            ? 'bg-amber-500 text-white shadow-sm'
+            : 'border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300',
+    }[tone] ?? styles?.default;
 
     return (
         <button type="button" onClick={onClick} className={`${base} ${styles}`}>
-            {dotColor && <span className={`h-2 w-2 rounded-full ${dotColor}`} />}
+            {dotColor && <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />}
             <span>{label}</span>
             {count > 0 && (
-                <span className={`rounded-md px-1.5 py-0.2 text-[9.5px] font-black ${active ? 'bg-white/20 text-white dark:bg-slate-300 dark:text-slate-900' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                <span className={`rounded px-1 py-px text-[9px] font-black tabular-nums ${active
+                    ? 'bg-white/25 text-white'
+                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                    }`}>
                     {count}
                 </span>
             )}

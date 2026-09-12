@@ -51,7 +51,8 @@ const DEFAULTS = {
 
 const notificationAdminRoles = new Set(['Developer', 'Admin']);
 const analyticsRoles = new Set(['Developer', 'Admin', 'Receptionist', 'Marketing']);
-const panelClass = 'rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-6';
+let testSoundContext = null;
+const panelClass = 'settings-section [padding:var(--VIARA-density-card-padding)]';
 
 const EVENT_CATEGORIES = [
     { key: 'notify_security_event', labelKey: 'settings.notifications.categories.security', defaultLabel: 'Security events', icon: ShieldAlert, descKey: 'settings.notifications.categories.securityDesc', defaultDesc: 'Login failures, lockouts, token reuse, and permission denials.' },
@@ -74,7 +75,7 @@ const DELIVERY_CHANNELS = [
     { key: 'inapp_enabled', labelKey: 'settings.notifications.channels.inApp', defaultLabel: 'In-app', icon: Inbox }
 ];
 
-export default function NotificationSettingsPanel() {
+export default function NotificationSettingsPanel({ embedded = false }) {
     const { t } = useTranslation(['settings', 'common']);
     const dispatch = useDispatch();
     const currentUser = useSelector(selectCurrentUser);
@@ -205,7 +206,13 @@ export default function NotificationSettingsPanel() {
             return;
         }
 
-        const context = new AudioContextClass();
+        if (!testSoundContext) {
+            testSoundContext = new AudioContextClass();
+        }
+        const context = testSoundContext;
+        if (context.state === 'suspended') {
+            context.resume().catch(() => { });
+        }
         const volume = Number(preferences.soundVolume) || 0.5;
         const oscillator = context.createOscillator();
         const gain = context.createGain();
@@ -215,7 +222,10 @@ export default function NotificationSettingsPanel() {
         oscillator.connect(gain).connect(context.destination);
         oscillator.start();
         oscillator.stop(context.currentTime + 0.22);
-        window.setTimeout(() => context.close().catch(() => { }), 350);
+        oscillator.onended = () => {
+            oscillator.disconnect();
+            gain.disconnect();
+        };
     };
 
     const handleMarkRead = async (id) => {
@@ -268,20 +278,20 @@ export default function NotificationSettingsPanel() {
     }, [analytics]);
 
     return (
-        <div className="space-y-6">
+        <div className={embedded ? 'space-y-5 pb-0' : 'space-y-6'}>
             {/* Top Notification Control Hero Deck */}
-            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8">
-                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
-                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
+            <div className="cs-hero sm:p-8">
+                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-[rgba(var(--VIARA-accent-rgb),.07)] blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-[rgba(var(--VIARA-accent-rgb),.04)] blur-3xl" />
 
                 <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex items-start gap-4 sm:items-center">
-                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-sky-500/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
+                        <div className="cs-hero-icon">
                             <BellRing size={26} />
                         </div>
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                                <span className="cs-hero-badge">
                                     <Bell size={11} />
                                     <span>{t('settings.notifications.eyebrow', { defaultValue: 'System Communications' })}</span>
                                 </span>

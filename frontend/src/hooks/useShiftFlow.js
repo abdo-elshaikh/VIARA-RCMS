@@ -6,6 +6,7 @@ import {
     useOpenCashierShiftMutation,
     useCloseCashierShiftMutation,
     useGetCashierReconciliationQuery,
+    useGetCurrentCashierShiftQuery,
 } from '../store/api';
 import { getCurrentUserId } from '../components/reception/receptionLogic';
 import { getErrorMessage } from '../utils/getErrorMessage';
@@ -28,6 +29,11 @@ export const useShiftFlow = ({ skip = false, includeAllForReview = false } = {})
     const [openCashierShift, { isLoading: isOpening }] = useOpenCashierShiftMutation();
     const [closeCashierShift, { isLoading: isClosing }] = useCloseCashierShiftMutation();
 
+    const { data: currentShiftResponse, isFetching: isLoadingCurrentShift } = useGetCurrentCashierShiftQuery(
+        undefined,
+        { skip: skip || !currentUserId, pollingInterval: 15000 }
+    );
+
     const { data: cashierData, isFetching: isLoadingShift } = useGetCashierReconciliationQuery(
         { cashierId: currentUserId },
         { skip: skip || !currentUserId }
@@ -38,8 +44,8 @@ export const useShiftFlow = ({ skip = false, includeAllForReview = false } = {})
     );
 
     const currentShift = useMemo(
-        () => cashierData?.data?.find((shift) => ['Open', 'Active'].includes(shift.status)),
-        [cashierData]
+        () => currentShiftResponse?.data || cashierData?.data?.find((shift) => ['Open', 'Active'].includes(shift.status)),
+        [currentShiftResponse, cashierData]
     );
 
     const pendingReviewShift = useMemo(
@@ -138,7 +144,7 @@ export const useShiftFlow = ({ skip = false, includeAllForReview = false } = {})
         pendingReviewShift,
         openShifts,
         closedShifts,
-        isLoadingShift: isLoadingShift || isLoadingSupervisorShifts,
+        isLoadingShift: isLoadingShift || isLoadingSupervisorShifts || isLoadingCurrentShift,
         isBusy: isOpening || isClosing,
         openShiftDialog,
         closeShiftDialog,

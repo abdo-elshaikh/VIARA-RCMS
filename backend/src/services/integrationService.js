@@ -1,17 +1,33 @@
 const { encrypt, decrypt } = require('../utils/crypto');
 
+const decryptStoredValue = (value) => {
+    if (!value) return null;
+    return String(value).startsWith('v2:') ? decrypt(value) : String(value);
+};
+
+const withTimeout = async (operation, timeoutMs, label) => {
+    let timer;
+    try {
+        return await Promise.race([
+            Promise.resolve().then(operation),
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+            })
+        ]);
+    } finally {
+        clearTimeout(timer);
+    }
+};
+
 /**
  * Integration Service
  * Abstraction layer for outbound communications.
  * Supports real provider dispatch, idempotent logging, retries, and dead-letter handling.
  */
 
-const IDEMPOTENCY_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 class IntegrationService {
     constructor(db) {
         this.db = db;
-        this._secretCache = new Map();
     }
 
     assertMockAllowed() {
@@ -24,53 +40,121 @@ class IntegrationService {
     // CONFIG & SECRETS
     // ==========================================
 
-    async getProviderConfig(providerName) {
+    async getProviderConfig(providerName, { requireActive = true } = {}) {
         if (!this.db || typeof this.db.query !== 'function') {
             this.assertMockAllowed();
             return null;
         }
         const result = await this.db.query(
-            'SELECT * FROM integrations WHERE provider_name = $1 AND is_active = TRUE',
-            [providerName]
+            `SELECT * FROM integrations
+             WHERE provider_name = $1
+               AND ($2::boolean = FALSE OR is_active = TRUE)`,
+            [providerName, requireActive]
         );
         return result.rows[0] || null;
     }
 
-    async getDecryptedApiKey(providerName) {
+    async getDecryptedApiKey(providerName, { requireActive = true } = {}) {
         const result = await this.db.query(
-            'SELECT api_key FROM integrations WHERE provider_name = $1 AND is_active = TRUE',
-            [providerName]
+            `SELECT api_key FROM integrations
+             WHERE provider_name = $1
+               AND ($2::boolean = FALSE OR is_active = TRUE)`,
+            [providerName, requireActive]
         );
         const row = result.rows[0];
         if (!row || !row.api_key) return null;
 
-        return row.api_key.startsWith('v2:') || /^[0-9a-f]+:[0-9a-f]+$/i.test(row.api_key)
-            ? decrypt(row.api_key)
-            : row.api_key;
+        return decryptStoredValue(row.api_key);
     }
 
-    async getDecryptedSecret(providerName) {
-        if (this._secretCache.has(providerName)) {
-            return this._secretCache.get(providerName);
-        }
-
+    async getDecryptedSecret(providerName, { requireActive = true } = {}) {
         const result = await this.db.query(
-            'SELECT api_secret, secret_version FROM integrations WHERE provider_name = $1 AND is_active = TRUE',
-            [providerName]
+            `SELECT api_secret, webhook_secret, sender_identity, secret_version
+             FROM integrations
+             WHERE provider_name = $1
+               AND ($2::boolean = FALSE OR is_active = TRUE)`,
+            [providerName, requireActive]
         );
         const row = result.rows[0];
-        if (!row || !row.api_secret) return null;
+        if (!row) return null;
 
-        const secret = row.api_secret.startsWith('v2:') || /^[0-9a-f]+:[0-9a-f]+$/i.test(row.api_secret)
-            ? decrypt(row.api_secret)
-            : row.api_secret;
-
-        this._secretCache.set(providerName, { secret, version: row.secret_version || 1 });
-        return { secret, version: row.secret_version || 1 };
+        return {
+            secret: decryptStoredValue(row.api_secret),
+            webhookSecret: decryptStoredValue(row.webhook_secret),
+            senderIdentity: row.sender_identity || null,
+            version: row.secret_version || 1
+        };
     }
 
-    invalidateSecretCache(providerName) {
-        this._secretCache.delete(providerName);
+    invalidateSecretCache() {
+        // Credentials are intentionally read for each operation. This no-op is
+        // retained for compatibility with callers from older deployments.
+    }
+
+    async testProviderConnection(providerName) {
+        const provider = await this.getProviderConfig(providerName, { requireActive: false });
+        if (!provider) throw new Error('Integration not found');
+
+        const timeoutMs = Math.min(Math.max(Number(provider.webhook_timeout_ms) || 5000, 500), 30000);
+        const apiKey = await this.getDecryptedApiKey(providerName, { requireActive: false });
+        const secretData = await this.getDecryptedSecret(providerName, { requireActive: false });
+        const secret = secretData?.secret || null;
+        const startedAt = Date.now();
+
+        if (providerName === 'Twilio' || providerName === 'WhatsApp') {
+            if (!apiKey || !secret) throw new Error('Twilio Account SID or Auth Token is not configured');
+            if (!String(apiKey).startsWith('AC')) throw new Error('Invalid Twilio Account SID format');
+            const twilio = require('twilio');
+            const client = twilio(apiKey, secret);
+            await withTimeout(
+                () => client.api.v2010.accounts(apiKey).fetch(),
+                timeoutMs,
+                `${providerName} health check`
+            );
+        } else if (providerName === 'Stripe') {
+            if (!secret) throw new Error('Stripe secret key is not configured');
+            if (!String(secret).startsWith('sk_') && !String(secret).startsWith('rk_')) {
+                throw new Error('Invalid Stripe secret key format');
+            }
+            const stripe = require('stripe');
+            const client = stripe(secret);
+            await withTimeout(() => client.accounts.retrieve(), timeoutMs, 'Stripe health check');
+        } else if (providerName === 'PACS_Orthanc') {
+            const baseUrl = provider.webhook_url || provider.extra_config?.orthanc_url;
+            if (!baseUrl) throw new Error('Orthanc server URL is not configured');
+            const url = new URL('/system', String(baseUrl).endsWith('/') ? baseUrl : `${baseUrl}/`);
+            if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Orthanc URL must use HTTP or HTTPS');
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const headers = apiKey || secret
+                    ? { Authorization: `Basic ${Buffer.from(`${apiKey || ''}:${secret || ''}`).toString('base64')}` }
+                    : {};
+                const response = await fetch(url, { headers, signal: controller.signal });
+                if (!response.ok) throw new Error(`Orthanc returned HTTP ${response.status}`);
+            } finally {
+                clearTimeout(timer);
+            }
+        } else if (providerName === 'QuickBooks') {
+            const realmId = provider.extra_config?.realm_id;
+            if (!apiKey || !realmId) throw new Error('QuickBooks access token and Realm ID are required');
+            const environment = provider.extra_config?.environment === 'production' ? 'quickbooks.api.intuit.com' : 'sandbox-quickbooks.api.intuit.com';
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const response = await fetch(`https://${environment}/v3/company/${encodeURIComponent(realmId)}/companyinfo/${encodeURIComponent(realmId)}?minorversion=75`, {
+                    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error(`QuickBooks returned HTTP ${response.status}`);
+            } finally {
+                clearTimeout(timer);
+            }
+        } else {
+            throw new Error(`Unsupported integration provider: ${providerName}`);
+        }
+
+        return { status: 'HEALTHY', latencyMs: Date.now() - startedAt };
     }
 
     // ==========================================
@@ -91,33 +175,61 @@ class IntegrationService {
             ? new Date(Date.now() + Math.pow(2, deliveryAttempt) * 1000)
             : null;
 
-        if (idempotencyKey) {
-            const existing = await this.db.query(
-                'SELECT log_id, status FROM integration_logs WHERE idempotency_key = $1 AND created_at > $2',
-                [idempotencyKey, new Date(Date.now() - IDEMPOTENCY_WINDOW_MS)]
-            );
-            if (existing.rows.length > 0) {
-                const existingLog = existing.rows[0];
-                if (existingLog.status === 'Success') {
-                    return { logId: existingLog.log_id, deduped: true };
-                }
-            }
-        }
-
         const result = await this.db.query(
             `INSERT INTO integration_logs (
                 integration_id, event_type, payload, status, error_message,
                 idempotency_key, webhook_id, delivery_attempt, max_retries,
-                next_retry_at, provider_response
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING log_id`,
+                next_retry_at, provider_response, retry_count, completed_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, GREATEST($8 - 1, 0),
+                      CASE WHEN $4::text IN ('Success', 'Retried', 'DeadLetter') THEN CURRENT_TIMESTAMP ELSE NULL END)
+            ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
+            DO UPDATE SET
+                integration_id = EXCLUDED.integration_id,
+                event_type = EXCLUDED.event_type,
+                payload = EXCLUDED.payload,
+                status = CASE
+                    WHEN integration_logs.status IN ('Success', 'Retried') THEN integration_logs.status
+                    ELSE EXCLUDED.status
+                END,
+                error_message = CASE
+                    WHEN integration_logs.status IN ('Success', 'Retried') THEN integration_logs.error_message
+                    ELSE EXCLUDED.error_message
+                END,
+                webhook_id = COALESCE(EXCLUDED.webhook_id, integration_logs.webhook_id),
+                delivery_attempt = GREATEST(integration_logs.delivery_attempt, EXCLUDED.delivery_attempt),
+                max_retries = EXCLUDED.max_retries,
+                retry_count = GREATEST(integration_logs.retry_count, EXCLUDED.retry_count),
+                next_retry_at = CASE
+                    WHEN integration_logs.status IN ('Success', 'Retried') THEN NULL
+                    ELSE EXCLUDED.next_retry_at
+                END,
+                provider_response = COALESCE(EXCLUDED.provider_response, integration_logs.provider_response),
+                completed_at = CASE
+                    WHEN integration_logs.status IN ('Success', 'Retried') THEN integration_logs.completed_at
+                    ELSE EXCLUDED.completed_at
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING log_id, status, status IN ('Success', 'Retried') AND status <> $4::text AS deduped`,
             [
                 integrationId, eventType, JSON.stringify(payload), status, errorMessage,
                 idempotencyKey, webhookId, deliveryAttempt, maxRetries,
                 nextRetryAt, providerResponse ? JSON.stringify(providerResponse) : null
             ]
         );
-        return { logId: result.rows[0].log_id, deduped: false };
+        return { logId: result.rows[0].log_id, deduped: result.rows[0].deduped === true };
+    }
+
+    async findCompletedEvent(idempotencyKey) {
+        if (!idempotencyKey) return null;
+        const result = await this.db.query(
+            `SELECT log_id, status
+             FROM integration_logs
+             WHERE idempotency_key = $1
+               AND status IN ('Success', 'Retried')
+             LIMIT 1`,
+            [idempotencyKey]
+        );
+        return result.rows[0] || null;
     }
 
     async updateLogStatus(logId, status, errorMessage = null, providerResponse = null) {
@@ -161,6 +273,11 @@ class IntegrationService {
         const idempotencyKey = options.idempotencyKey || `sms:${provider.integration_id}:${phoneNumber}:${Date.now()}`;
         let providerMessageId = null;
 
+        const completed = await this.findCompletedEvent(idempotencyKey);
+        if (completed) {
+            return { success: true, logId: completed.log_id, deduped: true, providerMessageId: null };
+        }
+
         try {
             if (process.env.NODE_ENV !== 'production' && options.mock) {
                 console.log('[MOCK Twilio] Sending redacted SMS payload');
@@ -172,22 +289,29 @@ class IntegrationService {
                 if (!apiKey || !secret) throw new Error('Twilio Account SID or Auth Token missing');
                 const twilio = require('twilio');
                 const client = twilio(apiKey, secret);
+                const statusCallback = options.statusCallback || process.env.TWILIO_STATUS_CALLBACK_URL
+                    || (process.env.PUBLIC_API_URL
+                        ? `${process.env.PUBLIC_API_URL.replace(/\/+$/, '')}/api/webhooks/twilio`
+                        : undefined);
+                const fromNumber = options.from || provider.sender_identity || process.env.TWILIO_PHONE_NUMBER;
+                if (!fromNumber) throw new Error('Twilio sender identity is not configured');
                 const twilioMessage = await client.messages.create({
                     body: message,
-                    from: options.from || process.env.TWILIO_PHONE_NUMBER,
-                    to: phoneNumber
+                    from: fromNumber,
+                    to: phoneNumber,
+                    ...(statusCallback ? { statusCallback } : {})
                 });
                 providerMessageId = twilioMessage.sid || null;
             }
 
             const result = await this.logEvent(
                 provider.integration_id, 'Outbound SMS', payload, 'Success',
-                { idempotencyKey, webhookId: options.webhookId, deliveryAttempt: options.deliveryAttempt || 1, maxRetries: provider.max_retries || 3 }
+                { idempotencyKey, webhookId: options.webhookId, deliveryAttempt: options.deliveryAttempt || 1, maxRetries: options.maxRetries || provider.max_retries || 3 }
             );
             return { success: true, logId: result.logId, deduped: result.deduped, providerMessageId };
         } catch (error) {
             const attempt = options.deliveryAttempt || 1;
-            const maxRetries = provider.max_retries || 3;
+            const maxRetries = options.maxRetries || provider.max_retries || 3;
             const result = await this.logEvent(
                 provider.integration_id, 'Outbound SMS', payload, 'Failed',
                 {
@@ -211,6 +335,11 @@ class IntegrationService {
         const idempotencyKey = options.idempotencyKey || `whatsapp:${provider.integration_id}:${to}:${Date.now()}`;
         let providerMessageId = null;
 
+        const completed = await this.findCompletedEvent(idempotencyKey);
+        if (completed) {
+            return { success: true, logId: completed.log_id, deduped: true, providerMessageId: null };
+        }
+
         try {
             if (process.env.NODE_ENV !== 'production' && options.mock) {
                 console.log('[MOCK WhatsApp] Sending redacted payload');
@@ -222,23 +351,29 @@ class IntegrationService {
                 if (!apiKey || !secret) throw new Error('WhatsApp Twilio SID or Auth Token missing');
                 const twilio = require('twilio');
                 const client = twilio(apiKey, secret);
-                const from = options.from || process.env.TWILIO_WHATSAPP_FROM;
+                const from = options.from || provider.sender_identity || process.env.TWILIO_WHATSAPP_FROM;
+                if (!from) throw new Error('WhatsApp sender identity is not configured');
+                const statusCallback = options.statusCallback || process.env.TWILIO_STATUS_CALLBACK_URL
+                    || (process.env.PUBLIC_API_URL
+                        ? `${process.env.PUBLIC_API_URL.replace(/\/+$/, '')}/api/webhooks/whatsapp`
+                        : undefined);
                 const twilioMessage = await client.messages.create({
                     body,
                     from: from?.startsWith('whatsapp:') ? from : `whatsapp:${from}`,
-                    to: to?.startsWith('whatsapp:') ? to : `whatsapp:${to}`
+                    to: to?.startsWith('whatsapp:') ? to : `whatsapp:${to}`,
+                    ...(statusCallback ? { statusCallback } : {})
                 });
                 providerMessageId = twilioMessage.sid || null;
             }
 
             const result = await this.logEvent(
                 provider.integration_id, 'Outbound WhatsApp', payload, 'Success',
-                { idempotencyKey, webhookId: options.webhookId, deliveryAttempt: options.deliveryAttempt || 1, maxRetries: provider.max_retries || 3 }
+                { idempotencyKey, webhookId: options.webhookId, deliveryAttempt: options.deliveryAttempt || 1, maxRetries: options.maxRetries || provider.max_retries || 3 }
             );
             return { success: true, logId: result.logId, deduped: result.deduped, providerMessageId };
         } catch (error) {
             const attempt = options.deliveryAttempt || 1;
-            const maxRetries = provider.max_retries || 3;
+            const maxRetries = options.maxRetries || provider.max_retries || 3;
             const result = await this.logEvent(
                 provider.integration_id, 'Outbound WhatsApp', payload, 'Failed',
                 {
@@ -271,13 +406,14 @@ class IntegrationService {
                 const secretKey = typeof secretData === 'object' ? secretData?.secret : secretData;
                 if (!secretKey) throw new Error('Stripe secret key is not configured');
                 const client = stripe(secretKey);
-                await client.paymentIntents.create({
+                const paymentIntent = await client.paymentIntents.create({
                     amount: Math.round(amount * 100),
-                    currency,
-                    confirm: true,
-                    idempotencyKey,
+                    currency: String(currency || 'EGP').toLowerCase(),
+                    confirm: Boolean(options.paymentMethodId),
+                    ...(options.paymentMethodId ? { payment_method: options.paymentMethodId } : {}),
                     metadata: { invoiceId: String(invoiceId) }
-                });
+                }, { idempotencyKey });
+                options.providerTransactionId = paymentIntent.id;
             }
 
             const result = await this.logEvent(
@@ -288,7 +424,12 @@ class IntegrationService {
                     maxRetries: provider.max_retries || 3
                 }
             );
-            return { success: true, transaction_id: `txn_${result.logId}`, logId: result.logId, deduped: result.deduped };
+            return {
+                success: true,
+                transaction_id: options.providerTransactionId || null,
+                logId: result.logId,
+                deduped: result.deduped
+            };
         } catch (error) {
             const attempt = options.deliveryAttempt || 1;
             const maxRetries = provider.max_retries || 3;
@@ -323,7 +464,7 @@ class IntegrationService {
             throw new Error(`Event in terminal state: ${log.status}`);
         }
 
-        const nextAttempt = (log.delivery_attempt || 1) + 1;
+        const nextAttempt = Number(log.delivery_attempt ?? 1) + 1;
         const maxRetries = log.max_retries || 3;
 
         try {
@@ -339,16 +480,10 @@ class IntegrationService {
                     providerResponse: log.provider_response
                 });
             } else if (log.event_type === 'Payment Capture') {
-                const { invoice_id, amount, currency } = log.payload || {};
-                result = await this.capturePayment(invoice_id, amount, currency, {
-                    idempotencyKey: log.idempotency_key,
-                    webhookId: log.webhook_id,
-                    deliveryAttempt: nextAttempt,
-                    maxRetries,
-                    providerResponse: log.provider_response
-                });
+                throw new Error('Payment retries require manual reconciliation and cannot be replayed automatically');
             } else if (log.event_type === 'Outbound WhatsApp') {
-                const { to, body } = log.payload || {};
+                const to = log.payload?.to_enc ? decrypt(log.payload.to_enc) : log.payload?.to;
+                const body = log.payload?.body_enc ? decrypt(log.payload.body_enc) : log.payload?.body;
                 result = await this.sendWhatsApp(to, body, {
                     idempotencyKey: log.idempotency_key,
                     webhookId: log.webhook_id,
@@ -360,10 +495,22 @@ class IntegrationService {
                 throw new Error(`Unsupported retry event type: ${log.event_type}`);
             }
 
-            await this.updateLogStatus(logId, 'Retried', null, result.providerResponse || null);
             return { success: true, logId, deduped: result.deduped };
         } catch (error) {
-            await this.updateLogStatus(logId, 'Failed', error.message);
+            await this.db.query(
+                `UPDATE integration_logs
+                 SET status = 'Failed', error_message = $2,
+                     retry_count = GREATEST(retry_count, $3 - 1),
+                     delivery_attempt = GREATEST(delivery_attempt, $3),
+                     next_retry_at = CASE
+                         WHEN $3 < max_retries AND event_type IN ('Outbound SMS', 'Outbound WhatsApp')
+                             THEN NOW() + INTERVAL '1 second' * POWER(2, $3)
+                         ELSE NULL
+                     END,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE log_id = $1 AND status = 'Processing'`,
+                [logId, error.message, nextAttempt]
+            );
             if (nextAttempt >= maxRetries) {
                 await this.moveToDeadLetter(logId, `Max retries (${maxRetries}) exceeded: ${error.message}`);
             }
@@ -373,7 +520,12 @@ class IntegrationService {
 
     async getDeadLetterEvents(limit = 100, offset = 0) {
         const result = await this.db.query(
-            `SELECT l.*, i.provider_name
+            `SELECT l.log_id, l.integration_id, l.event_type,
+                    COALESCE(l.payload, '{}'::jsonb)
+                        - 'to' - 'To' - 'body' - 'data' - 'to_enc' - 'body_enc' AS payload,
+                    l.status, l.error_message, l.retry_count, l.delivery_attempt,
+                    l.max_retries, l.next_retry_at, l.dead_letter_reason,
+                    l.completed_at, l.created_at, l.updated_at, i.provider_name
              FROM integration_logs l
              JOIN integrations i ON l.integration_id = i.integration_id
              WHERE l.status = 'DeadLetter'
@@ -396,7 +548,8 @@ class IntegrationService {
         await this.db.query(
             `UPDATE integration_logs
              SET status = 'Pending', retry_count = 0, dead_letter_reason = NULL,
-                 next_retry_at = NOW(), updated_at = CURRENT_TIMESTAMP
+                  delivery_attempt = 0, completed_at = NULL,
+                  next_retry_at = NOW(), updated_at = CURRENT_TIMESTAMP
              WHERE log_id = $1`,
             [logId]
         );

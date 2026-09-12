@@ -5,41 +5,54 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
+    Activity,
     AlertCircle,
     ArrowLeft,
     ArrowRight,
+    BadgeDollarSign,
+    Calculator,
     CheckCircle2,
+    ClipboardCheck,
     Eye,
     EyeOff,
     Fingerprint,
+    HeartPulse,
     HelpCircle,
     KeyRound,
+    Languages,
     Lock,
     Mail,
+    Moon,
     Radio,
     Server,
     ShieldCheck,
     Stethoscope,
+    Sun,
     Terminal,
     Users,
     X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-import { useLoginMutation, usePasskeyAuthenticationOptionsMutation, usePasskeyAuthenticationVerifyMutation } from '../store/api';
+import { api, useLoginMutation, usePasskeyAuthenticationOptionsMutation, usePasskeyAuthenticationVerifyMutation } from '../store/api';
 import { setCredentials } from '../store/authSlice';
-import { selectPreferences, updateAllPreferences } from '../store/preferencesSlice';
+import { selectPreferences, setLanguage, setTheme, updateAllPreferences } from '../store/preferencesSlice';
 import { getErrorMessage } from '../utils/getErrorMessage';
 import { authenticateWithPasskey, getPasskeyErrorKind, getPasskeySupport } from '../utils/passkeys';
 import { VIARA_BRAND } from '../config/brand';
+import { resolvePreferredStartPage } from '../utils/startPage';
 import './LoginIllustrative.css';
 
 const ROLE_DESTINATIONS = {
     Developer: '/admin',
     Admin: '/admin',
     Radiologist: '/worklist',
+    Technician: '/modality',
     Receptionist: '/reception',
     Accountant: '/financials',
+    Cashier: '/financials',
+    HR: '/admin',
+    Insurance_Staff: '/insurance',
     Doctor: '/dashboard',
     Nurse: '/dashboard',
     Patient: '/patient/profile',
@@ -66,7 +79,6 @@ export default function Login() {
     const [capsLockActive, setCapsLockActive] = useState(false);
     const [isPasskeyPromptOpen, setIsPasskeyPromptOpen] = useState(false);
     const [showPasswordHelpModal, setShowPasswordHelpModal] = useState(false);
-
     const {
         register,
         handleSubmit,
@@ -75,20 +87,25 @@ export default function Login() {
         formState: { errors },
     } = useForm({
         defaultValues: {
-            email: 'alice@VIARA.com',
-            password: 'Password123!',
+            email: '',
+            password: '',
             rememberMe: true,
         },
     });
 
     const watchedEmail = watch('email', '');
-    // Demo role matrix
-    const demoRoles = useMemo(() => [
+    const isDemoMode = import.meta.env.DEV;
+
+    // Demo role matrix — DEV ONLY. Never shipped in production bundles
+    // (tree-shaken when import.meta.env.DEV is false) and gated in the UI,
+    // so demo credentials can never surface in a deployed environment.
+    // One account per seeded role (backend/seed.js).
+    const demoRoles = useMemo(() => (isDemoMode ? [
         {
             role: 'Radiologist',
             label: isRtl ? 'طبيب الأشعة' : 'Radiologist',
-            email: 'alice@VIARA.com',
-            pass: 'Password123!',
+            email: 'ahmed.hassan@VIARA.com',
+            pass: '***REMOVED***',
             icon: Stethoscope,
             badge: isRtl ? 'تشخيص سريري' : 'Clinical Diagnostic',
             desc: isRtl ? 'مكتب العمل التشخيصي، قراءة صور DICOM المتقدمة، واعتماد التقارير فورياً.' : 'Diagnostic worklist, multi-planar DICOM viewer, and instant report signing.',
@@ -96,8 +113,8 @@ export default function Login() {
         {
             role: 'Technician',
             label: isRtl ? 'فني الأشعة' : 'Technologist',
-            email: 'tech@VIARA.com',
-            pass: 'Password123!',
+            email: 'mohamed.tech@VIARA.com',
+            pass: '***REMOVED***',
             icon: Radio,
             badge: isRtl ? 'تحكم بالأجهزة' : 'Modality Command',
             desc: isRtl ? 'إدارة قوائم الفحص، مراقبة جرعات الإشعاع، ومزامنة السلاسل مع PACS.' : 'Real-time scanner queues, protocol control, dose telemetry, and PACS routing.',
@@ -106,16 +123,61 @@ export default function Login() {
             role: 'Receptionist',
             label: isRtl ? 'الاستقبال' : 'Receptionist',
             email: 'reception@VIARA.com',
-            pass: 'Password123!',
+            pass: '***REMOVED***',
             icon: Users,
             badge: isRtl ? 'استيعاب المرضى' : 'Patient Check-in',
             desc: isRtl ? 'تسجيل المريض السريع، التحقق من الأهلية التأمينية، وتنسيق المواعيد.' : 'Rapid intake, automated insurance approvals, and scheduled appointment pacing.',
         },
         {
+            role: 'Nurse',
+            label: isRtl ? 'التمريض' : 'Nurse',
+            email: 'heba.nurse@VIARA.com',
+            pass: '***REMOVED***',
+            icon: HeartPulse,
+            badge: isRtl ? 'رعاية سريرية' : 'Clinical Care',
+            desc: isRtl ? 'متابعة التحضير قبل الفحص، مراقبة المرضى، وتنسيق الرعاية مع الفريق الطبي.' : 'Pre-exam preparation, patient monitoring, and coordinated clinical care.',
+        },
+        {
+            role: 'Cashier',
+            label: isRtl ? 'أمين الصندوق' : 'Cashier',
+            email: 'cashier@VIARA.com',
+            pass: '***REMOVED***',
+            icon: BadgeDollarSign,
+            badge: isRtl ? 'تحصيل مالي' : 'Payments & POS',
+            desc: isRtl ? 'تحصيل الرسوم، إدارة الفواتير والمدفوعات الجزئية، وترحيل المقبوضات.' : 'Fee collection, invoicing and partial payments, and daily cash reconciliation.',
+        },
+        {
+            role: 'Accountant',
+            label: isRtl ? 'المحاسب' : 'Accountant',
+            email: 'accountant@VIARA.com',
+            pass: '***REMOVED***',
+            icon: Calculator,
+            badge: isRtl ? 'الدورة المالية' : 'Revenue Cycle',
+            desc: isRtl ? 'التقارير المالية، مطالبات التأمين، ومراقبة الأداء الإيرادي للمركز.' : 'Financial reporting, insurance claims oversight, and center revenue analytics.',
+        },
+        {
+            role: 'Insurance_Staff',
+            label: isRtl ? 'التأمين' : 'Insurance',
+            email: 'insurance@VIARA.com',
+            pass: '***REMOVED***',
+            icon: ClipboardCheck,
+            badge: isRtl ? 'المطالبات' : 'Claims Desk',
+            desc: isRtl ? 'التحقق من التغطية التأمينية، إعداد المطالبات، ومتابعة الموافقات.' : 'Coverage verification, claim preparation, and approval tracking.',
+        },
+        {
+            role: 'HR',
+            label: isRtl ? 'الموارد البشرية' : 'HR',
+            email: 'hr@VIARA.com',
+            pass: '***REMOVED***',
+            icon: Activity,
+            badge: isRtl ? 'شؤون الكادر' : 'People Ops',
+            desc: isRtl ? 'ملفات الموظفين، الحضور والانصراف، الإجازات، والرواتب.' : 'Employee records, attendance and shifts, leave management, and payroll.',
+        },
+        {
             role: 'Admin',
             label: isRtl ? 'مدير النظام' : 'Administrator',
             email: 'admin@VIARA.com',
-            pass: 'Password123!',
+            pass: '***REMOVED***',
             icon: ShieldCheck,
             badge: isRtl ? 'إدارة المنظومة' : 'Center Operations',
             desc: isRtl ? 'مراقبة الأداء المؤسسي، التقارير المالية، وصلاحيات الكادر الطبي.' : 'Facility operations, revenue cycle, security logs, and role-based permissions.',
@@ -124,16 +186,40 @@ export default function Login() {
             role: 'Developer',
             label: isRtl ? 'المطور' : 'Developer',
             email: 'developer@VIARA.com',
-            pass: 'Password123!',
+            pass: '***REMOVED***',
             icon: Terminal,
             badge: isRtl ? 'بيئة التطوير' : 'Dev Sandbox',
             desc: isRtl ? 'صلاحيات متقدمة لاختبار الأنظمة والواجهات البرمجية وتكامل الأجهزة.' : 'Full debugging sandbox, API mock suites, and hardware telemetry simulator.',
         },
-    ], [isRtl]);
+    ] : []), [isRtl, isDemoMode]);
 
     const currentRoleMeta = useMemo(() => {
-        return demoRoles.find((r) => r.role === selectedRole) || demoRoles[0];
+        return demoRoles.find((r) => r.role === selectedRole) || demoRoles[0] || null;
     }, [demoRoles, selectedRole]);
+
+    // Production narrative used when the demo role matrix is absent.
+    const paneNarrative = currentRoleMeta?.desc || (isRtl
+        ? 'بيئة عمل متكاملة للأشعة التشخيصية: من جدولة الفحص إلى اعتماد التقرير وتسليمه للمريض والطبيب المعالج.'
+        : 'A complete diagnostic imaging workspace: from exam scheduling to report approval and delivery to patients and referring physicians.');
+
+    const toggleTheme = () => {
+        dispatch(setTheme(dark ? 'light' : 'dark'));
+    };
+
+    const toggleLanguage = async () => {
+        const next = isRtl ? 'en' : 'ar';
+        try {
+            await i18n.changeLanguage(next);
+        } catch {
+            return;
+        }
+        dispatch(setLanguage(next));
+        try {
+            localStorage.setItem('VIARA_lang', next);
+        } catch {
+            // Optional preference persistence.
+        }
+    };
 
     const handleSelectRole = (roleItem) => {
         setSelectedRole(roleItem.role);
@@ -141,8 +227,9 @@ export default function Login() {
         setValue('password', roleItem.pass);
     };
 
-    // Auto-select role if passed in navigation state from Landing Page
+    // Auto-select role if passed in navigation state from Landing Page (dev demo only)
     useEffect(() => {
+        if (!isDemoMode) return;
         if (location.state?.presetRole) {
             const match = demoRoles.find((r) => r.role.toLowerCase() === String(location.state.presetRole).toLowerCase());
             if (match) {
@@ -151,7 +238,7 @@ export default function Login() {
                 setValue('password', match.pass);
             }
         }
-    }, [location.state, demoRoles, setValue]);
+    }, [location.state, demoRoles, setValue, isDemoMode]);
 
     const passkeySupport = getPasskeySupport();
     const isPasskeyLoading = isPasskeyPromptOpen || isPasskeyOptionsLoading || isPasskeyVerifyLoading;
@@ -163,7 +250,8 @@ export default function Login() {
         dispatch(setCredentials({ token, user, rememberMe }));
         if (user.preferences) dispatch(updateAllPreferences(user.preferences));
         toast.success(isRtl ? `مرحباً بك مجدداً ${user.name || user.email}` : `Welcome back, ${user.name || user.email}`);
-        const destination = ROLE_DESTINATIONS[user.role || selectedRole] || '/dashboard';
+        const fallbackDestination = ROLE_DESTINATIONS[user.role || selectedRole] || '/dashboard';
+        const destination = resolvePreferredStartPage({ user, preferences, fallback: fallbackDestination });
         navigate(location.state?.from?.pathname || destination, { replace: true });
     };
 
@@ -202,6 +290,7 @@ export default function Login() {
 
     const onSubmit = async (formData) => {
         try {
+            dispatch(api.util.resetApiState());
             const res = await login({
                 email: formData.email.trim().toLowerCase(),
                 password: formData.password,
@@ -247,7 +336,7 @@ export default function Login() {
                             <span>{isRtl ? 'مساحة عملك السريرية' : 'Your Clinical Workspace,'}</span>
                             <strong>{isRtl ? 'جاهزة منذ لحظة الدخول.' : 'Ready From Sign-in.'}</strong>
                         </h1>
-                        <p>{currentRoleMeta.desc}</p>
+                        <p>{paneNarrative}</p>
                     </div>
 
                     <motion.div
@@ -266,46 +355,50 @@ export default function Login() {
                             decoding="async"
                         />
                         <AnimatePresence mode="wait" initial={false}>
-                            <motion.div
-                                key={currentRoleMeta.role}
-                                className="viara-login-active-role"
-                                initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -6 }}
-                                transition={{ duration: 0.24 }}
-                            >
-                                {React.createElement(currentRoleMeta.icon, { size: 15 })}
-                                <span>
-                                    <small>{isRtl ? 'مساحة العمل المحددة' : 'Selected workspace'}</small>
-                                    <strong>{currentRoleMeta.label}</strong>
-                                </span>
-                                <i>{currentRoleMeta.badge}</i>
-                            </motion.div>
+                            {currentRoleMeta && (
+                                <motion.div
+                                    key={currentRoleMeta.role}
+                                    className="viara-login-active-role"
+                                    initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -6 }}
+                                    transition={{ duration: 0.24 }}
+                                >
+                                    {React.createElement(currentRoleMeta.icon, { size: 15 })}
+                                    <span>
+                                        <small>{isRtl ? 'مساحة العمل المحددة' : 'Selected workspace'}</small>
+                                        <strong>{currentRoleMeta.label}</strong>
+                                    </span>
+                                    <i>{currentRoleMeta.badge}</i>
+                                </motion.div>
+                            )}
                         </AnimatePresence>
                     </motion.div>
 
-                    <div className="viara-login-roles-box">
-                        <span className="viara-roles-box-label">
-                            <span>{isRtl ? 'دخول تجريبي حسب الدور' : 'Demo access by role'}</span>
-                        </span>
-                        <div className="viara-role-pill-cluster">
-                            {demoRoles.map((item) => {
-                                const Icon = item.icon;
-                                const isActive = selectedRole === item.role;
-                                return (
-                                    <button
-                                        key={item.role}
-                                        type="button"
-                                        className={`viara-role-pill-btn ${isActive ? 'is-active' : ''}`}
-                                        onClick={() => handleSelectRole(item)}
-                                    >
-                                        <Icon size={12} />
-                                        <span>{item.label}</span>
-                                    </button>
-                                );
-                            })}
+                    {isDemoMode && (
+                        <div className="viara-login-roles-box">
+                            <span className="viara-roles-box-label">
+                                <span>{isRtl ? 'دخول تجريبي حسب الدور (وضع التطوير)' : 'Demo access by role (dev mode)'}</span>
+                            </span>
+                            <div className="viara-role-pill-cluster">
+                                {demoRoles.map((item) => {
+                                    const Icon = item.icon;
+                                    const isActive = selectedRole === item.role;
+                                    return (
+                                        <button
+                                            key={item.role}
+                                            type="button"
+                                            className={`viara-role-pill-btn ${isActive ? 'is-active' : ''}`}
+                                            onClick={() => handleSelectRole(item)}
+                                        >
+                                            <Icon size={12} />
+                                            <span>{item.label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     <div className="viara-login-trust-row">
                         <span className="viara-login-trust-item"><ShieldCheck size={12} className="viara-feature-pill-icon" /> HIPAA</span>
@@ -324,12 +417,13 @@ export default function Login() {
                         >
                             <span className="viara-login-brand-mark" aria-hidden="true">
                                 <img
-                                    src={VIARA_BRAND.iconUrl}
+                                    src={VIARA_BRAND.iconUrl || '/logo.png'}
                                     alt=""
-                                    width="72"
-                                    height="56"
+                                    width="32"
+                                    height="32"
                                     loading="eager"
                                     decoding="async"
+                                    onError={(event) => { event.currentTarget.src = VIARA_BRAND.logoUrl || '/logo.png'; }}
                                 />
                             </span>
                             <span className="viara-login-brand-copy">
@@ -338,10 +432,31 @@ export default function Login() {
                             </span>
                         </Link>
 
-                        <Link to="/" className="viara-login-inline-back">
-                            <ArrowLeft size={14} className={isRtl ? 'rotate-180' : ''} />
-                            <span>{isRtl ? 'العودة للرئيسية' : 'Back to home'}</span>
-                        </Link>
+                        <div className="viara-login-nav-actions">
+                            <button
+                                type="button"
+                                className="viara-util-circle-btn"
+                                onClick={toggleLanguage}
+                                aria-label={isRtl ? 'Switch to English' : 'Switch to Arabic'}
+                                title={isRtl ? 'Switch to English' : 'التبديل إلى العربية'}
+                            >
+                                <Languages size={13} />
+                                <span className="viara-util-btn-lang-code" dir="ltr">{isRtl ? 'EN' : 'عربي'}</span>
+                            </button>
+                            <button
+                                type="button"
+                                className="viara-util-circle-btn"
+                                onClick={toggleTheme}
+                                aria-label={dark ? 'Light mode' : 'Dark mode'}
+                                title={dark ? (isRtl ? 'الوضع الفاتح' : 'Light mode') : (isRtl ? 'الوضع الداكن' : 'Dark mode')}
+                            >
+                                {dark ? <Sun size={13} /> : <Moon size={13} />}
+                            </button>
+                            <Link to="/" className="viara-login-inline-back">
+                                <ArrowLeft size={14} className={isRtl ? 'rotate-180' : ''} />
+                                <span>{isRtl ? 'العودة للرئيسية' : 'Back to home'}</span>
+                            </Link>
+                        </div>
                     </div>
 
                     <span className="viara-form-eyebrow">
@@ -379,7 +494,7 @@ export default function Login() {
                                     })}
                                 />
                                 {watchedEmail && !errors.email && (
-                                    <CheckCircle2 size={14} className="viara-feature-pill-icon" />
+                                    <CheckCircle2 size={15} style={{ color: '#10B981', flexShrink: 0 }} />
                                 )}
                             </div>
                             {errors.email && (
@@ -417,11 +532,11 @@ export default function Login() {
                                 />
                                 <button
                                     type="button"
-                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'grid', placeItems: 'center', padding: '2px' }}
                                     onClick={() => setShowPassword((p) => !p)}
                                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                                 >
-                                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                                 </button>
                             </div>
                             {errors.password && (

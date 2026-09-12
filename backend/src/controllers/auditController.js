@@ -61,7 +61,7 @@ const auditAdminAction = async (db, req, {
 const buildAuditFilters = (query) => {
     const {
         userId, action, resourceId, startDate, endDate, category, outcome, q,
-        actorType, eventCode, targetType, targetId, patientId, examId, invoiceId, requestId
+        actorType, eventCode, targetType, targetId, patientId, examId, invoiceId, requestId, operationType
     } = query;
     const minSeverity = Number.parseInt(query.minSeverity, 10);
     const minRisk = Number.parseInt(query.minRisk, 10);
@@ -87,6 +87,18 @@ const buildAuditFilters = (query) => {
     if (startDate) { clauses.push(`s.timestamp >= $${i++}::date`); params.push(startDate); }
     if (endDate) { clauses.push(`s.timestamp < ($${i++}::date + INTERVAL '1 day')`); params.push(endDate); }
     if (action) { clauses.push(`(s.action ILIKE $${i} OR s.event_action ILIKE $${i})`); params.push(`%${action}%`); i++; }
+
+    // Explicit CRUDQ Operation Filter (Create, Update, Delete, Query)
+    if (operationType === 'create') {
+        clauses.push(`(s.http_method = 'POST' OR s.action ILIKE '%CREATE%' OR s.action ILIKE '%INSERT%' OR s.event_action ILIKE '%CREATE%')`);
+    } else if (operationType === 'update') {
+        clauses.push(`(s.http_method IN ('PUT', 'PATCH') OR s.action ILIKE '%UPDATE%' OR s.action ILIKE '%EDIT%' OR s.action ILIKE '%MODIFY%' OR s.action ILIKE '%AMEND%' OR s.previous_value IS NOT NULL)`);
+    } else if (operationType === 'delete') {
+        clauses.push(`(s.http_method = 'DELETE' OR s.action ILIKE '%DELETE%' OR s.action ILIKE '%REMOVE%' OR s.action ILIKE '%VOID%' OR s.action ILIKE '%CANCEL%')`);
+    } else if (operationType === 'query') {
+        clauses.push(`(s.http_method = 'GET' OR s.action ILIKE '%VIEW%' OR s.action ILIKE '%READ%' OR s.action ILIKE '%ACCESS%' OR s.action ILIKE '%SEARCH%' OR s.action ILIKE '%EXPORT%' OR s.category = 'PHI_ACCESS')`);
+    }
+
     // Full-text-ish search across action, request path, and the joined user name.
     if (q) {
         clauses.push(`(
@@ -141,7 +153,11 @@ const getAuditLogs = (db) => async (req, res, next) => {
                 COUNT(*) FILTER (WHERE s.category = 'PHI_ACCESS')::int AS phi_access,
                 COUNT(*) FILTER (WHERE s.severity >= 40)::int AS elevated,
                 COUNT(*) FILTER (WHERE s.risk_score >= 50)::int AS risky,
-                COUNT(*) FILTER (WHERE s.actor_type = 'SYSTEM')::int AS system_events
+                COUNT(*) FILTER (WHERE s.actor_type = 'SYSTEM')::int AS system_events,
+                COUNT(*) FILTER (WHERE s.http_method = 'POST' OR s.action ILIKE '%CREATE%' OR s.action ILIKE '%INSERT%' OR s.event_action ILIKE '%CREATE%')::int AS creates,
+                COUNT(*) FILTER (WHERE s.http_method IN ('PUT', 'PATCH') OR s.action ILIKE '%UPDATE%' OR s.action ILIKE '%EDIT%' OR s.action ILIKE '%MODIFY%' OR s.action ILIKE '%AMEND%' OR s.previous_value IS NOT NULL)::int AS updates,
+                COUNT(*) FILTER (WHERE s.http_method = 'DELETE' OR s.action ILIKE '%DELETE%' OR s.action ILIKE '%REMOVE%' OR s.action ILIKE '%VOID%' OR s.action ILIKE '%CANCEL%')::int AS deletes,
+                COUNT(*) FILTER (WHERE s.http_method = 'GET' OR s.action ILIKE '%VIEW%' OR s.action ILIKE '%READ%' OR s.action ILIKE '%ACCESS%' OR s.action ILIKE '%SEARCH%' OR s.action ILIKE '%EXPORT%' OR s.category = 'PHI_ACCESS')::int AS queries
             FROM system_logs s
             LEFT JOIN users u ON COALESCE(s.actor_user_id, s.user_id) = u.user_id
             WHERE ${where}
@@ -160,6 +176,10 @@ const getAuditLogs = (db) => async (req, res, next) => {
                 elevated: agg.elevated || 0,
                 risky: agg.risky || 0,
                 systemEvents: agg.system_events || 0,
+                creates: agg.creates || 0,
+                updates: agg.updates || 0,
+                deletes: agg.deletes || 0,
+                queries: agg.queries || 0,
             },
         });
     } catch (error) {
@@ -222,7 +242,7 @@ const exportAuditLogs = (db) => async (req, res, next) => {
 
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename="audit-logs-${new Date().toISOString().slice(0, 10)}.csv"`);
-        res.send(lines.join('\r\n'));
+        res.send(`\uFEFF${lines.join('\r\n')}`);
     } catch (error) {
         next(error);
     }

@@ -1,4 +1,14 @@
 const { AppError } = require('../middleware/errorHandler');
+const { decrypt } = require('../utils/crypto');
+
+const safeDecrypt = (text) => {
+    if (!text) return '';
+    try {
+        return decrypt(text) || '';
+    } catch {
+        return '';
+    }
+};
 const { logAction } = require('../services/auditService');
 const {
     DEFAULT_BRANCH_ID,
@@ -37,7 +47,7 @@ const getClaims = (db) => async (req, res, next) => {
         const values = [];
         let param = 1;
         let query = `
-            SELECT c.*, ip.name as provider_name, p.mrn, i.invoice_number
+            SELECT c.*, ip.name as provider_name, p.mrn, p.first_name_enc, p.last_name_enc, i.invoice_number
             FROM insurance_claims c
             JOIN insurance_providers ip ON c.provider_id = ip.provider_id
             JOIN patients p ON c.patient_id = p.patient_id
@@ -66,7 +76,19 @@ const getClaims = (db) => async (req, res, next) => {
         values.push(pageLimit, pageOffset);
 
         const result = await db.query(query, values);
-        res.json(result.rows);
+        const rows = result.rows.map(row => {
+            const firstName = row.first_name || safeDecrypt(row.first_name_enc);
+            const lastName = row.last_name || safeDecrypt(row.last_name_enc);
+            const patientName = row.patient_name || [firstName, lastName].filter(Boolean).join(' ') || '';
+            const { first_name_enc, last_name_enc, ...cleanRow } = row;
+            return {
+                ...cleanRow,
+                first_name: firstName,
+                last_name: lastName,
+                patient_name: patientName,
+            };
+        });
+        res.json(rows);
     } catch (error) {
         next(error);
     }
@@ -242,17 +264,38 @@ const updateClaimStatus = (db) => async (req, res, next) => {
             ? moneyNumber(data.receivedAmount)
             : moneyNumber(claim.received_amount);
         const previousReceivedAmount = moneyNumber(claim.received_amount);
+
+        const deductionAmount = data.deductionAmount !== undefined
+            ? moneyNumber(data.deductionAmount)
+            : moneyNumber(claim.deduction_amount || 0);
+        const previousDeductionAmount = moneyNumber(claim.deduction_amount || 0);
+        const deductionReason = data.deductionReason !== undefined
+            ? data.deductionReason
+            : claim.deduction_reason;
+
         const expectedAmount = moneyNumber(claim.expected_amount);
+
         if (receivedAmount + 0.005 < previousReceivedAmount) {
             throw new AppError('Received amount cannot be reduced; record a reversal instead', 409);
         }
-        if (receivedAmount > expectedAmount + 0.005) {
-            throw new AppError('Received amount cannot exceed the expected claim amount', 409);
+        if (deductionAmount < 0) {
+            throw new AppError('Deduction amount cannot be negative', 400);
         }
-        if (data.status === 'Paid' && receivedAmount + 0.005 < expectedAmount) {
-            throw new AppError('A paid claim must include the full expected amount', 400);
+        if (deductionAmount > 0 && !deductionReason?.trim()) {
+            throw new AppError('A deduction reason is required when a contractual deduction is recorded', 400);
         }
-        if (data.status === 'Partially Paid' && (receivedAmount <= 0 || receivedAmount >= expectedAmount - 0.005)) {
+        if (deductionAmount + 0.005 < previousDeductionAmount) {
+            throw new AppError('Deduction amount cannot be reduced; record a reversal instead', 409);
+        }
+
+        const totalSettled = moneyNumber(receivedAmount + deductionAmount);
+        if (totalSettled > expectedAmount + 0.005) {
+            throw new AppError('Total settled amount (received + deductions) cannot exceed the expected claim amount', 409);
+        }
+        if (data.status === 'Paid' && totalSettled + 0.005 < expectedAmount) {
+            throw new AppError('A paid claim must include the full expected amount (received plus deductions)', 400);
+        }
+        if (data.status === 'Partially Paid' && (totalSettled <= 0 || totalSettled >= expectedAmount - 0.005)) {
             throw new AppError('A partially paid claim must be above zero and below the expected amount', 400);
         }
         if (data.status === 'Rejected' && !data.rejectionReason?.trim()) {
@@ -296,24 +339,46 @@ const updateClaimStatus = (db) => async (req, res, next) => {
             });
         }
 
+        const deductionDelta = moneyNumber(deductionAmount - previousDeductionAmount);
+        if (deductionDelta > 0) {
+            const lockedPeriod = await lockFinancialBusinessDate(client, { branchId: claim.branch_id || DEFAULT_BRANCH_ID });
+            await postJournalBatch(client, {
+                sourceType: 'ClaimDeduction',
+                sourceId: `${claim.claim_id}:${deductionAmount}`,
+                businessDate: lockedPeriod.businessDate,
+                branchId: claim.branch_id || DEFAULT_BRANCH_ID,
+                currencyCode: claim.currency_code || 'EGP',
+                description: `Insurance deduction for ${claim.claim_number}: ${deductionReason || 'Contractual deduction'}`,
+                userId: req.user.user_id,
+                entries: [
+                    { accountCode: '4090', accountName: 'Insurance contractual deductions', debit: deductionDelta, credit: 0, patientId: claim.patient_id, payerId: claim.provider_id },
+                    { accountCode: '1110', accountName: 'Insurance receivables', debit: 0, credit: deductionDelta, patientId: claim.patient_id, payerId: claim.provider_id }
+                ]
+            });
+        }
+
         const result = await client.query(`
             UPDATE insurance_claims
             SET status = $1::varchar(50),
                 claim_reference_number = COALESCE($2, claim_reference_number),
                 received_amount = COALESCE($3, received_amount),
-                rejection_reason = CASE WHEN $1::varchar(50) = 'Rejected' THEN $4 ELSE rejection_reason END,
-                resubmission_notes = CASE WHEN $1::varchar(50) = 'Resubmitted' THEN $5 ELSE resubmission_notes END,
+                deduction_amount = COALESCE($4, deduction_amount),
+                deduction_reason = COALESCE($5, deduction_reason),
+                rejection_reason = CASE WHEN $1::varchar(50) = 'Rejected' THEN $6 ELSE rejection_reason END,
+                resubmission_notes = CASE WHEN $1::varchar(50) = 'Resubmitted' THEN $7 ELSE resubmission_notes END,
                 submitted_at = CASE WHEN $1::varchar(50) IN ('Submitted', 'Resubmitted') THEN COALESCE(submitted_at, NOW()) ELSE submitted_at END,
                 paid_at = CASE WHEN $1::varchar(50) = 'Paid' THEN NOW() ELSE paid_at END,
                 written_off_at = CASE WHEN $1::varchar(50) = 'Written Off' THEN COALESCE(written_off_at, NOW()) ELSE written_off_at END,
-                updated_by = $6,
+                updated_by = $8,
                 updated_at = NOW()
-            WHERE claim_id = $7
+            WHERE claim_id = $9
             RETURNING *
         `, [
             data.status,
             data.claimReferenceNumber || null,
             receivedAmount,
+            deductionAmount,
+            deductionReason || null,
             data.rejectionReason || null,
             data.resubmissionNotes || null,
             req.user.user_id,
@@ -330,8 +395,11 @@ const updateClaimStatus = (db) => async (req, res, next) => {
             details: {
                 previousStatus: claim.status,
                 newStatus: data.status,
-                previousReceivedAmount: previousReceivedAmount,
+                previousReceivedAmount,
                 newReceivedAmount: receivedAmount,
+                previousDeductionAmount,
+                newDeductionAmount: deductionAmount,
+                deductionReason: deductionReason || null,
                 claimReceiptId: claimReceipt?.claim_receipt_id || null,
                 rejectionReason: data.rejectionReason || null,
                 resubmissionNotes: data.resubmissionNotes || null
@@ -421,8 +489,124 @@ const updateClaimStatus = (db) => async (req, res, next) => {
     }
 };
 
+const exportClaims = (db) => async (req, res, next) => {
+    try {
+        const { status, providerId, patientId, startDate, endDate, format = 'json' } = req.query;
+        const values = [];
+        let param = 1;
+        let query = `
+            SELECT c.claim_id, c.claim_number, c.claim_reference_number, c.status,
+                   c.expected_amount, c.received_amount, c.deduction_amount, c.deduction_reason,
+                   c.rejection_reason, c.resubmission_notes,
+                   c.created_at, c.submitted_at, c.paid_at, c.written_off_at,
+                   ip.name as provider_name, ip.payer_code,
+                   p.mrn, p.first_name_enc, p.last_name_enc,
+                   i.invoice_number,
+                   pol.policy_number, pol.plan_name
+            FROM insurance_claims c
+            JOIN insurance_providers ip ON c.provider_id = ip.provider_id
+            JOIN patients p ON c.patient_id = p.patient_id
+            LEFT JOIN invoices i ON c.invoice_id = i.invoice_id
+            LEFT JOIN patient_insurance_policies pol ON c.policy_id = pol.policy_id
+            WHERE 1=1
+        `;
+
+        if (status) {
+            query += ` AND c.status = $${param++}::varchar`;
+            values.push(status);
+        }
+        if (providerId) {
+            query += ` AND c.provider_id = $${param++}::uuid`;
+            values.push(providerId);
+        }
+        if (patientId) {
+            query += ` AND c.patient_id = $${param++}::uuid`;
+            values.push(patientId);
+        }
+        if (startDate) {
+            query += ` AND c.created_at >= $${param++}::timestamptz`;
+            values.push(startDate);
+        }
+        if (endDate) {
+            query += ` AND c.created_at <= $${param++}::timestamptz`;
+            values.push(endDate);
+        }
+
+        query += ` ORDER BY c.created_at DESC`;
+        const result = await db.query(query, values);
+
+        const decryptedRows = result.rows.map(r => {
+            const firstName = r.first_name || safeDecrypt(r.first_name_enc);
+            const lastName = r.last_name || safeDecrypt(r.last_name_enc);
+            const patientName = r.patient_name || [firstName, lastName].filter(Boolean).join(' ') || '';
+            const { first_name_enc, last_name_enc, ...cleanRow } = r;
+            return {
+                ...cleanRow,
+                first_name: firstName,
+                last_name: lastName,
+                patient_name: patientName,
+            };
+        });
+
+        if (format === 'csv') {
+            const headers = [
+                'Claim Number', 'Reference', 'Status', 'Provider', 'Payer Code',
+                'Patient MRN', 'Patient Name', 'Invoice', 'Policy Number', 'Plan',
+                'Expected Amount', 'Received Amount', 'Deduction Amount', 'Deduction Reason',
+                'Created At', 'Submitted At', 'Paid At'
+            ];
+            const rows = decryptedRows.map(r => [
+                r.claim_number,
+                r.claim_reference_number || '',
+                r.status,
+                `"${(r.provider_name || '').replace(/"/g, '""')}"`,
+                r.payer_code || '',
+                r.mrn,
+                `"${(r.patient_name || '').replace(/"/g, '""')}"`,
+                r.invoice_number || '',
+                r.policy_number || '',
+                `"${(r.plan_name || '').replace(/"/g, '""')}"`,
+                r.expected_amount,
+                r.received_amount,
+                r.deduction_amount || 0,
+                `"${(r.deduction_reason || '').replace(/"/g, '""')}"`,
+                r.created_at?.toISOString?.() || r.created_at || '',
+                r.submitted_at?.toISOString?.() || r.submitted_at || '',
+                r.paid_at?.toISOString?.() || r.paid_at || ''
+            ]);
+
+            const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+            let safeProviderName = providerId ? 'provider' : 'all-providers';
+            if (providerId) {
+                if (decryptedRows[0]?.provider_name) {
+                    safeProviderName = decryptedRows[0].provider_name.replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
+                } else {
+                    try {
+                        const pRes = await db.query('SELECT name FROM insurance_providers WHERE provider_id = $1', [providerId]);
+                        if (pRes.rows[0]?.name) {
+                            safeProviderName = pRes.rows[0].name.replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
+                        }
+                    } catch (e) {
+                        // ignore and keep fallback 'provider'
+                    }
+                }
+            }
+            const dateStr = new Date().toISOString().slice(0, 10);
+            const filename = `insurance-claims-${safeProviderName}-${dateStr}.csv`;
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            return res.send(csvContent);
+        }
+
+        res.json(decryptedRows);
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getClaims,
     createClaim,
-    updateClaimStatus
+    updateClaimStatus,
+    exportClaims
 };

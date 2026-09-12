@@ -12,7 +12,12 @@ jest.mock('../src/utils/crypto', () => ({
 }));
 
 const realtimeService = require('../src/services/realtimeService');
-const { notifyClients } = require('../src/services/notificationService');
+const {
+    notifyClients,
+    renderTemplate,
+    sendInApp,
+    computeActionUrl
+} = require('../src/services/notificationService');
 
 const buildDb = (row) => ({
     query: jest.fn().mockResolvedValue({ rows: row ? [row] : [] })
@@ -92,5 +97,107 @@ describe('notification realtime routing', () => {
         }));
         expect(payload).not.toHaveProperty('recipient');
         expect(payload).not.toHaveProperty('content');
+    });
+});
+
+describe('notification template rendering', () => {
+    test('renders simple and dotted placeholders', () => {
+        expect(renderTemplate('Hello {{ patient.name }} ({{order_number}})', {
+            patient: { name: 'Mona' },
+            order_number: 'ORD-1'
+        })).toBe('Hello Mona (ORD-1)');
+    });
+
+    test('renders safe fallback values without evaluating expressions', () => {
+        expect(renderTemplate('User: {{user_email || "Unknown"}}', {})).toBe('User: Unknown');
+        expect(renderTemplate('User: {{user_email || "Unknown"}}', {
+            user_email: 'user@example.test'
+        })).toBe('User: user@example.test');
+    });
+
+    test('supports simple conditional sections', () => {
+        const template = 'Updated.{{#if staff_notes}} Notes: {{staff_notes}}{{/if}}';
+        expect(renderTemplate(template, { staff_notes: 'Call patient' })).toBe('Updated. Notes: Call patient');
+        expect(renderTemplate(template, {})).toBe('Updated.');
+    });
+
+    test('removes unsupported template source instead of exposing it', () => {
+        expect(renderTemplate('Alert {{ dangerous + expression }} complete', {}))
+            .toBe('Alert  complete');
+    });
+});
+
+describe('notification audience enforcement', () => {
+    test('refuses to persist an in-app notification without an explicit audience', async () => {
+        const db = { query: jest.fn() };
+
+        await expect(sendInApp('unknown', 'Subject', 'Body', db, {
+            eventType: 'TEST_EVENT'
+        })).resolves.toEqual(expect.objectContaining({
+            success: false,
+            error: 'Persisted notifications require an explicit audience'
+        }));
+        expect(db.query).not.toHaveBeenCalled();
+    });
+
+    test('rejects an external send before calling the provider when audience is absent', async () => {
+        const db = { query: jest.fn() };
+        const { sendEmail } = require('../src/services/notificationService');
+
+        await expect(sendEmail('patient@example.test', 'Subject', 'Body', db, {
+            eventType: 'TEST_EVENT'
+        })).resolves.toEqual(expect.objectContaining({
+            success: false,
+            error: 'Persisted notifications require an explicit audience'
+        }));
+        expect(db.query).not.toHaveBeenCalled();
+    });
+});
+
+describe('notification action routing', () => {
+    test('uses patient portal routes for patient clinical and financial events', () => {
+        expect(computeActionUrl({
+            event_type: 'ReportReady',
+            entity_id: 'exam 1',
+            audience_type: 'Patient'
+        })).toBe('/patient/dashboard?tab=records&examId=exam%201');
+        expect(computeActionUrl({
+            event_type: 'PaymentDue',
+            audience_type: 'Patient'
+        })).toBe('/patient/dashboard?tab=invoices');
+    });
+
+    test('uses doctor portal case routes for doctor clinical events', () => {
+        expect(computeActionUrl({
+            event_type: 'CRITICAL_RESULT',
+            entity_id: 'exam-1',
+            audience_type: 'Doctor'
+        })).toBe('/doctor/dashboard?tab=cases&examId=exam-1');
+    });
+
+    test('keeps staff clinical actions in the authenticated staff application', () => {
+        expect(computeActionUrl({
+            event_type: 'ExamStatusChanged',
+            entity_id: 'exam-1',
+            audience_type: 'Staff'
+        })).toBe('/worklist?examId=exam-1');
+    });
+
+    test('routes partial-payment decisions to the receiving clinical workspace', () => {
+        expect(computeActionUrl({
+            event_type: 'PartialPaymentException',
+            audience_type: 'Staff',
+            audience_role: 'Nurse'
+        })).toBe('/nurse');
+        expect(computeActionUrl({
+            event_type: 'PartialPaymentException',
+            audience_type: 'Staff',
+            audience_role: 'Technician'
+        })).toBe('/modality');
+        expect(computeActionUrl({
+            event_type: 'PartialPaymentException',
+            audience_type: 'Staff',
+            audience_role: 'Accountant'
+        })).toBe('/approvals');
     });
 });

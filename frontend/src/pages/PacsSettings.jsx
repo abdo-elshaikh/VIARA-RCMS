@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+
 import {
     Activity,
     AlertCircle,
@@ -65,24 +67,181 @@ const DEFAULT_CONFIG = {
 };
 
 const DEFAULT_MACHINE = {
-    aet_title: '',
-    modality_type: 'CT',
     name: '',
-    ip_address: '',
-    port: 104,
-    location: '',
+    type: 'CT',
+    roomNumber: '',
+    serialNumber: '',
     manufacturer: '',
-    is_active: true
+    model: '',
+    location: '',
+    status: 'Active',
+    aet: '',
+    ip_address: '',
+    port: '',
+    dicom_role: 'mwl_client'
 };
 
-const MODALITY_OPTIONS = ['CT', 'MR', 'XR', 'US', 'MG', 'DX', 'CR', 'NM', 'PT', 'XA', 'OT'];
+const MODALITY_OPTIONS = ['MRI', 'CT', 'X-Ray', 'Ultrasound', 'Mammography', 'Cath Lab', 'Panoramic X-Ray', 'PET-CT', 'Fluoroscopy', 'DEXA'];
+const MACHINE_STATUS_OPTIONS = ['Active', 'Out of Service', 'Under Maintenance'];
+const DICOM_ROLE_OPTIONS = [
+    {
+        value: 'mwl_client',
+        labelKey: 'admin:pacsSettings.modalities.roles.mwlClient',
+        defaultLabel: 'MWL / Storage client',
+        helpKey: 'admin:pacsSettings.modalities.roles.mwlClientHelp',
+        defaultHelp: 'Scanner queries worklist and sends studies to PACS.'
+    },
+    {
+        value: 'destination',
+        labelKey: 'admin:pacsSettings.modalities.roles.destination',
+        defaultLabel: 'PACS destination',
+        helpKey: 'admin:pacsSettings.modalities.roles.destinationHelp',
+        defaultHelp: 'Orthanc can echo, move, or push studies back to this node.'
+    },
+    {
+        value: 'bidirectional',
+        labelKey: 'admin:pacsSettings.modalities.roles.bidirectional',
+        defaultLabel: 'Bidirectional',
+        helpKey: 'admin:pacsSettings.modalities.roles.bidirectionalHelp',
+        defaultHelp: 'Use when both workstation and PACS initiate DICOM traffic.'
+    }
+];
 
-const panelClass = "rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90";
-const inputClass = "w-full rounded-xl border border-slate-200 bg-white/80 px-3.5 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:placeholder-slate-500 dark:focus:border-teal-400";
-const buttonClass = "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200/80 bg-white/90 px-4 text-xs font-bold text-slate-700 shadow-2xs backdrop-blur-md transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800";
-const primaryButtonClass = "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-4 text-xs font-bold text-white shadow-sm hover:bg-teal-500 disabled:opacity-50";
+const panelClass = 'settings-section';
+const inputClass = 'input-field';
+const buttonClass = 'ds-btn-secondary';
+const primaryButtonClass = 'ds-btn-primary';
 
-const fieldClass = (error) => `${inputClass} ${error ? 'border-rose-300 dark:border-rose-900 focus:border-rose-500 focus:ring-rose-500/20' : ''}`;
+const fieldClass = (error) => `${inputClass} ${error ? '[border-color:var(--VIARA-danger)] focus:[border-color:var(--VIARA-danger)] focus:[box-shadow:0_0_0_3px_rgba(var(--VIARA-danger-rgb),.15)]' : ''}`;
+
+const trimValue = (value) => String(value ?? '').trim();
+
+const getMachineId = (machine = {}) => machine.modality_id || machine.machine_id || machine.id;
+
+const machineStatusTone = (status) => {
+    if (status === 'Active') return 'emerald';
+    if (status === 'Under Maintenance') return 'amber';
+    if (status === 'Out of Service') return 'rose';
+    return 'slate';
+};
+
+const hasAnyDicomDetails = (source = {}) => Boolean(
+    trimValue(source.aet)
+    || trimValue(source.ip_address)
+    || trimValue(source.port)
+);
+
+const hasCompleteDicomDetails = (source = {}) => Boolean(
+    trimValue(source.aet)
+    && trimValue(source.ip_address)
+    && trimValue(source.port)
+);
+
+const isArabicLocale = (language = '') => String(language || '').toLowerCase().startsWith('ar');
+
+const localizedDefault = (language, english, arabic) => (isArabicLocale(language) ? arabic : english);
+
+const translateCheckStatus = (status, language) => {
+    const normalized = String(status || '').toLowerCase();
+    if (!isArabicLocale(language)) return status || '-';
+    if (normalized === 'ok') return 'سليم';
+    if (normalized === 'warning') return 'تحذير';
+    if (normalized === 'error') return 'خطأ';
+    return status || '-';
+};
+
+const translateDiagnosticLabel = (check = {}, language) => {
+    if (!isArabicLocale(language)) return check.label || check.name || '-';
+    const labels = {
+        server_identity: 'هوية خادم PACS',
+        network_mode: 'وضع الشبكة',
+        orthanc_api: 'Orthanc REST API',
+        aet_alignment: 'مطابقة AET',
+        storage: 'تخزين الأرشيف',
+        dicomweb: 'DICOMweb QIDO',
+        dicom_listener: 'مستمع DICOM',
+        orthanc_dicom_endpoint: 'نقطة DICOM الداخلية',
+        webhook_secret: 'سر Webhook',
+        ris_index: 'فهرس صور RIS'
+    };
+    return labels[check.key] || check.label || check.name || '-';
+};
+
+const translateNetworkError = (detail = '', language = 'en') => {
+    const text = String(detail || '').trim();
+    if (!text) return '-';
+    if (!isArabicLocale(language)) return text;
+
+    const timeout = text.match(/Timed out after\s+(\d+)ms/i);
+    if (timeout) return `انتهت مهلة الاتصال بعد ${timeout[1]} مللي ثانية.`;
+    const http = text.match(/HTTP\s+(\d+)/i);
+    if (http) return `استجاب الخادم برمز HTTP ${http[1]}.`;
+    if (/fetch failed/i.test(text)) return 'فشل اتصال الشبكة بالخدمة.';
+    if (/connection refused|ECONNREFUSED/i.test(text)) return 'رفضت الخدمة الاتصال. تأكد أنها تعمل وتستمع على المنفذ الصحيح.';
+    if (/ENOTFOUND|getaddrinfo/i.test(text)) return 'تعذر العثور على اسم المضيف. تحقق من اسم الخدمة أو إعدادات DNS.';
+
+    return text
+        .replace(/Backend could not reach/i, 'تعذر على backend الوصول إلى')
+        .replace(/Could not read Orthanc statistics:/i, 'تعذرت قراءة إحصاءات Orthanc:')
+        .replace(/If this is local development, set PACS Server IP to/i, 'للتطوير المحلي اضبط عنوان خادم PACS على')
+        .replace(/if scanners must connect from LAN, expose Orthanc DICOM on the server LAN IP\/VPN/i, 'وإذا كانت الأجهزة ستتصل عبر الشبكة، اكشف Orthanc DICOM على عنوان LAN/VPN للخادم')
+        .replace(/accepts TCP connections from the backend/i, 'تقبل اتصالات TCP من backend')
+        .replace(/Backend can reach/i, 'backend يستطيع الوصول إلى');
+};
+
+const translateDiagnosticDetail = (check = {}, language) => {
+    const detail = check.detail || '';
+    if (!isArabicLocale(language)) return detail || '-';
+    const meta = check.meta || {};
+    switch (check.key) {
+        case 'server_identity':
+            return meta.aet && meta.host && meta.port
+                ? `${meta.aet} على ${meta.host}:${meta.port}`
+                : 'بيانات AET أو مضيف LAN أو منفذ DICOM غير مكتملة.';
+        case 'network_mode':
+            if (!meta.configured_dicom_host) return 'لم يتم ضبط مضيف DICOM بعد.';
+            if (detail.includes('REST is configured')) {
+                return `REST مضبوط على ${meta.orthanc_rest_host || 'مضيف Orthanc'}، بينما DICOM مضبوط على ${meta.configured_dicom_host}. أبقِ هذا الوضع فقط إذا كان Orthanc DICOM مكشوفًا على عنوان LAN/VPN.`;
+            }
+            return 'REST وDICOM يبدوان موجّهين إلى نفس المضيف؛ هذا مناسب للتشغيل المحلي أو الخادم الواحد.';
+        case 'orthanc_api':
+            return check.status === 'ok' ? `Orthanc ${detail.replace(/^Orthanc\s*/i, '') || 'متاح'}` : `تعذر الوصول إلى Orthanc REST: ${translateNetworkError(detail, language)}`;
+        case 'aet_alignment':
+            return `VIARA مضبوط كـ ${meta.configured_aet || '-'}، بينما Orthanc يعلن ${meta.orthanc_aet || '-'}. يجب أن تستخدم الأجهزة قيمة Orthanc الفعلية.`;
+        case 'storage':
+            return check.status === 'ok'
+                ? `تمت قراءة إحصاءات الأرشيف: ${meta.totalDiskSizeMB ?? 0} MB مفهرسة.`
+                : `تعذرت قراءة إحصاءات Orthanc: ${translateNetworkError(detail.replace(/^Could not read Orthanc statistics:\s*/i, ''), language)}`;
+        case 'dicomweb':
+            return check.status === 'ok'
+                ? 'إضافة DICOMweb استجابت لاستعلام دراسة.'
+                : `تعذر استعلام DICOMweb: ${translateNetworkError(detail, language)}`;
+        case 'dicom_listener':
+            return check.status === 'ok'
+                ? `النقطة ${meta.host || '-'}:${meta.port || '-'} تقبل اتصالات TCP من backend.`
+                : `تعذر الوصول إلى مستمع DICOM على ${meta.host || '-'}:${meta.port || '-'}: ${translateNetworkError(detail, language)}`;
+        case 'orthanc_dicom_endpoint':
+            return check.status === 'ok'
+                ? `backend يستطيع الوصول إلى Orthanc DICOM على ${meta.host || '-'}:${meta.port || '-'}.`
+                : `backend لا يستطيع الوصول إلى Orthanc DICOM على ${meta.host || '-'}:${meta.port || '-'}: ${translateNetworkError(detail, language)}`;
+        case 'webhook_secret':
+            return check.status === 'ok'
+                ? 'مصادقة Webhook للأجهزة مفعلة.'
+                : 'متغير PACS_WEBHOOK_SECRET غير مضبوط.';
+        case 'ris_index':
+            return check.status === 'ok'
+                ? 'جداول فهرس صور PACS داخل RIS قابلة للوصول.'
+                : `تعذر الوصول إلى فهرس صور RIS: ${detail}`;
+        default:
+            return detail || '-';
+    }
+};
+
+const slugifyAet = (value) => String(value || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 50);
 
 const toneIconClass = (tone = 'slate') => {
     switch (tone) {
@@ -139,7 +298,7 @@ const formatNumber = (value) => (
         : value || '0'
 );
 
-const PacsDiagnosticsPanel = ({ diagnostics = {}, loading = false, onRefresh = () => {}, reveal = () => ({}), t = (key) => key }) => {
+const PacsDiagnosticsPanel = ({ diagnostics = {}, loading = false, onRefresh = () => {}, reveal = () => ({}), t = (key) => key, language = 'en' }) => {
     const checks = diagnostics.checks || [];
     const okChecks = checks.filter((c) => c.status === 'ok').length;
     const warningChecks = checks.filter((c) => c.status === 'warning').length;
@@ -160,10 +319,10 @@ const PacsDiagnosticsPanel = ({ diagnostics = {}, loading = false, onRefresh = (
                 <div className="flex items-center gap-2">
                     <StatusBadge tone={summaryTone}>
                         {errorChecks > 0
-                            ? t('admin:pacsSettings.diagnostics.errorsFound', { defaultValue: '{{count}} issue(s)', count: errorChecks })
+                            ? t('admin:pacsSettings.diagnostics.errorsFound', { defaultValue: localizedDefault(language, '{{count}} issue(s)', '{{count}} مشكلة'), count: errorChecks })
                             : warningChecks > 0
-                                ? t('admin:pacsSettings.diagnostics.warningsFound', { defaultValue: '{{count}} warning(s)', count: warningChecks })
-                                : t('admin:pacsSettings.diagnostics.allOk', { defaultValue: 'All checks passed' })}
+                                ? t('admin:pacsSettings.diagnostics.warningsFound', { defaultValue: localizedDefault(language, '{{count}} warning(s)', '{{count}} تحذير'), count: warningChecks })
+                                : t('admin:pacsSettings.diagnostics.allOk', { defaultValue: localizedDefault(language, 'All checks passed', 'كل الفحوصات سليمة') })}
                     </StatusBadge>
                     <button type="button" onClick={onRefresh} disabled={loading} className={buttonClass}>
                         <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -178,8 +337,8 @@ const PacsDiagnosticsPanel = ({ diagnostics = {}, loading = false, onRefresh = (
                 <PageState icon={ShieldCheck} title={t('admin:pacsSettings.diagnostics.empty', { defaultValue: 'No diagnostic checks available' })} />
             ) : (
                 <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-                    {checks.map((check) => (
-                        <DiagnosticCheckCard key={check.id} check={check} t={t} />
+                    {checks.map((check, index) => (
+                        <DiagnosticCheckCard key={check.id || check.key || check.name || `${check.status || 'check'}-${index}`} check={check} language={language} />
                     ))}
                 </div>
             )}
@@ -187,7 +346,7 @@ const PacsDiagnosticsPanel = ({ diagnostics = {}, loading = false, onRefresh = (
     );
 };
 
-const DiagnosticCheckCard = ({ check, t }) => {
+const DiagnosticCheckCard = ({ check, language }) => {
     const tone = check.status === 'ok' ? 'emerald' : check.status === 'warning' ? 'amber' : 'rose';
     const Icon = check.status === 'ok' ? CheckCircle2 : check.status === 'warning' ? AlertTriangle : AlertCircle;
 
@@ -199,10 +358,10 @@ const DiagnosticCheckCard = ({ check, t }) => {
                 </span>
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{check.name}</p>
-                        <StatusBadge tone={tone}>{check.status}</StatusBadge>
+                        <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{translateDiagnosticLabel(check, language)}</p>
+                        <StatusBadge tone={tone}>{translateCheckStatus(check.status, language)}</StatusBadge>
                     </div>
-                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{check.detail || '-'}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{translateDiagnosticDetail(check, language)}</p>
                 </div>
             </div>
         </div>
@@ -210,7 +369,7 @@ const DiagnosticCheckCard = ({ check, t }) => {
 };
 
 const PacsConfigPanel = ({ reveal = () => ({}) }) => {
-    const { t } = useTranslation(['admin', 'common']);
+    const { t, i18n } = useTranslation(['admin', 'common']);
     const { data: configData = DEFAULT_CONFIG, isLoading: isConfigLoading, refetch: refetchConfig } = useGetPacsConfigQuery();
     const { data: stats = {}, isError: isHealthError, isFetching: isFetchingSystem, refetch: refetchSystem } = useGetOrthancSystemQuery();
     const { data: diagnostics = {}, isFetching: isFetchingDiagnostics, refetch: refetchDiagnostics } = useGetPacsDiagnosticsQuery();
@@ -236,6 +395,12 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
     }, [configData]);
 
     const hasStoredPassword = Boolean(configData?.has_orthanc_password);
+    const pacsUnreachable = isHealthError || stats?.status === 'unreachable';
+    const language = i18n.resolvedLanguage || i18n.language;
+    const copy = (key, english, arabic, values = {}) => t(key, {
+        defaultValue: localizedDefault(language, english, arabic),
+        ...values
+    });
 
     const dirty = useMemo(() => {
         if (!configData) return false;
@@ -262,10 +427,10 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
     const validateForm = () => {
         const errors = {};
         if (form.is_pacs_enabled) {
-            if (!form.pacs_server_aet.trim()) errors.pacs_server_aet = t('admin:pacsSettings.validation.aetRequired', { defaultValue: 'AET title is required' });
-            if (!form.pacs_server_ip.trim()) errors.pacs_server_ip = t('admin:pacsSettings.validation.ipRequired', { defaultValue: 'Server host/IP is required' });
+            if (!form.pacs_server_aet.trim()) errors.pacs_server_aet = copy('admin:pacsSettings.validation.aetRequired', 'AET title is required', 'عنوان AET مطلوب');
+            if (!form.pacs_server_ip.trim()) errors.pacs_server_ip = copy('admin:pacsSettings.validation.ipRequired', 'Server host/IP is required', 'مضيف أو عنوان الخادم مطلوب');
             const port = Number(form.pacs_server_port);
-            if (!port || port < 1 || port > 65535) errors.pacs_server_port = t('admin:pacsSettings.validation.portInvalid', { defaultValue: 'Valid port (1-65535) required' });
+            if (!port || port < 1 || port > 65535) errors.pacs_server_port = copy('admin:pacsSettings.validation.portInvalid', 'Valid port (1-65535) required', 'أدخل منفذًا صحيحًا بين 1 و65535');
         }
         setValidationErrors(errors);
         return Object.keys(errors).length === 0;
@@ -284,12 +449,12 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
                 delete payload.orthanc_password;
             }
             await updatePacsConfig(payload).unwrap();
-            toast.success(t('admin:pacsSettings.configSaved', { defaultValue: 'PACS configuration saved successfully' }));
+            toast.success(copy('admin:pacsSettings.configSaved', 'PACS configuration saved successfully', 'تم حفظ إعدادات PACS بنجاح'));
             refetchConfig();
             refetchSystem();
             refetchDiagnostics();
         } catch (error) {
-            toast.error(error?.data?.message || t('admin:pacsSettings.configSaveError', { defaultValue: 'Failed to save PACS configuration' }));
+            toast.error(error?.data?.message || copy('admin:pacsSettings.configSaveError', 'Failed to save PACS configuration', 'تعذر حفظ إعدادات PACS'));
         }
     };
 
@@ -304,30 +469,34 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
             const parsed = new URL(form.orthanc_api_url);
             setForm((prev) => ({ ...prev, pacs_server_ip: parsed.hostname }));
         } catch {
-            toast.error(t('admin:pacsSettings.invalidUrl', { defaultValue: 'Invalid REST API URL format' }));
+            toast.error(copy('admin:pacsSettings.invalidUrl', 'Invalid REST API URL format', 'رابط REST API غير صحيح'));
         }
     };
 
     if (isConfigLoading) {
-        return <PageState icon={Activity} spin title={t('admin:pacsSettings.loadingConfig', { defaultValue: 'Loading PACS configuration...' })} />;
+        return <PageState icon={Activity} spin title={copy('admin:pacsSettings.loadingConfig', 'Loading PACS configuration...', 'جاري تحميل إعدادات PACS...')} />;
     }
 
     return (
         <div className="space-y-5">
-            {isHealthError && (
+            {pacsUnreachable && (
                 <div className="rounded-2xl border border-rose-200 bg-rose-50/90 p-4 text-xs font-semibold text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
                     <div className="flex items-center gap-2">
                         <AlertCircle size={16} className="shrink-0" />
-                        <p>{t('admin:pacsSettings.healthWarning', { defaultValue: 'Orthanc server health check failing. Check REST URL, credentials, or DICOM service status.' })}</p>
+                        <p>
+                            {pacsUnreachable
+                                ? copy('admin:pacsSettings.unreachable', 'PACS is currently unreachable. Check Orthanc service, REST URL, credentials, host networking, and firewall rules.', 'لا يمكن الوصول إلى خادم PACS حاليًا. تحقق من خدمة Orthanc ورابط REST وبيانات الدخول والشبكة والجدار الناري.')
+                                : copy('admin:pacsSettings.healthWarning', 'Orthanc server health check failing. Check REST URL, credentials, or DICOM service status.', 'فحص صحة Orthanc يفشل. تحقق من رابط REST أو بيانات الدخول أو حالة خدمة DICOM.')}
+                        </p>
                     </div>
                 </div>
             )}
 
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" {...reveal(240)}>
-                <SummaryMetric icon={Server} label={t('admin:pacsSettings.stats.version', { defaultValue: 'Orthanc version' })} value={stats.version || '-'} tone={isHealthError ? 'rose' : 'teal'} />
-                <SummaryMetric icon={Network} label={t('admin:pacsSettings.stats.aet', { defaultValue: 'Server AET' })} value={stats.aet || '-'} tone={isHealthError ? 'rose' : 'emerald'} />
-                <SummaryMetric icon={Monitor} label={t('admin:pacsSettings.stats.studies', { defaultValue: 'Studies' })} value={formatNumber(stats.countStudies)} />
-                <SummaryMetric icon={Database} label={t('admin:pacsSettings.stats.disk', { defaultValue: 'Archive MB' })} value={formatNumber(stats.totalDiskSizeMB)} />
+                <SummaryMetric icon={Server} label={copy('admin:pacsSettings.stats.version', 'Orthanc version', 'إصدار Orthanc')} value={stats.version || '-'} tone={pacsUnreachable ? 'rose' : 'teal'} />
+                <SummaryMetric icon={Network} label={copy('admin:pacsSettings.stats.aet', 'Server AET', 'AET الخادم')} value={stats.aet || '-'} tone={pacsUnreachable ? 'rose' : 'emerald'} />
+                <SummaryMetric icon={Monitor} label={copy('admin:pacsSettings.stats.studies', 'Studies', 'الدراسات')} value={formatNumber(stats.countStudies)} />
+                <SummaryMetric icon={Database} label={copy('admin:pacsSettings.stats.disk', 'Archive MB', 'الأرشيف MB')} value={formatNumber(stats.totalDiskSizeMB)} />
             </div>
 
             <PacsDiagnosticsPanel
@@ -336,28 +505,29 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
                 onRefresh={refetchDiagnostics}
                 reveal={reveal}
                 t={t}
+                language={language}
             />
 
             <form onSubmit={handleSaveConfig} className={panelClass} {...reveal(300)}>
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/60 p-4 dark:border-slate-800/60">
                     <div>
                         <h2 className="text-base font-bold text-slate-950 dark:text-white">
-                            {t('admin:pacsSettings.globalConfigTitle', { defaultValue: 'PACS configuration' })}
+                            {copy('admin:pacsSettings.globalConfigTitle', 'PACS configuration', 'إعدادات PACS')}
                         </h2>
                         <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                            {t('admin:pacsSettings.globalConfigDesc', { defaultValue: 'Settings used for DICOM networking and Orthanc REST API access.' })}
+                            {copy('admin:pacsSettings.globalConfigDesc', 'Settings used for DICOM networking and Orthanc REST API access.', 'تُستخدم هذه القيم لشبكة DICOM والوصول إلى Orthanc REST API.')}
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         <StatusBadge tone={dirty ? 'amber' : 'emerald'}>
                             {dirty
-                                ? t('admin:pacsSettings.unsaved', { defaultValue: 'Unsaved changes' })
-                                : t('admin:pacsSettings.saved', { defaultValue: 'Saved' })}
+                                ? copy('admin:pacsSettings.unsaved', 'Unsaved changes', 'تغييرات غير محفوظة')
+                                : copy('admin:pacsSettings.saved', 'Saved', 'محفوظ')}
                         </StatusBadge>
                         <StatusBadge tone={hasStoredPassword || form.orthanc_password ? 'emerald' : 'slate'}>
                             {hasStoredPassword || form.orthanc_password
-                                ? t('admin:pacsSettings.passwordSet', { defaultValue: 'Password set' })
-                                : t('admin:pacsSettings.passwordMissing', { defaultValue: 'No password' })}
+                                ? copy('admin:pacsSettings.passwordSet', 'Password set', 'كلمة المرور محفوظة')
+                                : copy('admin:pacsSettings.passwordMissing', 'No password', 'لا توجد كلمة مرور')}
                         </StatusBadge>
                         <button type="button" onClick={handleRefreshSystem} disabled={isFetchingSystem} className={buttonClass}>
                             <RefreshCw size={14} className={isFetchingSystem ? 'animate-spin' : ''} />
@@ -371,15 +541,15 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-slate-200">
                                 <Network size={16} className="text-teal-700 dark:text-teal-300" />
-                                {t('admin:pacsSettings.dicomProtocol', { defaultValue: 'DICOM protocol' })}
+                                {copy('admin:pacsSettings.dicomProtocol', 'DICOM protocol', 'بروتوكول DICOM')}
                             </div>
                             <button type="button" onClick={applyRestHostEndpoint} className={buttonClass}>
-                                {t('admin:pacsSettings.useRestHost', { defaultValue: 'Use REST host' })}
+                                {copy('admin:pacsSettings.useRestHost', 'Use REST host', 'استخدام مضيف REST')}
                             </button>
                         </div>
                         <label className="block">
                             <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                {t('admin:pacsSettings.serverAet', { defaultValue: 'PACS server AET' })}
+                                {copy('admin:pacsSettings.serverAet', 'PACS server AET', 'AET خادم PACS')}
                             </span>
                             <input required maxLength={50} value={form.pacs_server_aet} onChange={updateField('pacs_server_aet')} className={fieldClass(validationErrors.pacs_server_aet)} placeholder="ORTHANC" autoCapitalize="characters" />
                             <FieldError message={validationErrors.pacs_server_aet} />
@@ -387,14 +557,14 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
                         <div className="grid gap-3 sm:grid-cols-2">
                             <label className="block">
                                 <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                    {t('admin:pacsSettings.serverHost', { defaultValue: 'Server host/IP' })}
+                                    {copy('admin:pacsSettings.serverHost', 'Server host/IP', 'مضيف/عنوان الخادم')}
                                 </span>
                                 <input required value={form.pacs_server_ip} onChange={updateField('pacs_server_ip')} className={fieldClass(validationErrors.pacs_server_ip)} placeholder="127.0.0.1 or orthanc" />
                                 <FieldError message={validationErrors.pacs_server_ip} />
                             </label>
                             <label className="block">
                                 <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                    {t('admin:pacsSettings.serverPort', { defaultValue: 'DICOM port' })}
+                                    {copy('admin:pacsSettings.serverPort', 'DICOM port', 'منفذ DICOM')}
                                 </span>
                                 <input required type="number" min={1} max={65535} value={form.pacs_server_port} onChange={updateField('pacs_server_port')} className={fieldClass(validationErrors.pacs_server_port)} placeholder="4242" />
                                 <FieldError message={validationErrors.pacs_server_port} />
@@ -405,11 +575,11 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
                     <section className="space-y-3">
                         <div className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-slate-200">
                             <Server size={16} className="text-teal-700 dark:text-teal-300" />
-                            {t('admin:pacsSettings.restApiConfig', { defaultValue: 'Orthanc REST API' })}
+                            {copy('admin:pacsSettings.restApiConfig', 'Orthanc REST API', 'Orthanc REST API')}
                         </div>
                         <label className="block">
                             <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                {t('admin:pacsSettings.apiUrl', { defaultValue: 'REST API base URL' })}
+                                {copy('admin:pacsSettings.apiUrl', 'REST API base URL', 'رابط REST API الأساسي')}
                             </span>
                             <input value={form.orthanc_api_url} onChange={updateField('orthanc_api_url')} className={fieldClass(validationErrors.orthanc_api_url)} placeholder="http://127.0.0.1:8042" />
                             <FieldError message={validationErrors.orthanc_api_url} />
@@ -417,15 +587,23 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
                         <div className="grid gap-3 sm:grid-cols-2">
                             <label className="block">
                                 <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                    {t('admin:pacsSettings.username', { defaultValue: 'Username' })}
+                                    {copy('admin:pacsSettings.username', 'Username', 'اسم المستخدم')}
                                 </span>
                                 <input value={form.orthanc_username} onChange={updateField('orthanc_username')} className={inputClass} placeholder="orthanc" />
                             </label>
                             <label className="block">
                                 <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                    {t('admin:pacsSettings.password', { defaultValue: 'Password' })}
+                                    {copy('admin:pacsSettings.password', 'Password', 'كلمة المرور')}
                                 </span>
-                                <input type="password" value={form.orthanc_password} onChange={updateField('orthanc_password')} className={inputClass} placeholder={hasStoredPassword ? '•••••••• (unchanged)' : 'Enter password'} />
+                                <input
+                                    type="password"
+                                    value={form.orthanc_password}
+                                    onChange={updateField('orthanc_password')}
+                                    className={inputClass}
+                                    placeholder={hasStoredPassword
+                                        ? localizedDefault(language, '•••••••• (unchanged)', '•••••••• (بدون تغيير)')
+                                        : localizedDefault(language, 'Enter password', 'أدخل كلمة المرور')}
+                                />
                             </label>
                         </div>
                     </section>
@@ -433,18 +611,18 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
 
                 <div className="grid gap-4 border-t border-slate-200/60 p-4 dark:border-slate-800/60 md:grid-cols-2">
                     <label className="flex items-start gap-3 rounded-xl border border-slate-200/60 bg-slate-50/50 p-3 dark:border-slate-800/60 dark:bg-slate-950/20">
-                        <input type="checkbox" checked={form.is_pacs_enabled} onChange={updateField('is_pacs_enabled')} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+                        <input type="checkbox" checked={form.is_pacs_enabled} onChange={updateField('is_pacs_enabled')} className="ds-checkbox mt-0.5" />
                         <div>
-                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{t('admin:pacsSettings.enablePacs', { defaultValue: 'Enable PACS integration' })}</p>
-                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t('admin:pacsSettings.enablePacsHelp', { defaultValue: 'Activates DICOM routing and modality worklist querying.' })}</p>
+                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{copy('admin:pacsSettings.enablePacs', 'Enable PACS integration', 'تفعيل تكامل PACS')}</p>
+                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{copy('admin:pacsSettings.enablePacsHelp', 'Activates DICOM routing and modality worklist querying.', 'يفعّل توجيه DICOM واستعلام قائمة عمل أجهزة التصوير.')}</p>
                         </div>
                     </label>
 
                     <label className="flex items-start gap-3 rounded-xl border border-slate-200/60 bg-slate-50/50 p-3 dark:border-slate-800/60 dark:bg-slate-950/20">
-                        <input type="checkbox" checked={form.auto_import_dicom} onChange={updateField('auto_import_dicom')} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+                        <input type="checkbox" checked={form.auto_import_dicom} onChange={updateField('auto_import_dicom')} className="ds-checkbox mt-0.5" />
                         <div>
-                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{t('admin:pacsSettings.autoImport', { defaultValue: 'Auto-import DICOM instances' })}</p>
-                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t('admin:pacsSettings.autoImportHelp', { defaultValue: 'Automatically index new instances into VIARA studies and reports.' })}</p>
+                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{copy('admin:pacsSettings.autoImport', 'Auto-import DICOM instances', 'استيراد صور DICOM تلقائيًا')}</p>
+                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{copy('admin:pacsSettings.autoImportHelp', 'Automatically index new instances into VIARA studies and reports.', 'يفهرس الصور الجديدة تلقائيًا داخل دراسات وتقارير VIARA.')}</p>
                         </div>
                     </label>
                 </div>
@@ -452,7 +630,7 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
                 <div className="flex items-center justify-end border-t border-slate-200/60 p-4 dark:border-slate-800/60">
                     <button type="submit" disabled={isSaving || !dirty} className={primaryButtonClass}>
                         <Save size={14} className={isSaving ? 'animate-spin' : ''} />
-                        {t('common:actions.save', { defaultValue: 'Save configuration' })}
+                        {copy('common:actions.save', 'Save configuration', 'حفظ الإعدادات')}
                     </button>
                 </div>
             </form>
@@ -471,38 +649,132 @@ const PacsModalitiesPanel = ({ reveal = () => ({}) }) => {
 
     const [editingMachine, setEditingMachine] = useState(null);
     const [form, setForm] = useState(DEFAULT_MACHINE);
+    const [validationErrors, setValidationErrors] = useState({});
     const [showModal, setShowModal] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState(null);
 
     const openCreateModal = () => {
         setEditingMachine(null);
-        setForm(DEFAULT_MACHINE);
+        setForm({ ...DEFAULT_MACHINE });
+        setValidationErrors({});
         setShowModal(true);
     };
 
     const openEditModal = (machine) => {
         setEditingMachine(machine);
         setForm({
-            aet_title: machine.aet_title || '',
-            modality_type: machine.modality_type || 'CT',
             name: machine.name || '',
-            ip_address: machine.ip_address || '',
-            port: machine.port || 104,
-            location: machine.location || '',
+            type: machine.type || 'CT',
+            roomNumber: machine.room_number || machine.roomNumber || '',
+            serialNumber: machine.serial_number || machine.serialNumber || '',
             manufacturer: machine.manufacturer || '',
-            is_active: machine.is_active ?? true
+            model: machine.model || '',
+            location: machine.location || '',
+            status: MACHINE_STATUS_OPTIONS.includes(machine.status) ? machine.status : 'Active',
+            aet: machine.aet || machine.aet_title || '',
+            ip_address: machine.ip_address || '',
+            port: machine.port || '',
+            dicom_role: machine.dicom_role || 'mwl_client'
         });
+        setValidationErrors({});
         setShowModal(true);
     };
 
+    const updateForm = (field) => (event) => {
+        setForm((prev) => ({ ...prev, [field]: event.target.value }));
+        if (validationErrors[field]) {
+            setValidationErrors((prev) => ({ ...prev, [field]: null }));
+        }
+    };
+
+    const validateForm = () => {
+        const errors = {};
+        const name = trimValue(form.name);
+        if (name.length < 2) {
+            errors.name = t('admin:pacsSettings.modalities.validation.name', { defaultValue: 'Name must be at least 2 characters.' });
+        }
+        if (!MODALITY_OPTIONS.includes(form.type)) {
+            errors.type = t('admin:pacsSettings.modalities.validation.type', { defaultValue: 'Select a supported modality type.' });
+        }
+        if (!MACHINE_STATUS_OPTIONS.includes(form.status)) {
+            errors.status = t('admin:pacsSettings.modalities.validation.status', { defaultValue: 'Select a valid machine status.' });
+        }
+        if (hasAnyDicomDetails(form)) {
+            if (!trimValue(form.aet)) {
+                errors.aet = t('admin:pacsSettings.modalities.validation.aet', { defaultValue: 'AET is required when DICOM connection details are used.' });
+            } else if (trimValue(form.aet).length > 50) {
+                errors.aet = t('admin:pacsSettings.modalities.validation.aetLength', { defaultValue: 'AET must be 50 characters or fewer.' });
+            }
+            if (!trimValue(form.ip_address)) {
+                errors.ip_address = t('admin:pacsSettings.modalities.validation.host', { defaultValue: 'Host/IP is required when DICOM connection details are used.' });
+            }
+            const port = Number(form.port);
+            if (!Number.isInteger(port) || port < 1 || port > 65535) {
+                errors.port = t('admin:pacsSettings.modalities.validation.port', { defaultValue: 'Port must be a number between 1 and 65535.' });
+            }
+        }
+        setValidationErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
+    const buildMachinePayload = () => ({
+        name: trimValue(form.name),
+        type: form.type,
+        roomNumber: trimValue(form.roomNumber),
+        serialNumber: trimValue(form.serialNumber),
+        manufacturer: trimValue(form.manufacturer),
+        model: trimValue(form.model),
+        location: trimValue(form.location),
+        status: form.status
+    });
+
+    const buildDicomPayload = (id, source = form) => ({
+        id,
+        aet: trimValue(source.aet),
+        ip_address: trimValue(source.ip_address),
+        port: Number(source.port),
+        dicom_role: source.dicom_role || 'mwl_client'
+    });
+
     const handleSubmit = async (event) => {
         event.preventDefault();
+        if (!validateForm()) return;
         try {
+            const machineData = buildMachinePayload();
+            const needsDicomSync = hasCompleteDicomDetails(form);
+            let syncFailed = false;
             if (editingMachine) {
-                await updateMachine({ id: editingMachine.machine_id, ...form }).unwrap();
-                toast.success(t('admin:pacsSettings.modalityUpdated', { defaultValue: 'Modality updated successfully' }));
+                const id = getMachineId(editingMachine);
+                await updateMachine({ id, ...machineData }).unwrap();
+                if (needsDicomSync) {
+                    try {
+                        await syncModality(buildDicomPayload(id)).unwrap();
+                    } catch (error) {
+                        syncFailed = true;
+                        toast.error(error?.data?.message || t('admin:pacsSettings.syncError', { defaultValue: 'Connection details saved, but Orthanc sync failed' }));
+                    }
+                }
+                if (!syncFailed) {
+                    toast.success(needsDicomSync
+                        ? t('admin:pacsSettings.modalityUpdatedSynced', { defaultValue: 'Modality updated and synced successfully' })
+                        : t('admin:pacsSettings.modalityUpdated', { defaultValue: 'Modality updated successfully' }));
+                }
             } else {
-                await createMachine(form).unwrap();
-                toast.success(t('admin:pacsSettings.modalityCreated', { defaultValue: 'Modality added successfully' }));
+                const created = await createMachine(machineData).unwrap();
+                const id = getMachineId(created);
+                if (needsDicomSync && id) {
+                    try {
+                        await syncModality(buildDicomPayload(id)).unwrap();
+                    } catch (error) {
+                        syncFailed = true;
+                        toast.error(error?.data?.message || t('admin:pacsSettings.syncError', { defaultValue: 'Connection details saved, but Orthanc sync failed' }));
+                    }
+                }
+                if (!syncFailed) {
+                    toast.success(needsDicomSync
+                        ? t('admin:pacsSettings.modalityCreatedSynced', { defaultValue: 'Modality added and synced successfully' })
+                        : t('admin:pacsSettings.modalityCreated', { defaultValue: 'Modality added successfully' }));
+                }
             }
             setShowModal(false);
             refetch();
@@ -511,21 +783,25 @@ const PacsModalitiesPanel = ({ reveal = () => ({}) }) => {
         }
     };
 
-    const handleDelete = async (id) => {
-        if (!confirm(t('admin:pacsSettings.confirmDeleteModality', { defaultValue: 'Are you sure you want to remove this DICOM modality?' }))) return;
+    const handleDelete = async () => {
+        if (!deleteTarget) return;
         try {
-            await deleteMachine(id).unwrap();
+            await deleteMachine(deleteTarget).unwrap();
             toast.success(t('admin:pacsSettings.modalityDeleted', { defaultValue: 'Modality removed' }));
             refetch();
         } catch (error) {
             toast.error(error?.data?.message || t('admin:pacsSettings.modalityDeleteError', { defaultValue: 'Failed to remove modality' }));
+        } finally {
+            setDeleteTarget(null);
         }
     };
 
     const handlePing = async (machine) => {
         try {
-            const res = await pingModality(machine.machine_id).unwrap();
-            if (res.status === 'ok') {
+            const res = await pingModality(getMachineId(machine)).unwrap();
+            if (res.skipped) {
+                toast(res.message || t('admin:pacsSettings.pingSkipped', { defaultValue: 'Outbound echo is not required for this modality role' }), { icon: 'ℹ️' });
+            } else if (res.success || res.status === 'ok') {
                 toast.success(t('admin:pacsSettings.pingSuccess', { defaultValue: 'Echo successful ({{rtt}}ms)', rtt: res.rtt || 0 }));
             } else {
                 toast.error(res.message || t('admin:pacsSettings.pingFailed', { defaultValue: 'DICOM C-ECHO failed' }));
@@ -536,8 +812,13 @@ const PacsModalitiesPanel = ({ reveal = () => ({}) }) => {
     };
 
     const handleSync = async (machine) => {
+        if (!hasCompleteDicomDetails(machine)) {
+            toast.error(t('admin:pacsSettings.modalities.syncNeedsDetails', { defaultValue: 'Add AET, host/IP, and port before syncing this modality.' }));
+            openEditModal(machine);
+            return;
+        }
         try {
-            await syncModality(machine.machine_id).unwrap();
+            await syncModality(buildDicomPayload(getMachineId(machine), machine)).unwrap();
             toast.success(t('admin:pacsSettings.syncedWithOrthanc', { defaultValue: 'Synced modality with Orthanc' }));
         } catch (error) {
             toast.error(error?.data?.message || t('admin:pacsSettings.syncError', { defaultValue: 'Failed to sync with Orthanc' }));
@@ -586,45 +867,58 @@ const PacsModalitiesPanel = ({ reveal = () => ({}) }) => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {machines.map((machine) => (
-                                    <tr key={machine.machine_id} className="align-top text-slate-700 dark:text-slate-200">
+                                {machines.map((machine) => {
+                                    const id = getMachineId(machine);
+                                    const endpoint = hasCompleteDicomDetails(machine) ? `${machine.ip_address}:${machine.port}` : '—';
+                                    return (
+                                    <tr key={id} className="align-top text-slate-700 dark:text-slate-200">
                                         <td className="px-4 py-3 font-mono text-xs font-bold text-slate-900 dark:text-white">
-                                            {machine.aet_title}
+                                            {machine.aet || '—'}
+                                            {machine.dicom_synced && (
+                                                <span className="ms-2 inline-flex align-middle text-emerald-600 dark:text-emerald-400" title={t('admin:pacsSettings.modalities.synced', { defaultValue: 'Synced with PACS' })}>
+                                                    <CheckCircle2 size={13} />
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 font-bold">{machine.name}</td>
                                         <td className="px-4 py-3">
-                                            <StatusBadge tone="teal">{machine.modality_type}</StatusBadge>
+                                            <StatusBadge tone="teal">{machine.type}</StatusBadge>
+                                            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                                {(() => {
+                                                    const role = DICOM_ROLE_OPTIONS.find((option) => option.value === machine.dicom_role);
+                                                    return role ? t(role.labelKey, { defaultValue: role.defaultLabel }) : (machine.dicom_role || '—');
+                                                })()}
+                                            </p>
                                         </td>
                                         <td className="px-4 py-3 font-mono text-xs">
-                                            {machine.ip_address}:{machine.port}
+                                            {endpoint}
                                         </td>
                                         <td className="px-4 py-3">
-                                            <StatusBadge tone={machine.is_active ? 'emerald' : 'slate'}>
-                                                {machine.is_active
-                                                    ? t('common:status.active', { defaultValue: 'Active' })
-                                                    : t('common:status.inactive', { defaultValue: 'Inactive' })}
+                                            <StatusBadge tone={machineStatusTone(machine.status)}>
+                                                {t(`admin:pacsSettings.modalities.statuses.${String(machine.status || '').toLowerCase().replace(/[^a-z0-9]+/g, '_')}`, { defaultValue: machine.status || '-' })}
                                             </StatusBadge>
                                         </td>
                                         <td className="px-4 py-3 text-end">
                                             <div className="flex items-center justify-end gap-1.5">
-                                                <button type="button" onClick={() => handlePing(machine)} disabled={isPinging} className={buttonClass} title="Ping DICOM C-ECHO">
+                                                <button type="button" onClick={() => handlePing(machine)} disabled={isPinging || !machine.dicom_synced} className={buttonClass} title={t('admin:pacsSettings.modalities.echoTitle', { defaultValue: 'Ping DICOM C-ECHO' })}>
                                                     <Activity size={13} />
-                                                    <span className="sr-only sm:not-sr-only sm:ms-1">Echo</span>
+                                                    <span className="sr-only sm:not-sr-only sm:ms-1">{t('admin:pacsSettings.modalities.echo', { defaultValue: 'Echo' })}</span>
                                                 </button>
-                                                <button type="button" onClick={() => handleSync(machine)} disabled={isSyncing} className={buttonClass} title="Sync with Orthanc">
+                                                <button type="button" onClick={() => handleSync(machine)} disabled={isSyncing} className={buttonClass} title={t('admin:pacsSettings.modalities.syncTitle', { defaultValue: 'Sync with Orthanc' })}>
                                                     <RefreshCw size={13} />
-                                                    <span className="sr-only sm:not-sr-only sm:ms-1">Sync</span>
+                                                    <span className="sr-only sm:not-sr-only sm:ms-1">{t('admin:pacsSettings.modalities.sync', { defaultValue: 'Sync' })}</span>
                                                 </button>
-                                                <button type="button" onClick={() => openEditModal(machine)} className={buttonClass} title="Edit modality">
+                                                <button type="button" onClick={() => openEditModal(machine)} className={buttonClass} title={t('admin:pacsSettings.modalities.editTitle', { defaultValue: 'Edit modality' })}>
                                                     <Edit3 size={13} />
                                                 </button>
-                                                <button type="button" onClick={() => handleDelete(machine.machine_id)} disabled={isDeleting} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:border-rose-200 hover:text-rose-600 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-rose-900 dark:hover:text-rose-400" title="Delete modality">
+                                                <button type="button" onClick={() => setDeleteTarget(id)} disabled={isDeleting} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:border-rose-200 hover:text-rose-600 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-rose-900 dark:hover:text-rose-400" title={t('admin:pacsSettings.modalities.deleteTitle', { defaultValue: 'Delete modality' })}>
                                                     <Trash2 size={13} />
                                                 </button>
                                             </div>
                                         </td>
                                     </tr>
-                                ))}
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -633,71 +927,190 @@ const PacsModalitiesPanel = ({ reveal = () => ({}) }) => {
 
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
-                    <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+                    <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
                         <div className="flex items-center justify-between border-b border-slate-200/60 pb-4 dark:border-slate-800/60">
-                            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                                {editingMachine ? t('admin:pacsSettings.editModality', { defaultValue: 'Edit DICOM modality' }) : t('admin:pacsSettings.addModality', { defaultValue: 'Add DICOM modality' })}
-                            </h3>
+                            <div>
+                                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                                    {editingMachine ? t('admin:pacsSettings.editModality', { defaultValue: 'Edit DICOM modality' }) : t('admin:pacsSettings.addModality', { defaultValue: 'Add DICOM modality' })}
+                                </h3>
+                                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                    {editingMachine ? t('admin:pacsSettings.modalities.editHelp', { defaultValue: 'Update modality details and DICOM connection.' }) : t('admin:pacsSettings.modalities.addHelp', { defaultValue: 'Register a new imaging modality or PACS destination.' })}
+                                </p>
+                            </div>
                             <button type="button" onClick={() => setShowModal(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200">
                                 <XCircle size={18} />
                             </button>
                         </div>
-                        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+                        <form onSubmit={handleSubmit} className="mt-4 space-y-5">
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <label className="block">
-                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">AET Title</span>
-                                    <input required maxLength={50} value={form.aet_title} onChange={(e) => setForm({ ...form, aet_title: e.target.value })} className={inputClass} placeholder="SCANNER_CT1" autoCapitalize="characters" />
+                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{t('admin:pacsSettings.modalities.name', { defaultValue: 'Display Name' })}</span>
+                                    <input required maxLength={50} value={form.name} onChange={updateForm('name')} className={fieldClass(validationErrors.name)} placeholder="CT Room 1" />
+                                    <FieldError message={validationErrors.name} />
                                 </label>
                                 <label className="block">
-                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Display Name</span>
-                                    <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} placeholder="CT Room 1" />
-                                </label>
-                            </div>
-
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                <label className="block">
-                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Modality Type</span>
-                                    <select value={form.modality_type} onChange={(e) => setForm({ ...form, modality_type: e.target.value })} className={inputClass}>
+                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{t('admin:pacsSettings.modalities.type', { defaultValue: 'Modality Type' })}</span>
+                                    <select required value={form.type} onChange={updateForm('type')} className={fieldClass(validationErrors.type)}>
                                         {MODALITY_OPTIONS.map((opt) => (
                                             <option key={opt} value={opt}>{opt}</option>
                                         ))}
                                     </select>
-                                </label>
-                                <label className="block">
-                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Location</span>
-                                    <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={inputClass} placeholder="Building A, Room 102" />
+                                    <FieldError message={validationErrors.type} />
                                 </label>
                             </div>
 
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <label className="block">
-                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">IP Address / Host</span>
-                                    <input required value={form.ip_address} onChange={(e) => setForm({ ...form, ip_address: e.target.value })} className={inputClass} placeholder="192.168.1.50" />
+                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{t('admin:pacsSettings.modalities.location', { defaultValue: 'Location' })}</span>
+                                    <input value={form.location} onChange={updateForm('location')} className={inputClass} placeholder="Building A, Room 102" />
                                 </label>
                                 <label className="block">
-                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">DICOM Port</span>
-                                    <input required type="number" min={1} max={65535} value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value) })} className={inputClass} placeholder="104" />
+                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{t('admin:pacsSettings.modalities.manufacturer', { defaultValue: 'Manufacturer' })}</span>
+                                    <input value={form.manufacturer} onChange={updateForm('manufacturer')} className={inputClass} placeholder="Siemens Healthineers" />
                                 </label>
                             </div>
 
-                            <label className="flex items-center gap-2 pt-2">
-                                <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
-                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Active DICOM node</span>
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <label className="block">
+                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{t('admin:pacsSettings.modalities.roomNumber', { defaultValue: 'Room' })}</span>
+                                    <input value={form.roomNumber} onChange={updateForm('roomNumber')} className={inputClass} placeholder="102" />
+                                </label>
+                                <label className="block">
+                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{t('admin:pacsSettings.modalities.model', { defaultValue: 'Model' })}</span>
+                                    <input value={form.model} onChange={updateForm('model')} className={inputClass} placeholder="SOMATOM" />
+                                </label>
+                                <label className="block">
+                                    <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{t('admin:pacsSettings.modalities.serialNumber', { defaultValue: 'Serial number' })}</span>
+                                    <input value={form.serialNumber} onChange={updateForm('serialNumber')} className={inputClass} placeholder="SN-001" />
+                                </label>
+                            </div>
+
+                            <label className="block">
+                                <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{t('admin:pacsSettings.modalities.status', { defaultValue: 'Status' })}</span>
+                                <select required value={form.status} onChange={updateForm('status')} className={fieldClass(validationErrors.status)}>
+                                    {MACHINE_STATUS_OPTIONS.map((status) => (
+                                        <option key={status} value={status}>
+                                            {t(`admin:pacsSettings.modalities.statuses.${status.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`, { defaultValue: status })}
+                                        </option>
+                                    ))}
+                                </select>
+                                <FieldError message={validationErrors.status} />
                             </label>
 
-                            <div className="flex items-center justify-end gap-2 border-t border-slate-200/60 pt-4 dark:border-slate-800/60">
-                                <button type="button" onClick={() => setShowModal(false)} className={buttonClass}>
-                                    {t('common:actions.cancel', { defaultValue: 'Cancel' })}
-                                </button>
-                                <button type="submit" disabled={isCreating || isUpdating} className={primaryButtonClass}>
-                                    <Save size={14} />
-                                    {t('common:actions.save', { defaultValue: 'Save' })}
-                                </button>
+                            <div className="rounded-2xl border border-slate-200/70 bg-slate-50/60 p-4 dark:border-slate-800/70 dark:bg-slate-950/25">
+                                <div className="mb-3 flex items-center justify-between">
+                                    <div className="flex items-start gap-2">
+                                        <Network size={16} className="mt-0.5 text-[var(--VIARA-accent)]" />
+                                        <div>
+                                            <p className="text-xs font-black text-slate-900 dark:text-white">
+                                                {t('admin:pacsSettings.modalities.dicomConnection', { defaultValue: 'DICOM connection details' })}
+                                            </p>
+                                            <p className="mt-0.5 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                                                {t('admin:pacsSettings.modalities.dicomConnectionHelp', { defaultValue: 'Optional for inventory, required for Orthanc sync and echo tests.' })}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    {hasCompleteDicomDetails(form) && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handlePing({ ...form, modality_id: editingMachine ? getMachineId(editingMachine) : 'new' })}
+                                            disabled={isPinging}
+                                            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--VIARA-accent)]/30 bg-[var(--VIARA-accent-soft)] px-2.5 text-[11px] font-bold text-[var(--VIARA-accent)] hover:border-[var(--VIARA-accent)]/50 disabled:opacity-50"
+                                        >
+                                            <Activity size={12} className={isPinging ? 'animate-pulse' : ''} />
+                                            {t('admin:pacsSettings.modalities.testConnection', { defaultValue: 'Test' })}
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="grid gap-3 sm:grid-cols-3">
+                                    <label className="block sm:col-span-2">
+                                        <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{t('admin:pacsSettings.modalities.aet', { defaultValue: 'AET title' })}</span>
+                                        <div className="flex gap-2">
+                                            <input maxLength={50} value={form.aet} onChange={updateForm('aet')} className={`${fieldClass(validationErrors.aet)} flex-1`} placeholder="CT_ROOM_1" autoCapitalize="characters" />
+                                            <button
+                                                type="button"
+                                                onClick={() => setForm((prev) => ({ ...prev, aet: slugifyAet(prev.name || prev.aet) }))}
+                                                disabled={!form.name}
+                                                className="inline-flex h-10 shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                                                title={t('admin:pacsSettings.modalities.generateAet', { defaultValue: 'Generate from name' })}
+                                            >
+                                                <RefreshCw size={12} />
+                                                <span className="hidden sm:inline">{t('admin:pacsSettings.modalities.generate', { defaultValue: 'Auto' })}</span>
+                                            </button>
+                                        </div>
+                                        <FieldError message={validationErrors.aet} />
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{t('admin:pacsSettings.modalities.host', { defaultValue: 'Host / IP' })}</span>
+                                        <input value={form.ip_address} onChange={updateForm('ip_address')} className={fieldClass(validationErrors.ip_address)} placeholder="192.168.1.20" />
+                                        <FieldError message={validationErrors.ip_address} />
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{t('admin:pacsSettings.modalities.port', { defaultValue: 'Port' })}</span>
+                                        <input type="number" min="1" max="65535" value={form.port} onChange={updateForm('port')} className={fieldClass(validationErrors.port)} placeholder="104" />
+                                        <FieldError message={validationErrors.port} />
+                                    </label>
+                                </div>
+                                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                                    {DICOM_ROLE_OPTIONS.map((role) => {
+                                        const active = form.dicom_role === role.value;
+                                        return (
+                                            <label
+                                                key={role.value}
+                                                className={`cursor-pointer rounded-xl border p-3 transition ${
+                                                    active
+                                                        ? 'border-[var(--VIARA-accent)] bg-[var(--VIARA-accent-soft)] text-[var(--VIARA-accent-strong)]'
+                                                        : 'border-slate-200 bg-white text-slate-600 hover:border-[var(--VIARA-accent)]/50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+                                                }`}
+                                            >
+                                                <input type="radio" name="dicom_role" value={role.value} checked={active} onChange={updateForm('dicom_role')} className="sr-only" />
+                                                <span className="block text-xs font-black">{t(role.labelKey, { defaultValue: role.defaultLabel })}</span>
+                                                <span className="mt-1 block text-[11px] leading-4 opacity-80">{t(role.helpKey, { defaultValue: role.defaultHelp })}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between border-t border-slate-200/60 pt-4 dark:border-slate-800/60">
+                                <div className="text-xs text-slate-500 dark:text-slate-400">
+                                    {hasCompleteDicomDetails(form) ? (
+                                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                                            <CheckCircle2 size={12} />
+                                            {t('admin:pacsSettings.modalities.dicomReady', { defaultValue: 'DICOM connection details' })}
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1">
+                                            <AlertCircle size={12} />
+                                            {t('admin:pacsSettings.modalities.dicomOptional', { defaultValue: 'DICOM details optional for inventory only' })}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button type="button" onClick={() => setShowModal(false)} className={buttonClass}>
+                                        {t('common:actions.cancel', { defaultValue: 'Cancel' })}
+                                    </button>
+                                    <button type="submit" disabled={isCreating || isUpdating} className={primaryButtonClass}>
+                                        <Save size={14} className={(isCreating || isUpdating) ? 'animate-spin' : ''} />
+                                        {t('common:actions.save', { defaultValue: 'Save' })}
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={Boolean(deleteTarget)}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={handleDelete}
+                title={t('admin:pacsSettings.modalities.deleteModality', { defaultValue: 'Delete modality' })}
+                message={t('admin:pacsSettings.modalities.confirmDelete', { defaultValue: 'Are you sure you want to remove this DICOM modality?' })}
+                confirmText={t('common:actions.delete', { defaultValue: 'Delete' })}
+                variant="danger"
+                isLoading={isDeleting}
+            />
         </div>
     );
 };
@@ -796,6 +1209,8 @@ const PacsAiQueuePanel = ({ reveal = () => ({}) }) => {
     const [processQueue, { isLoading: isProcessing }] = useProcessPacsAiAnalysisQueueMutation();
     const [retryAll, { isLoading: isRetryingAll }] = useRetryAllPacsAiJobsMutation();
     const [cancelAll, { isLoading: isCancelingAll }] = useCancelAllPacsAiJobsMutation();
+    const [confirmRetryAll, setConfirmRetryAll] = useState(false);
+    const [confirmCancelAll, setConfirmCancelAll] = useState(false);
 
     const jobs = data?.jobs || [];
     const totals = data?.totals || {};
@@ -807,26 +1222,26 @@ const PacsAiQueuePanel = ({ reveal = () => ({}) }) => {
 
     const handleRetryAll = async () => {
         try {
-            if (confirm(t('admin:pacsSettings.aiQueue.retryAllConfirm', { defaultValue: 'Are you sure you want to re-queue all failed and canceled jobs?' }))) {
-                const res = await retryAll().unwrap();
-                toast.success(t('admin:pacsSettings.aiQueue.retryAllSuccess', { defaultValue: 'Successfully re-queued {{count}} jobs', count: res.count || 0 }));
-                refetch();
-            }
+            const res = await retryAll().unwrap();
+            toast.success(t('admin:pacsSettings.aiQueue.retryAllSuccess', { defaultValue: 'Successfully re-queued {{count}} jobs', count: res.count || 0 }));
+            refetch();
         } catch (error) {
             toast.error(error?.data?.message || t('admin:pacsSettings.aiQueue.retryAllError', { defaultValue: 'Failed to re-queue jobs' }));
+            return false;
         }
+        return true;
     };
 
     const handleCancelAll = async () => {
         try {
-            if (confirm(t('admin:pacsSettings.aiQueue.cancelAllConfirm', { defaultValue: 'Are you sure you want to stop/cancel all queued and running jobs?' }))) {
-                const res = await cancelAll().unwrap();
-                toast.success(t('admin:pacsSettings.aiQueue.cancelAllSuccess', { defaultValue: 'Stopped {{count}} active jobs', count: res.count || 0 }));
-                refetch();
-            }
+            const res = await cancelAll().unwrap();
+            toast.success(t('admin:pacsSettings.aiQueue.cancelAllSuccess', { defaultValue: 'Stopped {{count}} active jobs', count: res.count || 0 }));
+            refetch();
         } catch (error) {
             toast.error(error?.data?.message || t('admin:pacsSettings.aiQueue.cancelAllError', { defaultValue: 'Failed to stop jobs' }));
+            return false;
         }
+        return true;
     };
 
     const runQueue = async () => {
@@ -886,15 +1301,25 @@ const PacsAiQueuePanel = ({ reveal = () => ({}) }) => {
                             {t('common:actions.refresh', { defaultValue: 'Refresh' })}
                         </button>
                         {(failed > 0 || totals.Canceled > 0) && (
-                            <button type="button" onClick={handleRetryAll} disabled={isRetryingAll} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-white px-3.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-900/60 dark:bg-slate-900 dark:text-emerald-400 dark:hover:bg-emerald-950/20">
+                            <button type="button" onClick={() => setConfirmRetryAll(true)} disabled={isRetryingAll} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-white px-3.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-900/60 dark:bg-slate-900 dark:text-emerald-400 dark:hover:bg-emerald-950/20">
                                 <RotateCcw size={13} className={isRetryingAll ? 'animate-spin' : ''} />
-                                <span>Retry failed ({failed + (totals.Canceled || 0)})</span>
+                                <span>
+                                    {t('admin:pacsSettings.aiQueue.retryFailedButton', {
+                                        defaultValue: 'Retry failed ({{count}})',
+                                        count: failed + (totals.Canceled || 0)
+                                    })}
+                                </span>
                             </button>
                         )}
                         {(queued > 0 || running > 0) && (
-                            <button type="button" onClick={handleCancelAll} disabled={isCancelingAll} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3.5 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/60 dark:bg-slate-900 dark:text-rose-400 dark:hover:bg-rose-950/20">
+                            <button type="button" onClick={() => setConfirmCancelAll(true)} disabled={isCancelingAll} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3.5 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/60 dark:bg-slate-900 dark:text-rose-400 dark:hover:bg-rose-950/20">
                                 <XCircle size={13} className={isCancelingAll ? 'animate-spin' : ''} />
-                                <span>Stop queue ({queued + running})</span>
+                                <span>
+                                    {t('admin:pacsSettings.aiQueue.stopQueueButton', {
+                                        defaultValue: 'Stop queue ({{count}})',
+                                        count: queued + running
+                                    })}
+                                </span>
                             </button>
                         )}
                         <button type="button" onClick={runQueue} disabled={isProcessing || (!queued && !running)} className={primaryButtonClass}>
@@ -916,10 +1341,10 @@ const PacsAiQueuePanel = ({ reveal = () => ({}) }) => {
                             <div className="flex min-w-0 items-start gap-2">
                                 {processor.status === 'ready' ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> : <AlertTriangle size={16} className="mt-0.5 shrink-0" />}
                                 <span>
-                                    {processor.message || 'PACS AI processor state is unknown.'}
+                                    {processor.message || t('admin:pacsSettings.aiQueue.processorUnknown', { defaultValue: 'PACS AI processor state is unknown.' })}
                                     {processor.status !== 'ready' && (
                                         <Link to="/settings?tab=ai" className="ms-2 font-black underline underline-offset-2">
-                                            Configure AI
+                                            {t('admin:pacsSettings.aiQueue.configureAi', { defaultValue: 'Configure AI' })}
                                         </Link>
                                     )}
                                 </span>
@@ -960,6 +1385,27 @@ const PacsAiQueuePanel = ({ reveal = () => ({}) }) => {
                     </div>
                 )}
             </section>
+
+            <ConfirmDialog
+                isOpen={confirmRetryAll}
+                onClose={() => setConfirmRetryAll(false)}
+                onConfirm={handleRetryAll}
+                title={t('admin:pacsSettings.aiQueue.retryAllTitle', { defaultValue: 'Retry all failed jobs' })}
+                message={t('admin:pacsSettings.aiQueue.retryAllConfirm', { defaultValue: 'Are you sure you want to re-queue all failed and canceled jobs?' })}
+                confirmText={t('admin:pacsSettings.aiQueue.retryAll', { defaultValue: 'Retry all' })}
+                variant="warning"
+                isLoading={isRetryingAll}
+            />
+            <ConfirmDialog
+                isOpen={confirmCancelAll}
+                onClose={() => setConfirmCancelAll(false)}
+                onConfirm={handleCancelAll}
+                title={t('admin:pacsSettings.aiQueue.cancelAllTitle', { defaultValue: 'Cancel all jobs' })}
+                message={t('admin:pacsSettings.aiQueue.cancelAllConfirm', { defaultValue: 'Are you sure you want to stop/cancel all queued and running jobs?' })}
+                confirmText={t('common:actions.stop', { defaultValue: 'Stop all' })}
+                variant="danger"
+                isLoading={isCancelingAll}
+            />
         </div>
     );
 };
@@ -969,6 +1415,7 @@ const PacsAiQueueRow = ({ job, locale, processor }) => {
     const [retryJob, { isLoading: isRetrying }] = useRetryPacsAiJobMutation();
     const [cancelJob, { isLoading: isCanceling }] = useCancelPacsAiJobMutation();
     const [deleteJob, { isLoading: isDeleting }] = useDeletePacsAiJobMutation();
+    const [pendingAction, setPendingAction] = useState(null);
 
     const handleRetry = async () => {
         try {
@@ -981,24 +1428,24 @@ const PacsAiQueueRow = ({ job, locale, processor }) => {
 
     const handleCancel = async () => {
         try {
-            if (confirm(t('admin:pacsSettings.aiQueue.cancelConfirm', { defaultValue: 'Are you sure you want to cancel this analysis job?' }))) {
-                await cancelJob(job.job_id).unwrap();
-                toast.success(t('admin:pacsSettings.aiQueue.jobCanceled', { defaultValue: 'Job canceled' }));
-            }
+            await cancelJob(job.job_id).unwrap();
+            toast.success(t('admin:pacsSettings.aiQueue.jobCanceled', { defaultValue: 'Job canceled' }));
         } catch (error) {
             toast.error(error?.data?.message || t('admin:pacsSettings.aiQueue.cancelError', { defaultValue: 'Failed to cancel job' }));
+            return false;
         }
+        return true;
     };
 
     const handleDelete = async () => {
         try {
-            if (confirm(t('admin:pacsSettings.aiQueue.deleteConfirm', { defaultValue: 'Are you sure you want to delete this job row?' }))) {
-                await deleteJob(job.job_id).unwrap();
-                toast.success(t('admin:pacsSettings.aiQueue.jobDeleted', { defaultValue: 'Job deleted' }));
-            }
+            await deleteJob(job.job_id).unwrap();
+            toast.success(t('admin:pacsSettings.aiQueue.jobDeleted', { defaultValue: 'Job deleted' }));
         } catch (error) {
             toast.error(error?.data?.message || t('admin:pacsSettings.aiQueue.deleteError', { defaultValue: 'Failed to delete job' }));
+            return false;
         }
+        return true;
     };
 
     const statusTone = job.status === 'Completed'
@@ -1028,6 +1475,7 @@ const PacsAiQueueRow = ({ job, locale, processor }) => {
     const effectiveModelVersion = job.model_version || processor?.modelVersion || '';
 
     return (
+        <>
         <tr className="align-top text-slate-700 dark:text-slate-200">
             <td className="px-4 py-3">
                 <p className="font-mono text-xs font-bold">{job.order_number || '-'}</p>
@@ -1076,7 +1524,7 @@ const PacsAiQueueRow = ({ job, locale, processor }) => {
                     {(job.status === 'Queued' || job.status === 'Running') && (
                         <button
                             type="button"
-                            onClick={handleCancel}
+                            onClick={() => setPendingAction('cancel')}
                             disabled={isCanceling}
                             className="inline-flex min-h-8 items-center justify-center gap-1 rounded-xl border border-rose-200 bg-white px-2.5 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/60 dark:bg-slate-900 dark:text-rose-400 dark:hover:bg-rose-950/20"
                             title={t('admin:pacsSettings.aiQueue.cancelJob', { defaultValue: 'Cancel job' })}
@@ -1099,7 +1547,7 @@ const PacsAiQueueRow = ({ job, locale, processor }) => {
                     )}
                     <button
                         type="button"
-                        onClick={handleDelete}
+                        onClick={() => setPendingAction('delete')}
                         disabled={isDeleting}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:border-rose-200 hover:text-rose-600 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-rose-900 dark:hover:text-rose-400"
                         title={t('admin:pacsSettings.aiQueue.deleteJob', { defaultValue: 'Delete job entry' })}
@@ -1109,6 +1557,27 @@ const PacsAiQueueRow = ({ job, locale, processor }) => {
                 </div>
             </td>
         </tr>
+        <ConfirmDialog
+            isOpen={pendingAction === 'cancel'}
+            onClose={() => setPendingAction(null)}
+            onConfirm={handleCancel}
+            title={t('admin:pacsSettings.aiQueue.cancelJob', { defaultValue: 'Cancel job' })}
+            message={t('admin:pacsSettings.aiQueue.cancelConfirm', { defaultValue: 'Are you sure you want to cancel this analysis job?' })}
+            confirmText={t('common:actions.cancel', { defaultValue: 'Cancel' })}
+            variant="warning"
+            isLoading={isCanceling}
+        />
+        <ConfirmDialog
+            isOpen={pendingAction === 'delete'}
+            onClose={() => setPendingAction(null)}
+            onConfirm={handleDelete}
+            title={t('admin:pacsSettings.aiQueue.deleteJob', { defaultValue: 'Delete job entry' })}
+            message={t('admin:pacsSettings.aiQueue.deleteConfirm', { defaultValue: 'Are you sure you want to delete this job row?' })}
+            confirmText={t('common:actions.delete', { defaultValue: 'Delete' })}
+            variant="danger"
+            isLoading={isDeleting}
+        />
+        </>
     );
 };
 
@@ -1241,6 +1710,7 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
     const { t, i18n } = useTranslation(['admin', 'common']);
     const { data, isLoading, isFetching, refetch } = useGetPacsStorageSummaryQuery();
     const [runTiering, { isLoading: isTiering }] = useRunPacsTieringMutation();
+    const [confirmTiering, setConfirmTiering] = useState(false);
     const tiers = data?.tiers || {};
     const index = data?.index || {};
     const orthanc = data?.orthanc || {};
@@ -1254,20 +1724,12 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
     const canRunTiering = Boolean(tiering.enabled) && eligibleInstances > 0 && !isTiering;
 
     const tierSweep = async () => {
-        const confirmed = window.confirm(t('admin:pacsSettings.storage.confirmTiering', {
-            defaultValue: 'Run a tiering sweep for eligible hot instances? This updates VIARA storage bookkeeping; it does not delete Orthanc files unless a deployment archiver is configured.'
-        }));
-        if (!confirmed) return;
-
         try {
             const result = await runTiering().unwrap();
-            toast.success(t('admin:pacsSettings.storage.tiered', {
-                defaultValue: `Tiering complete: ${result.migrated || 0} instance(s) migrated`,
-                count: result.migrated || 0
-            }));
+            toast.success(t('admin:pacsSettings.storage.tiered', { defaultValue: 'Data tiering completed: {{count}} items migrated', count: result.migrated || 0 }));
             refetch();
         } catch (error) {
-            toast.error(error?.data?.message || t('admin:pacsSettings.storage.tierError', { defaultValue: 'Failed to run tiering sweep' }));
+            toast.error(error?.data?.message || t('admin:pacsSettings.storage.tierError', { defaultValue: 'Failed to start data tiering' }));
         }
     };
 
@@ -1295,7 +1757,7 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
                             <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
                             {t('common:actions.refresh', { defaultValue: 'Refresh' })}
                         </button>
-                        <button type="button" onClick={tierSweep} disabled={!canRunTiering} className={primaryButtonClass}>
+                        <button type="button" onClick={() => setConfirmTiering(true)} disabled={!canRunTiering} className={primaryButtonClass}>
                             <Database size={14} className={isTiering ? 'animate-pulse' : ''} />
                             {t('admin:pacsSettings.storage.runTiering', { defaultValue: 'Run tiering sweep' })}
                         </button>
@@ -1375,6 +1837,19 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
                     </div>
                 )}
             </section>
+
+            <ConfirmDialog
+                isOpen={confirmTiering}
+                onClose={() => setConfirmTiering(false)}
+                onConfirm={tierSweep}
+                title={t('admin:pacsSettings.storage.tiering.title', { defaultValue: 'Run data tiering' })}
+                message={t('admin:pacsSettings.storage.confirmTiering', {
+                    defaultValue: 'Run a tiering sweep for eligible hot instances? This updates VIARA storage bookkeeping; it does not delete Orthanc files unless a deployment archiver is configured.'
+                })}
+                confirmText={t('admin:pacsSettings.storage.runTiering', { defaultValue: 'Run tiering' })}
+                variant="warning"
+                isLoading={isTiering}
+            />
         </div>
     );
 };
@@ -1484,17 +1959,21 @@ const PageState = ({ icon: Icon, title, spin = false }) => (
     </div>
 );
 
-const PacsSettings = () => {
-    const { t } = useTranslation(['admin', 'common']);
+const PacsSettings = ({ embedded = false }) => {
+    const { t, i18n } = useTranslation(['admin', 'common']);
     const [activeTab, setActiveTab] = useState('overview');
+    const language = i18n.resolvedLanguage || i18n.language;
+    const copy = (key, english, arabic) => t(key, {
+        defaultValue: localizedDefault(language, english, arabic)
+    });
 
     const tabs = [
-        { id: 'overview', label: t('admin:pacsSettings.tabs.overview', { defaultValue: 'Overview & Config' }), icon: Server },
-        { id: 'modalities', label: t('admin:pacsSettings.tabs.modalities', { defaultValue: 'DICOM Modalities' }), icon: Network },
-        { id: 'aiQueue', label: t('admin:pacsSettings.tabs.aiQueue', { defaultValue: 'PACS AI Queue' }), icon: BrainCircuit },
-        { id: 'worklist', label: t('admin:pacsSettings.tabs.worklist', { defaultValue: 'Modality Worklist' }), icon: ClipboardList },
-        { id: 'storage', label: t('admin:pacsSettings.tabs.storage', { defaultValue: 'Archive Storage' }), icon: Database },
-        { id: 'operations', label: t('admin:pacsSettings.tabs.operations', { defaultValue: 'Activity & Audit' }), icon: Activity }
+        { id: 'overview', label: copy('admin:pacsSettings.tabs.overview', 'Overview & Config', 'النظرة العامة والإعداد'), icon: Server },
+        { id: 'modalities', label: copy('admin:pacsSettings.tabs.modalities', 'DICOM Modalities', 'أجهزة DICOM'), icon: Network },
+        { id: 'aiQueue', label: copy('admin:pacsSettings.tabs.aiQueue', 'PACS AI Queue', 'طابور ذكاء PACS'), icon: BrainCircuit },
+        { id: 'worklist', label: copy('admin:pacsSettings.tabs.worklist', 'Modality Worklist', 'قائمة عمل الأجهزة'), icon: ClipboardList },
+        { id: 'storage', label: copy('admin:pacsSettings.tabs.storage', 'Archive Storage', 'تخزين الأرشيف'), icon: Database },
+        { id: 'operations', label: copy('admin:pacsSettings.tabs.operations', 'Activity & Audit', 'النشاط والتدقيق'), icon: Activity }
     ];
 
     const reveal = (delay = 0) => ({
@@ -1504,7 +1983,7 @@ const PacsSettings = () => {
     });
 
     return (
-        <div className="space-y-6">
+        <div className={embedded ? 'space-y-5 pb-0' : 'space-y-6'}>
             {/* VIARA Hero Command Deck */}
             <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8 space-y-6">
                 <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
@@ -1518,13 +1997,13 @@ const PacsSettings = () => {
                         <div className="min-w-0">
                             <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
                                 <Network size={11} />
-                                <span>DICOM Engine & Imaging Archive</span>
+                                <span>{copy('admin:pacsSettings.eyebrow', 'DICOM Engine & Imaging Archive', 'محرك DICOM وأرشيف الصور')}</span>
                             </span>
                             <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
-                                {t('admin:pacsSettings.title', { defaultValue: 'PACS & DICOM Server Network' })}
+                                {copy('admin:pacsSettings.title', 'PACS & DICOM Server Network', 'إعدادات PACS وشبكة DICOM')}
                             </h1>
                             <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
-                                {t('admin:pacsSettings.subtitle', { defaultValue: 'Orthanc server endpoints, scanner AET nodes, AI analysis queue, Modality Worklist, storage tiering, and DICOM audit logs.' })}
+                                {copy('admin:pacsSettings.subtitle', 'Orthanc server endpoints, scanner AET nodes, AI analysis queue, Modality Worklist, storage tiering, and DICOM audit logs.', 'إدارة نقاط Orthanc، وأجهزة AET، وطابور تحليل الصور، وقائمة العمل، والتخزين، وسجلات تدقيق DICOM من مكان واحد.')}
                             </p>
                         </div>
                     </div>

@@ -73,6 +73,7 @@ import { getErrorMessage } from '../utils/getErrorMessage';
 import { hasDeveloperOrAdminRole } from '../utils/roles';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
+import PageHeader from '../components/ui/PageHeader';
 import { inputClass } from '../utils/designTokens';
 
 import {
@@ -149,6 +150,7 @@ const ReportEditorPage = () => {
     const [amendmentMode, setAmendmentMode] = useState(false);
     const [amendmentReason, setAmendmentReason] = useState('');
     const [showFinalize, setShowFinalize] = useState(false);
+    const [criticalResult, setCriticalResult] = useState(false);
     const [pendingReportStatus, setPendingReportStatus] = useState(null);
     const [showTemplatePrompt, setShowTemplatePrompt] = useState(false);
     const [showExitConfirm, setShowExitConfirm] = useState(false);
@@ -279,7 +281,9 @@ const ReportEditorPage = () => {
     }, [qualityChecks]);
 
     dirtyRef.current = dirty;
-    useUnsavedChangesGuard(dirty, t);
+    // Object signature required by the hook: destructures { dirty, canSave, onSave }.
+    // Passing positional args silently disabled the beforeunload data-loss guard.
+    useUnsavedChangesGuard({ dirty });
 
     useEffect(() => {
         if (!fetchedExam) return;
@@ -305,13 +309,51 @@ const ReportEditorPage = () => {
 
     useEffect(() => {
         const handleKeyDown = (e) => {
-            if (e.key === 'Escape' && studyToolsDrawerOpen) {
-                setStudyToolsDrawerOpen(false);
+            const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+
+            // Ctrl/Cmd + S: Quick Save Report Draft
+            if (isCtrlOrMeta && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                if (editable) {
+                    saveTypedReport();
+                }
+                return;
+            }
+
+            // Ctrl/Cmd + Enter: Open Finalize & Sign Modal
+            if (isCtrlOrMeta && e.key === 'Enter') {
+                e.preventDefault();
+                if (canFinalize && !locked) {
+                    setShowFinalize(true);
+                }
+                return;
+            }
+
+            // Ctrl/Cmd + Space: Open Templates & Macros Selector
+            if (isCtrlOrMeta && (e.code === 'Space' || e.key === ' ')) {
+                e.preventDefault();
+                if (editable) {
+                    setShowTemplatePrompt(true);
+                }
+                return;
+            }
+
+            // Escape: Dismiss active drawers / modals
+            if (e.key === 'Escape') {
+                if (studyToolsDrawerOpen) setStudyToolsDrawerOpen(false);
+                if (showFinalize) setShowFinalize(false);
+                if (showTemplatePrompt) setShowTemplatePrompt(false);
+                if (showExitConfirm) setShowExitConfirm(false);
+                if (showExportDialog) setShowExportDialog(false);
             }
         };
+
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [studyToolsDrawerOpen]);
+    // saveTypedReport is intentionally resolved at keypress time; including the render-scoped
+    // handler would re-register the global shortcut after every editor keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [studyToolsDrawerOpen, editable, canFinalize, locked, showFinalize, showTemplatePrompt, showExitConfirm, showExportDialog, sections, selectedTemplateId, saveStatus]);
 
     const updateSection = useCallback((key, value, options = {}) => {
         if (!options.preserveImprovementUndo) setImprovementUndo(null);
@@ -524,8 +566,8 @@ const ReportEditorPage = () => {
         try {
             const payload = {
                 sections,
-                template_id: isUuid(selectedTemplateId) ? selectedTemplateId : undefined,
-                report_status: saveStatus
+                templateId: isUuid(selectedTemplateId) ? selectedTemplateId : undefined,
+                reportStatus: saveStatus
             };
             const updated = await updateReport({ examId, ...payload }).unwrap();
             setExam(updated);
@@ -543,8 +585,8 @@ const ReportEditorPage = () => {
         try {
             const payload = {
                 sections,
-                template_id: isUuid(selectedTemplateId) ? selectedTemplateId : undefined,
-                report_status: nextReportStatus
+                templateId: isUuid(selectedTemplateId) ? selectedTemplateId : undefined,
+                reportStatus: nextReportStatus
             };
             const updated = await updateReport({ examId, ...payload }).unwrap();
             setExam(updated);
@@ -565,13 +607,16 @@ const ReportEditorPage = () => {
         try {
             const payload = {
                 sections,
-                template_id: isUuid(selectedTemplateId) ? selectedTemplateId : undefined,
-                report_status: 'Finalized'
+                templateId: isUuid(selectedTemplateId) ? selectedTemplateId : undefined,
+                reportStatus: 'Finalized',
+                status: 'Finalized',
+                criticalResult
             };
             const updated = await updateReport({ examId, ...payload }).unwrap();
             setExam(updated);
             setBaseline({ ...sections });
             setShowFinalize(false);
+            setCriticalResult(false);
             toast.success(t('messages.finalized'));
             return true;
         } catch (error) {
@@ -674,6 +719,44 @@ const ReportEditorPage = () => {
         }
     };
 
+    const downloadPdfReport = async () => {
+        if (isOpeningPdf) return false;
+        setIsOpeningPdf(true);
+        try {
+            const baseUrl = import.meta.env.VITE_API_URL || '/api';
+            const query = new URLSearchParams({
+                format: 'pdf',
+                disposition: 'attachment',
+                reportHeader: reportDocument.reportHeader,
+                reportFooter: reportDocument.reportFooter,
+                includeHeader: String(reportDocument.includeHeader !== false),
+                includeFooter: String(reportDocument.includeFooter !== false),
+                includeSignature: String(reportDocument.includeSignature !== false)
+            });
+            const response = await authenticatedFetch(`${baseUrl}/exams/${examId}/report/pdf?${query.toString()}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            const patientStem = String(exam?.patient_name || 'Patient').replace(/[^a-zA-Z0-9_\u0600-\u06FF]+/g, '_');
+            const examStem = String(exam?.exam_type_name || 'Report').replace(/[^a-zA-Z0-9_\u0600-\u06FF]+/g, '_');
+            const orderStem = String(exam?.order_number || exam?.mrn || examId).replace(/[^a-zA-Z0-9_\u0600-\u06FF]+/g, '_');
+            anchor.download = `${patientStem}_${examStem}_${orderStem}.pdf`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+            toast.success(t('messages.pdfDownloaded', { defaultValue: 'PDF downloaded successfully' }));
+            return true;
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('messages.openError')));
+            return false;
+        } finally {
+            setIsOpeningPdf(false);
+        }
+    };
+
     const openPacsViewer = () => {
         if (!studyInstanceUid && !examId) return;
         const params = new URLSearchParams();
@@ -743,6 +826,19 @@ const ReportEditorPage = () => {
     return (
         <div className="space-y-4 pb-12" dir={isArabic ? 'rtl' : 'ltr'}>
             <ImageUploadOverlay progress={imageUploadProgress} t={t} />
+            <PageHeader
+                icon={PenLine}
+                eyebrow={isArabic ? 'مساحة إعداد التقرير' : 'Reporting workspace'}
+                title={studyTitle}
+                description={`${exam?.patient_name || '-'} · MRN ${exam?.mrn || '-'} · #${exam?.order_number || examId}`}
+                metrics={[
+                    { key: 'completion', icon: ClipboardCheck, label: isArabic ? 'اكتمال التقرير' : 'Report completion', value: `${completion}%`, tone: completion === 100 ? 'emerald' : 'teal' },
+                    { key: 'quality', icon: ShieldCheck, label: isArabic ? 'جودة التقرير' : 'Quality score', value: `${qualityScore}%`, tone: qualityScore >= 80 ? 'emerald' : 'amber' },
+                    { key: 'words', icon: FileText, label: isArabic ? 'عدد الكلمات' : 'Word count', value: reportWords, tone: 'blue' },
+                    { key: 'status', icon: locked ? LockKeyhole : Save, label: isArabic ? 'حالة السجل' : 'Record status', value: locked ? (isArabic ? 'نهائي ومغلق' : 'Finalized') : dirty ? (isArabic ? 'تغييرات غير محفوظة' : 'Unsaved') : (isArabic ? 'محفوظ' : 'Saved'), tone: locked || !dirty ? 'emerald' : 'rose' }
+                ]}
+                metricsLabel={isArabic ? 'مؤشرات سجل التقرير' : 'Report record indicators'}
+            />
 
             {/* Master Patient & Study Hero Deck */}
             <section className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
@@ -754,9 +850,9 @@ const ReportEditorPage = () => {
                         </span>
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                                <h1 className="text-base font-black text-slate-900 dark:text-white sm:text-lg truncate">
+                                <h2 className="text-base font-black text-slate-900 dark:text-white sm:text-lg truncate">
                                     {exam?.patient_name || '—'}
-                                </h1>
+                                </h2>
                                 <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${priorityTone[priorityKey] || priorityTone.Routine}`}>
                                     {priorityKey}
                                 </span>
@@ -1205,9 +1301,36 @@ const ReportEditorPage = () => {
                 confirmLabel={isArabic ? 'تأكيد وقفل التقرير' : 'Finalize & Lock'}
                 cancelLabel={isArabic ? 'إلغاء' : 'Cancel'}
                 onConfirm={finalizeReport}
-                onCancel={() => setShowFinalize(false)}
-                isDangerous={false}
-            />
+                onCancel={() => {
+                    setShowFinalize(false);
+                    setCriticalResult(false);
+                }}
+                variant={criticalResult ? 'warning' : 'info'}
+            >
+                <label className={`block rounded-xl border p-3 transition ${criticalResult
+                    ? 'border-red-400 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-200'
+                    : 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
+                    }`}>
+                    <span className="flex items-start gap-3">
+                        <input
+                            type="checkbox"
+                            checked={criticalResult}
+                            onChange={(event) => setCriticalResult(event.target.checked)}
+                            className="mt-1 h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
+                        />
+                        <span>
+                            <strong className="block text-sm">
+                                {isArabic ? 'نتيجة حرجة تتطلب تأكيد الاستلام' : 'Critical result requiring acknowledgement'}
+                            </strong>
+                            <span className="mt-1 block text-xs leading-5 opacity-80">
+                                {isArabic
+                                    ? 'فعّل هذا الخيار فقط عند وجود نتيجة حرجة مؤكدة. سيُنشئ النظام تنبيهات عاجلة وسجلات تأكيد استلام للمستلمين المسؤولين.'
+                                    : 'Select only for an explicitly confirmed critical finding. This creates urgent alerts and acknowledgement tasks for responsible recipients.'}
+                            </span>
+                        </span>
+                    </span>
+                </label>
+            </ConfirmDialog>
 
             {/* Template Prompt Dialog */}
             <TextPromptDialog
@@ -1242,6 +1365,7 @@ const ReportEditorPage = () => {
                 onClose={() => setShowExportDialog(false)}
                 onExportWord={exportWord}
                 onExportPdf={openPrintableReport}
+                onDownloadPdf={downloadPdfReport}
                 isExportingWord={isExportingWord}
                 isOpeningPdf={isOpeningPdf}
                 locked={locked}

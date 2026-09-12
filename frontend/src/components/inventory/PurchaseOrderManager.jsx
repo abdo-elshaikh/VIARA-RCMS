@@ -13,6 +13,7 @@ import {
 } from '../../store/api';
 import { selectCurrentUser } from '../../store/authSlice';
 import { getErrorMessage } from '../../utils/getErrorMessage';
+import { getEffectivePermissions } from '../../utils/effectivePermissions';
 import Modal from '../ui/Modal';
 
 const emptyLine = () => ({ itemId: '', orderedQuantity: '1', unitPrice: '0' });
@@ -24,7 +25,7 @@ const PurchaseOrderManager = () => {
     const copy = (key, options) => t(`inventory.purchaseOrders.${key}`, options);
     const locale = i18n.language.startsWith('ar') ? 'ar-EG' : 'en-EG';
     const user = useSelector(selectCurrentUser);
-    const effectivePermissions = new Set([...(user?.permissions || []), ...(user?.elevatedPermissions || [])]);
+    const effectivePermissions = getEffectivePermissions(user);
     const elevated = ['Developer', 'Admin'].includes(user?.role);
     const canManagePurchaseOrders = elevated || effectivePermissions.has('MANAGE_PURCHASE_ORDERS');
     const canReceiveStock = canManagePurchaseOrders || effectivePermissions.has('MANAGE_INVENTORY');

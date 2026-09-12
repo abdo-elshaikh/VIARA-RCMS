@@ -1,6 +1,7 @@
 const { AppError } = require('./errorHandler');
 const { logSecurityEvent } = require('../services/securityEventService');
 const { triggerEventForRole } = require('../services/notificationJobService');
+const { getGrantedEmergencyPermissions } = require('../services/emergencyAccessService');
 
 // Simple in-memory cache for role permissions to avoid DB hits on every request
 // In a distributed setup, this would be Redis.
@@ -18,6 +19,18 @@ const attachGrantedPermissions = (req, permissions = []) => {
         ...granted
     ]);
     req.user.permissions = Array.from(current);
+};
+
+const markEmergencyAccessUsed = async (db, req, permissions) => {
+    req.emergencyAccess = {
+        grantId: req.user.emergencyAccessId,
+        permissions
+    };
+    await db.query(`
+        UPDATE emergency_access_logs
+        SET last_used_at = NOW()
+        WHERE grant_id = $1 AND status = 'Active'
+    `, [req.user.emergencyAccessId]);
 };
 
 /**
@@ -76,10 +89,12 @@ const hasPermission = (db, requiredPermission) => {
             }
 
             // 1. Check Break-Glass / Elevated Permissions
-            if (elevatedPermissions
-                && Number(req.user.breakGlassExpiry) > Date.now()
-                && elevatedPermissions.includes(requiredPermission)) {
+            const emergencyPermissions = elevatedPermissions
+                ? await getGrantedEmergencyPermissions(db, req.user, [requiredPermission])
+                : [];
+            if (emergencyPermissions.includes(requiredPermission)) {
                 attachGrantedPermissions(req, [requiredPermission]);
+                await markEmergencyAccessUsed(db, req, [requiredPermission]);
                 return next();
             }
 
@@ -139,12 +154,13 @@ const hasAnyPermission = (db, requiredPermissions = []) => {
                 return next();
             }
 
-            if (elevatedPermissions && Number(req.user.breakGlassExpiry) > Date.now()) {
-                const grantedElevated = requiredPermissions.filter(permission => elevatedPermissions.includes(permission));
-                if (grantedElevated.length > 0) {
-                    attachGrantedPermissions(req, grantedElevated);
-                    return next();
-                }
+            const grantedElevated = elevatedPermissions
+                ? await getGrantedEmergencyPermissions(db, req.user, requiredPermissions)
+                : [];
+            if (grantedElevated.length > 0) {
+                attachGrantedPermissions(req, grantedElevated);
+                await markEmergencyAccessUsed(db, req, grantedElevated);
+                return next();
             }
 
             const permission = await db.query(`

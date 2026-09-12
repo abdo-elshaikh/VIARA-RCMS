@@ -226,6 +226,13 @@
     "Other": "Other"
   },
   "visitDetail": {
+    "metrics": {
+      "label": "Patient record summary",
+      "totalVisits": "Total visits",
+      "finalizedReports": "Finalized reports",
+      "pendingReports": "Pending reports",
+      "deliveredReports": "Delivered reports"
+    },
     "followUp": "Follow-up",
     "followUpContext": "Follow-up context",
     "priorStudy": "Prior study",

@@ -18,23 +18,24 @@ export const formatRelativeTime = (value, locale) => {
 };
 
 export const formatDuration = (minutes, locale = 'en') => {
-    const numMinutes = Number(minutes) || 0;
-    if (numMinutes < 60) {
-        return new Intl.NumberFormat(locale, { style: 'unit', unit: 'minute', unitDisplay: 'long' }).format(numMinutes);
-    } else if (numMinutes < 24 * 60) {
-        const hours = Math.round(numMinutes / 60);
-        return new Intl.NumberFormat(locale, { style: 'unit', unit: 'hour', unitDisplay: 'long' }).format(hours);
-    } else if (numMinutes < 7 * 24 * 60) {
-        const days = Math.round(numMinutes / (24 * 60));
-        return new Intl.NumberFormat(locale, { style: 'unit', unit: 'day', unitDisplay: 'long' }).format(days);
-    } else if (numMinutes < 30 * 24 * 60) {
-        const weeks = Math.round(numMinutes / (7 * 24 * 60));
-        return new Intl.NumberFormat(locale, { style: 'unit', unit: 'week', unitDisplay: 'long' }).format(weeks);
-    } else if (numMinutes < 365 * 24 * 60) {
-        const months = Math.round(numMinutes / (30 * 24 * 60));
-        return new Intl.NumberFormat(locale, { style: 'unit', unit: 'month', unitDisplay: 'long' }).format(months);
-    } else {
-        const years = Math.round(numMinutes / (365 * 24 * 60));
-        return new Intl.NumberFormat(locale, { style: 'unit', unit: 'year', unitDisplay: 'long' }).format(years);
+    const totalMinutes = Math.max(0, Math.round(Number(minutes) || 0));
+    const formatter = (value, unit) => new Intl.NumberFormat(locale, {
+        style: 'unit', unit, unitDisplay: 'long'
+    }).format(value);
+
+    if (totalMinutes < 60) return formatter(totalMinutes, 'minute');
+    if (totalMinutes < 24 * 60) {
+        const hours = Math.floor(totalMinutes / 60);
+        const remainingMinutes = totalMinutes % 60;
+        return remainingMinutes ? `${formatter(hours, 'hour')} ${formatter(remainingMinutes, 'minute')}` : formatter(hours, 'hour');
     }
+    if (totalMinutes < 7 * 24 * 60) {
+        const days = Math.floor(totalMinutes / (24 * 60));
+        const remainingHours = Math.floor((totalMinutes % (24 * 60)) / 60);
+        return remainingHours ? `${formatter(days, 'day')} ${formatter(remainingHours, 'hour')}` : formatter(days, 'day');
+    }
+
+    const weeks = Math.floor(totalMinutes / (7 * 24 * 60));
+    const remainingDays = Math.floor((totalMinutes % (7 * 24 * 60)) / (24 * 60));
+    return remainingDays ? `${formatter(weeks, 'week')} ${formatter(remainingDays, 'day')}` : formatter(weeks, 'week');
 };

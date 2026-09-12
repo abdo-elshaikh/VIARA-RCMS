@@ -23,6 +23,7 @@ export const DEFAULT_PREFERENCES = {
     firstDayOfWeek: 0, // 0: Sunday, 1: Monday
     startPage: '/dashboard',
     sessionTimeout: 15, // in minutes
+    organizationSessionTimeout: 30, // maximum inactivity policy set by administration
     calendarView: 'week',
     compactSidebar: false,
 
@@ -90,6 +91,7 @@ export const normalizePreferences = (value = {}) => {
         firstDayOfWeek: pick(Number(raw.firstDayOfWeek), [0, 1, 6], DEFAULT_PREFERENCES.firstDayOfWeek),
         startPage: toSafePath(raw.startPage, DEFAULT_PREFERENCES.startPage),
         sessionTimeout: pick(Number(raw.sessionTimeout), [0, 5, 15, 30], DEFAULT_PREFERENCES.sessionTimeout),
+        organizationSessionTimeout: toNumber(raw.organizationSessionTimeout, DEFAULT_PREFERENCES.organizationSessionTimeout, { min: 1, max: 1440 }),
         calendarView: pick(raw.calendarView, ['day', 'week', 'month'], DEFAULT_PREFERENCES.calendarView),
         compactSidebar: toBool(raw.compactSidebar, DEFAULT_PREFERENCES.compactSidebar),
         showNotificationBadge: toBool(raw.showNotificationBadge, DEFAULT_PREFERENCES.showNotificationBadge),

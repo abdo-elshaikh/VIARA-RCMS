@@ -4,6 +4,10 @@ const bcrypt = require('bcrypt');
 const { AppError } = require('../middleware/errorHandler');
 const { generateTokens } = require('./authController');
 const { triggerEventForRole } = require('../services/notificationJobService');
+const {
+    buildPortalNotificationEnvelope,
+    getPortalNotificationPage
+} = require('../utils/portalNotificationInbox');
 
 const decryptOptional = (value) => value ? decrypt(value) : '';
 const INVALID_LOGIN_ERROR = 'Invalid credentials';
@@ -590,23 +594,35 @@ const decryptStored = (value) => {
 const getMyNotifications = (db) => async (req, res, next) => {
     try {
         const patientId = req.user.userId;
-        const result = await db.query(`
-            SELECT notification_id, channel, event_type, subject, content,
-                   status, is_read, read_at, created_at
-            FROM notifications
-            WHERE patient_id = $1
-              AND channel = 'InApp'
-            ORDER BY created_at DESC
-            LIMIT 100
-        `, [patientId]);
+        const page = getPortalNotificationPage(req.query);
+        const [itemsResult, countsResult] = await Promise.all([
+            db.query(`
+                SELECT n.notification_id, n.channel, n.event_type, n.entity_id,
+                       n.subject, n.content, n.status, n.priority,
+                       n.is_read, n.read_at, n.created_at, ec.category
+                FROM notifications n
+                LEFT JOIN notification_event_catalog ec ON ec.event_type = n.event_type
+                WHERE n.patient_id = $1
+                  AND n.channel = 'InApp'
+                ORDER BY n.created_at DESC, n.notification_id DESC
+                LIMIT $2 OFFSET $3
+            `, [patientId, page.limit, page.offset]),
+            db.query(`
+                SELECT COUNT(*)::int AS total,
+                       COUNT(*) FILTER (WHERE is_read = FALSE)::int AS unread_count
+                FROM notifications
+                WHERE patient_id = $1
+                  AND channel = 'InApp'
+            `, [patientId])
+        ]);
 
-        const items = result.rows.map((row) => ({
-            ...row,
-            subject: decryptStored(row.subject),
-            content: decryptStored(row.content)
+        res.json(buildPortalNotificationEnvelope({
+            rows: itemsResult.rows,
+            counts: countsResult.rows[0],
+            persona: 'patient',
+            page,
+            decryptStored
         }));
-
-        res.json(items);
     } catch (error) {
         next(error);
     }

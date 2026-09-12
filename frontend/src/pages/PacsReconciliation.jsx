@@ -301,119 +301,32 @@ const PacsReconciliation = () => {
                         <span>{tr(t, 'actions.refresh', 'Refresh Queue', 'تحديث القائمة', isAr)}</span>
                     </button>
                 }
+                metrics={[
+                    { key: 'total', icon: Database, tone: 'teal', label: ar.pending, value: stats.total, loading: isLoading, error: isError },
+                    { key: 'visible', icon: FileSearch, tone: 'slate', label: ar.visible, value: stats.visible, loading: isLoading, error: isError },
+                    { key: 'critical', icon: AlertTriangle, tone: 'rose', label: ar.critical, value: stats.critical, onClick: () => { setTriageTab(triageTab === 'critical' ? 'all' : 'critical'); setReasonFilter(all); }, loading: isLoading, error: isError },
+                    { key: 'accession', icon: ClipboardCheck, tone: 'amber', label: ar.noAccession, value: stats.noAccession, onClick: () => { setTriageTab(triageTab === 'no_accession' ? 'all' : 'no_accession'); setReasonFilter(all); }, loading: isLoading, error: isError },
+                    { key: 'identity', icon: BadgeCheck, tone: 'emerald', label: ar.readyIdentity, value: stats.readyIdentity, onClick: () => { setTriageTab(triageTab === 'ready' ? 'all' : 'ready'); setReasonFilter(all); }, loading: isLoading, error: isError },
+                    { key: 'oldest', icon: CalendarClock, tone: 'sky', label: ar.oldest, value: stats.oldest, loading: isLoading, error: isError },
+                ]}
+                metricsLabel={isAr ? 'مؤشرات سجل مطابقة PACS' : 'PACS reconciliation record indicators'}
             />
 
-            {/* Top 6-Tile Telemetry Metric HUD */}
-            <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-                {/* 1. Pending */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                    <div className="flex items-center justify-between">
-                        <span className="grid h-8 w-8 place-items-center rounded-xl border border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300">
-                            <Database size={16} />
-                        </span>
-                        <span className="font-mono text-[9px] font-black uppercase text-teal-600 dark:text-teal-400">TOTAL</span>
-                    </div>
-                    <p className="mt-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{ar.pending}</p>
-                    <p className="mt-0.5 text-xl font-black tabular-nums text-slate-900 dark:text-white sm:text-2xl">{stats.total}</p>
-                </div>
-
-                {/* 2. Filtered Visible */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                    <div className="flex items-center justify-between">
-                        <span className="grid h-8 w-8 place-items-center rounded-xl border border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                            <FileSearch size={16} />
-                        </span>
-                        <span className="font-mono text-[9px] font-black uppercase text-slate-500">FILTER</span>
-                    </div>
-                    <p className="mt-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{ar.visible}</p>
-                    <p className="mt-0.5 text-xl font-black tabular-nums text-slate-900 dark:text-white sm:text-2xl">{stats.visible}</p>
-                </div>
-
-                {/* 3. Critical */}
-                <div
-                    onClick={() => { setTriageTab(triageTab === 'critical' ? 'all' : 'critical'); setReasonFilter(all); }}
-                    className={`cursor-pointer rounded-2xl border p-3.5 shadow-sm backdrop-blur-xl transition-all duration-200 hover:shadow-md ${
-                        triageTab === 'critical'
-                            ? 'border-rose-500 bg-rose-50/90 ring-2 ring-rose-500/20 dark:bg-rose-950/40'
-                            : 'border-slate-200/80 bg-white/90 dark:border-slate-800 dark:bg-slate-900/90'
-                    }`}
-                >
-                    <div className="flex items-center justify-between">
-                        <span className="grid h-8 w-8 place-items-center rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300">
-                            <AlertTriangle size={16} />
-                        </span>
-                        <span className="font-mono text-[9px] font-black uppercase text-rose-600 dark:text-rose-400">STAT</span>
-                    </div>
-                    <p className="mt-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{ar.critical}</p>
-                    <p className="mt-0.5 text-xl font-black tabular-nums text-slate-900 dark:text-white sm:text-2xl">{stats.critical}</p>
-                </div>
-
-                {/* 4. Missing Accession */}
-                <div
-                    onClick={() => { setTriageTab(triageTab === 'no_accession' ? 'all' : 'no_accession'); setReasonFilter(all); }}
-                    className={`cursor-pointer rounded-2xl border p-3.5 shadow-sm backdrop-blur-xl transition-all duration-200 hover:shadow-md ${
-                        triageTab === 'no_accession'
-                            ? 'border-amber-500 bg-amber-50/90 ring-2 ring-amber-500/20 dark:bg-amber-950/40'
-                            : 'border-slate-200/80 bg-white/90 dark:border-slate-800 dark:bg-slate-900/90'
-                    }`}
-                >
-                    <div className="flex items-center justify-between">
-                        <span className="grid h-8 w-8 place-items-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300">
-                            <ClipboardCheck size={16} />
-                        </span>
-                        <span className="font-mono text-[9px] font-black uppercase text-amber-600 dark:text-amber-400">NO ACC</span>
-                    </div>
-                    <p className="mt-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{ar.noAccession}</p>
-                    <p className="mt-0.5 text-xl font-black tabular-nums text-slate-900 dark:text-white sm:text-2xl">{stats.noAccession}</p>
-                </div>
-
-                {/* 5. Ready Identity */}
-                <div
-                    onClick={() => { setTriageTab(triageTab === 'ready' ? 'all' : 'ready'); setReasonFilter(all); }}
-                    className={`cursor-pointer rounded-2xl border p-3.5 shadow-sm backdrop-blur-xl transition-all duration-200 hover:shadow-md ${
-                        triageTab === 'ready'
-                            ? 'border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-500/20 dark:bg-emerald-950/40'
-                            : 'border-slate-200/80 bg-white/90 dark:border-slate-800 dark:bg-slate-900/90'
-                    }`}
-                >
-                    <div className="flex items-center justify-between">
-                        <span className="grid h-8 w-8 place-items-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                            <BadgeCheck size={16} />
-                        </span>
-                        <span className="font-mono text-[9px] font-black uppercase text-emerald-600 dark:text-emerald-400">READY</span>
-                    </div>
-                    <p className="mt-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{ar.readyIdentity}</p>
-                    <p className="mt-0.5 text-xl font-black tabular-nums text-slate-900 dark:text-white sm:text-2xl">{stats.readyIdentity}</p>
-                </div>
-
-                {/* 6. Oldest Received */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                    <div className="flex items-center justify-between">
-                        <span className="grid h-8 w-8 place-items-center rounded-xl border border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300">
-                            <CalendarClock size={16} />
-                        </span>
-                        <span className="font-mono text-[9px] font-black uppercase text-sky-600 dark:text-sky-400">OLDEST</span>
-                    </div>
-                    <p className="mt-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{ar.oldest}</p>
-                    <p className="mt-0.5 truncate font-mono text-xs font-bold text-slate-800 dark:text-slate-200">{stats.oldest}</p>
-                </div>
-            </section>
-
             {/* Main Workbench: Search, Filters & Triage Chips */}
-            <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-4 space-y-3">
+            <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 shadow-sm backdrop-blur-xl dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] sm:p-4 space-y-3">
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_200px_180px_160px_auto]">
                     {/* Search Field */}
                     <div className="relative">
-                        <Search size={16} className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Search size={16} className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
                         <input
                             type="text"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             placeholder={ar.searchPlaceholder}
-                            className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 ps-10 pe-4 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-slate-950/40 dark:text-white"
+                            className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 ps-10 pe-4 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:placeholder:text-[var(--VIARA-muted)]"
                         />
                         {query && (
-                            <button type="button" onClick={() => setQuery('')} className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                            <button type="button" onClick={() => setQuery('')} className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300">
                                 <X size={14} />
                             </button>
                         )}
@@ -423,7 +336,7 @@ const PacsReconciliation = () => {
                     <select
                         value={reasonFilter}
                         onChange={(e) => setReasonFilter(e.target.value)}
-                        className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-white"
+                        className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)]"
                     >
                         <option value="all">{ar.allReasons}</option>
                         {reasonOptions.map((r) => (
@@ -435,7 +348,7 @@ const PacsReconciliation = () => {
                     <select
                         value={modalityFilter}
                         onChange={(e) => setModalityFilter(e.target.value)}
-                        className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-white"
+                        className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)]"
                     >
                         <option value="all">{ar.allModalities}</option>
                         {modalityOptions.map((m) => (
@@ -447,7 +360,7 @@ const PacsReconciliation = () => {
                     <select
                         value={sortMode}
                         onChange={(e) => setSortMode(e.target.value)}
-                        className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-white"
+                        className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)]"
                     >
                         <option value="priority">{isAr ? 'الأولوية أولاً' : 'Highest Risk First'}</option>
                         <option value="newest">{isAr ? 'الأحدث استلاماً' : 'Newest Received'}</option>
@@ -459,7 +372,7 @@ const PacsReconciliation = () => {
                         <button
                             type="button"
                             onClick={() => { setQuery(''); setReasonFilter(all); setModalityFilter(all); setTriageTab('all'); }}
-                            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-200 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-muted)] dark:text-slate-300 dark:hover:bg-[var(--VIARA-surface-hover)]"
                         >
                             <FilterX size={14} />
                             <span>{ar.clear}</span>
@@ -483,12 +396,12 @@ const PacsReconciliation = () => {
                                 onClick={() => setTriageTab(tab.id)}
                                 className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition-all ${
                                     isActive
-                                        ? 'bg-slate-900 text-white shadow-xs dark:bg-white dark:text-slate-950'
-                                        : 'border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+                                        ? 'bg-slate-900 text-white shadow-xs dark:bg-emerald-500 dark:text-slate-950'
+                                        : 'border border-slate-200/80 bg-white text-slate-600 hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-slate-300 dark:hover:bg-[var(--VIARA-surface-hover)]'
                                 }`}
                             >
                                 <span>{tab.label}</span>
-                                <span className={`rounded-md px-1.5 py-0.2 text-[10px] font-mono ${isActive ? 'bg-white/20 dark:bg-slate-900/20' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                                <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-mono ${isActive ? 'bg-white/20 dark:bg-slate-950/20' : 'bg-slate-100 dark:bg-[var(--VIARA-surface-muted)]'}`}>
                                     {tab.count}
                                 </span>
                             </button>
@@ -502,19 +415,19 @@ const PacsReconciliation = () => {
                 {/* Left/Main Study Feed */}
                 <div className="space-y-3">
                     {isLoading ? (
-                        <div className="flex min-h-[360px] items-center justify-center rounded-2xl border border-slate-200/80 bg-white/90 dark:border-slate-800 dark:bg-slate-900/90">
+                        <div className="flex min-h-[360px] items-center justify-center rounded-2xl border border-slate-200/80 bg-white/90 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]">
                             <div className="flex flex-col items-center gap-3">
-                                <Loader2 size={32} className="animate-spin text-teal-600 dark:text-teal-400" />
+                                <Loader2 size={32} className="animate-spin text-teal-600 dark:text-emerald-400" />
                                 <p className="text-sm font-bold text-slate-600 dark:text-slate-400">Loading quarantine studies...</p>
                             </div>
                         </div>
                     ) : visibleStudies.length === 0 ? (
-                        <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-8 text-center shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                            <ShieldCheck size={40} className="mx-auto text-emerald-600" />
-                            <h3 className="mt-3 text-base font-black text-slate-900 dark:text-white">
+                        <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-8 text-center shadow-sm backdrop-blur-xl dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]">
+                            <ShieldCheck size={40} className="mx-auto text-emerald-600 dark:text-emerald-400" />
+                            <h3 className="mt-3 text-base font-black text-slate-900 dark:text-[var(--VIARA-ink)]">
                                 {isAr ? 'لا توجد دراسات في الحجر الصحي مطابقة للبحث' : 'No matching studies in quarantine'}
                             </h3>
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            <p className="mt-1 text-xs text-slate-500 dark:text-[var(--VIARA-muted)]">
                                 {isAr ? 'جميع الدراسات الواردة تم ربطها بنجاح مع أوامر الفحص المجدولة.' : 'Inbound imaging series are automatically verified and linked.'}
                             </p>
                         </div>
@@ -528,7 +441,7 @@ const PacsReconciliation = () => {
                                 return (
                                     <article
                                         key={study.quarantine_id}
-                                        className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl transition-all duration-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/90 sm:p-5"
+                                        className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl transition-all duration-200 hover:shadow-md dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] sm:p-5"
                                     >
                                         {/* Left/Right Colored Acuity Stripe */}
                                         <div className={`absolute inset-y-0 start-0 w-1.5 ${isCritical ? 'bg-rose-500' : isWarning ? 'bg-amber-400' : 'bg-teal-500'}`} />
@@ -537,17 +450,17 @@ const PacsReconciliation = () => {
                                             {/* Patient & Reason Column */}
                                             <div className="min-w-0 flex-1 space-y-2.5">
                                                 <div className="flex flex-wrap items-center gap-2">
-                                                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-black text-xs">
+                                                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700 dark:bg-[var(--VIARA-surface-muted)] dark:text-[var(--VIARA-ink)] font-black text-xs">
                                                         <User size={16} />
                                                     </div>
                                                     <div>
-                                                        <h3 className="truncate text-sm font-black text-slate-900 dark:text-white sm:text-base">
+                                                        <h3 className="truncate text-sm font-black text-slate-900 dark:text-[var(--VIARA-ink)] sm:text-base">
                                                             {study.raw_patient_name || missing}
                                                         </h3>
-                                                        <p className="flex items-center gap-2 font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                                                            <span>MRN: <strong className="text-slate-800 dark:text-slate-200">{study.raw_patient_id || missing}</strong></span>
+                                                        <p className="flex items-center gap-2 font-mono text-[11px] font-semibold text-slate-500 dark:text-[var(--VIARA-muted)]">
+                                                            <span>MRN: <strong className="text-slate-800 dark:text-[var(--VIARA-ink)]">{study.raw_patient_id || missing}</strong></span>
                                                             <span>·</span>
-                                                            <span className="inline-flex items-center gap-1 rounded bg-teal-500/10 px-1.5 py-0.2 font-black text-teal-700 dark:text-teal-300">
+                                                            <span className="inline-flex items-center gap-1 rounded bg-teal-500/10 px-1.5 py-0.5 font-black text-teal-700 dark:text-emerald-300 dark:bg-emerald-500/15">
                                                                 {study.modality || 'DX'}
                                                             </span>
                                                         </p>
@@ -555,26 +468,26 @@ const PacsReconciliation = () => {
                                                 </div>
 
                                                 {/* DICOM Header Metadata Box */}
-                                                <div className="rounded-xl border border-slate-200/70 bg-slate-50/70 p-2.5 dark:border-slate-800 dark:bg-slate-950/40 text-xs font-mono">
+                                                <div className="rounded-xl border border-slate-200/70 bg-slate-50/70 p-2.5 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] text-xs font-mono">
                                                     <div className="grid gap-1.5 sm:grid-cols-2">
                                                         <div className="flex items-center justify-between gap-2 overflow-hidden">
                                                             <span className="text-[10px] font-bold uppercase text-slate-400">Accession:</span>
-                                                            <span className="truncate font-bold text-slate-800 dark:text-slate-200">
+                                                            <span className="truncate font-bold text-slate-800 dark:text-[var(--VIARA-ink)]">
                                                                 {study.raw_accession_number || missing}
                                                             </span>
                                                             {study.raw_accession_number && (
-                                                                <button type="button" onClick={() => copyValue(study.raw_accession_number)} className="text-slate-400 hover:text-teal-600">
+                                                                <button type="button" onClick={() => copyValue(study.raw_accession_number)} className="text-slate-400 hover:text-teal-600 dark:hover:text-emerald-400">
                                                                     <Copy size={11} />
                                                                 </button>
                                                             )}
                                                         </div>
                                                         <div className="flex items-center justify-between gap-2 overflow-hidden">
                                                             <span className="text-[10px] font-bold uppercase text-slate-400">Study UID:</span>
-                                                            <span className="truncate font-bold text-slate-800 dark:text-slate-200" title={study.study_instance_uid}>
+                                                            <span className="truncate font-bold text-slate-800 dark:text-[var(--VIARA-ink)]" title={study.study_instance_uid}>
                                                                 {study.study_instance_uid ? `...${study.study_instance_uid.slice(-16)}` : missing}
                                                             </span>
                                                             {study.study_instance_uid && (
-                                                                <button type="button" onClick={() => copyValue(study.study_instance_uid)} className="text-slate-400 hover:text-teal-600">
+                                                                <button type="button" onClick={() => copyValue(study.study_instance_uid)} className="text-slate-400 hover:text-teal-600 dark:hover:text-emerald-400">
                                                                     <Copy size={11} />
                                                                 </button>
                                                             )}
@@ -593,7 +506,7 @@ const PacsReconciliation = () => {
                                                         <span>{ar.reasons[reason] || reason}</span>
                                                     </span>
 
-                                                    <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 font-mono text-[10.5px] font-black text-emerald-700 dark:text-emerald-300">
+                                                    <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 font-mono text-[10.5px] font-black text-emerald-700 dark:text-emerald-300 dark:bg-emerald-500/15">
                                                         <CheckCircle2 size={12} />
                                                         <span>{study.__identityScore}/4 Ready</span>
                                                     </span>
@@ -606,13 +519,13 @@ const PacsReconciliation = () => {
                                             </div>
 
                                             {/* Action Buttons Column */}
-                                            <div className="flex flex-row lg:flex-col items-stretch gap-2 shrink-0 border-t border-slate-100 pt-3 lg:border-t-0 lg:pt-0 lg:ps-4">
+                                            <div className="flex flex-row lg:flex-col items-stretch gap-2 shrink-0 border-t border-slate-100 pt-3 lg:border-t-0 lg:pt-0 lg:ps-4 dark:border-[var(--VIARA-line)]">
                                                 {/* Primary Match & Link Action Button */}
                                                 <button
                                                     type="button"
                                                     onClick={() => setActiveStudy(study)}
                                                     disabled={busy}
-                                                    className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-4 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95 disabled:opacity-50 min-w-[140px]"
+                                                    className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-4 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95 disabled:opacity-50 min-w-[140px] dark:bg-emerald-600 dark:hover:bg-emerald-500"
                                                 >
                                                     <Link2 size={14} />
                                                     <span>{ar.link}</span>
@@ -635,7 +548,7 @@ const PacsReconciliation = () => {
                             })}
 
                             {visibleStudies.length > 0 && (
-                                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+                                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 shadow-sm backdrop-blur-xl dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]">
                                     <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
                                         <span>
                                             {isAr
@@ -649,7 +562,7 @@ const PacsReconciliation = () => {
                                         <select
                                             value={pageSize}
                                             onChange={(e) => setPageSize(Number(e.target.value))}
-                                            className="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                            className="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)]"
                                         >
                                             {[5, 10, 20, 50].map((size) => (
                                                 <option key={size} value={size}>{size}</option>
@@ -672,10 +585,10 @@ const PacsReconciliation = () => {
                 {/* Right Sidebar: Analytics & Protocol Advice */}
                 <aside className="space-y-4">
                     {/* Triage Profile */}
-                    <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+                    <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]">
                         <div className="flex items-center gap-2 mb-3">
                             <AlertTriangle size={15} className="text-amber-500" />
-                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-[var(--VIARA-ink)]">
                                 {ar.triageTitle}
                             </h3>
                         </div>
@@ -687,12 +600,12 @@ const PacsReconciliation = () => {
                                     onClick={() => setReasonFilter(reasonFilter === r ? all : r)}
                                     className={`flex w-full items-center justify-between rounded-xl border p-2.5 text-start text-xs font-semibold transition ${
                                         reasonFilter === r
-                                            ? 'border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-950/30 dark:text-teal-300'
-                                            : 'border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800'
+                                            ? 'border-teal-500 bg-teal-50 text-teal-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300'
+                                            : 'border-slate-100 hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:hover:bg-[var(--VIARA-surface-muted)] dark:text-slate-300'
                                     }`}
                                 >
                                     <span className="truncate">{ar.reasons[r] || r}</span>
-                                    <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-black text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                    <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-black text-slate-700 dark:bg-[var(--VIARA-surface-muted)] dark:text-slate-300">
                                         {reasonCounts[r]}
                                     </span>
                                 </button>
@@ -701,10 +614,10 @@ const PacsReconciliation = () => {
                     </div>
 
                     {/* Modality Breakdown */}
-                    <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+                    <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]">
                         <div className="flex items-center gap-2 mb-3">
-                            <Network size={15} className="text-teal-600" />
-                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                            <Network size={15} className="text-teal-600 dark:text-emerald-400" />
+                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-[var(--VIARA-ink)]">
                                 {ar.modalityTitle}
                             </h3>
                         </div>
@@ -718,8 +631,8 @@ const PacsReconciliation = () => {
                                             <span>{m}</span>
                                             <span className="font-mono text-slate-400">{cnt} ({pct}%)</span>
                                         </div>
-                                        <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                                            <div className="h-full bg-teal-600 rounded-full" style={{ width: `${pct}%` }} />
+                                        <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-[var(--VIARA-surface-muted)] overflow-hidden">
+                                            <div className="h-full bg-teal-600 dark:bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
                                         </div>
                                     </div>
                                 );
@@ -728,24 +641,24 @@ const PacsReconciliation = () => {
                     </div>
 
                     {/* Resolution Protocol */}
-                    <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+                    <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]">
                         <div className="flex items-center gap-2 mb-3">
-                            <ShieldCheck size={15} className="text-emerald-600" />
-                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                            <ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400" />
+                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-[var(--VIARA-ink)]">
                                 {ar.protocolTitle}
                             </h3>
                         </div>
                         <ol className="space-y-2.5 text-xs font-medium text-slate-600 dark:text-slate-300">
                             <li className="flex gap-2">
-                                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-teal-500/15 text-[10px] font-black text-teal-700 dark:text-teal-300">1</span>
+                                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-teal-500/15 text-[10px] font-black text-teal-700 dark:bg-emerald-500/20 dark:text-emerald-300">1</span>
                                 <span>تحقق من مطابقة اسم المريض ورقم الملف (MRN) ونوع الفحص.</span>
                             </li>
                             <li className="flex gap-2">
-                                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-teal-500/15 text-[10px] font-black text-teal-700 dark:text-teal-300">2</span>
+                                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-teal-500/15 text-[10px] font-black text-teal-700 dark:bg-emerald-500/20 dark:text-emerald-300">2</span>
                                 <span>استخدم زر <strong>مطابقة الفحص</strong> للبحث في الفحوصات المجدولة وربط الدراسة فوراً.</span>
                             </li>
                             <li className="flex gap-2">
-                                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-teal-500/15 text-[10px] font-black text-teal-700 dark:text-teal-300">3</span>
+                                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-teal-500/15 text-[10px] font-black text-teal-700 dark:bg-emerald-500/20 dark:text-emerald-300">3</span>
                                 <span>استبعد الدراسات المكررة أو غير الصالحة بالضغط على <strong>استبعاد</strong>.</span>
                             </li>
                         </ol>

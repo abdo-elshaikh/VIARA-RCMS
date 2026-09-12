@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import {
@@ -11,6 +11,7 @@ import {
     Calendar,
     CalendarOff,
     ChevronLeft,
+    ChevronDown,
     ChevronRight,
     ClipboardList,
     ClipboardCheck,
@@ -32,8 +33,9 @@ import {
 import { logOut, selectCurrentUser } from '../../store/authSlice';
 import { api, useGetCenterSettingsQuery } from '../../store/api';
 import { normalizeCenterSettings } from '../../utils/centerSettings';
-import { getNavigationRoutes } from '../../config/routes';
+import { getAccessibleNavigationTree } from '../../config/routes';
 import { VIARA_BRAND } from '../../config/brand';
+import { confirmNavigation } from '../../utils/navigationGuard';
 
 const CATEGORY_STYLES = {
     clinical: {
@@ -69,32 +71,74 @@ const CATEGORY_STYLES = {
 const ICONS = { Activity, Banknote, Bell, Briefcase, Calendar, CalendarOff, ClipboardCheck, ClipboardList, FileBarChart, HelpCircle, LayoutDashboard, Megaphone, MessageSquare, Monitor, Package, Settings, ShieldCheck, TrendingUp, UserCircle, Users };
 const NAVIGATION_ORDER = {
     clinical: ['/dashboard', '/reception', '/communications', '/notifications', '/appointments', '/referring-doctors', '/worklist', '/modality', '/nurse', '/pacs/reconciliation', '/case-reports'],
-    management: ['/approvals', '/patients', '/admin', '/financials', '/payroll', '/insurance', '/inventory', '/equipment', '/hr', '/marketing', '/users'],
+    management: ['/approvals', '/patients', '/admin', '/financials', '/payroll', '/insurance', '/inventory', '/equipment', '/hr', '/marketing', '/users', '/user-activity'],
     reports: ['/analytics'],
-    system: ['/settings', '/help'],
+    system: ['/settings', '/display/control', '/help'],
 };
 
 const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButtonRef }) => {
     const dispatch = useDispatch();
     const navigate = useNavigate();
+    const location = useLocation();
     const user = useSelector(selectCurrentUser);
     const { t, i18n } = useTranslation(['navigation', 'common']);
     const isRtl = i18n.dir() === 'rtl';
     const [isSignOutOpen, setIsSignOutOpen] = useState(false);
+    const [expandedGroups, setExpandedGroups] = useState(() => {
+        try {
+            const saved = JSON.parse(localStorage.getItem('sidebar-expanded-groups') || '{}');
+            return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+        } catch { return {}; }
+    });
     const { data: rawCenterSettings } = useGetCenterSettingsQuery();
+    useEffect(() => {
+        setExpandedGroups((current) => ({ ...current, [location.pathname]: true }));
+    }, [location.pathname]);
     const centerSettings = useMemo(() => normalizeCenterSettings(rawCenterSettings), [rawCenterSettings]);
     const effectiveRole = user?.role || role;
     const brandInitials = String(centerSettings.center_name || VIARA_BRAND.name).trim().slice(0, 4).toUpperCase();
     const userInitial = String(user?.name || effectiveRole || 'U').trim().charAt(0).toUpperCase();
 
-    const navItems = useMemo(() => Object.entries(NAVIGATION_ORDER).map(([key, paths]) => ({
-        key,
-        group: t(`groups.${key}`),
-        items: paths.map((to) => {
-            const route = getNavigationRoutes().find((item) => item.to === to);
-            return { ...route, icon: ICONS[route.iconId], label: t(`items.${route.key}`, { defaultValue: route.key === 'communications' ? 'Inbox & Chat' : route.key === 'approvals' ? 'Approval Inbox' : undefined }) };
-        }),
-    })), [t]);
+    const navItems = useMemo(() => {
+        const accessibleRoutes = getAccessibleNavigationTree({ ...(user || {}), role: effectiveRole });
+        const routesByPath = new Map(accessibleRoutes.map((route) => [route.to, route]));
+        return Object.entries(NAVIGATION_ORDER).map(([key, paths]) => ({
+            key,
+            group: t(`groups.${key}`),
+            items: paths.map((to) => routesByPath.get(to)).filter(Boolean).map((route) => ({
+                ...route,
+                icon: ICONS[route.iconId] || LayoutDashboard,
+                label: t(`items.${route.key}`, { defaultValue: route.key === 'communications' ? 'Inbox & Chat' : route.key === 'approvals' ? 'Approval Inbox' : undefined }),
+                children: route.children.map((child) => ({ ...child, label: t(`items.${child.key}`, { defaultValue: child.key }) }))
+            })),
+        })).filter((group) => group.items.length > 0);
+    }, [effectiveRole, t, user]);
+
+    const isChildActive = (to) => {
+        const [path, query] = to.split('?');
+        if (location.pathname !== path) return false;
+        return new URLSearchParams(query || '').get('tab') === new URLSearchParams(location.search).get('tab');
+    };
+
+    const isGroupExpanded = (item) => expandedGroups[item.to] ?? (location.pathname === item.to);
+    const toggleGroup = (item) => {
+        setExpandedGroups((current) => {
+            const next = { ...current, [item.to]: !isGroupExpanded(item) };
+            try { localStorage.setItem('sidebar-expanded-groups', JSON.stringify(next)); } catch { /* Storage is optional. */ }
+            return next;
+        });
+    };
+
+    const handleNavigation = (event, item) => {
+        // Let the browser handle new-tab/window gestures without closing this drawer.
+        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        if (!confirmNavigation()) { event.preventDefault(); return; }
+        if (item?.children.length) {
+            setExpandedGroups((current) => ({ ...current, [item.to]: true }));
+            if (isCollapsed) toggleCollapse?.();
+        }
+        onCloseMobile?.();
+    };
 
     const handleLogout = () => {
         setIsSignOutOpen(true);
@@ -120,16 +164,16 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButton
     const activeBarRadius = isRtl ? 'rounded-l-full' : 'rounded-r-full';
 
     return (
-        <aside className="app-sidebar-panel relative flex h-full flex-col overflow-visible border-e border-white/10 bg-[linear-gradient(180deg,#063E30,#0B1F1A)] text-emerald-50 transition-all duration-300 select-none dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-canvas)] dark:text-[var(--VIARA-ink)]">
+        <aside className="app-sidebar-panel relative flex h-full flex-col overflow-visible border-e text-emerald-50 transition-all duration-300 select-none dark:text-[var(--VIARA-ink)]">
             <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-44 bg-[radial-gradient(circle_at_top,rgba(var(--VIARA-accent-rgb),.09),transparent_72%)] opacity-0 dark:opacity-100" />
             {/* Header / Brand Section */}
-            <div className={`relative flex h-[76px] shrink-0 items-center border-b border-white/10 bg-[linear-gradient(180deg,#063E30,#0B1F1A)] text-white transition-all duration-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] ${isCollapsed ? 'justify-center px-0' : 'justify-between px-4'}`}>
+            <div className={`app-sidebar-header relative flex h-[76px] shrink-0 items-center border-b transition-all duration-300 ${isCollapsed ? 'justify-center px-0' : 'justify-between px-4'}`}>
                 <div className="flex min-w-0 items-center gap-3 overflow-hidden">
-                    <div className="relative flex h-10 w-10 min-w-[2.5rem] items-center justify-center rounded-xl bg-white text-[var(--viara-primary-dark)] shadow-md shadow-black/20 ring-1 ring-white/25 transition-transform duration-300 hover:scale-105 dark:bg-[var(--VIARA-surface-muted)] dark:text-[var(--VIARA-accent-text)] dark:shadow-none dark:ring-[var(--VIARA-line)]">
+                    <div className="sidebar-brand-mark relative flex h-10 w-10 min-w-[2.5rem] items-center justify-center rounded-xl p-1 transition-transform duration-300 hover:scale-105">
                         {centerSettings.logo_url ? (
-                            <img src={centerSettings.logo_url} alt="" className="h-7 w-7 rounded-lg object-contain" />
+                            <img src={centerSettings.logo_url} alt="" className="h-8 w-8 object-contain" />
                         ) : (
-                            <span className="text-xs font-black tracking-wider">{brandInitials}</span>
+                            <span className="text-xs font-black tracking-wider text-teal-800">{brandInitials}</span>
                         )}
                         <span className="absolute -bottom-0.5 -end-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-white dark:ring-[var(--VIARA-surface)]">
                             <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
@@ -138,10 +182,10 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButton
 
                     {!isCollapsed && (
                         <div className="min-w-0 animate-in fade-in slide-in-from-start-3 duration-300">
-                            <h1 className="truncate text-sm font-bold tracking-tight text-white dark:text-[var(--VIARA-ink)]">
+                            <h1 className="sidebar-primary-copy truncate text-sm font-bold tracking-tight">
                                 {centerSettings.center_name || t('app.name', { ns: 'common', defaultValue: VIARA_BRAND.name })}
                             </h1>
-                            <p className={`truncate text-[10px] font-bold text-emerald-100/80 dark:text-[var(--VIARA-muted)] ${isRtl ? 'tracking-normal' : 'uppercase tracking-[.12em]'}`}>
+                             <p className={`sidebar-muted-copy truncate text-[10px] font-bold ${isRtl ? 'tracking-normal' : 'uppercase tracking-[.12em]'}`}>
                                 {centerSettings.branch_name || t('app.tagline', { ns: 'common', defaultValue: VIARA_BRAND.tagline })}
                             </p>
                         </div>
@@ -160,7 +204,14 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButton
             </div>
 
             {/* Navigation Body */}
-            <nav className={`app-sidebar-scroll relative flex-1 overflow-y-auto px-3 py-3 ${isCollapsed ? 'space-y-2' : 'space-y-4'}`} aria-label={t('aria.mainNavigation')}>
+            <nav className={`app-sidebar-scroll relative flex-1 overflow-y-auto px-2.5 py-3 ${isCollapsed ? 'space-y-2' : 'space-y-4'}`} aria-label={t('aria.mainNavigation')}>
+                {!isCollapsed && (
+                    <div className="px-3 pb-1 pt-1">
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-emerald-100/60 dark:text-[var(--VIARA-muted)]">
+                            {t('workspace.title', { ns: 'navigation', defaultValue: 'Your workspace' })}
+                        </p>
+                    </div>
+                )}
                 {navItems.map((group) => {
                     const categoryStyle = CATEGORY_STYLES[group.key] || CATEGORY_STYLES.clinical;
                     const filteredItems = group.items.filter((item) => {
@@ -174,26 +225,28 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButton
                     return (
                         <div key={group.key} className="space-y-1">
                             {!isCollapsed && (
-                                <div className="flex items-center gap-2 px-3 pb-1 pt-2">
+                                <div className="app-sidebar-group-label flex items-center gap-2 px-3 pb-1 pt-2">
                                     <span className={`shrink-0 text-[10px] font-extrabold ${isRtl ? 'tracking-normal' : 'uppercase tracking-[0.14em]'} ${categoryStyle.groupTag}`}>
                                         {group.group}
                                     </span>
                                     <span aria-hidden="true" className="h-px flex-1 bg-white/10 dark:bg-[var(--VIARA-line)]" />
                                 </div>
                             )}
-                            <ul className="space-y-1">
+                            <ul className="space-y-1" aria-label={group.group}>
                                 {filteredItems.map((item) => (
                                     <li key={item.to}>
+                                        <div className="relative">
                                         <NavLink
-                                            to={item.to}
-                                            onClick={onCloseMobile}
+                                            to={item.children[0]?.to || item.to}
+                                            onClick={(event) => handleNavigation(event, item)}
+                                            aria-current={item.children.length ? 'false' : undefined}
                                             end={item.to === '/dashboard'}
                                             className={({ isActive }) => `
                                                 group relative flex min-h-11 items-center gap-3 overflow-visible rounded-xl border px-3 py-2 text-[13px] font-semibold transition-[background-color,border-color,color,transform] duration-150
                                                 ${isActive
                                                     ? categoryStyle.activeBg
                                                     : 'border-transparent text-emerald-50/70 hover:border-white/10 hover:bg-white/[.08] hover:text-white dark:text-[var(--VIARA-muted)] dark:hover:border-[var(--VIARA-line)] dark:hover:bg-[var(--VIARA-surface)] dark:hover:text-[var(--VIARA-ink)]'}
-                                                ${isCollapsed ? 'justify-center' : 'justify-start'}
+                                                ${isCollapsed ? 'justify-center' : `justify-start ${item.children.length ? 'pe-12' : ''}`}
                                             `}
                                             title={isCollapsed ? item.label : undefined}
                                             aria-label={item.label}
@@ -242,8 +295,22 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButton
                                                     )}
                                                 </>
                                             )}
-                                        </NavLink>
-                                    </li>
+                                         </NavLink>
+                                         {!isCollapsed && item.children.length > 0 && (
+                                             <button type="button" onClick={() => toggleGroup(item)} aria-expanded={Boolean(isGroupExpanded(item))} aria-controls={`submenu-${item.to.replaceAll('/', '-')}`} aria-label={t('actions.toggleSubmenu', { section: item.label })} className="absolute end-1 top-1 z-10 flex h-9 w-9 items-center justify-center rounded-lg text-emerald-100/80 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-[var(--VIARA-ink)]">
+                                                 <ChevronDown size={16} className={`transition-transform ${isGroupExpanded(item) ? 'rotate-180' : ''}`} />
+                                             </button>
+                                         )}
+                                         {item.children.length > 0 && !isCollapsed && (
+                                             <ul id={`submenu-${item.to.replaceAll('/', '-')}`} hidden={!isGroupExpanded(item)} className="ms-5 mt-1 space-y-0.5 border-s-2 border-white/10 ps-2 dark:border-[var(--VIARA-line)]" aria-label={item.label}>
+                                                 {item.children.map((child) => {
+                                                     const childActive = isChildActive(child.to);
+                                                     return <li key={child.to}><Link to={child.to} onClick={handleNavigation} aria-current={childActive ? 'page' : undefined} className={`group flex min-h-10 items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${childActive ? 'bg-white/[.12] text-white dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-accent-text)]' : 'text-emerald-100/80 hover:bg-white/[.07] hover:text-white dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface)] dark:hover:text-[var(--VIARA-ink)]'}`}><span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${childActive ? 'bg-[var(--VIARA-accent)]' : 'bg-white/25'}`} /><span className="min-w-0 break-words">{child.label}</span></Link></li>;
+                                                 })}
+                                             </ul>
+                                         )}
+                                         </div>
+                                     </li>
                                 ))}
                             </ul>
                         </div>
@@ -252,7 +319,7 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButton
             </nav>
 
             {/* Footer Profile / Session Area */}
-            <div className="relative shrink-0 border-t border-white/10 bg-black/10 p-3 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-canvas)]">
+             <div className="app-sidebar-footer relative shrink-0 border-t p-3">
                 <div
                     className={`flex items-center rounded-xl border border-white/10 bg-white/[.08] p-2 shadow-sm backdrop-blur-md transition-all duration-200 hover:border-white/20 hover:bg-white/10 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:hover:border-[var(--VIARA-line-strong)] dark:hover:bg-[var(--VIARA-surface-raised)] ${
                         isCollapsed ? 'justify-center' : 'justify-between'
@@ -275,17 +342,15 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButton
                         )}
                     </div>
 
-                    {!isCollapsed && (
-                        <button
-                            type="button"
-                            onClick={handleLogout}
-                            className="rounded-lg p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--danger-bg)] dark:hover:text-[var(--danger)]"
-                            title={t('actions.signOut', { ns: 'common', defaultValue: 'Sign out' })}
-                            aria-label={t('actions.signOut', { ns: 'common', defaultValue: 'Sign out' })}
-                        >
-                            <LogOut size={16} />
-                        </button>
-                    )}
+                    <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="rounded-lg p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--danger-bg)] dark:hover:text-[var(--danger)]"
+                        title={t('actions.signOut', { ns: 'common', defaultValue: 'Sign out' })}
+                        aria-label={t('actions.signOut', { ns: 'common', defaultValue: 'Sign out' })}
+                    >
+                        <LogOut size={16} />
+                    </button>
                 </div>
             </div>
 

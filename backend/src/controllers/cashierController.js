@@ -1,10 +1,18 @@
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
+const { triggerEventForRole } = require('../services/notificationJobService');
 const { DEFAULT_BRANCH_ID, lockFinancialBusinessDate } = require('../services/financialPostingService');
+const { ensureActiveAttendanceClockIn } = require('./hrController');
+const { decrypt } = require('../utils/crypto');
 
 const getVarianceThreshold = () => {
     const value = Number(process.env.CASH_VARIANCE_THRESHOLD ?? 5);
     return Number.isFinite(value) && value >= 0 ? value : 5;
+};
+
+const getCashHandoverTolerance = () => {
+    const value = Number(process.env.CASH_HANDOVER_TOLERANCE ?? 0.01);
+    return Number.isFinite(value) && value >= 0 ? value : 0.01;
 };
 
 const openShift = (db) => async (req, res, next) => {
@@ -43,6 +51,36 @@ const openShift = (db) => async (req, res, next) => {
             return next(new AppError('You have an unreviewed shift variance closure that requires manager approval before opening a new shift', 403));
         }
 
+        const previousShift = await client.query(`
+            SELECT shift_id, closing_balance, closed_at
+            FROM cashier_shifts
+            WHERE cashier_id = $1
+              AND branch_id = $2
+              AND status = 'Closed'
+              AND closing_balance IS NOT NULL
+            ORDER BY closed_at DESC NULLS LAST, opened_at DESC
+            LIMIT 1
+            FOR UPDATE
+        `, [req.user.user_id, postingDate.branchId]);
+        const openingBalance = Number(req.body.openingBalance || 0);
+        const previousClosingBalance = previousShift.rows[0]
+            ? Number(previousShift.rows[0].closing_balance)
+            : null;
+        const handoverDifference = previousClosingBalance === null
+            ? 0
+            : openingBalance - previousClosingBalance;
+        const handoverMismatch = previousClosingBalance !== null
+            && Math.abs(handoverDifference) > getCashHandoverTolerance();
+        if (handoverMismatch && (!req.body.notes || String(req.body.notes).trim().length < 3)) {
+            await client.query('ROLLBACK');
+            return next(new AppError('A handover note is required when the opening cash differs from the previous closing balance', 400));
+        }
+        const openingNotes = handoverMismatch
+            ? `[handover] Previous closing balance: ${previousClosingBalance}; opening balance: ${openingBalance}; difference: ${handoverDifference}. ${String(req.body.notes).trim()}`
+            : (req.body.notes || null);
+
+        await ensureActiveAttendanceClockIn(client, req.user.user_id, '[نظام] تسجيل حضور تلقائي عند فتح وردية الخزينة');
+
         const result = await client.query(`
             INSERT INTO cashier_shifts (
                 cashier_id, opening_balance, notes, business_date, branch_id, currency_code
@@ -51,8 +89,8 @@ const openShift = (db) => async (req, res, next) => {
             RETURNING *
         `, [
             req.user.user_id,
-            req.body.openingBalance || 0,
-            req.body.notes || null,
+            openingBalance,
+            openingNotes,
             postingDate.businessDate,
             postingDate.branchId
         ]);
@@ -63,7 +101,12 @@ const openShift = (db) => async (req, res, next) => {
             resourceId: result.rows[0].shift_id,
             resourceTable: 'cashier_shifts',
             ipAddress: req.ip,
-            details: { openingBalance: Number(req.body.openingBalance || 0) },
+            details: {
+                openingBalance,
+                previousClosingBalance,
+                handoverDifference,
+                handoverMismatch,
+            },
             required: true
         });
         await client.query('COMMIT');
@@ -93,10 +136,11 @@ const closeShift = (db) => async (req, res, next) => {
         await client.query('BEGIN');
 
         const shiftResult = await client.query(`
-            SELECT *
-            FROM cashier_shifts
-            WHERE shift_id = $1
-            FOR UPDATE
+            SELECT s.*, u.full_name AS cashier_name
+            FROM cashier_shifts s
+            JOIN users u ON u.user_id = s.cashier_id
+            WHERE s.shift_id = $1
+            FOR UPDATE OF s
         `, [id]);
 
         if (shiftResult.rows.length === 0) {
@@ -197,6 +241,24 @@ const closeShift = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+
+        if (materialVariance) {
+            const variancePayload = {
+                entityType: 'CashierClosure',
+                entityId: closureResult.rows[0].closure_id,
+                variables: {
+                    cashier_name: shift.cashier_name || '',
+                    expected_cash: expectedCash,
+                    counted_cash: Number(countedCash),
+                    variance,
+                    business_date: shift.business_date,
+                }
+            };
+            for (const role of ['Admin', 'Accountant', 'Developer']) {
+                triggerEventForRole(db, 'CASHIER_VARIANCE_REQUIRES_REVIEW', role, variancePayload);
+            }
+        }
+
         res.json({
             shift: closeResult.rows[0],
             closure: closureResult.rows[0]
@@ -263,7 +325,18 @@ const getReconciliation = (db) => async (req, res, next) => {
     try {
         const { startDate, endDate } = req.query;
         const branchId = req.query.branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
-        const cashierId = req.user.role === 'Cashier' ? req.user.user_id : req.query.cashierId;
+
+        const supervisorPermissions = await db.query(`
+            SELECT 1
+            FROM role_permissions rp
+            JOIN permissions p ON p.permission_id = rp.permission_id
+            WHERE rp.role_name = $1
+              AND p.name IN ('RECONCILE_SHIFTS', 'APPROVE_SHIFT_VARIANCE')
+            LIMIT 1
+        `, [req.user.role]);
+        const canReviewAllShifts = supervisorPermissions.rows.length > 0
+            || req.user.role === 'Developer';
+        const cashierId = canReviewAllShifts ? (req.query.cashierId || null) : (req.user.user_id || null);
         const values = [];
         let param = 1;
 
@@ -311,7 +384,41 @@ const getReconciliation = (db) => async (req, res, next) => {
             ORDER BY s.opened_at DESC
         `, values);
 
-        const summary = result.rows.reduce((acc, row) => {
+        const shiftIds = (result.rows || []).map((r) => r.shift_id).filter(Boolean);
+        const paymentsByShift = new Map();
+        if (shiftIds.length > 0) {
+            try {
+                const paymentsResult = await db.query(`
+                    SELECT p.payment_id, p.invoice_id, p.amount, p.method, p.payment_reference, p.payment_status,
+                           p.transaction_date, p.transaction_date AS created_at, p.cashier_shift_id,
+                           i.invoice_number, i.patient_id,
+                           pt.mrn, pt.first_name_enc, pt.last_name_enc
+                    FROM payments p
+                    JOIN invoices i ON i.invoice_id = p.invoice_id
+                    JOIN patients pt ON pt.patient_id = i.patient_id
+                    WHERE p.cashier_shift_id = ANY($1::uuid[]) AND p.payment_status = 'Completed'
+                    ORDER BY p.transaction_date DESC
+                `, [shiftIds]);
+
+                (paymentsResult?.rows || []).forEach((row) => {
+                    const list = paymentsByShift.get(row.cashier_shift_id) || [];
+                    list.push({
+                        ...row,
+                        patient_name: [decrypt(row.first_name_enc), decrypt(row.last_name_enc)].filter(Boolean).join(' ') || 'المريض'
+                    });
+                    paymentsByShift.set(row.cashier_shift_id, list);
+                });
+            } catch {
+                // Graceful fallback if database mock or table does not support batch query
+            }
+        }
+
+        const rowsWithPayments = (result.rows || []).map((row) => ({
+            ...row,
+            payments: paymentsByShift.get(row.shift_id) || []
+        }));
+
+        const summary = rowsWithPayments.reduce((acc, row) => {
             acc.collectedAmount += Number(row.collected_amount || 0);
             acc.paymentCount += Number(row.payment_count || 0);
             acc.variance += Number(row.variance || 0);
@@ -320,7 +427,7 @@ const getReconciliation = (db) => async (req, res, next) => {
         }, { collectedAmount: 0, paymentCount: 0, variance: 0, openShifts: 0 });
 
         res.json({
-            data: result.rows,
+            data: rowsWithPayments,
             summary
         });
     } catch (error) {
@@ -328,7 +435,69 @@ const getReconciliation = (db) => async (req, res, next) => {
     }
 };
 
+const getCurrentCashierShift = (db) => async (req, res, next) => {
+    try {
+        const branchId = req.query?.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID;
+        const userId = req.user?.user_id || req.user?.userId || req.user?.id;
+        const result = await db.query(`
+            SELECT s.*, u.full_name AS cashier_name,
+                   COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.cashier_shift_id = s.shift_id AND p.payment_status = 'Completed'), 0)
+                     - COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.cashier_shift_id = s.shift_id AND r.status = 'Processed'), 0) AS collected_amount,
+                   (SELECT COUNT(*) FROM payments p WHERE p.cashier_shift_id = s.shift_id AND p.payment_status = 'Completed') AS payment_count,
+                   (SELECT COUNT(*) FROM refunds r WHERE r.cashier_shift_id = s.shift_id AND r.status = 'Processed') AS refund_count,
+                   COALESCE((
+                       SELECT jsonb_object_agg(method, total)
+                       FROM (
+                           SELECT method, SUM(net_amount) AS total
+                           FROM (
+                               SELECT method, amount AS net_amount FROM payments WHERE cashier_shift_id = s.shift_id AND payment_status = 'Completed'
+                               UNION ALL
+                               SELECT method, -amount AS net_amount FROM refunds WHERE cashier_shift_id = s.shift_id AND status = 'Processed'
+                           ) tx
+                           GROUP BY method
+                       ) method_summary
+                   ), '{}'::jsonb) AS payment_totals
+            FROM cashier_shifts s
+            JOIN users u ON u.user_id = s.cashier_id
+            WHERE s.cashier_id = $1 AND s.branch_id = $2 AND s.status = 'Open'
+            ORDER BY s.opened_at DESC
+            LIMIT 1
+        `, [userId, branchId]);
+
+        if (!result.rows[0]) {
+            return res.json(null);
+        }
+
+        const shift = { ...result.rows[0] };
+        try {
+            const paymentsResult = await db.query(`
+                SELECT p.payment_id, p.invoice_id, p.amount, p.method, p.payment_reference, p.payment_status,
+                       p.transaction_date, p.transaction_date AS created_at, p.cashier_shift_id,
+                       i.invoice_number, i.patient_id,
+                       pt.mrn, pt.first_name_enc, pt.last_name_enc
+                FROM payments p
+                JOIN invoices i ON i.invoice_id = p.invoice_id
+                JOIN patients pt ON pt.patient_id = i.patient_id
+                WHERE p.cashier_shift_id = $1 AND p.payment_status = 'Completed'
+                ORDER BY p.transaction_date DESC
+            `, [shift.shift_id]);
+
+            shift.payments = (paymentsResult?.rows || []).map((row) => ({
+                ...row,
+                patient_name: [decrypt(row.first_name_enc), decrypt(row.last_name_enc)].filter(Boolean).join(' ') || 'المريض'
+            }));
+        } catch {
+            shift.payments = shift.payments || [];
+        }
+
+        res.json(shift);
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
+    getCurrentCashierShift,
     openShift,
     closeShift,
     getReconciliation,

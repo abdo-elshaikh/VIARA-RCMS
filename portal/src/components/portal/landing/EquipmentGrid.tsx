@@ -1,24 +1,26 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useTranslation } from "react-i18next";
+import { useLandingContent, matchesActiveModalities } from "../../../hooks/use-landing-content";
+import { LandingSectionSkeleton, LandingRetryBox } from "./LandingStates";
 
 const FLAGSHIPS = [
   {
     id: "mri",
-    label: "MRI 3.0T",
+    label: "MRI",
     titleAr: "وضوح أعلى دون إشعاع",
     titleEn: "Sharper detail without radiation",
-    descAr: "تصوير دقيق للأعصاب والمفاصل مع تجويف واسع وتقنيات تقلل الضوضاء ووقت الفحص.",
+    descAr: "تصوير دقيق للأعصاب والمفاصل والأنسجة دون استخدام الإشعاع المؤين.",
     descEn:
-      "High-detail neuro and joint imaging with a wider bore, quieter scanning, and shorter exam times.",
+      "High-detail neuro, joint, and soft-tissue imaging without ionizing radiation.",
     benefitAr: "راحة أكبر وصور أوضح",
     benefitEn: "More comfort, clearer images",
     image: "/images/scans/equipment-mri-slider-v3.jpg",
   },
   {
     id: "ct",
-    label: "CT 128 Slice",
+    label: "CT",
     titleAr: "تفاصيل دقيقة في وقت أقصر",
     titleEn: "Precise detail in less time",
     descAr: "تصوير سريع للقلب والصدر والجسم مع بروتوكولات متقدمة لتقليل الجرعة الإشعاعية.",
@@ -100,6 +102,19 @@ const FLAGSHIPS = [
   },
 ] as const;
 
+// Keywords matched against the center's real active modality names, so a
+// technology card only appears when that equipment is actually operated.
+const MATCHERS: Record<string, string[]> = {
+  mri: ["mri", "magnetic", "رنين", "مغناطيسي"],
+  ct: ["ct", "computed", "مقطعية"],
+  xray: ["x-ray", "xray", "radiography", "radiograph", "سينية", "أشعة رقمية"],
+  ultrasound: ["ultrasound", "doppler", "سونار", "موجات"],
+  mammography: ["mammo", "breast", "ماموجرام", "الثدي"],
+  petct: ["pet", "spect"],
+  dexa: ["dexa", "densit", "كثافة"],
+  dental: ["dental", "panoramic", "أسنان", "بانوراما"],
+};
+
 interface EquipmentGridProps {
   onBookModality?: (modality: string) => void;
 }
@@ -108,23 +123,46 @@ export const EquipmentGrid = ({ onBookModality }: EquipmentGridProps) => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith("ar");
   const reduceMotion = useReducedMotion();
+  const { activeModalityNames, overviewLoaded, overviewError, refetchOverview } = useLandingContent();
   const [activeIndex, setActiveIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
+
+  const flagships = overviewLoaded
+    ? FLAGSHIPS.filter((item) => matchesActiveModalities(activeModalityNames, MATCHERS[item.id] || []))
+    : [];
 
   const move = (direction: number) => {
-    setActiveIndex((current) => (current + direction + FLAGSHIPS.length) % FLAGSHIPS.length);
+    setActiveIndex((current) => (current + direction + flagships.length) % flagships.length);
   };
 
-  useEffect(() => {
-    if (paused || reduceMotion) return undefined;
-    const timer = window.setInterval(() => {
-      setActiveIndex((current) => (current + 1) % FLAGSHIPS.length);
-    }, 8800);
-    return () => window.clearInterval(timer);
-  }, [paused, reduceMotion]);
+  if (overviewError) {
+    return (
+      <section id="equipment-section" className="scroll-mt-24 border-y border-[#E4EEEB] bg-[#F7FBFA] py-14 dark:border-border dark:bg-background sm:py-16 lg:py-20">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+          <LandingRetryBox
+            onRetry={refetchOverview}
+            messageAr="تعذر تحميل عرض الأجهزة حالياً."
+            messageEn="The technology showcase could not load right now."
+          />
+        </div>
+      </section>
+    );
+  }
+
+  if (!overviewLoaded) {
+    return (
+      <section id="equipment-section" className="scroll-mt-24 border-y border-[#E4EEEB] bg-[#F7FBFA] py-14 dark:border-border dark:bg-background sm:py-16 lg:py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <LandingSectionSkeleton rows={3} minHeight="min-h-[300px]" />
+        </div>
+      </section>
+    );
+  }
+
+  // Nothing verified to show — hide the whole section rather than guess.
+  if (!flagships.length) return null;
 
   const visibleItems = [-1, 0, 1].map((offset) => ({
-    item: FLAGSHIPS[(activeIndex + offset + FLAGSHIPS.length) % FLAGSHIPS.length],
+    item: flagships[(activeIndex + offset + flagships.length) % flagships.length],
     offset,
   }));
 
@@ -148,13 +186,7 @@ export const EquipmentGrid = ({ onBookModality }: EquipmentGridProps) => {
           </p>
         </div>
 
-        <div
-          className="relative mx-auto max-w-6xl"
-          onMouseEnter={() => setPaused(true)}
-          onMouseLeave={() => setPaused(false)}
-          onFocus={() => setPaused(true)}
-          onBlur={() => setPaused(false)}
-        >
+        <div className="relative mx-auto max-w-6xl">
           <div className="grid items-center gap-4 lg:grid-cols-[0.8fr_1.12fr_0.8fr] lg:gap-5">
             <AnimatePresence initial={false} mode="popLayout">
               {visibleItems.map(({ item, offset }) => {
@@ -196,11 +228,11 @@ export const EquipmentGrid = ({ onBookModality }: EquipmentGridProps) => {
                         className="h-full w-full object-cover transition-transform duration-1000 group-hover:scale-[1.025]"
                       />
                       <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-[#071B38]/35 to-transparent" />
-                      <span className="absolute start-3 top-3 rounded-md border border-white/60 bg-white/90 px-2.5 py-1 text-[11px] font-bold text-[#0B2348] shadow-sm backdrop-blur dark:bg-surface/90 dark:text-white">
+                      <span className="absolute start-3 top-3 rounded-md border border-white/60 bg-white/90 px-2.5 py-1 text-xs font-bold text-[#0B2348] shadow-sm backdrop-blur dark:bg-surface/90 dark:text-white">
                         {item.label}
                       </span>
                       {isActive && (
-                        <span className="absolute end-3 top-3 rounded-md bg-primary px-2.5 py-1 text-[10px] font-bold text-white shadow-sm">
+                        <span className="absolute end-3 top-3 rounded-md bg-primary px-2.5 py-1 text-xs font-bold text-white shadow-sm">
                           {isRtl ? "تقنية مميزة" : "Featured technology"}
                         </span>
                       )}
@@ -250,23 +282,23 @@ export const EquipmentGrid = ({ onBookModality }: EquipmentGridProps) => {
 
             <div
               className="flex min-w-0 items-center gap-1.5"
-              aria-label={`${activeIndex + 1} / ${FLAGSHIPS.length}`}
+              aria-label={`${activeIndex + 1} / ${flagships.length}`}
             >
-              {FLAGSHIPS.map((item, index) => (
+              {flagships.map((item, index) => (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => setActiveIndex(index)}
-                  aria-label={`${item.label}: ${index + 1} / ${FLAGSHIPS.length}`}
+                  aria-label={`${item.label}: ${index + 1} / ${flagships.length}`}
                   aria-current={index === activeIndex ? "true" : undefined}
                   className={`h-1.5 rounded-full transition-all duration-500 ${index === activeIndex ? "w-7 bg-primary" : "w-1.5 bg-[#C5D8D3] hover:bg-primary/50"}`}
                 />
               ))}
             </div>
 
-            <span className="min-w-12 text-center text-[11px] font-semibold tabular-nums text-muted-foreground">
+            <span className="min-w-12 text-center text-xs font-semibold tabular-nums text-muted-foreground">
               {String(activeIndex + 1).padStart(2, "0")} /{" "}
-              {String(FLAGSHIPS.length).padStart(2, "0")}
+              {String(flagships.length).padStart(2, "0")}
             </span>
 
             <button

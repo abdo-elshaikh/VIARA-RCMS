@@ -1,6 +1,16 @@
 const { calculateCoverage } = require('../services/coverageService');
 const { logAction } = require('../services/auditService');
 const { AppError } = require('../middleware/errorHandler');
+const { decrypt } = require('../utils/crypto');
+
+const safeDecrypt = (text) => {
+    if (!text) return '';
+    try {
+        return decrypt(text) || '';
+    } catch {
+        return '';
+    }
+};
 
 const money = (value) => Number(value || 0);
 
@@ -105,9 +115,13 @@ const getPolicies = (db) => async (req, res, next) => {
         const { patientId } = req.query;
         const values = [];
         let query = `
-            SELECT pip.*, ip.name as provider_name
+            SELECT pip.*, ip.name as provider_name,
+                   p.mrn, p.first_name_enc, p.last_name_enc,
+                   c.contract_number, c.entity_name as contract_name
             FROM patient_insurance_policies pip
             JOIN insurance_providers ip ON pip.provider_id = ip.provider_id
+            JOIN patients p ON pip.patient_id = p.patient_id
+            LEFT JOIN contracts c ON pip.contract_id = c.contract_id
             WHERE 1=1
         `;
 
@@ -118,7 +132,19 @@ const getPolicies = (db) => async (req, res, next) => {
 
         query += ' ORDER BY pip.is_primary DESC, pip.created_at DESC';
         const result = await db.query(query, values);
-        res.json(result.rows);
+        const rows = result.rows.map(row => {
+            const firstName = row.first_name || safeDecrypt(row.first_name_enc);
+            const lastName = row.last_name || safeDecrypt(row.last_name_enc);
+            const patientName = row.patient_name || [firstName, lastName].filter(Boolean).join(' ') || row.holder_name || '';
+            const { first_name_enc, last_name_enc, ...cleanRow } = row;
+            return {
+                ...cleanRow,
+                first_name: firstName,
+                last_name: lastName,
+                patient_name: patientName,
+            };
+        });
+        res.json(rows);
     } catch (error) {
         next(error);
     }
@@ -141,14 +167,15 @@ const createPolicy = (db) => async (req, res, next) => {
 
         const result = await client.query(`
             INSERT INTO patient_insurance_policies (
-                patient_id, provider_id, policy_number, member_number, plan_name, holder_name,
+                patient_id, provider_id, contract_id, policy_number, member_number, plan_name, holder_name,
                 relationship_to_holder, valid_from, valid_to, is_primary, approval_document_url, notes
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING *
         `, [
             data.patientId,
             data.providerId,
+            data.contractId || null,
             data.policyNumber,
             data.memberNumber || null,
             data.planName || null,
@@ -354,7 +381,7 @@ const updateApprovalStatus = (db) => async (req, res, next) => {
         }
 
         const userId = req.user.user_id || req.user.userId;
-        if (req.user.role !== 'Developer' && approval.requested_by === userId) {
+        if (!['Admin', 'Insurance_Staff', 'Developer'].includes(req.user.role) && approval.requested_by === userId) {
             throw new AppError('The requester cannot decide their own authorization', 403);
         }
 
@@ -410,15 +437,327 @@ const updateApprovalStatus = (db) => async (req, res, next) => {
     }
 };
 
+const updateProvider = (db) => async (req, res, next) => {
+    let client;
+    try {
+        const { id } = req.params;
+        const data = req.body;
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const existing = await client.query(
+            'SELECT * FROM insurance_providers WHERE provider_id = $1 FOR UPDATE',
+            [id]
+        );
+        if (!existing.rows.length) throw new AppError('Insurance provider not found', 404);
+
+        const current = existing.rows[0];
+        const phone = data.phone !== undefined ? data.phone : current.phone;
+        const email = data.email !== undefined ? data.email : current.email;
+
+        const result = await client.query(`
+            UPDATE insurance_providers
+            SET name = COALESCE($1, name),
+                payer_code = COALESCE($2, payer_code),
+                phone = COALESCE($3, phone),
+                email = COALESCE($4, email),
+                address = COALESCE($5, address),
+                notes = COALESCE($6, notes),
+                is_active = COALESCE($7, is_active),
+                contact_info = $8::jsonb,
+                updated_at = NOW()
+            WHERE provider_id = $9
+            RETURNING *
+        `, [
+            data.name || null,
+            data.payerCode || null,
+            phone || null,
+            email || null,
+            data.address || null,
+            data.notes || null,
+            data.isActive !== undefined ? data.isActive : null,
+            JSON.stringify({ phone: phone || null, email: email || null }),
+            id
+        ]);
+
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'INSURANCE_PROVIDER_UPDATED',
+            resourceId: id,
+            resourceTable: 'insurance_providers',
+            ipAddress: req.ip,
+            details: { previous: current, updated: result.rows[0] }
+        });
+
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        next(error);
+    } finally {
+        if (client) client.release();
+    }
+};
+
+const updateContract = (db) => async (req, res, next) => {
+    let client;
+    try {
+        const { id } = req.params;
+        const data = req.body;
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const existing = await client.query(
+            'SELECT * FROM contracts WHERE contract_id = $1 FOR UPDATE',
+            [id]
+        );
+        if (!existing.rows.length) throw new AppError('Contract not found', 404);
+
+        const current = existing.rows[0];
+        const newEntityName = data.entityName !== undefined ? data.entityName : current.entity_name;
+        const newEntityType = data.entityType !== undefined ? data.entityType : current.entity_type;
+        const newProviderId = data.providerId !== undefined ? data.providerId : current.provider_id;
+        const newStartDate = data.startDate !== undefined ? data.startDate : current.start_date;
+        const newEndDate = data.endDate !== undefined ? data.endDate : current.end_date;
+        const newIsActive = data.isActive !== undefined ? data.isActive : current.is_active;
+
+        if (newIsActive) {
+            const overlap = await client.query(`
+                SELECT contract_id
+                FROM contracts
+                WHERE contract_id <> $1
+                  AND is_active = true
+                  AND entity_type = $2
+                  AND lower(entity_name) = lower($3)
+                  AND provider_id IS NOT DISTINCT FROM $4::uuid
+                  AND daterange(COALESCE(start_date, '-infinity'::date), COALESCE(end_date, 'infinity'::date), '[]')
+                      && daterange(COALESCE($5::date, '-infinity'::date), COALESCE($6::date, 'infinity'::date), '[]')
+                LIMIT 1
+            `, [
+                id,
+                newEntityType,
+                newEntityName,
+                newProviderId || null,
+                newStartDate || null,
+                newEndDate || null
+            ]);
+            if (overlap.rows.length) {
+                throw new AppError('An active overlapping contract already exists for this payer/entity', 409);
+            }
+        }
+
+        const result = await client.query(`
+            UPDATE contracts
+            SET provider_id = $1,
+                entity_name = $2,
+                entity_type = $3,
+                contract_number = COALESCE($4, contract_number),
+                commission_percentage = COALESCE($5, commission_percentage),
+                start_date = $6,
+                end_date = $7,
+                is_active = $8,
+                coverage_notes = COALESCE($9, coverage_notes),
+                updated_at = NOW()
+            WHERE contract_id = $10
+            RETURNING *
+        `, [
+            newProviderId || null,
+            newEntityName,
+            newEntityType,
+            data.contractNumber !== undefined ? data.contractNumber : null,
+            data.commissionPercentage !== undefined ? data.commissionPercentage : null,
+            newStartDate || null,
+            newEndDate || null,
+            newIsActive,
+            data.coverageNotes !== undefined ? data.coverageNotes : null,
+            id
+        ]);
+
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'INSURANCE_CONTRACT_UPDATED',
+            resourceId: id,
+            resourceTable: 'contracts',
+            ipAddress: req.ip,
+            details: { previous: current, updated: result.rows[0] }
+        });
+
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        next(error);
+    } finally {
+        if (client) client.release();
+    }
+};
+
+const updatePolicy = (db) => async (req, res, next) => {
+    let client;
+    try {
+        const { id } = req.params;
+        const data = req.body;
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const existing = await client.query(
+            'SELECT * FROM patient_insurance_policies WHERE policy_id = $1 FOR UPDATE',
+            [id]
+        );
+        if (!existing.rows.length) throw new AppError('Insurance policy not found', 404);
+
+        const current = existing.rows[0];
+        if (data.isPrimary === true) {
+            await client.query(`
+                UPDATE patient_insurance_policies
+                SET is_primary = false, updated_at = NOW()
+                WHERE patient_id = $1 AND policy_id <> $2
+            `, [current.patient_id, id]);
+        }
+
+        const result = await client.query(`
+            UPDATE patient_insurance_policies
+            SET provider_id = COALESCE($1, provider_id),
+                contract_id = COALESCE($2, contract_id),
+                policy_number = COALESCE($3, policy_number),
+                member_number = COALESCE($4, member_number),
+                plan_name = COALESCE($5, plan_name),
+                holder_name = COALESCE($6, holder_name),
+                relationship_to_holder = COALESCE($7, relationship_to_holder),
+                valid_from = COALESCE($8, valid_from),
+                valid_to = COALESCE($9, valid_to),
+                is_primary = COALESCE($10, is_primary),
+                approval_document_url = COALESCE($11, approval_document_url),
+                notes = COALESCE($12, notes),
+                updated_at = NOW()
+            WHERE policy_id = $13
+            RETURNING *
+        `, [
+            data.providerId || null,
+            data.contractId !== undefined ? (data.contractId || null) : null,
+            data.policyNumber || null,
+            data.memberNumber !== undefined ? data.memberNumber : null,
+            data.planName !== undefined ? data.planName : null,
+            data.holderName !== undefined ? data.holderName : null,
+            data.relationshipToHolder !== undefined ? data.relationshipToHolder : null,
+            data.validFrom !== undefined ? data.validFrom : null,
+            data.validTo !== undefined ? data.validTo : null,
+            data.isPrimary !== undefined ? data.isPrimary : null,
+            data.approvalDocumentUrl !== undefined ? data.approvalDocumentUrl : null,
+            data.notes !== undefined ? data.notes : null,
+            id
+        ]);
+
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'INSURANCE_POLICY_UPDATED',
+            resourceId: id,
+            resourceTable: 'patient_insurance_policies',
+            ipAddress: req.ip,
+            details: { previous: current, updated: result.rows[0] }
+        });
+
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        next(error);
+    } finally {
+        if (client) client.release();
+    }
+};
+
+const updateCoverageRule = (db) => async (req, res, next) => {
+    let client;
+    try {
+        const { id } = req.params;
+        const data = req.body;
+        client = await db.connect();
+        await client.query('BEGIN');
+
+        const existing = await client.query(
+            'SELECT * FROM insurance_coverage_rules WHERE rule_id = $1 FOR UPDATE',
+            [id]
+        );
+        if (!existing.rows.length) throw new AppError('Coverage rule not found', 404);
+
+        const current = existing.rows[0];
+        const newProviderId = data.providerId !== undefined ? data.providerId : current.provider_id;
+        const newContractId = data.contractId !== undefined ? data.contractId : current.contract_id;
+        const newExamTypeId = data.examTypeId !== undefined ? data.examTypeId : current.exam_type_id;
+        const newModalityType = data.modalityType !== undefined ? data.modalityType : current.modality_type;
+        const newCoveragePercentage = data.coveragePercentage !== undefined ? Number(data.coveragePercentage) : current.coverage_percentage;
+        const newCoverageCeiling = data.coverageCeiling !== undefined ? (data.coverageCeiling !== null ? Number(data.coverageCeiling) : null) : current.coverage_ceiling;
+        const newCopayAmount = data.copayAmount !== undefined ? Number(data.copayAmount) : current.copay_amount;
+        const newPreauthorizationRequired = data.preauthorizationRequired !== undefined ? data.preauthorizationRequired : current.preauthorization_required;
+        const newEffectiveFrom = data.effectiveFrom !== undefined ? data.effectiveFrom : current.effective_from;
+        const newEffectiveTo = data.effectiveTo !== undefined ? data.effectiveTo : current.effective_to;
+        const newIsActive = data.isActive !== undefined ? data.isActive : current.is_active;
+
+        const result = await client.query(`
+            UPDATE insurance_coverage_rules
+            SET provider_id = $1,
+                contract_id = $2,
+                exam_type_id = $3,
+                modality_type = $4,
+                coverage_percentage = $5,
+                coverage_ceiling = $6,
+                copay_amount = $7,
+                preauthorization_required = $8,
+                effective_from = $9,
+                effective_to = $10,
+                is_active = $11,
+                notes = COALESCE($12, notes)
+            WHERE rule_id = $13
+            RETURNING *
+        `, [
+            newProviderId,
+            newContractId || null,
+            newExamTypeId || null,
+            newModalityType || null,
+            newCoveragePercentage,
+            newCoverageCeiling,
+            newCopayAmount,
+            newPreauthorizationRequired,
+            newEffectiveFrom || null,
+            newEffectiveTo || null,
+            newIsActive,
+            data.notes !== undefined ? data.notes : null,
+            id
+        ]);
+
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'INSURANCE_COVERAGE_RULE_UPDATED',
+            resourceId: id,
+            resourceTable: 'insurance_coverage_rules',
+            ipAddress: req.ip,
+            details: { previous: current, updated: result.rows[0] }
+        });
+
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        next(error);
+    } finally {
+        if (client) client.release();
+    }
+};
+
 module.exports = {
     getProviders,
     createProvider,
+    updateProvider,
     getContracts,
     createContract,
+    updateContract,
     getPolicies,
     createPolicy,
+    updatePolicy,
     getCoverageRules,
     createCoverageRule,
+    updateCoverageRule,
     previewCoverage,
     getApprovals,
     createApproval,

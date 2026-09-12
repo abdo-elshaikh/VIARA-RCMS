@@ -1,9 +1,21 @@
 const { z } = require('zod');
 
+const timeZoneSchema = z.string().trim().min(1).max(80).refine((value) => {
+    try {
+        new Intl.DateTimeFormat('en-US', { timeZone: value }).format();
+        return true;
+    } catch {
+        return false;
+    }
+}, 'Invalid IANA timezone');
+
 const getNotificationsQuerySchema = z.object({
     channel: z.enum(['Email', 'SMS', 'WhatsApp', 'InApp']).optional(),
     status: z.enum(['Sent', 'Delivered', 'Failed', 'Pending']).optional(),
     eventType: z.string().trim().max(80).optional(),
+    category: z.enum(['Security', 'Clinical', 'Financial', 'Operational', 'Patient', 'System']).optional(),
+    priority: z.enum(['Normal', 'Action', 'Warning', 'Critical']).optional(),
+    readState: z.enum(['all', 'read', 'unread']).default('all'),
     q: z.string().trim().max(120).optional(),
     patientId: z.string().uuid().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -83,7 +95,8 @@ const updatePreferencesSchema = z.object({
     notifyPaymentUpdate: z.boolean().optional(),
     quietHoursEnabled: z.boolean().optional(),
     quietHoursStart: z.number().int().min(0).max(23).optional(),
-    quietHoursEnd: z.number().int().min(0).max(23).optional()
+    quietHoursEnd: z.number().int().min(0).max(23).optional(),
+    timeZone: timeZoneSchema.optional()
 }).refine(d => Object.keys(d).length > 0, { message: 'At least one field required' });
 
 const staffHourSchema = z.union([
@@ -109,7 +122,8 @@ const updateStaffPreferencesSchema = z.object({
     notify_payment_update: z.boolean().optional(),
     quiet_hours_enabled: z.boolean().optional(),
     quiet_hours_start: staffHourSchema.optional(),
-    quiet_hours_end: staffHourSchema.optional()
+    quiet_hours_end: staffHourSchema.optional(),
+    time_zone: timeZoneSchema.optional()
 }).strict().refine(d => Object.keys(d).length > 0, { message: 'At least one field required' });
 
 const notificationPreferencesQuerySchema = z.object({
@@ -120,17 +134,15 @@ const notificationPreferencesQuerySchema = z.object({
 });
 
 const reminderSchema = z.object({
-    appointmentId: z.string().uuid().optional(),
-    recipientEmail: z.string().email(),
-    patientName: z.string().trim().min(1).max(200),
-    time: z.string().datetime({ offset: true })
-});
+    appointmentId: z.string().uuid()
+}).strict();
 
 const unsubscribeSchema = z.object({
     phone: z.string().trim().min(7).max(50).optional(),
-    email: z.string().trim().email().optional()
-}).refine(d => d.phone || d.email, {
-    message: 'Provide phone or email'
+    email: z.string().trim().email().optional(),
+    token: z.string().trim().min(20).max(512)
+}).refine(d => Boolean(d.phone) !== Boolean(d.email), {
+    message: 'Provide exactly one of phone or email'
 });
 
 module.exports = {

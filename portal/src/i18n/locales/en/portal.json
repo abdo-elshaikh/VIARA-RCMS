@@ -54,7 +54,8 @@
     "copied": "Copied",
     "copyError": "Failed to copy",
     "viewAll": "View all",
-    "download": "Download"
+    "download": "Download",
+    "retry": "Retry"
   },
   "chat": {
     "title": "Radiology Support Chat",
@@ -135,11 +136,30 @@
     "read": "Read",
     "unread": "Unread",
     "allRead": "All notifications marked as read.",
-    "readError": "Could not update notifications."
+    "readError": "Could not update notifications.",
+    "markRead": "Mark as read",
+    "errorTitle": "Notifications could not be loaded",
+    "errorDescription": "Check your connection and try again.",
+    "loadMore": "Load more",
+    "loadingMore": "Loading more...",
+    "loadMoreError": "Could not load more notifications. Try again.",
+    "showing": "Showing {{shown}} of {{total}} notifications",
+    "actions": {
+      "records": "View records",
+      "invoices": "View billing",
+      "documents": "View documents",
+      "requests": "View requests",
+      "messages": "Open messages",
+      "reports": "View reports",
+      "cases": "View cases",
+      "order": "Open order form"
+    }
   },
   "records": {
     "previewReport": "Preview final report",
     "printReport": "Print final report",
+    "downloadPdf": "Download PDF Report",
+    "downloadPdfSuccess": "Report PDF downloaded successfully",
     "notReady": "Preview, print, and export become available after the final report is approved.",
     "wordTitle": "Download Word report"
   },

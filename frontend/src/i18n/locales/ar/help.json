@@ -9,6 +9,7 @@
   "searchPlaceholder": "ابحث عن المرضى أو المدفوعات أو التقارير أو الصلاحيات...",
   "clearSearch": "مسح بحث المساعدة",
   "roles": {
+    "Developer": "المطور",
     "Admin": "مسؤول النظام",
     "Radiologist": "طبيب أشعة",
     "Receptionist": "استقبال",
@@ -18,7 +19,8 @@
     "Technician": "فني",
     "Nurse": "تمريض",
     "Insurance_Staff": "موظف تأمين",
-    "Marketing": "تسويق"
+    "Marketing": "التسويق",
+    "Referring_Doctor": "الطبيب المحول"
   },
   "quick": {
     "title": "افتح مساحات العمل الشائعة",

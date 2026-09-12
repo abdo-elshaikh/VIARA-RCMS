@@ -21,6 +21,8 @@ const FALLBACK_CHAINS = {
     Normal:   ['Email']
 };
 
+const PRIORITY_RANK = { Normal: 0, Action: 1, Warning: 2, Critical: 3 };
+
 const buildIdempotencyKey = (opts) => {
     if (opts.idempotencyKey) return opts.idempotencyKey;
     if (!opts.entityType || !opts.entityId || !opts.eventType || !opts.channel || !opts.recipientType) return null;
@@ -29,6 +31,59 @@ const buildIdempotencyKey = (opts) => {
     return [opts.eventType, opts.channel, opts.recipientType, recipient, opts.entityType, opts.entityId, occurrence]
         .filter(value => value !== null && value !== undefined && value !== '')
         .join(':');
+};
+
+const getAppointmentOccurrenceKey = startTime => {
+    if (!startTime) return null;
+    const parsed = new Date(startTime);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+};
+
+const cancelPendingAppointmentReminders = async (db, appointmentId, exceptOccurrenceKey = null) => {
+    const result = await db.query(`
+        UPDATE notification_jobs
+        SET status = 'Cancelled',
+            processed_at = NOW(),
+            next_retry_at = NULL,
+            locked_at = NULL,
+            locked_by = NULL,
+            error_message = 'Appointment reminder superseded or cancelled'
+        WHERE event_type = 'AppointmentReminder'
+          AND entity_type = 'Appointment'
+          AND entity_id = $1
+          AND status = 'Pending'
+          AND ($2::text IS NULL OR variables->>'occurrence_key' IS DISTINCT FROM $2::text)
+        RETURNING job_id
+    `, [appointmentId, exceptOccurrenceKey]);
+    return result.rowCount ?? result.rows?.length ?? 0;
+};
+
+const scheduleAppointmentReminder = async (db, appointment, options = {}) => {
+    const occurrenceKey = getAppointmentOccurrenceKey(appointment.start_time || appointment.startTime);
+    if (!occurrenceKey || new Date(occurrenceKey) <= new Date()) return null;
+
+    const reminderTime = new Date(new Date(occurrenceKey).getTime() - 24 * 60 * 60 * 1000);
+    await cancelPendingAppointmentReminders(
+        db,
+        appointment.appointment_id || appointment.appointmentId,
+        occurrenceKey
+    );
+    return triggerEvent(db, 'AppointmentReminder', {
+        patientId: appointment.patient_id || appointment.patientId,
+        entityType: 'Appointment',
+        entityId: appointment.appointment_id || appointment.appointmentId,
+        scheduledFor: options.scheduledFor || (reminderTime > new Date() ? reminderTime : new Date()),
+        channels: options.channels || ['Email', 'SMS'],
+        occurrenceKey,
+        variables: {
+            patient_name: appointment.patient_name || appointment.patientName || appointment.order_number || '',
+            order_number: appointment.order_number || appointment.orderNumber || '',
+            appointment_time: new Date(occurrenceKey).toLocaleString(),
+            exam_type: appointment.exam_type_name || appointment.examTypeName || '',
+            prep_instructions: appointment.preparation_instructions || appointment.prepInstructions || '',
+            language: appointment.preferred_language || appointment.language || 'en'
+        }
+    });
 };
 
 // ─── Schedule a job ───────────────────────────────────────────────────────────
@@ -59,15 +114,18 @@ const scheduleJob = async (db, opts) => {
             VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
             DO UPDATE SET
-                scheduled_for = LEAST(notification_jobs.scheduled_for, EXCLUDED.scheduled_for),
+                scheduled_for = CASE
+                    WHEN notification_jobs.status IN ('Failed', 'Cancelled') THEN EXCLUDED.scheduled_for
+                    ELSE notification_jobs.scheduled_for
+                END,
                 variables = notification_jobs.variables || EXCLUDED.variables,
-                status = CASE WHEN notification_jobs.status = 'Failed' THEN 'Pending' ELSE notification_jobs.status END,
-                retry_count = CASE WHEN notification_jobs.status = 'Failed' THEN 0 ELSE notification_jobs.retry_count END,
-                processed_at = CASE WHEN notification_jobs.status = 'Failed' THEN NULL ELSE notification_jobs.processed_at END,
-                error_message = CASE WHEN notification_jobs.status = 'Failed' THEN NULL ELSE notification_jobs.error_message END,
-                locked_at = CASE WHEN notification_jobs.status = 'Failed' THEN NULL ELSE notification_jobs.locked_at END,
-                locked_by = CASE WHEN notification_jobs.status = 'Failed' THEN NULL ELSE notification_jobs.locked_by END,
-                next_retry_at = NULL
+                status = CASE WHEN notification_jobs.status IN ('Failed', 'Cancelled') THEN 'Pending' ELSE notification_jobs.status END,
+                retry_count = CASE WHEN notification_jobs.status IN ('Failed', 'Cancelled') THEN 0 ELSE notification_jobs.retry_count END,
+                processed_at = CASE WHEN notification_jobs.status IN ('Failed', 'Cancelled') THEN NULL ELSE notification_jobs.processed_at END,
+                error_message = CASE WHEN notification_jobs.status IN ('Failed', 'Cancelled') THEN NULL ELSE notification_jobs.error_message END,
+                locked_at = CASE WHEN notification_jobs.status IN ('Failed', 'Cancelled') THEN NULL ELSE notification_jobs.locked_at END,
+                locked_by = CASE WHEN notification_jobs.status IN ('Failed', 'Cancelled') THEN NULL ELSE notification_jobs.locked_by END,
+                next_retry_at = CASE WHEN notification_jobs.status IN ('Failed', 'Cancelled') THEN NULL ELSE notification_jobs.next_retry_at END
             RETURNING *
         `, [
             opts.eventType,
@@ -197,13 +255,9 @@ const isOptedIn = async (db, job) => {
     const preferenceColumns = eventCol
         ? `${eventCol} AS event_ok, ${channelCol} AS channel_ok`
         : `TRUE AS event_ok, ${channelCol} AS channel_ok`;
-    const result = await db.query(`
-        SELECT ${preferenceColumns}
-        FROM notification_preferences
-        WHERE ($1::uuid IS NULL OR patient_id = $1)
-          AND ($2::uuid IS NULL OR doctor_id = $2)
-        LIMIT 1
-    `, [patientId, doctorId]);
+    const result = patientId
+        ? await db.query(`SELECT ${preferenceColumns} FROM notification_preferences WHERE patient_id = $1::uuid LIMIT 1`, [patientId])
+        : await db.query(`SELECT ${preferenceColumns} FROM notification_preferences WHERE doctor_id = $1::uuid LIMIT 1`, [doctorId]);
 
     if (result.rows.length === 0) {
         return job.event_type !== 'FollowUpReminder';
@@ -240,12 +294,19 @@ const EVENT_SPECIFIC_PREF = {
     PACS_DEVICE_UNREACHABLE: 'notify_pacs_alert',
     PACS_STUDY_MISMATCH: 'notify_pacs_alert',
     CHAT_MESSAGE_RECEIVED: 'notify_chat_message',
+    ChatMessageReceived: 'notify_chat_message',
     CHAT_DIRECT_MESSAGE: 'notify_chat_message',
     INVENTORY_LOW_STOCK: 'notify_inventory_expiry',
+    LowStock: 'notify_inventory_expiry',
     INVENTORY_EXPIRY_WARNING: 'notify_inventory_expiry',
+    ItemExpired: 'notify_inventory_expiry',
     INSURANCE_CLAIM_SUBMITTED: 'notify_claim_update',
+    ClaimSubmitted: 'notify_claim_update',
     INSURANCE_CLAIM_APPROVED: 'notify_claim_update',
+    ClaimApproved: 'notify_claim_update',
     INSURANCE_CLAIM_REJECTED: 'notify_claim_update',
+    ClaimRejected: 'notify_claim_update',
+    ClaimPaid: 'notify_claim_update',
 };
 
 const isStaffOptedIn = async (db, job) => {
@@ -257,7 +318,7 @@ const isStaffOptedIn = async (db, job) => {
                notify_privacy_request, notify_chat_message, notify_inventory_expiry,
                notify_claim_update, notify_payment_update, inapp_enabled,
                email_enabled, sms_enabled, whatsapp_enabled,
-               quiet_hours_enabled, quiet_hours_start, quiet_hours_end
+               quiet_hours_enabled, quiet_hours_start, quiet_hours_end, time_zone
         FROM notification_preferences
         WHERE staff_user_id = $1
         LIMIT 1
@@ -299,7 +360,7 @@ const isStaffOptedIn = async (db, job) => {
 const getQuietHoursPrefs = async (db, job) => {
     if (job.recipient_type === 'Staff' && job.recipient_id) {
         const result = await db.query(`
-            SELECT quiet_hours_enabled, quiet_hours_start, quiet_hours_end
+            SELECT quiet_hours_enabled, quiet_hours_start, quiet_hours_end, time_zone
             FROM notification_preferences
             WHERE staff_user_id = $1
             LIMIT 1
@@ -309,7 +370,7 @@ const getQuietHoursPrefs = async (db, job) => {
 
     if (job.recipient_type === 'Patient' && job.recipient_id) {
         const result = await db.query(`
-            SELECT quiet_hours_enabled, quiet_hours_start, quiet_hours_end
+            SELECT quiet_hours_enabled, quiet_hours_start, quiet_hours_end, time_zone
             FROM notification_preferences
             WHERE patient_id = $1
             LIMIT 1
@@ -319,7 +380,7 @@ const getQuietHoursPrefs = async (db, job) => {
 
     if (job.recipient_type === 'Doctor' && job.recipient_id) {
         const result = await db.query(`
-            SELECT quiet_hours_enabled, quiet_hours_start, quiet_hours_end
+            SELECT quiet_hours_enabled, quiet_hours_start, quiet_hours_end, time_zone
             FROM notification_preferences
             WHERE doctor_id = $1
             LIMIT 1
@@ -363,12 +424,23 @@ const isQuietHours = (prefs = {}, now = new Date(), timeZone = 'Africa/Cairo') =
 };
 
 const resolveDeliveryTime = (job, prefs = {}, timeZone = 'Africa/Cairo') => {
-    if (isQuietHours(prefs, new Date(), timeZone) && job.priority !== 'Critical') {
-        const deferred = new Date();
+    const zone = prefs.time_zone || timeZone;
+    if (isQuietHours(prefs, new Date(), zone) && job.priority !== 'Critical') {
         const end = normalizeQuietHour(prefs.quiet_hours_end, 7);
-        deferred.setHours(end, 0, 0, 0);
-        if (deferred <= new Date()) deferred.setDate(deferred.getDate() + 1);
-        return deferred;
+        const now = new Date();
+        for (let minutes = 1; minutes <= 48 * 60; minutes += 1) {
+            const candidate = new Date(now.getTime() + minutes * 60 * 1000);
+            const parts = new Intl.DateTimeFormat('en-US', {
+                timeZone: zone,
+                hour: 'numeric',
+                minute: 'numeric',
+                hourCycle: 'h23'
+            }).formatToParts(candidate);
+            const hour = Number(parts.find(part => part.type === 'hour')?.value);
+            const minute = Number(parts.find(part => part.type === 'minute')?.value);
+            if (hour === end && minute === 0) return candidate;
+        }
+        return new Date(now.getTime() + 24 * 60 * 60 * 1000);
     }
     return job.scheduled_for || new Date();
 };
@@ -400,14 +472,22 @@ const dispatchWithFallback = async (db, job, policies = []) => {
                 : policies.some(policy => (
                     policy.allowed_channels?.includes(channel)
                     && (!policyFlag || policy[policyFlag] !== false)
+                    && (PRIORITY_RANK[job.priority] ?? 0) >= (PRIORITY_RANK[policy.min_priority] ?? 0)
                 ));
             if (!allowed) continue;
         }
 
         const attemptedJob = { ...job, channel };
-        const optedIn = job.recipient_type === 'Staff'
-            ? await isStaffOptedIn(db, attemptedJob)
-            : await isOptedIn(db, attemptedJob);
+        // Mandatory staff/doctor alerts may bypass a user preference, but a
+        // patient contact-consent decision is a legal boundary and is never
+        // bypassed by an event payload flag.
+        const optedIn = job.recipient_type === 'Patient'
+            ? await isOptedIn(db, attemptedJob)
+            : job.variables?.force_delivery === true
+                ? true
+                : job.recipient_type === 'Staff'
+                    ? await isStaffOptedIn(db, attemptedJob)
+                    : await isOptedIn(db, attemptedJob);
         if (!optedIn) {
             lastError = `Recipient is not opted in for ${channel}`;
             continue;
@@ -421,7 +501,13 @@ const dispatchWithFallback = async (db, job, policies = []) => {
         }
 
         const language = job.variables?.language || 'en';
-        const template = await resolveTemplate(db, job.event_type, channel, language);
+        const template = job.variables?.notification_body
+            ? {
+                subject: job.variables.notification_subject || '',
+                body: job.variables.notification_body,
+                language
+            }
+            : await resolveTemplate(db, job.event_type, channel, language);
         if (!template) {
             lastError = `No active template for ${job.event_type}/${channel}`;
             continue;
@@ -445,6 +531,7 @@ const dispatchWithFallback = async (db, job, policies = []) => {
                 audienceType: job.recipient_type === 'Patient' ? 'Patient' : job.recipient_type === 'Doctor' ? 'Doctor' : 'Staff',
                 audienceRole: job.recipient_type === 'Staff' ? job.variables?.role : null,
                 priority: job.priority || 'Normal',
+                idempotencyKey: job.job_id ? `notification-job:${job.job_id}:${channel}` : job.idempotency_key,
                 variables: job.variables
             }
         );
@@ -465,10 +552,10 @@ const updateCampaignRecipient = async (db, job, status, updates = {}) => {
 
     await db.query(`
         UPDATE marketing_campaign_recipients
-        SET status = $1,
+        SET status = $1::varchar,
             notification_id = COALESCE($2, notification_id),
             failure_reason = $3,
-            sent_at = CASE WHEN $1::text = 'Sent' THEN NOW() ELSE sent_at END,
+            sent_at = CASE WHEN $1::varchar = 'Sent' THEN NOW() ELSE sent_at END,
             updated_at = NOW()
         WHERE campaign_id = $4
           AND patient_id = $5
@@ -571,6 +658,33 @@ const processJobs = async (db) => {
 
     for (const job of jobs) {
         try {
+            // Revalidate after claiming so stale reminders cannot be sent after
+            // a cancellation or reschedule races the scheduler.
+            if (job.event_type === 'AppointmentReminder' && job.entity_type === 'Appointment') {
+                const appointmentResult = await db.query(
+                    'SELECT status, start_time FROM appointments WHERE appointment_id = $1',
+                    [job.entity_id]
+                );
+                const appointment = appointmentResult.rows[0];
+                const currentOccurrence = getAppointmentOccurrenceKey(appointment?.start_time);
+                const expectedOccurrence = job.variables?.occurrence_key || null;
+                if (!appointment
+                    || !['Scheduled', 'Confirmed'].includes(appointment.status)
+                    || new Date(appointment.start_time) <= new Date()
+                    || !expectedOccurrence
+                    || currentOccurrence !== expectedOccurrence) {
+                    await db.query(`
+                        UPDATE notification_jobs
+                        SET status = 'Cancelled', processed_at = NOW(),
+                            error_message = 'Appointment is no longer eligible for this reminder',
+                            next_retry_at = NULL, locked_at = NULL, locked_by = NULL
+                        WHERE job_id = $1
+                    `, [job.job_id]);
+                    processed++;
+                    continue;
+                }
+            }
+
             // 1. Enforce quiet hours (defer non-critical notifications)
             const quietPrefs = await getQuietHoursPrefs(db, job);
             if (isQuietHours(quietPrefs) && job.priority !== 'Critical') {
@@ -615,12 +729,12 @@ const processJobs = async (db) => {
             const retryDelayMinutes = Math.min(60, 5 * Math.pow(2, job.retry_count || 0));
             await db.query(`
                 UPDATE notification_jobs
-                SET status = $1,
-                    processed_at = CASE WHEN $1::text = 'Pending' THEN NULL ELSE NOW() END,
+                SET status = $1::varchar,
+                    processed_at = CASE WHEN $1::varchar = 'Pending' THEN NULL ELSE NOW() END,
                     notification_id = $2,
                     error_message = $3,
-                    retry_count = retry_count + CASE WHEN $1::text IN ('Pending', 'Failed') THEN 1 ELSE 0 END,
-                    next_retry_at = CASE WHEN $1::text = 'Pending' THEN NOW() + ($5::int * INTERVAL '1 minute') ELSE NULL END,
+                    retry_count = retry_count + CASE WHEN $1::varchar IN ('Pending', 'Failed') THEN 1 ELSE 0 END,
+                    next_retry_at = CASE WHEN $1::varchar = 'Pending' THEN NOW() + ($5::int * INTERVAL '1 minute') ELSE NULL END,
                     locked_at = NULL,
                     locked_by = NULL
                 WHERE job_id = $4
@@ -636,11 +750,11 @@ const processJobs = async (db) => {
             const canRetry = job.retry_count < job.max_retries;
             await db.query(`
                 UPDATE notification_jobs
-                SET status = $1,
+                SET status = $1::varchar,
                     retry_count = retry_count + 1,
                     error_message = $2,
                     next_retry_at = NOW() + ($4::int * INTERVAL '1 minute'),
-                    processed_at = CASE WHEN $1::text = 'Pending' THEN NULL ELSE NOW() END,
+                    processed_at = CASE WHEN $1::varchar = 'Pending' THEN NULL ELSE NOW() END,
                     locked_at = NULL,
                     locked_by = NULL
                 WHERE job_id = $3
@@ -673,15 +787,40 @@ const triggerEvent = async (db, eventType, payload = {}) => {
             entityType,
             entityId,
             variables = {},
-            channels = ['Email', 'SMS'],
+            channels,
             scheduledFor,
             occurrenceKey,
-            priority = 'Normal'
+            priority
         } = payload;
 
         const jobs = [];
+        const catalogResult = await db.query(`
+            SELECT default_channels, default_priority
+            FROM notification_event_catalog
+            WHERE event_type = $1
+            LIMIT 1
+        `, [eventType]);
+        const catalog = catalogResult.rows[0] || {};
+        if (!catalogResult.rows[0]) throw new Error(`Unknown notification event: ${eventType}`);
+        const effectivePriority = priority || catalog.default_priority || 'Normal';
+        const baseChannels = channels || catalog.default_channels || ['Email', 'SMS'];
+        const shouldAddPortalInApp = (patientId || doctorId) && baseChannels.some(channel => channel !== 'InApp');
+        const inAppTemplate = shouldAddPortalInApp
+            ? await db.query(`
+                SELECT 1
+                FROM notification_templates
+                WHERE event_type = $1
+                  AND channel = 'InApp'
+                  AND is_active = TRUE
+                LIMIT 1
+            `, [eventType])
+            : { rows: [] };
+        const requestedChannels = [...new Set([
+            ...baseChannels,
+            ...(inAppTemplate.rows.length > 0 ? ['InApp'] : [])
+        ])];
 
-        for (const channel of channels) {
+        for (const channel of requestedChannels) {
             if (patientId) {
                 jobs.push({
                     eventType,
@@ -690,30 +829,32 @@ const triggerEvent = async (db, eventType, payload = {}) => {
                     recipientId: patientId,
                     entityType,
                     entityId,
-                    variables: { ...variables, requested_channels: channels },
+                    variables: { ...variables, requested_channels: requestedChannels, ...(occurrenceKey ? { occurrence_key: occurrenceKey } : {}) },
                     scheduledFor,
                     occurrenceKey,
-                    priority
+                    priority: effectivePriority
                 });
             }
         }
 
         if (doctorId) {
             const prefResult = await db.query(`
-                SELECT email_enabled, sms_enabled, whatsapp_enabled
+                SELECT email_enabled, sms_enabled, whatsapp_enabled, inapp_enabled
                 FROM notification_preferences WHERE doctor_id = $1 LIMIT 1
             `, [doctorId]);
             const pref = prefResult.rows[0];
-            const doctorChannels = pref
-                ? ['Email', 'SMS', 'WhatsApp'].filter(ch => pref[CHANNEL_PREF_COLUMN[ch]])
-                : ['Email'];
+            const doctorChannels = variables.force_delivery === true
+                ? requestedChannels
+                : pref
+                ? requestedChannels.filter(ch => pref[CHANNEL_PREF_COLUMN[ch]] !== false)
+                : requestedChannels.filter(ch => ch === 'Email' || ch === 'InApp');
             for (const channel of doctorChannels) {
                 jobs.push({
                     eventType, channel,
                     recipientType: 'Doctor', recipientId: doctorId,
                     entityType, entityId,
-                    variables: { ...variables, requested_channels: doctorChannels },
-                    scheduledFor, occurrenceKey, priority
+                    variables: { ...variables, requested_channels: doctorChannels, ...(occurrenceKey ? { occurrence_key: occurrenceKey } : {}) },
+                    scheduledFor, occurrenceKey, priority: effectivePriority
                 });
             }
         }
@@ -722,6 +863,7 @@ const triggerEvent = async (db, eventType, payload = {}) => {
             const policies = await resolveAudiencePolicies(db, eventType, staffRole);
             const allowedChannels = policies.length > 0
                 ? [...new Set(policies.flatMap(p => p.allowed_channels || []))]
+                    .filter(channel => baseChannels.includes(channel))
                 : ['InApp'];
 
             for (const channel of allowedChannels) {
@@ -729,10 +871,10 @@ const triggerEvent = async (db, eventType, payload = {}) => {
                     eventType, channel,
                     recipientType: 'Staff', recipientId: staffId,
                     entityType, entityId,
-                    variables: { ...variables, role: staffRole, requested_channels: allowedChannels },
+                    variables: { ...variables, role: staffRole, requested_channels: allowedChannels, ...(occurrenceKey ? { occurrence_key: occurrenceKey } : {}) },
                     scheduledFor,
                     occurrenceKey,
-                    priority
+                    priority: effectivePriority
                 });
             }
         }
@@ -740,8 +882,11 @@ const triggerEvent = async (db, eventType, payload = {}) => {
         for (const job of jobs) {
             await scheduleJob(db, job);
         }
+        return { scheduled: jobs.length };
     } catch (err) {
         console.error(`[NotificationJobService] triggerEvent(${eventType}) error:`, err.message);
+        if (payload.required === true) throw err;
+        return { scheduled: 0, error: err.message };
     }
 };
 
@@ -751,15 +896,20 @@ const triggerEventForRole = async (db, eventType, role, payload = {}) => {
             SELECT user_id FROM users WHERE role = $1 AND is_active = TRUE
         `, [role]);
 
+        let scheduled = 0;
         for (const user of usersResult.rows) {
-            await triggerEvent(db, eventType, {
+            const result = await triggerEvent(db, eventType, {
                 ...payload,
                 staffId: user.user_id,
                 staffRole: role
             });
+            scheduled += result?.scheduled || 0;
         }
+        return { recipients: usersResult.rows.length, scheduled };
     } catch (err) {
         console.error(`[NotificationJobService] triggerEventForRole(${eventType}, ${role}) error:`, err.message);
+        if (payload.required === true) throw err;
+        return { recipients: 0, scheduled: 0, error: err.message };
     }
 };
 
@@ -767,6 +917,109 @@ const triggerEventForRole = async (db, eventType, role, payload = {}) => {
 
 let pollingInterval = null;
 let reminderInterval = null;
+let criticalEscalationInterval = null;
+
+const reconcileCriticalResultNotifications = async (db) => {
+    const pendingResult = await db.query(`
+        SELECT cra.acknowledgement_id, cra.exam_id, cra.recipient_user_id,
+               cra.referring_doctor_id, cra.recipient_role, cra.escalation_level,
+               cra.acknowledgement_due_at, e.order_number, e.critical_result_marked_at
+        FROM critical_result_acknowledgements cra
+        JOIN examinations e ON e.exam_id = cra.exam_id
+        WHERE cra.status = 'Pending'
+          AND e.critical_result = TRUE
+        ORDER BY cra.created_at ASC
+        LIMIT 100
+    `);
+
+    let reconciled = 0;
+    for (const acknowledgement of pendingResult.rows) {
+        const eventType = acknowledgement.escalation_level > 0
+            ? 'CriticalResultEscalated'
+            : 'CriticalResultFinalized';
+        const payload = {
+            entityType: 'Exam',
+            entityId: acknowledgement.exam_id,
+            occurrenceKey: acknowledgement.acknowledgement_id,
+            priority: 'Critical',
+            required: true,
+            variables: {
+                exam_id: acknowledgement.exam_id,
+                order_number: acknowledgement.order_number || '',
+                critical_marked_at: acknowledgement.critical_result_marked_at,
+                overdue_since: acknowledgement.acknowledgement_due_at,
+                force_delivery: true
+            }
+        };
+        if (acknowledgement.referring_doctor_id) {
+            await triggerEvent(db, eventType, {
+                ...payload,
+                doctorId: acknowledgement.referring_doctor_id
+            });
+        } else if (acknowledgement.recipient_user_id) {
+            await triggerEvent(db, eventType, {
+                ...payload,
+                staffId: acknowledgement.recipient_user_id,
+                staffRole: acknowledgement.recipient_role
+            });
+        }
+        reconciled += 1;
+    }
+    return reconciled;
+};
+
+const processCriticalResultEscalations = async (db) => {
+    const admins = await db.query(`
+        SELECT user_id, role
+        FROM users
+        WHERE role = 'Admin' AND is_active = TRUE
+        ORDER BY user_id
+    `);
+    if (admins.rows.length === 0) {
+        return { escalated: 0, reconciled: await reconcileCriticalResultNotifications(db) };
+    }
+
+    const dueResult = await db.query(`
+        SELECT cra.acknowledgement_id, cra.exam_id, cra.acknowledgement_due_at
+        FROM critical_result_acknowledgements cra
+        JOIN examinations e ON e.exam_id = cra.exam_id
+        WHERE cra.status = 'Pending'
+          AND cra.referring_doctor_id IS NOT NULL
+          AND cra.acknowledgement_due_at <= NOW()
+          AND cra.escalated_at IS NULL
+          AND e.critical_result = TRUE
+        ORDER BY cra.acknowledgement_due_at ASC
+        LIMIT 50
+    `);
+
+    let escalated = 0;
+    for (const acknowledgement of dueResult.rows) {
+
+        for (const admin of admins.rows) {
+            await db.query(`
+                INSERT INTO critical_result_acknowledgements (
+                    exam_id, recipient_user_id, recipient_role, status,
+                    acknowledgement_due_at, escalation_level
+                )
+                VALUES ($1, $2, 'Admin', 'Pending', NOW() + INTERVAL '15 minutes', 1)
+                ON CONFLICT (exam_id, recipient_user_id) WHERE recipient_user_id IS NOT NULL
+                DO UPDATE SET escalation_level = GREATEST(critical_result_acknowledgements.escalation_level, 1)
+            `, [acknowledgement.exam_id, admin.user_id]);
+        }
+        const claimed = await db.query(`
+            UPDATE critical_result_acknowledgements
+            SET escalated_at = NOW(), escalation_level = 1, updated_at = NOW()
+            WHERE acknowledgement_id = $1
+              AND status = 'Pending'
+              AND escalated_at IS NULL
+            RETURNING acknowledgement_id
+        `, [acknowledgement.acknowledgement_id]);
+        if (claimed.rows.length > 0) escalated += 1;
+    }
+
+    const reconciled = await reconcileCriticalResultNotifications(db);
+    return { escalated, reconciled };
+};
 
 const startPolling = (db, intervalMs = 60000) => {
     if (pollingInterval) return; // already running
@@ -784,6 +1037,16 @@ const startPolling = (db, intervalMs = 60000) => {
 
     // Start 24-hour appointment reminder scheduling (runs every 15 minutes)
     startReminderScheduler(db);
+    if (!criticalEscalationInterval) {
+        processCriticalResultEscalations(db).catch(err => {
+            console.error('[NotificationJobService] Critical-result reconciliation error:', err.message);
+        });
+        criticalEscalationInterval = setInterval(() => {
+            processCriticalResultEscalations(db).catch(err => {
+                console.error('[NotificationJobService] Critical-result reconciliation error:', err.message);
+            });
+        }, 60 * 1000);
+    }
 };
 
 const stopPolling = () => {
@@ -794,6 +1057,10 @@ const stopPolling = () => {
     if (reminderInterval) {
         clearInterval(reminderInterval);
         reminderInterval = null;
+    }
+    if (criticalEscalationInterval) {
+        clearInterval(criticalEscalationInterval);
+        criticalEscalationInterval = null;
     }
 };
 
@@ -838,26 +1105,11 @@ const scheduleReminders = async (db) => {
                 ? ['Email', 'SMS', 'WhatsApp'].filter(channel => pref[CHANNEL_PREF_COLUMN[channel]])
                 : ['Email', 'SMS'];
 
-            for (const channel of channels) {
-                await scheduleJob(db, {
-                    eventType: 'AppointmentReminder',
-                    channel,
-                    recipientType: 'Patient',
-                    recipientId: appt.patient_id,
-                    entityType: 'Appointment',
-                    entityId: appt.appointment_id,
-                    variables: {
-                        patient_name: patientName,
-                        order_number: appt.order_number || '',
-                        appointment_time: apptTime,
-                        exam_type: appt.exam_type_name || '',
-                        language: appt.preferred_language || 'en',
-                        requested_channels: channels
-                    },
-                    occurrenceKey: new Date(appt.start_time).toISOString(),
-                    scheduledFor: new Date()
-                });
-            }
+            await scheduleAppointmentReminder(db, {
+                ...appt,
+                patient_name: patientName,
+                appointment_time: apptTime
+            }, { channels });
             scheduled++;
         }
 
@@ -886,10 +1138,15 @@ module.exports = {
     startPolling,
     stopPolling,
     scheduleReminders,
+    scheduleAppointmentReminder,
+    cancelPendingAppointmentReminders,
+    getAppointmentOccurrenceKey,
     validateRequiredVariables,
     validateTemplatePlaceholders,
     buildIdempotencyKey,
     isQuietHours,
     resolveDeliveryTime,
     dispatchWithFallback,
+    reconcileCriticalResultNotifications,
+    processCriticalResultEscalations,
 };

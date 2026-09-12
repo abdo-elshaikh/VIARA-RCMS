@@ -25,12 +25,53 @@ const transporter = process.env.SMTP_HOST
 
 // ─── Template engine ─────────────────────────────────────────────────────────
 
+const getTemplateValue = (variables, path) => String(path || '')
+    .split('.')
+    .filter(Boolean)
+    .reduce((value, key) => (value !== null && value !== undefined ? value[key] : undefined), variables);
+
+const formatTemplateValue = (value) => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+};
+
 /**
- * Replace {{variable}} placeholders with values from the variables object.
+ * Render the deliberately small notification-template language without eval.
+ * Supported forms are {{path.to.value}}, {{value || "fallback"}}, and
+ * {{#if value}}...{{/if}}. Unknown or unsupported expressions are removed so
+ * template source is never exposed to a recipient.
  */
 const renderTemplate = (text, variables = {}) => {
     if (!text) return '';
-    return text.replace(/\{\{(\w+)\}\}/g, (_, key) => variables[key] ?? '');
+
+    let rendered = String(text);
+    const conditionalPattern = /\{\{#if\s+([\w.-]+)\}\}([\s\S]*?)\{\{\/if\}\}/g;
+    let previous;
+    let iterations = 0;
+    do {
+        previous = rendered;
+        rendered = rendered.replace(conditionalPattern, (_, path, content) => (
+            getTemplateValue(variables, path) ? content : ''
+        ));
+        iterations += 1;
+    } while (rendered !== previous && iterations < 10 && rendered.includes('{{#if'));
+
+    rendered = rendered.replace(
+        /\{\{\s*([\w.-]+)\s*\|\|\s*(["'])(.*?)\2\s*\}\}/g,
+        (_, path, _quote, fallback) => {
+            const value = getTemplateValue(variables, path);
+            return value === null || value === undefined || value === ''
+                ? fallback
+                : formatTemplateValue(value);
+        }
+    );
+
+    rendered = rendered.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_, path) => (
+        formatTemplateValue(getTemplateValue(variables, path))
+    ));
+
+    return rendered.replace(/\{\{[\s\S]*?\}\}/g, '');
 };
 
 const getAudienceType = (context = {}) => {
@@ -38,16 +79,22 @@ const getAudienceType = (context = {}) => {
     if (context.patientId) return 'Patient';
     if (context.doctorId || context.referringDoctorId) return 'Doctor';
     if (context.recipientUserId || context.audienceRole) return 'Staff';
-    return 'Global';
+    return null;
 };
 
-const getNotificationContextValues = (context = {}) => [
-    context.doctorId || context.referringDoctorId || null,
-    context.recipientUserId || null,
-    getAudienceType(context),
-    context.audienceRole || null,
-    context.priority || 'Normal'
-];
+const getNotificationContextValues = (context = {}) => {
+    const audienceType = getAudienceType(context);
+    if (!audienceType) {
+        throw new Error('Persisted notifications require an explicit audience');
+    }
+    return [
+        context.doctorId || context.referringDoctorId || null,
+        context.recipientUserId || null,
+        audienceType,
+        context.audienceRole || null,
+        context.priority || 'Normal'
+    ];
+};
 
 const computeActionUrl = (item = {}, context = {}) => {
     if (context.actionUrl) return context.actionUrl;
@@ -56,6 +103,43 @@ const computeActionUrl = (item = {}, context = {}) => {
     const event = String(item.event_type || context.eventType || '').toUpperCase();
     const entityId = item.entity_id || context.entityId;
     const patientId = item.patient_id || context.patientId;
+    const audienceType = item.audience_type || getAudienceType(context);
+    const audienceRole = item.audience_role || context.audienceRole || '';
+
+    if (audienceType === 'Patient') {
+        if (event.includes('REPORT') || event.includes('RESULT') || event.includes('EXAM')) {
+            return entityId
+                ? `/patient/dashboard?tab=records&examId=${encodeURIComponent(entityId)}`
+                : '/patient/dashboard?tab=records';
+        }
+        if (event.includes('INVOICE') || event.includes('PAYMENT') || event.includes('BILLING') || event.includes('REFUND')) {
+            return '/patient/dashboard?tab=invoices';
+        }
+        if (event.includes('APPOINTMENT') || event.includes('WAITLIST') || event.includes('BOOKING')) {
+            return '/patient/dashboard?tab=requests';
+        }
+        if (event.includes('DOCUMENT')) return '/patient/dashboard?tab=documents';
+        if (event.includes('CHAT') || event.includes('MESSAGE')) return '/patient/dashboard?tab=messages';
+        return '/patient/dashboard?tab=notifications';
+    }
+
+    if (audienceType === 'Doctor') {
+        if (event.includes('REPORT') || event.includes('RESULT') || event.includes('EXAM') || event.includes('CRITICAL')) {
+            return entityId
+                ? `/doctor/dashboard?tab=cases&examId=${encodeURIComponent(entityId)}`
+                : '/doctor/dashboard?tab=cases';
+        }
+        if (event.includes('CHAT') || event.includes('MESSAGE')) return '/doctor/dashboard?tab=messages';
+        return '/doctor/dashboard?tab=notifications';
+    }
+
+    if (event.includes('PARTIALPAYMENTEXCEPTION')) {
+        if (audienceRole === 'Nurse') return '/nurse';
+        if (audienceRole === 'Technician') return '/modality';
+        if (audienceRole === 'Accountant' || audienceRole === 'Admin') return '/approvals';
+        if (audienceRole === 'Cashier') return '/reception?tab=cashier';
+        return '/reception?tab=schedule';
+    }
 
     if (event.includes('STAT') || event.includes('CRITICAL') || event.includes('EXAM') || event.includes('REPORT')) {
         return entityId ? `/worklist?examId=${entityId}` : '/worklist';
@@ -158,8 +242,10 @@ const notifyClients = async (db, notificationId) => {
 const sendEmail = async (to, subject, body, db, context = {}) => {
     const resolvedSubject = renderTemplate(subject, context.variables || {});
     const resolvedBody = renderTemplate(body, context.variables || {});
+    let notificationContextValues = null;
 
     try {
+        notificationContextValues = db ? getNotificationContextValues(context) : null;
         if (process.env.NODE_ENV === 'production' && !process.env.SMTP_HOST) {
             throw new Error('Email provider is not configured');
         }
@@ -187,7 +273,7 @@ const sendEmail = async (to, subject, body, db, context = {}) => {
                 context.eventType || null,
                 context.entityId || null,
                 context.patientId || null,
-                ...getNotificationContextValues(context)
+                ...notificationContextValues
             ]);
             const notificationId = result.rows[0].notification_id;
             await notifyClients(db, notificationId);
@@ -195,7 +281,7 @@ const sendEmail = async (to, subject, body, db, context = {}) => {
         }
         return { success: true, messageId: info.messageId };
     } catch (error) {
-        if (db) {
+        if (db && notificationContextValues) {
             const result = await db.query(`
                 INSERT INTO notifications
                     (recipient, type, channel, subject, content, status, event_type, entity_id, patient_id,
@@ -205,7 +291,7 @@ const sendEmail = async (to, subject, body, db, context = {}) => {
             `, [
                 encrypt(to), encrypt(resolvedSubject), encrypt(resolvedBody),
                 context.eventType || null, context.entityId || null, context.patientId || null,
-                ...getNotificationContextValues(context),
+                ...notificationContextValues,
                 error.message
             ]);
             const notificationId = result.rows[0]?.notification_id;
@@ -221,12 +307,20 @@ const sendSms = async (to, body, db, context = {}) => {
     let errorMsg = null;
     let providerMessageId = null;
     let isStub = false;
+    let notificationContextValues = null;
+
+    try {
+        notificationContextValues = db ? getNotificationContextValues(context) : null;
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
 
     if (db) {
         try {
             const IntegrationService = require('../services/integrationService');
             const integrationService = new IntegrationService(db);
             const result = await integrationService.sendSMS(to, resolvedBody, {
+                idempotencyKey: context.idempotencyKey,
                 eventType: context.eventType,
                 entityId: context.entityId,
                 patientId: context.patientId,
@@ -259,7 +353,7 @@ const sendSms = async (to, body, db, context = {}) => {
         `, [
             encrypt(to), notifType, encrypt(resolvedBody), status,
             context.eventType || null, context.entityId || null, context.patientId || null,
-            ...getNotificationContextValues(context),
+            ...notificationContextValues,
             errorMsg, providerMessageId
         ]);
         const notificationId = result.rows[0]?.notification_id;
@@ -275,12 +369,20 @@ const sendWhatsApp = async (to, body, db, context = {}) => {
     let errorMsg = null;
     let providerMessageId = null;
     let isStub = false;
+    let notificationContextValues = null;
+
+    try {
+        notificationContextValues = db ? getNotificationContextValues(context) : null;
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
 
     if (db) {
         try {
             const IntegrationService = require('../services/integrationService');
             const integrationService = new IntegrationService(db);
             const result = await integrationService.sendWhatsApp(to, resolvedBody, {
+                idempotencyKey: context.idempotencyKey,
                 eventType: context.eventType,
                 entityId: context.entityId,
                 patientId: context.patientId,
@@ -313,7 +415,7 @@ const sendWhatsApp = async (to, body, db, context = {}) => {
         `, [
             encrypt(to), notifType, encrypt(resolvedBody), status,
             context.eventType || null, context.entityId || null, context.patientId || null,
-            ...getNotificationContextValues(context),
+            ...notificationContextValues,
             errorMsg, providerMessageId
         ]);
         const notificationId = result.rows[0]?.notification_id;
@@ -328,6 +430,7 @@ const sendInApp = async (to, subject, body, db, context = {}) => {
     const resolvedBody = renderTemplate(body, context.variables || {});
 
     try {
+        const notificationContextValues = db ? getNotificationContextValues(context) : null;
         if (db) {
             const result = await db.query(`
                 INSERT INTO notifications
@@ -342,7 +445,7 @@ const sendInApp = async (to, subject, body, db, context = {}) => {
                 context.eventType || null,
                 context.entityId || null,
                 context.patientId || null,
-                ...getNotificationContextValues(context)
+                ...notificationContextValues
             ]);
             const notificationId = result.rows[0].notification_id;
             await notifyClients(db, notificationId);
@@ -367,4 +470,4 @@ const dispatch = async (channel, to, subject, body, db, context = {}) => {
     }
 };
 
-module.exports = { sendEmail, sendSms, sendWhatsApp, sendInApp, dispatch, renderTemplate, notifyClients };
+module.exports = { sendEmail, sendSms, sendWhatsApp, sendInApp, dispatch, renderTemplate, notifyClients, computeActionUrl };

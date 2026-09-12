@@ -1,9 +1,17 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { setupListeners } from '@reduxjs/toolkit/query';
 import { api } from './api';
-import authReducer from './authSlice';
+import authReducer, { logOut } from './authSlice';
 import preferencesReducer from './preferencesSlice';
 import { configureAccessTokenProvider } from '../utils/accessToken';
+
+export const clearApiCacheOnSessionBoundary = (storeApi) => (next) => (action) => {
+    const result = next(action);
+    if (logOut.match(action)) {
+        storeApi.dispatch(api.util.resetApiState());
+    }
+    return result;
+};
 
 export const store = configureStore({
     reducer: {
@@ -12,7 +20,7 @@ export const store = configureStore({
         preferences: preferencesReducer,
     },
     middleware: (getDefaultMiddleware) =>
-        getDefaultMiddleware().concat(api.middleware),
+        getDefaultMiddleware().concat(clearApiCacheOnSessionBoundary, api.middleware),
 });
 
 configureAccessTokenProvider(() => store.getState().auth.token);

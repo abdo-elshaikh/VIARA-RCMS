@@ -1,29 +1,53 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
     Activity,
     AlertCircle,
+    AlertOctagon,
     AlertTriangle,
+    Archive,
+    ArrowRight,
+    Award,
     Bell,
     Check,
     CheckCheck,
+    ChevronDown,
+    ChevronUp,
     Clock,
     Clock3,
     Copy,
+    DollarSign,
+    ExternalLink,
+    FileCheck2,
+    FileSearch,
+    FileText,
     Filter,
     FilterX,
+    HardDrive,
+    Info,
     Mail,
+    MessageCircle,
     MessageSquare,
+    Package,
     Phone,
+    Radio,
     RefreshCw,
     Search,
     Send,
     Settings,
+    Shield,
+    ShieldAlert,
+    ShieldCheck,
     Smartphone,
     Sparkles,
+    Stethoscope,
+    Tag,
+    TrendingUp,
     User,
+    UserCheck,
+    Users,
+    Wrench,
     X,
-    Zap,
-    ExternalLink
+    Zap
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
@@ -32,56 +56,26 @@ import { useSelector } from 'react-redux';
 import { selectCurrentUser } from '../store/authSlice';
 import {
     useGetNotificationsQuery,
+    useGetMyNotificationsQuery,
     useMarkAllNotificationsReadMutation,
     useMarkNotificationReadMutation,
+    useMarkAllMyNotificationsReadMutation,
+    useMarkMyNotificationReadMutation,
+    useAcknowledgeCriticalResultMutation,
     useSendManualNotificationMutation
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
+import { getEffectivePermissions } from '../utils/effectivePermissions';
 import PageHeader from '../components/ui/PageHeader';
-import MetricCard from '../components/ui/MetricCard';
 import Pagination from '../components/ui/Pagination';
 import { getPaginationState } from '../utils/pagination';
 
-const CHANNELS = ['all', 'Email', 'SMS', 'WhatsApp', 'InApp'];
-const STATUSES = ['all', 'Sent', 'Delivered', 'Pending', 'Failed'];
+const CHANNELS = ['all', 'InApp', 'WhatsApp', 'SMS', 'Email'];
+const STATUSES = ['all', 'Delivered', 'Sent', 'Pending', 'Failed'];
+const PRIORITIES = ['all', 'Normal', 'Action', 'Warning', 'Critical'];
 const SEND_CHANNELS = ['Email', 'SMS', 'WhatsApp'];
-const MANUAL_ROLES = new Set(['Developer', 'Admin']);
-
-const ar = {
-    eyebrow: 'مركز الرسائل والتنبيهات السريرية',
-    title: 'مركز الإشعارات والتواصل',
-    description: 'متابعة سجل إرسال الرسائل والتنبيهات، الرسائل غير المقروءة، حالات الفشل، وإرسال تنبيهات مباشرة للمرضى والأطباء.',
-    all: 'جميع الإشعارات',
-    unread: 'تنبيهات غير مقروءة',
-    failed: 'تعذر الإرسال',
-    pending: 'قيد الإرسال',
-    sent: 'تم التسليم بنجاح',
-    markAllRead: 'تحديد الكل كمقروء',
-    markRead: 'تحديد كمقروء',
-    composeTitle: 'إرسال إشعار مباشر جديد',
-    composeHint: 'اختر القناة المناسبة واكتب نص الرسالة أو اختر قالباً جاهزاً.',
-    recipient: 'المستلم (البريد الإلكتروني أو الهاتف)',
-    channel: 'قناة الإرسال',
-    subject: 'عنوان الإشعار (اختياري)',
-    message: 'نص الرسالة...',
-    send: 'إرسال الإشعار',
-    sending: 'جاري الإرسال...',
-    copied: 'تم النسخ إلى الحافظة',
-    copy: 'نسخ المحتوى',
-    templates: 'قوالب سريرية سريعة',
-    tplReminder: 'تذكير بالموعد',
-    tplReady: 'التقرير جاهز للاستلام',
-    tplPrep: 'تعليمات التحضير للفحص',
-    tplPayment: 'تأكيد السداد',
-    today: 'اليوم',
-    yesterday: 'أمس',
-    week: 'هذا الأسبوع',
-    older: 'أقدم من ذلك',
-    settings: 'إعدادات الإشعارات',
-    refresh: 'تحديث السجل'
-};
-
-const tr = (t, key, defaultEn, defaultAr, isAr) => t(key, { defaultValue: isAr ? defaultAr : defaultEn });
+const MANUAL_ROLES = new Set(['Developer', 'Admin', 'Receptionist', 'Marketing']);
+const OUTBOUND_LOG_ROLES = new Set(['Developer', 'Admin', 'Receptionist', 'HR', 'Marketing']);
 
 const channelIcons = {
     Email: Mail,
@@ -94,25 +88,48 @@ const channelStyles = {
     Email: 'bg-sky-500/10 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400 border-sky-200/80 dark:border-sky-900/50',
     SMS: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 border-emerald-200/80 dark:border-emerald-900/50',
     WhatsApp: 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400 border-green-200/80 dark:border-green-900/50',
-    InApp: 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400 border-cyan-200/80 dark:border-cyan-900/50'
+    InApp: 'bg-teal-500/10 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400 border-teal-200/80 dark:border-teal-900/50'
 };
 
-const fieldClass = 'h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-800 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
+const priorityStyles = {
+    Critical: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30 ring-1 ring-rose-500/20',
+    Warning: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
+    Action: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/30',
+    Normal: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+};
+
+const categoryDefinitions = [
+    { id: 'all', labelAr: 'جميع الإشعارات', labelEn: 'All Alerts', icon: Bell },
+    { id: 'Security', labelAr: 'الأمان', labelEn: 'Security', icon: Shield, tone: 'rose' },
+    { id: 'Clinical', labelAr: 'سريري', labelEn: 'Clinical', icon: Stethoscope, tone: 'teal' },
+    { id: 'Financial', labelAr: 'مالي', labelEn: 'Financial', icon: DollarSign, tone: 'emerald' },
+    { id: 'Operational', labelAr: 'تشغيلي', labelEn: 'Operational', icon: Activity, tone: 'cyan' },
+    { id: 'Patient', labelAr: 'المريض', labelEn: 'Patient', icon: Users, tone: 'blue' },
+    { id: 'System', labelAr: 'النظام', labelEn: 'System', icon: Settings, tone: 'indigo' }
+];
+
+const fieldClass = 'h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-800 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
 
 export default function Notifications() {
-    const { t, i18n } = useTranslation(['system', 'common']);
+    const { t, i18n } = useTranslation(['system', 'common', 'workspace']);
     const navigate = useNavigate();
     const currentUser = useSelector(selectCurrentUser);
-    const effectivePermissions = new Set([...(currentUser?.permissions || []), ...(currentUser?.elevatedPermissions || [])]);
-    const canSendManual = MANUAL_ROLES.has(currentUser?.role) || effectivePermissions.has('MANAGE_NOTIFICATIONS');
+    const effectivePermissions = getEffectivePermissions(currentUser);
+    const canSendManual = MANUAL_ROLES.has(currentUser?.role)
+        && (currentUser?.role === 'Developer' || effectivePermissions.has('MANAGE_NOTIFICATIONS'));
+    const canViewOutbound = OUTBOUND_ROLES_CHECK(currentUser?.role);
     const isAr = i18n.language?.startsWith('ar');
     const isRtl = i18n.dir() === 'rtl';
     const language = i18n.language;
 
+    // Scope: 'personal' (My Notifications) vs 'outbound' (Center Logs)
+    const [scope, setScope] = useState('personal');
+    const [category, setCategory] = useState('all');
     const [query, setQuery] = useState('');
     const [channel, setChannel] = useState('all');
     const [status, setStatus] = useState('all');
-    const [activeTab, setActiveTab] = useState('all');
+    const [priority, setPriority] = useState('all');
+    const [readFilter, setReadFilter] = useState('all'); // 'all', 'unread', 'read'
     const [expandedId, setExpandedId] = useState(null);
     const [composerOpen, setComposerOpen] = useState(false);
     const [manualForm, setManualForm] = useState({
@@ -124,95 +141,179 @@ export default function Notifications() {
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
 
-    const params = useMemo(() => ({
+    const serverPaginationEnabled = true;
+
+    // API queries for Personal vs Outbound
+    const queryParams = useMemo(() => ({
         limit: pageSize,
         offset: (currentPage - 1) * pageSize,
-        view: activeTab,
         ...(channel !== 'all' ? { channel } : {}),
         ...(status !== 'all' ? { status } : {}),
+        ...(category !== 'all' ? { category } : {}),
+        ...(priority !== 'all' ? { priority } : {}),
+        ...(readFilter !== 'all' ? { readState: readFilter } : {}),
         ...(query.trim() ? { q: query.trim() } : {})
-    }), [activeTab, channel, currentPage, pageSize, query, status]);
+    }), [category, channel, currentPage, pageSize, priority, query, readFilter, status]);
 
-    const {
-        data,
-        isLoading,
-        isFetching,
-        isError,
-        error,
-        refetch
-    } = useGetNotificationsQuery(params, {
+    const myNotificationsQuery = useGetMyNotificationsQuery(queryParams, {
+        skip: scope !== 'personal',
         pollingInterval: 30000,
         refetchOnFocus: true,
         refetchOnReconnect: true
     });
 
-    const [markAllRead, { isLoading: markingAll }] = useMarkAllNotificationsReadMutation();
-    const [markRead, { isLoading: markingOne }] = useMarkNotificationReadMutation();
+    const outboundNotificationsQuery = useGetNotificationsQuery(queryParams, {
+        skip: scope !== 'outbound' || !canViewOutbound,
+        pollingInterval: 30000,
+        refetchOnFocus: true,
+        refetchOnReconnect: true
+    });
+
+    const [markAllRead, { isLoading: markingAllOutbound }] = useMarkAllNotificationsReadMutation();
+    const [markRead, { isLoading: markingOneOutbound }] = useMarkNotificationReadMutation();
+    const [markAllMyRead, { isLoading: markingAllMy }] = useMarkAllMyNotificationsReadMutation();
+    const [markMyRead, { isLoading: markingOneMy }] = useMarkMyNotificationReadMutation();
+    const [acknowledgeCriticalResult, { isLoading: acknowledgingCritical }] = useAcknowledgeCriticalResultMutation();
     const [sendManual, { isLoading: sendingManual }] = useSendManualNotificationMutation();
 
-    const notifications = useMemo(() => {
-        const items = Array.isArray(data?.items) ? data.items : [];
-        return [...items].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-    }, [data]);
+    const activeQuery = scope === 'personal' ? myNotificationsQuery : outboundNotificationsQuery;
+    const rawItems = useMemo(
+        () => Array.isArray(activeQuery.data?.items) ? activeQuery.data.items : [],
+        [activeQuery.data?.items]
+    );
+    const isLoading = activeQuery.isLoading;
+    const isFetching = activeQuery.isFetching;
+    const isError = activeQuery.isError;
+    const error = activeQuery.error;
+    const refetch = activeQuery.refetch;
 
+    const serverTotal = Number.isFinite(Number(activeQuery.data?.total))
+        ? Number(activeQuery.data.total)
+        : null;
+    const searchLimited = Boolean(activeQuery.data?.searchLimited);
+
+    // Filter by category & extra filters
+    const filteredItems = useMemo(() => {
+        return rawItems.filter((item) => {
+            if (channel !== 'all' && item.channel !== channel) return false;
+            if (status !== 'all' && item.status !== status) return false;
+
+            // Read filter
+            if (readFilter === 'unread' && item.is_read) return false;
+            if (readFilter === 'read' && !item.is_read) return false;
+
+            // Priority filter
+            if (priority !== 'all') {
+                const itemPri = normalizePriority(item.priority).toLowerCase();
+                if (itemPri !== priority.toLowerCase()) return false;
+            }
+
+            // Category filter
+            if (category !== 'all') {
+                if (getNotificationCategory(item) !== category) return false;
+            }
+
+            return true;
+        });
+    }, [category, channel, priority, rawItems, readFilter, status]);
+
+    // Aggregate counts
     const counts = useMemo(() => {
-        const fallback = {
-            all: notifications.length,
-            unread: notifications.filter((item) => !item.is_read).length,
-            failed: notifications.filter((item) => item.status === 'Failed').length,
-            pending: notifications.filter((item) => item.status === 'Pending').length,
-            sent: notifications.filter((item) => item.status === 'Sent').length,
-            delivered: notifications.filter((item) => item.status === 'Delivered').length
-        };
-        return { ...fallback, ...(data?.counts || {}) };
-    }, [data, notifications]);
-    const filteredTotal = Number(data?.total || 0);
+        const apiCounts = activeQuery.data?.counts || {};
+        const total = serverPaginationEnabled && Number.isFinite(Number(serverTotal)) ? serverTotal : rawItems.length;
+        const unread = serverPaginationEnabled && Number.isFinite(Number(apiCounts.unread))
+            ? Number(apiCounts.unread)
+            : rawItems.filter((i) => !i.is_read).length;
+        const critical = Number.isFinite(Number(apiCounts.critical))
+            ? Number(apiCounts.critical)
+            : rawItems.filter((i) => normalizePriority(i.priority) === 'Critical').length;
+        const delivered = Number.isFinite(Number(apiCounts.delivered))
+            ? Number(apiCounts.delivered)
+            : rawItems.filter((i) => i.status === 'Delivered').length;
+        const failed = Number.isFinite(Number(apiCounts.failed))
+            ? Number(apiCounts.failed)
+            : rawItems.filter((i) => i.status === 'Failed').length;
+        const terminal = delivered + failed;
+        const deliveryRate = scope === 'outbound' && terminal > 0 ? Math.round((delivered / terminal) * 100) : null;
+        return { total, unread, critical, delivered, failed, deliveryRate };
+    }, [activeQuery.data, rawItems, scope, serverPaginationEnabled, serverTotal]);
 
+    // Pagination
     useEffect(() => {
         setCurrentPage(1);
-    }, [query, channel, status, activeTab, pageSize]);
+    }, [query, channel, status, priority, readFilter, category, scope, pageSize]);
 
+    const totalCount = serverPaginationEnabled && serverTotal !== null ? serverTotal : filteredItems.length;
     const { pageCount, startIndex, endIndex } = useMemo(
-        () => getPaginationState(Number(data?.total || 0), currentPage, pageSize),
-        [currentPage, data?.total, pageSize]
+        () => getPaginationState(totalCount, currentPage, pageSize),
+        [currentPage, totalCount, pageSize]
     );
 
-    const pagedNotifications = notifications;
+    const pagedItems = useMemo(() => {
+        return serverPaginationEnabled ? filteredItems : filteredItems.slice(startIndex, endIndex);
+    }, [filteredItems, serverPaginationEnabled, startIndex, endIndex]);
 
-    useEffect(() => {
-        if (currentPage > pageCount) setCurrentPage(pageCount);
-    }, [currentPage, pageCount]);
-
+    // Grouping by Date
     const grouped = useMemo(() => {
         const buckets = { today: [], yesterday: [], week: [], older: [] };
-        pagedNotifications.forEach((item) => buckets[getGroupKey(item.created_at)].push(item));
+        pagedItems.forEach((item) => buckets[getGroupKey(item.created_at)].push(item));
         return Object.entries(buckets).filter(([, items]) => items.length > 0);
-    }, [pagedNotifications]);
+    }, [pagedItems]);
 
+    // Actions
     const handleMarkAll = async () => {
+        const scopeLabel = scope === 'personal'
+            ? (isAr ? 'صندوق إشعاراتي الشخصي' : 'your personal inbox')
+            : (isAr ? 'سجل الإرسال الصادر للمركز' : 'the center outbound log');
+        if (!window.confirm(isAr
+            ? `هل تريد تحديد جميع الإشعارات في ${scopeLabel} كمقروءة؟`
+            : `Mark all notifications in ${scopeLabel} as read?`)) return;
         try {
-            await markAllRead().unwrap();
+            if (scope === 'personal') {
+                await markAllMyRead().unwrap();
+            } else {
+                await markAllRead().unwrap();
+            }
             toast.success(isAr ? 'تم تحديد جميع الإشعارات كمقروءة' : 'All notifications marked as read');
-        } catch (error) {
-            toast.error(getErrorMessage(error, isAr ? 'فشلت العملية' : 'Action failed'));
+        } catch (err) {
+            toast.error(getErrorMessage(err, isAr ? 'فشلت العملية' : 'Action failed'));
         }
     };
 
-    const handleMarkRead = async (id) => {
+    const handleMarkSingleRead = async (id) => {
         try {
-            await markRead(id).unwrap();
+            if (scope === 'personal') {
+                await markMyRead(id).unwrap();
+            } else {
+                await markRead(id).unwrap();
+            }
             toast.success(isAr ? 'تم تحديد الإشعار كمقروء' : 'Notification marked as read');
+        } catch (err) {
+            toast.error(getErrorMessage(err, isAr ? 'فشلت العملية' : 'Action failed'));
+        }
+    };
+
+    const handleNavigate = (actionUrl) => {
+        if (!actionUrl || !String(actionUrl).startsWith('/')) return;
+        navigate(actionUrl);
+    };
+
+    const handleAcknowledge = async (item) => {
+        if (!item?.entity_id) return;
+        try {
+            await acknowledgeCriticalResult({ examId: item.entity_id }).unwrap();
+            toast.success(isAr ? 'تم تأكيد استلام النتيجة الحرجة' : 'Critical result acknowledged');
         } catch (error) {
-            toast.error(getErrorMessage(error, isAr ? 'فشلت العملية' : 'Action failed'));
+            toast.error(getErrorMessage(error, isAr ? 'تعذر تأكيد النتيجة الحرجة' : 'Could not acknowledge critical result'));
         }
     };
 
     const handleCopy = async (item) => {
         try {
-            await navigator.clipboard.writeText([item.subject, item.recipient, item.content].filter(Boolean).join('\n\n'));
-            toast.success(isAr ? ar.copied : 'Copied to clipboard');
+            await navigator.clipboard.writeText([item.subject, item.recipient, item.content, item.event_type].filter(Boolean).join('\n\n'));
+            toast.success(isAr ? 'تم نسخ بيانات الإشعار إلى الحافظة' : 'Copied notification to clipboard');
         } catch {
-            toast.error('Could not copy notification');
+            toast.error(isAr ? 'تعذر النسخ' : 'Could not copy');
         }
     };
 
@@ -220,32 +321,48 @@ export default function Notifications() {
         if (type === 'reminder') {
             setManualForm((prev) => ({
                 ...prev,
-                subject: isAr ? 'تذكير بموعد الفحص الإشعاعي' : 'Radiology Appointment Reminder',
+                subject: isAr ? 'تذكير بموعد الفحص الطبي' : 'Radiology Appointment Reminder',
                 body: isAr
-                    ? 'نود تذكيركم بموعد الفحص الإشعاعي الخاص بكم لدى مركز فيارا. يُرجى الحضور قبل الموعد بـ 15 دقيقة مصطحبين الهوية والتقارير السابقة.'
-                    : 'This is a friendly reminder for your upcoming radiology appointment at VIARA. Please arrive 15 minutes early with your ID and prior records.'
+                    ? 'نود تذكيركم بموعد الفحص الإشعاعي الخاص بكم لدى مركز طيبة سكان. يُرجى الحضور قبل الموعد بـ 15 دقيقة مع إحضار بطاقة الهوية والفحوصات السابقة.'
+                    : 'Friendly reminder for your upcoming diagnostic exam at Tiba Scan. Please arrive 15 minutes before your scheduled slot with your ID and prior medical files.'
             }));
         } else if (type === 'ready') {
             setManualForm((prev) => ({
                 ...prev,
-                subject: isAr ? 'تقرير الفحص الإشعاعي جاهز' : 'Radiology Diagnostic Report Ready',
+                subject: isAr ? 'التقرير التشخيصي والصور جاهزة للاستلام' : 'Diagnostic Report & Images Ready',
                 body: isAr
-                    ? 'نود إبلاغكم بأن التقرير الطبي لفحصكم الإشعاعي تم اعتماده وأصبح جاهزاً للاستلام عبر بوابة المريض أو من قسم الاستقبال.'
-                    : 'Your diagnostic radiology report has been finalized and is now available for download via the patient portal or front desk.'
+                    ? 'نحيطكم علماً بأن التقرير الطبي وصور الفحص الإشعاعي تم اعتمادها رسمياً وأصبحت متاحة للتحميل عبر بوابة المريض الإلكترونية أو الاستلام المباشر.'
+                    : 'Your diagnostic radiology report and calibrated DICOM images have been signed off and are now available for secure download via the patient portal.'
             }));
         } else if (type === 'prep') {
             setManualForm((prev) => ({
                 ...prev,
-                subject: isAr ? 'تعليمات التحضير للفحص الإشعاعي' : 'Important Exam Preparation Guidelines',
+                subject: isAr ? 'تعليمات وإرشادات التحضير للفحص' : 'Exam Preparation Instructions',
                 body: isAr
-                    ? 'يُرجى الصيام لمدة 6 ساعات قبل موعد الفحص، مع شرب كمية كافية من الماء، وتجنب ارتداء أي مشغولات أو معادن.'
-                    : 'Please fast for 6 hours prior to your scheduled exam. Drink plenty of water and avoid wearing metallic jewelry or accessories.'
+                    ? 'يُرجى الصيام لمدة 6 ساعات قبل موعد الفحص، وشرب كمية مناسبة من الماء، وتجنب ارتداء أي حلي أو معادن أثناء الفحص.'
+                    : 'Please fast for 6 hours prior to your scheduled exam, remain well-hydrated, and refrain from wearing metallic jewelry or accessories.'
+            }));
+        } else if (type === 'payment') {
+            setManualForm((prev) => ({
+                ...prev,
+                subject: isAr ? 'تأكيد استلام السداد الإلكتروني' : 'Payment Receipt & Confirmation',
+                body: isAr
+                    ? 'تم استلام وتأكيد سداد فاتورة الخدمات التشخيصية بنجاح. يمكنكم تحميل الإيصال المعتمد عبر حسابكم.'
+                    : 'We confirm the successful receipt of your payment for diagnostic medical services. Your certified invoice is available in your portal.'
+            }));
+        } else if (type === 'urgent') {
+            setManualForm((prev) => ({
+                ...prev,
+                subject: isAr ? 'تنبيه سريري عاجل ومهم' : 'Urgent Clinical Notification',
+                body: isAr
+                    ? 'تنبيه سريري عاجل يتطلب مراجعة فورية من الطبيب المعالج أو المريض لاستكمال الخطة العلاجية.'
+                    : 'Urgent clinical communication requiring prompt review by the attending physician or patient.'
             }));
         }
     };
 
-    const handleSendManual = async (event) => {
-        event.preventDefault();
+    const handleSendManual = async (e) => {
+        e.preventDefault();
         const recipient = manualForm.recipient.trim();
         const body = manualForm.body.trim();
         if (!recipient || !body) return;
@@ -257,117 +374,203 @@ export default function Notifications() {
                 subject: manualForm.channel === 'Email' ? manualForm.subject.trim() || undefined : undefined,
                 ...(manualForm.channel === 'Email' ? { recipientEmail: recipient } : { recipientPhone: recipient })
             }).unwrap();
-            toast.success(isAr ? 'تم إرسال الإشعار بنجاح' : 'Notification sent successfully');
+            toast.success(isAr ? 'تم إرسال الإشعار بنجاح' : 'Notification dispatched successfully');
             setManualForm({ recipient: '', channel: 'Email', subject: '', body: '' });
             setComposerOpen(false);
-        } catch (error) {
-            toast.error(getErrorMessage(error, isAr ? 'تعذر إرسال الإشعار' : 'Could not send notification'));
+        } catch (err) {
+            toast.error(getErrorMessage(err, isAr ? 'تعذر إرسال الإشعار' : 'Could not dispatch notification'));
         }
     };
 
-    const activeFilterCount = Number(channel !== 'all') + Number(status !== 'all') + Number(Boolean(query.trim()));
+    const activeFilterCount = Number(channel !== 'all') + Number(status !== 'all') + Number(priority !== 'all') + Number(readFilter !== 'all') + Number(Boolean(query.trim()));
+
+    const isMarkingAll = markingAllMy || markingAllOutbound;
+    const isMarkingOne = markingOneMy || markingOneOutbound;
 
     return (
-        <div className="mx-auto max-w-[1600px] space-y-6 pb-14" dir={isRtl ? 'rtl' : 'ltr'}>
-            {/* Top Notifications Hero Command Deck */}
-            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8">
-                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
-                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
-
-                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex items-start gap-4 sm:items-center">
-                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-sky-500/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
-                            <Bell size={26} />
-                        </div>
-                        <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
-                                    <Activity size={11} />
-                                    <span>{tr(t, 'notifications.managementEyebrow', 'Communications Deck', ar.eyebrow, isAr)}</span>
-                                </span>
-                                {(counts.unread || 0) > 0 && (
-                                    <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-0.5 text-[10px] font-black text-rose-700 dark:text-rose-300">
-                                        <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping" />
-                                        <span>{counts.unread} {isAr ? 'تنبيه جديد' : 'New Alerts'}</span>
-                                    </span>
-                                )}
-                            </div>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
-                                {tr(t, 'notifications.managementTitle', 'Notifications & Messaging Hub', ar.title, isAr)}
-                            </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
-                                {tr(t, 'notifications.managementDescription', 'Review multi-channel message delivery logs, unread alerts, and dispatch direct notifications.', ar.description, isAr)}
-                            </p>
-                        </div>
-                    </div>
-
+        <main className="mx-auto max-w-[1680px] space-y-4 pb-14" dir={isRtl ? 'rtl' : 'ltr'}>
+            {/* 1. Unified PageHeader */}
+            <PageHeader
+                icon={Bell}
+                eyebrowIcon={Activity}
+                eyebrow={isAr ? 'مركز الرسائل والتنبيهات السريرية والتشغيلية الموحد' : 'Unified Clinical & Operational Communications Hub'}
+                title={isAr ? 'مركز الإشعارات والتنبيهات والتواصل' : 'Notifications, System Alerts & Communications Hub'}
+                description={isAr
+                    ? 'إدارة ومتابعة إشعارات وتنبيهات النظام، الحالات السريرية الحرجة، أعطال الأجهزة، وسجل الرسائل الصادرة للمرضى والأطباء.'
+                    : 'Monitor clinical STAT alerts, system warnings, equipment maintenance notices, and multi-channel patient dispatches.'}
+                meta={
                     <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-bold text-teal-700 dark:text-teal-300">
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-400 opacity-75" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-500" />
+                            </span>
+                            <span>{isAr ? 'محرك التنبيهات نشط ومباشر' : 'Live Realtime Push Active'}</span>
+                        </span>
+                        {counts.unread > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-bold text-rose-700 dark:text-rose-300">
+                                <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping" />
+                                <span className="font-mono">{counts.unread}</span>
+                                <span>{isAr ? 'غير مقروء' : 'unread'}</span>
+                            </span>
+                        )}
+                        <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                            {currentUser?.role || (isAr ? 'مستخدم النظام' : 'Staff')}
+                        </span>
+                    </div>
+                }
+                actions={
+                    <div className="flex flex-wrap items-center gap-2">
+                        {canSendManual && (
+                            <button
+                                type="button"
+                                onClick={() => setComposerOpen((prev) => !prev)}
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-xs font-black text-white shadow-md shadow-teal-600/20 transition hover:brightness-110"
+                            >
+                                <Send size={14} />
+                                <span>{isAr ? 'إرسال إشعار مباشر' : 'New Dispatch'}</span>
+                            </button>
+                        )}
                         <button
                             type="button"
                             onClick={() => navigate('/settings?tab=notifications')}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 px-3.5 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                         >
                             <Settings size={15} />
-                            <span>{tr(t, 'notifications.settings', 'Settings', ar.settings, isAr)}</span>
+                            <span>{isAr ? 'تفضيلات الإشعارات' : 'Preferences'}</span>
                         </button>
                         <button
                             type="button"
                             onClick={() => refetch()}
                             disabled={isFetching}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 px-3.5 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                         >
-                            <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
-                            <span>{tr(t, 'notifications.refresh', 'Refresh', ar.refresh, isAr)}</span>
+                            <RefreshCw size={14} className={isFetching ? 'animate-spin text-teal-600' : ''} />
+                            <span>{isAr ? 'تحديث السجلات' : 'Refresh'}</span>
                         </button>
-                        {canSendManual && (
-                            <button
-                                type="button"
-                                onClick={() => setComposerOpen((current) => !current)}
-                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95"
-                            >
-                                <Send size={14} />
-                                <span>{tr(t, 'notifications.manual', 'New Notification', ar.composeTitle, isAr)}</span>
-                            </button>
-                        )}
                     </div>
+                }
+                metrics={[
+                    {
+                        key: 'unread',
+                        icon: Bell,
+                        label: isAr ? 'التنبيهات غير المقروءة' : 'Unread Alerts',
+                        value: counts.unread,
+                        detail: counts.unread > 0 ? (isAr ? 'تتطلب مراجعة ومتابعة' : 'Requires follow-up') : (isAr ? 'جميع التنبيهات مراجعة' : 'All clear'),
+                        tone: counts.unread > 0 ? 'rose' : 'emerald',
+                        loading: isLoading,
+                        error: isError
+                    },
+                    {
+                        key: 'critical',
+                        icon: AlertOctagon,
+                        label: isAr ? 'التحذيرات والإنذارات الحرجة' : 'Critical / STAT Alerts',
+                        value: counts.critical,
+                        detail: counts.critical > 0 ? (isAr ? 'حالات عاجلة جداً' : 'STAT priority cases') : (isAr ? 'لا توجد إنذارات حرجة' : 'No critical alerts'),
+                        tone: counts.critical > 0 ? 'rose' : 'slate',
+                        loading: isLoading,
+                        error: isError
+                    },
+                    {
+                        key: 'deliveryRate',
+                        icon: CheckCheck,
+                        label: isAr ? 'نسبة نجاح تسليم الرسائل' : 'Delivery Success Rate',
+                         value: counts.deliveryRate === null ? '—' : `${counts.deliveryRate}%`,
+                         detail: scope === 'outbound'
+                             ? `${counts.delivered} ${isAr ? 'تم تسليمها بنجاح' : 'delivered dispatches'}`
+                             : (isAr ? 'متاح في سجل الإرسال الصادر فقط' : 'Available for outbound logs only'),
+                        tone: counts.deliveryRate >= 90 ? 'emerald' : counts.deliveryRate >= 75 ? 'amber' : 'rose',
+                        loading: isLoading,
+                        error: isError
+                    },
+                    {
+                        key: 'total',
+                        icon: Activity,
+                        label: isAr ? 'إجمالي السجلات المسجلة' : 'Total Communication Logs',
+                        value: counts.total,
+                         detail: scope === 'outbound'
+                             ? `${counts.failed} ${isAr ? 'فشل إرسالها' : 'failed dispatches'}`
+                             : (isAr ? 'إشعارات صندوقك الشخصي' : 'Your personal inbox'),
+                        tone: 'indigo',
+                        loading: isLoading,
+                        error: isError
+                    }
+                ]}
+                metricsLabel={isAr ? 'مؤشرات التنبيهات والرسائل' : 'Notification & Messaging Indicators'}
+            />
+
+            {/* 2. Scope Selector Deck: Personal vs Center Outbound Logs */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-xs dark:border-slate-800 dark:bg-slate-900/90">
+                <div className="flex items-center gap-1.5 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                    <button
+                        type="button"
+                        onClick={() => setScope('personal')}
+                        className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black transition-all ${
+                            scope === 'personal'
+                                ? 'bg-white text-teal-800 shadow-sm dark:bg-slate-900 dark:text-teal-300'
+                                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                    >
+                        <UserCheck size={14} />
+                        <span>{isAr ? 'إشعاراتي وسير عملي الشخصي' : 'My Personal Workflow Alerts'}</span>
+                    </button>
+                    {canViewOutbound && (
+                        <button
+                            type="button"
+                            onClick={() => setScope('outbound')}
+                            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black transition-all ${
+                                scope === 'outbound'
+                                    ? 'bg-white text-teal-800 shadow-sm dark:bg-slate-900 dark:text-teal-300'
+                                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                            }`}
+                        >
+                            <Send size={14} />
+                            <span>{isAr ? 'سجل تواصل ورسائل المركز الصادرة' : 'Center Outbound Dispatches'}</span>
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                    {counts.unread > 0 && (
+                        <button
+                            type="button"
+                            onClick={handleMarkAll}
+                            disabled={isMarkingAll}
+                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3.5 text-xs font-black text-teal-700 transition hover:bg-teal-500/20 disabled:opacity-50 dark:text-teal-300"
+                        >
+                            {isMarkingAll ? <RefreshCw size={13} className="animate-spin" /> : <CheckCheck size={13} />}
+                            <span>{isAr ? 'تحديد الكل كمقروء' : 'Mark all as read'}</span>
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Metric Summary Cards */}
-            <section className="grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-5">
-                <MetricCard tone="slate" label={tr(t, 'notifications.tabs.all', 'All Dispatches', ar.all, isAr)} value={formatNumber(counts.all || 0, language)} detail="Total communication records" />
-                <MetricCard tone="cyan" label={tr(t, 'notifications.tabs.unread', 'Unread Alerts', ar.unread, isAr)} value={formatNumber(counts.unread || 0, language)} detail="Requires team follow-up" />
-                <MetricCard tone="rose" label={tr(t, 'notifications.tabs.failed', 'Failed Deliveries', ar.failed, isAr)} value={formatNumber(counts.failed || 0, language)} detail="Provider dispatch errors" />
-                <MetricCard tone="amber" label={tr(t, 'notifications.status.Pending', 'Queued / Pending', ar.pending, isAr)} value={formatNumber(counts.pending || 0, language)} detail="In dispatch queue" />
-                <MetricCard tone="emerald" label={tr(t, 'notifications.status.Delivered', 'Delivered', ar.sent, isAr)} value={formatNumber(counts.delivered || 0, language)} detail="Provider-confirmed delivery" />
-            </section>
-
-            {/* Manual Composer Panel */}
+            {/* 3. Sliding Manual Composer Panel */}
             {composerOpen && canSendManual && (
-                <form onSubmit={handleSendManual} className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 p-4 sm:p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 animate-in slide-in-from-top-2 duration-200">
+                <form onSubmit={handleSendManual} className="overflow-hidden rounded-2xl border border-teal-500/30 bg-white/95 p-4 sm:p-5 shadow-lg backdrop-blur-xl dark:border-teal-500/30 dark:bg-slate-900/95 animate-in slide-in-from-top-3 duration-200">
                     <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
                         <div className="flex items-center gap-2.5">
-                            <span className="grid h-8 w-8 place-items-center rounded-xl bg-teal-500/15 text-teal-700 dark:text-teal-300">
-                                <Send size={15} />
+                            <span className="grid h-9 w-9 place-items-center rounded-xl bg-teal-500/15 text-teal-700 dark:text-teal-300">
+                                <Send size={16} />
                             </span>
                             <div>
                                 <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                                    {tr(t, 'notifications.composeTitle', 'Manual Notification Dispatcher', ar.composeTitle, isAr)}
+                                    {isAr ? 'نافذة إرسال إشعار مباشر وسريع' : 'Direct Notification Dispatcher'}
                                 </h2>
                                 <p className="text-[10px] font-semibold text-slate-400">
-                                    {tr(t, 'notifications.composeHint', 'Send direct messages via Email, SMS, or WhatsApp.', ar.composeHint, isAr)}
+                                    {isAr ? 'إرسال رسائل وتنبيهات فورية للمرضى أو الأطباء عبر القنوات المعتمدة' : 'Dispatch instant messages via SMS, WhatsApp, or Email.'}
                                 </p>
                             </div>
                         </div>
-                        <button type="button" onClick={() => setComposerOpen(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                            <X size={16} />
+                         <button type="button" onClick={() => setComposerOpen(false)} aria-label={isAr ? 'إغلاق نافذة الإرسال' : 'Close dispatcher'} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                             <X size={16} aria-hidden="true" />
                         </button>
                     </div>
 
                     {/* Quick Clinical Templates */}
                     <div className="mb-3">
-                        <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
-                            {tr(t, 'notifications.templates', 'Clinical Quick Templates', ar.templates, isAr)}:
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                            {isAr ? 'قوالب سريرية وتشغيلية جاهزة:' : 'Clinical Quick Templates:'}
                         </span>
                         <div className="flex flex-wrap gap-1.5">
                             <button
@@ -376,7 +579,7 @@ export default function Notifications() {
                                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
                             >
                                 <Clock size={12} className="text-teal-600" />
-                                <span>{tr(t, 'notifications.tplReminder', 'Appointment Reminder', ar.tplReminder, isAr)}</span>
+                                <span>{isAr ? 'تذكير بالموعد' : 'Appointment Reminder'}</span>
                             </button>
                             <button
                                 type="button"
@@ -384,7 +587,7 @@ export default function Notifications() {
                                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
                             >
                                 <Sparkles size={12} className="text-teal-600" />
-                                <span>{tr(t, 'notifications.tplReady', 'Report Ready', ar.tplReady, isAr)}</span>
+                                <span>{isAr ? 'التقرير والصور جاهزة' : 'Report Ready'}</span>
                             </button>
                             <button
                                 type="button"
@@ -392,15 +595,31 @@ export default function Notifications() {
                                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
                             >
                                 <AlertCircle size={12} className="text-teal-600" />
-                                <span>{tr(t, 'notifications.tplPrep', 'Preparation Instructions', ar.tplPrep, isAr)}</span>
+                                <span>{isAr ? 'إرشادات التحضير' : 'Prep Guidelines'}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => applyTemplate('payment')}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
+                            >
+                                <DollarSign size={12} className="text-teal-600" />
+                                <span>{isAr ? 'تأكيد السداد' : 'Payment Confirmation'}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => applyTemplate('urgent')}
+                                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 transition"
+                            >
+                                <AlertOctagon size={12} className="text-rose-600" />
+                                <span>{isAr ? 'تنبيه سريري عاجل' : 'Urgent Alert'}</span>
                             </button>
                         </div>
                     </div>
 
-                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_200px]">
                         <input
                             value={manualForm.recipient}
-                            onChange={(event) => setManualForm((current) => ({ ...current, recipient: event.target.value }))}
+                            onChange={(e) => setManualForm((curr) => ({ ...curr, recipient: e.target.value }))}
                             required
                             type={manualForm.channel === 'Email' ? 'email' : 'tel'}
                             placeholder={manualForm.channel === 'Email' ? 'patient@example.com' : '+20 100 000 0000'}
@@ -408,11 +627,11 @@ export default function Notifications() {
                         />
                         <select
                             value={manualForm.channel}
-                            onChange={(event) => setManualForm((current) => ({ ...current, channel: event.target.value, subject: event.target.value === 'Email' ? current.subject : '' }))}
+                            onChange={(e) => setManualForm((curr) => ({ ...curr, channel: e.target.value, subject: e.target.value === 'Email' ? curr.subject : '' }))}
                             className={fieldClass}
                         >
-                            {SEND_CHANNELS.map((item) => (
-                                <option key={item} value={item}>{item}</option>
+                            {SEND_CHANNELS.map((ch) => (
+                                <option key={ch} value={ch}>{ch}</option>
                             ))}
                         </select>
                     </div>
@@ -420,117 +639,164 @@ export default function Notifications() {
                     {manualForm.channel === 'Email' && (
                         <input
                             value={manualForm.subject}
-                            onChange={(event) => setManualForm((current) => ({ ...current, subject: event.target.value }))}
-                            placeholder={tr(t, 'notifications.subject', 'Email Subject', ar.subject, isAr)}
+                            onChange={(e) => setManualForm((curr) => ({ ...curr, subject: e.target.value }))}
+                            placeholder={isAr ? 'عنوان البريد الإلكتروني (اختياري)...' : 'Email Subject...'}
                             className={`${fieldClass} mt-3 w-full`}
                         />
                     )}
 
                     <textarea
                         value={manualForm.body}
-                        onChange={(event) => setManualForm((current) => ({ ...current, body: event.target.value }))}
+                        onChange={(e) => setManualForm((curr) => ({ ...curr, body: e.target.value }))}
                         required
                         rows={3}
                         maxLength={2000}
-                        placeholder={tr(t, 'notifications.message', 'Message body...', ar.message, isAr)}
+                        placeholder={isAr ? 'اكتب نص الرسالة بدقة للمستلم...' : 'Type message body here...'}
                         className={`${fieldClass} mt-3 h-auto min-h-24 w-full py-2.5 leading-relaxed`}
                     />
 
-                    <div className="mt-4 flex justify-end">
+                    <div className="mt-4 flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-400 font-mono">
+                            {manualForm.body.length} / 2000 {isAr ? 'حرف' : 'chars'}
+                        </span>
                         <button
                             type="submit"
                             disabled={sendingManual || !manualForm.recipient.trim() || !manualForm.body.trim()}
                             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-600 px-6 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 disabled:opacity-40"
                         >
                             {sendingManual ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
-                            <span>{sendingManual ? tr(t, 'notifications.sending', 'Sending...', ar.sending, isAr) : tr(t, 'notifications.send', 'Dispatch Message', ar.send, isAr)}</span>
+                            <span>{sendingManual ? (isAr ? 'جاري الإرسال...' : 'Sending...') : (isAr ? 'إرسال الإشعار' : 'Dispatch Notification')}</span>
                         </button>
                     </div>
                 </form>
             )}
 
-            {/* Filter & Notification List Workbench */}
+            {/* 4. Segmented Category Filter Bar */}
+            <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-xs dark:border-slate-800 dark:bg-slate-900/90">
+                <nav aria-label={isAr ? 'تصنيفات الإشعارات' : 'Notification categories'} className="flex flex-wrap gap-1">
+                    {categoryDefinitions.map((cat) => {
+                        const Icon = cat.icon;
+                        const isActive = category === cat.id;
+                        return (
+                            <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => setCategory(cat.id)}
+                                className={`flex min-h-9 items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all ${
+                                    isActive
+                                        ? 'bg-teal-700 text-white shadow-sm font-black'
+                                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <Icon size={14} />
+                                <span>{isAr ? cat.labelAr : cat.labelEn}</span>
+                            </button>
+                        );
+                    })}
+                </nav>
+            </div>
+
+            {searchLimited && (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200" role="status">
+                    {isAr
+                        ? 'نتائج البحث محدودة بأحدث السجلات المتاحة. ضيّق البحث للحصول على نتائج أدق.'
+                        : 'Search results are limited to the newest available records. Narrow the search for more complete results.'}
+                </p>
+            )}
+
+            {/* 5. Filter & List Workbench */}
             <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                {/* Search and Filters Bar */}
+                {/* Search and Granular Filters Bar */}
                 <div className="border-b border-slate-100 p-4 space-y-3 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-950/30">
-                    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
+                    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.5fr)_140px_140px_140px_auto]">
+                        {/* Search Input */}
                         <div className="relative">
                             <Search size={15} className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input
                                 value={query}
-                                onChange={(event) => setQuery(event.target.value)}
-                                placeholder={tr(t, 'notifications.search', 'Search recipient, subject, or message content...', 'بحث بالمستلم، العنوان، أو المحتوى...', isAr)}
+                                onChange={(e) => setQuery(e.target.value)}
+                                placeholder={isAr ? 'بحث بالمستلم، العنوان، المحتوى، أو رقم الملف...' : 'Search recipient, subject, content, or MRN...'}
                                 className={`${fieldClass} w-full ps-10 pe-9`}
                             />
-                            {query && (
-                                <button type="button" onClick={() => setQuery('')} className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 transition">
-                                    <X size={14} />
+                             {query && (
+                                 <button type="button" onClick={() => setQuery('')} aria-label={isAr ? 'مسح البحث' : 'Clear search'} className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 transition">
+                                     <X size={14} aria-hidden="true" />
                                 </button>
                             )}
                         </div>
 
-                        <select value={channel} onChange={(event) => setChannel(event.target.value)} className={fieldClass}>
-                            {CHANNELS.map((item) => (
-                                <option key={item} value={item}>
-                                    {item === 'all' ? tr(t, 'notifications.channels.all', 'All Channels', 'جميع القنوات', isAr) : item}
+                        {/* Channel Filter */}
+                        <select value={channel} onChange={(e) => setChannel(e.target.value)} className={fieldClass}>
+                            {CHANNELS.map((ch) => (
+                                <option key={ch} value={ch}>
+                                    {ch === 'all' ? (isAr ? 'جميع القنوات' : 'All Channels') : ch}
                                 </option>
                             ))}
                         </select>
 
-                        <select value={status} onChange={(event) => setStatus(event.target.value)} className={fieldClass}>
-                            {STATUSES.map((item) => (
-                                <option key={item} value={item}>
-                                    {item === 'all' ? tr(t, 'notifications.status.all', 'All Statuses', 'جميع الحالات', isAr) : item}
+                        {/* Priority Filter */}
+                        <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldClass}>
+                            {PRIORITIES.map((pri) => (
+                                <option key={pri} value={pri}>
+                                    {pri === 'all' ? (isAr ? 'جميع الأولويات' : 'All Priorities') : (isAr ? translatePriority(pri) : pri)}
                                 </option>
                             ))}
                         </select>
 
-                        <div className="flex items-center gap-2">
+                        {/* Status Filter */}
+                        <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldClass}>
+                            {STATUSES.map((st) => (
+                                <option key={st} value={st}>
+                                    {st === 'all' ? (isAr ? 'جميع الحالات' : 'All Statuses') : (isAr ? translateStatus(st) : st)}
+                                </option>
+                            ))}
+                        </select>
+
+                        {/* Quick Actions / Reset */}
+                        <div className="flex items-center gap-1.5">
                             {activeFilterCount > 0 && (
                                 <button
                                     type="button"
-                                    onClick={() => { setQuery(''); setChannel('all'); setStatus('all'); }}
-                                    className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-rose-600 transition hover:bg-rose-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-rose-950/30"
+                                    onClick={() => { setQuery(''); setChannel('all'); setStatus('all'); setPriority('all'); setReadFilter('all'); setCategory('all'); }}
+                                    className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-rose-600 transition hover:bg-rose-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-rose-950/30"
+                                    title={isAr ? 'إعادة ضبط الفلاتر' : 'Reset Filters'}
                                 >
                                     <FilterX size={14} />
-                                    <span>{tr(t, 'notifications.filters.reset', 'Reset', 'مسح الفلاتر', isAr)}</span>
-                                </button>
-                            )}
-                            {(counts.unread || 0) > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={handleMarkAll}
-                                    disabled={markingAll}
-                                    className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-4 text-xs font-bold text-teal-700 transition hover:bg-teal-500/20 disabled:opacity-50 dark:text-teal-300"
-                                >
-                                    {markingAll ? <RefreshCw size={14} className="animate-spin" /> : <CheckCheck size={14} />}
-                                    <span>{tr(t, 'notifications.markRead', 'Mark all read', ar.markAllRead, isAr)}</span>
+                                    <span>{isAr ? 'مسح' : 'Reset'}</span>
                                 </button>
                             )}
                         </div>
                     </div>
 
-                    {/* Quick Category Filter Pills */}
-                    <div className="flex rounded-xl border border-slate-200/80 bg-slate-100/70 p-1 dark:border-slate-800 dark:bg-slate-950/50">
-                        {['all', 'unread', 'failed'].map((tab) => (
-                            <button
-                                key={tab}
-                                type="button"
-                                onClick={() => setActiveTab(tab)}
-                                className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-black transition-all ${
-                                    activeTab === tab
-                                        ? 'bg-white text-teal-800 shadow-xs dark:bg-slate-800 dark:text-teal-300'
-                                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
-                                }`}
-                            >
-                                {tab === 'all' ? ar.all : tab === 'unread' ? ar.unread : ar.failed}
-                                {Number(counts[tab]) > 0 && (
-                                    <span className="ms-1.5 rounded-full bg-slate-200/80 dark:bg-slate-700 px-2 py-0.5 text-[10px] font-black tabular-nums">
-                                        {formatNumber(counts[tab], language)}
-                                    </span>
-                                )}
-                            </button>
-                        ))}
+                    {/* Secondary Status Pills (All, Unread Only, Read Only) */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800 pt-2.5">
+                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                            <span>{isAr ? 'حالة القراءة:' : 'Read State:'}</span>
+                             <div className="inline-flex rounded-lg bg-slate-200/80 p-0.5 dark:bg-slate-800" role="group" aria-label={isAr ? 'حالة القراءة' : 'Read state'}>
+                                {[
+                                    { id: 'all', labelAr: 'الكل', labelEn: 'All' },
+                                    { id: 'unread', labelAr: 'غير مقروء', labelEn: 'Unread' },
+                                    { id: 'read', labelAr: 'مقروء', labelEn: 'Read' }
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setReadFilter(tab.id)}
+                                        className={`rounded-md px-2.5 py-0.5 text-xs font-bold transition ${
+                                            readFilter === tab.id
+                                                ? 'bg-white text-teal-800 shadow-2xs dark:bg-slate-900 dark:text-teal-300 font-black'
+                                                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
+                                        }`}
+                                    >
+                                        {isAr ? tab.labelAr : tab.labelEn}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <span className="text-[11px] font-bold text-slate-400 font-mono">
+                            {filteredItems.length} {isAr ? 'إشعار مطابق' : 'matching records'}
+                        </span>
                     </div>
                 </div>
 
@@ -539,22 +805,38 @@ export default function Notifications() {
                     {isLoading ? (
                         <div className="flex min-h-[360px] flex-col items-center justify-center text-slate-400">
                             <RefreshCw size={24} className="animate-spin text-teal-600" />
-                            <p className="mt-3 text-xs font-extrabold text-slate-500">Loading notifications...</p>
+                            <p className="mt-3 text-xs font-black text-slate-500">
+                                {isAr ? 'جاري تحميل سجل الإشعارات...' : 'Loading notification stream...'}
+                            </p>
                         </div>
                     ) : isError ? (
                         <div className="flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
                             <AlertCircle size={28} className="text-rose-500" />
-                            <p className="mt-3 text-sm font-extrabold text-slate-800 dark:text-white">Unable to load notifications</p>
-                            <p className="mt-1 max-w-sm text-xs font-semibold text-slate-400">{getErrorMessage(error, 'The notification service could not be reached.')}</p>
-                            <button type="button" onClick={refetch} className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white dark:bg-white dark:text-slate-900">Retry</button>
+                            <p className="mt-3 text-sm font-black text-slate-800 dark:text-white">
+                                {isAr ? 'تعذر تحميل الإشعارات' : 'Unable to load notifications'}
+                            </p>
+                            <p className="mt-1 max-w-sm text-xs font-semibold text-slate-400">
+                                {getErrorMessage(error, isAr ? 'يرجى التحقق من الاتصال بالخادم والمحاولة مرة أخرى.' : 'The notification service could not be reached.')}
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => refetch()}
+                                className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white dark:bg-white dark:text-slate-900"
+                            >
+                                {isAr ? 'إعادة المحاولة' : 'Retry'}
+                            </button>
                         </div>
-                    ) : notifications.length === 0 ? (
+                    ) : filteredItems.length === 0 ? (
                         <div className="flex min-h-[360px] flex-col items-center justify-center text-center p-8">
                             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 mb-3">
                                 <Bell size={24} />
                             </div>
-                            <p className="text-sm font-extrabold text-slate-800 dark:text-white">No notifications found</p>
-                            <p className="mt-1 text-xs font-semibold text-slate-400 max-w-sm">No notification records match the selected filters or search query.</p>
+                            <p className="text-sm font-black text-slate-800 dark:text-white">
+                                {isAr ? 'لا توجد إشعارات تطابق معايير البحث' : 'No notifications found'}
+                            </p>
+                            <p className="mt-1 text-xs font-semibold text-slate-400 max-w-sm">
+                                {isAr ? 'لم يتم العثور على أي سجلات تنبيهات مطابقة للتصنيف أو الفلاتر المختارة.' : 'No notification records match the selected scope or filter parameters.'}
+                            </p>
                         </div>
                     ) : (
                         <div className="space-y-6">
@@ -562,23 +844,25 @@ export default function Notifications() {
                                 <section key={groupKey} className="space-y-2.5">
                                     <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
                                         <Clock3 size={12} className="text-teal-600 dark:text-teal-400" />
-                                        <span>{groupKey === 'today' ? ar.today : groupKey === 'yesterday' ? ar.yesterday : groupKey === 'week' ? ar.week : ar.older}</span>
-                                        <span className="ms-auto rounded-full bg-slate-200/80 dark:bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-400 tabular-nums">
-                                            {formatNumber(items.length, language)}
+                                        <span>{translateGroupKey(groupKey, isAr)}</span>
+                                        <span className="ms-auto rounded-full bg-slate-200/80 dark:bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-400 font-mono">
+                                            {items.length}
                                         </span>
                                     </div>
-                                    <div className="space-y-2">
+                                    <div className="space-y-2.5">
                                         {items.map((item) => (
-                                            <NotificationRow
+                                            <NotificationCard
                                                 key={item.notification_id}
                                                 item={item}
                                                 expanded={expandedId === item.notification_id}
-                                                onToggle={() => setExpandedId((current) => current === item.notification_id ? null : item.notification_id)}
-                                                onMarkRead={handleMarkRead}
+                                                onToggle={() => setExpandedId((curr) => curr === item.notification_id ? null : item.notification_id)}
+                                                onMarkRead={handleMarkSingleRead}
                                                 onCopy={handleCopy}
-                                                marking={markingOne}
+                                                onNavigate={handleNavigate}
+                                                onAcknowledge={handleAcknowledge}
+                                                marking={isMarkingOne}
+                                                acknowledging={acknowledgingCritical}
                                                 language={language}
-                                                t={t}
                                                 isAr={isAr}
                                             />
                                         ))}
@@ -589,26 +873,21 @@ export default function Notifications() {
                     )}
                 </div>
 
-                {data?.searchLimited ? (
-                    <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
-                        Search was limited to the newest {data.searchScanLimit} visible notifications. Narrow the filters for exhaustive results.
-                    </p>
-                ) : null}
-
-                {/* Pagination Footer */}
-                {!isError && filteredTotal > 0 && (
+                {/* 6. Numbered Pagination Footer */}
+                {!isError && totalCount > 0 && (
                     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 p-3.5 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30">
-                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 font-mono">
                             <span>
                                 {isAr
-                                    ? `عرض ${startIndex + 1} - ${Math.min(endIndex, filteredTotal)} من إجمالي ${filteredTotal} إشعار`
-                                    : `Showing ${startIndex + 1} - ${Math.min(endIndex, filteredTotal)} of ${filteredTotal} notifications`}
+                                     ? `عرض ${serverPaginationEnabled ? (currentPage - 1) * pageSize + 1 : startIndex + 1} - ${Math.min(serverPaginationEnabled ? (currentPage - 1) * pageSize + pagedItems.length : endIndex, totalCount)} من إجمالي ${totalCount} إشعار`
+                                     : `Showing ${serverPaginationEnabled ? (currentPage - 1) * pageSize + 1 : startIndex + 1} - ${Math.min(serverPaginationEnabled ? (currentPage - 1) * pageSize + pagedItems.length : endIndex, totalCount)} of ${totalCount} notifications`}
                             </span>
                         </div>
 
                         <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-slate-400">{isAr ? 'لكل صفحة:' : 'Per page:'}</span>
                             <select
+                                aria-label={isAr ? 'عدد الإشعارات في الصفحة' : 'Notifications per page'}
                                 value={pageSize}
                                 onChange={(e) => setPageSize(Number(e.target.value))}
                                 className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
@@ -628,113 +907,250 @@ export default function Notifications() {
                     </div>
                 )}
             </section>
-        </div>
+        </main>
     );
 }
 
-const NotificationRow = ({ item, expanded, onToggle, onMarkRead, onCopy, marking, language, t, isAr }) => {
+// ─── Notification Card Component ──────────────────────────────────────────
+
+export const NotificationCard = ({ item, expanded, onToggle, onMarkRead, onCopy, onNavigate, onAcknowledge, marking, acknowledging, language, isAr }) => {
     const ChannelIcon = channelIcons[item.channel] || Bell;
-    const title = item.subject || item.event_type || item.channel;
-    const statusClass = getStatusClass(item.status);
+    const title = item.subject || item.event_type || item.channel || (isAr ? 'إشعار نظام' : 'System Alert');
+    const priority = normalizePriority(item.priority, item.event_type);
+    const priStyle = priorityStyles[priority] || priorityStyles.Normal;
     const badgeStyle = channelStyles[item.channel] || channelStyles.InApp;
+    const statusClass = getStatusClass(item.status);
+    const CategoryIcon = getCategoryIcon(item.event_type, item.category);
+    const categoryLabel = item.category || getNotificationCategory(item);
 
     return (
-        <article className={`overflow-hidden rounded-2xl border bg-white/90 p-3.5 transition-all duration-150 backdrop-blur-xl dark:bg-slate-900/90 ${
-            item.is_read
-                ? 'border-slate-200/80 dark:border-slate-800'
-                : 'border-teal-500/60 ring-2 ring-teal-500/15 dark:border-teal-500/50'
+        <article className={`overflow-hidden rounded-2xl border bg-white/90 p-4 transition-all duration-150 backdrop-blur-xl dark:bg-slate-900/90 ${
+            !item.is_read
+                ? 'border-teal-500/60 ring-2 ring-teal-500/15 dark:border-teal-500/50 shadow-sm'
+                : 'border-slate-200/80 dark:border-slate-800'
         }`}>
             <div className="flex items-start gap-3">
-                <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl border ${badgeStyle}`}>
-                    <ChannelIcon size={16} />
+                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border ${badgeStyle}`}>
+                    <ChannelIcon size={18} />
                 </span>
-                <button type="button" onClick={onToggle} className="min-w-0 flex-1 text-start outline-none">
-                    <span className="flex flex-wrap items-start justify-between gap-2">
-                        <span className="flex items-center gap-2 min-w-0">
+
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
                             {!item.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-teal-500 animate-pulse" />}
-                            <span className="truncate text-xs font-black text-slate-900 dark:text-white">{title}</span>
+                            <h3 className="truncate text-xs font-black text-slate-900 dark:text-white" title={title}>
+                                {title}
+                            </h3>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${priStyle}`}>
+                                {isAr ? translatePriority(priority) : priority}
+                            </span>
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${statusClass}`}>
+                                {isAr ? translateStatus(item.status) : item.status}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-400">
+                            <span className="inline-flex items-center gap-1 text-teal-700 dark:text-teal-400 font-bold">
+                    <CategoryIcon size={12} aria-hidden="true" />
+                            <span>{isAr ? translateCategory(categoryLabel) : categoryLabel}</span>
                         </span>
-                        <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusClass}`}>
-                            {item.status}
-                        </span>
-                    </span>
-                    <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-400">
-                        <span className="text-teal-700 dark:text-teal-400 font-bold">{item.channel}</span>
                         <span>•</span>
-                        <span>{formatDate(item.created_at, language)}</span>
+                        <span>{item.channel}</span>
+                        <span>•</span>
+                        <span className="font-mono">{formatDate(item.created_at, language)}</span>
                         {item.recipient && (
                             <>
                                 <span>•</span>
-                                <span className="max-w-[240px] truncate text-slate-600 dark:text-slate-300 font-mono">{item.recipient}</span>
+                                <span className="max-w-[220px] truncate text-slate-600 dark:text-slate-300 font-mono" title={item.recipient}>
+                                    {item.recipient}
+                                </span>
                             </>
                         )}
                         {item.patient_mrn && (
                             <>
                                 <span>•</span>
-                                <span dir="ltr" className="font-mono text-teal-600 dark:text-teal-400 font-bold">MRN {item.patient_mrn}</span>
+                                <span dir="ltr" className="font-mono text-teal-600 dark:text-teal-400 font-bold">
+                                    MRN {item.patient_mrn}
+                                </span>
                             </>
                         )}
-                    </span>
-                    {item.content && !expanded && (
-                        <p className="mt-2 line-clamp-2 text-xs font-medium leading-relaxed text-slate-600 dark:text-slate-300">{item.content}</p>
-                    )}
-                </button>
-            </div>
+                    </div>
 
-            <div className="mt-3 flex flex-wrap items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-2.5 ps-12">
-                <div className="flex items-center gap-2">
-                    {item.action_url && (
-                        <a
-                            href={item.action_url}
-                            className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 text-[10px] font-bold text-teal-700 hover:bg-teal-500/20 transition dark:text-teal-300"
-                        >
-                            <ExternalLink size={11} />
-                            <span>{isAr ? 'فتح السجل' : 'Open Record'}</span>
-                        </a>
+                    {item.content && (
+                        <p className={`mt-2 text-xs font-medium leading-relaxed text-slate-600 dark:text-slate-300 ${expanded ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>
+                            {item.content}
+                        </p>
                     )}
-                    <button
-                        type="button"
-                        onClick={() => onCopy(item)}
-                        className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
-                    >
-                        <Copy size={12} />
-                        <span>{isAr ? ar.copy : 'Copy'}</span>
-                    </button>
-                    {!item.is_read && (
-                        <button
-                            type="button"
-                            onClick={() => onMarkRead(item.notification_id)}
-                            disabled={marking}
-                            className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 text-[10px] font-black text-teal-700 transition hover:bg-teal-500 hover:text-white disabled:opacity-50 dark:text-teal-300"
-                        >
-                            <Check size={12} />
-                            <span>{isAr ? ar.markRead : 'Mark read'}</span>
-                        </button>
-                    )}
-                </div>
-            </div>
 
-            {expanded && (
-                <div className="mt-3 space-y-3 rounded-xl border border-slate-200/80 bg-slate-50/80 p-3.5 text-xs leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300 sm:ms-12">
-                    {item.content && <p className="whitespace-pre-wrap font-medium">{item.content}</p>}
-                    {item.event_type && <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Event: {item.event_type}</p>}
-                    {item.status === 'Failed' && item.error_message && (
-                        <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+                    {expanded && item.status === 'Failed' && item.error_message && (
+                        <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
                             <AlertTriangle size={15} className="mt-0.5 shrink-0 text-rose-500" />
                             <span>{item.error_message}</span>
                         </div>
                     )}
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-2.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                            {item.action_url && (
+                                <button
+                                    type="button"
+                                    onClick={() => onNavigate(item.action_url)}
+                                    className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 text-[10px] font-black text-teal-700 hover:bg-teal-500/20 transition dark:text-teal-300"
+                                >
+                                    <ExternalLink size={11} aria-hidden="true" />
+                                    <span>{isAr ? 'فتح السجل المرتبط' : 'Open Target Record'}</span>
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => onCopy(item)}
+                                className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                                <Copy size={11} />
+                                <span>{isAr ? 'نسخ' : 'Copy'}</span>
+                            </button>
+                            {!item.is_read && (
+                                <button
+                                    type="button"
+                                    onClick={() => onMarkRead(item.notification_id)}
+                                    disabled={marking}
+                                    className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 text-[10px] font-black text-teal-700 transition hover:bg-teal-500 hover:text-white disabled:opacity-50 dark:text-teal-300"
+                                >
+                                    <Check size={11} />
+                                    <span>{isAr ? 'تحديد كمقروء' : 'Mark read'}</span>
+                                </button>
+                            )}
+                            {item.acknowledgement_status === 'Pending' && item.entity_id && (
+                                <button
+                                    type="button"
+                                    onClick={() => onAcknowledge(item)}
+                                    disabled={acknowledging}
+                                    className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 text-[10px] font-black text-rose-700 transition hover:bg-rose-600 hover:text-white disabled:opacity-50 dark:text-rose-300"
+                                >
+                                    <ShieldCheck size={11} />
+                                    <span>{isAr ? 'تأكيد الاستلام الطبي' : 'Acknowledge critical result'}</span>
+                                </button>
+                            )}
+                        </div>
+
+                            <button
+                                type="button"
+                                onClick={onToggle}
+                                aria-expanded={expanded}
+                                aria-label={expanded ? (isAr ? 'إخفاء التفاصيل' : 'Collapse details') : (isAr ? 'عرض التفاصيل' : 'Show details')}
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition"
+                        >
+                            <span>{expanded ? (isAr ? 'إخفاء التفاصيل' : 'Collapse') : (isAr ? 'عرض المزيد' : 'Details')}</span>
+                            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                        </button>
+                    </div>
                 </div>
-            )}
+            </div>
         </article>
     );
 };
+
+// ─── Helpers & Utilities ──────────────────────────────────────────────────
+
+function OUTBOUND_ROLES_CHECK(role) {
+    return OUTBOUND_LOG_ROLES.has(role);
+}
+
+const normalizePriority = (priority, eventType = '') => {
+    const value = String(priority || '').trim().toLowerCase();
+    if (value === 'critical') return 'Critical';
+    if (value === 'warning') return 'Warning';
+    if (value === 'action' || value === 'high') return 'Action';
+    if (value === 'normal' || value === 'low') return 'Normal';
+    const event = String(eventType).toUpperCase();
+    return event.includes('STAT') || event.includes('CRITICAL') ? 'Critical' : 'Normal';
+};
+
+const getNotificationCategory = (item = {}) => {
+    const metadata = item.category || item.event_category || item.category_metadata?.key || item.category_metadata?.name;
+    const knownCategories = ['Security', 'Clinical', 'Financial', 'Operational', 'Patient', 'System'];
+    const fromMetadata = knownCategories.find((category) => String(metadata || '').toLowerCase() === category.toLowerCase());
+    if (fromMetadata) return fromMetadata;
+
+    const ev = `${item.event_type || ''} ${item.subject || ''} ${item.content || ''}`.toUpperCase();
+    if (ev.includes('SECURITY') || ev.includes('LOGIN') || ev.includes('AUTH') || ev.includes('TOKEN') || ev.includes('PERMISSION')) return 'Security';
+    if (ev.includes('PAYMENT') || ev.includes('INVOICE') || ev.includes('BILLING') || ev.includes('CLAIM') || ev.includes('REFUND') || ev.includes('PAYROLL')) return 'Financial';
+    if (ev.includes('PATIENT') || ev.includes('APPOINTMENTREQUEST') || ev.includes('PROFILEUPDATE') || ev.includes('DOCUMENTDOWNLOADED')) return 'Patient';
+    if (ev.includes('EXAM') || ev.includes('REPORT') || ev.includes('PACS') || ev.includes('STUDY') || ev.includes('DIAGNOSTIC')) return 'Clinical';
+    if (ev.includes('SYSTEM') || ev.includes('BACKUP') || ev.includes('STAFF_')) return 'System';
+    return 'Operational';
+};
+
+const getCategoryIcon = (eventType = '', category) => {
+    switch (getNotificationCategory({ event_type: eventType, category })) {
+        case 'Security': return Shield;
+        case 'Financial': return DollarSign;
+        case 'Patient': return Users;
+        case 'Clinical': return Stethoscope;
+        case 'System': return Settings;
+        case 'Operational': return Activity;
+        default: return AlertOctagon;
+    }
+};
+
+const translateCategory = (category) => ({
+    Security: 'الأمان',
+    Clinical: 'سريري',
+    Financial: 'مالي',
+    Operational: 'تشغيلي',
+    Patient: 'المريض',
+    System: 'النظام'
+}[category] || category);
 
 const getStatusClass = (status) => {
     if (status === 'Failed') return 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300';
     if (status === 'Pending') return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300';
     if (status === 'Sent' || status === 'Delivered') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
     return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300';
+};
+
+const translatePriority = (priority) => {
+    switch (priority) {
+        case 'Critical': return 'عاجل جداً';
+        case 'Warning': return 'تحذير';
+        case 'Action': return 'إجراء';
+        case 'Normal': return 'عادي';
+        // Keep legacy values readable if an older record is returned.
+        case 'High': return 'إجراء';
+        case 'Low': return 'عادي';
+        default: return priority;
+    }
+};
+
+const translateStatus = (status) => {
+    switch (status) {
+        case 'Delivered': return 'تم التسليم';
+        case 'Sent': return 'تم الإرسال';
+        case 'Pending': return 'قيد الانتظار';
+        case 'Failed': return 'فشل التسليم';
+        default: return status || '—';
+    }
+};
+
+const translateGroupKey = (key, isAr) => {
+    if (!isAr) {
+        switch (key) {
+            case 'today': return 'Today';
+            case 'yesterday': return 'Yesterday';
+            case 'week': return 'This Week';
+            default: return 'Older';
+        }
+    }
+    switch (key) {
+        case 'today': return 'اليوم';
+        case 'yesterday': return 'أمس';
+        case 'week': return 'هذا الأسبوع';
+        default: return 'أقدم من ذلك';
+    }
 };
 
 const getGroupKey = (value) => {
@@ -759,8 +1175,4 @@ const formatDate = (value, language) => {
         hour: '2-digit',
         minute: '2-digit'
     }).format(date);
-};
-
-const formatNumber = (value, language) => {
-    return new Intl.NumberFormat(language?.startsWith('ar') ? 'ar-EG' : 'en-US').format(Number(value) || 0);
 };

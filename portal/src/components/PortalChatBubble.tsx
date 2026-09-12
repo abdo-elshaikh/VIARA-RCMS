@@ -10,23 +10,28 @@ import {
   useSendDoctorMessageMutation,
 } from "../store/api";
 import { getErrorMessage } from "../utils/getErrorMessage";
+import { useFocusTrap } from "../hooks/use-focus-trap";
 
 export default function PortalChatBubble({ role = "patient" }) {
   const { t, i18n } = useTranslation("portal");
   const dateLocale = (i18n.resolvedLanguage || i18n.language || "en").startsWith("ar")
     ? "ar-EG"
-    : undefined;
+    : "en-GB";
   const isDoctor = role === "doctor";
 
   const [open, setOpen] = useState(false);
   const [messageText, setMessageText] = useState("");
   const [unseen, setUnseen] = useState(0);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  useFocusTrap(panelRef, open);
 
   // Patient hooks
   const patientQuery = useGetMyMessagesQuery(undefined, {
     skip: isDoctor || !open,
     pollingInterval: 8000,
+    skipPollingIfUnfocused: true,
   });
   const [sendPortalMessage, patientSend] = useSendPortalMessageMutation();
 
@@ -34,10 +39,12 @@ export default function PortalChatBubble({ role = "patient" }) {
   const doctorQuery = useGetDoctorMessagesQuery(undefined, {
     skip: !isDoctor || !open,
     pollingInterval: 8000,
+    skipPollingIfUnfocused: true,
   });
   const { data: doctorUnread } = useGetDoctorUnreadCountQuery(undefined, {
     skip: !isDoctor,
     pollingInterval: 15000,
+    skipPollingIfUnfocused: true,
   });
   const [sendDoctorMessage, doctorSend] = useSendDoctorMessageMutation();
 
@@ -55,9 +62,59 @@ export default function PortalChatBubble({ role = "patient" }) {
   // Badge: doctor uses the backend unread count; patient uses a local unseen counter
   const badge = open ? 0 : isDoctor ? doctorUnread?.unreadCount || 0 : unseen;
 
+  // Auto-scroll without dragging the user away from earlier history.
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  const isNearBottomRef = useRef(true);
+  const lastMessageIdRef = useRef<string | null>(null);
+
+  const handleThreadScroll = () => {
+    const container = threadRef.current;
+    if (!container) return;
+    isNearBottomRef.current =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 160;
+  };
+
   useEffect(() => {
-    if (open) messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [sortedMessages, open]);
+    if (open) {
+      previouslyFocusedRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      window.requestAnimationFrame(() => {
+        const container = threadRef.current;
+        if (container) container.scrollTop = container.scrollHeight;
+        panelRef.current?.querySelector<HTMLElement>("input, button, textarea")?.focus();
+      });
+    } else {
+      previouslyFocusedRef.current?.focus();
+      previouslyFocusedRef.current = null;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const last = sortedMessages[sortedMessages.length - 1];
+    const lastId = last ? String(last.message_id ?? last.created_at) : null;
+    const isNewMessage = lastId !== lastMessageIdRef.current;
+    lastMessageIdRef.current = lastId;
+    if (!last || !isNewMessage) return;
+
+    const container = threadRef.current;
+    const isNearBottom =
+      isNearBottomRef.current ||
+      (container ? container.scrollHeight - container.scrollTop - container.clientHeight < 160 : true);
+    const ownLatest = isDoctor ? last.sender_role === "Doctor" : last.sender_role === "Patient";
+    if (isNearBottom || ownLatest) {
+      messageEndRef.current?.scrollIntoView({ behavior: ownLatest ? "auto" : "smooth" });
+    }
+  }, [open, sortedMessages, isDoctor]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
 
   // Patient SSE relay increments the unseen counter while the panel is closed
   useEffect(() => {
@@ -68,6 +125,14 @@ export default function PortalChatBubble({ role = "patient" }) {
     window.addEventListener("SSE_PATIENT_MESSAGE_UPDATE", handler);
     return () => window.removeEventListener("SSE_PATIENT_MESSAGE_UPDATE", handler);
   }, [isDoctor, open]);
+
+  // Reading the full messages view also clears the bubble badge
+  useEffect(() => {
+    if (isDoctor) return;
+    const handler = () => setUnseen(0);
+    window.addEventListener("VIARA_PORTAL_MESSAGES_VIEWED", handler);
+    return () => window.removeEventListener("VIARA_PORTAL_MESSAGES_VIEWED", handler);
+  }, [isDoctor]);
 
   useEffect(() => {
     if (open) setUnseen(0);
@@ -108,6 +173,7 @@ export default function PortalChatBubble({ role = "patient" }) {
 
       {open && (
         <div
+          ref={panelRef}
           id="portal-support-chat"
           role="dialog"
           aria-modal="false"
@@ -149,7 +215,12 @@ export default function PortalChatBubble({ role = "patient" }) {
           </div>
 
           {/* Thread */}
-          <div className="flex-1 space-y-3 overflow-y-auto bg-background p-4" aria-live="polite">
+          <div
+            ref={threadRef}
+            onScroll={handleThreadScroll}
+            className="flex-1 space-y-3 overflow-y-auto bg-background p-4"
+            aria-live="polite"
+          >
             {sortedMessages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
                 <MessageCircle size={26} className="mb-2 text-primary-600 opacity-40" />
@@ -203,6 +274,7 @@ export default function PortalChatBubble({ role = "patient" }) {
               type="text"
               value={messageText}
               onChange={(e) => setMessageText(e.target.value)}
+              maxLength={1500}
               placeholder={t("chat.placeholder", "Type your message...")}
               aria-label={t("chat.placeholder", "Type your message...")}
               className="flex-1 rounded-lg border border-border bg-surface px-4 py-2.5 text-xs text-foreground outline-none transition focus:border-primary-600 focus:ring-2 focus:ring-primary-600/10"

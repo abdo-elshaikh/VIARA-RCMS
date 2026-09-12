@@ -102,6 +102,16 @@ const updateCenterSettingsSchema = z.object({
     vat_enabled: z.boolean().optional().nullable(),
     vat_rate: z.coerce.number().min(0).max(100).optional().nullable(),
     showPoweredByViara: z.boolean().optional().nullable(),
+    workstation_presets: z.array(z.object({
+        id: z.string().min(1).max(100),
+        label: z.string().min(1).max(200),
+        icon: z.string().max(20).optional().nullable(),
+        descAr: z.string().max(500).optional().nullable(),
+        descEn: z.string().max(500).optional().nullable(),
+        roomIds: z.array(z.union([z.string(), z.number()])).max(200).default([]),
+        scope: z.enum(['all', 'rooms', 'emergency']).default('all'),
+        tab: z.string().max(40).optional().nullable(),
+    }).strict()).max(100).optional().nullable(),
     working_hours: workingHoursSchema.optional().nullable(),
     print_settings: z.object({
         stickerWidth: z.string().optional(),

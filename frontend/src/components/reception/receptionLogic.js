@@ -1,4 +1,5 @@
 import { roundFinancialAmount, toFinancialNumber } from '../../utils/financialFormat';
+import { getEffectivePermissions } from '../../utils/effectivePermissions';
 
 export const toLocalDateInput = (date = new Date()) => {
     const year = date.getFullYear();
@@ -17,7 +18,7 @@ export const shiftLocalDateInput = (dateInput, days) => {
 export const getCurrentUserId = (user) => user?.id || user?.user_id || null;
 
 export const buildPermissionModel = (user) => {
-    const permissions = new Set([...(user?.permissions || []), ...(user?.elevatedPermissions || [])]);
+    const permissions = getEffectivePermissions(user);
     const has = (permission) => user?.role === 'Developer' || permissions.has(permission);
 
     return {
@@ -219,12 +220,45 @@ export const canTransitionQueue = (fromStage, toStage) => {
     return getValidQueueTransitions(fromStage).includes(toStage);
 };
 
-export const buildScheduleSummary = (appointments = [], queueItems = []) => ({
-    booked: appointments.length,
-    ready: queueItems.filter((item) => ['Arrived', 'Payment Pending', 'Prep Pending'].includes(item.queue_stage || item.queueStage)).length,
-    urgent: appointments.filter((appointment) => ['Urgent', 'Emergency'].includes(appointment.priority)).length,
-    activeQueue: queueItems.filter((item) => !['Delivered', 'Cancelled'].includes(item.queue_stage || item.queueStage)).length
-});
+export const isActionableCashierItem = (item, invoice) => {
+    if (!item && !invoice) return false;
+    if (invoice && invoice.invoice_status === 'Voided') return false;
+
+    const stage = item?.queue_stage || item?.queueStage;
+    const balance = Number(invoice?.balance_amount ?? 0);
+    const hasOutstandingBalance = Boolean(invoice && balance > 0.005);
+
+    // 1. If in 'Payment Pending', actionable if missing invoice or has balance
+    if (stage === 'Payment Pending') {
+        return !invoice || hasOutstandingBalance;
+    }
+    // 2. If in 'Arrived', actionable if invoice exists with balance
+    if (stage === 'Arrived') {
+        return Boolean(invoice && hasOutstandingBalance);
+    }
+    // 3. For any other stage (e.g. 'Prep Pending', 'Ready for Exam', 'In Exam', 'Reporting', 'Finalized'),
+    // if new supplies were consumed or the invoice has an outstanding balance,
+    // it MUST appear in the Cashier Queue for collection!
+    if (hasOutstandingBalance) {
+        return true;
+    }
+
+    return false;
+};
+
+export const buildScheduleSummary = (appointments = [], queueItems = []) => {
+    const readyFromQueue = queueItems.filter((item) => ['Arrived', 'Payment Pending', 'Prep Pending'].includes(item.queue_stage || item.queueStage)).length;
+    const readyFromAppts = appointments.filter((a) => ['Arrived', 'Checked-in'].includes(a.status) && !queueItems.some(q => (q.appointment_id && q.appointment_id === a.appointment_id) || (q.exam_id && q.exam_id === a.exam_id))).length;
+    const urgentAppts = appointments.filter((appointment) => ['Urgent', 'Emergency'].includes(appointment.priority)).length;
+    const urgentQueue = queueItems.filter((q) => ['Urgent', 'Emergency'].includes(q.priority) && !appointments.some(a => (a.appointment_id && a.appointment_id === q.appointment_id) || (a.exam_id && a.exam_id === q.exam_id))).length;
+
+    return {
+        booked: appointments.length,
+        ready: readyFromQueue + readyFromAppts,
+        urgent: urgentAppts + urgentQueue,
+        activeQueue: queueItems.filter((item) => !['Delivered', 'Cancelled'].includes(item.queue_stage || item.queueStage)).length
+    };
+};
 
 export const buildReceptionTabs = ({ canProcessPayments, t }) => [
     { id: 'schedule', label: t('tabs.schedule') },

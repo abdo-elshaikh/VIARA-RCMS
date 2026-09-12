@@ -18,17 +18,17 @@ const Input = forwardRef(({
     const inputId = id || generatedId;
     const errorId = `${inputId}-error`;
     const helperId = `${inputId}-helper`;
-    const baseStyles = 'w-full min-h-11 px-4 py-2.5 rounded-xl border text-slate-800 dark:text-[var(--VIARA-ink)] placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all outline-none';
+    const baseStyles = 'ds-field';
     const stateStyles = error
-        ? 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30 focus:ring-2 focus:ring-red-500/20 focus:border-red-500'
-        : 'border-slate-200 bg-white dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] focus:ring-4 focus:ring-[rgba(var(--VIARA-accent-rgb),0.12)] focus:border-[var(--VIARA-accent)] hover:border-slate-300 dark:hover:border-[var(--VIARA-line-strong)]';
+        ? 'ds-field-error'
+        : '';
 
     return (
         <div className={`${containerClassName}`}>
             {label && (
-                <label htmlFor={inputId} className="block text-sm font-semibold text-slate-700 dark:text-[var(--VIARA-ink)] mb-2">
+                <label htmlFor={inputId} className="ds-field-label mb-2 block text-sm font-semibold">
                     {label}
-                    {required && <span className="ms-1 text-red-500">*</span>}
+                    {required && <span className="ms-1 text-[var(--VIARA-danger)]" aria-hidden="true">*</span>}
                 </label>
             )}
 
@@ -45,13 +45,13 @@ const Input = forwardRef(({
             />
 
             {error && (
-                <p id={errorId} role="alert" className="mt-1 text-sm text-red-600">
+                <p id={errorId} role="alert" className="ds-field-error-copy mt-1 text-sm">
                     {error.message || error}
                 </p>
             )}
 
             {helperText && !error && (
-                <p id={helperId} className="mt-1 text-sm text-slate-500 dark:text-[var(--VIARA-muted)]">
+                <p id={helperId} className="ds-field-help mt-1 text-sm">
                     {helperText}
                 </p>
             )}

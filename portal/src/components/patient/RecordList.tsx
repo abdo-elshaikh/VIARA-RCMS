@@ -1,9 +1,10 @@
 import React from "react";
-import { FileText, ChevronDown, Printer, FileDown, Copy, Eye, Award, Calendar } from "lucide-react";
+import { FileText, ChevronDown, Printer, FileDown, Copy, Eye, Award, Calendar, Download } from "lucide-react";
 import { Empty } from "../ui/StateIndicators";
 import { InfoBlock } from "../ui/DataBlocks";
 import { ActionButton } from "../ui/FormElements";
 import StatusBadge from "../ui/StatusBadge";
+import { isFinalizedRecord } from "../../utils/recordStatus";
 
 interface RecordListProps {
   records: any[];
@@ -16,6 +17,7 @@ interface RecordListProps {
   formatDate: (date: any, short?: boolean) => string;
   onPreviewReport: (record: any) => void;
   onPrintReport: (record: any) => void;
+  onDownloadPdf?: (record: any) => void;
   onExportWord: (record: any) => void;
   onCopyReport: (text: string) => void;
   t: any;
@@ -32,6 +34,7 @@ const RecordList: React.FC<RecordListProps> = ({
   formatDate,
   onPreviewReport,
   onPrintReport,
+  onDownloadPdf,
   onExportWord,
   onCopyReport,
   t,
@@ -43,10 +46,7 @@ const RecordList: React.FC<RecordListProps> = ({
       {records.map((record) => {
         const recordKey = getRecordKey(record);
         const isOpen = expandedRecordId === recordKey;
-        const isFinalized =
-          record.exam_status === "Finalized" ||
-          ["Finalized", "Amended"].includes(record.report_status) ||
-          record.report_locked === true;
+        const isFinalized = isFinalizedRecord(record);
         const reportText = isFinalized
           ? record.report_content || record.report_sections?.findings || ""
           : "";
@@ -65,6 +65,8 @@ const RecordList: React.FC<RecordListProps> = ({
             <button
               type="button"
               onClick={() => setExpandedRecordId(isOpen ? null : recordKey)}
+              aria-expanded={isOpen}
+              aria-controls={`record-details-${recordKey}`}
               className="group flex w-full flex-col gap-4 p-5 text-start outline-none transition hover:bg-primary-50/60 dark:hover:bg-primary-400/10 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex min-w-0 items-start gap-4">
@@ -121,7 +123,12 @@ const RecordList: React.FC<RecordListProps> = ({
             </button>
 
             {isOpen && (
-              <div className="space-y-5 border-t border-border bg-background p-5">
+              <div
+                id={`record-details-${recordKey}`}
+                role="region"
+                aria-label={`${examName(record)} ${t("records.detailsLabel", "details")}`}
+                className="space-y-5 border-t border-border bg-background p-5"
+              >
                 <div className="grid gap-3 sm:grid-cols-3">
                   <InfoBlock
                     label={t("records.bodyPart", "Body Part")}
@@ -183,6 +190,15 @@ const RecordList: React.FC<RecordListProps> = ({
                   >
                     {t("records.printReport", "Print final report")}
                   </ActionButton>
+                  {onDownloadPdf && (
+                    <ActionButton
+                      disabled={!canUseReport}
+                      onClick={() => onDownloadPdf(record)}
+                      icon={Download}
+                    >
+                      {t("records.downloadPdf", "Download PDF Report")}
+                    </ActionButton>
+                  )}
                   <ActionButton
                     disabled={!canUseReport}
                     onClick={() => onExportWord(record)}

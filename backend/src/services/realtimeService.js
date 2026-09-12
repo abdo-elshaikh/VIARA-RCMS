@@ -33,19 +33,54 @@ sessionCleanupInterval.unref?.();
  * @returns {string} A random 32-byte hex SSE session token
  */
 const createSseSession = (decoded) => {
+    const isPatient = decoded.role === 'Patient';
+    const isDoctorPortal = decoded.role === 'Doctor' && !decoded.user_id && Boolean(decoded.doctorId || decoded.doctor_id);
+    const patientId = isPatient
+        ? (decoded.patientId || decoded.patient_id || decoded.userId || null)
+        : (decoded.patientId || decoded.patient_id || null);
+    const doctorId = isDoctorPortal
+        ? (decoded.doctorId || decoded.doctor_id || null)
+        : null;
     const sessionToken = crypto.randomBytes(32).toString('hex');
     sseSessionTokens.set(sessionToken, {
-        userId: decoded.user_id || decoded.userId || null,
+        userId: isPatient || isDoctorPortal ? null : (decoded.user_id || decoded.userId || null),
         role: decoded.role || null,
-        patientId: decoded.patientId || null,
-        doctorId: decoded.doctorId || null,
+        patientId,
+        doctorId,
         expiresAt: Date.now() + SSE_SESSION_TTL_MS
     });
     return sessionToken;
 };
 
+/**
+ * Broadcast to the subset of connected staff authorized for an event.
+ * The predicate receives only the authenticated realtime identity.
+ * Declared before removeClient because presence announcements use it.
+ */
+const broadcastToStaffMatching = (predicate, event, data) => {
+    if (typeof predicate !== 'function') return;
+    clients
+        .filter(client => Boolean(client.userId) && predicate({
+            userId: client.userId,
+            role: client.role
+        }))
+        .forEach(client => writeSse(client, { event, data }));
+};
+
 const removeClient = (clientInfo) => {
+    const wasStaff = Boolean(clientInfo.userId);
+    const userId = clientInfo.userId;
     clients = clients.filter(c => c !== clientInfo && c.res !== clientInfo.res);
+    // Announce staff departures immediately so online presence does not
+    // linger until the next poll. Only broadcast when the user's LAST
+    // connection closed (multi-tab users stay online while any tab lives).
+    if (wasStaff && userId && !clients.some(c => String(c.userId) === String(userId))) {
+        broadcastToStaffMatching(
+            c => String(c.userId) !== String(userId),
+            'USER_PRESENCE',
+            { userId: String(userId), online: false }
+        );
+    }
 };
 
 const writeSse = (clientInfo, payload) => {
@@ -70,9 +105,13 @@ const writeSse = (clientInfo, payload) => {
 /**
  * Register a new SSE connection client.
  * Expects a short-lived SSE session token (not the user's access JWT).
+ * The token is accepted from the query string (legacy EventSource clients) or
+ * from the Authorization header (fetch-based clients), so it never needs to
+ * appear in URL/access logs.
  */
 const registerClient = (req, res) => {
-    const sessionToken = req.query.token;
+    const authorization = typeof req.headers?.authorization === 'string' ? req.headers.authorization : '';
+    const sessionToken = (req.query.token || (authorization.startsWith('Bearer ') ? authorization.slice(7) : '')).trim();
     if (!sessionToken) {
         res.status(401).json({ error: 'SSE session token required' });
         return;
@@ -107,6 +146,16 @@ const registerClient = (req, res) => {
 
         // Add to active clients pool
         clients.push(clientInfo);
+
+        // Announce staff arrivals so other tabs update presence instantly
+        // instead of waiting for the next users-list poll.
+        if (session.userId) {
+            broadcastToStaffMatching(
+                c => String(c.userId) !== String(session.userId),
+                'USER_PRESENCE',
+                { userId: String(session.userId), online: true }
+            );
+        }
 
         // Send initial connection validation message
         writeSse(clientInfo, { type: 'CONNECTED', status: 'OK' });
@@ -151,7 +200,7 @@ const registerClient = (req, res) => {
  */
 const sendToUser = (userId, event, data) => {
     if (!userId) return;
-    const targetClients = clients.filter(c => c.userId === userId);
+    const targetClients = clients.filter(c => String(c.userId) === String(userId));
     targetClients.forEach(client => {
         writeSse(client, { event, data });
     });
@@ -162,7 +211,7 @@ const sendToUser = (userId, event, data) => {
  */
 const sendToPatient = (patientId, event, data) => {
     if (!patientId) return;
-    const targetClients = clients.filter(c => c.patientId === patientId);
+    const targetClients = clients.filter(c => String(c.patientId) === String(patientId));
     targetClients.forEach(client => {
         writeSse(client, { event, data });
     });
@@ -173,7 +222,7 @@ const sendToPatient = (patientId, event, data) => {
  */
 const sendToDoctor = (doctorId, event, data) => {
     if (!doctorId) return;
-    const targetClients = clients.filter(c => c.doctorId === doctorId);
+    const targetClients = clients.filter(c => String(c.doctorId) === String(doctorId));
     targetClients.forEach(client => {
         writeSse(client, { event, data });
     });
@@ -194,7 +243,7 @@ const sendToRole = (role, event, data) => {
  * Broadcast an event to all active staff connections
  */
 const broadcastToStaff = (event, data) => {
-    const staffClients = clients.filter(c => c.userId !== null);
+    const staffClients = clients.filter(c => Boolean(c.userId));
     staffClients.forEach(client => {
         writeSse(client, { event, data });
     });
@@ -219,5 +268,6 @@ module.exports = {
     sendToDoctor,
     sendToRole,
     broadcastToStaff,
+    broadcastToStaffMatching,
     getOnlineUserIds
 };

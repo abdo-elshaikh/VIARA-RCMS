@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import {
     Activity,
     AlertTriangle,
@@ -7,8 +8,6 @@ import {
     Check,
     CheckCircle2,
     ChevronDown,
-    ChevronLeft,
-    ChevronRight,
     Clock,
     Copy,
     Download,
@@ -43,6 +42,8 @@ import {
     useRunAuditDetectionsMutation
 } from '../store/api';
 import PageHeader from '../components/ui/PageHeader';
+import Pagination from '../components/ui/Pagination';
+import { getEffectivePermissions } from '../utils/effectivePermissions';
 
 const PAGE_SIZE = 25;
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -89,7 +90,7 @@ const AuditLogs = ({ embedded = false }) => {
     const [reviewAlert, reviewAlertState] = useReviewAuditAlertMutation();
 
     const { data: alertData, isLoading: alertsLoading, isError: alertsError, refetch: refetchAlerts } = useGetAuditAlertsQuery({ status: 'open', limit: 8 });
-    const permissions = new Set([...(currentUser?.permissions || []), ...(currentUser?.elevatedPermissions || [])]);
+    const permissions = getEffectivePermissions(currentUser);
     const elevatedRole = ['Admin', 'Developer'].includes(currentUser?.role);
     const canExportAudit = elevatedRole || permissions.has('EXPORT_AUDIT_TRAILS');
     const canVerifyAudit = elevatedRole || permissions.has('VERIFY_AUDIT_CHAIN');
@@ -289,7 +290,9 @@ const AuditLogs = ({ embedded = false }) => {
             type="button"
             onClick={() => {
                 setAutoRefresh((prev) => !prev);
-                toast.success(!autoRefresh ? 'Live audit polling active (15s)' : 'Live polling paused');
+                toast.success(!autoRefresh
+                    ? t('audit.livePollingActive', { defaultValue: 'Live audit polling active (15s)' })
+                    : t('audit.livePollingPaused', { defaultValue: 'Live polling paused' }));
             }}
             className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition ${
                 autoRefresh
@@ -298,7 +301,9 @@ const AuditLogs = ({ embedded = false }) => {
             }`}
         >
             <Radio size={14} className={autoRefresh ? 'text-emerald-600 animate-pulse' : 'text-slate-400'} />
-            {autoRefresh ? 'Live Polling' : 'Auto-Refresh Off'}
+            {autoRefresh
+                ? t('audit.livePolling', { defaultValue: 'Live Polling' })
+                : t('audit.autoRefreshOff', { defaultValue: 'Auto-Refresh Off' })}
         </button>
     );
 
@@ -390,6 +395,14 @@ const AuditLogs = ({ embedded = false }) => {
                             {canExportAudit ? exportCsvButton : null}
                         </div>
                     )}
+                    metrics={[
+                        { key: 'events', icon: Activity, label: t('audit.matchingEvents', { defaultValue: 'Matching Events' }), value: total.toLocaleString(locale), detail: t('audit.serverTotal', { defaultValue: 'Filtered result set' }), tone: 'teal', loading: isLoading, error: isError },
+                        { key: 'failures', icon: ShieldAlert, label: t('audit.failures', { defaultValue: 'Failed Events' }), value: Number(serverSummary.failures || 0).toLocaleString(locale), tone: serverSummary.failures ? 'rose' : 'emerald', loading: isLoading, error: isError },
+                        { key: 'denied', icon: ShieldX, label: t('audit.denied', { defaultValue: 'Access Denied' }), value: Number(serverSummary.denied || 0).toLocaleString(locale), tone: serverSummary.denied ? 'amber' : 'emerald', loading: isLoading, error: isError },
+                        { key: 'phi', icon: Eye, label: t('audit.phiAccess', { defaultValue: 'PHI Views' }), value: Number(serverSummary.phiAccess || 0).toLocaleString(locale), tone: 'blue', loading: isLoading, error: isError },
+                        { key: 'risk', icon: AlertTriangle, label: t('audit.risky', { defaultValue: 'High Risk' }), value: Number(serverSummary.risky || 0).toLocaleString(locale), tone: serverSummary.risky ? 'rose' : 'emerald', loading: isLoading, error: isError },
+                    ]}
+                    metricsLabel={t('audit.summary')}
                 />
             )}
 
@@ -427,9 +440,13 @@ const AuditLogs = ({ embedded = false }) => {
                     <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5 dark:border-slate-800">
                         <div className="flex items-center gap-2">
                             <Layers size={15} className="text-slate-500" />
-                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">Category Distribution in Active Page</h3>
+                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                                {t('audit.categoryDistribution', { defaultValue: 'Category Distribution in Active Page' })}
+                            </h3>
                         </div>
-                        <span className="font-mono text-[10px] font-bold text-slate-400">{logs.length} items analyzed</span>
+                        <span className="font-mono text-[10px] font-bold text-slate-400">
+                            {logs.length} {t('audit.itemsAnalyzed', { defaultValue: 'items analyzed' })}
+                        </span>
                     </div>
 
                     <div className="mt-3 flex h-3.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -501,15 +518,23 @@ const AuditLogs = ({ embedded = false }) => {
                             <h2 id="audit-filter-heading" className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
                                 {t('audit.filters', { defaultValue: 'Multi-Criteria Filter Engine' })}
                             </h2>
-                            <p className="text-[11px] text-slate-400">Refine by user, PHI patient, action, outcome, or date range</p>
+                            <p className="text-[11px] text-slate-400">
+                                {t('audit.filtersDescription', { defaultValue: 'Refine by user, PHI patient, action, outcome, or date range' })}
+                            </p>
                         </div>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
                         {/* Quick Date Presets */}
-                        <button type="button" onClick={() => applyDatePreset(0)} className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">Today</button>
-                        <button type="button" onClick={() => applyDatePreset(7)} className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">7 Days</button>
-                        <button type="button" onClick={() => applyDatePreset(30)} className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">30 Days</button>
+                        <button type="button" onClick={() => applyDatePreset(0)} className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                            {t('audit.today', { defaultValue: 'Today' })}
+                        </button>
+                        <button type="button" onClick={() => applyDatePreset(7)} className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                            {t('audit.sevenDays', { defaultValue: '7 Days' })}
+                        </button>
+                        <button type="button" onClick={() => applyDatePreset(30)} className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                            {t('audit.thirtyDays', { defaultValue: '30 Days' })}
+                        </button>
 
                         <button
                             type="button"
@@ -656,7 +681,7 @@ const AuditLogs = ({ embedded = false }) => {
                 </div>
             </section>
 
-            {/* Event Stream Stream & Quick Tabs */}
+            {/* Event Stream & Quick Tabs */}
             <section style={reveal(120).style} className={`overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70 ${reveal(120).className}`} aria-labelledby="audit-results-heading">
                 <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 sm:px-5 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -675,11 +700,11 @@ const AuditLogs = ({ embedded = false }) => {
 
                     {/* Quick Filter Stream Tabs */}
                     <div className="flex items-center gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-                        <QuickStreamTab label="All Stream" active={quickTab === 'all'} onClick={() => handleQuickTabSelect('all')} />
-                        <QuickStreamTab label="High Risk (50+)" active={quickTab === 'risky'} onClick={() => handleQuickTabSelect('risky')} />
-                        <QuickStreamTab label="Auth & Login" active={quickTab === 'auth'} onClick={() => handleQuickTabSelect('auth')} />
-                        <QuickStreamTab label="PHI Queries" active={quickTab === 'phi'} onClick={() => handleQuickTabSelect('phi')} />
-                        <QuickStreamTab label="Failures" active={quickTab === 'failures'} onClick={() => handleQuickTabSelect('failures')} />
+                        <QuickStreamTab label={t('audit.quickTabs.all', { defaultValue: 'All Stream' })} active={quickTab === 'all'} onClick={() => handleQuickTabSelect('all')} />
+                        <QuickStreamTab label={t('audit.quickTabs.risky', { defaultValue: 'High Risk (50+)' })} active={quickTab === 'risky'} onClick={() => handleQuickTabSelect('risky')} />
+                        <QuickStreamTab label={t('audit.quickTabs.auth', { defaultValue: 'Auth & Login' })} active={quickTab === 'auth'} onClick={() => handleQuickTabSelect('auth')} />
+                        <QuickStreamTab label={t('audit.quickTabs.phi', { defaultValue: 'PHI Queries' })} active={quickTab === 'phi'} onClick={() => handleQuickTabSelect('phi')} />
+                        <QuickStreamTab label={t('audit.quickTabs.failures', { defaultValue: 'Failures' })} active={quickTab === 'failures'} onClick={() => handleQuickTabSelect('failures')} />
                     </div>
                 </div>
 
@@ -749,29 +774,14 @@ const AuditLogs = ({ embedded = false }) => {
 
                 {/* Pagination Toolbar */}
                 {!isLoading && !isError && total > 0 ? (
-                    <nav className="flex items-center justify-between gap-4 border-t border-slate-100 p-4 dark:border-slate-800 sm:px-6" aria-label={t('audit.pagination')}>
-                        <button
-                            type="button"
-                            onClick={() => setPage((value) => Math.max(1, value - 1))}
-                            disabled={page === 1}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                        >
-                            <ChevronLeft size={16} className="rtl:rotate-180" aria-hidden="true" />
-                            <span>{t('audit.previous', { defaultValue: 'Previous' })}</span>
-                        </button>
-                        <p className="font-mono text-xs font-bold text-slate-600 dark:text-slate-400">
-                            {t('audit.pageOf', { page, count: pageCount, defaultValue: `Page ${page} of ${pageCount}` })}
-                        </p>
-                        <button
-                            type="button"
-                            onClick={() => setPage((value) => Math.min(pageCount, value + 1))}
-                            disabled={page >= pageCount}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                        >
-                            <span>{t('audit.next', { defaultValue: 'Next' })}</span>
-                            <ChevronRight size={16} className="rtl:rotate-180" aria-hidden="true" />
-                        </button>
-                    </nav>
+                    <Pagination
+                        currentPage={page}
+                        pageCount={pageCount}
+                        onPageChange={setPage}
+                        isRtl={i18n.language?.startsWith('ar')}
+                        ariaLabel={t('audit.pagination')}
+                        className="border-t border-slate-100 px-4 dark:border-slate-800 sm:px-6"
+                    />
                 ) : null}
             </section>
 
@@ -785,14 +795,16 @@ const AuditLogs = ({ embedded = false }) => {
                                     <ShieldCheck size={16} />
                                 </span>
                                 <div>
-                                    <h3 className="text-sm font-black uppercase tracking-wider text-white">Cryptographic Audit Entry #{inspectingLog.log_id}</h3>
+                                    <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                                        {t('audit.inspector.title', { id: inspectingLog.log_id, defaultValue: `Cryptographic Audit Entry #${inspectingLog.log_id}` })}
+                                    </h3>
                                     <p className="font-mono text-xs text-slate-400">{formatDate(inspectingLog.timestamp, locale)}</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
                                 <button type="button" onClick={() => copyJsonPayload(inspectingLog)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-3 text-xs font-bold text-slate-200 hover:bg-slate-800">
                                     {copiedId === inspectingLog.log_id ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                                    <span>Copy JSON</span>
+                                    <span>{t('audit.inspector.copyJson', { defaultValue: 'Copy JSON' })}</span>
                                 </button>
                                 <button type="button" onClick={() => setInspectingLog(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
                                     <X size={16} />
@@ -803,17 +815,23 @@ const AuditLogs = ({ embedded = false }) => {
                         <div className="space-y-4 overflow-y-auto p-4 sm:p-6">
                             <div className="grid gap-3 sm:grid-cols-3">
                                 <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Actor</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                        {t('audit.inspector.actor', { defaultValue: 'Actor' })}
+                                    </span>
                                     <p className="mt-1 font-bold text-white text-xs">{inspectingLog.actor_name || inspectingLog.user_name || 'SYSTEM'}</p>
                                     <p className="font-mono text-[10px] text-slate-400">{inspectingLog.actor_role || inspectingLog.actor_type || '-'}</p>
                                 </div>
                                 <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Category & Action</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                        {t('audit.inspector.categoryAndAction', { defaultValue: 'Category & Action' })}
+                                    </span>
                                     <p className="mt-1 font-mono font-bold text-emerald-400 text-xs">{inspectingLog.category || '-'}</p>
                                     <p className="font-mono text-[10px] text-slate-300">{inspectingLog.event_code || inspectingLog.action}</p>
                                 </div>
                                 <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">IP & Request ID</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                        {t('audit.inspector.ipAndRequestId', { defaultValue: 'IP & Request ID' })}
+                                    </span>
                                     <p className="mt-1 font-mono text-xs text-white">{inspectingLog.ip_address || '-'}</p>
                                     <p className="truncate font-mono text-[10px] text-slate-400">{inspectingLog.request_id || '-'}</p>
                                 </div>
@@ -822,14 +840,20 @@ const AuditLogs = ({ embedded = false }) => {
                             {/* Changed fields diff box */}
                             {(inspectingLog.previous_value || inspectingLog.new_value) && (
                                 <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 p-4">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">State Modification Diff</span>
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">
+                                        {t('audit.inspector.stateDiff', { defaultValue: 'State Modification Diff' })}
+                                    </span>
                                     <div className="mt-2 grid gap-3 sm:grid-cols-2">
                                         <div className="rounded-lg bg-slate-900 p-3">
-                                            <span className="text-[10px] font-bold text-rose-400">- Previous State</span>
+                                            <span className="text-[10px] font-bold text-rose-400">
+                                                {t('audit.inspector.previousState', { defaultValue: '- Previous State' })}
+                                            </span>
                                             <pre className="mt-1 max-h-32 overflow-auto font-mono text-[11px] text-rose-200">{JSON.stringify(inspectingLog.previous_value, null, 2)}</pre>
                                         </div>
                                         <div className="rounded-lg bg-slate-900 p-3">
-                                            <span className="text-[10px] font-bold text-emerald-400">+ New State</span>
+                                            <span className="text-[10px] font-bold text-emerald-400">
+                                                {t('audit.inspector.newState', { defaultValue: '+ New State' })}
+                                            </span>
                                             <pre className="mt-1 max-h-32 overflow-auto font-mono text-[11px] text-emerald-200">{JSON.stringify(inspectingLog.new_value, null, 2)}</pre>
                                         </div>
                                     </div>
@@ -837,7 +861,9 @@ const AuditLogs = ({ embedded = false }) => {
                             )}
 
                             <div>
-                                <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-400">Full Raw Log Entry Object</span>
+                                <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                    {t('audit.inspector.rawObject', { defaultValue: 'Full Raw Log Entry Object' })}
+                                </span>
                                 <pre className="max-h-64 overflow-auto rounded-xl border border-slate-800 bg-slate-900 p-4 font-mono text-[11px] leading-relaxed text-slate-200">{JSON.stringify(inspectingLog, null, 2)}</pre>
                             </div>
                         </div>
@@ -1026,7 +1052,7 @@ const AuditCard = ({ log, locale, t, systemLabel, detailsLabel, expanded, copied
             <Detail label={t('audit.ip', { defaultValue: 'IP Address' })} value={log.ip_address || '-'} mono />
             <Detail label={t('audit.resourceId', { defaultValue: 'Ref ID' })} value={log.target_id || log.resource_id || '-'} mono wide />
         </dl>
-        {expanded ? <DetailsPanel log={log} label={t('audit.details', { defaultValue: 'Full Event Payload' })} /> : null}
+        {expanded ? <DetailsPanel log={log} label={t('audit.details', { defaultValue: 'Full Event Payload' })} t={t} /> : null}
     </article>
 );
 
@@ -1065,7 +1091,7 @@ const AuditRow = ({ log, locale, t, systemLabel, detailsLabel, expanded, copiedI
         {expanded ? (
             <tr>
                 <td colSpan="8" className="bg-slate-950 p-4 border-y border-slate-800">
-                    <DetailsPanel log={log} label={t('audit.details', { defaultValue: 'Cryptographic Log Entry Payload' })} />
+                    <DetailsPanel log={log} label={t('audit.details', { defaultValue: 'Cryptographic Log Entry Payload' })} t={t} />
                 </td>
             </tr>
         ) : null}
@@ -1107,7 +1133,7 @@ const Detail = ({ label, value, mono, wide }) => (
     </div>
 );
 
-const DetailsPanel = ({ log, label }) => {
+const DetailsPanel = ({ log, label, t }) => {
     const jsonStr = JSON.stringify(log.details || {}, null, 2);
     const hasRedaction = jsonStr.includes('[REDACTED]');
 
@@ -1131,7 +1157,7 @@ const DetailsPanel = ({ log, label }) => {
                     {hasRedaction && (
                         <span className="inline-flex items-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2 py-0.5 text-[9.5px] font-bold text-teal-300">
                             <Lock size={10} />
-                            <span>HIPAA/GDPR Redacted</span>
+                            <span>{t ? t('audit.inspector.hipaaRedacted', { defaultValue: 'HIPAA/GDPR Redacted' }) : 'HIPAA/GDPR Redacted'}</span>
                         </span>
                     )}
                     <span className="font-mono text-[10px] text-slate-400">ID #{log.log_id}</span>
@@ -1141,38 +1167,40 @@ const DetailsPanel = ({ log, label }) => {
             {/* Direct 1-Click Resource Navigation Links */}
             {(log.patient_id || log.exam_id || log.invoice_id || log.appointment_id) && (
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Quick Links:</span>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        {t ? t('audit.inspector.quickLinks', { defaultValue: 'Quick Links:' }) : 'Quick Links:'}
+                    </span>
                     {log.patient_id && (
-                        <a
-                            href={`/patients?patientId=${log.patient_id}`}
+                        <Link
+                            to={`/patients?patientId=${log.patient_id}`}
                             className="inline-flex items-center gap-1 rounded-lg bg-teal-600/30 border border-teal-500/40 px-2.5 py-1 text-[10.5px] font-bold text-teal-200 hover:bg-teal-600/50 transition"
                         >
-                            <span>Patient #{String(log.patient_id).slice(0, 8)}...</span>
-                        </a>
+                            <span>{t ? t('audit.inspector.patient', { defaultValue: 'Patient' }) : 'Patient'} #{String(log.patient_id).slice(0, 8)}...</span>
+                        </Link>
                     )}
                     {log.exam_id && (
-                        <a
-                            href={`/worklist?examId=${log.exam_id}`}
+                        <Link
+                            to={`/worklist?examId=${log.exam_id}`}
                             className="inline-flex items-center gap-1 rounded-lg bg-cyan-600/30 border border-cyan-500/40 px-2.5 py-1 text-[10.5px] font-bold text-cyan-200 hover:bg-cyan-600/50 transition"
                         >
-                            <span>Exam Study</span>
-                        </a>
+                            <span>{t ? t('audit.inspector.examStudy', { defaultValue: 'Exam Study' }) : 'Exam Study'}</span>
+                        </Link>
                     )}
                     {log.invoice_id && (
-                        <a
-                            href={`/reception?tab=cashier&invoiceId=${log.invoice_id}`}
+                        <Link
+                            to={`/reception?tab=cashier&invoiceId=${log.invoice_id}`}
                             className="inline-flex items-center gap-1 rounded-lg bg-amber-600/30 border border-amber-500/40 px-2.5 py-1 text-[10.5px] font-bold text-amber-200 hover:bg-amber-600/50 transition"
                         >
-                            <span>Invoice</span>
-                        </a>
+                            <span>{t ? t('audit.inspector.invoice', { defaultValue: 'Invoice' }) : 'Invoice'}</span>
+                        </Link>
                     )}
                     {log.appointment_id && (
-                        <a
-                            href={`/appointments?appointmentId=${log.appointment_id}`}
+                        <Link
+                            to={`/appointments?appointmentId=${log.appointment_id}`}
                             className="inline-flex items-center gap-1 rounded-lg bg-sky-600/30 border border-sky-500/40 px-2.5 py-1 text-[10.5px] font-bold text-sky-200 hover:bg-sky-600/50 transition"
                         >
-                            <span>Appointment</span>
-                        </a>
+                            <span>{t ? t('audit.inspector.appointment', { defaultValue: 'Appointment' }) : 'Appointment'}</span>
+                        </Link>
                     )}
                 </div>
             )}

@@ -226,6 +226,13 @@
     "Other": "آخر"
   },
   "visitDetail": {
+    "metrics": {
+      "label": "ملخص سجل المريض",
+      "totalVisits": "إجمالي الزيارات",
+      "finalizedReports": "التقارير المعتمدة",
+      "pendingReports": "التقارير المعلقة",
+      "deliveredReports": "التقارير المسلّمة"
+    },
     "followUp": "متابعة",
     "followUpContext": "سياق المتابعة",
     "priorStudy": "الفحص السابق",

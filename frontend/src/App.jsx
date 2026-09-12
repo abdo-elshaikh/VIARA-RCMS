@@ -3,11 +3,11 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from
 import toast, { Toaster } from 'react-hot-toast';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { selectCurrentToken, selectCurrentUser, selectIsAuthenticated, rehydrateUser, logOut, setAccessToken } from './store/authSlice';
+import { selectCurrentToken, selectCurrentUser, selectIsAuthenticated, rehydrateUser, logOut, setAccessToken, permissionsUpdated } from './store/authSlice';
 import ErrorBoundary from './components/ErrorBoundary';
 import { api, rehydrateSession, useGetPreferencesQuery } from './store/api';
 import Modal from './components/ui/Modal';
-import { DEFAULT_PREFERENCES, updateAllPreferences } from './store/preferencesSlice';
+import { DEFAULT_PREFERENCES, selectPreferences, updateAllPreferences } from './store/preferencesSlice';
 import { getRouteRoles } from './config/routes';
 import {
     getDoctorPortalDashboardUrl,
@@ -19,6 +19,7 @@ import {
 } from './utils/portalUrls';
 import { VIARA_BRAND } from './config/brand';
 import { applyThemePalette, resolveBrandColor } from './utils/themePalette';
+import { getEffectiveSessionTimeout, getSessionTimeoutSchedule } from './utils/sessionTimeout';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -28,16 +29,15 @@ const getCsrfToken = () => {
     return match ? decodeURIComponent(match[1]) : null;
 };
 
-// Eager-loaded components (needed immediately)
-import Login from './pages/Login';
-import AppLayout from './components/dashboard/AppLayout';
-import Help from './pages/Help';
-
 // Lazy-loaded pages for code splitting
+const Login = lazy(() => import('./pages/Login'));
+const AppLayout = lazy(() => import('./components/dashboard/AppLayout'));
+const Help = lazy(() => import('./pages/Help'));
 const DashboardHome = lazy(() => import('./pages/DashboardHome'));
 const Admin = lazy(() => import('./pages/Admin'));
 const Users = lazy(() => import('./pages/Users'));
 const UserDetailPage = lazy(() => import('./pages/UserDetailPage'));
+const UserActivityTracking = lazy(() => import('./pages/UserActivityTracking'));
 const Financials = lazy(() => import('./pages/Financials'));
 const Payroll = lazy(() => import('./pages/Payroll'));
 const Insurance = lazy(() => import('./pages/Insurance'));
@@ -69,13 +69,16 @@ const Notifications = lazy(() => import('./pages/Notifications'));
 const PendingRequests = lazy(() => import('./pages/PendingRequests'));
 const Offline = lazy(() => import('./pages/Offline'));
 const Landing = lazy(() => import('./pages/Landing'));
+const DisplayBoard = lazy(() => import('./pages/DisplayBoard'));
+const DisplayBoardControl = lazy(() => import('./pages/DisplayBoardControl'));
 const CommunicationCenter = lazy(() => import('./components/communications/CommunicationCenter'));
 const CaseReports = lazy(() => import('./pages/CaseReports'));
 const CaseDetailsPage = lazy(() => import('./pages/CaseDetailsPage'));
 
-const PrintSticker = lazy(() => import('./pages/print/PrintSticker'));
-const PrintReceipt = lazy(() => import('./pages/print/PrintReceipt'));
-const PrintInvoice = lazy(() => import('./pages/print/PrintInvoice'));
+const PrintSticker = lazy(() => import('./components/print/PrintSticker'));
+const PrintReceipt = lazy(() => import('./components/print/PrintReceipt'));
+const PrintBookingSlip = lazy(() => import('./components/print/PrintBookingSlip'));
+const PrintInvoice = lazy(() => import('./components/print/PrintInvoice'));
 
 // Loading component for Suspense
 const PageLoader = () => {
@@ -134,7 +137,6 @@ const showDesktopNotification = ({ title, body, tag, preferences, critical = fal
     }
 };
 
-// Enhanced Protected Route Wrapper
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     const user = useSelector(selectCurrentUser);
     const isAuthenticated = useSelector(selectIsAuthenticated);
@@ -219,6 +221,7 @@ const SessionTimeout = ({ t }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const isAuthenticated = useSelector(selectIsAuthenticated);
+    const preferences = useSelector(selectPreferences);
     const [showWarning, setShowWarning] = useState(false);
     const [isExtending, setIsExtending] = useState(false);
     const [timerGeneration, setTimerGeneration] = useState(0);
@@ -231,13 +234,18 @@ const SessionTimeout = ({ t }) => {
     }, [showWarning]);
 
     useEffect(() => {
-        if (!isAuthenticated) {
+        const effectiveTimeout = getEffectiveSessionTimeout(
+            preferences?.sessionTimeout,
+            preferences?.organizationSessionTimeout
+        );
+        const scheduleConfig = getSessionTimeoutSchedule(effectiveTimeout, DEFAULT_PREFERENCES.sessionTimeout);
+
+        if (!isAuthenticated || !scheduleConfig) {
             setShowWarning(false);
             return undefined;
         }
 
-        const warningMs = 28 * 60 * 1000;
-        const expiryMs = 30 * 60 * 1000;
+        const { expiryMs, warningMs } = scheduleConfig;
         const clearTimers = () => {
             window.clearTimeout(warningTimerRef.current);
             window.clearTimeout(expiryTimerRef.current);
@@ -271,7 +279,7 @@ const SessionTimeout = ({ t }) => {
             clearTimers();
             events.forEach((event) => document.removeEventListener(event, handleActivity));
         };
-    }, [dispatch, isAuthenticated, location.hash, location.pathname, location.search, navigate, t, timerGeneration]);
+    }, [dispatch, isAuthenticated, location.hash, location.pathname, location.search, navigate, preferences?.organizationSessionTimeout, preferences?.sessionTimeout, t, timerGeneration]);
 
     const extendSession = async () => {
         setIsExtending(true);
@@ -292,7 +300,7 @@ const SessionTimeout = ({ t }) => {
             <div className="space-y-4">
                 <p className="text-sm leading-6 text-slate-600 dark:text-slate-300" role="status">{t('session.warningMessage')}</p>
                 <div className="flex justify-end gap-3">
-                    <button type="button" onClick={extendSession} disabled={isExtending} className="min-h-11 rounded-xl bg-cyan-700 px-4 text-sm font-bold text-white disabled:opacity-60">
+                    <button type="button" onClick={extendSession} disabled={isExtending} className="ds-button ds-button-primary ds-button-md font-bold">
                         {isExtending ? t('status.updating') : t('session.staySignedIn')}
                     </button>
                 </div>
@@ -305,8 +313,33 @@ const App = () => {
     const dispatch = useDispatch();
     const { t, i18n } = useTranslation('common');
     const isAuthenticated = useSelector(selectIsAuthenticated);
+    const currentUser = useSelector(selectCurrentUser);
     const preferences = useSelector((state) => state.preferences);
     const [isRehydrated, setIsRehydrated] = useState(false);
+    const [permissionsHydrated, setPermissionsHydrated] = useState(false);
+
+    // Backfill effective permissions for sessions that were restored without
+    // a permission list (e.g. legacy persisted users), so route/nav permission
+    // gates operate on real data instead of failing open forever.
+    useEffect(() => {
+        if (!isAuthenticated) {
+            setPermissionsHydrated(false);
+            return undefined;
+        }
+        if (permissionsHydrated) return undefined;
+        setPermissionsHydrated(true);
+        if (!api.endpoints?.getMyPermissions?.initiate) return undefined;
+        let cancelled = false;
+        const result = dispatch(api.endpoints.getMyPermissions.initiate(undefined));
+        Promise.resolve(typeof result?.unwrap === 'function' ? result.unwrap() : result)
+            .then((data) => {
+                if (!cancelled && Array.isArray(data?.permissions)) {
+                    dispatch(permissionsUpdated(data.permissions));
+                }
+        })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, [dispatch, isAuthenticated, permissionsHydrated]);
 
     // Apply global UI preferences
     useEffect(() => {
@@ -344,7 +377,12 @@ const App = () => {
     }, [preferences]);
 
     useEffect(() => {
-        const language = preferences?.language;
+        const displayLanguage = window.location.pathname === '/display'
+            ? new URLSearchParams(window.location.search).get('lang')
+            : null;
+        const language = ['ar', 'en'].includes(displayLanguage)
+            ? displayLanguage
+            : preferences?.language;
         if (!language) return;
         const activeLanguage = (i18n.resolvedLanguage || i18n.language || 'en').split('-')[0];
         if (language !== activeLanguage) {
@@ -383,32 +421,6 @@ const App = () => {
         }
     }, [serverPreferences, dispatch]);
 
-    // Session Timeout Logic (30 minutes of inactivity)
-    useEffect(() => {
-        if (!isAuthenticated) return;
-
-        let timeoutId;
-        const resetTimer = () => {
-            clearTimeout(timeoutId);
-            timeoutId = setTimeout(() => {
-                dispatch(api.endpoints.logout.initiate());
-                dispatch(logOut());
-                toast.error(t('session.expired'));
-            }, 30 * 60 * 1000); // 30 mins
-        };
-
-        const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-        events.forEach(e => document.addEventListener(e, resetTimer));
-
-        resetTimer(); // init
-
-        return () => {
-            clearTimeout(timeoutId);
-            events.forEach(e => document.removeEventListener(e, resetTimer));
-        };
-    }, [isAuthenticated, dispatch, t]);
-
-    const currentUser = useSelector(selectCurrentUser);
     const currentToken = useSelector(selectCurrentToken);
     const currentUserId = currentUser?.user_id || currentUser?.userId;
     const currentUserIdRef = useRef(currentUserId);
@@ -431,27 +443,51 @@ const App = () => {
 
         let eventSource;
         let isCancelled = false;
+        let reconnectTimer;
+        let reconnectAttempt = 0;
 
-        // Fetch a short-lived SSE session token so the access JWT is not placed in the URL.
-        const csrfToken = getCsrfToken();
-        fetch(`${API_BASE_URL}/realtime/session`, {
+        const scheduleReconnect = () => {
+            if (isCancelled || reconnectTimer) return;
+            const delay = Math.min(30000, 1000 * (2 ** reconnectAttempt));
+            reconnectAttempt += 1;
+            reconnectTimer = window.setTimeout(() => {
+                reconnectTimer = undefined;
+                connect();
+            }, delay);
+        };
+
+        // Every reconnect exchanges the access token for a new single-use SSE token.
+        const connect = () => {
+            if (isCancelled) return;
+            const csrfToken = getCsrfToken();
+            fetch(`${API_BASE_URL}/realtime/session`, {
             method: 'POST',
             credentials: 'include',
             headers: {
                 'Authorization': `Bearer ${token}`,
                 ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
             }
-        })
-            .then(res => res.ok ? res.json() : null)
+            })
+            .then(res => {
+                if (!res.ok) throw new Error(`SSE session request failed (${res.status})`);
+                return res.json();
+            })
             .then(sseSession => {
                 if (isCancelled || !sseSession?.token) return;
-                eventSource = new EventSource(`${API_BASE_URL}/realtime/stream?token=${encodeURIComponent(sseSession.token)}`);
+                const source = new EventSource(`${API_BASE_URL}/realtime/stream?token=${encodeURIComponent(sseSession.token)}`);
+                eventSource = source;
 
-                eventSource.onmessage = (event) => {
+                source.onmessage = (event) => {
                     try {
                         const parsed = JSON.parse(event.data);
 
-                        if (parsed.type === 'PING' || parsed.type === 'CONNECTED') return;
+                        if (parsed.type === 'PING') return;
+                        if (parsed.type === 'CONNECTED') {
+                            reconnectAttempt = 0;
+                            toast.dismiss('sse-disconnected');
+                            window.dispatchEvent(new CustomEvent('SSE_CONNECTION_STATUS', { detail: { connected: true } }));
+                            return;
+                        }
 
                         const { event: sseEvent, data } = parsed;
                         const notificationPreferences = preferencesRef.current || {};
@@ -463,39 +499,42 @@ const App = () => {
                             return;
                         }
 
+                        if (sseEvent === 'PERMISSIONS_CHANGED') {
+                            // An RBAC policy change just landed. Invalidate cached
+                            // RBAC data and live-sync this user's effective
+                            // permissions so nav/pages update without re-login.
+                            dispatch(api.util.invalidateTags(['RBAC']));
+                            if (api.endpoints?.getMyPermissions?.initiate) {
+                                const result = dispatch(api.endpoints.getMyPermissions.initiate(undefined));
+                                Promise.resolve(typeof result?.unwrap === 'function' ? result.unwrap() : result)
+                                    .then((data) => {
+                                        if (Array.isArray(data?.permissions)) {
+                                            dispatch(permissionsUpdated(data.permissions));
+                                        }
+                                    })
+                                    .catch(() => {});
+                            }
+                            return;
+                        }
+
                         if (sseEvent === 'NEW_NOTIFICATION') {
-                            // Incrementally patch caches instead of invalidating (avoids a refetch).
-                            // Bump the always-subscribed unread badge count.
-                            dispatch(api.util.updateQueryData('getNotificationUnreadCount', undefined, (draft) => {
-                                if (draft && typeof draft.unreadCount === 'number' && !data.is_read) {
-                                    draft.unreadCount += 1;
-                                }
-                            }));
-                            // Prepend into the notification-center list cache when it exists
-                            // (NotificationCenter subscribes with { limit: 120 }; no-op when closed).
-                            dispatch(api.util.updateQueryData('getNotifications', { limit: 120 }, (draft) => {
-                                if (!draft || !Array.isArray(draft.items)) return;
-                                if (draft.items.some((n) => n.notification_id === data.notification_id)) return;
-                                draft.items.unshift(data);
-                                if (typeof draft.total === 'number') draft.total += 1;
-                                if (draft.counts) {
-                                    draft.counts.all = (draft.counts.all || 0) + 1;
-                                    if (!data.is_read) draft.counts.unread = (draft.counts.unread || 0) + 1;
-                                    if (data.status === 'Failed') draft.counts.failed = (draft.counts.failed || 0) + 1;
-                                    if (data.status === 'Pending') draft.counts.pending = (draft.counts.pending || 0) + 1;
-                                    if (data.status === 'Sent') draft.counts.sent = (draft.counts.sent || 0) + 1;
-                                    if (data.status === 'Delivered') draft.counts.delivered = (draft.counts.delivered || 0) + 1;
-                                }
-                            }));
+                            // Re-fetch the personal inbox so visibility and read state are
+                            // resolved by the server rather than guessed from the event.
                             dispatch(api.util.invalidateTags(['Notifications']));
-                            toast.success(data.content || 'New system notification received!', {
-                                icon: '🔔',
-                                duration: 5000
-                            });
+                            const critical = data.priority === 'Critical' || data.status === 'Failed' || /critical|urgent|failed|safety/i.test(`${data.event_type || ''} ${data.subject || ''}`);
+                            const quiet = isWithinQuietHours(notificationPreferences);
+                            if (!quiet || (critical && notificationPreferences.criticalNotificationBypass)) {
+                                toast.success(notificationPreferences?.desktopNotificationPreview
+                                    ? (data.content || data.subject || 'New notification received')
+                                    : 'New notification received', {
+                                    duration: 5000
+                                });
+                            }
                             if (notificationPreferences?.desktopSystemNotifications !== false) {
-                                const critical = data.status === 'Failed' || /critical|urgent|failed|safety/i.test(`${data.event_type || ''} ${data.subject || ''}`);
                                 showDesktopNotification({
-                                    title: data.subject || `${VIARA_BRAND.name} notification`,
+                                    title: notificationPreferences?.desktopNotificationPreview
+                                        ? (data.subject || `${VIARA_BRAND.name} notification`)
+                                        : `${VIARA_BRAND.name} notification`,
                                     body: notificationPreferences?.desktopNotificationPreview
                                         ? (data.content || data.event_type || 'New system notification received')
                                         : 'New system notification received',
@@ -511,8 +550,17 @@ const App = () => {
                             sseEvent === 'NEW_PATIENT_MESSAGE_ALERT' ||
                             sseEvent === 'NEW_PATIENT_MESSAGE_UPDATE' ||
                             sseEvent === 'NEW_DOCTOR_MESSAGE_ALERT' ||
-                            sseEvent === 'NEW_DOCTOR_MESSAGE_UPDATE'
+                            sseEvent === 'NEW_DOCTOR_MESSAGE_UPDATE' ||
+                            sseEvent === 'STAFF_MESSAGES_READ' ||
+                            sseEvent === 'USER_PRESENCE'
                         ) {
+                            if (sseEvent === 'USER_PRESENCE') {
+                                // Online/offline changes only refresh the users
+                                // list — no toasts, no message refetch churn.
+                                dispatch(api.util.invalidateTags(['StaffUsers']));
+                                window.dispatchEvent(new CustomEvent('SSE_REALTIME_MESSAGE', { detail: { event: sseEvent, data } }));
+                                return;
+                            }
                             dispatch(api.util.invalidateTags([
                                 'ChatMessages', 'StaffUsers', 'PatientConversations', 'DoctorConversations', 'ChatUnread'
                             ]));
@@ -521,13 +569,18 @@ const App = () => {
 
                             const isIncoming = sseEvent === 'NEW_PATIENT_MESSAGE_ALERT' ||
                                 sseEvent === 'NEW_DOCTOR_MESSAGE_ALERT' ||
-                                (sseEvent === 'NEW_STAFF_MESSAGE' && data.sender_id !== activeUserId);
+                                (sseEvent === 'NEW_STAFF_MESSAGE' && String(data.sender_id) !== String(activeUserId));
 
                             if (isIncoming) {
-                                toast(data.body || 'New message received', {
-                                    icon: '💬',
-                                    duration: 4000
-                                });
+                                const quiet = isWithinQuietHours(notificationPreferences);
+                                const critical = /urgent|critical|safety/i.test(`${data.subject || ''} ${data.body || ''}`);
+                                if (!quiet || (critical && notificationPreferences.criticalNotificationBypass)) {
+                                    toast(notificationPreferences?.desktopNotificationPreview
+                                        ? (data.body || 'New message received')
+                                        : 'New message received', {
+                                        duration: 4000
+                                    });
+                                }
                                 if (notificationPreferences?.desktopMessageNotifications !== false) {
                                     const title = sseEvent.includes('PATIENT')
                                         ? 'New patient message'
@@ -544,27 +597,64 @@ const App = () => {
                                     });
                                 }
                             }
+                        } else if (
+                            sseEvent === 'NEW_CHAT_CHANNEL' ||
+                            sseEvent === 'CHAT_CHANNEL_UPDATED' ||
+                            sseEvent === 'CHAT_CHANNEL_DELETED' ||
+                            sseEvent === 'CHANNEL_MEMBERS_UPDATED'
+                        ) {
+                            dispatch(api.util.invalidateTags(['ChatChannels', 'ChatMessages']));
+                        } else if (
+                            sseEvent === 'CLINICAL_TASK_CLAIMED' ||
+                            sseEvent === 'CLINICAL_TASK_ASSIGNED' ||
+                            sseEvent === 'CLINICAL_TASK_RELEASED' ||
+                            sseEvent === 'CLINICAL_TASK_COMPLETED' ||
+                            sseEvent === 'CLINICAL_TASK_UPDATED' ||
+                            sseEvent === 'RECEPTION_TASK_CLAIMED' ||
+                            sseEvent === 'RECEPTION_TASK_RELEASED' ||
+                            sseEvent === 'RECEPTION_TASK_TRANSFERRED' ||
+                            sseEvent === 'RECEPTION_TASK_COMPLETED' ||
+                            sseEvent === 'RECEPTION_WORK_ITEM_UPDATED' ||
+                            sseEvent === 'QUEUE_UPDATED' ||
+                            sseEvent === 'QUEUE_TRANSITION'
+                        ) {
+                            dispatch(api.util.invalidateTags(['Queue', 'Appointments', 'Dashboard', 'CaseReports', 'ReceptionTasks', 'DisplayBoard']));
+                            window.dispatchEvent(new CustomEvent('SSE_RECEPTION_UPDATE', { detail: { event: sseEvent, data } }));
                         }
                     } catch (err) {
                         console.error('Failed to parse SSE payload', err);
                     }
                 };
 
-                eventSource.onerror = (error) => {
+                source.onerror = (error) => {
                     console.error('SSE connection error:', error);
                     if (isCancelled) return;
-                    eventSource.close();
+                    window.dispatchEvent(new CustomEvent('SSE_CONNECTION_STATUS', { detail: { connected: false } }));
+                    source.close();
+                    if (eventSource === source) eventSource = undefined;
                     toast.error(t('sse.disconnected', 'Live updates disconnected. Attempting to reconnect...'), {
                         id: 'sse-disconnected',
                     });
+                    scheduleReconnect();
                 };
             })
             .catch(err => {
+                if (isCancelled) return;
+                window.dispatchEvent(new CustomEvent('SSE_CONNECTION_STATUS', { detail: { connected: false } }));
                 console.error('Failed to establish SSE session', err);
+                toast.error(t('sse.disconnected', 'Live updates disconnected. Attempting to reconnect...'), {
+                    id: 'sse-disconnected',
+                });
+                scheduleReconnect();
             });
+        };
+
+        connect();
 
         return () => {
             isCancelled = true;
+            window.dispatchEvent(new CustomEvent('SSE_CONNECTION_STATUS', { detail: { connected: false } }));
+            if (reconnectTimer) window.clearTimeout(reconnectTimer);
             if (eventSource) {
                 eventSource.close();
             }
@@ -588,19 +678,20 @@ const App = () => {
                             color: 'var(--VIARA-ink)',
                             border: '1px solid var(--VIARA-line)',
                             boxShadow: '0 18px 45px -16px rgba(15, 23, 42, 0.28)',
-                            borderRadius: '12px',
-                            padding: '16px',
+                            borderRadius: 'var(--VIARA-radius-surface)',
+                            padding: 'var(--VIARA-density-card-padding)',
+                            fontFamily: 'var(--VIARA-font-family)',
                         },
                         success: {
                             iconTheme: {
-                                primary: '#10b981',
-                                secondary: '#fff',
+                                primary: 'var(--VIARA-success)',
+                                secondary: 'var(--VIARA-success-soft)',
                             },
                         },
                         error: {
                             iconTheme: {
-                                primary: '#ef4444',
-                                secondary: '#fff',
+                                primary: 'var(--VIARA-danger)',
+                                secondary: 'var(--VIARA-danger-soft)',
                             },
                         },
                     }}
@@ -616,6 +707,8 @@ const App = () => {
                         <Route path="/doctor-portal/login" element={<ExternalRedirect to={getDoctorPortalLoginUrl()} />} />
                         <Route path="/unauthorized" element={<Unauthorized />} />
                         <Route path="/offline" element={<Offline />} />
+                        {/* Public waiting-room display board for external TV screens */}
+                        <Route path="/display" element={<DisplayBoard />} />
 
                         <Route path="/print/sticker/:id" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/print/sticker/:id')}>
@@ -625,6 +718,11 @@ const App = () => {
                         <Route path="/print/receipt/:id" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/print/receipt/:id')}>
                                 <PrintReceipt />
+                            </ProtectedRoute>
+                        } />
+                        <Route path="/print/booking-slip/:id" element={
+                            <ProtectedRoute allowedRoles={getRouteRoles('/print/booking-slip/:id')}>
+                                <PrintBookingSlip />
                             </ProtectedRoute>
                         } />
                         <Route path="/print/invoice/:id" element={
@@ -673,6 +771,14 @@ const App = () => {
                             </ProtectedRoute>
                         } />
 
+                        <Route path="/user-activity" element={
+                            <ProtectedRoute allowedRoles={getRouteRoles('/user-activity')}>
+                                <AppLayout role="Admin">
+                                    <UserActivityTracking />
+                                </AppLayout>
+                            </ProtectedRoute>
+                        } />
+
                         <Route path="/referring-doctors" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/referring-doctors')}>
                                 <AppLayout role="Receptionist">
@@ -707,6 +813,14 @@ const App = () => {
                             <ProtectedRoute allowedRoles={getRouteRoles('/settings')}>
                                 <AppLayout role="Staff">
                                     <Settings />
+                                </AppLayout>
+                            </ProtectedRoute>
+                        } />
+
+                        <Route path="/display/control" element={
+                            <ProtectedRoute allowedRoles={getRouteRoles('/display/control')}>
+                                <AppLayout role="Staff">
+                                    <DisplayBoardControl />
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
