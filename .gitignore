@@ -61,6 +61,3 @@ portal/unused-images/
 pacs-worklists/*.wl
 !pacs-worklists/.gitkeep
 /ChatGPT Image*
-
-
-scratch/
