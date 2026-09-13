@@ -25,20 +25,76 @@ const isValidBackupFilename = (filename) => (
     typeof filename === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]*\.(json|dump|dump\.enc)$/.test(filename)
 );
 
-const encryptBackup = async (sourcePath, destinationPath) => {
+const MAGIC = Buffer.from('VIARABKP2');
+const IV_LENGTH = 12;
+const TAG_LENGTH = 16;
+const HEADER_LENGTH = MAGIC.length + IV_LENGTH;
+
+const getBackupEncryptionKey = () => {
     const configuredKey = process.env.BACKUP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
     if (!/^[0-9a-fA-F]{64}$/.test(configuredKey || '')) {
         throw new Error('BACKUP_ENCRYPTION_KEY or ENCRYPTION_KEY must be a 64-character hex value');
     }
-    const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(configuredKey, 'hex'), iv);
-    await fsp.writeFile(destinationPath, Buffer.concat([Buffer.from('VIARABKP2'), iv]), { mode: 0o600 });
+    return Buffer.from(configuredKey, 'hex');
+};
+
+const encryptBackup = async (sourcePath, destinationPath) => {
+    const key = getBackupEncryptionKey();
+    const iv = crypto.randomBytes(IV_LENGTH);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    await fsp.writeFile(destinationPath, Buffer.concat([MAGIC, iv]), { mode: 0o600 });
     await pipeline(
         fs.createReadStream(sourcePath),
         cipher,
         fs.createWriteStream(destinationPath, { flags: 'a', mode: 0o600 })
     );
     await fsp.appendFile(destinationPath, cipher.getAuthTag());
+};
+
+const decryptBackup = async (sourcePath, destinationPath) => {
+    const key = getBackupEncryptionKey();
+    const stat = await fsp.stat(sourcePath);
+    if (stat.size <= HEADER_LENGTH + TAG_LENGTH) {
+        throw new Error('Encrypted backup is too small or truncated');
+    }
+
+    const fd = await fsp.open(sourcePath, 'r');
+    try {
+        const header = Buffer.alloc(HEADER_LENGTH);
+        await fd.read(header, 0, HEADER_LENGTH, 0);
+        if (!header.subarray(0, MAGIC.length).equals(MAGIC)) {
+            throw new Error('Unsupported encrypted backup format');
+        }
+
+        const tag = Buffer.alloc(TAG_LENGTH);
+        await fd.read(tag, 0, TAG_LENGTH, stat.size - TAG_LENGTH);
+
+        const iv = header.subarray(MAGIC.length);
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+        decipher.setAuthTag(tag);
+
+        await pipeline(
+            fs.createReadStream(sourcePath, { start: HEADER_LENGTH, end: stat.size - TAG_LENGTH - 1 }),
+            decipher,
+            fs.createWriteStream(destinationPath, { mode: 0o600 })
+        );
+    } catch (error) {
+        if (fs.existsSync(destinationPath)) await fsp.unlink(destinationPath);
+        throw error;
+    } finally {
+        await fd.close();
+    }
+};
+
+const computeFileChecksum = async (filepath) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filepath);
+    await new Promise((resolve, reject) => {
+        stream.on('data', (chunk) => hash.update(chunk));
+        stream.on('end', resolve);
+        stream.on('error', reject);
+    });
+    return hash.digest('hex');
 };
 
 const resolveBackupPath = (filename) => {
@@ -177,13 +233,17 @@ const createPostgresBackup = async () => {
         await cleanupBackups();
 
         const stat = await fsp.stat(filepath);
+        const dicomStorage = await getDicomStorageStatus();
+        const checksum = await computeFileChecksum(filepath);
         return {
             filename,
             filepath,
             size_bytes: stat.size,
+            checksum,
             created_at: stat.mtime,
             type: 'PostgreSQL',
-            verified: true
+            verified: true,
+            dicom_storage: dicomStorage
         };
     } catch (error) {
         if (fs.existsSync(temporaryPath)) await fsp.unlink(temporaryPath);
@@ -192,13 +252,60 @@ const createPostgresBackup = async () => {
     }
 };
 
+const getDicomStorageStatus = async () => {
+    const dicomDir = path.resolve(
+        process.env.ORTHANC_STORAGE_DIR || process.env.DICOM_STORAGE_DIR || '/var/lib/orthanc/db'
+    );
+    try {
+        const exists = fs.existsSync(dicomDir);
+        if (!exists) {
+            return { configured_path: dicomDir, accessible: false, file_count: 0, total_size_bytes: 0 };
+        }
+        let totalSize = 0;
+        let count = 0;
+
+        const scanDirectory = async (dir, depth = 0) => {
+            if (depth > 4) return;
+            const entries = await fsp.readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isFile()) {
+                    try {
+                        const stat = await fsp.stat(fullPath);
+                        totalSize += stat.size;
+                        count += 1;
+                    } catch {
+                        // skip unreadable file
+                    }
+                } else if (entry.isDirectory()) {
+                    await scanDirectory(fullPath, depth + 1);
+                }
+            }
+        };
+
+        await scanDirectory(dicomDir);
+        return {
+            configured_path: dicomDir,
+            accessible: true,
+            file_count: count,
+            total_size_bytes: totalSize
+        };
+    } catch (e) {
+        return { configured_path: dicomDir, accessible: false, error: e.message, file_count: 0, total_size_bytes: 0 };
+    }
+};
+
 module.exports = {
     buildPgEnvironment,
     cleanupBackups,
+    computeFileChecksum,
     createPostgresBackup,
+    decryptBackup,
+    encryptBackup,
     ensureBackupDir,
     getBackupDir,
     getBackupMode,
+    getDicomStorageStatus,
     isValidBackupFilename,
     listBackupFiles,
     resolveBackupPath

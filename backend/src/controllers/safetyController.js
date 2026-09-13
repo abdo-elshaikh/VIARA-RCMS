@@ -13,6 +13,77 @@ const getSafetyTemplates = (db) => async (req, res, next) => {
     }
 };
 
+const evaluateSafetyContraindications = (answers = {}) => {
+    let hasContraindication = false;
+    const reasons = [];
+    let implantRisk = false;
+    let pregnancyRisk = false;
+    let renalRisk = false;
+
+    if (!answers || typeof answers !== 'object') {
+        return { hasContraindication, reasons, implantRisk, pregnancyRisk, renalRisk };
+    }
+
+    const checkValue = (val) => {
+        if (typeof val === 'boolean') return val;
+        if (typeof val === 'string') {
+            const lower = val.trim().toLowerCase();
+            return lower === 'true' || lower === 'yes' || lower === 'positive';
+        }
+        return false;
+    };
+
+    // Pacemaker / Cardiac implants
+    if (checkValue(answers.pacemaker) || checkValue(answers.cardiac_pacemaker) || checkValue(answers.q1)) {
+        hasContraindication = true;
+        implantRisk = true;
+        reasons.push('Cardiac pacemaker or active implant detected');
+    }
+
+    // Metallic implants / shrapnel / clips
+    if (checkValue(answers.metallic_implants) || checkValue(answers.metal_shrapnel) || checkValue(answers.implants) || checkValue(answers.q2)) {
+        hasContraindication = true;
+        implantRisk = true;
+        reasons.push('Metallic implants or shrapnel detected');
+    }
+
+    // Pregnancy
+    if (checkValue(answers.pregnancy) || checkValue(answers.pregnant) || checkValue(answers.is_pregnant) || checkValue(answers.q3)) {
+        hasContraindication = true;
+        pregnancyRisk = true;
+        reasons.push('Patient pregnancy reported');
+    }
+
+    // Contrast allergy
+    if (checkValue(answers.contrast_allergy) || checkValue(answers.iodine_allergy)) {
+        hasContraindication = true;
+        reasons.push('Contrast / Iodine allergy detected');
+    }
+
+    // eGFR low renal function (< 30 ml/min is severe contraindication for contrast)
+    const egfrValue = Number(answers.egfr || answers.eGFR || (typeof answers.q2 === 'number' ? answers.q2 : null));
+    if (Number.isFinite(egfrValue) && egfrValue > 0 && egfrValue < 30) {
+        hasContraindication = true;
+        renalRisk = true;
+        reasons.push(`Severely reduced eGFR (${egfrValue} ml/min) contraindicates contrast`);
+    }
+
+    // Explicit contraindication flag
+    if (checkValue(answers.contraindication) || checkValue(answers.has_contraindication) || checkValue(answers.contraindicated)) {
+        hasContraindication = true;
+        reasons.push('Clinical contraindication explicitly flagged');
+    }
+
+    return {
+        hasContraindication,
+        reasons,
+        holdReason: reasons.join('; '),
+        implantRisk,
+        pregnancyRisk,
+        renalRisk
+    };
+};
+
 const submitSafetyResponse = (db) => async (req, res, next) => {
     try {
         const { examId } = req.params;
@@ -51,7 +122,45 @@ const submitSafetyResponse = (db) => async (req, res, next) => {
             [examId, templateId, JSON.stringify(answers), userId]
         );
 
-        res.status(201).json({ message: 'Safety form submitted successfully', response: result.rows[0] });
+        // Evaluate clinical safety contraindications
+        const contraindication = evaluateSafetyContraindications(answers);
+        if (contraindication.hasContraindication) {
+            await db.query(`
+                UPDATE examinations
+                SET is_on_hold = TRUE,
+                    hold_started_at = COALESCE(hold_started_at, NOW()),
+                    hold_reason = COALESCE(hold_reason, $1),
+                    implant_safety_status = CASE WHEN $2::boolean THEN 'At Risk' ELSE implant_safety_status END,
+                    pregnancy_safety_status = CASE WHEN $3::boolean THEN 'At Risk' ELSE pregnancy_safety_status END,
+                    renal_safety_status = CASE WHEN $4::boolean THEN 'At Risk' ELSE renal_safety_status END
+                WHERE exam_id = $5
+            `, [
+                contraindication.holdReason || 'Clinical contraindication detected in safety questionnaire',
+                contraindication.implantRisk,
+                contraindication.pregnancyRisk,
+                contraindication.renalRisk,
+                examId
+            ]);
+
+            try {
+                const { triggerEventForRole } = require('../services/notificationJobService');
+                triggerEventForRole(db, 'ExamStatusChanged', 'Radiologist', {
+                    priority: 'Critical',
+                    exam_id: examId,
+                    reason: contraindication.holdReason
+                }).catch(() => {});
+            } catch (e) {
+                // Ignore notification delivery errors
+            }
+        }
+
+        res.status(201).json({
+            message: 'Safety form submitted successfully',
+            response: result.rows[0],
+            contraindicationDetected: contraindication.hasContraindication,
+            isOnHold: contraindication.hasContraindication,
+            holdReason: contraindication.hasContraindication ? contraindication.holdReason : null
+        });
     } catch (error) {
         next(error);
     }

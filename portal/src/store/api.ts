@@ -47,7 +47,9 @@ export interface PortalNotificationPageParams {
     offset?: number;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+// Same-origin by default (behind the portal nginx proxy /api/ -> backend).
+// A missing env var must never silently point the patient portal at localhost.
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const getCsrfToken = (): string | null => {
     if (typeof document === 'undefined') return null;

@@ -88,6 +88,7 @@ module.exports = {
     canManageRole,
     canManageRolePermissions,
     canAssignRole,
+    assertCanAssignRole,
     assertCanManageRole,
     assertCanManageRolePermissions,
     assertProtectedUserMutation

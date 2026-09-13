@@ -61,6 +61,13 @@ def create_app(
     def require_auth(authorization: str | None = Depends(authorization_header)) -> None:
         authorize_request(config, authorization)
 
+    @application.get("/health/live")
+    async def health_live():
+        # Unauthenticated liveness for container orchestrators: reports only
+        # that the process is up. No configuration details, no key needed, so
+        # healthchecks do not leak the worker credential via `docker inspect`.
+        return {"status": "ok"}
+
     @application.get("/health", dependencies=[Depends(require_auth)])
     async def health():
         configuration_warnings = []

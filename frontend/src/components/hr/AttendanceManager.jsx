@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef } from 'react';
+import { useCallback, useMemo, useState, useRef } from 'react';
 import {
     Clock3, Pencil, RefreshCw, Download, Calendar, Clock, Timer, TrendingDown, TrendingUp,
     LogIn, LogOut, DoorOpen, AlertTriangle, CheckCircle2, Search, Users, UserCheck,
@@ -191,12 +191,12 @@ const AttendanceManager = () => {
     }, [staff, records]);
 
     // Role translator helper
-    const getRoleName = (roleKey) => {
+    const getRoleName = useCallback((roleKey) => {
         if (!roleKey) return '';
         const entry = ROLE_LABELS[roleKey];
         if (entry) return isArabic ? entry.ar : entry.en;
         return roleKey;
-    };
+    }, [isArabic]);
 
     // Calculate quick filter counters across current fetched records
     const quickCounts = useMemo(() => {
@@ -268,7 +268,7 @@ const AttendanceManager = () => {
 
             return true;
         });
-    }, [records, filters.role, quickFilter, search, isArabic]);
+    }, [records, filters.role, quickFilter, search, getRoleName]);
 
     // High-level KPI metrics summary
     const summary = useMemo(() => {

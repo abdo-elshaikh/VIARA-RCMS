@@ -156,6 +156,7 @@ const generateBackup = (db) => async (req, res, next) => {
                 details: {
                     filename: backup.filename,
                     size_bytes: backup.size_bytes,
+                    checksum: backup.checksum || replicationResult.checksum || null,
                     type: backup.type,
                     verified: backup.verified,
                     offsiteReplicated: replicationResult.replicated,
@@ -185,7 +186,8 @@ const generateBackup = (db) => async (req, res, next) => {
                 filename: backup.filename,
                 type: backup.type,
                 verified: backup.verified,
-                offsiteReplicated: replicationResult.replicated
+                offsiteReplicated: replicationResult.replicated,
+                dicom_storage: backup.dicom_storage
             });
         }
 

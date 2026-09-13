@@ -7,13 +7,21 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
-const seedPassword = process.env.TEST_USER_PASSWORD || '***REMOVED***';
+const seedPassword = process.env.TEST_USER_PASSWORD;
+if (!seedPassword) {
+    console.error('[seed] TEST_USER_PASSWORD is required. Refusing to fall back to a committed default password.');
+    process.exit(1);
+}
 
 // Central encryption utility for AES-GCM (v2) PII encryption
 const { encrypt } = require('./src/utils/crypto');
 
 // Database connection
-const connectionString = process.env.DATABASE_URL || 'postgresql://***REMOVED***/rcms';
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+    console.error('[seed] DATABASE_URL is required. Refusing to fall back to a committed default credential.');
+    process.exit(1);
+}
 const pool = new Pool({ connectionString });
 
 // Egyptian names database

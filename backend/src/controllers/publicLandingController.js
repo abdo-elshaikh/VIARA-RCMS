@@ -809,10 +809,12 @@ const getPublicLandingOverview = (db) => async (req, res, next) => {
 const verifyReportAuthenticity = (db) => async (req, res, next) => {
     try {
         const rawCode = String(req.params.hash || req.query.code || req.query.hash || '').trim();
-        if (!rawCode || rawCode.length < 3) {
+        // Digital signature verification requires a cryptographically secure hash (min 16 chars).
+        // Guessable sequential order numbers or predictable IDs are prohibited to protect PHI against IDOR scraping.
+        if (!rawCode || rawCode.length < 16) {
             return res.status(400).json({
                 verified: false,
-                error: 'Verification code is required.'
+                error: 'Valid digital signature verification hash is required.'
             });
         }
 
@@ -830,9 +832,7 @@ const verifyReportAuthenticity = (db) => async (req, res, next) => {
             JOIN modalities m ON e.modality_id = m.modality_id
             JOIN patients p ON e.patient_id = p.patient_id
             LEFT JOIN appointments a ON e.appointment_id = a.appointment_id
-            WHERE (UPPER(e.digital_signature_hash) = UPPER($1) 
-               OR UPPER(e.order_number) = UPPER($1)
-               OR UPPER(e.exam_id::text) = UPPER($1))
+            WHERE UPPER(e.digital_signature_hash) = UPPER($1)
               AND e.report_status = 'Finalized'
             LIMIT 1
         `, [rawCode]);

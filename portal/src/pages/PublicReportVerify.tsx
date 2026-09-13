@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -78,9 +78,11 @@ export const PublicReportVerify: React.FC = () => {
     }
   };
 
+  const initialVerifyRef = useRef(verifyCode);
+
   useEffect(() => {
     if (initialCode) {
-      verifyCode(initialCode);
+      initialVerifyRef.current(initialCode);
     }
   }, [initialCode]);
 

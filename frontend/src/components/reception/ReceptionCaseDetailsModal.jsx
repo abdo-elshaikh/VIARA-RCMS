@@ -108,10 +108,10 @@ const ReceptionCaseDetailsModal = ({
     const { data: roomsData = [] } = useGetRoomsQuery();
     const [updateAppointmentMutation, { isLoading: isMutating }] = useUpdateAppointmentMutation();
 
-    const machines = Array.isArray(machinesData) ? machinesData : machinesData?.data || [];
-    const examTypes = Array.isArray(examTypesData) ? examTypesData : examTypesData?.data || [];
-    const staff = Array.isArray(staffList) ? staffList : staffList?.data || [];
-    const rooms = Array.isArray(roomsData) ? roomsData : roomsData?.data || [];
+    const machines = useMemo(() => (Array.isArray(machinesData) ? machinesData : machinesData?.data || []), [machinesData]);
+    const examTypes = useMemo(() => (Array.isArray(examTypesData) ? examTypesData : examTypesData?.data || []), [examTypesData]);
+    const staff = useMemo(() => (Array.isArray(staffList) ? staffList : staffList?.data || []), [staffList]);
+    const rooms = useMemo(() => (Array.isArray(roomsData) ? roomsData : roomsData?.data || []), [roomsData]);
 
     const nurses = staff.filter((s) => s.role === 'Nurse');
     const technicians = staff.filter((s) => s.role === 'Technician');
@@ -141,7 +141,9 @@ const ReceptionCaseDetailsModal = ({
                     modalities: Array.isArray(parsed.modalities) ? parsed.modalities : []
                 };
             }
-        } catch {}
+        } catch {
+            // Malformed persisted workstation profile: fall through to defaults.
+        }
         return { desk: '', scope: 'all', rooms: [], modalities: [] };
     }, [workstationDesk, workstationScope, workstationRooms, workstationModalities, currentUser?.user_id]);
 
@@ -177,8 +179,8 @@ const ReceptionCaseDetailsModal = ({
     const { data: shiftsData = [] } = useGetShiftsQuery({ date: appointmentDateStr }, { skip: !appointmentDateStr });
     const { data: attendanceData = [] } = useGetAttendanceQuery({ date: appointmentDateStr }, { skip: !appointmentDateStr });
 
-    const dayShifts = Array.isArray(shiftsData) ? shiftsData : shiftsData?.data || [];
-    const dayAttendance = Array.isArray(attendanceData) ? attendanceData : attendanceData?.data || [];
+    const dayShifts = useMemo(() => (Array.isArray(shiftsData) ? shiftsData : shiftsData?.data || []), [shiftsData]);
+    const dayAttendance = useMemo(() => (Array.isArray(attendanceData) ? attendanceData : attendanceData?.data || []), [attendanceData]);
 
     useEffect(() => {
         if (canEditBooking) {
@@ -217,7 +219,7 @@ const ReceptionCaseDetailsModal = ({
                 assignmentReason: 'تعديل جدول وتوزيع المهام السريرية'
             });
         }
-    }, [activeCase, appointment, queue]);
+    }, [activeCase, appointment, queue, machines]);
 
     const selRoom = useMemo(() => {
         return rooms.find((r) => String(r.room_id || r.id) === String(editForm.roomId) || String(r.room_number) === String(editForm.roomId));

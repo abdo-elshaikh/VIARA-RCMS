@@ -13,6 +13,7 @@
 const logger = require('../config/logger');
 const { decrypt } = require('../utils/crypto');
 const { AppError } = require('../utils/errors');
+const realtimeService = require('../services/realtimeService');
 
 const PRE_EXAM_STAGES = ['Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam'];
 
@@ -356,6 +357,11 @@ const broadcastPatientCall = (db) => async (req, res, next) => {
         newCall.id = result.rows[0]?.call_id || newCall.id;
         newCall.calledAt = result.rows[0]?.called_at || newCall.calledAt;
         activeBroadcastCalls = [newCall, ...activeBroadcastCalls.filter(c => Date.now() - c.timestamp < 60000)].slice(0, 10);
+        try {
+            realtimeService.broadcastToStaff('DISPLAY_CALL', newCall);
+        } catch (rtErr) {
+            logger.debug('Realtime broadcast DISPLAY_CALL error', { error: rtErr.message });
+        }
         res.status(200).json({ success: true, call: newCall });
     } catch (error) {
         logger.error('Display call could not be persisted', { error: error.message });

@@ -75,8 +75,8 @@ const createToken = (db) => async (req, res, next) => {
         const rawToken = generateTokenString();
         const prefix = rawToken.substring(0, 15) + '...'; // VIARA_live_xx...
 
-        // Hash it for storage
-        const hashedToken = await bcrypt.hash(rawToken, SALT_ROUNDS);
+        // Hash it for storage using SHA-256 for fast indexed O(1) verification
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
 
         const result = await db.query(`
             INSERT INTO api_tokens (user_id, name, token_hash, prefix, access_level)

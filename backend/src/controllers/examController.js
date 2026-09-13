@@ -47,6 +47,19 @@ const extractReceiptLookupCode = (rawValue) => {
     return (match?.[1] || value).trim();
 };
 
+const roleHasAnyPermission = async (client, role, permissionNames = []) => {
+    if (!role || !Array.isArray(permissionNames) || permissionNames.length === 0) return false;
+    const result = await client.query(`
+        SELECT 1
+        FROM role_permissions rp
+        JOIN permissions p ON p.permission_id = rp.permission_id
+        WHERE rp.role_name = $1
+            AND p.name = ANY($2::text[])
+        LIMIT 1
+    `, [role, permissionNames]);
+    return result.rows.length > 0;
+};
+
 const addReportVersion = async (db, {
     examId,
     reportStatus,
@@ -60,6 +73,8 @@ const addReportVersion = async (db, {
         [examId]
     );
 
+    const versionNum = nextVersion?.rows?.[0]?.version_number || 1;
+
     await db.query(`
         INSERT INTO report_versions (
             exam_id, version_number, report_status, report_content,
@@ -68,7 +83,7 @@ const addReportVersion = async (db, {
         VALUES ($1, $2, $3, $4, $5, $6, $7)
     `, [
         examId,
-        nextVersion.rows[0].version_number,
+        versionNum,
         reportStatus,
         reportContent || null,
         reportSections || {},
@@ -81,7 +96,10 @@ const getWorklist = (db) => async (req, res, next) => {
     try {
         const userId = req.user.user_id;
         const { role } = req.user;
-        const { status, modalityType, priority, date, scope = 'all', limit = 100, offset = 0 } = req.query;
+        const { status, modalityType, priority, date, scope = 'all' } = req.query;
+        // Clamp pagination so a hostile/buggy client cannot pull the entire table.
+        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 500);
+        const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
 
         const assignmentColumn = role === 'Technician'
             ? 'a.technician_id'
@@ -1228,23 +1246,20 @@ const amendReport = (db) => async (req, res, next) => {
             return next(new AppError('Only finalized reports can be amended', 400));
         }
 
-        // Emergency (break-glass) elevation is read-only by design and never
-        // includes amendment rights; only the reporting radiologist may amend.
-        const isReportOwner = req.user.role === 'Radiologist'
-            && String(existing.rows[0].performing_radiologist_id || '') === String(req.user.user_id || '');
-        if (!isReportOwner) {
+        // Emergency (break-glass) elevation is read-only by design and never includes amendment rights
+        if (req.user.emergencyAccessId) {
             await client.query('ROLLBACK');
-            return next(new AppError('Exam not found or not assigned to this user', 404));
+            return next(new AppError('Emergency access is read-only and does not permit report amendments', 403));
         }
 
-        const isRadiologist = req.user.role === 'Radiologist';
-        const isDeveloper = req.user.role === 'Developer';
-        if (!isRadiologist && !isDeveloper) {
-            const canAmend = await roleHasAnyPermission(client, req.user.role, ['AMEND_FINALIZED_REPORTS']);
-            if (!canAmend) {
-                await client.query('ROLLBACK');
-                return next(new AppError('AMEND_FINALIZED_REPORTS permission is required', 403));
-            }
+        const isReportOwner = req.user.role === 'Radiologist'
+            && String(existing.rows[0].performing_radiologist_id || '') === String(req.user.user_id || '');
+        const isDeveloperOrAdmin = ['Developer', 'Admin'].includes(req.user.role);
+        const hasAmendPermission = isDeveloperOrAdmin || (await roleHasAnyPermission(client, req.user.role, ['AMEND_FINALIZED_REPORTS']));
+
+        if (!isReportOwner && !hasAmendPermission) {
+            await client.query('ROLLBACK');
+            return next(new AppError('AMEND_FINALIZED_REPORTS permission is required to amend reports not authored by you', 403));
         }
 
         const nextSections = {

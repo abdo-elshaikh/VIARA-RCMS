@@ -342,7 +342,7 @@ const getPatients = (db) => async (req, res, next) => {
         const sortColumns = {
             mrn: 'p.mrn',
             gender: 'p.gender',
-            dateOfBirth: 'p.date_of_birth',
+            dateOfBirth: 'p.created_at',
             createdAt: 'p.created_at'
         };
         query += ` ORDER BY ${sortColumns[sortBy] || sortColumns.createdAt} ${sortDirection === 'asc' ? 'ASC' : 'DESC'} NULLS LAST, p.patient_id ASC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;

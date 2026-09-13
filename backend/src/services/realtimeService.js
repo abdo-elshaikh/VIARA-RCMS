@@ -2,12 +2,12 @@
  * realtimeService.js
  * Native Server-Sent Events (SSE) based real-time pub/sub hub.
  * Handles instant event dispatching for staff chat, portal messaging, and system notifications.
+ * Supports distributed multi-instance messaging via PostgreSQL LISTEN / NOTIFY.
  */
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
 const logger = require('../config/logger');
 
-// Store all active client connections
+// Store all active client connections on this local instance
 let clients = [];
 
 // In-memory store for short-lived SSE session tokens.
@@ -25,6 +25,84 @@ const sessionCleanupInterval = setInterval(() => {
     }
 }, 60 * 1000); // every minute
 sessionCleanupInterval.unref?.();
+
+const REALTIME_CHANNEL = 'viara_realtime_events';
+let dbPool = null;
+let listenerClient = null;
+
+/**
+ * Configure database pool for distributed real-time pub/sub via PostgreSQL LISTEN/NOTIFY
+ * @param {object} pool - PostgreSQL pool
+ */
+const setRealtimePool = (pool) => {
+    dbPool = pool;
+    initDistributedSubscriber(pool).catch(() => {});
+};
+
+const initDistributedSubscriber = async (pool) => {
+    if (!pool || listenerClient) return;
+    try {
+        listenerClient = await pool.connect();
+        await listenerClient.query(`LISTEN ${REALTIME_CHANNEL}`);
+        listenerClient.on('notification', (msg) => {
+            if (msg.channel !== REALTIME_CHANNEL || !msg.payload) return;
+            try {
+                const parsed = JSON.parse(msg.payload);
+                handleDistributedMessage(parsed);
+            } catch (err) {
+                logger.debug('Realtime distributed parse error', { error: err.message });
+            }
+        });
+        listenerClient.on('error', (err) => {
+            logger.warn('Realtime distributed client error', { error: err.message });
+            try { listenerClient.release(true); } catch {}
+            listenerClient = null;
+            setTimeout(() => initDistributedSubscriber(pool), 5000).unref?.();
+        });
+    } catch (err) {
+        logger.debug('Realtime distributed subscriber init skipped', { error: err.message });
+        listenerClient = null;
+    }
+};
+
+const handleDistributedMessage = ({ target, targetId, event, data, originNodeId }) => {
+    if (originNodeId === process.pid) return; // already handled locally
+    switch (target) {
+        case 'user':
+            sendToUserLocal(targetId, event, data);
+            break;
+        case 'role':
+            sendToRoleLocal(targetId, event, data);
+            break;
+        case 'patient':
+            sendToPatientLocal(targetId, event, data);
+            break;
+        case 'doctor':
+            sendToDoctorLocal(targetId, event, data);
+            break;
+        case 'staff':
+            broadcastToStaffLocal(event, data);
+            break;
+        default:
+            break;
+    }
+};
+
+const publishDistributed = (target, targetId, event, data) => {
+    if (!dbPool) return;
+    try {
+        const payload = JSON.stringify({
+            originNodeId: process.pid,
+            target,
+            targetId,
+            event,
+            data
+        });
+        dbPool.query('SELECT pg_notify($1, $2)', [REALTIME_CHANNEL, payload]).catch(() => {});
+    } catch (e) {
+        // ignore notification publish errors
+    }
+};
 
 /**
  * Create a short-lived SSE session token from an authenticated user's identity.
@@ -198,7 +276,7 @@ const registerClient = (req, res) => {
 /**
  * Dispatch an event to a specific staff user ID
  */
-const sendToUser = (userId, event, data) => {
+const sendToUserLocal = (userId, event, data) => {
     if (!userId) return;
     const targetClients = clients.filter(c => String(c.userId) === String(userId));
     targetClients.forEach(client => {
@@ -206,10 +284,15 @@ const sendToUser = (userId, event, data) => {
     });
 };
 
+const sendToUser = (userId, event, data) => {
+    sendToUserLocal(userId, event, data);
+    publishDistributed('user', userId, event, data);
+};
+
 /**
  * Dispatch an event to a specific patient ID
  */
-const sendToPatient = (patientId, event, data) => {
+const sendToPatientLocal = (patientId, event, data) => {
     if (!patientId) return;
     const targetClients = clients.filter(c => String(c.patientId) === String(patientId));
     targetClients.forEach(client => {
@@ -217,10 +300,15 @@ const sendToPatient = (patientId, event, data) => {
     });
 };
 
+const sendToPatient = (patientId, event, data) => {
+    sendToPatientLocal(patientId, event, data);
+    publishDistributed('patient', patientId, event, data);
+};
+
 /**
  * Dispatch an event to a specific referring doctor ID
  */
-const sendToDoctor = (doctorId, event, data) => {
+const sendToDoctorLocal = (doctorId, event, data) => {
     if (!doctorId) return;
     const targetClients = clients.filter(c => String(c.doctorId) === String(doctorId));
     targetClients.forEach(client => {
@@ -228,10 +316,15 @@ const sendToDoctor = (doctorId, event, data) => {
     });
 };
 
+const sendToDoctor = (doctorId, event, data) => {
+    sendToDoctorLocal(doctorId, event, data);
+    publishDistributed('doctor', doctorId, event, data);
+};
+
 /**
  * Dispatch an event to all staff users possessing a specific role
  */
-const sendToRole = (role, event, data) => {
+const sendToRoleLocal = (role, event, data) => {
     if (!role) return;
     const targetClients = clients.filter(c => c.role === role);
     targetClients.forEach(client => {
@@ -239,14 +332,24 @@ const sendToRole = (role, event, data) => {
     });
 };
 
+const sendToRole = (role, event, data) => {
+    sendToRoleLocal(role, event, data);
+    publishDistributed('role', role, event, data);
+};
+
 /**
  * Broadcast an event to all active staff connections
  */
-const broadcastToStaff = (event, data) => {
+const broadcastToStaffLocal = (event, data) => {
     const staffClients = clients.filter(c => Boolean(c.userId));
     staffClients.forEach(client => {
         writeSse(client, { event, data });
     });
+};
+
+const broadcastToStaff = (event, data) => {
+    broadcastToStaffLocal(event, data);
+    publishDistributed('staff', null, event, data);
 };
 
 /**
@@ -263,11 +366,13 @@ const getOnlineUserIds = () => {
 module.exports = {
     registerClient,
     createSseSession,
+    setRealtimePool,
     sendToUser,
     sendToPatient,
     sendToDoctor,
     sendToRole,
     broadcastToStaff,
     broadcastToStaffMatching,
-    getOnlineUserIds
+    getOnlineUserIds,
+    handleDistributedMessage
 };

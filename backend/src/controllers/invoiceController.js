@@ -937,7 +937,41 @@ const getInvoiceSummary = (db) => async (req, res, next) => {
                 COUNT(*) FILTER (WHERE invoice_status = 'Voided')::integer AS voided_count
             FROM positions
         `, values);
-        res.json(result.rows[0]);
+
+        // Per-payment-method net collection for the same scope (completed payments
+        // minus processed refunds, netting identical to the headline "collected").
+        // Refunds always share the method of the payment they reverse.
+        const byMethodResult = await db.query(`
+            WITH scoped_invoices AS (
+                SELECT i.invoice_id, i.invoice_status
+                FROM invoices i
+                LEFT JOIN appointments a ON i.appointment_id = a.appointment_id
+                ${whereClause}
+            ), pay AS (
+                SELECT p.method, COALESCE(SUM(p.amount), 0) AS total
+                FROM payments p
+                JOIN scoped_invoices si ON si.invoice_id = p.invoice_id AND si.invoice_status <> 'Voided'
+                WHERE p.payment_status = 'Completed'
+                GROUP BY p.method
+            ), ref AS (
+                SELECT r.method, COALESCE(SUM(r.amount), 0) AS total
+                FROM refunds r
+                JOIN scoped_invoices si ON si.invoice_id = r.invoice_id AND si.invoice_status <> 'Voided'
+                WHERE r.status = 'Processed'
+                GROUP BY r.method
+            )
+            SELECT COALESCE(pay.method, ref.method) AS method,
+                   GREATEST(COALESCE(pay.total, 0) - COALESCE(ref.total, 0), 0) AS collected
+            FROM pay
+            FULL JOIN ref ON ref.method = pay.method
+        `, values);
+
+        const byMethod = {};
+        byMethodResult.rows.forEach((row) => {
+            if (row.method) byMethod[row.method] = Number(row.collected || 0);
+        });
+
+        res.json({ ...result.rows[0], by_method: byMethod });
     } catch (error) {
         next(error);
     }
@@ -1529,6 +1563,36 @@ const collectPayment = (db) => async (req, res, next) => {
         });
         await client.query('COMMIT');
 
+        if (paymentResult.rows[0]) {
+            const paymentVariables = {
+                invoice_number: invoice.invoice_number,
+                amount: String(paymentAmount),
+                payment_method: method
+            };
+            triggerEvent(db, 'PaymentReceived', {
+                patientId: invoice.patient_id,
+                entityType: 'Invoice',
+                entityId: invoice.invoice_id,
+                channels: ['Email', 'SMS'],
+                variables: paymentVariables
+            }).catch(() => {});
+            triggerEventForRole(db, 'PaymentReceived', 'Cashier', {
+                entityType: 'Invoice',
+                entityId: invoice.invoice_id,
+                variables: paymentVariables
+            }).catch(() => {});
+            triggerEventForRole(db, 'PaymentReceived', 'Accountant', {
+                entityType: 'Invoice',
+                entityId: invoice.invoice_id,
+                variables: paymentVariables
+            }).catch(() => {});
+            triggerEventForRole(db, 'PaymentReceived', 'Admin', {
+                entityType: 'Invoice',
+                entityId: invoice.invoice_id,
+                variables: paymentVariables
+            }).catch(() => {});
+        }
+
         const releasedReport = reportReadyResult.rows[0];
         if (releasedReport?.newly_released) {
             triggerEvent(db, 'ReportReady', {
@@ -1554,7 +1618,7 @@ const refundInvoice = (db) => async (req, res, next) => {
 
     try {
         const { id } = req.params;
-        const { paymentId, amount, method = 'Cash', reason } = req.body;
+        const { paymentId, amount, method: requestMethod, reason } = req.body;
         const idempotencyKey = req.get('Idempotency-Key');
         client = await db.connect();
         await client.query('BEGIN');
@@ -1595,7 +1659,7 @@ const refundInvoice = (db) => async (req, res, next) => {
                 COALESCE((SELECT SUM(p.amount) FROM payments p
                           WHERE p.invoice_id = $1 AND p.payment_status = 'Completed'), 0) AS paid_amount,
                 COALESCE((SELECT SUM(r.amount) FROM refunds r
-                          WHERE r.invoice_id = $1 AND r.status <> 'Rejected'), 0) AS reserved_refund_amount
+                          WHERE r.invoice_id = $1 AND r.status NOT IN ('Rejected', 'Failed')), 0) AS reserved_refund_amount
         `, [invoice.invoice_id]);
         const paidAmount = Number(totalsResult.rows[0]?.paid_amount || 0);
         const reservedRefundAmount = Number(totalsResult.rows[0]?.reserved_refund_amount || 0);
@@ -1604,22 +1668,27 @@ const refundInvoice = (db) => async (req, res, next) => {
             return next(new AppError('Refund amount exceeds the unrefunded collected amount', 409));
         }
 
+        let payment = null;
         if (paymentId) {
             const paymentResult = await client.query(`
                 SELECT * FROM payments
                 WHERE payment_id = $1 AND invoice_id = $2
                 FOR UPDATE
             `, [paymentId, invoice.invoice_id]);
-            const payment = paymentResult.rows[0];
+            payment = paymentResult.rows[0];
             if (!payment || payment.payment_status !== 'Completed') {
                 await client.query('ROLLBACK');
                 return next(new AppError('Completed payment not found for this invoice', 404));
+            }
+            if (requestMethod && requestMethod !== payment.method) {
+                await client.query('ROLLBACK');
+                return next(new AppError('Refund method must match the original payment method', 409));
             }
 
             const paymentRefundsResult = await client.query(`
                 SELECT COALESCE(SUM(amount), 0) AS reserved_amount
                 FROM refunds
-                WHERE payment_id = $1 AND status <> 'Rejected'
+                WHERE payment_id = $1 AND status NOT IN ('Rejected', 'Failed')
             `, [paymentId]);
             const paymentReserved = Number(paymentRefundsResult.rows[0]?.reserved_amount || 0);
             if (Number(amount) > Number(payment.amount) - paymentReserved + 0.005) {
@@ -1628,26 +1697,34 @@ const refundInvoice = (db) => async (req, res, next) => {
             }
         }
 
+        const refundMethod = payment ? payment.method : (requestMethod || 'Cash');
+        const reasonCode = req.body.reasonCode || null;
+        const branchId = payment?.branch_id || invoice.branch_id;
+        const currencyCode = payment?.currency_code || invoice.currency_code || 'EGP';
+
         const refundStatus = 'Pending';
         const refundResult = await client.query(`
             INSERT INTO refunds (
-                invoice_id, payment_id, amount, method, reason, status,
-                requested_by, approved_by, processed_by, cashier_shift_id, processed_at
+                invoice_id, payment_id, amount, method, reason, reason_code, status,
+                requested_by, approved_by, processed_by, cashier_shift_id, branch_id, currency_code, processed_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6::varchar(20), $7, $8, $9, $10,
-                    CASE WHEN $6::varchar(20) = 'Processed' THEN NOW() ELSE NULL END)
+            VALUES ($1, $2, $3, $4, $5, $6, $7::varchar(20), $8, $9, $10, $11, $12, $13,
+                    CASE WHEN $7::varchar(20) = 'Processed' THEN NOW() ELSE NULL END)
             RETURNING *
         `, [
             invoice.invoice_id,
             paymentId || null,
             amount,
-            method,
+            refundMethod,
             reason,
+            reasonCode,
             refundStatus,
             req.user.user_id,
             null,
             null,
-            null
+            null,
+            branchId,
+            currencyCode
         ]);
 
         const updatedInvoice = invoice;
@@ -1663,7 +1740,7 @@ const refundInvoice = (db) => async (req, res, next) => {
                 refundId: refundResult.rows[0].refund_id,
                 paymentId: paymentId || null,
                 amount: Number(amount),
-                method,
+                method: refundMethod,
                 reason,
                 status: refundStatus
             },
@@ -1680,7 +1757,7 @@ const refundInvoice = (db) => async (req, res, next) => {
             variables: {
                 invoice_number: invoice.invoice_number || '',
                 amount,
-                payment_method: method,
+                payment_method: refundMethod,
                 payment_date: new Date().toLocaleDateString('en-GB')
             }
         }).catch(() => {});
@@ -1690,7 +1767,7 @@ const refundInvoice = (db) => async (req, res, next) => {
             variables: {
                 invoice_number: invoice.invoice_number || '',
                 amount,
-                payment_method: method
+                payment_method: refundMethod
             }
         }).catch(() => {});
 
@@ -1699,7 +1776,7 @@ const refundInvoice = (db) => async (req, res, next) => {
             variables: {
                 invoice_number: invoice.invoice_number || '',
                 amount,
-                payment_method: method
+                payment_method: refundMethod
             }
         }).catch(() => {});
 
@@ -1708,7 +1785,7 @@ const refundInvoice = (db) => async (req, res, next) => {
             variables: {
                 invoice_number: invoice.invoice_number || '',
                 amount,
-                payment_method: method
+                payment_method: refundMethod
             }
         }).catch(() => {});
 
@@ -1789,9 +1866,10 @@ const reviewRefund = (db) => async (req, res, next) => {
             return next(new AppError('Refund request not found', 404));
         }
         const refund = refundResult.rows[0];
-        const approving = refund.status === 'Pending' && ['Approved', 'Rejected'].includes(status);
+        const approving = (refund.status === 'Pending' || refund.status === 'Failed') && ['Approved', 'Rejected'].includes(status);
         const processing = refund.status === 'Approved' && status === 'Processed';
-        if (!approving && !processing) throw new AppError(`Refund cannot move from ${refund.status} to ${status}`, 409);
+        const failing = refund.status === 'Approved' && status === 'Failed';
+        if (!approving && !processing && !failing) throw new AppError(`Refund cannot move from ${refund.status} to ${status}`, 409);
 
         if (approving) {
             const canApprove = await roleHasAnyPermission(client, req.user.role, ['APPROVE_REFUNDS', 'ISSUE_REFUNDS']);
@@ -1856,12 +1934,10 @@ const reviewRefund = (db) => async (req, res, next) => {
                 review_reason = CASE WHEN $1::varchar(20) IN ('Approved', 'Rejected') THEN $3 ELSE review_reason END,
                 reviewed_at = CASE WHEN $1::varchar(20) IN ('Approved', 'Rejected') THEN NOW() ELSE reviewed_at END,
                 approved_by = CASE WHEN $1::varchar(20) = 'Approved' THEN $2 ELSE approved_by END,
+                failure_reason = CASE WHEN $1::varchar(20) = 'Failed' THEN $3 ELSE failure_reason END,
                 processed_by = CASE WHEN $1::varchar(20) = 'Processed' THEN $2 ELSE processed_by END,
                 cashier_shift_id = CASE WHEN $1::varchar(20) = 'Processed' THEN $5 ELSE cashier_shift_id END,
-                processed_at = CASE WHEN $1::varchar(20) = 'Processed' THEN NOW() ELSE processed_at END,
-                business_date = CASE WHEN $1::varchar(20) = 'Processed' THEN $6::date ELSE business_date END,
-                branch_id = CASE WHEN $1::varchar(20) = 'Processed' THEN $7::uuid ELSE branch_id END,
-                currency_code = CASE WHEN $1::varchar(20) = 'Processed' THEN $8 ELSE currency_code END
+                processed_at = CASE WHEN $1::varchar(20) = 'Processed' THEN NOW() ELSE processed_at END
             WHERE refund_id = $4
             RETURNING *
         `, [
@@ -1869,10 +1945,7 @@ const reviewRefund = (db) => async (req, res, next) => {
             req.user.user_id,
             reason,
             refund.refund_id,
-            shiftId,
-            processingDate?.businessDate || null,
-            processingDate?.branchId || invoice.branch_id,
-            invoice.currency_code || 'EGP'
+            shiftId
         ]);
 
         if (processing) {
@@ -2026,7 +2099,7 @@ const getInvoicePdf = (db) => async (req, res, next) => {
         const html = `
             <!doctype html>
             <html dir="${dir}" lang="${lang === 'both' ? 'en' : lang}">
-            <head><meta charset="utf-8"><title>${escapeHtml(payload.invoice_number)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');@page{margin:18mm}*{box-sizing:border-box}body{font-family:${fontStack};margin:0;color:#0f172a;font-size:13px}.header{display:flex;justify-content:space-between;gap:20px;padding-bottom:20px;border-bottom:3px solid ${center.themeColor}}.brand-block{display:flex;align-items:flex-start;gap:14px;min-width:0}.logo{max-width:92px;max-height:56px;object-fit:contain}.mark{display:grid;width:54px;height:54px;place-items:center;border-radius:10px;background:${center.themeColor};color:white;font-weight:800;letter-spacing:.04em}.brand{color:${center.themeColor};margin:0;font-size:20px}.doc-title{margin:4px 0 0;color:#0f172a;font-size:13px;font-weight:800}.meta{margin:4px 0;color:#475569}.center-lines{white-space:pre-wrap;line-height:1.45}.patient{margin:20px 0;padding:14px 16px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc}.section-title{margin:24px 0 8px;font-size:15px}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #e2e8f0;padding:9px;text-align:start}th{background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase}.right{text-align:end}.totals{width:min(100%,390px);margin:18px 0 0 auto}.totals td{padding:6px 8px}.grand td{border-top:2px solid #0f172a;font-weight:800;font-size:15px}.balance td{color:#b45309;font-weight:800}.reason,.terms{margin-top:10px;padding:10px;border-inline-start:3px solid ${center.themeColor};background:#f8fafc;color:#334155}.footer{margin-top:30px;padding-top:12px;border-top:1px solid #e2e8f0;color:#64748b;font-size:10px}@media print{.no-print{display:none}}</style></head>
+            <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escapeHtml(payload.invoice_number)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');@page{size:A4;margin:18mm}*{box-sizing:border-box}thead{display:table-header-group}body{font-family:${fontStack};margin:0;color:#0f172a;font-size:13px}.header{display:flex;justify-content:space-between;gap:20px;padding-bottom:20px;border-bottom:3px solid ${center.themeColor}}.brand-block{display:flex;align-items:flex-start;gap:14px;min-width:0}.logo{max-width:92px;max-height:56px;object-fit:contain}.mark{display:grid;width:54px;height:54px;place-items:center;border-radius:10px;background:${center.themeColor};color:white;font-weight:800;letter-spacing:.04em}.brand{color:${center.themeColor};margin:0;font-size:20px}.doc-title{margin:4px 0 0;color:#0f172a;font-size:13px;font-weight:800}.meta{margin:4px 0;color:#475569}.center-lines{white-space:pre-wrap;line-height:1.45}.patient{margin:20px 0;padding:14px 16px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc}.section-title{margin:24px 0 8px;font-size:15px}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #e2e8f0;padding:9px;text-align:start}th{background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase}.right{text-align:end}.totals{width:min(100%,390px);margin:18px 0 0 auto}.totals td{padding:6px 8px}.grand td{border-top:2px solid #0f172a;font-weight:800;font-size:15px}.balance td{color:#b45309;font-weight:800}.reason,.terms{margin-top:10px;padding:10px;border-inline-start:3px solid ${center.themeColor};background:#f8fafc;color:#334155}.footer{margin-top:30px;padding-top:12px;border-top:1px solid #e2e8f0;color:#64748b;font-size:10px}@media print{.no-print{display:none}}@media(max-width:640px){.brand-block{flex-direction:column}}</style></head>
             <body>
                 <header class="header"><div class="brand-block">${center.logoUrl ? `<img class="logo" src="${escapeHtml(center.logoUrl)}" alt="">` : `<div class="mark">${escapeHtml(logoText)}</div>`}<div><h1 class="brand">${escapeHtml(facilityName || center.centerName)}</h1><p class="doc-title">${t.title}</p>${centerLines ? `<p class="meta center-lines">${lineBreaks(centerLines)}</p>` : ''}${center.taxId ? `<p class="meta"><strong>Tax ID:</strong> ${escapeHtml(center.taxId)}</p>` : ''}</div></div><div><p class="meta"><strong>${t.invoice}:</strong> ${escapeHtml(payload.invoice_number)}</p><p class="meta"><strong>${receipt.date}:</strong> ${escapeHtml(new Date(payload.generated_at || payload.created_at).toLocaleString())}</p><p class="meta"><strong>${t.status}:</strong> ${escapeHtml(payload.invoice_status)}</p></div></header>
                 <div class="patient">

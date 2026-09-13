@@ -1,6 +1,15 @@
 const { AppError } = require('../middleware/errorHandler');
-const { decrypt } = require('../utils/crypto');
+const { decrypt, hash } = require('../utils/crypto');
 const { validateEnum, validateUUID, VALID_WAITING_LIST_STATUSES } = require('../utils/queryValidator');
+
+const safeHash = (val) => {
+    try {
+        if (!val || !process.env.BLIND_INDEX_KEY) return null;
+        return hash(val);
+    } catch {
+        return null;
+    }
+};
 
 const getWaitingList = (db) => async (req, res, next) => {
     try {
@@ -46,6 +55,32 @@ const getWaitingList = (db) => async (req, res, next) => {
             values.push(date);
         }
 
+        if (q && q.trim()) {
+            const rawTerm = q.trim();
+            const term = `%${rawTerm}%`;
+            const hashed = safeHash(rawTerm);
+            if (hashed) {
+                query += ` AND (
+                    p.mrn ILIKE $${param}
+                    OR et.name ILIKE $${param}
+                    OR m.name ILIKE $${param}
+                    OR p.first_name_hash = $${param + 1}
+                    OR p.last_name_hash = $${param + 1}
+                    OR p.phone_hash = $${param + 1}
+                )`;
+                values.push(term, hashed);
+                param += 2;
+            } else {
+                query += ` AND (
+                    p.mrn ILIKE $${param}
+                    OR et.name ILIKE $${param}
+                    OR m.name ILIKE $${param}
+                )`;
+                values.push(term);
+                param += 1;
+            }
+        }
+
         query += ` ORDER BY
             CASE wl.priority WHEN 'Emergency' THEN 1 WHEN 'Urgent' THEN 2 ELSE 3 END,
             wl.created_at ASC
@@ -68,16 +103,6 @@ const getWaitingList = (db) => async (req, res, next) => {
             delete mapped.last_name_enc;
             return mapped;
         });
-
-        if (q && q.trim()) {
-            const term = q.trim().toLowerCase();
-            mappedRows = mappedRows.filter(r =>
-                (r.mrn && r.mrn.toLowerCase().includes(term)) ||
-                (r.patient_name && r.patient_name.toLowerCase().includes(term)) ||
-                (r.exam_type_name && r.exam_type_name.toLowerCase().includes(term)) ||
-                (r.machine_name && r.machine_name.toLowerCase().includes(term))
-            );
-        }
 
         res.json(mappedRows);
     } catch (error) {

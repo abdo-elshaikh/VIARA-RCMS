@@ -190,7 +190,8 @@ const MIGRATION_FILES = [
     '159_attendance_auto_absent_notification.sql',
     '160_fix_operational_role_permissions.sql',
     '161_rbac_governance_alignment.sql',
-    '162_emergency_access_revoked_notification.sql'
+    '162_emergency_access_revoked_notification.sql',
+    '163_hot_path_indexes.sql'
 ];
 
 const SEED_FILES = [

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
     CalendarClock, ChevronLeft, ChevronRight, Clock, Plus, RefreshCw, Trash2, Pencil,
     Users, LayoutGrid, Calendar, Copy, Moon, Sun, Sunset, PhoneCall, Search, Filter, CheckCircle2,
@@ -328,18 +328,18 @@ const ShiftManager = () => {
         setForm(emptyForm);
     };
 
-    const resolveRange = () => {
+    const resolveRange = useCallback(() => {
         const start = new Date(`${form.date}T${form.startTime}`);
         let end = new Date(`${form.date}T${form.endTime}`);
         if (end <= start) end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
         return { start, end, crossesMidnight: form.endTime <= form.startTime };
-    };
+    }, [form.date, form.startTime, form.endTime]);
 
     const previewDuration = useMemo(() => {
         if (!form.date || !form.startTime || !form.endTime) return null;
         const { start, end } = resolveRange();
         return Math.max(0, (end - start) / 3600000);
-    }, [form.date, form.startTime, form.endTime]);
+    }, [form.date, form.startTime, form.endTime, resolveRange]);
 
     const applyPreset = (preset) => {
         const presets = {

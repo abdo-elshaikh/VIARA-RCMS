@@ -7,10 +7,15 @@ const { DEFAULT_BRANCH_ID } = require('./financialPostingService');
 
 // Keep all dashboard day/week boundaries aligned with the center setting,
 // independently of the Node or PostgreSQL host timezone.
-const CENTER_BUSINESS_DATE_SQL = `(CURRENT_TIMESTAMP AT TIME ZONE COALESCE(
+const CENTER_TZ_SQL = `COALESCE(
     NULLIF((SELECT setting_value FROM system_settings WHERE setting_key = 'center.timezone'), ''),
     'Africa/Cairo'
-))::date`;
+)`;
+const CENTER_BUSINESS_DATE_SQL = `(CURRENT_TIMESTAMP AT TIME ZONE ${CENTER_TZ_SQL})::date`;
+// Center-local business-day midnight as a timestamptz. Casting timestamptz
+// columns with ::date defeats their indexes; the sargable equivalent is
+// col >= midnight AND col < midnight + interval '1 day'.
+const CENTER_BUSINESS_MIDNIGHT_SQL = `((${CENTER_BUSINESS_DATE_SQL})::timestamp AT TIME ZONE ${CENTER_TZ_SQL})`;
 
 class DashboardService {
     constructor(db) {
@@ -26,7 +31,8 @@ class DashboardService {
             const checkInsQuery = `
                 SELECT COUNT(*) as count
                 FROM examinations
-                WHERE arrived_at::date = ${CENTER_BUSINESS_DATE_SQL}
+                WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                  AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
             `;
             const checkInsResult = await this.db.query(checkInsQuery);
             const todayCheckIns = parseInt(checkInsResult.rows[0].count);
@@ -35,7 +41,8 @@ class DashboardService {
             const yesterdayCheckInsResult = await this.db.query(`
                 SELECT COUNT(*) as count
                 FROM examinations
-                WHERE arrived_at::date = ${CENTER_BUSINESS_DATE_SQL} - 1
+                WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL} - interval '1 day'
+                  AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL}
             `);
             const yesterdayCheckIns = parseInt(yesterdayCheckInsResult.rows[0].count);
 
@@ -45,7 +52,8 @@ class DashboardService {
                     COUNT(*) as total,
                     COUNT(CASE WHEN status = 'Confirmed' THEN 1 END) as pending
                 FROM appointments
-                WHERE start_time::date = ${CENTER_BUSINESS_DATE_SQL}
+                WHERE start_time >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                  AND start_time < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
             `;
             const appointmentsResult = await this.db.query(appointmentsQuery);
             const appointments = appointmentsResult.rows[0];
@@ -54,7 +62,8 @@ class DashboardService {
             const waitingQuery = `
                 SELECT COUNT(*) as count
                 FROM examinations
-                WHERE arrived_at::date = ${CENTER_BUSINESS_DATE_SQL}
+                WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                  AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
                   AND exam_started_at IS NULL
                   AND status <> 'Finalized'
             `;
@@ -66,7 +75,8 @@ class DashboardService {
                 SELECT COUNT(*) as count
                 FROM examinations
                 WHERE status = 'Finalized'
-                AND report_finalized_at::date = ${CENTER_BUSINESS_DATE_SQL}
+                  AND report_finalized_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                  AND report_finalized_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
             `;
             const completedResult = await this.db.query(completedQuery);
             const completed = parseInt(completedResult.rows[0].count);
@@ -75,7 +85,8 @@ class DashboardService {
                 SELECT COUNT(*) as count
                 FROM examinations
                 WHERE status = 'Finalized'
-                  AND report_finalized_at::date = ${CENTER_BUSINESS_DATE_SQL} - 1
+                  AND report_finalized_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL} - interval '1 day'
+                  AND report_finalized_at < ${CENTER_BUSINESS_MIDNIGHT_SQL}
             `);
             const yesterdayCompleted = parseInt(yesterdayCompletedResult.rows[0].count);
 
@@ -85,7 +96,8 @@ class DashboardService {
                     0
                 ) as minutes
                 FROM examinations
-                WHERE arrived_at::date = ${CENTER_BUSINESS_DATE_SQL}
+                WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                  AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
                 AND arrived_at IS NOT NULL
                 AND exam_started_at IS NOT NULL
                 AND exam_started_at >= arrived_at
@@ -101,7 +113,8 @@ class DashboardService {
                     COUNT(CASE WHEN e.status = 'Finalized' THEN 1 END) as completed
                 FROM appointments a
                 LEFT JOIN examinations e ON a.appointment_id = e.appointment_id
-                WHERE a.start_time::date = ${CENTER_BUSINESS_DATE_SQL}
+                WHERE a.start_time >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                  AND a.start_time < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
                 GROUP BY TO_CHAR(start_time, 'HH24:00')
                 ORDER BY time
             `;
@@ -511,7 +524,7 @@ class DashboardService {
             SELECT
                 (SELECT COUNT(*) FROM users WHERE is_active = TRUE)::int AS active_staff,
                 (SELECT COUNT(DISTINCT user_id) FROM attendance_logs
-                    WHERE clock_in::date = ${CENTER_BUSINESS_DATE_SQL})::int AS present_today,
+                    WHERE clock_in >= ${CENTER_BUSINESS_MIDNIGHT_SQL} AND clock_in < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day')::int AS present_today,
                 (SELECT COUNT(DISTINCT user_id) FROM leave_requests
                     WHERE status = 'Approved'
                       AND ${CENTER_BUSINESS_DATE_SQL} BETWEEN start_date AND end_date)::int AS on_leave_today,
@@ -619,7 +632,7 @@ class DashboardService {
             const operationalQuery = `
                 SELECT
                     COUNT(*) FILTER (WHERE status != 'Finalized') as open_work,
-                    COUNT(*) FILTER (WHERE exam_completed_at::date = ${CENTER_BUSINESS_DATE_SQL}) as scans_today
+                    COUNT(*) FILTER (WHERE exam_completed_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL} AND exam_completed_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day') as scans_today
                 FROM examinations
             `;
             const operationalResult = await this.db.query(operationalQuery);
@@ -646,7 +659,7 @@ class DashboardService {
                     GROUP BY business_date
                 )
                 SELECT d.day AS date, TO_CHAR(d.day, 'Dy') AS name,
-                       COALESCE((SELECT COUNT(*) FROM examinations e WHERE e.exam_completed_at::date = d.day), 0)::int AS scans,
+                       COALESCE((SELECT COUNT(*) FROM examinations e WHERE e.exam_completed_at >= d.day::timestamp AT TIME ZONE ${CENTER_TZ_SQL} AND e.exam_completed_at < d.day::timestamp AT TIME ZONE ${CENTER_TZ_SQL} + interval '1 day'), 0)::int AS scans,
                        COALESCE(c.amount, 0) AS revenue
                 FROM days d LEFT JOIN cash c ON c.day = d.day
                 ORDER BY d.day

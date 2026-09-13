@@ -21,6 +21,13 @@
       "eyebrow": "Access denied",
       "title": "This area is outside your permissions.",
       "description": "Your account is signed in, but this page is limited to another role."
+    },
+    "errorBoundary": {
+      "eyebrow": "Unexpected error",
+      "title": "Something went wrong.",
+      "description": "An unexpected error interrupted this page. You can retry or return to the portal home.",
+      "retry": "Try again",
+      "home": "Go home"
     }
   },
   "empty": {

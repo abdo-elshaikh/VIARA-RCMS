@@ -128,6 +128,64 @@ const AUDIT_SELECT = `
     s.risk_reason, s.changed_fields, s.metadata
 `;
 
+// Aggregate summaries scan the full filtered set of an append-only table; with
+// the admin UI's 15s auto-refresh they used to dominate database time. A short
+// TTL cache keyed by the exact filter set keeps numbers fresh enough while an
+// order-of-magnitude fewer full scans run per open admin session.
+const AUDIT_SUMMARY_CACHE_TTL_MS = 30_000;
+const AUDIT_SUMMARY_CACHE_MAX_KEYS = 200;
+const auditSummaryCache = new Map();
+
+const getAuditSummary = async (db, where, params) => {
+    const cacheKey = JSON.stringify([where, params]);
+    const cached = auditSummaryCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < AUDIT_SUMMARY_CACHE_TTL_MS) {
+        return cached.value;
+    }
+
+    const aggQuery = `
+        SELECT
+            COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE s.outcome = 'failure')::int AS failures,
+            COUNT(*) FILTER (WHERE s.outcome = 'denied')::int AS denied,
+            COUNT(*) FILTER (WHERE s.category = 'PHI_ACCESS')::int AS phi_access,
+            COUNT(*) FILTER (WHERE s.severity >= 40)::int AS elevated,
+            COUNT(*) FILTER (WHERE s.risk_score >= 50)::int AS risky,
+            COUNT(*) FILTER (WHERE s.actor_type = 'SYSTEM')::int AS system_events,
+            COUNT(*) FILTER (WHERE s.http_method = 'POST' OR s.action ILIKE '%CREATE%' OR s.action ILIKE '%INSERT%' OR s.event_action ILIKE '%CREATE%')::int AS creates,
+            COUNT(*) FILTER (WHERE s.http_method IN ('PUT', 'PATCH') OR s.action ILIKE '%UPDATE%' OR s.action ILIKE '%EDIT%' OR s.action ILIKE '%MODIFY%' OR s.action ILIKE '%AMEND%' OR s.previous_value IS NOT NULL)::int AS updates,
+            COUNT(*) FILTER (WHERE s.http_method = 'DELETE' OR s.action ILIKE '%DELETE%' OR s.action ILIKE '%REMOVE%' OR s.action ILIKE '%VOID%' OR s.action ILIKE '%CANCEL%')::int AS deletes,
+            COUNT(*) FILTER (WHERE s.http_method = 'GET' OR s.action ILIKE '%VIEW%' OR s.action ILIKE '%READ%' OR s.action ILIKE '%ACCESS%' OR s.action ILIKE '%SEARCH%' OR s.action ILIKE '%EXPORT%' OR s.category = 'PHI_ACCESS')::int AS queries
+        FROM system_logs s
+        LEFT JOIN users u ON COALESCE(s.actor_user_id, s.user_id) = u.user_id
+        WHERE ${where}
+    `;
+    const aggResult = await db.query(aggQuery, params);
+    const agg = aggResult.rows[0] || {};
+    const value = {
+        total: agg.total || 0,
+        summary: {
+            total: agg.total || 0,
+            failures: agg.failures || 0,
+            denied: agg.denied || 0,
+            phiAccess: agg.phi_access || 0,
+            elevated: agg.elevated || 0,
+            risky: agg.risky || 0,
+            systemEvents: agg.system_events || 0,
+            creates: agg.creates || 0,
+            updates: agg.updates || 0,
+            deletes: agg.deletes || 0,
+            queries: agg.queries || 0,
+        },
+    };
+
+    if (auditSummaryCache.size >= AUDIT_SUMMARY_CACHE_MAX_KEYS) {
+        auditSummaryCache.clear();
+    }
+    auditSummaryCache.set(cacheKey, { at: Date.now(), value });
+    return value;
+};
+
 const getAuditLogs = (db) => async (req, res, next) => {
     try {
         const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 500);
@@ -145,42 +203,12 @@ const getAuditLogs = (db) => async (req, res, next) => {
         const listResult = await db.query(listQuery, [...params, limit, offset]);
 
         // Total + aggregate counts over the FULL filtered set (not just this page).
-        const aggQuery = `
-            SELECT
-                COUNT(*)::int AS total,
-                COUNT(*) FILTER (WHERE s.outcome = 'failure')::int AS failures,
-                COUNT(*) FILTER (WHERE s.outcome = 'denied')::int AS denied,
-                COUNT(*) FILTER (WHERE s.category = 'PHI_ACCESS')::int AS phi_access,
-                COUNT(*) FILTER (WHERE s.severity >= 40)::int AS elevated,
-                COUNT(*) FILTER (WHERE s.risk_score >= 50)::int AS risky,
-                COUNT(*) FILTER (WHERE s.actor_type = 'SYSTEM')::int AS system_events,
-                COUNT(*) FILTER (WHERE s.http_method = 'POST' OR s.action ILIKE '%CREATE%' OR s.action ILIKE '%INSERT%' OR s.event_action ILIKE '%CREATE%')::int AS creates,
-                COUNT(*) FILTER (WHERE s.http_method IN ('PUT', 'PATCH') OR s.action ILIKE '%UPDATE%' OR s.action ILIKE '%EDIT%' OR s.action ILIKE '%MODIFY%' OR s.action ILIKE '%AMEND%' OR s.previous_value IS NOT NULL)::int AS updates,
-                COUNT(*) FILTER (WHERE s.http_method = 'DELETE' OR s.action ILIKE '%DELETE%' OR s.action ILIKE '%REMOVE%' OR s.action ILIKE '%VOID%' OR s.action ILIKE '%CANCEL%')::int AS deletes,
-                COUNT(*) FILTER (WHERE s.http_method = 'GET' OR s.action ILIKE '%VIEW%' OR s.action ILIKE '%READ%' OR s.action ILIKE '%ACCESS%' OR s.action ILIKE '%SEARCH%' OR s.action ILIKE '%EXPORT%' OR s.category = 'PHI_ACCESS')::int AS queries
-            FROM system_logs s
-            LEFT JOIN users u ON COALESCE(s.actor_user_id, s.user_id) = u.user_id
-            WHERE ${where}
-        `;
-        const aggResult = await db.query(aggQuery, params);
-        const agg = aggResult.rows[0] || {};
+        const agg = await getAuditSummary(db, where, params);
 
         res.json({
             logs: listResult.rows,
             total: agg.total || 0,
-            summary: {
-                total: agg.total || 0,
-                failures: agg.failures || 0,
-                denied: agg.denied || 0,
-                phiAccess: agg.phi_access || 0,
-                elevated: agg.elevated || 0,
-                risky: agg.risky || 0,
-                systemEvents: agg.system_events || 0,
-                creates: agg.creates || 0,
-                updates: agg.updates || 0,
-                deletes: agg.deletes || 0,
-                queries: agg.queries || 0,
-            },
+            summary: agg.summary,
         });
     } catch (error) {
         next(error);

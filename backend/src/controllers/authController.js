@@ -13,7 +13,9 @@ const AuthService = require('../services/authService');
 const { attachActiveEmergencyClaims } = require('../services/emergencyAccessService');
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 
-const SALT_ROUNDS = 10;
+// 12 rounds per current OWASP guidance for medical systems; existing hashes
+// embed their own cost factor so verification of old hashes is unaffected.
+const SALT_ROUNDS = 12;
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 
 const getPermissionNamesForRole = async (db, role, bypassCache = false) => {

@@ -264,8 +264,47 @@ const regenerateWorklists = async (pool) => {
     return { written, pruned };
 };
 
+let mwlRegenTimeout = null;
+let mwlRegenRunning = false;
+let mwlPendingRegen = false;
+
+/**
+ * Debounced trigger for asynchronous MWL regeneration.
+ * Bundles rapid appointment or examination scheduling events into a single regeneration run.
+ *
+ * @param {object} pool - PostgreSQL pool or client
+ * @param {number} [delayMs=2000] - Debounce delay in milliseconds
+ */
+const triggerMwlRegeneration = (pool, delayMs = 2000) => {
+    if (!pool) return;
+    if (mwlRegenTimeout) {
+        clearTimeout(mwlRegenTimeout);
+    }
+    mwlRegenTimeout = setTimeout(async () => {
+        mwlRegenTimeout = null;
+        if (mwlRegenRunning) {
+            mwlPendingRegen = true;
+            return;
+        }
+        mwlRegenRunning = true;
+        try {
+            await regenerateWorklists(pool);
+        } catch (err) {
+            logger.error('Debounced MWL regeneration failed', { error: err.message });
+        } finally {
+            mwlRegenRunning = false;
+            if (mwlPendingRegen) {
+                mwlPendingRegen = false;
+                triggerMwlRegeneration(pool, 500);
+            }
+        }
+    }, delayMs);
+    mwlRegenTimeout.unref?.();
+};
+
 module.exports = {
     regenerateWorklists,
+    triggerMwlRegeneration,
     // exported for unit tests
     buildWorklistBuffer,
     fetchScheduledWorklist,

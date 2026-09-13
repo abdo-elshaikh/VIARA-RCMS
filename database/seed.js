@@ -29,17 +29,28 @@ if (!process.env.DATABASE_URL && process.env.POSTGRES_USER && process.env.POSTGR
     process.env.DATABASE_URL = `postgresql://${user}:${password}@127.0.0.1:${port}/${database}`;
 }
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://rcms:***REMOVED***@127.0.0.1:15432/rcms';
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+    console.error('[seed] DATABASE_URL is required. Refusing to fall back to a committed default credential.');
+    process.exit(1);
+}
 const pool = new Pool({ connectionString });
 
-const seedPassword = process.env.TEST_USER_PASSWORD || 'Password123!';
+const seedPassword = process.env.TEST_USER_PASSWORD;
+if (!seedPassword) {
+    console.error('[seed] TEST_USER_PASSWORD is required. Refusing to fall back to a committed default password.');
+    process.exit(1);
+}
 
 // Encryption utilities
 const GCM_IV_LENGTH = 12;
 function encrypt(text) {
     if (!text) return null;
     const iv = crypto.randomBytes(GCM_IV_LENGTH);
-    const keyHex = process.env.ENCRYPTION_KEY || '***REMOVED***';
+    const keyHex = process.env.ENCRYPTION_KEY;
+    if (!keyHex || !/^[0-9a-fA-F]{64}$/.test(keyHex)) {
+        throw new Error('[seed] ENCRYPTION_KEY must be set to a 64-char hex key (no committed fallback).');
+    }
     const key = Buffer.from(keyHex, 'hex');
     const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
     let encrypted = cipher.update(String(text), 'utf8');
@@ -50,7 +61,10 @@ function encrypt(text) {
 
 function hashBlind(text) {
     if (!text) return null;
-    const blindIndexKey = process.env.BLIND_INDEX_KEY || '***REMOVED***';
+    const blindIndexKey = process.env.BLIND_INDEX_KEY;
+    if (!blindIndexKey || blindIndexKey.length < 32) {
+        throw new Error('[seed] BLIND_INDEX_KEY must be set (>= 32 chars, no committed fallback).');
+    }
     const key = /^[0-9a-fA-F]{64}$/.test(blindIndexKey)
         ? Buffer.from(blindIndexKey, 'hex')
         : Buffer.from(blindIndexKey, 'utf8');

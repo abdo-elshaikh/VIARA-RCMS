@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { rehydrateUser, selectCurrentUser, selectIsAuthenticated, type PortalRole } from './store/authSlice';
 import { selectTheme } from './store/preferencesSlice';
 import { applyPortalTheme } from './utils/theme';
+import PortalErrorBoundary from './components/PortalErrorBoundary';
 
 const PatientLogin = lazy(() => import('./pages/PatientLogin'));
 const PatientPortal = lazy(() => import('./pages/PatientPortal'));
@@ -72,6 +73,7 @@ const App = () => {
     const isDoctor = isAuthenticated && DOCTOR_ROLES.some((role) => role === user?.role);
 
     return (
+        <PortalErrorBoundary>
         <BrowserRouter>
             <Toaster
                 position="top-center"
@@ -135,6 +137,7 @@ const App = () => {
             </Routes>
             </Suspense>
         </BrowserRouter>
+        </PortalErrorBoundary>
     );
 };
 

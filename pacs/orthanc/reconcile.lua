@@ -62,3 +62,42 @@ function OnStoredInstance(instanceId, tags, metadata, origin)
     print('VIARA reconcile webhook failed for instance ' .. instanceId .. ': ' .. tostring(err))
   end
 end
+
+function OnStableStudy(studyId, tags, metadata)
+  -- Called by Orthanc once an entire study is stable (all slices received).
+  -- This provides high-throughput reconciliation for multi-slice CT/MRI studies.
+  local orthancStudy = nil
+  local okStudy, studyData = pcall(function()
+    return ParseJson(RestApiGet('/studies/' .. studyId))
+  end)
+  if okStudy and studyData ~= nil then
+    orthancStudy = studyData
+  end
+
+  local mainTags = (orthancStudy and orthancStudy['MainDicomTags']) or tags or {}
+  local patientMainTags = (orthancStudy and orthancStudy['PatientMainDicomTags']) or {}
+
+  local payload = {
+    EventType = 'StableStudy',
+    OrthancStudyId = studyId,
+    PatientID = patientMainTags['PatientID'] or (tags and tags['PatientID']),
+    PatientName = patientMainTags['PatientName'] or (tags and tags['PatientName']),
+    AccessionNumber = mainTags['AccessionNumber'] or (tags and tags['AccessionNumber']),
+    StudyInstanceUID = mainTags['StudyInstanceUID'] or (tags and tags['StudyInstanceUID']),
+    StudyDescription = mainTags['StudyDescription'] or (tags and tags['StudyDescription']),
+    Modality = (tags and tags['Modality']) or 'CT'
+  }
+
+  local body = DumpJson(payload, false)
+  local headers = {
+    ['Content-Type'] = 'application/json',
+    ['X-Pacs-Signature'] = WEBHOOK_SECRET
+  }
+
+  local ok, err = pcall(function()
+    HttpPost(WEBHOOK_URL, body, headers)
+  end)
+  if not ok then
+    print('VIARA reconcile webhook failed for stable study ' .. studyId .. ': ' .. tostring(err))
+  end
+end

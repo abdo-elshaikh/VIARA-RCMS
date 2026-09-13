@@ -25,7 +25,7 @@ const attachmentPreviewSql = (alias) => `
     )
 `;
 
-const sanitizeText = (value) => String(value || '').replace(/<\/?[^>]+(>|$)/g, '').trim();
+const sanitizeText = (value) => String(value || '').replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/gi, '').trim();
 
 const getRichMessagePayload = (req) => {
     const body = typeof req.body?.body === 'string' ? sanitizeText(req.body.body) : '';

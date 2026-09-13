@@ -268,7 +268,11 @@ const SessionTimeout = ({ t }) => {
             warningTimerRef.current = window.setTimeout(() => setShowWarning(true), warningMs);
             expiryTimerRef.current = window.setTimeout(expire, expiryMs);
         };
+        let lastActivityTime = 0;
         const handleActivity = () => {
+            const now = Date.now();
+            if (now - lastActivityTime < 10000) return;
+            lastActivityTime = now;
             if (!warningOpenRef.current) schedule();
         };
 

@@ -507,7 +507,7 @@ const reconcileInstance = async (pool, payload, { remoteIp = null } = {}) => {
         );
 
         await writeAudit(client, {
-            eventType: 'INSTANCE_RECEIVED',
+            eventType: payload.EventType === 'StableStudy' ? 'STUDY_IMPORTED' : 'INSTANCE_RECEIVED',
             accessionNumber,
             studyInstanceUid: effectiveStudyUid,
             remoteIp,

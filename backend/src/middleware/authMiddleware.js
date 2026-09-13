@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { getActiveEmergencyGrant } = require('../services/emergencyAccessService');
@@ -27,22 +28,40 @@ const enforcePasswordChange = (req, res, next) => {
 
 const authenticatePersonalAccessToken = async (req, res, next, token) => {
     if (!authDatabase) return res.status(503).json({ error: 'Authentication service unavailable' });
-    const prefix = `${token.substring(0, 15)}...`;
-    const result = await authDatabase.query(`
+
+    // 1. Fast O(1) indexed SHA-256 hash lookup (sub-millisecond)
+    const sha256Hash = crypto.createHash('sha256').update(token).digest('hex');
+    let result = await authDatabase.query(`
         SELECT at.token_id, at.token_hash, at.access_level,
                u.user_id, u.role, u.email, u.full_name, u.must_change_password
         FROM api_tokens at
         JOIN users u ON u.user_id = at.user_id AND u.is_active = TRUE
-        WHERE at.prefix = $1
-    `, [prefix]);
+        WHERE at.token_hash = $1
+    `, [sha256Hash]);
 
-    let matched;
-    for (const candidate of result.rows) {
-        if (await bcrypt.compare(token, candidate.token_hash)) {
-            matched = candidate;
-            break;
+    let matched = result.rows[0] || null;
+
+    // 2. Backwards compatibility fallback for legacy bcrypt tokens
+    if (!matched) {
+        const prefix = `${token.substring(0, 15)}...`;
+        const legacyResult = await authDatabase.query(`
+            SELECT at.token_id, at.token_hash, at.access_level,
+                   u.user_id, u.role, u.email, u.full_name, u.must_change_password
+            FROM api_tokens at
+            JOIN users u ON u.user_id = at.user_id AND u.is_active = TRUE
+            WHERE at.prefix = $1
+        `, [prefix]);
+
+        for (const candidate of legacyResult.rows) {
+            if (candidate.token_hash.startsWith('$2') && await bcrypt.compare(token, candidate.token_hash)) {
+                matched = candidate;
+                // Upgrade to SHA-256 opportunistically
+                authDatabase.query('UPDATE api_tokens SET token_hash = $1 WHERE token_id = $2', [sha256Hash, candidate.token_id]).catch(() => {});
+                break;
+            }
         }
     }
+
     if (!matched) return res.status(403).json({ error: 'Invalid Token' });
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && matched.access_level !== 'read_write') {
         return res.status(403).json({ error: 'Token is read-only', code: 'TOKEN_READ_ONLY' });

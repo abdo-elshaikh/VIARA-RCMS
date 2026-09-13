@@ -9,6 +9,7 @@ const {
 const { getWorkingHours, assertWithinWorkingHours } = require('../services/schedulingService');
 const { decrypt } = require('../utils/crypto');
 const { logAction } = require('../services/auditService');
+const { triggerMwlRegeneration } = require('../services/pacsMwlService');
 const crypto = require('crypto');
 
 const generateOrderNumber = () => {
@@ -721,6 +722,7 @@ const createAppointment = (db) => async (req, res, next) => {
                 });
             }
 
+            try { triggerMwlRegeneration(db); } catch {}
             res.status(201).json(appointment);
         } catch (error) {
             try { await client.query('ROLLBACK'); } catch (rbErr) { /* ignore */ }
@@ -1144,6 +1146,7 @@ const updateAppointment = (db) => async (req, res, next) => {
             });
         }
 
+        try { triggerMwlRegeneration(db); } catch {}
         res.json(result.rows[0]);
     } catch (error) {
         if (client) {
@@ -1228,6 +1231,7 @@ const markNoShow = (db) => async (req, res, next) => {
             channels: ['InApp', 'Email']
         });
 
+        try { triggerMwlRegeneration(db); } catch {}
         res.json(result.rows[0]);
     } catch (error) {
         if (client) {
@@ -1341,6 +1345,7 @@ const rescheduleAppointment = (db) => async (req, res, next) => {
                 reschedule_reason: reason || 'N/A'
             }
         });
+        try { triggerMwlRegeneration(db); } catch {}
         res.json(result.rows[0]);
     } catch (error) {
         if (client) {
@@ -1593,6 +1598,7 @@ const cancelAppointment = (db) => async (req, res, next) => {
             variables: { order_number: result.rows[0].order_number, cancellation_reason: reason || 'Cancelled by staff' }
         });
 
+        try { triggerMwlRegeneration(db); } catch {}
         res.json({
             message: 'Appointment cancelled; its history was preserved',
             matchingWaitlistCount
@@ -1673,9 +1679,17 @@ const getAppointments = (db) => async (req, res, next) => {
         const queryParams = [];
         if (date) {
             queryParams.push(date);
+            // Sargable day window (index-friendly range instead of ::date casts
+            // on the column). Branch 1 matches the session-timezone (UTC) day,
+            // branch 2 the center-timezone day — union preserves the previous
+            // OR-of-casts semantics exactly while letting idx_appointments_start_time
+            // serve both branches through BitmapOr.
             query += ` AND (
-                a.start_time::date = $${queryParams.length}
-                OR (a.start_time AT TIME ZONE COALESCE(NULLIF((SELECT setting_value FROM system_settings WHERE setting_key = 'center.timezone'), ''), 'Africa/Cairo'))::date = $${queryParams.length}
+                (a.start_time >= $${queryParams.length}::date AND a.start_time < $${queryParams.length}::date + interval '1 day')
+                OR (
+                    a.start_time >= ($${queryParams.length}::date::timestamp AT TIME ZONE COALESCE(NULLIF((SELECT setting_value FROM system_settings WHERE setting_key = 'center.timezone'), ''), 'Africa/Cairo'))
+                    AND a.start_time < (($${queryParams.length}::date::timestamp AT TIME ZONE COALESCE(NULLIF((SELECT setting_value FROM system_settings WHERE setting_key = 'center.timezone'), ''), 'Africa/Cairo')) + interval '1 day')
+                )
             )`;
         }
         if (startDate) {

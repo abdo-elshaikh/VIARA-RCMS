@@ -2,21 +2,20 @@
 
 -- 1. Insert demo users
 -- Demo user passwords are provisioned by deployment/CI and must not be committed as plaintext.
+-- Each demo account uses a per-user bcrypt hash generated at deployment time; this file only
+-- provisions a random, non-login placeholder that is force-replaced by scripts/resetDemoAccounts.js
+-- (or the JS seeders) before the environment is handed to any human.
 INSERT INTO users (full_name, email, password_hash, role, is_active)
-VALUES 
-('System Admin', 'admin@VIARA.com', '***REMOVED***', 'Admin', TRUE),
-('Dr. Alice Smith', 'alice@VIARA.com', '***REMOVED***', 'Radiologist', TRUE),
-('Front Desk', 'reception@VIARA.com', '***REMOVED***', 'Receptionist', TRUE),
-('Cashier Desk', 'cashier@VIARA.com', '***REMOVED***', 'Cashier', TRUE),
-('Finance User', 'accountant@VIARA.com', '***REMOVED***', 'Accountant', TRUE),
-('HR Manager', 'hr@VIARA.com', '***REMOVED***', 'HR', TRUE),
-('Lead Technician', 'tech@VIARA.com', '***REMOVED***', 'Technician', TRUE),
-('Charge Nurse', 'nurse@VIARA.com', '***REMOVED***', 'Nurse', TRUE)
-ON CONFLICT (email) DO UPDATE SET
-    full_name = EXCLUDED.full_name,
-    password_hash = EXCLUDED.password_hash,
-    role = EXCLUDED.role,
-    is_active = EXCLUDED.is_active;
+VALUES
+('System Admin', 'admin@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Admin', FALSE),
+('Dr. Alice Smith', 'alice@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Radiologist', FALSE),
+('Front Desk', 'reception@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Receptionist', FALSE),
+('Cashier Desk', 'cashier@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Cashier', FALSE),
+('Finance User', 'accountant@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Accountant', FALSE),
+('HR Manager', 'hr@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'HR', FALSE),
+('Lead Technician', 'tech@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Technician', FALSE),
+('Charge Nurse', 'nurse@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Nurse', FALSE)
+ON CONFLICT (email) DO NOTHING;
 
 -- 2. Insert Modalities (Machines)
 INSERT INTO modalities (name, type, room_number, status)

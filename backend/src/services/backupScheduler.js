@@ -37,16 +37,20 @@ const runScheduledBackup = async (db) => {
             target: { type: 'backups', label: backup.filename },
             details: {
                 filename: backup.filename,
-                size: backup.size || backup.sizeBytes || null,
-                checksum: backup.checksum || null,
-                offsiteReplicated: replicationResult.replicated,
+                size: backup.size_bytes ?? backup.size ?? backup.sizeBytes ?? null,
+                checksum: backup.checksum || replicationResult.checksum || null,
+                offsiteReplicated: Boolean(replicationResult.replicated),
                 ...(replicationResult.error ? { offsiteError: replicationResult.error } : {}),
             },
         });
         return { skipped: false, backup };
     } finally {
         if (lockAcquired) {
-            await client.query('SELECT pg_advisory_unlock($1)', [LOCK_ID]);
+            try {
+                await client.query('SELECT pg_advisory_unlock($1)', [LOCK_ID]);
+            } catch (unlockErr) {
+                logger.error(`Failed to release backup advisory lock: ${unlockErr.message}`);
+            }
         }
         client.release();
     }

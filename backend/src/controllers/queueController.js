@@ -129,6 +129,8 @@ const hasEmergencyTaskVisibility = (user = {}) => Boolean(
 );
 
 const publishTaskAssignment = (event, assignment) => {
+    // Claim/assign/release/complete all mutate queue state: drop memoized KPIs.
+    invalidateQueueKpiCache();
     const payload = {
         exam_id: assignment.exam_id,
         task_role: assignment.task_role,
@@ -141,6 +143,9 @@ const publishTaskAssignment = (event, assignment) => {
 };
 
 const publishQueueTaskChange = (row, event = 'CLINICAL_TASK_UPDATED') => {
+    // Every mutation that reaches this publish point changed queue state, so
+    // memoized KPI aggregates must not be served stale.
+    invalidateQueueKpiCache();
     const taskRole = roleForStation(row.current_station);
     const assignment = taskRole ? assignmentFromRow(row, taskRole) : null;
     const payload = {
@@ -175,6 +180,31 @@ const notifyClinicalTask = (db, role, assigneeId, payload) => {
         });
     }
     return triggerEventForRole(db, 'ExamStatusChanged', role, payload);
+};
+
+// Short-lived memoization of the queue KPI aggregate (the statement re-runs the
+// full filtered queue query). Invalidated on every queue mutation; bounded TTL
+// guards against clock-skew edge cases.
+const QUEUE_KPI_CACHE_TTL_MS = 10_000;
+const queueKpiCache = new Map();
+
+const getQueueKpiAggregate = async (db, kpiQuery, kpiValues) => {
+    const cacheKey = JSON.stringify(kpiValues);
+    const cached = queueKpiCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < QUEUE_KPI_CACHE_TTL_MS) {
+        return cached.value;
+    }
+    const kpiResult = await db.query(kpiQuery, kpiValues);
+    const value = kpiResult.rows[0] || {};
+    if (queueKpiCache.size >= 300) {
+        queueKpiCache.clear();
+    }
+    queueKpiCache.set(cacheKey, { at: Date.now(), value });
+    return value;
+};
+
+const invalidateQueueKpiCache = () => {
+    queueKpiCache.clear();
 };
 
 const getQueue = (db) => async (req, res, next) => {
@@ -518,9 +548,13 @@ const getQueue = (db) => async (req, res, next) => {
         `;
         values.push(limit, offset);
 
-        const [result, kpiResult] = await Promise.all([
+        // The KPI statement re-runs the full filtered queue query. Every
+        // workstation polls this endpoint frequently, so short-lived memoized
+        // KPIs (invalidated by any queue mutation) halve the hottest database
+        // path in the system while keeping tab counters effectively live.
+        const [result, kpiAggregate] = await Promise.all([
             db.query(query, values),
-            db.query(kpiQuery, kpiValues)
+            getQueueKpiAggregate(db, kpiQuery, kpiValues)
         ]);
         const rows = result.rows.map(row => {
             const mapped = {
@@ -549,7 +583,7 @@ const getQueue = (db) => async (req, res, next) => {
             return mapped;
         });
 
-        const aggregate = kpiResult.rows[0] || {};
+        const aggregate = kpiAggregate || {};
         const kpis = {
             total: Number(aggregate.total || 0),
             assignedToMe: Number(aggregate.assigned_to_me || 0),

@@ -58,6 +58,7 @@ import { getInvoiceCoverageCategory, getContractRequirementsChecklist, toLocalDa
 import Pagination from '../ui/Pagination';
 import { getPaginationState } from '../../utils/pagination';
 import { getErrorMessage } from '../../utils/getErrorMessage';
+import { escapeHtml } from '../../utils/financialReportExport';
 import { generateUUID } from '../../utils/uuid';
 import { selectCurrentUser } from '../../store/authSlice';
 import { getEffectivePermissions } from '../../utils/effectivePermissions';
@@ -87,6 +88,22 @@ const StatusPill = ({ status }) => {
         </span>
     );
 };
+
+const LoadingRows = ({ label }) => (
+    <div className="space-y-2" role="status" aria-live="polite">
+        <span className="sr-only">{label}</span>
+        {[0, 1, 2].map((row) => (
+            <div key={row} className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/60 p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
+                <span className="h-8 w-8 shrink-0 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
+                <div className="flex-1 space-y-1.5">
+                    <span className="block h-3 w-1/3 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                    <span className="block h-2.5 w-1/4 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                </div>
+                <span className="h-3 w-14 shrink-0 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+            </div>
+        ))}
+    </div>
+);
 
 const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
     const { t, i18n } = useTranslation('reception');
@@ -266,6 +283,16 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
         if (invoiceSummary) {
             const grossBilled = Number(invoiceSummary.gross_billed || 0);
             const collected = Number(invoiceSummary.collected || 0);
+            const byMethodRaw = invoiceSummary.by_method || {};
+            const byMethod = Object.fromEntries(
+                Object.entries(byMethodRaw).map(([method, total]) => [method, Number(total || 0)])
+            );
+            const rails = {
+                cash: byMethod.Cash || 0,
+                card: (byMethod.Card || 0) + (byMethod['Credit Card'] || 0),
+                wallet: (byMethod.Wallet || 0) + (byMethod['Bank Transfer'] || 0) + (byMethod.Installment || 0) + (byMethod.Corporate || 0),
+            };
+            const hasMethodBreakdown = Object.keys(byMethodRaw).length > 0;
             return {
                 collected,
                 outstanding: Number(invoiceSummary.outstanding || 0),
@@ -280,6 +307,8 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
                 pendingCount: Number(invoiceSummary.pending_count || 0),
                 refundedCount: Number(invoiceSummary.refunded_count || 0),
                 voidedCount: Number(invoiceSummary.voided_count || 0),
+                rails,
+                hasMethodBreakdown,
             };
         }
         let collected = 0;
@@ -330,6 +359,8 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
             pendingCount,
             refundedCount,
             voidedCount,
+            rails: null,
+            hasMethodBreakdown: false,
         };
     }, [invoiceSummary, invoices]);
 
@@ -502,12 +533,12 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
                         ${invoices.slice(0, 50).map((inv, idx) => `
                             <tr>
                                 <td>${idx + 1}</td>
-                                <td><strong>${inv.invoice_number || '-'}</strong></td>
-                                <td>${inv.patient_name || '-'}</td>
+                                <td><strong>${escapeHtml(inv.invoice_number)}</strong></td>
+                                <td>${escapeHtml(inv.patient_name)}</td>
                                 <td style="text-align:end; font-family:monospace;">${Number(inv.patient_payable_amount ?? inv.total_amount ?? 0).toFixed(2)}</td>
                                 <td style="text-align:end; font-family:monospace; color:#16a34a;">${Number(inv.paid_amount || 0).toFixed(2)}</td>
                                 <td style="text-align:end; font-family:monospace; color:${Number(inv.balance_amount || 0) > 0 ? '#d97706' : '#64748b'}; font-weight:bold;">${Number(inv.balance_amount || 0).toFixed(2)}</td>
-                                <td style="text-align:center;">${inv.invoice_status || '-'}</td>
+                                <td style="text-align:center;">${escapeHtml(inv.invoice_status)}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -516,7 +547,7 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
                 <div class="signatures">
                     <div class="sig-block">
                         <p><strong>${isRtl ? 'مسؤول الخزينة / أمين الصندوق' : 'Cashier Officer'}</strong></p>
-                        <p style="font-size:11px; color:#64748b;">${user?.name || user?.username || (isRtl ? 'أمين الصندوق المناوب' : 'Duty Cashier')}</p>
+                        <p style="font-size:11px; color:#64748b;">${escapeHtml(user?.name || user?.username || (isRtl ? 'أمين الصندوق المناوب' : 'Duty Cashier'))}</p>
                         <div class="sig-line"></div>
                     </div>
                     <div class="sig-block">
@@ -1269,7 +1300,11 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
                                 <div className="min-w-0">
                                     <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{t('billing.statement.cashRail', { defaultValue: 'نقدًا بالخزينة' })}</p>
                                     <p className="font-mono text-sm font-black text-slate-900 dark:text-white">
-                                        {(receptionShift || currentShift)?.collected_amount ? Number((receptionShift || currentShift).collected_amount).toFixed(2) : (kpis.collected * 0.7).toFixed(2)} EGP
+                                        {kpis.hasMethodBreakdown
+                                            ? `${kpis.rails.cash.toFixed(2)} EGP`
+                                            : (((receptionShift || currentShift)?.collected_amount != null)
+                                                ? `${Number((receptionShift || currentShift).collected_amount).toFixed(2)} EGP`
+                                                : '—')}
                                     </p>
                                 </div>
                             </div>
@@ -1281,7 +1316,7 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
                                 <div className="min-w-0">
                                     <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{t('billing.statement.cardRail', { defaultValue: 'بطاقات دفع POS' })}</p>
                                     <p className="font-mono text-sm font-black text-slate-900 dark:text-white">
-                                        {(kpis.collected * 0.25).toFixed(2)} EGP
+                                        {kpis.hasMethodBreakdown ? `${kpis.rails.card.toFixed(2)} EGP` : '—'}
                                     </p>
                                 </div>
                             </div>
@@ -1293,7 +1328,7 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
                                 <div className="min-w-0">
                                     <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{t('billing.statement.walletRail', { defaultValue: 'محافظ إلكترونية' })}</p>
                                     <p className="font-mono text-sm font-black text-slate-900 dark:text-white">
-                                        {(kpis.collected * 0.05).toFixed(2)} EGP
+                                        {kpis.hasMethodBreakdown ? `${kpis.rails.wallet.toFixed(2)} EGP` : '—'}
                                     </p>
                                 </div>
                             </div>

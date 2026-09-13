@@ -19,7 +19,9 @@ const DEFAULT_BATCH_SIZE = Number(process.env.PACS_RECON_QUEUE_BATCH_SIZE || 5);
  */
 async function enqueueReconciliation(db, payload, options = {}) {
     const { remoteIp = null } = options;
-    const { orthancInstanceId, studyInstanceUid, accessionNumber } = payload;
+    const orthancInstanceId = payload.orthancInstanceId || payload.OrthancInstanceId || null;
+    const studyInstanceUid = payload.studyInstanceUid || payload.StudyInstanceUID || null;
+    const accessionNumber = payload.accessionNumber || payload.AccessionNumber || null;
 
     await db.query(`
         INSERT INTO ${QUEUE_TABLE} (

@@ -44,6 +44,9 @@ __pycache__/
 backend/backups/
 *.dump
 
+# Patient documents & chat attachments (PHI) must never be committed
+backend/uploads/
+
 *.playwright-mcp
 *.kilo
 

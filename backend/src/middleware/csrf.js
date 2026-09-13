@@ -39,6 +39,12 @@ function csrfProtection() {
             return next();
         }
 
+        const authHeader = req.headers.authorization;
+        if (typeof authHeader === 'string' && /^Bearer\s+VIARA_live_/i.test(authHeader.trim())) {
+            ensureCsrfCookie(req, res);
+            return next();
+        }
+
         const cookieToken = req.cookies?.[CSRF_COOKIE_NAME];
         const headerToken = req.headers[CSRF_HEADER_NAME];
 

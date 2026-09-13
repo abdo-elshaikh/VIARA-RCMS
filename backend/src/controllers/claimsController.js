@@ -41,7 +41,7 @@ const boundedInteger = (value, fallback, max) => {
 
 const getClaims = (db) => async (req, res, next) => {
     try {
-        const { status, providerId, patientId, rejectedOnly, limit = 100, offset = 0 } = req.query;
+        const { status, providerId, patientId, rejectedOnly, branchId, limit = 100, offset = 0 } = req.query;
         const pageLimit = Math.max(1, boundedInteger(limit, 100, 500));
         const pageOffset = boundedInteger(offset, 0, Number.MAX_SAFE_INTEGER);
         const values = [];
@@ -54,6 +54,14 @@ const getClaims = (db) => async (req, res, next) => {
             LEFT JOIN invoices i ON c.invoice_id = i.invoice_id
             WHERE 1=1
         `;
+
+        const userBranchId = req.user?.branch_id || req.user?.branchId;
+        const isGlobalUser = ['Developer', 'Admin'].includes(req.user?.role);
+        const targetBranchId = (isGlobalUser && branchId) ? branchId : userBranchId;
+        if (targetBranchId) {
+            query += ` AND c.branch_id = $${param++}::uuid`;
+            values.push(targetBranchId);
+        }
 
         if (rejectedOnly === 'true') {
             query += ` AND c.status = 'Rejected'`;
@@ -197,7 +205,7 @@ const createClaim = (db) => async (req, res, next) => {
             data.claimReferenceNumber || null,
             expectedAmount,
             req.user.user_id,
-            invoice?.branch_id || DEFAULT_BRANCH_ID,
+            invoice?.branch_id || data.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID,
             invoice?.currency_code || 'EGP'
         ]);
 
@@ -491,7 +499,7 @@ const updateClaimStatus = (db) => async (req, res, next) => {
 
 const exportClaims = (db) => async (req, res, next) => {
     try {
-        const { status, providerId, patientId, startDate, endDate, format = 'json' } = req.query;
+        const { status, providerId, patientId, startDate, endDate, format = 'json', branchId } = req.query;
         const values = [];
         let param = 1;
         let query = `
@@ -510,6 +518,14 @@ const exportClaims = (db) => async (req, res, next) => {
             LEFT JOIN patient_insurance_policies pol ON c.policy_id = pol.policy_id
             WHERE 1=1
         `;
+
+        const userBranchId = req.user?.branch_id || req.user?.branchId;
+        const isGlobalUser = ['Developer', 'Admin'].includes(req.user?.role);
+        const targetBranchId = (isGlobalUser && branchId) ? branchId : userBranchId;
+        if (targetBranchId) {
+            query += ` AND c.branch_id = $${param++}::uuid`;
+            values.push(targetBranchId);
+        }
 
         if (status) {
             query += ` AND c.status = $${param++}::varchar`;

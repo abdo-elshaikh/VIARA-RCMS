@@ -24,7 +24,7 @@ export const sanitizeSpreadsheetCell = (value) => {
     return /^[=+\-@]/.test(text.trimStart()) ? `'${text}` : text;
 };
 
-const escapeHtml = (value) => normalize(value)
+export const escapeHtml = (value) => normalize(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

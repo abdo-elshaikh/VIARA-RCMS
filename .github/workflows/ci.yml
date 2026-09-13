@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (tests + audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Dependency audit (fail on high/critical)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Tests
+        run: npm test
+
+  frontend:
+    name: Frontend (lint + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Lint (max-warnings 0)
+        run: npm run lint
+      - name: Tests
+        run: npm test
+
+  portal:
+    name: Portal (typecheck + lint + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Tests
+        run: npm test
+
+  locales:
+    name: Locale contract (en/ar parity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Check locales
+        run: node scripts/check-locales.mjs
+
+  no-secrets:
+    name: Guard (no PHI uploads / no committed secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No patient upload artifacts tracked
+        run: |
+          if git ls-files -- 'backend/uploads/**' | grep -q .; then
+            echo "::error::backend/uploads contains tracked files (PHI risk)"
+            exit 1
+          fi
+      - name: No suspicious secret fallbacks in seeders
+        run: |
+          ! grep -RnE "ENCRYPTION_KEY \|\| '|BLIND_INDEX_KEY \|\| '|DATABASE_URL \|\| 'postgres" database/ backend/seed.js
