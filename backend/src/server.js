@@ -521,61 +521,21 @@ app.get('/api/csrf-token', (req, res) => {
     res.json({ ok: true });
 });
 
-const httpRequestDurationMs = new Map();
-const activeConnections = { count: 0, total: 0 };
-
-const metricsMiddleware = (req, res, next) => {
-    const start = process.hrtime.bigint();
-    const connId = `${req.method}:${req.path}`;
-    const count = activeConnections.count + 1;
-    activeConnections.count = count;
-    activeConnections.total += 1;
-    res.on('close', () => {
-        activeConnections.count = Math.max(0, activeConnections.count - 1);
-    });
-    res.on('finish', () => {
-        const elapsedNs = Number(process.hrtime.bigint() - start);
-        const elapsedMs = elapsedNs / 1e6;
-        const existing = httpRequestDurationMs.get(connId) || { count: 0, sum: 0, min: Infinity, max: 0 };
-        httpRequestDurationMs.set(connId, {
-            count: existing.count + 1,
-            sum: existing.sum + elapsedMs,
-            min: Math.min(existing.min, elapsedMs),
-            max: Math.max(existing.max, elapsedMs),
-        });
-    });
-    next();
-};
+// Central Prometheus exporter (see src/config/metrics.js): bounded route
+// labels, real histogram buckets, status label, process/pool/backup metrics.
+const { register: metricsRegistry, metricsMiddleware, setDbPool } = require('./config/metrics');
 
 app.use(metricsMiddleware);
+setDbPool(pool);
 
-app.get('/metrics', (req, res) => {
-    const lines = [];
-    lines.push('# HELP VIARA_http_requests_total Total number of HTTP requests received');
-    lines.push('# TYPE VIARA_http_requests_total counter');
-    let totalRequests = 0;
-    for (const [path, data] of httpRequestDurationMs) {
-        lines.push(`VIARA_http_requests_total{method="${path}"} ${data.count}`);
-        totalRequests += data.count;
+app.get('/metrics', async (req, res) => {
+    try {
+        res.set('Content-Type', metricsRegistry.contentType);
+        res.set('Cache-Control', 'no-store');
+        res.send(await metricsRegistry.metrics());
+    } catch (error) {
+        res.status(500).end();
     }
-    if (totalRequests === 0) {
-        lines.push('VIARA_http_requests_total{method="none"} 0');
-    }
-    lines.push('# HELP VIARA_http_request_duration_seconds HTTP request latency in seconds');
-    lines.push('# TYPE VIARA_http_request_duration_seconds histogram');
-    for (const [path, data] of httpRequestDurationMs) {
-        lines.push(`VIARA_http_request_duration_seconds_count{method="${path}"} ${data.count}`);
-        lines.push(`VIARA_http_request_duration_seconds_sum{method="${path}"} ${(data.sum / 1000).toFixed(6)}`);
-    }
-    lines.push('# HELP VIARA_active_connections Number of in-flight HTTP requests');
-    lines.push('# TYPE VIARA_active_connections gauge');
-    lines.push(`VIARA_active_connections ${activeConnections.count}`);
-    lines.push('# HELP VIARA_total_connections_total Total connections handled');
-    lines.push('# TYPE VIARA_total_connections_total counter');
-    lines.push(`VIARA_total_connections_total ${activeConnections.total}`);
-    res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
-    res.set('Cache-Control', 'no-store');
-    res.send(lines.join('\n') + '\n');
 });
 
 // Auth Routes (Public) - with rate limiting and validation

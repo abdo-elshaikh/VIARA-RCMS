@@ -27,11 +27,11 @@ export const systemApi = api.injectEndpoints({
             providesTags: ['Analytics'],
         }),
         getPeakHoursAnalytics: builder.query({
-            query: (params) => ({ url: '/v1/analytics/peak-hours', params }),
+            query: (params) => ({ url: '/analytics/peak-hours', params }),
             providesTags: ['Analytics'],
         }),
         getTopProceduresAnalytics: builder.query({
-            query: (params) => ({ url: '/v1/analytics/top-procedures', params }),
+            query: (params) => ({ url: '/analytics/top-procedures', params }),
             providesTags: ['Analytics'],
         }),
         getIntegrations: builder.query({

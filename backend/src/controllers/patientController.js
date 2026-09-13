@@ -268,10 +268,13 @@ const createPatient = (db) => async (req, res, next) => {
             required: true
         });
 
+        const patientData = { ...result.rows[0] };
+        delete patientData.password_hash;
+        delete patientData.password;
+
         res.status(201).json({
             message: 'Patient created successfully',
-            data: result.rows[0],
-            portalPassword: generatedPassword
+            data: patientData
         });
 
     } catch (error) {
@@ -434,6 +437,43 @@ const getPatients = (db) => async (req, res, next) => {
                     Other: Number(genderCounts.other_count || 0)
                 }
             }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getPatientById = (db) => async (req, res, next) => {
+    try {
+        const { id } = req.params;
+
+        const patientValues = [id];
+        const patientScope = clinicalPatientScope(req.user.role, 'p', `$${patientValues.length + 1}`);
+        if (patientScope) patientValues.push(req.user.user_id);
+        const patientQuery = `
+            SELECT p.*, manager.full_name as assigned_manager_name
+            FROM patients p
+            LEFT JOIN users manager ON p.assigned_manager_id = manager.user_id
+            WHERE p.patient_id = $1
+              ${patientScope ? `AND ${patientScope}` : ''}
+        `;
+        const patientResult = await db.query(patientQuery, patientValues);
+
+        if (patientResult.rows.length === 0) {
+            return next(new AppError('Patient not found', 404));
+        }
+
+        const p = patientResult.rows[0];
+        const decryptedPatient = {
+            ...decryptPatientRow(p),
+            portal_enabled: Boolean(p.password_hash)
+        };
+        delete decryptedPatient.password_hash;
+        delete decryptedPatient.password;
+
+        res.json({
+            success: true,
+            data: decryptedPatient
         });
     } catch (error) {
         next(error);
@@ -889,6 +929,7 @@ const generatePortalPassword = (db) => async (req, res, next) => {
 module.exports = {
     createPatient,
     getPatients,
+    getPatientById,
     getPatientHistory,
     updatePatient,
     getDuplicatePatients,

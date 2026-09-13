@@ -67,7 +67,7 @@ describe('RoleManagement', () => {
         // Modules are collapsed by default — expand the Patients module first.
         fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
 
-        const switches = screen.getAllByRole('switch', { name: /View Patients.*Radiologist/i });
+        const switches = screen.getAllByRole('switch', { name: /View patient list.*Radiologist/i });
 
         fireEvent.click(switches[0]);
         expect(screen.getByText(/1 pending changes/i)).toBeInTheDocument();

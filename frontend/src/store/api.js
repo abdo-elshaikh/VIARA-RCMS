@@ -90,6 +90,7 @@ export const {
     useReviewPortalProfileUpdateRequestMutation,
     useUpdatePatientMutation,
     useDeletePatientMutation,
+    useGetPatientByIdQuery,
     useGetPatientHistoryQuery,
     useGetPatientDuplicatesQuery,
     useMergePatientsMutation,

@@ -14,6 +14,7 @@ const {
 const {
     createPatient,
     getPatients,
+    getPatientById,
     updatePatient,
     deletePatient,
     getDuplicatePatients,
@@ -86,6 +87,15 @@ module.exports = function patientRoutes(pool, auditService) {
         authorizeRole(['Admin']),
         hasPermission(pool, 'DELETE_PATIENTS'),
         deletePatient(pool)
+    );
+
+    // Get single patient by ID
+    router.get('/:id',
+        authenticateToken,
+        auditRead(auditService, { resourceTable: 'patients' }),
+        patientDataLimiter,
+        authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Technician', 'Nurse', 'Marketing']),
+        getPatientById(pool)
     );
 
     // Patient clinical examination history

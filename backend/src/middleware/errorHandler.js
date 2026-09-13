@@ -62,7 +62,7 @@ const errorHandler = (err, req, res, next) => {
 
     if (error.details) errorResponse.details = error.details;
 
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV === 'development' && process.env.EXPOSE_DEV_STACK === 'true') {
         errorResponse.stack = error.stack;
     }
 

@@ -59,6 +59,10 @@ export const patientApi = api.injectEndpoints({
             }),
             invalidatesTags: ['PortalReviewRequests'],
         }),
+        getPatientById: builder.query({
+            query: (id) => `/patients/${id}`,
+            providesTags: (result, error, id) => [{ type: 'Patients', id }],
+        }),
         getPatientHistory: builder.query({
             query: (id) => `/patients/${id}/history`,
             providesTags: (result, error, id) => [{ type: 'PatientHistory', id }],
