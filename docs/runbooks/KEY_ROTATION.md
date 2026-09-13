@@ -72,8 +72,10 @@ git filter-repo --invert-paths --path backend/uploads --path database/seed.js --
 # still needed (now sanitized), re-add the sanitized versions afterwards.
 
 # Option B — BFG (simpler, keeps files, strips only secret *strings*)
-bfg --replace-text <(echo '***REMOVED***>>>REMOVED') \
-    --replace-text <(echo '***REMOVED***>>>REMOVED') \
+# Build replacements.txt LOCALLY from the key backups — never paste real key
+# values into committed documentation or shell history:
+#   node -e "const fs=require('fs');const e={};for(const l of fs.readFileSync('.env.backup-<stamp>','utf8').split(/\r?\n/)){const m=l.match(/^(ENCRYPTION_KEY|BLIND_INDEX_KEY)=(.+)$/);if(m)e[m[1]]=m[2]}fs.writeFileSync('replacements.txt',Object.values(e).map(v=>v+'>>>REMOVED').join('\n')+'\n')"
+bfg --replace-text replacements.txt \
     --delete-folders uploads
 git reflog expire --expire=now --all
 git gc --prune=now --aggressive
