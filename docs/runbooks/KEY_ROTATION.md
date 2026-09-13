@@ -1,5 +1,27 @@
 # Key Rotation & History Scrub Runbook — VIARA
 
+> **EXECUTION LOG (2026-09-13/14):** steps 2, 3 (partial) and the GitHub push
+> were executed against the local deployment and `origin/spectacled-foundation`.
+> Completed: keys rotated via `backend/scripts/rotateKeys.js` (keyring
+> `default` → `rot-2026091316152`, 151/151 patients re-encrypted, blind indexes
+> rebuilt, e2e blind search verified, backend boots `READY`), DB superuser
+> password and `ORTHANC_PASSWORD` rotated, history scrubbed with
+> `git filter-repo` (PHI uploads removed + 7 secret patterns replaced, verified
+> zero-occurrence) and force-pushed to `origin/spectacled-foundation`.
+> **Still open — requires repository owner action:**
+> 1. `main` is branch-protected (no force-push). Temporarily allow force-push
+>    (Settings → Rules/Rulesets), then run:
+>    `git -C D:\RCMS-scrub.git push --force https://github.com/abdo-elshaikh/RCMS.git refs/heads/main:refs/heads/main`
+>    then re-enable protection. Local `main` + kilo worktree branches still
+>    reference pre-scrub history until migrated the same way.
+> 2. `refs/pull/1/head` retains old commits server-side (immutable). Request
+>    GitHub Support GC, or delete + recreate the repository for guaranteed
+>    removal.
+> 3. Migration checksum note: `001_add_roles.sql` was scrubbed (shared bcrypt
+>    hash removed). Any OTHER environment with it applied must refresh its
+>    `schema_migrations.checksum` (see execution scripts) or startup
+>    migration gating will fail.
+
 **Status:** REQUIRED BEFORE PRODUCTION. Code-side hardening is complete (no more
 committed fallbacks); this runbook covers the operational steps that must run on
 the deployment itself. The incident: `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, a DB
