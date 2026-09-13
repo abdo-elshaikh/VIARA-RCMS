@@ -135,11 +135,11 @@ VIARA maps services to dedicated network boundaries with granular resource limit
 | **Public Portal** | `VIARA_portal` | `80` | `127.0.0.1:5174` | Public / Internet | HTTP / Patient & Doctor Portal |
 | **Backend API** | `VIARA_backend` | `3000` | `127.0.0.1:3000` | Internal App | HTTP / REST API, Auth & Business Logic |
 | **OHIF Viewer** | `VIARA_ohif` | `80` | `127.0.0.1:3005` | Staff LAN / VPN | HTTP / Zero-Footprint DICOMweb Viewer |
-| **PACS DICOM** | `VIARA_orthanc` | `4242` | `0.0.0.0:4242` | Modality Subnet | DICOM C-STORE, C-ECHO, C-FIND (MWL) |
+| **PACS DICOM** | `VIARA_orthanc` | `4242` | `${PACS_DICOM_BIND:-127.0.0.1}:4242` | Modality Subnet (set `PACS_DICOM_BIND` to the LAN/VPN IP for scanners) | DICOM C-STORE, C-ECHO, C-FIND (MWL) |
 | **PACS REST** | `VIARA_orthanc` | `8042` | `127.0.0.1:8042` | Backend Loopback | HTTP REST API (Orthanc Admin & WADO) |
 | **AI Worker** | `VIARA_pacs_ai_worker` | `8000` | `127.0.0.1:3015` | Backend Loopback | HTTP / PyTorch Image Inference Engine |
 | **PostgreSQL** | `VIARA_db` | `5432` | `127.0.0.1:5432` | Database Net | PostgreSQL 15 Core Database |
-| **ClamAV** | `VIARA_clamav` | `3310` | `127.0.0.1:3310` | Scanner Net | TCP Socket / Antivirus Upload Scanning |
+| **ClamAV** | `VIARA_clamav` | `3310` | *not published* | Internal `data`/`scanner-egress` networks only | TCP Socket / Antivirus Upload Scanning |
 
 ---
 

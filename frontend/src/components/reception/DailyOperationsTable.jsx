@@ -232,27 +232,38 @@ const DailyOperationsTable = ({
         return 'Scheduled';
     };
 
-    // Build merged rows from appointments, queueItems, and invoices
+    // Build merged rows from appointments, queueItems, and invoices.
+    // Index lookups by exam/appointment id first so merging stays O(N+M)
+    // instead of a find() scan per row on every poll.
     const rows = useMemo(() => {
+        const queueByExam = new Map();
+        const queueByAppt = new Map();
+        (queueItems || []).forEach((item) => {
+            if (item.exam_id && !queueByExam.has(item.exam_id)) queueByExam.set(item.exam_id, item);
+            if (item.appointment_id && !queueByAppt.has(item.appointment_id)) queueByAppt.set(item.appointment_id, item);
+        });
+        const invoiceByAppt = new Map();
+        const invoiceByExam = new Map();
+        (invoices || []).forEach((inv) => {
+            if (inv.appointment_id && !invoiceByAppt.has(inv.appointment_id)) invoiceByAppt.set(inv.appointment_id, inv);
+            if (inv.exam_id && !invoiceByExam.has(inv.exam_id)) invoiceByExam.set(inv.exam_id, inv);
+        });
+
         const matchedExamIds = new Set();
         const matchedApptIds = new Set();
 
         const result = (appointments || []).map((appointment) => {
-            const queue = (queueItems || []).find((item) =>
-                (item.exam_id && appointment.exam_id && item.exam_id === appointment.exam_id) ||
-                (item.appointment_id && appointment.appointment_id && item.appointment_id === appointment.appointment_id)
-            );
+            const queue = (appointment.exam_id && queueByExam.get(appointment.exam_id)) ||
+                queueByAppt.get(appointment.appointment_id);
             if (queue?.exam_id) matchedExamIds.add(queue.exam_id);
             if (queue?.appointment_id) matchedApptIds.add(queue.appointment_id);
             if (appointment.exam_id) matchedExamIds.add(appointment.exam_id);
             if (appointment.appointment_id) matchedApptIds.add(appointment.appointment_id);
 
-            const invoice = (invoices || []).find((inv) =>
-                (appointment.appointment_id && inv.appointment_id === appointment.appointment_id) ||
-                (appointment.exam_id && inv.exam_id === appointment.exam_id) ||
-                (queue?.exam_id && inv.exam_id === queue.exam_id) ||
-                (queue?.appointment_id && inv.appointment_id === queue.appointment_id)
-            );
+            const invoice = (appointment.appointment_id && invoiceByAppt.get(appointment.appointment_id)) ||
+                (appointment.exam_id && invoiceByExam.get(appointment.exam_id)) ||
+                (queue?.exam_id && invoiceByExam.get(queue.exam_id)) ||
+                (queue?.appointment_id && invoiceByAppt.get(queue.appointment_id));
 
             return {
                 appointment,
@@ -265,10 +276,8 @@ const DailyOperationsTable = ({
             const alreadyMatched = (queue.exam_id && matchedExamIds.has(queue.exam_id)) ||
                 (queue.appointment_id && matchedApptIds.has(queue.appointment_id));
             if (!alreadyMatched) {
-                const invoice = (invoices || []).find((inv) =>
-                    (queue.exam_id && inv.exam_id === queue.exam_id) ||
-                    (queue.appointment_id && inv.appointment_id === queue.appointment_id)
-                );
+                const invoice = (queue.exam_id && invoiceByExam.get(queue.exam_id)) ||
+                    (queue.appointment_id && invoiceByAppt.get(queue.appointment_id));
                 result.push({
                     queue,
                     invoice

@@ -1,10 +1,11 @@
 import React, { Component } from 'react';
 import { AlertTriangle, Home, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import Button from './ui/Button';
 
 const IS_DEV = import.meta.env.DEV;
 
-class ErrorBoundary extends Component {
+class ErrorBoundaryBase extends Component {
     constructor(props) {
         super(props);
         this.state = { hasError: false, error: null, errorInfo: null };
@@ -21,8 +22,6 @@ class ErrorBoundary extends Component {
         if (IS_DEV) {
             console.error('Error caught by boundary:', error, errorInfo);
         }
-
-        // TODO: Send to error reporting service (Sentry, LogRocket, etc.)
     }
 
     handleReset = () => {
@@ -34,6 +33,7 @@ class ErrorBoundary extends Component {
     };
 
     render() {
+        const { t } = this.props;
         if (this.state.hasError) {
             return (
                 <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
@@ -41,24 +41,24 @@ class ErrorBoundary extends Component {
                         <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8 text-center">
                             {/* Error Icon */}
                             <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
-                                <AlertTriangle className="w-8 h-8 text-red-600" />
+                                <AlertTriangle className="w-8 h-8 text-red-600" aria-hidden="true" />
                             </div>
 
                             {/* Title */}
                             <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                                Something went wrong
+                                {t('states.errorBoundary.title')}
                             </h2>
 
                             {/* Message */}
                             <p className="text-slate-600 mb-6">
-                                We're sorry for the inconvenience. The application encountered an unexpected error.
+                                {t('states.errorBoundary.description')}
                             </p>
 
                             {/* Error Details (Development Only) */}
                             {IS_DEV && this.state.error && (
                                 <details className="mb-6 text-left">
                                     <summary className="cursor-pointer text-sm font-medium text-slate-700 hover:text-slate-900 mb-2">
-                                        Error Details (Dev Only)
+                                        {t('states.errorBoundary.devDetails')}
                                     </summary>
                                     <div className="bg-slate-100 rounded-lg p-4 overflow-auto max-h-40">
                                         <code className="text-xs text-red-600 block whitespace-pre-wrap">
@@ -76,8 +76,8 @@ class ErrorBoundary extends Component {
                                     className="flex-1"
                                     onClick={this.handleReset}
                                 >
-                                    <RefreshCw className="w-4 h-4 mr-2" />
-                                    Try Again
+                                    <RefreshCw className="w-4 h-4 mr-2" aria-hidden="true" />
+                                    {t('states.errorBoundary.tryAgain')}
                                 </Button>
 
                                 <Button
@@ -85,14 +85,14 @@ class ErrorBoundary extends Component {
                                     className="flex-1"
                                     onClick={this.handleGoHome}
                                 >
-                                    <Home className="w-4 h-4 mr-2" />
-                                    Go Home
+                                    <Home className="w-4 h-4 mr-2" aria-hidden="true" />
+                                    {t('states.errorBoundary.goHome')}
                                 </Button>
                             </div>
 
                             {/* Support Info */}
                             <p className="mt-6 text-xs text-slate-500">
-                                If this problem persists, please contact support.
+                                {t('states.errorBoundary.support')}
                             </p>
                         </div>
                     </div>
@@ -103,5 +103,15 @@ class ErrorBoundary extends Component {
         return this.props.children;
     }
 }
+
+/** Localized root error boundary for the staff application. */
+const ErrorBoundary = ({ children }) => {
+    const { t } = useTranslation('system');
+    return (
+        <ErrorBoundaryBase t={t}>
+            {children}
+        </ErrorBoundaryBase>
+    );
+};
 
 export default ErrorBoundary;

@@ -27,98 +27,95 @@ class DashboardService {
      */
     async getReceptionistStats() {
         try {
-            // Today's check-ins count
-            const checkInsQuery = `
-                SELECT COUNT(*) as count
-                FROM examinations
-                WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
-                  AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
-            `;
-            const checkInsResult = await this.db.query(checkInsQuery);
+            // All dashboard queries are independent: run them concurrently so a
+            // poll costs one round-trip of latency instead of eight sequential ones.
+            const [
+                checkInsResult,
+                yesterdayCheckInsResult,
+                appointmentsResult,
+                waitingResult,
+                completedResult,
+                yesterdayCompletedResult,
+                averageWaitResult,
+                flowResult,
+                sparklineData
+            ] = await Promise.all([
+                this.db.query(`
+                    SELECT COUNT(*) as count
+                    FROM examinations
+                    WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                      AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
+                `),
+                this.db.query(`
+                    SELECT COUNT(*) as count
+                    FROM examinations
+                    WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL} - interval '1 day'
+                      AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                `),
+                this.db.query(`
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(CASE WHEN status = 'Confirmed' THEN 1 END) as pending
+                    FROM appointments
+                    WHERE start_time >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                      AND start_time < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
+                `),
+                this.db.query(`
+                    SELECT COUNT(*) as count
+                    FROM examinations
+                    WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                      AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
+                      AND exam_started_at IS NULL
+                      AND status <> 'Finalized'
+                `),
+                this.db.query(`
+                    SELECT COUNT(*) as count
+                    FROM examinations
+                    WHERE status = 'Finalized'
+                      AND report_finalized_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                      AND report_finalized_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
+                `),
+                this.db.query(`
+                    SELECT COUNT(*) as count
+                    FROM examinations
+                    WHERE status = 'Finalized'
+                      AND report_finalized_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL} - interval '1 day'
+                      AND report_finalized_at < ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                `),
+                this.db.query(`
+                    SELECT COALESCE(
+                        ROUND(AVG(EXTRACT(EPOCH FROM (exam_started_at - arrived_at)) / 60)),
+                        0
+                    ) as minutes
+                    FROM examinations
+                    WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                      AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
+                    AND arrived_at IS NOT NULL
+                    AND exam_started_at IS NOT NULL
+                    AND exam_started_at >= arrived_at
+                `),
+                this.db.query(`
+                    SELECT
+                        TO_CHAR(start_time, 'HH24:00') as time,
+                        COUNT(CASE WHEN e.status IN ('Scheduled', 'Checked-in') THEN 1 END) as waiting,
+                        COUNT(CASE WHEN e.status IN ('Scanning', 'Reporting') THEN 1 END) as in_progress,
+                        COUNT(CASE WHEN e.status = 'Finalized' THEN 1 END) as completed
+                    FROM appointments a
+                    LEFT JOIN examinations e ON a.appointment_id = e.appointment_id
+                    WHERE a.start_time >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
+                      AND a.start_time < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
+                    GROUP BY TO_CHAR(start_time, 'HH24:00')
+                    ORDER BY time
+                `),
+                this.getWeeklySparkline('appointments')
+            ]);
+
             const todayCheckIns = parseInt(checkInsResult.rows[0].count);
-
-            // Yesterday's check-ins for comparison
-            const yesterdayCheckInsResult = await this.db.query(`
-                SELECT COUNT(*) as count
-                FROM examinations
-                WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL} - interval '1 day'
-                  AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL}
-            `);
             const yesterdayCheckIns = parseInt(yesterdayCheckInsResult.rows[0].count);
-
-            // Appointments count and pending
-            const appointmentsQuery = `
-                SELECT 
-                    COUNT(*) as total,
-                    COUNT(CASE WHEN status = 'Confirmed' THEN 1 END) as pending
-                FROM appointments
-                WHERE start_time >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
-                  AND start_time < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
-            `;
-            const appointmentsResult = await this.db.query(appointmentsQuery);
             const appointments = appointmentsResult.rows[0];
-
-            // Waiting room count (checked-in but not yet scanning/completed)
-            const waitingQuery = `
-                SELECT COUNT(*) as count
-                FROM examinations
-                WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
-                  AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
-                  AND exam_started_at IS NULL
-                  AND status <> 'Finalized'
-            `;
-            const waitingResult = await this.db.query(waitingQuery);
             const waitingRoom = parseInt(waitingResult.rows[0].count);
-
-            // Completed today
-            const completedQuery = `
-                SELECT COUNT(*) as count
-                FROM examinations
-                WHERE status = 'Finalized'
-                  AND report_finalized_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
-                  AND report_finalized_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
-            `;
-            const completedResult = await this.db.query(completedQuery);
             const completed = parseInt(completedResult.rows[0].count);
-
-            const yesterdayCompletedResult = await this.db.query(`
-                SELECT COUNT(*) as count
-                FROM examinations
-                WHERE status = 'Finalized'
-                  AND report_finalized_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL} - interval '1 day'
-                  AND report_finalized_at < ${CENTER_BUSINESS_MIDNIGHT_SQL}
-            `);
             const yesterdayCompleted = parseInt(yesterdayCompletedResult.rows[0].count);
-
-            const averageWaitQuery = `
-                SELECT COALESCE(
-                    ROUND(AVG(EXTRACT(EPOCH FROM (exam_started_at - arrived_at)) / 60)),
-                    0
-                ) as minutes
-                FROM examinations
-                WHERE arrived_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
-                  AND arrived_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
-                AND arrived_at IS NOT NULL
-                AND exam_started_at IS NOT NULL
-                AND exam_started_at >= arrived_at
-            `;
-            const averageWaitResult = await this.db.query(averageWaitQuery);
-
-            // Patient flow data (hourly breakdown)
-            const flowQuery = `
-                SELECT 
-                    TO_CHAR(start_time, 'HH24:00') as time,
-                    COUNT(CASE WHEN e.status IN ('Scheduled', 'Checked-in') THEN 1 END) as waiting,
-                    COUNT(CASE WHEN e.status IN ('Scanning', 'Reporting') THEN 1 END) as in_progress,
-                    COUNT(CASE WHEN e.status = 'Finalized' THEN 1 END) as completed
-                FROM appointments a
-                LEFT JOIN examinations e ON a.appointment_id = e.appointment_id
-                WHERE a.start_time >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
-                  AND a.start_time < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day'
-                GROUP BY TO_CHAR(start_time, 'HH24:00')
-                ORDER BY time
-            `;
-            const flowResult = await this.db.query(flowQuery);
 
             return {
                 todayCheckIns,
@@ -130,7 +127,7 @@ class DashboardService {
                 completedChange: this.calculatePercentageChange(completed, yesterdayCompleted),
                 averageWaitMinutes: parseInt(averageWaitResult.rows[0].minutes),
                 patientFlowData: flowResult.rows,
-                sparklineData: await this.getWeeklySparkline('appointments')
+                sparklineData
             };
         } catch (error) {
             logger.error('Error in getReceptionistStats:', error);

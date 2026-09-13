@@ -2,6 +2,11 @@ import { api } from '../baseApi';
 
 export const systemApi = api.injectEndpoints({
     endpoints: (builder) => ({
+        getDashboardStats: builder.query({
+            query: () => '/dashboard/stats',
+            providesTags: ['Dashboard'],
+            keepUnusedDataFor: 30,
+        }),
         getVolumeAnalytics: builder.query({
             query: (params) => ({ url: '/analytics/volume', params }),
             providesTags: ['Analytics'],

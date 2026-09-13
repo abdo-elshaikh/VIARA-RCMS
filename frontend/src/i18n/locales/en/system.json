@@ -24,6 +24,14 @@
       "checking": "Checking...",
       "retry": "Try again"
     },
+    "errorBoundary": {
+      "title": "Something went wrong",
+      "description": "We're sorry for the inconvenience. The application encountered an unexpected error.",
+      "devDetails": "Error Details (Dev Only)",
+      "tryAgain": "Try Again",
+      "goHome": "Go Home",
+      "support": "If this problem persists, please contact support."
+    },
     "unauthorized": {
       "eyebrow": "Access denied",
       "title": "This area is outside your permissions.",
