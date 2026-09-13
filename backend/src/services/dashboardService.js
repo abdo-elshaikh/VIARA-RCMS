@@ -740,7 +740,8 @@ class DashboardService {
                 WHERE e.modality_id = m.modality_id
                   AND e.exam_started_at IS NOT NULL
                   AND e.exam_completed_at IS NULL
-                  AND e.status <> 'Finalized'
+                  AND e.status NOT IN ('Finalized', 'Cancelled')
+                  AND e.exam_started_at >= NOW() - INTERVAL '12 hours'
                 ORDER BY e.exam_started_at DESC
                 LIMIT 1
             ) active_exam ON TRUE
@@ -750,17 +751,17 @@ class DashboardService {
         const turnaroundResult = await this.db.query(`
             SELECT
                 ROUND(AVG(EXTRACT(EPOCH FROM (exam_started_at - arrived_at)) / 60)
-                    FILTER (WHERE arrived_at IS NOT NULL AND exam_started_at >= arrived_at), 1) AS checkin_minutes,
-                COUNT(*) FILTER (WHERE arrived_at IS NOT NULL AND exam_started_at >= arrived_at)::int AS checkin_samples,
+                    FILTER (WHERE arrived_at IS NOT NULL AND exam_started_at >= arrived_at AND (exam_started_at - arrived_at) <= INTERVAL '12 hours'), 1) AS checkin_minutes,
+                COUNT(*) FILTER (WHERE arrived_at IS NOT NULL AND exam_started_at >= arrived_at AND (exam_started_at - arrived_at) <= INTERVAL '12 hours')::int AS checkin_samples,
                 ROUND(AVG(EXTRACT(EPOCH FROM (prep_completed_at - prep_started_at)) / 60)
-                    FILTER (WHERE prep_started_at IS NOT NULL AND prep_completed_at >= prep_started_at), 1) AS prep_minutes,
-                COUNT(*) FILTER (WHERE prep_started_at IS NOT NULL AND prep_completed_at >= prep_started_at)::int AS prep_samples,
+                    FILTER (WHERE prep_started_at IS NOT NULL AND prep_completed_at >= prep_started_at AND (prep_completed_at - prep_started_at) <= INTERVAL '6 hours'), 1) AS prep_minutes,
+                COUNT(*) FILTER (WHERE prep_started_at IS NOT NULL AND prep_completed_at >= prep_started_at AND (prep_completed_at - prep_started_at) <= INTERVAL '6 hours')::int AS prep_samples,
                 ROUND(AVG(EXTRACT(EPOCH FROM (exam_completed_at - exam_started_at)) / 60)
-                    FILTER (WHERE exam_started_at IS NOT NULL AND exam_completed_at >= exam_started_at), 1) AS acquisition_minutes,
-                COUNT(*) FILTER (WHERE exam_started_at IS NOT NULL AND exam_completed_at >= exam_started_at)::int AS acquisition_samples,
+                    FILTER (WHERE exam_started_at IS NOT NULL AND exam_completed_at >= exam_started_at AND (exam_completed_at - exam_started_at) <= INTERVAL '6 hours'), 1) AS acquisition_minutes,
+                COUNT(*) FILTER (WHERE exam_started_at IS NOT NULL AND exam_completed_at >= exam_started_at AND (exam_completed_at - exam_started_at) <= INTERVAL '6 hours')::int AS acquisition_samples,
                 ROUND(AVG(EXTRACT(EPOCH FROM (report_finalized_at - exam_completed_at)) / 60)
-                    FILTER (WHERE exam_completed_at IS NOT NULL AND report_finalized_at >= exam_completed_at), 1) AS reporting_minutes,
-                COUNT(*) FILTER (WHERE exam_completed_at IS NOT NULL AND report_finalized_at >= exam_completed_at)::int AS reporting_samples
+                    FILTER (WHERE exam_completed_at IS NOT NULL AND report_finalized_at >= exam_completed_at AND (report_finalized_at - exam_completed_at) <= INTERVAL '24 hours'), 1) AS reporting_minutes,
+                COUNT(*) FILTER (WHERE exam_completed_at IS NOT NULL AND report_finalized_at >= exam_completed_at AND (report_finalized_at - exam_completed_at) <= INTERVAL '24 hours')::int AS reporting_samples
             FROM examinations
             WHERE COALESCE(report_finalized_at, exam_completed_at, exam_started_at, arrived_at, created_at)
                 >= DATE_TRUNC('week', ${CENTER_BUSINESS_DATE_SQL})

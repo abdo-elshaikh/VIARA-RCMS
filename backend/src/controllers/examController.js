@@ -357,7 +357,7 @@ const getCaseReports = (db) => async (req, res, next) => {
                        e.queue_stage, e.current_station, e.clinical_indication,
                        e.provisional_diagnosis, e.icd_code, e.body_part, e.contrast_required,
                        a.start_time, a.end_time,
-                       p.mrn, p.gender, p.email_enc AS patient_email_enc, p.phone_enc, p.date_of_birth_enc,
+                       p.mrn, p.gender, p.date_of_birth_enc,
                        p.first_name_enc, p.last_name_enc, p.communication_preference,
                        p.consent_email, p.consent_sms, p.consent_whatsapp,
                        m.name AS modality_name, m.type AS modality_type, m.room_number,
@@ -415,12 +415,15 @@ const getCaseReports = (db) => async (req, res, next) => {
                 ...row,
                 patient_name: [decrypt(row.first_name_enc), decrypt(row.last_name_enc)].filter(Boolean).join(' '),
                 date_of_birth: decrypt(row.date_of_birth_enc),
-                patient_phone: decrypt(row.phone_enc)
             };
+            // Strip all PII fields — patient contact details are not needed for the
+            // case-reports list view and must not be sent to avoid PHI exposure.
             delete mapped.first_name_enc;
             delete mapped.last_name_enc;
             delete mapped.date_of_birth_enc;
             delete mapped.phone_enc;
+            delete mapped.patient_phone;   // decrypted phone — not needed in list
+            delete mapped.patient_email_enc; // encrypted email — still PHI in transit
             return mapped;
         });
 

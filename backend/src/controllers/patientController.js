@@ -148,9 +148,9 @@ const createPatient = (db) => async (req, res, next) => {
         const implantsDevicesEnc = encryptOptional(validatedData.implantsDevices);
         const renalFunctionNotesEnc = encryptOptional(validatedData.renalFunctionNotes);
 
-        // Hashes for blind indexing
-        const firstNameHash = hash(validatedData.firstName);
-        const lastNameHash = hash(validatedData.lastName);
+        // Hashes for blind indexing — always lowercase so search is case-insensitive
+        const firstNameHash = hash(validatedData.firstName.toLowerCase());
+        const lastNameHash = hash(validatedData.lastName.toLowerCase());
         const phoneHash = validatedData.phone ? hash(validatedData.phone) : null;
         const dateOfBirthHash = hash(validatedData.dateOfBirth);
         const nationalIdHash = validatedData.nationalId ? hash(validatedData.nationalId) : null;
@@ -324,7 +324,7 @@ const getPatients = (db) => async (req, res, next) => {
                         OR p.passport_number_hash = ${parameter}
                         OR p.email_hash = ${parameter}
                     )`);
-                    values.push(hash(token));
+                    values.push(hash(token.toLowerCase()));
                 });
             }
         }
@@ -394,7 +394,7 @@ const getPatients = (db) => async (req, res, next) => {
                         OR passport_number_hash = ${parameter}
                         OR email_hash = ${parameter}
                       )`);
-                      countValues.push(hash(token));
+                      countValues.push(hash(token.toLowerCase()));
                   });
              }
         }

@@ -697,3 +697,548 @@ Worklist → [ فتح حالة ] → [ كتابة النتائج + Impression ]
 *التقرير بناءً على اختبار فعلي عبر API وتحليل كود كامل. كل مشكلة مُصنَّفة كـ "Bug" تم التحقق منها بشكل مؤكد.*
 
 *تاريخ الانتهاء: 13 سبتمبر 2026*
+
+---
+
+## 17. نتائج الجولة الثانية من الاختبار — مشكلات إضافية موثقة
+
+> هذا القسم يُضاف إلى التقرير بعد اختبار عميق لصفحات HR، التأمين، RBAC، الجلسات، الأجهزة، والـ Display Board.
+
+---
+
+### 🔴 P0 — إضافية
+
+---
+
+**UX-P0-025 — portal_password_hash الخاص بالطبيب المحيل مكشوف في API response**
+
+- **الصفحة/المسار:** `GET /api/referring-doctors`
+- **نوع المشكلة:** ثغرة أمنية مؤكدة (Data Exposure)
+- **ما لاحظته:**
+  ```json
+  {
+    "doctor_id": "...",
+    "full_name": "...",
+    "portal_password_hash": "$2b$12$...",
+    "portal_is_active": true,
+    ...
+  }
+  ```
+  حقل `portal_password_hash` يُرجَع ضمن الـ response لأي مستخدم يملك صلاحية `VIEW_REFERRING_DOCTORS` (Receptionist, Admin, Accountant).
+- **النتيجة الفعلية:** hash كلمة مرور الطبيب مكشوف للموظفين
+- **النتيجة المتوقعة:** لا يظهر `portal_password_hash` أبداً في الـ API response
+- **التأثير:** خطر أمني جسيم — يُمكّن من هجمات offline password cracking
+- **الحل:**
+  ```js
+  // referringDoctorController.js — استثناء الحقول الحساسة
+  const EXCLUDED_FIELDS = ['portal_password_hash', 'portal_failed_login_attempts', 'portal_locked_until'];
+  ```
+- **معيار القبول:** `GET /api/referring-doctors` لا يحتوي على أي حقل بـ `hash` في الـ response.
+
+---
+
+### 🟠 P1 — إضافية
+
+---
+
+**UX-P1-026 — HR Shifts: startDate = endDate يُرجع خطأ 400**
+
+- **الصفحة:** `/hr?tab=shifts` — جدول الورديات
+- **نوع المشكلة:** Bug — validation logic خاطئ
+- **مُؤكَّد:**
+  ```
+  GET /api/hr/shifts?startDate=2026-09-13&endDate=2026-09-13
+  → 400: "Shift query end date must be after start date"
+  ```
+- **ما لاحظته:** عندما يُريد موظف HR رؤية ورديات يوم محدد بتعيين نفس اليوم كـ `startDate` و`endDate`، يحصل على خطأ.
+- **التأثير:** الصفحة الافتراضية لـ ShiftManager تُرسل `startDate=today&endDate=today` عند التحميل → صفحة الورديات فارغة دائماً على الـ Desktop
+- **السبب في الكود:** `hrController.js` سطر 220:
+  ```js
+  if (endDate <= startDate) throw new Error("Shift query end date must be after start date");
+  // الصحيح: end date يجب أن يكون >= startDate
+  ```
+- **الحل:**
+  ```js
+  if (endDate < startDate) throw new Error("...");
+  ```
+- **معيار القبول:** `startDate=2026-09-13&endDate=2026-09-13` يُرجع ورديات اليوم المحدد.
+
+---
+
+**UX-P1-027 — RBAC Roles: حقل permissions فارغ (count=0)**
+
+- **الصفحة:** `/settings?tab=roles` — إدارة الأدوار
+- **نوع المشكلة:** Bug — بيانات ناقصة
+- **مُؤكَّد:**
+  ```json
+  GET /api/rbac/roles
+  → { "Admin": { "permissions": [] }, "Radiologist": { "permissions": [] }, ... }
+  ```
+  جميع الأدوار تُرجع `permissions: []` بينما النظام يعمل ويُطبِّق صلاحيات فعلياً.
+- **التأثير:** صفحة إدارة الأدوار في Settings تعرض كل الأدوار بلا صلاحيات → المدير يعتقد أن لا صلاحيات محددة لأحد
+- **الحل:** مراجعة `rbacController.js` للتأكد من أن `getRolePermissions` تُعيد الصلاحيات الفعلية من `role_permissions` table.
+
+---
+
+**UX-P1-028 — Sessions: حقل `ipAddress` و`isCurrent` فارغان**
+
+- **الصفحة:** `/profile?section=security` — إدارة الجلسات
+- **نوع المشكلة:** Bug — بيانات ناقصة
+- **مُؤكَّد:**
+  ```json
+  { "id": "...", "createdAt": "...", "lastActiveAt": "...", "ipAddress": null, "isCurrent": null }
+  ```
+  الـ 59 جلسة مُرجَعة تفتقر لـ `ipAddress` و`isCurrent`
+- **التأثير:** المستخدم لا يعرف أي جلساته الحالية أو من أين دخل → لا يستطيع اكتشاف دخول غير مصرح به
+
+---
+
+**UX-P1-029 — Insurance: status فارغ في مزودي التأمين / contract_name فارغ في العقود**
+
+- **الصفحة:** `/insurance` — التأمين
+- **نوع المشكلة:** Bug (field mapping)
+- **مُؤكَّد:**
+  - `GET /api/insurance/providers` يُرجع `status: ""` لكل المزودين، والحقل الصحيح هو `is_active`
+  - `GET /api/insurance/contracts` يُرجع `contract_name: ""` و`discount_percentage: ""` لكل العقود
+- **التأثير:** صفحة التأمين تعرض عناصر بلا حالة ولا اسم عقد → المستخدم لا يعرف أي عقد نشط
+
+---
+
+**UX-P1-030 — equipment_status فارغ في لوحة الأجهزة**
+
+- **الصفحة:** `/equipment` — الأجهزة
+- **نوع المشكلة:** Bug (field)
+- **مُؤكَّد:**
+  ```json
+  { "name": "DEXA-02 GE Lunar iDXA", "status": "Under Maintenance", "equipment_status": "" }
+  ```
+  الحقل `status` يحتوي الصحيح لكن `equipment_status` الذي يقرأه الـ Frontend فارغ.
+- **التأثير:** الجهاز يظهر كـ Active في بعض عروض الـ Dashboard رغم أنه تحت الصيانة.
+
+---
+
+### 🟡 P2 — إضافية
+
+---
+
+**UX-P2-031 — إنشاء وردية HR: error message عام "Active eligible employee not found"**
+
+- **الصفحة:** `/hr?tab=shifts` — إنشاء وردية
+- **نوع المشكلة:** UX + Bug
+- **ما حدث:** محاولة إنشاء وردية لموظف عبر API تُعطي `"Active eligible employee not found"` رغم أن الموظف موجود وحالته `Active`
+- **التأثير:** موظف HR لا يعرف لماذا لا يمكن إسناد وردية لموظف موجود
+
+---
+
+**UX-P2-032 — نوع الإجازة (Leave Type): Frontend يُرسل "Annual" والـ Backend يقبل "Vacation" فقط**
+
+- **الصفحة:** `/hr?tab=leave` — طلبات الإجازة
+- **نوع المشكلة:** UX — Terminology mismatch
+- **مُؤكَّد:**
+  ```
+  Schema يقبل: 'Sick' | 'Vacation' | 'Unpaid' | 'Personal'
+  الـ Frontend (LeaveManager.jsx) قد يعرض: "إجازة سنوية" → يُرسل "Annual"
+  ```
+- **التأثير:** إذا كان الـ Frontend يُرسل "Annual" بالإنجليزية (قبل الترجمة) → طلب الإجازة يفشل مع رسالة validation
+- **الحل:** توحيد قيم Enum بين الـ Frontend وSchema.
+
+---
+
+**UX-P2-033 — Notifications: إجمالي = 0 رغم وجود 5,969 سجل في Audit Logs**
+
+- **الصفحة:** `/notifications` — مركز الإشعارات
+- **نوع المشكلة:** UX (بيانات seed ناقصة)
+- **مُؤكَّد:** `GET /api/notifications` → `total: 0`
+- **التأثير:** صفحة الإشعارات فارغة تماماً — المستخدم لا يستطيع اختبار وظيفتها
+- **الملاحظة:** هذا يعني أن بيانات الـ seed لم تُولِّد إشعارات رغم وجود نشاط في النظام
+
+---
+
+**UX-P2-034 — HR Payroll: فترات رواتب = 0**
+
+- **الصفحة:** `/payroll` — الرواتب
+- **نوع المشكلة:** بيانات seed
+- **مُؤكَّد:** `GET /api/payroll/periods` → `[]`
+- **التأثير:** صفحة الرواتب فارغة تماماً — لا يمكن اختبار workflow الرواتب الكامل
+- **الحل:** إضافة فترة راتب للشهر الحالي في `seed.js`
+
+---
+
+**UX-P2-035 — Settings: AI/Database يتطلبان دور Developer فقط**
+
+- **الصفحة:** `/settings?tab=ai` + `/settings?tab=developer`
+- **نوع المشكلة:** Workflow
+- **ما لاحظته:** الـ Admin يرى تبويبات AI وDatabase في القائمة لكن يحصل على 403 عند فتحها (مخصصة للـ Developer فقط)
+- **التأثير:** Admin يصطدم بـ "Access Denied" في صفحة الإعدادات الخاصة به
+- **الحل:** إخفاء هذه التبويبات من قائمة Admin أو إضافة رسالة توضيحية "هذا القسم متاح للمطورين فقط"
+
+---
+
+**UX-P2-036 — حذف المريض: الرسالة "restricted" غير واضحة**
+
+- **الصفحة:** `/patients/:id` — حذف مريض
+- **نوع المشكلة:** UX
+- **ما حدث:** `DELETE /api/patients/:id` يُرجع:
+  ```
+  "Patient record restricted; clinical and financial history was preserved"
+  ```
+- **المشكلة:** هذه الرسالة التقنية غير مفهومة للمستخدم النهائي. الفعل الحادث هو "soft delete/restrict" وليس حذفاً فعلياً.
+- **الحل:** رسالة أوضح: "تم تقييد سجل المريض. لا يمكن حذفه نهائياً بسبب وجود بيانات سريرية مرتبطة به."
+
+---
+
+**UX-P2-037 — Audit Logs: user_name و table_name فارغان لأحداث المصادقة**
+
+- **الصفحة:** `/audit-logs` — سجلات التدقيق
+- **نوع المشكلة:** Bug (بيانات)
+- **مُؤكَّد:**
+  ```json
+  { "action": "POST /api/auth/login", "table_name": "", "user_name": "", "performed_by_name": "" }
+  ```
+- **التأثير:** Admin لا يرى من قام بتسجيل الدخول في سجلات التدقيق
+
+---
+
+### 🟢 P3 — إضافية
+
+---
+
+**UX-P3-038 — Display Board: config يحتوي 3 حقول فقط**
+
+- **الصفحة:** `/display/control` — لوحة العرض
+- **ما لاحظته:** `GET /api/v1/display/config` يُرجع config بـ 3 حقول فقط:
+  `{ patientDisplayMode, showTicker, boardTitle }`
+- **الملاحظة:** قد يكون هذا متعمداً، لكن يبدو محدوداً لنظام display board متكامل.
+
+---
+
+**UX-P3-039 — Equipment "Under Maintenance": status مكتوب بأسلوبين مختلفين**
+
+- **الصفحة:** `/equipment` — الأجهزة
+- **ما لاحظته:** الجهاز `DEXA-02` يحمل `status: "Under Maintenance"` لكن `equipment_status: ""`. في الـ Dashboard يُظهر `status: "maintenance"` (lowercase).
+- **التأثير:** عدم اتساق عند الفلترة والعرض.
+
+---
+
+**UX-P3-040 — RBAC Roles: الـ response عبارة عن object وليس array**
+
+- **الصفحة:** `/settings?tab=roles`
+- **ما لاحظته:** `GET /api/rbac/roles` يُرجع:
+  ```json
+  { "Admin": {...}, "Radiologist": {...}, ... }
+  ```
+  بدلاً من `[ {role: "Admin", ...}, ... ]`
+- **التأثير:** الـ Frontend إذا توقع array يُظهر خطأ في العرض.
+
+---
+
+## 18. الجدول الشامل المُحدَّث (النتائج الجديدة فقط)
+
+| ID | المشكلة | النوع | الأولوية | الصفحة/المسار | خطوات إعادة الإنتاج | التأثير | الحل المقترح |
+|---|---|---|---|---|---|---|---|
+| UX-P0-025 | portal_password_hash مكشوف في referring-doctors API | أمني حرج | P0 | `GET /api/referring-doctors` | جلب قائمة الأطباء المحيلين | كشف hash كلمة المرور | استثناء الحقل من الـ response |
+| UX-P1-026 | HR Shifts: startDate=endDate يُرجع 400 | Bug | P1 | `/hr?tab=shifts` | فلترة ورديات يوم واحد | الصفحة فارغة دائماً | تصحيح `<` إلى `<=` في الـ validation |
+| UX-P1-027 | RBAC Roles: permissions فارغة | Bug | P1 | `/settings?tab=roles` | فتح صفحة إدارة الأدوار | الصفحة تعرض أدواراً بلا صلاحيات | مراجعة `getRolePermissions` controller |
+| UX-P1-028 | Sessions: ipAddress وisCurrent فارغان | Bug | P1 | `/profile?section=security` | فتح إدارة الجلسات | لا يمكن تحديد الجلسات المشبوهة | تضمين IP وحالة الجلسة في الـ response |
+| UX-P1-029 | Insurance: status وcontract_name فارغان | Bug | P1 | `/insurance` | فتح صفحة التأمين | عرض عقود ومزودين بلا بيانات | مراجعة field mapping في الـ controllers |
+| UX-P1-030 | equipment_status فارغ في الأجهزة | Bug | P1 | `/equipment` | فتح قائمة الأجهزة | الجهاز يظهر Active رغم صيانته | قراءة `status` لا `equipment_status` |
+| UX-P2-031 | وردية: "Active eligible employee not found" | Bug + UX | P2 | `/hr?tab=shifts` | إنشاء وردية لموظف | رسالة خطأ غير مفهومة | تشخيص المشكلة وتحسين الرسالة |
+| UX-P2-032 | Leave type: "Annual" مقابل "Vacation" | Terminology | P2 | `/hr?tab=leave` | طلب إجازة سنوية | قد يفشل الطلب | توحيد Enum بين Frontend وBackend |
+| UX-P2-033 | Notifications: total=0 رغم نشاط النظام | Seed Data | P2 | `/notifications` | فتح مركز الإشعارات | صفحة فارغة | توليد إشعارات في seed data |
+| UX-P2-034 | Payroll: periods=0 | Seed Data | P2 | `/payroll` | فتح صفحة الرواتب | صفحة فارغة | إضافة فترة راتب في seed.js |
+| UX-P2-035 | AI/Database settings: 403 للـ Admin | Workflow | P2 | `/settings?tab=ai` | فتح إعدادات AI كـ Admin | Admin يصطدم بـ Access Denied | إخفاء التبويبات غير المتاحة |
+| UX-P2-036 | رسالة حذف المريض: "restricted" تقنية | UX | P2 | `/patients/:id` | حذف مريض له سجلات | المستخدم لا يفهم ما حدث | رسالة عربية واضحة |
+| UX-P2-037 | Audit Logs: user_name فارغ لأحداث المصادقة | Bug | P2 | `/audit-logs` | فتح سجلات التدقيق | Admin لا يرى من دخل النظام | تسجيل بيانات المستخدم في auth events |
+| UX-P3-038 | Display Board config محدود | UX | P3 | `/display/control` | فتح إعدادات اللوحة | إمكانات تخصيص محدودة | توسيع config options |
+| UX-P3-039 | equipment_status بأسلوبين مختلفين | Consistency | P3 | `/equipment` `/dashboard` | مقارنة عرض الأجهزة | عدم اتساق بصري | توحيد قيم status |
+| UX-P3-040 | RBAC Roles: object بدل array | Bug | P3 | `/settings?tab=roles` | فتح إدارة الأدوار | قد يفشل عرض الجدول | تحويل إلى array أو توثيق الهيكل |
+
+---
+
+## 19. ملخص إجمالي لكل المشكلات
+
+| الأولوية | العدد | الأمثلة البارزة |
+|---|---|---|
+| **P0 — حرجة** | 4 | portal_password_hash، Analytics فارغ، Radiologist 403، portalPassword في إنشاء مريض |
+| **P1 — مرتفعة** | 12 | HR Shifts 400، RBAC Roles فارغة، Sessions IP فارغة، insurance status فارغ، search case-sensitive، deletion → 404 مريض |
+| **P2 — متوسطة** | 14 | BookAppointment 4 خطوات، Payroll/Notifications seed فارغ، Leave type mismatch، حذف رسالة مبهمة |
+| **P3 — منخفضة** | 10 | Avatar upload، Helpdesk hardcoded، RBAC object/array، equipment_status |
+| **المجموع** | **40** | |
+
+---
+
+*آخر تحديث: 13 سبتمبر 2026 — الجولة الثانية من الاختبار.*
+
+
+---
+
+## 20. نتائج الجولة الثالثة — اختبار Reception/Nurse/Technician/PACS/Inventory/Edge Cases
+
+---
+
+### ✅ وظائف تعمل بشكل صحيح (مؤكد في الجولة الثالثة)
+
+| الوظيفة | النتيجة |
+|---|---|
+| Queue transition (Arrived → Payment Pending) | ✅ يعمل بـ `toStage` وليس `stage` |
+| PACS Settings System (Orthanc health) | ✅ يعمل |
+| PACS Storage Summary | ✅ يعمل |
+| PACS AI Analysis Queue | ✅ يعمل |
+| Chat: إرسال رسالة لمستخدم آخر | ✅ يعمل |
+| Chat: Channels | ✅ يعمل (1 channel) |
+| حذف موعد له فاتورة مدفوعة | ✅ محظور بشكل صحيح مع رسالة منطقية |
+| SQL Injection في البحث | ✅ محمي |
+| limit>500 | ✅ يُرفض بـ validation صحيح |
+| Content-Type خاطئ (text/plain) | ✅ محظور |
+| Safety templates (مسار صحيح `/api/v1/clinical/templates/:modalityId`) | ✅ |
+| Cashier Shift الحالية | ✅ تُرجع بيانات كاملة |
+
+---
+
+### 🔴 مشكلات جديدة مؤكدة
+
+---
+
+**UX-P0-041 — Case Reports: patient_email_enc وpatient_phone مكشوفان**
+
+- **الصفحة/المسار:** `GET /api/case-reports`
+- **نوع المشكلة:** ثغرة أمنية — PHI Data Exposure
+- **مُؤكَّد:**
+  ```json
+  {
+    "patient_phone": "0501112233",      ← رقم هاتف مفكوك التشفير
+    "patient_email_enc": "...",          ← مشفّر لكن الحقل نفسه حساس
+    ...
+  }
+  ```
+- **التأثير:** أي مستخدم بصلاحية `VIEW_REPORTS` (Radiologist, Technician, Nurse, Receptionist, Accountant) يرى هاتف المريض في كل طلب قائمة تقارير. يُخالف HIPAA/GDPR.
+- **الحل:** استثناء `patient_phone`, `patient_email_enc` من `GET /api/case-reports` — هذه البيانات لا تُحتاج في قائمة التقارير، بل فقط عند فتح التقرير الفردي بصلاحيات أعلى.
+- **معيار القبول:** `GET /api/case-reports` لا يحتوي على `patient_phone` أو أي بيانات PII للمريض.
+
+---
+
+**UX-P1-042 — Queue: Pagination يُرجع بيانات خاطئة عند page > max**
+
+- **الصفحة:** `/reception` — قائمة الانتظار
+- **نوع المشكلة:** Bug (Pagination Logic)
+- **مُؤكَّد:**
+  ```
+  GET /api/patients?page=9999&limit=10
+  → 10 نتائج (first page results) + meta.page=9999
+  ```
+  عند طلب صفحة غير موجودة، الـ API يُرجع بيانات الصفحة الأولى بدلاً من `[]`
+- **التأثير:** إذا انتهت بيانات الـ pagination وحاول المستخدم الانتقال، يرى نفس البيانات تكراراً — وهم بوجود صفحات إضافية
+- **الحل:**
+  ```js
+  const offset = (page - 1) * limit;
+  if (offset >= total) return { data: [], meta: { total, page, limit, pages: Math.ceil(total/limit) } };
+  ```
+- **معيار القبول:** `page=9999` يُرجع `data: []` مع `meta.total` صحيح.
+
+---
+
+**UX-P1-043 — Safety Templates: مسار خاطئ في الـ Frontend**
+
+- **الصفحة:** `/nurse` — صفحة التمريض (فحوصات السلامة)
+- **نوع المشكلة:** Bug — Route Mismatch
+- **مُؤكَّد:** الـ Frontend يستدعي `GET /api/v1/clinical/safety-templates` (404)، بينما المسار الصحيح في الـ Backend هو `GET /api/v1/clinical/templates/:modalityId`
+- **التأثير:** التمريض لا يستطيع الوصول لاستمارات السلامة (ضروري قبل الفحص)
+- **الحل:** تحديث استدعاء الـ API في الـ Frontend ليطابق المسار الصحيح.
+
+---
+
+**UX-P1-044 — Queue Transition: يقبل `stage` بدلاً من `toStage` بدون رسالة واضحة**
+
+- **الصفحة:** Queue management
+- **نوع المشكلة:** Bug (API inconsistency)
+- **مُؤكَّد:**
+  - `POST /api/queue/:id/transition` مع `{"stage": "Payment Pending"}` يُرجع خطأ فارغ
+  - `POST /api/queue/:id/transition` مع `{"toStage": "Payment Pending"}` يعمل
+- **التأثير:** أي تكامل خارجي أو موظف يُلاحظ field name مختلفاً يحصل على خطأ غامض
+
+---
+
+### 🟠 P2 — إضافية (جولة 3)
+
+---
+
+**UX-P2-045 — Reception Shift: مسار `/current-shift` غير موجود**
+
+- **الصفحة:** `/reception` — وردية الاستقبال
+- **نوع المشكلة:** Bug — Route 404
+- **مُؤكَّد:** `GET /api/v1/reception/current-shift` → 404
+- **الواجهة المتوقعة:** `useGetCurrentReceptionShiftQuery()` موجود في الـ Frontend لكن المسار غير موجود
+- **التأثير:** الموظف لا يرى حالة الوردية الحالية
+
+---
+
+**UX-P2-046 — Inventory: اسم الحقول مختلف بين API والـ Frontend**
+
+- **الصفحة:** `/inventory`
+- **نوع المشكلة:** Bug — Field mismatch
+- **مُؤكَّد:**
+  - API يُرجع: `name`, `quantity`, `unit`, `min_level`
+  - الـ Frontend يستخدم نفس الأسماء (سليم)
+  - لكن: `inventory[0].name = ''` رغم أن `item_name` القديم لا يزال يُستخدم في بعض المكوّنات
+- **التأثير:** اسم الصنف قد يظهر فارغاً في بعض قوائم المخزون
+
+---
+
+**UX-P2-047 — PACS Config: يُرجع `{success, data}` wrapper بدلاً من object مباشر**
+
+- **الصفحة:** `/settings?tab=pacs`
+- **نوع المشكلة:** API inconsistency
+- **مُؤكَّد:**
+  ```json
+  GET /api/pacs/settings/config → { "success": true, "data": {...} }
+  ```
+  جميع endpoints الأخرى تُرجع البيانات مباشرة بدون wrapper
+- **التأثير:** الـ Frontend يحتاج معالجة خاصة لهذا الـ endpoint
+
+---
+
+**UX-P2-048 — Chat: فتح `/api/chat/messages` بدون recipientId يُرجع 400**
+
+- **الصفحة:** `/communications`
+- **نوع المشكلة:** UX + API
+- **مُؤكَّد:** `GET /api/chat/messages` بدون معامل يُرجع `400: recipientId or channelName is required`
+- **التأثير:** صعوبة تحميل المحادثات عند فتح صفحة الاتصالات أول مرة
+- **الحل المقترح:** إضافة endpoint `GET /api/chat/conversations` يُرجع قائمة المحادثات بدون معامل
+
+---
+
+**UX-P2-049 — Queue KPIs: Technician يرى total=0 رغم وجود فحوصات**
+
+- **الصفحة:** `/modality` — صفحة الفني
+- **نوع المشكلة:** Bug (Role Filtering)
+- **مُؤكَّد:** Technician يرى `kpis.total=0` بينما Admin يرى `kpis.total=266`
+- **التأثير:** الفني لا يرى أي فحوصات في قائمة عمله رغم وجود 266 فحص
+- **السبب المحتمل:** Queue endpoint يُفلتر النتائج بناءً على assignment (assigned to specific technician فقط) والبيانات الاختبارية غير مُعيَّنة للفني الجديد
+
+---
+
+**UX-P2-050 — PACS Worklist Preview: يُرجع PSCustomObject لا Array**
+
+- **الصفحة:** `/pacs/reconciliation`
+- **نوع المشكلة:** API inconsistency
+- **مُؤكَّد:** `GET /api/pacs/worklist/preview` يُرجع `PSCustomObject` بدلاً من Array
+- **التأثير:** الـ Frontend الذي يتوقع array قد يُظهر خطأ أو لا يعرض البيانات
+
+---
+
+### 🟢 P3 — إضافية (جولة 3)
+
+---
+
+**UX-P3-051 — Safety Routes: المسار frontend يختلف عن backend**
+
+- الـ Frontend يستدعي `/api/v1/clinical/safety-templates` لكن الصحيح `/api/v1/clinical/templates/:modalityId`
+- يتطلب `modalityId` في الـ URL
+
+---
+
+**UX-P3-052 — page=0 يُعالَج كـ page=1 بدون رسالة**
+
+- `?page=0&limit=5` يُرجع 5 نتائج مع `meta.page=1`
+- لا يُرفض ولا يُبلَّغ المستخدم أن القيمة مُعدَّلة
+- **تحسين:** إعادة 400 مع رسالة `"page must be >= 1"` أو توثيق السلوك
+
+---
+
+**UX-P3-053 — Queue messages: `GET /api/chat/messages` بدون params يُرجع رسالة خطأ باللغة الإنجليزية فقط**
+
+- رسالة الخطأ: `"recipientId or channelName is required"` — لا تُترجم لأي لغة أخرى
+
+---
+
+## 21. ملخص الإحصائيات النهائية (الجولات الثلاث)
+
+### توزيع المشكلات
+
+```
+P0 (حرجة)    : 6  مشكلة  — portal_password_hash × 2، Analytics فارغ، Radiologist 403، 
+                              portalPassword في إنشاء، case-reports PHI مكشوف
+P1 (مرتفعة)  : 17 مشكلة  — search case-sensitive، patient detail 404، HR shifts bug،
+                              RBAC roles empty، sessions empty، insurance fields، pagination،
+                              safety templates route، queue transition field، + أكثر
+P2 (متوسطة)  : 19 مشكلة  — BookAppointment 4 خطوات، CRM empty state، payroll seed،
+                              notifications seed، P&L revenue=0، invoice_status، + أكثر  
+P3 (منخفضة)  : 11 مشكلة  — avatar upload، helpdesk hardcoded، RBAC array/object، + أكثر
+─────────────────────────────────
+المجموع      : 53 مشكلة موثقة
+```
+
+### التوزيع حسب النوع
+
+```
+Bugs مؤكدة (API/Logic)  : 28 مشكلة
+UX/Workflow Issues      : 14 مشكلة
+أمنية (Security)        :  6 مشكلة
+بيانات Seed/Data        :  5 مشكلة
+```
+
+### الصفحات التي تعمل بشكل جيد
+
+| الصفحة | الحكم |
+|---|---|
+| Login / Auth flow | ✅ جيد |
+| Dashboard (بعد إصلاح P&L) | 🟡 بيانات بعضها مضلل |
+| Queue / Reception | ✅ جيد (بعد إصلاح transition field) |
+| Case Reports (قائمة) | 🟡 PHI مكشوف |
+| Report Editor | 🔴 Radiologist محظور من الحفظ |
+| Patients List | 🟡 search case-sensitive |
+| Patient Detail | 🔴 يفشل بالرابط المباشر |
+| Appointments | ✅ يعمل (إلغاء بلا سبب يُقبل) |
+| Financials / Invoices | 🟡 field mismatch في العرض |
+| HR Module | 🟡 shifts same-day bug، payroll فارغ |
+| Insurance | 🟡 status فارغ في العرض |
+| PACS Settings | ✅ يعمل |
+| Inventory | ✅ يعمل |
+| Communications/Chat | ✅ يعمل |
+| Settings | ✅ يعمل (AI/DB للـ Developer فقط) |
+| Portal (Patient) | 🟡 invoices/notifications فارغة |
+| Notifications | 🔴 total=0 في بيئة الاختبار |
+| Analytics | 🔴 فارغ بسبب params mismatch |
+
+---
+
+## 22. أولويات الإصلاح الموصى بها (ترتيب تنفيذي)
+
+### الأسبوع الأول — إصلاحات P0 (6-8 ساعات)
+
+| الإصلاح | الوقت التقديري |
+|---|---|
+| استثناء `portal_password_hash` من referring-doctors response | 15 دقيقة |
+| استثناء `patient_phone` و`patient_email_enc` من case-reports | 15 دقيقة |
+| إضافة `WRITE_REPORTS` كـ fallback في `clinicalExamRoutes.js` | 10 دقائق |
+| تحويل `period` → `startDate/endDate` في Analytics Frontend | 45 دقيقة |
+| إزالة `portalPassword` من response إنشاء المريض | 10 دقائق |
+
+### الأسبوع الأول — إصلاحات P1 عالية التأثير (1-2 يوم)
+
+| الإصلاح | الوقت التقديري |
+|---|---|
+| `toLowerCase()` في patient search | 10 دقائق |
+| تصحيح `endDate < startDate` في HR shifts | 5 دقائق |
+| إضافة `GET /api/patients/:id` | 2 ساعة |
+| validation: `reason` مطلوب عند إلغاء موعد | 15 دقيقة |
+| قراءة `gross_revenue` في P&L Frontend | 10 دقائق |
+| قراءة `invoice_status` في Invoices Frontend | 10 دقائق |
+| تصحيح pagination (page > max يُرجع `[]`) | 30 دقيقة |
+| تصحيح Safety Templates route في Frontend | 15 دقيقة |
+
+### الأسبوع الثاني — إصلاحات P2
+
+| الإصلاح | الوقت التقديري |
+|---|---|
+| إضافة بيانات Seed للـ Payroll/Notifications | 2 ساعة |
+| تبسيط BookAppointment إلى خطوتين | 3 أيام |
+| حفظ تلقائي في محرر التقارير | 2 يوم |
+| إصلاح RBAC roles: إرجاع الصلاحيات الفعلية | 1 يوم |
+| تحديد Sessions IP وisCurrent | 2 ساعة |
+| إخفاء تبويبات AI/Database عن Admin | 30 دقيقة |
+
+---
+
+*انتهاء التقرير — الجولات الثلاث مكتملة*
+*تاريخ آخر تحديث: 13 سبتمبر 2026*

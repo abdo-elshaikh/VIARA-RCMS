@@ -205,7 +205,7 @@ const PortalAccessCard = ({ enabled, mrn, loginUrl, password, canOperate, loadin
                         {password ? (
                             <dd className="mt-1.5 flex items-center gap-2">
                                 <code className="min-w-0 flex-1 truncate rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-2 font-mono text-xs font-black text-[var(--VIARA-ink)]" dir="ltr">
-                                    {showPassword ? password : '••••••••••••••••••••••••'}
+                                    {showPassword ? password : '\u2022'.repeat(24)}
                                 </code>
                                 <button type="button" onClick={() => setShowPassword(value => !value)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] transition hover:text-[var(--VIARA-accent)]" aria-label={showPassword ? t('page.hidePassword') : t('page.showPassword')}>
                                     {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}

@@ -529,6 +529,13 @@ app.use(metricsMiddleware);
 setDbPool(pool);
 
 app.get('/metrics', async (req, res) => {
+    const configuredToken = process.env.METRICS_TOKEN;
+    if (configuredToken) {
+        const auth = req.headers.authorization;
+        if (!auth || auth !== `Bearer ${configuredToken}`) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+    }
     try {
         res.set('Content-Type', metricsRegistry.contentType);
         res.set('Cache-Control', 'no-store');

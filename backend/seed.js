@@ -1318,6 +1318,80 @@ async function seedEquipmentRecords(modalityIds, userIds) {
     console.log(`   ✓ Seeded service contracts and calibration records for ${modalityIds.length} modalities.`);
 }
 
+async function seedCrmData(userIds, patientIds) {
+    console.log('\n📣 Seeding Marketing Campaigns, Patient Segments & CRM Activities...');
+    const admin = userIds.find(u => u.role === 'Admin');
+    const receptionist = userIds.find(u => u.role === 'Receptionist');
+    const creatorId = admin?.id || userIds[0]?.id;
+
+    // 1. Patient Segments
+    const segment1Res = await pool.query(`
+        INSERT INTO patient_segments (name, description, created_by)
+        VALUES ($1, $2, $3)
+        RETURNING segment_id;
+    `, [
+        'مرضى الفحص الدوري والوقائي السنوي',
+        'شريحة المرضى الذين يحتاجون متابعة سنوية دورية وفحوصات وقائية',
+        creatorId
+    ]);
+    const segment1Id = segment1Res.rows[0].segment_id;
+
+    const segment2Res = await pool.query(`
+        INSERT INTO patient_segments (name, description, created_by)
+        VALUES ($1, $2, $3)
+        RETURNING segment_id;
+    `, [
+        'حملة الكشف المبكر عن أورام الثدي وصحة المرأة',
+        'السيدات فوق سن الأربعين للمتابعة الدورية بالماموجرام والسونار',
+        creatorId
+    ]);
+    const segment2Id = segment2Res.rows[0].segment_id;
+
+    // Link some patients to segments
+    for (let i = 0; i < Math.min(10, patientIds.length); i++) {
+        await pool.query(`
+            INSERT INTO patient_segment_members (segment_id, patient_id)
+            VALUES ($1, $2)
+            ON CONFLICT DO NOTHING;
+        `, [i % 2 === 0 ? segment1Id : segment2Id, patientIds[i]]);
+    }
+
+    // 2. Marketing Campaigns
+    const now = new Date();
+    const startDate = toIsoDate(now);
+    const endDate = toIsoDate(new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000));
+
+    await pool.query(`
+        INSERT INTO marketing_campaigns (
+            name, message_subject, message_body, target_segment,
+            channel, budget, start_date, end_date, created_by, status
+        ) VALUES
+        ($1, $2, $3, $4, 'SMS', 15000.00, $5, $6, $7, 'Active'),
+        ($8, $9, $10, $11, 'WhatsApp', 25000.00, $5, $6, $7, 'Active');
+    `, [
+        'حملة الكشف المبكر والوقاية من أورام الثدي',
+        'فحص الماموجرام الدوري المتطور ثلاثي الأبعاد',
+        'يسر مركز فيارا للأشعة دعوتكم للاستفادة من باقة الفحص الدوري للكشف المبكر مع استشارة مجانية.',
+        segment2Id, startDate, endDate, creatorId,
+        'الفحص الشامل لسلامة العمود الفقري والرنين المغناطيسي',
+        'عرض الفحص الشامل للفقرات القطنية والعنقية بالرنين 3T',
+        'احصل على تقرير تشخيصي متكامل وأحدث تقنيات التصوير بالرنين المغناطيسي بمركز فيارا.',
+        segment1Id
+    ]);
+
+    // 3. CRM Activities
+    if (patientIds.length > 0 && receptionist) {
+        await pool.query(`
+            INSERT INTO crm_activities (patient_id, assigned_to, activity_type, due_date, notes, status)
+            VALUES
+            ($1, $2, 'Follow-up Call', NOW() + INTERVAL '1 day', 'متابعة رضا المريض بعد إجراء فحص الرنين والتأكد من استلام التقرير', 'Pending'),
+            ($3, $2, 'Patient Reminder', NOW() + INTERVAL '3 days', 'تذكير بموعد فحص المتابعة الدورية للغدة الدرقية بالسونار', 'Pending');
+        `, [patientIds[0], receptionist.id, patientIds[1] || patientIds[0]]);
+    }
+
+    console.log('   ✓ Seeded marketing campaigns, patient segments, and CRM activities.');
+}
+
 async function main() {
     console.log('═══════════════════════════════════════════════════════════════');
     console.log('🚀 VIARA Integrated Database Seeder (Clinical & Operational)');
@@ -1341,6 +1415,7 @@ async function main() {
         await seedInsuranceNetwork(patientIds, examTypes, userIds, finalizedExams);
         await seedInventory();
         await seedEquipmentRecords(modalityIds, userIds);
+        await seedCrmData(userIds, patientIds);
 
         console.log('\n═══════════════════════════════════════════════════════════════');
         console.log('✅ Database Seeding Completed Successfully with High Fidelity!');

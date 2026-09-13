@@ -60,7 +60,7 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
     router.get('/exams/worklist',
         authenticateToken,
         auditRead(auditService, { resourceTable: 'examinations' }),
-        authorizeRole(['Radiologist', 'Technician', 'Nurse']),
+        authorizeRole(['Admin', 'Radiologist', 'Technician', 'Nurse']),
         validateQuery(getWorklistQuerySchema),
         getWorklist(pool)
     );
@@ -96,7 +96,7 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
     router.put('/exams/:id/report',
         authenticateToken,
         authorizeRole(['Radiologist', 'Admin']),
-        hasPermission(pool, 'EDIT_REPORTS'),
+        hasAnyPermission(pool, ['WRITE_REPORTS', 'EDIT_REPORTS']),
         validateRequest(updateExamReportSchema),
         updateReport(pool)
     );
@@ -104,7 +104,7 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
     router.post('/exams/report/improve-format',
         authenticateToken,
         authorizeRole(['Radiologist', 'Admin']),
-        hasPermission(pool, 'EDIT_REPORTS'),
+        hasAnyPermission(pool, ['WRITE_REPORTS', 'EDIT_REPORTS']),
         validateRequest(improveReportSchema),
         improveReportFormat(pool)
     );

@@ -162,13 +162,20 @@ const login = (db) => async (req, res, next) => {
             const remainingAttempts = Math.max(0, 5 - attempts);
             const isAr = req.get('accept-language')?.includes('ar') || req.body?.language === 'ar';
 
-            const errorMessage = lockedUntil
-                ? (isAr
+            let errorMessage;
+            if (lockedUntil) {
+                errorMessage = isAr
                     ? 'تم إغلاق الحساب بسبب محاولات دخول فاشلة متكررة. يرجى المحاولة بعد 15 دقيقة.'
-                    : 'Account is locked due to too many failed attempts. Try again in 15 minutes.')
-                : (isAr
-                    ? `بيانات الاعتماد غير صحيحة. متبقي ${remainingAttempts} محاولة قبل إغلاق الحساب (${attempts}/5).`
-                    : `Invalid credentials. ${remainingAttempts} attempt${remainingAttempts === 1 ? '' : 's'} remaining before account lock (${attempts}/5).`);
+                    : 'Account is locked due to too many failed attempts. Try again in 15 minutes.';
+            } else if (remainingAttempts <= 1) {
+                errorMessage = isAr
+                    ? 'بيانات الاعتماد غير صحيحة. تحذير: محاولة واحدة متبقية قبل إغلاق الحساب مؤقتًا.'
+                    : 'Invalid credentials. Warning: 1 attempt remaining before account is temporarily locked.';
+            } else {
+                errorMessage = isAr
+                    ? 'بيانات الاعتماد غير صحيحة. يرجى التحقق من البريد الإلكتروني وكلمة المرور.'
+                    : 'Invalid credentials. Please check your email and password.';
+            }
 
             return next(new AppError(errorMessage, 401));
         }
