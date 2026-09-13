@@ -533,7 +533,7 @@ const Insurance = () => {
             p.policy_number || '',
             p.member_number || '',
             `"${(p.plan_name || '').replace(/"/g, '""')}"`,
-            `"${(p.contract_name || p.contract_number || '').replace(/"/g, '""')}"`,
+            `"${(p.entity_name || p.contract_number || '').replace(/"/g, '""')}"`,
             p.valid_from ? p.valid_from.slice(0, 10) : '',
             p.valid_to ? p.valid_to.slice(0, 10) : '',
             p.is_primary ? 'Yes' : 'No'
@@ -1226,7 +1226,7 @@ const Insurance = () => {
                                                     {pol.plan_name || 'Standard'}
                                                 </td>
                                                 <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                                                    {pol.contract_name || pol.contract_number || '—'}
+                                                    {pol.entity_name || pol.contract_number || '—'}
                                                 </td>
                                                 <td className="border-b border-slate-150/60 dark:border-slate-800/60 px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
                                                     {pol.valid_from ? pol.valid_from.slice(0, 10) : '—'} → {pol.valid_to ? pol.valid_to.slice(0, 10) : '—'}

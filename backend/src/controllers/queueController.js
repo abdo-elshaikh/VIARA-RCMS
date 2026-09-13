@@ -217,7 +217,7 @@ const getQueue = (db) => async (req, res, next) => {
             includeDelivered = 'false',
             scope = 'all'
         } = req.query;
-        const { limit, offset } = getPagination(req.query, 200);
+        const { limit, offset } = getPagination(req.query, { defaultLimit: 200, maxLimit: 500 });
 
         // Input validation to prevent SQL injection
         validateEnum(stage, VALID_QUEUE_STAGES, 'stage');

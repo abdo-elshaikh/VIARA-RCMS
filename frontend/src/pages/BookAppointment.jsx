@@ -186,7 +186,7 @@ const CardHead = ({ icon: Icon, title, subtitle, stepNumber, right, accentClass 
 );
 
 /* ── Interactive Stepper Navigator ── */
-const BookingNavigator = ({ active, complete, progress, onSelect, t, isRtl }) => {
+const BookingNavigator = ({ active, complete, progress, onSelect, bookingMode = 'express', onToggleMode, t, isRtl }) => {
     const steps = [
         {
             icon: UserRound,
@@ -212,26 +212,65 @@ const BookingNavigator = ({ active, complete, progress, onSelect, t, isRtl }) =>
 
     return (
         <section className="sticky top-2 z-30 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)]/95 p-2.5 shadow-lg shadow-slate-950/5 backdrop-blur-xl sm:p-3">
-            <div className="mb-2 flex items-center justify-between gap-3 px-1">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-3 px-1">
                 <div className="min-w-0">
-                    <p className="text-[9px] font-black uppercase tracking-[0.16em] text-teal-600 dark:text-teal-400">
-                        {t('bookingPage.workflow', 'Appointment workflow')}
-                    </p>
+                    <div className="flex items-center gap-2">
+                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-teal-600 dark:text-teal-400">
+                            {t('bookingPage.workflow', 'Appointment workflow')}
+                        </p>
+                        {bookingMode === 'express' && (
+                            <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[9px] font-black text-teal-700 dark:text-teal-300">
+                                {isRtl ? 'حجز سريع مفعّل' : 'Express Active'}
+                            </span>
+                        )}
+                    </div>
                     <p className="truncate text-[10px] font-semibold text-[var(--VIARA-muted)]">
-                        {t('bookingPage.workflowHint', 'Complete the four sections to confirm the visit')}
+                        {bookingMode === 'express'
+                            ? (isRtl ? 'كافة البيانات الأساسية في شاشة واحدة — تأكيد الحجز فورياً' : 'All essential fields in one view — instant confirmation')
+                            : t('bookingPage.workflowHint', 'Complete the four sections to confirm the visit')}
                     </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                    <span className="text-[10px] font-black tabular-nums text-[var(--VIARA-muted)]">{progress}%</span>
-                    <div
-                        role="progressbar"
-                        aria-label={t('bookingPage.bookingCompletion', 'Booking completion')}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-valuenow={progress}
-                        className="h-1.5 w-20 overflow-hidden rounded-full bg-[var(--VIARA-surface-muted)] sm:w-28"
-                    >
-                        <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-[width] duration-500" style={{ width: `${progress}%` }} />
+
+                <div className="flex shrink-0 items-center gap-2.5">
+                    {onToggleMode && (
+                        <div className="inline-flex rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/70 p-0.5 shadow-2xs">
+                            <button
+                                type="button"
+                                onClick={() => onToggleMode('express')}
+                                className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-black transition-all ${bookingMode === 'express'
+                                    ? 'bg-teal-600 text-white shadow-xs'
+                                    : 'text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)]'
+                                    }`}
+                            >
+                                <Sparkles size={12} />
+                                <span>{isRtl ? 'حجز سريع' : t('bookingPage.expressMode', 'Express')}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onToggleMode('guided')}
+                                className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-black transition-all ${bookingMode === 'guided'
+                                    ? 'bg-teal-600 text-white shadow-xs'
+                                    : 'text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)]'
+                                    }`}
+                            >
+                                <Layers size={12} />
+                                <span>{isRtl ? 'معالج تفصيلي' : t('bookingPage.guidedMode', 'Guided')}</span>
+                            </button>
+                        </div>
+                    )}
+
+                    <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-[10px] font-black tabular-nums text-[var(--VIARA-muted)]">{progress}%</span>
+                        <div
+                            role="progressbar"
+                            aria-label={t('bookingPage.bookingCompletion', 'Booking completion')}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={progress}
+                            className="h-1.5 w-16 overflow-hidden rounded-full bg-[var(--VIARA-surface-muted)] sm:w-24"
+                        >
+                            <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-[width] duration-500" style={{ width: `${progress}%` }} />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -330,6 +369,7 @@ const BookAppointment = () => {
     const [ptSearch, setPtSearch] = useState('');
     const [refMode, setRefMode] = useState('directory');
     const [date, setDate] = useState(initDate);
+    const [bookingMode, setBookingMode] = useState('express');
     const [activeSection, setActiveSection] = useState(0);
     const [maxVisitedSection, setMaxVisitedSection] = useState(0);
     const [bookedAppointment, setBookedAppointment] = useState(null);
@@ -795,6 +835,10 @@ const BookAppointment = () => {
 
 
     const advanceToSection = async (target) => {
+        if (bookingMode === 'express') {
+            goToSection(target);
+            return;
+        }
         const current = activeSection;
         let valid = true;
 
@@ -1008,6 +1052,8 @@ const BookAppointment = () => {
                 complete={sectionComplete}
                 progress={bookingProgress}
                 onSelect={goToSection}
+                bookingMode={bookingMode}
+                onToggleMode={setBookingMode}
                 t={t}
                 isRtl={isRtl}
             />
@@ -1056,15 +1102,39 @@ const BookAppointment = () => {
                 dir={isRtl ? 'rtl' : undefined}
                 noValidate
             >
-                {/* ── LEFT COLUMN: Only Active Step Visible with Smooth Transition ── */}
+                {/* ── LEFT COLUMN ── */}
                 <div className="min-w-0">
+
+                    {/* Quick Confirmation Banner for Express Mode when essential fields are satisfied */}
+                    {bookingMode === 'express' && patientId && modalityId && examTypeId && time && !isPast && !overlap && (
+                        <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-300/80 bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-emerald-500/10 p-3.5 text-xs text-emerald-950 dark:border-emerald-800 dark:text-emerald-100 shadow-sm animate-in fade-in duration-200">
+                            <div className="flex items-center gap-2.5">
+                                <span className="grid h-7 w-7 place-items-center rounded-xl bg-emerald-600 text-white shadow-xs shrink-0">
+                                    <CheckCircle2 size={16} />
+                                </span>
+                                <div>
+                                    <p className="font-black">{t('bookingPage.readyToConfirmNotice', 'Essential booking information complete — ready to confirm appointment')}</p>
+                                    <p className="text-[10.5px] opacity-80">{isRtl ? 'تم تحديد المريض، الجهاز، الفحص والموعد بنجاح. يمكنك التأكيد فوراً.' : 'Patient, modality, exam, and slot selected. You can confirm immediately without visiting further steps.'}</p>
+                                </div>
+                            </div>
+                            <button
+                                type="submit"
+                                form="book-appointment-form"
+                                disabled={isSaving}
+                                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 py-2 text-xs font-black text-white shadow-md shadow-emerald-600/20 hover:brightness-105 active:scale-[.98] transition"
+                            >
+                                <CalendarCheck2 size={14} />
+                                <span>{isSaving ? t('booking.booking', 'Booking...') : t('bookingPage.quickConfirm', 'Confirm Appointment Now')}</span>
+                            </button>
+                        </div>
+                    )}
 
                     {/* ══════════════════════════════════════════════════
                         STEP 1: Patient Identity & Visit Date
                     ══════════════════════════════════════════════════ */}
                     <div
                         ref={sectionRefs[0]}
-                        className={activeSection === 0 ? "block animate-in fade-in-50 duration-200" : "hidden"}
+                        className={bookingMode === 'express' || activeSection === 0 ? "mb-4 block animate-in fade-in-50 duration-200" : "hidden"}
                     >
                         <StepCard className={STEP_COLORS[0].card} highlight={activeSection === 0}>
                             <CardHead
@@ -1334,7 +1404,7 @@ const BookAppointment = () => {
                     ══════════════════════════════════════════════════ */}
                     <div
                         ref={sectionRefs[1]}
-                        className={activeSection === 1 ? "block animate-in fade-in-50 duration-200" : "hidden"}
+                        className={bookingMode === 'express' || activeSection === 1 ? "mb-4 block animate-in fade-in-50 duration-200" : "hidden"}
                     >
                         <StepCard className={STEP_COLORS[1].card} highlight={activeSection === 1}>
                             <CardHead
@@ -1576,7 +1646,7 @@ const BookAppointment = () => {
                     ══════════════════════════════════════════════════ */}
                     <div
                         ref={sectionRefs[2]}
-                        className={activeSection === 2 ? "block animate-in fade-in-50 duration-200" : "hidden"}
+                        className={bookingMode === 'express' || activeSection === 2 ? "mb-4 block animate-in fade-in-50 duration-200" : "hidden"}
                     >
                         <StepCard className={STEP_COLORS[2].card} highlight={activeSection === 2}>
                             <CardHead
@@ -1863,7 +1933,7 @@ const BookAppointment = () => {
                     ══════════════════════════════════════════════════ */}
                     <div
                         ref={sectionRefs[3]}
-                        className={activeSection === 3 ? "block animate-in fade-in-50 duration-200" : "hidden"}
+                        className={bookingMode === 'express' || activeSection === 3 ? "mb-4 block animate-in fade-in-50 duration-200" : "hidden"}
                     >
                         <StepCard className={STEP_COLORS[3].card} highlight={activeSection === 3}>
                             <CardHead

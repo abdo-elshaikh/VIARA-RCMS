@@ -300,4 +300,61 @@ describe('BookAppointment page', () => {
         );
         expect(navigateMock).toHaveBeenCalledWith('/appointments?patientId=patient-1', { replace: true });
     });
+
+    it('toggles between Express Booking and Guided Steps modes smoothly', async () => {
+        render(
+            <MemoryRouter
+                initialEntries={['/appointments/new']}
+                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+            >
+                <BookAppointment />
+            </MemoryRouter>
+        );
+
+        // Verify Express mode is active by default
+        expect(screen.getByRole('button', { name: 'Express' })).toHaveClass('bg-teal-600');
+        expect(screen.getByText('Express Active')).toBeInTheDocument();
+
+        // Toggle to Guided mode
+        fireEvent.click(screen.getByRole('button', { name: 'Guided' }));
+        expect(screen.getByRole('button', { name: 'Guided' })).toHaveClass('bg-teal-600');
+        expect(screen.queryByText('Express Active')).not.toBeInTheDocument();
+
+        // Toggle back to Express mode
+        fireEvent.click(screen.getByRole('button', { name: 'Express' }));
+        expect(screen.getByRole('button', { name: 'Express' })).toHaveClass('bg-teal-600');
+        expect(screen.getByText('Express Active')).toBeInTheDocument();
+    });
+
+    it('displays the Express ready-to-confirm notice when essential fields are satisfied', async () => {
+        render(
+            <MemoryRouter
+                initialEntries={['/appointments/new']}
+                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+            >
+                <BookAppointment />
+            </MemoryRouter>
+        );
+
+        // Fill core essentials
+        fireEvent.change(screen.getByLabelText('Selected Patient'), { target: { value: 'patient-1' } });
+        fireEvent.change(screen.getByLabelText('Modality / Device'), { target: { value: 'machine-1' } });
+        fireEvent.change(screen.getByLabelText('Exam Type'), { target: { value: 'exam-1' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }));
+        fireEvent.click(screen.getByRole('button', { name: '09:00' }));
+
+        // Quick confirm banner should appear
+        expect(await screen.findByText('Essential booking information complete — ready to confirm appointment')).toBeInTheDocument();
+        const quickConfirmBtn = screen.getByRole('button', { name: 'Confirm Appointment Now' });
+        expect(quickConfirmBtn).toBeInTheDocument();
+
+        // Submitting via quick confirm button
+        fireEvent.click(quickConfirmBtn);
+        await waitFor(() => expect(createAppointmentMock).toHaveBeenCalled());
+        expect(createAppointmentMock.mock.calls[0][0]).toMatchObject({
+            patientId: 'patient-1',
+            modalityId: 'machine-1',
+            examTypeId: 'exam-1'
+        });
+    });
 });

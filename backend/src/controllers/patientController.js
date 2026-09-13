@@ -287,10 +287,10 @@ const createPatient = (db) => async (req, res, next) => {
 
 const getPatients = (db) => async (req, res, next) => {
     try {
-        const { page = 1, status, gender, sortBy = 'createdAt', sortDirection = 'desc' } = req.query;
+        const { status, gender, sortBy = 'createdAt', sortDirection = 'desc' } = req.query;
         const search = req.query.search || req.query.q;
         const { getPagination } = require('../utils/pagination');
-        const { limit, offset: resolvedOffset } = getPagination(req.query);
+        const { limit, offset: resolvedOffset, page } = getPagination(req.query);
 
         let query = `
             SELECT p.*, manager.full_name as assigned_manager_name
@@ -427,7 +427,7 @@ const getPatients = (db) => async (req, res, next) => {
             data: decryptedPatients,
             meta: {
                 total,
-                page: parseInt(page, 10) || 1,
+                page,
                 limit,
                 totalPages: Math.ceil(total / limit),
                 genderCounts: {
