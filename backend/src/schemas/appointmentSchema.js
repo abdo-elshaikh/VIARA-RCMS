@@ -193,6 +193,10 @@ const noShowAppointmentSchema = z.object({
     reason: z.string().max(1000).trim().optional()
 });
 
+const cancelAppointmentSchema = z.object({
+    reason: z.string().trim().min(3, 'Cancellation reason must be at least 3 characters').max(1000, 'Cancellation reason must be less than 1000 characters')
+});
+
 const rescheduleAppointmentSchema = z.object({
     startTime: z.string().datetime('Invalid start time format'),
     endTime: z.string().datetime('Invalid end time format'),
@@ -275,6 +279,7 @@ module.exports = {
     getAppointmentsQuerySchema,
     availabilityQuerySchema,
     noShowAppointmentSchema,
+    cancelAppointmentSchema,
     rescheduleAppointmentSchema,
     createWaitingListSchema,
     updateWaitingListSchema,

@@ -1501,7 +1501,7 @@ const cancelAppointment = (db) => async (req, res, next) => {
         if (!appointment.rows[0]) throw new AppError('Appointment not found', 404);
         const apptData = appointment.rows[0];
         if (['Cancelled', 'No-Show', 'Completed'].includes(apptData.status)) {
-            throw new AppError(`A ${apptData.status} appointment cannot be cancelled`, 409);
+            throw new AppError(`This appointment is already ${apptData.status.toLowerCase()} and cannot be cancelled again`, 409);
         }
 
 

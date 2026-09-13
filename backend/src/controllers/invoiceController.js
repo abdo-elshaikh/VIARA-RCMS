@@ -512,6 +512,8 @@ const getInvoices = (db) => async (req, res, next) => {
         const result = await db.query(query, values);
         const items = result.rows.map(({ first_name_enc, last_name_enc, filtered_count, ...invoice }) => ({
             ...invoice,
+            status: invoice.invoice_status,
+            payment_status: invoice.invoice_status,
             patient_name: [decrypt(first_name_enc), decrypt(last_name_enc)].filter(Boolean).join(' ')
         }));
         if (includeMeta) {
@@ -689,6 +691,8 @@ const getInvoiceById = (db) => async (req, res, next) => {
 
         res.json({
             ...invoice,
+            status: invoice.invoice_status,
+            payment_status: invoice.invoice_status,
             patient_name: [decrypt(first_name_enc), decrypt(last_name_enc)].filter(Boolean).join(' '),
             paid_amount: paidAmount,
             refunded_amount: refundedAmount,

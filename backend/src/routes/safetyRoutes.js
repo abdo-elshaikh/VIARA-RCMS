@@ -6,6 +6,7 @@ const {
 } = require('../controllers/safetyController');
 const { hasPermission } = require('../middleware/rbacMiddleware');
 
+
 module.exports = (pool, authenticateToken, authorizeRole) => {
     const router = express.Router();
     
@@ -14,6 +15,8 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     
     // Get templates for a modality
     router.get('/templates/:modalityId', authorizeRole(['Admin', 'Nurse', 'Technician', 'Radiologist']), getSafetyTemplates(pool));
+    router.get('/safety-templates/:modalityId', authorizeRole(['Admin', 'Nurse', 'Technician', 'Radiologist']), getSafetyTemplates(pool));
+    router.get('/safety-templates', authorizeRole(['Admin', 'Nurse', 'Technician', 'Radiologist']), getSafetyTemplates(pool));
     
     // Submit answers for an exam
     router.post('/exams/:examId/responses', authorizeRole(['Admin', 'Nurse', 'Technician']), hasPermission(pool, 'MANAGE_SAFETY'), submitSafetyResponse(pool));

@@ -120,7 +120,7 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
     router.post('/exams/:id/ai-preliminary-draft',
         authenticateToken,
         authorizeRole(['Radiologist', 'Admin']),
-        hasPermission(pool, 'EDIT_REPORTS'),
+        hasAnyPermission(pool, ['WRITE_REPORTS', 'EDIT_REPORTS']),
         validateRequest(generatePreliminaryReportSchema),
         generatePreliminaryReportDraft(pool)
     );
@@ -128,7 +128,7 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
     router.post('/exams/:id/ai-drafts/:draftId/apply',
         authenticateToken,
         authorizeRole(['Radiologist', 'Admin']),
-        hasPermission(pool, 'EDIT_REPORTS'),
+        hasAnyPermission(pool, ['WRITE_REPORTS', 'EDIT_REPORTS']),
         validateRequest(markAiReportDraftAppliedSchema),
         markAiReportDraftApplied(pool)
     );

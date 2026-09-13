@@ -46,7 +46,8 @@ const transitionQueueSchema = z.object({
     implantSafetyStatus: z.enum(['Unknown', 'Cleared', 'At Risk', 'Not Applicable']).optional(),
     renalSafetyStatus: z.enum(['Unknown', 'Cleared', 'At Risk', 'Not Applicable']).optional()
 }).refine((data) => data.toStage || data.action, {
-    message: 'Provide either a queue stage or a hold/release/update action'
+    message: 'Provide either a queue stage (toStage) or a hold/release/update action',
+    path: ['toStage']
 });
 
 module.exports = {

@@ -1,6 +1,13 @@
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 
+const sanitizeReferringDoctor = (doc) => {
+    if (!doc) return doc;
+    const sanitized = { ...doc };
+    delete sanitized.portal_password_hash;
+    return sanitized;
+};
+
 const getReferringDoctors = (db) => async (req, res, next) => {
     try {
         const { active, limit = 200, offset = 0 } = req.query;
@@ -9,7 +16,12 @@ const getReferringDoctors = (db) => async (req, res, next) => {
         let param = 1;
 
         let query = `
-            SELECT rd.*,
+            SELECT rd.doctor_id, rd.full_name, rd.specialty, rd.clinic_hospital,
+                   rd.phone, rd.email, rd.address, rd.tax_id, rd.contract_id,
+                   rd.referral_source_category, rd.commission_percentage,
+                   rd.preferred_contact_method, rd.is_active, rd.notes,
+                   rd.created_by, rd.created_at, rd.updated_at,
+                   rd.portal_is_active, rd.portal_last_login,
                    COUNT(DISTINCT a.appointment_id) as appointment_count,
                    COUNT(DISTINCT e.exam_id) as exam_count,
                    COALESCE(SUM(i.subtotal_amount - i.discount_amount), 0)
@@ -54,7 +66,7 @@ const getReferringDoctors = (db) => async (req, res, next) => {
         values.push(limit, offset);
 
         const result = await db.query(query, values);
-        res.json(result.rows);
+        res.json(result.rows.map(sanitizeReferringDoctor));
     } catch (error) {
         next(error);
     }
@@ -87,7 +99,7 @@ const createReferringDoctor = (db) => async (req, res, next) => {
             req.user.user_id
         ]);
 
-        res.status(201).json(result.rows[0]);
+        res.status(201).json(sanitizeReferringDoctor(result.rows[0]));
     } catch (error) {
         next(error);
     }
@@ -155,7 +167,7 @@ const updateReferringDoctor = (db) => async (req, res, next) => {
             id
         ]);
 
-        res.json(result.rows[0]);
+        res.json(sanitizeReferringDoctor(result.rows[0]));
     } catch (error) {
         next(error);
     }
@@ -240,7 +252,7 @@ const getReferringDoctorStats = (db) => async (req, res, next) => {
         `, [id]);
 
         res.json({
-            doctor: doctorResult.rows[0],
+            doctor: sanitizeReferringDoctor(doctorResult.rows[0]),
             stats: statsResult.rows[0] || {},
             recentReferrals: recentResult.rows
         });

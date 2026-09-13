@@ -2,11 +2,14 @@ const { AppError } = require('../middleware/errorHandler');
 
 const getSafetyTemplates = (db) => async (req, res, next) => {
     try {
-        const { modalityId } = req.params;
-        const result = await db.query(
-            'SELECT * FROM safety_templates WHERE modality_id = $1 AND is_active = TRUE',
-            [modalityId]
-        );
+        const modalityId = req.params.modalityId || req.query.modalityId;
+        let query = 'SELECT * FROM safety_templates WHERE is_active = TRUE';
+        const values = [];
+        if (modalityId) {
+            query += ' AND modality_id = $1';
+            values.push(modalityId);
+        }
+        const result = await db.query(query, values);
         res.json(result.rows);
     } catch (error) {
         next(error);

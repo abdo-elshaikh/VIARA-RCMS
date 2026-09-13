@@ -9,6 +9,7 @@ const {
     getAppointmentsQuerySchema,
     noShowAppointmentSchema,
     rescheduleAppointmentSchema,
+    cancelAppointmentSchema,
     availabilityQuerySchema,
     getWaitingListQuerySchema,
     createWaitingListSchema,
@@ -83,6 +84,7 @@ module.exports = function appointmentRoutes(pool, auditService) {
         authenticateToken,
         authorizeRole(['Receptionist', 'Admin']),
         hasPermission(pool, 'DELETE_APPOINTMENTS'),
+        validateRequest(cancelAppointmentSchema),
         cancelAppointment(pool)
     );
 

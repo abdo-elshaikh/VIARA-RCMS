@@ -217,7 +217,7 @@ const getShifts = (db) => async (req, res, next) => {
         const { startDate, endDate, userId, limit = 500 } = req.query;
         if (startDate && Number.isNaN(new Date(startDate).getTime())) throw new AppError('Invalid shift start date', 400);
         if (endDate && Number.isNaN(new Date(endDate).getTime())) throw new AppError('Invalid shift end date', 400);
-        if (startDate && endDate && new Date(startDate) >= new Date(endDate)) throw new AppError('Shift query end date must be after start date', 400);
+        if (startDate && endDate && new Date(startDate) > new Date(endDate)) throw new AppError('Shift query end date must be on or after start date', 400);
         if (userId && !z.string().uuid().safeParse(userId).success) throw new AppError('Invalid employee id', 400);
         const canReviewAll = ['Developer', 'Admin', 'HR', 'Receptionist', 'Radiologist'].includes(req.user.role);
         const effectiveUserId = canReviewAll ? userId : getAuthenticatedUserId(req);
