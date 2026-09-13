@@ -9,7 +9,7 @@ const {
     consumeStockSchema,
     adjustStockSchema
 } = require('../schemas/inventorySchema');
-const { recalculateInvoiceAfterItemChange } = require('./invoiceController');
+const { recalculateInvoiceAfterItemChange } = require('../services/billingEngineService');
 const { moneyNumber } = require('../services/financialPostingService');
 
 const getInventory = (db) => async (req, res, next) => {

@@ -453,7 +453,41 @@
     "noOpenAlerts": "لا توجد تنبيهات مفتوحة.",
     "resolve": "حل",
     "dismiss": "تجاهل",
-    "requestId": "معرف الطلب"
+    "requestId": "معرف الطلب",
+    "livePolling": "التحديث المباشر",
+    "autoRefreshOff": "التحديث التلقائي متوقف",
+    "livePollingActive": "التحديث المباشر للتدقيق نشط (15 ثانية)",
+    "livePollingPaused": "التحديث المباشر متوقف مؤقتاً",
+    "categoryDistribution": "توزيع الفئات في الصفحة النشطة",
+    "itemsAnalyzed": "عنصراً محللاً",
+    "today": "اليوم",
+    "sevenDays": "7 أيام",
+    "thirtyDays": "30 يوماً",
+    "quickTabs": {
+      "all": "كل السجل",
+      "risky": "عالي المخاطر (50+)",
+      "auth": "الدخول والمصادقة",
+      "phi": "استعلامات البيانات الصحية",
+      "failures": "الفشل"
+    },
+    "inspector": {
+      "title": "سجل تدقيق مشفر رقم {{id}}",
+      "copyJson": "نسخ JSON",
+      "copied": "تم نسخ الحمولة إلى الحافظة",
+      "actor": "المنفذ",
+      "categoryAndAction": "الفئة والإجراء",
+      "ipAndRequestId": "عنوان IP ومعرف الطلب",
+      "stateDiff": "فروقات تعديل الحالة",
+      "previousState": "- الحالة السابقة",
+      "newState": "+ الحالة الجديدة",
+      "rawObject": "كائن السجل الخام الكامل",
+      "quickLinks": "روابط سريعة:",
+      "patient": "المريض",
+      "examStudy": "فحص/دراسة",
+      "invoice": "الفاتورة",
+      "appointment": "الموعد",
+      "hipaaRedacted": "مُقنَّع وفق HIPAA/GDPR"
+    }
   },
   "users": {
     "eyebrow": "التحكم في الوصول",
@@ -1487,7 +1521,9 @@
       "status": "مزامنة PACS",
       "order": "الطلب",
       "mrn": "رقم الملف",
-      "modality": "الجهاز"
+      "modality": "الجهاز",
+      "name": "الاسم",
+      "endpoint": "المضيف:المنفذ"
     },
     "ping": "اختبار C-ECHO من PACS إلى الجهاز",
     "pingBtn": "اختبار Echo",
@@ -1587,7 +1623,11 @@
       "restEndpoint": "Orthanc REST",
       "dicomEndpoint": "مستمع DICOM",
       "recommendedEndpoint": "الفحص المحلي الموصى به",
-      "networkHelp": "استخدم الشبكة المحلية أو VPN فقط عندما يكون Orthanc DICOM متاحا هناك."
+      "networkHelp": "استخدم الشبكة المحلية أو VPN فقط عندما يكون Orthanc DICOM متاحا هناك.",
+      "errorsFound": "{{count}} مشكلة",
+      "warningsFound": "{{count}} تحذير",
+      "allOk": "نجحت كل الفحوصات",
+      "loading": "جارٍ تشغيل تشخيص النظام..."
     },
     "ops": {
       "events": "أحداث التدقيق",
@@ -1731,6 +1771,73 @@
       "indexedStorageBytes": "بايت التخزين المفهرسة",
       "oldest": "الأقدم",
       "newest": "الأحدث"
+    },
+    "modalitiesTitle": "أجهزة وأنظمة DICOM",
+    "modalitiesDesc": "اضبط عناوين AE للماسحات وعقد DICOM البعيدة لتوجيه PACS.",
+    "addModality": "إضافة جهاز",
+    "modalities": {
+      "name": "اسم العرض",
+      "type": "نوع الجهاز",
+      "location": "الموقع",
+      "manufacturer": "الشركة المصنعة",
+      "status": "الحالة",
+      "editModality": "تعديل جهاز DICOM",
+      "addModality": "إضافة جهاز DICOM",
+      "editHelp": "حدّث بيانات الجهاز واتصال DICOM.",
+      "addHelp": "سجّل جهاز تصوير جديداً أو وجهة PACS.",
+      "confirmDeleteModality": "هل تريد إزالة جهاز DICOM هذا؟",
+      "modalityUpdated": "تم تحديث الجهاز بنجاح",
+      "modalityCreated": "تمت إضافة الجهاز بنجاح",
+      "modalitySaveError": "فشل حفظ الجهاز",
+      "modalityDeleted": "تمت إزالة الجهاز",
+      "modalityDeleteError": "فشل إزالة الجهاز",
+      "pingSuccess": "نجح اختبار Echo ({{rtt}}ms)",
+      "pingFailed": "فشل C-ECHO لـ DICOM",
+      "syncedWithOrthanc": "تمت مزامنة الجهاز مع Orthanc",
+      "syncError": "فشلت المزامنة مع Orthanc",
+      "confirmDelete": "هل تريد إزالة جهاز DICOM هذا؟",
+      "generateAet": "توليد من الاسم",
+      "generate": "تلقائي",
+      "testConnection": "اختبار",
+      "dicomReady": "بيانات اتصال DICOM",
+      "dicomOptional": "بيانات DICOM اختيارية للجرد فقط",
+      "validation": {
+        "name": "يجب أن يكون الاسم حرفين على الأقل.",
+        "type": "اختر نوع جهاز مدعوماً.",
+        "status": "اختر حالة جهاز صالحة.",
+        "aet": "عنوان AET مطلوب عند استخدام بيانات اتصال DICOM.",
+        "aetLength": "يجب ألا يتجاوز AET خمسين حرفاً.",
+        "host": "المضيف/IP مطلوب عند استخدام بيانات اتصال DICOM.",
+        "port": "يجب أن يكون المنفذ رقماً بين 1 و65535."
+      }
+    },
+    "configSaveError": "فشل حفظ إعدادات PACS",
+    "enablePacs": "تفعيل تكامل PACS",
+    "enablePacsHelp": "يشغّل توجيه DICOM واستعلامات قائمة عمل الأجهزة.",
+    "autoImport": "استيراد عناصر DICOM تلقائياً",
+    "autoImportHelp": "يفهرس العناصر الجديدة تلقائياً في دراسات وتقارير VIARA.",
+    "restApiConfig": "Orthanc REST API",
+    "username": "اسم المستخدم",
+    "password": "كلمة المرور",
+    "healthWarning": "فشل فحص صحة خادم Orthanc. تحقق من رابط REST أو بيانات الدخول أو حالة خدمة DICOM.",
+    "invalidUrl": "صيغة رابط REST API غير صالحة",
+    "loadingConfig": "جارٍ تحميل إعدادات PACS...",
+    "aetRequired": "عنوان AET مطلوب",
+    "ipRequired": "مضيف/عنوان IP للخادم مطلوب",
+    "portInvalid": "يلزم منفذ صالح (1-65535)",
+    "ai": {
+      "missingWorker": "ذكاء PACS في وضع الطابور فقط. أضف رابط عامل في إعدادات الذكاء قبل معالجة المهام.",
+      "disabled": "ذكاء صور PACS معطل. فعّله أولاً من إعدادات الذكاء.",
+      "processed": "تمت معالجة {{processed}} مهمة: {{completed}} مكتملة، {{failed}} فاشلة",
+      "tiering": {
+        "title": "النقل الطبقي للبيانات",
+        "description": "نقل الدراسات الأقدم إلى تخزين أبطأ/أرخص وفق قواعد الاحتفاظ.",
+        "running": "جارٍ تشغيل النقل الطبقي...",
+        "start": "تشغيل النقل الطبقي",
+        "startConfirm": "هل تريد بدء عملية النقل الطبقي للبيانات؟",
+        "completed": "اكتمل النقل الطبقي للبيانات بنجاح",
+        "error": "فشل بدء النقل الطبقي للبيانات"
+      }
     }
   }
 }
