@@ -181,7 +181,14 @@ const CampaignManager = () => {
                     </form>
                 )}
 
-                {isLoading ? <Loading label={copy('loading')} /> : isError ? <ErrorState label={copy('loadError')} retry={copy('retry')} onRetry={refetch} /> : visibleCampaigns.length === 0 ? <Empty title={copy(campaigns.length ? 'filteredEmpty' : 'empty')} description={copy(campaigns.length ? 'filteredEmptyDescription' : 'emptyDescription')} /> : <div className="grid gap-4 p-4 xl:grid-cols-2">{visibleCampaigns.map(campaign => <CampaignCard key={campaign.campaign_id} campaign={campaign} copy={copy} formatDate={formatDate} formatMoney={formatMoney} canManage={canManage} onStatus={handleStatusUpdate} updating={isUpdatingStatus} />)}</div>}
+                {isLoading ? <Loading label={copy('loading')} /> : isError ? <ErrorState label={copy('loadError')} retry={copy('retry')} onRetry={refetch} /> : visibleCampaigns.length === 0 ? (
+                    <Empty
+                        title={copy(campaigns.length ? 'filteredEmpty' : 'empty')}
+                        description={copy(campaigns.length ? 'filteredEmptyDescription' : 'emptyDescription')}
+                        actionLabel={canManage && !campaigns.length ? copy('newCampaign') : null}
+                        onAction={canManage && !campaigns.length ? () => setShowNew(true) : null}
+                    />
+                ) : <div className="grid gap-4 p-4 xl:grid-cols-2">{visibleCampaigns.map(campaign => <CampaignCard key={campaign.campaign_id} campaign={campaign} copy={copy} formatDate={formatDate} formatMoney={formatMoney} canManage={canManage} onStatus={handleStatusUpdate} updating={isUpdatingStatus} />)}</div>}
             </section>
         </div>
     );
@@ -241,7 +248,24 @@ const CampaignCard = ({ campaign, copy, formatDate, formatMoney, canManage, onSt
 const IconButton = ({ label, onClick, disabled, children }) => <button type="button" aria-label={label} title={label} onClick={onClick} disabled={disabled} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-pink-50 hover:text-pink-700 disabled:opacity-50 dark:hover:bg-pink-400/10 dark:hover:text-pink-300">{children}</button>;
 const Info = ({ label, value, icon: Icon }) => <div><dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</dt><dd className="mt-1 flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-200">{Icon && <Icon size={14} />}{value}</dd></div>;
 const Loading = ({ label }) => <div className="animate-pulse p-12 text-center text-sm font-bold text-slate-400">{label}</div>;
-const ErrorState = ({ label, retry, onRetry }) => <div role="alert" className="p-10 text-center"><p className="font-bold text-rose-600">{label}</p><button type="button" onClick={onRetry} className="mt-3 rounded-xl border border-rose-200 px-4 py-2 text-sm font-bold text-rose-700">{retry}</button></div>;
-const Empty = ({ title, description }) => <div className="p-12 text-center"><CheckCircle2 size={34} className="mx-auto text-slate-300" /><p className="mt-3 font-black text-slate-800 dark:text-white">{title}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p></div>;
+const Empty = ({ title, description, actionLabel, onAction, icon: Icon = Megaphone }) => (
+    <div className="p-12 text-center">
+        <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-pink-50 text-pink-700 dark:bg-pink-950/30 dark:text-pink-300">
+            <Icon size={28} />
+        </div>
+        <p className="text-base font-black text-slate-800 dark:text-white">{title}</p>
+        <p className="mx-auto mt-1 max-w-md text-sm text-slate-500 dark:text-slate-400">{description}</p>
+        {actionLabel && onAction && (
+            <button
+                type="button"
+                onClick={onAction}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-pink-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-pink-800 transition"
+            >
+                <Plus size={15} />
+                <span>{actionLabel}</span>
+            </button>
+        )}
+    </div>
+);
 
 export default CampaignManager;

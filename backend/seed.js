@@ -594,6 +594,7 @@ async function seedExaminationTypes(modalityIds) {
 async function seedReferringDoctors(userIds) {
     console.log('\n🩺 Seeding Referring Physicians Network...');
     const admin = userIds.find(u => u.role === 'Admin');
+    const doctorPasswordHash = await bcrypt.hash('Doctor@123', 10);
     const doctors = [
         { name: 'Dr. Tarek Mostafa', specialty: 'Cardiology & Angiology', hospital: 'National Heart Institute' },
         { name: 'Dr. Nadia Khalil', specialty: 'Orthopedic Surgery & Sports Medicine', hospital: 'Heliopolis Orthopedic Clinic' },
@@ -611,24 +612,27 @@ async function seedReferringDoctors(userIds) {
             INSERT INTO referring_doctors (
                 full_name, specialty, clinic_hospital, phone, email, address,
                 tax_id, referral_source_category, commission_percentage,
-                preferred_contact_method, is_active, notes, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'Doctor', $8, 'Email', TRUE, $9, $10)
+                preferred_contact_method, is_active, notes, created_by,
+                portal_is_active, portal_password_hash
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'Doctor', $8, 'Email', TRUE, $9, $10, TRUE, $11)
             RETURNING doctor_id;
         `, [
             doc.name, doc.specialty, doc.hospital, randomPhone(),
             `${doc.name.toLowerCase().replace(/[^a-z]+/g, '.')}@referral-network.com`,
             randomAddress(), `TAX-${randomInt(100000, 999999)}`,
-            randomInt(8, 15), `Key clinical referral partner in ${doc.specialty}.`, admin?.id || null
+            randomInt(8, 15), `Key clinical referral partner in ${doc.specialty}.`, admin?.id || null,
+            doctorPasswordHash
         ]);
         referringDoctorIds.push({ ...doc, id: res.rows[0].doctor_id });
     }
-    console.log(`   ✓ Seeded ${referringDoctorIds.length} referring doctors.`);
+    console.log(`   ✓ Seeded ${referringDoctorIds.length} referring doctors (Doctor Portal password: 'Doctor@123').`);
     return referringDoctorIds;
 }
 
 async function seedPatients(count = 150) {
     console.log(`\n🧑‍⚕️ Seeding ${count} Realistic Egyptian Patient Records (AES-GCM Encrypted)...`);
     const patientIds = [];
+    const patientPasswordHash = await bcrypt.hash('Patient@123', 10);
 
     for (let i = 0; i < count; i++) {
         const gender = i % 2 === 0 ? 'Male' : 'Female';
@@ -639,12 +643,15 @@ async function seedPatients(count = 150) {
         const address = randomAddress();
         const nationalId = randomNationalId();
         const mrn = `MRN-${String(i + 1).padStart(6, '0')}`;
+        // Give first 10 patients portal accounts so patient billing/reports/appointments are instantly testable
+        const passwordHash = i < 10 ? patientPasswordHash : null;
 
         const res = await pool.query(`
             INSERT INTO patients (
                 mrn, first_name_enc, last_name_enc, date_of_birth_enc,
-                phone_enc, address_enc, national_id_enc, gender
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                phone_enc, address_enc, national_id_enc, gender,
+                password_hash, patient_status
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'Active')
             RETURNING patient_id;
         `, [
             mrn,
@@ -654,11 +661,12 @@ async function seedPatients(count = 150) {
             encrypt(phone),
             encrypt(address),
             encrypt(nationalId),
-            gender
+            gender,
+            passwordHash
         ]);
         patientIds.push(res.rows[0].patient_id);
     }
-    console.log(`   ✓ Created ${count} patients with secure AES-GCM tags.`);
+    console.log(`   ✓ Seeded ${patientIds.length} patients (Portal demo accounts active: MRN-000001 to MRN-000010 with password 'Patient@123').`);
     return patientIds;
 }
 
@@ -886,9 +894,9 @@ async function seedAppointmentsAndExams(patientIds, modalityIds, examTypes, user
     for (const group of liveStages) {
         for (let k = 0; k < group.count; k++) {
             const modality = modalityIds[(orderIdx - 1) % modalityIds.length];
-            const matchingExams = examTypes.filter(e => e.modalityId === modality.id);
-            const examType = matchingExams.length ? matchingExams[orderIdx % matchingExams.length] : examTypes[orderIdx % examTypes.length];
-            const patient = patientIds[(orderIdx * 7) % patientIds.length];
+            const matchingExams = examTypes.filter(e => e.modalityType === modality.type);
+            const examType = matchingExams.length ? matchingExams[orderIdx % matchingExams.length] : (examTypes.find(e => e.modalityType === modality.type) || examTypes[0]);
+            const patient = orderIdx === 1 ? patientIds[0] : patientIds[(orderIdx * 7) % patientIds.length];
             const radiologist = radiologists[orderIdx % radiologists.length];
             const technician = technicians[orderIdx % technicians.length];
             const nurse = nurses[orderIdx % nurses.length];

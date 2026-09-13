@@ -203,14 +203,16 @@ const getMyInvoices = (db) => async (req, res, next) => {
                        + COALESCE(rt.refunded_amount, 0),
                        0
                    ) as balance_amount,
-                   a.order_number, et.name as exam_type_name
+                   COALESCE(a.order_number, e.order_number) as order_number,
+                   COALESCE(et.name, 'Medical Examination / فحص طبي') as exam_type_name
             FROM invoices i
             LEFT JOIN payment_totals pt ON pt.invoice_id = i.invoice_id
             LEFT JOIN refund_totals rt ON rt.invoice_id = i.invoice_id
             LEFT JOIN credit_totals ct ON ct.invoice_id = i.invoice_id
             LEFT JOIN appointments a ON i.appointment_id = a.appointment_id
-            LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
-            WHERE i.patient_id = $1
+            LEFT JOIN examinations e ON (i.exam_id = e.exam_id OR e.appointment_id = a.appointment_id)
+            LEFT JOIN examination_types et ON et.type_id = COALESCE(a.exam_type_id, e.exam_type_id)
+            WHERE (i.patient_id = $1::uuid OR a.patient_id = $1::uuid OR e.patient_id = $1::uuid)
               AND i.invoice_status != 'Voided'
             ORDER BY i.generated_at DESC
         `, [req.user.userId]);
