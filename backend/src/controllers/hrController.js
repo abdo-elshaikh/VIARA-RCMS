@@ -304,7 +304,7 @@ const createShift = (db) => async (req, res, next) => {
             'SELECT user_id, role FROM users WHERE user_id = $1 AND is_active = TRUE AND role = ANY($2::user_role[])',
             [data.userId, EMPLOYEE_ROLES]
         );
-        if (!employee.rows.length) throw new AppError('Active eligible employee not found', 400);
+        if (!employee.rows.length) throw new AppError('Employee not found, inactive, or not eligible for shift scheduling', 400);
 
         const conflict = await client.query(`
             SELECT shift_id FROM staff_shifts

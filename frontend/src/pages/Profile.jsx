@@ -18,7 +18,7 @@ import ProfileSettings from '../components/settings/ProfileSettings';
 import SecuritySettings from '../components/settings/SecuritySettings';
 import LeaveManager from '../components/hr/LeaveManager';
 import StaffShiftSchedule from '../components/hr/attendance/StaffShiftSchedule';
-import { selectCurrentUser } from '../store/authSlice';
+import { selectCurrentUser, updateCurrentUser } from '../store/authSlice';
 import PageHeader from '../components/ui/PageHeader';
 
 /* ─── Avatar ──────────────────────────────────────────────────────── */
@@ -163,8 +163,10 @@ const LeaveHeader = ({ isRtl }) => {
 const Profile = () => {
     const { t, i18n } = useTranslation(['settings', 'common']);
     const currentUser = useSelector(selectCurrentUser);
+    const dispatch = useDispatch();
     const [searchParams, setSearchParams] = useSearchParams();
     const isRtl = i18n.dir() === 'rtl';
+    const [updateProfile] = useUpdateProfileMutation();
 
     const displayName = currentUser?.fullName || currentUser?.full_name || currentUser?.name
         || currentUser?.email
@@ -270,7 +272,20 @@ const Profile = () => {
                 <div className="p-5 sm:p-6">
                     {/* Top row: avatar + name + badges */}
                     <div className="flex flex-wrap items-start gap-5">
-                        <ProfileAvatar currentUser={currentUser} initials={initials} isRtl={isRtl} />
+                        <ProfileAvatar
+                            currentUser={currentUser}
+                            initials={initials}
+                            isRtl={isRtl}
+                            onAvatarChange={async (dataUrl) => {
+                                try {
+                                    const result = await updateProfile({ avatarUrl: dataUrl }).unwrap();
+                                    dispatch(updateCurrentUser({ avatarUrl: result?.avatarUrl || dataUrl }));
+                                    toast.success(isRtl ? 'تم تحديث الصورة الشخصية' : 'Profile picture updated');
+                                } catch {
+                                    toast.error(isRtl ? 'فشل تحديث الصورة' : 'Failed to update profile picture');
+                                }
+                            }}
+                        />
 
                         <div className="min-w-0 flex-1">
                             {/* Eyebrow + active badge */}

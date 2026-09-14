@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-import { api, useLoginMutation, usePasskeyAuthenticationOptionsMutation, usePasskeyAuthenticationVerifyMutation } from '../store/api';
+import { api, useLoginMutation, usePasskeyAuthenticationOptionsMutation, usePasskeyAuthenticationVerifyMutation, useGetPublicCenterSettingsQuery } from '../store/api';
 import { setCredentials } from '../store/authSlice';
 import { selectPreferences, setLanguage, setTheme, updateAllPreferences } from '../store/preferencesSlice';
 import { getErrorMessage } from '../utils/getErrorMessage';
@@ -72,6 +72,11 @@ export default function Login() {
     const [login, { isLoading: isApiSubmitting }] = useLoginMutation();
     const [getPasskeyOptions, { isLoading: isPasskeyOptionsLoading }] = usePasskeyAuthenticationOptionsMutation();
     const [verifyPasskey, { isLoading: isPasskeyVerifyLoading }] = usePasskeyAuthenticationVerifyMutation();
+
+    // Fetch public center settings for dynamic helpdesk contact info
+    const { data: publicSettings } = useGetPublicCenterSettingsQuery();
+    const helpdeskEmail = publicSettings?.support_email || publicSettings?.email || 'it-support@viara.clinic';
+    const helpdeskPhone = publicSettings?.hotline || publicSettings?.phone || null;
 
     // Visual states
     const [selectedRole, setSelectedRole] = useState('Radiologist');
@@ -651,7 +656,7 @@ export default function Login() {
                                         {isRtl ? 'مكتب دعم تقنية المعلومات السريرية:' : 'Radiology IT Helpdesk:'}
                                     </strong>
                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                        it-support@VIARA.com | Ext: 4401
+                                        {helpdeskEmail}{helpdeskPhone ? ` | ${helpdeskPhone}` : ''}
                                     </span>
                                 </div>
                                 <span className="viara-pill-badge">24/7 STAT</span>

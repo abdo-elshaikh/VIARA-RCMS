@@ -150,6 +150,11 @@ const auditLogger = (auditService) => (req, res, next) => {
   res.on('finish', async () => {
     try {
       const userId = req.user ? req.user.user_id || null : null;
+      // For auth endpoints (login/portal), extract actor info from the response payload
+      // since req.user is not populated before authentication completes.
+      const actorNameFromResponse = capturedResponse?.user?.name
+        || capturedResponse?.user?.full_name
+        || null;
       const requestPath = req.originalUrl.split('?')[0];
       const action = `${req.method} ${requestPath}`;
       const ipAddress = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || null;
@@ -177,7 +182,7 @@ const auditLogger = (auditService) => (req, res, next) => {
             type: userId ? AUDIT_ACTOR_TYPE.USER : AUDIT_ACTOR_TYPE.SYSTEM,
             userId,
             role: req.user?.role || null,
-            name: req.user?.full_name || req.user?.name || null,
+            name: req.user?.full_name || req.user?.name || actorNameFromResponse || null,
           },
           event: {
             code: action || 'UNKNOWN_ACTION',

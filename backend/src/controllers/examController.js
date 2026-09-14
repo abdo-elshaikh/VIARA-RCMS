@@ -536,7 +536,9 @@ const updateReport = (db) => async (req, res, next) => {
     let patientPortalRelease = null;
     let criticalAcknowledgements = [];
     try {
-        const { examId, status, reportContent, findings, impression, sections, templateId, reportStatus, criticalResult } = req.body;
+        const { examId: bodyExamId, status, reportContent, findings, impression, sections, templateId, reportStatus, criticalResult } = req.body;
+        // examId is supplied in the URL params; body field is optional for clients that echo it back.
+        const examId = req.params?.id || bodyExamId;
         const userId = req.user.user_id;
         const { role } = req.user;
         const isRadiologist = role === 'Radiologist';

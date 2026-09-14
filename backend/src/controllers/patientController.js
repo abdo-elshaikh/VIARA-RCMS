@@ -636,8 +636,8 @@ const updatePatient = (db, auditService) => async (req, res, next) => {
             data.assignedManagerId !== undefined ? data.assignedManagerId : existing.assigned_manager_id,
             data.leadStatus !== undefined ? data.leadStatus : existing.lead_status,
             data.plannedActivity !== undefined ? data.plannedActivity : existing.planned_activity,
-            hash(firstName),
-            hash(lastName),
+            hash(firstName.toLowerCase()),
+            hash(lastName.toLowerCase()),
             phone ? hash(phone) : null,
             id,
             data.email !== undefined ? (data.email ? hash(data.email.trim().toLowerCase()) : null) : existing.email_hash

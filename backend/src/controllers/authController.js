@@ -133,6 +133,7 @@ const login = (db) => async (req, res, next) => {
 
             await logAction(db, {
                 userId: user.user_id,
+                actorName: user.full_name,
                 action: 'LOGIN_FAILED',
                 resourceId: user.user_id,
                 resourceTable: 'users',
@@ -278,6 +279,7 @@ const login = (db) => async (req, res, next) => {
 
         await logAction(db, {
             userId: user.user_id,
+            actorName: user.full_name,
             action: 'LOGIN_SUCCESS',
             resourceId: user.user_id,
             resourceTable: 'users',
@@ -572,7 +574,7 @@ const verify2FA = (db) => async (req, res, next) => {
             maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
         });
 
-        await logAction(db, { userId: user.user_id, action: 'LOGIN_SUCCESS_2FA', resourceId: user.user_id, resourceTable: 'users', ipAddress: req.ip });
+        await logAction(db, { userId: user.user_id, actorName: user.full_name, action: 'LOGIN_SUCCESS_2FA', resourceId: user.user_id, resourceTable: 'users', ipAddress: req.ip });
 
         const permissions = await getPermissionNamesForRole(db, user.role, true);
 

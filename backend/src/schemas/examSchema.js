@@ -7,7 +7,8 @@ const { z } = require('zod');
 // Update exam report schema
 const updateExamReportSchema = z.object({
     examId: z.string()
-        .uuid('Invalid exam ID format'),
+        .uuid('Invalid exam ID format')
+        .optional(),  // examId comes from URL params; accepting it in body is optional for clients that echo it back
 
     status: z.enum(['Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Finalized'], {
         errorMap: () => ({ message: 'Invalid exam status' })
