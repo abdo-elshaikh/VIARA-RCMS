@@ -1,4 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { useDispatch } from 'react-redux';
+import toast from 'react-hot-toast';
 import {
     Briefcase,
     Calendar,
@@ -19,6 +21,7 @@ import SecuritySettings from '../components/settings/SecuritySettings';
 import LeaveManager from '../components/hr/LeaveManager';
 import StaffShiftSchedule from '../components/hr/attendance/StaffShiftSchedule';
 import { selectCurrentUser, updateCurrentUser } from '../store/authSlice';
+import { useUpdateProfileMutation } from '../store/api';
 import PageHeader from '../components/ui/PageHeader';
 
 /* ─── Avatar ──────────────────────────────────────────────────────── */

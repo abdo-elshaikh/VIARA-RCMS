@@ -248,6 +248,7 @@ const CampaignCard = ({ campaign, copy, formatDate, formatMoney, canManage, onSt
 const IconButton = ({ label, onClick, disabled, children }) => <button type="button" aria-label={label} title={label} onClick={onClick} disabled={disabled} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-pink-50 hover:text-pink-700 disabled:opacity-50 dark:hover:bg-pink-400/10 dark:hover:text-pink-300">{children}</button>;
 const Info = ({ label, value, icon: Icon }) => <div><dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</dt><dd className="mt-1 flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-200">{Icon && <Icon size={14} />}{value}</dd></div>;
 const Loading = ({ label }) => <div className="animate-pulse p-12 text-center text-sm font-bold text-slate-400">{label}</div>;
+const ErrorState = ({ label }) => <div role="alert" className="p-12 text-center text-sm font-bold text-red-500">{label}</div>;
 const Empty = ({ title, description, actionLabel, onAction, icon: Icon = Megaphone }) => (
     <div className="p-12 text-center">
         <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-pink-50 text-pink-700 dark:bg-pink-950/30 dark:text-pink-300">
