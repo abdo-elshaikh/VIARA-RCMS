@@ -157,6 +157,52 @@ const createPatient = (db) => async (req, res, next) => {
         const passportNumberHash = validatedData.passportNumber ? hash(validatedData.passportNumber) : null;
         const nameDobHash = buildNameDobHash(validatedData.firstName, validatedData.lastName, validatedData.dateOfBirth);
 
+        // Duplicate guard (backend-enforced): the frontend matcher cannot see
+        // double-clicks or API clients. Exact identity fingerprints first
+        // (phone / national id / passport), then name+DOB composite.
+        const dupConditions = [];
+        const dupValues = [];
+        if (phoneHash) {
+            dupValues.push(phoneHash);
+            dupConditions.push(`phone_hash = $${dupValues.length}`);
+        }
+        if (nationalIdHash) {
+            dupValues.push(nationalIdHash);
+            dupConditions.push(`national_id_hash = $${dupValues.length}`);
+        }
+        if (passportNumberHash) {
+            dupValues.push(passportNumberHash);
+            dupConditions.push(`passport_number_hash = $${dupValues.length}`);
+        }
+        if (nameDobHash) {
+            dupValues.push(nameDobHash);
+            dupConditions.push(`name_dob_hash = $${dupValues.length}`);
+        }
+        if (dupConditions.length) {
+            const existing = await db.query(
+                `SELECT patient_id, mrn, patient_status, created_at
+                 FROM patients
+                 WHERE patient_status NOT IN ('Merged', 'Anonymized')
+                   AND (${dupConditions.join(' OR ')})
+                 LIMIT 1`,
+                dupValues
+            );
+            if (existing.rows.length) {
+                const dup = existing.rows[0];
+                return res.status(409).json({
+                    message: 'A patient with these details already exists',
+                    code: 'PATIENT_DUPLICATE',
+                    existingPatient: {
+                        patient_id: dup.patient_id,
+                        mrn: dup.mrn,
+                        patient_status: dup.patient_status,
+                        created_at: dup.created_at,
+                    },
+                    hint: 'Link the existing record instead of creating a duplicate (merge if needed).',
+                });
+            }
+        }
+
         // Generate portal password
         const generatedPassword = generateSecurePassword();
         const passwordHash = await bcrypt.hash(generatedPassword, 10);
@@ -267,7 +313,6 @@ const createPatient = (db) => async (req, res, next) => {
             details: { mrn: result.rows[0].mrn },
             required: true
         });
-
         const patientData = { ...result.rows[0] };
         delete patientData.password_hash;
         delete patientData.password;

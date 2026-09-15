@@ -995,7 +995,13 @@ const collectPayment = (db) => async (req, res, next) => {
                 const hasContrast = contrastCheck.rows[0].has_verified_contrast;
                 if (!hasContrast) {
                     await client.query('ROLLBACK');
-                    return next(new AppError('هذا الفحص يتطلب صبغة وريدية. يجب تسجيل وإضافة صبغة ومستلزمات الفحص إلى الفاتورة أولاً قبل إتمام التحصيل.', 400));
+                    return next(new AppError(
+                        'This exam requires IV contrast. Register and add the contrast consumables to the invoice before collecting payment. | هذا الفحص يتطلب صبغة وريدية. يجب تسجيل وإضافة صبغة ومستلزمات الفحص إلى الفاتورة أولاً قبل إتمام التحصيل.',
+                        400,
+                        true,
+                        'CONTRAST_REQUIRED',
+                        { action: 'add_contrast_consumables', invoiceId: invoice.invoice_id, examId: invoice.exam_id || null }
+                    ));
                 }
             }
         }

@@ -9,15 +9,17 @@ const { errorHandler } = require('../src/middleware/errorHandler');
 describe('Patient Controller Hardening & Canonical Routes', () => {
     describe('createPatient security sanitization (BUG-C01)', () => {
         it('should NOT leak portalPassword or password_hash in response', async () => {
+            const insertRow = {
+                patient_id: 'p-1001',
+                mrn: 'PAT-2026-TEST',
+                created_at: new Date().toISOString(),
+                password_hash: '$2b$10$abcdefghijklmnopqrstuvwxyz0123456789'
+            };
             const mockDb = {
-                query: jest.fn().mockResolvedValue({
-                    rows: [{
-                        patient_id: 'p-1001',
-                        mrn: 'PAT-2026-TEST',
-                        created_at: new Date().toISOString(),
-                        password_hash: '$2b$10$abcdefghijklmnopqrstuvwxyz0123456789'
-                    }]
-                })
+                // First call = duplicate guard lookup (empty), second = INSERT.
+                query: jest.fn()
+                    .mockResolvedValueOnce({ rows: [] })
+                    .mockResolvedValueOnce({ rows: [insertRow] })
             };
 
             const req = {
@@ -51,7 +53,49 @@ describe('Patient Controller Hardening & Canonical Routes', () => {
             expect(responseBody.data.password_hash).toBeUndefined();
             expect(responseBody.data.password).toBeUndefined();
             expect(responseBody.data.patient_id).toBe('p-1001');
-            expect(responseBody.data.mrn).toBe('PAT-2026-TEST');
+        });
+
+        it('BUG-001: rejects duplicate patient with 409 + existing patient info (backend guard)', async () => {
+            const mockDb = {
+                // Duplicate guard lookup finds an existing active patient.
+                query: jest.fn().mockResolvedValue({
+                    rows: [{
+                        patient_id: 'p-existing',
+                        mrn: 'PAT-2026-EXIST',
+                        patient_status: 'Active',
+                        created_at: new Date().toISOString(),
+                    }]
+                })
+            };
+            const req = {
+                body: {
+                    firstName: 'Duplicate',
+                    lastName: 'CheckUser',
+                    dateOfBirth: '1985-05-05',
+                    gender: 'Female',
+                    phone: '01234567890'
+                },
+                user: { user_id: 'u-admin-1', role: 'Admin' },
+                ip: '127.0.0.1'
+            };
+            const res = {
+                status: jest.fn().mockReturnThis(),
+                json: jest.fn()
+            };
+            const next = jest.fn();
+
+            const handler = createPatient(mockDb);
+            await handler(req, res, next);
+
+            expect(res.status).toHaveBeenCalledWith(409);
+            const body = res.json.mock.calls[0][0];
+            expect(body.code).toBe('PATIENT_DUPLICATE');
+            expect(body.existingPatient).toEqual(expect.objectContaining({
+                patient_id: 'p-existing',
+                mrn: 'PAT-2026-EXIST'
+            }));
+            // No INSERT may run after a duplicate hit: exactly one query total.
+            expect(mockDb.query).toHaveBeenCalledTimes(1);
         });
     });
 

@@ -21,8 +21,17 @@ const errorHandler = (err, req, res, next) => {
         error = new ConflictError('The resource is still referenced by another record');
     }
     if (['22P02', '23502', '23514'].includes(error.code)) {
-        const detail = err.detail || err.message || 'The request contains an invalid value';
-        error = new ValidationError(detail.includes('The request contains') ? detail : `Invalid value: ${detail}`);
+        // 22P02 on a UUID path param means "no such record can exist" — the
+        // user-telling answer is 404, not raw Postgres syntax text (UX-003).
+        const isUuidPath = error.code === '22P02'
+            && /uuid/i.test(String(err.message || ''))
+            && /\/[0-9a-f]{0,8}[-a-z0-9]*$/i.test(String(req.originalUrl || '').split('?')[0]);
+        if (isUuidPath) {
+            error = new AppError('Record not found', 404);
+        } else {
+            const detail = err.detail || err.message || 'The request contains an invalid value';
+            error = new ValidationError(detail.includes('The request contains') ? detail : `Invalid value: ${detail}`);
+        }
     }
     // JWT Token mappings
     if (error.name === 'JsonWebTokenError') {

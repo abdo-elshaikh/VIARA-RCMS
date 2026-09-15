@@ -8,7 +8,7 @@ const allowedMessageKinds = new Set(['text', 'sticker', 'attachment']);
 const systemAdministratorRoles = new Set(['Admin', 'SuperAdmin', 'Developer']);
 const externalInboxRoles = new Set(['Admin', 'Receptionist', 'Marketing', 'Developer']);
 const validPostPermissions = new Set(['all_members', 'admins_only']);
-const MAX_MESSAGE_LENGTH = 4000;
+const MAX_MESSAGE_LENGTH = 2000;
 
 const attachmentPreviewSql = (alias) => `
     COALESCE(

@@ -59,7 +59,13 @@ const createPatientSchema = z.object({
 
     gender: z.enum(['Male', 'Female', 'Other'], {
         errorMap: () => ({ message: 'Gender must be Male, Female, or Other' })
-    }).optional(),
+    })
+        // Accept any casing ("female", "MALE") — normalize instead of rejecting.
+        .or(z.string().transform((v) => v.trim().charAt(0).toUpperCase() + v.trim().slice(1).toLowerCase())
+            .refine((v) => ['Male', 'Female', 'Other'].includes(v), {
+                message: 'Gender must be Male, Female, or Other'
+            }))
+        .optional(),
 
     email: z.string()
         .email('Invalid email format')

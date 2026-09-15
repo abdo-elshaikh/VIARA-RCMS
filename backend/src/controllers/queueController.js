@@ -1048,7 +1048,13 @@ const transitionQueue = (db) => async (req, res, next) => {
 
             if (contrastLogged.rows.length > 0 && !contrastLogged.rows[0].has_verified_contrast) {
                 await client.query('ROLLBACK');
-                return next(new AppError('هذا الفحص يتطلب صبغة وريدية. يجب تسجيل وصرف صبغة ومستلزمات الفحص قبل إنهاء الفحص وكتابة التقرير.', 400));
+                return next(new AppError(
+                    'This exam requires IV contrast. Register and dispense the contrast and exam consumables before completing the exam and writing the report. | هذا الفحص يتطلب صبغة وريدية. يجب تسجيل وصرف صبغة ومستلزمات الفحص قبل إنهاء الفحص وكتابة التقرير.',
+                    400,
+                    true,
+                    'CONTRAST_REQUIRED',
+                    { action: 'dispense_contrast_consumables', examId }
+                ));
             }
         }
 
