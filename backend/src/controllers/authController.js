@@ -482,6 +482,40 @@ const logout = (db) => async (req, res, next) => {
                 await db.query(`UPDATE refresh_tokens SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'logout' WHERE token_hash = $1`, [refreshHash]);
             }
         }
+        // Immediate access-token invalidation (SEC-007): clearing the owner's
+        // current_session_id makes the per-request single-session check in
+        // authMiddleware reject this token at once instead of at JWT expiry.
+        // Best-effort and optional: only when a valid Bearer token is present
+        // (this endpoint is intentionally reachable without one).
+        const authHeader = req.headers.authorization;
+        const [scheme, token] = authHeader?.split(' ') || [];
+        if (scheme === 'Bearer' && token && !token.startsWith('VIARA_live_')) {
+            try {
+                // Identifies the session being logged out so it can be
+                // invalidated immediately; mirrors authMiddleware's secret
+                // resolution (its module-level constant is a snapshot of the
+                // same env variable). Best-effort — failures are ignored.
+                const user = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+                if (user?.session_id) {
+                    if (user.user_id) {
+                        await db.query(
+                            'UPDATE users SET current_session_id = NULL WHERE user_id = $1 AND current_session_id = $2',
+                            [user.user_id, user.session_id]
+                        );
+                    } else if (user.patientId || user.patient_id) {
+                        await db.query(
+                            'UPDATE patients SET current_session_id = NULL WHERE patient_id = $1 AND current_session_id = $2',
+                            [user.patientId || user.patient_id, user.session_id]
+                        );
+                    } else if (user.doctorId || user.doctor_id) {
+                        await db.query(
+                            'UPDATE referring_doctors SET current_session_id = NULL WHERE doctor_id = $1 AND current_session_id = $2',
+                            [user.doctorId || user.doctor_id, user.session_id]
+                        );
+                    }
+                }
+            } catch { /* expired/invalid token on logout — nothing to invalidate */ }
+        }
         res.clearCookie('refreshToken', {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',

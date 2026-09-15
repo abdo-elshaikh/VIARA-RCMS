@@ -830,7 +830,7 @@ describe('request and lifecycle business rules', () => {
         const db = {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
-                if (text.includes('WITH filtered_queue AS')) {
+                if (text.includes('stage_counts AS')) {
                     return {
                         rows: [{
                             total: 12,
@@ -871,9 +871,14 @@ describe('request and lifecycle business rules', () => {
         expect(pageSql).toContain('GREATEST(0');
         expect(pageSql).toContain('LIMIT $5 OFFSET $6');
         expect(pageValues).toEqual(['Ready for Exam', 'Routine', 'Modality', 'technician-1', 1, 1]);
-        expect(kpiSql).toContain('WITH filtered_queue AS');
+        // Lightweight KPI statement: same filter tree, aggregation-only columns.
+        expect(kpiSql).toContain('WITH last_event AS');
+        expect(kpiSql).toContain('stage_counts AS');
         expect(kpiSql).not.toContain('LIMIT $5 OFFSET $6');
         expect(kpiSql).toContain('(a.technician_id = $4 OR a.technician_id IS NULL)');
+        // The KPI statement must NOT carry display-only payloads.
+        expect(kpiSql).not.toContain('first_name_enc');
+        expect(kpiSql).not.toContain('report_content');
         expect(kpiValues).toEqual(['Ready for Exam', 'Routine', 'Modality', 'technician-1', 'technician-1']);
         expect(res.json).toHaveBeenCalledWith({
             data: [expect.objectContaining({ exam_id: '00000000-0000-4000-8000-000000000113' })],

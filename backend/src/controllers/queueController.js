@@ -248,8 +248,8 @@ const getQueue = (db) => async (req, res, next) => {
                    e.is_on_hold, e.hold_started_at, e.hold_released_at, e.hold_reason,
                    e.order_number, e.priority, e.clinical_indication, e.body_part, e.contrast_required,
                    e.pregnancy_safety_status, e.implant_safety_status, e.renal_safety_status,
-                   e.is_follow_up, e.prior_exam_id, e.follow_up_reason,
-                    e.report_content, e.report_status,
+                    e.is_follow_up, e.prior_exam_id, e.follow_up_reason,
+                    e.report_status,
                     e.created_at,
                     a.start_time, a.end_time, a.preparation_status,
                     a.nurse_id, a.nurse_assigned_at, a.nurse_task_available_at, a.nurse_assignment_version,
@@ -411,31 +411,36 @@ const getQueue = (db) => async (req, res, next) => {
             WHERE 1=1
         `;
 
+        // Filter clauses are accumulated ONCE and appended to both the display
+        // query and the lightweight KPI query — guarantees tab counts always
+        // match the visible list and cannot drift apart.
+        let filterClauses = '';
+
         if (stage) {
-            query += ` AND e.queue_stage = $${param++}`;
+            filterClauses += ` AND e.queue_stage = $${param++}`;
             values.push(stage);
         } else {
-            query += ` AND a.status != 'Cancelled' AND e.queue_stage != 'Cancelled'`;
+            filterClauses += ` AND a.status != 'Cancelled' AND e.queue_stage != 'Cancelled'`;
         }
 
         if (station) {
-            query += ` AND e.current_station = $${param++}`;
+            filterClauses += ` AND e.current_station = $${param++}`;
             values.push(station);
         }
 
         if (priority) {
-            query += ` AND e.priority = $${param++}`;
+            filterClauses += ` AND e.priority = $${param++}`;
             values.push(priority);
         }
 
         if (date) {
-            query += ` AND a.start_time >= $${param}::date AND a.start_time < ($${param}::date + '1 day'::interval)`;
+            filterClauses += ` AND a.start_time >= $${param}::date AND a.start_time < ($${param}::date + '1 day'::interval)`;
             values.push(date);
             param++;
         }
 
         if (includeDelivered !== 'true') {
-            query += ` AND e.queue_stage != 'Delivered'`;
+            filterClauses += ` AND e.queue_stage != 'Delivered'`;
         }
 
         const clinicalTaskConfig = ROLE_CONFIG[req.user.role];
@@ -444,7 +449,7 @@ const getQueue = (db) => async (req, res, next) => {
                 return next(new AppError('Queue station is not available for this clinical role', 403, true, 'ROLE_NOT_ELIGIBLE'));
             }
             if (!station) {
-                query += ` AND e.current_station = $${param++}`;
+                filterClauses += ` AND e.current_station = $${param++}`;
                 values.push(clinicalTaskConfig.station);
             }
 
@@ -454,18 +459,18 @@ const getQueue = (db) => async (req, res, next) => {
             const emergencyVisibility = hasEmergencyTaskVisibility(req.user);
 
             if (scope === 'mine') {
-                query += ` AND ${assignmentColumn} = $${param++}`;
+                filterClauses += ` AND ${assignmentColumn} = $${param++}`;
                 values.push(req.user.user_id);
             } else if (scope === 'available') {
-                query += ` AND ${assignmentColumn} IS NULL`;
+                filterClauses += ` AND ${assignmentColumn} IS NULL`;
             } else if (!emergencyVisibility) {
-                query += ` AND (${assignmentColumn} = $${param++} OR ${assignmentColumn} IS NULL)`;
+                filterClauses += ` AND (${assignmentColumn} = $${param++} OR ${assignmentColumn} IS NULL)`;
                 values.push(req.user.user_id);
             }
         } else if (['Receptionist', 'Cashier', 'Admin', 'Developer'].includes(req.user.role)) {
             // Receptionists, Cashiers, and Admins can see all cases across clinical stations for holistic workflow tracking
             if (scope === 'mine') {
-                query += ` AND a.receptionist_id = $${param++}`;
+                filterClauses += ` AND a.receptionist_id = $${param++}`;
                 values.push(req.user.user_id);
             }
         } else {
@@ -474,7 +479,7 @@ const getQueue = (db) => async (req, res, next) => {
             }
             // Non-clinical operational views may see the shared pool, but not a
             // private task already owned by a clinical user.
-            query += ` AND (
+            filterClauses += ` AND (
                 e.current_station NOT IN ('Nurse', 'Modality', 'Radiologist')
                 OR (e.current_station = 'Nurse' AND a.nurse_id IS NULL)
                 OR (e.current_station = 'Modality' AND a.technician_id IS NULL)
@@ -482,13 +487,75 @@ const getQueue = (db) => async (req, res, next) => {
             )`;
         }
 
+        // Append the shared filters to the display query.
+        query += filterClauses;
         const filteredQuery = query;
         const filterValues = [...values];
         const kpiValues = [...filterValues, req.user.user_id];
         const currentUserParam = `$${kpiValues.length}`;
+        // Lightweight KPI statement: identical filter tree (so tab counts always
+        // match the visible list) but WITHOUT display columns — no decrypted
+        // patient names, no financial LATERALs, no staff/user joins. Only the
+        // columns the aggregates below actually read.
         const kpiQuery = `
-            WITH filtered_queue AS (
-                ${filteredQuery}
+            WITH last_event AS (
+                SELECT DISTINCT ON (exam_id)
+                    exam_id, created_at as last_event_at
+                FROM queue_events
+                WHERE event_type = 'Transition'
+                  AND from_stage IS DISTINCT FROM to_stage
+                ORDER BY exam_id, created_at DESC
+            ),
+            hold_totals AS (
+                SELECT exam_id, queue_stage,
+                       COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(released_at, NOW()) - started_at))), 0) AS hold_seconds
+                FROM clinical_task_hold_intervals
+                GROUP BY exam_id, queue_stage
+            ),
+            filtered_queue AS (
+                SELECT
+                    e.queue_stage,
+                    e.current_station,
+                    e.is_on_hold,
+                    e.priority,
+                    e.delivered_at, e.report_finalized_at, e.created_at,
+                    e.arrived_at,
+                    CASE e.current_station
+                        WHEN 'Nurse' THEN a.nurse_id
+                        WHEN 'Modality' THEN a.technician_id
+                        WHEN 'Radiologist' THEN e.performing_radiologist_id
+                        ELSE NULL
+                    END AS task_assignee_id,
+                    CASE e.current_station
+                        WHEN 'Nurse' THEN a.nurse_task_started_at
+                        WHEN 'Modality' THEN a.technician_task_started_at
+                        WHEN 'Radiologist' THEN e.radiologist_task_started_at
+                        ELSE NULL
+                    END AS task_started_at,
+                    CASE
+                        WHEN e.queue_stage IN ('Delivered', 'Cancelled') THEN 0
+                        ELSE GREATEST(0, ROUND((EXTRACT(EPOCH FROM (NOW() - CASE
+                            WHEN e.queue_stage = 'Scheduled' THEN a.start_time
+                            ELSE COALESCE(le.last_event_at, e.arrived_at, e.created_at)
+                        END)) - COALESCE(ht.hold_seconds, 0)) / 60))
+                    END AS waiting_minutes,
+                    CASE
+                        WHEN e.delivered_at IS NULL AND e.report_finalized_at IS NULL THEN NULL
+                        WHEN COALESCE(e.delivered_at, e.report_finalized_at) < e.created_at THEN NULL
+                        ELSE GREATEST(0, ROUND(EXTRACT(EPOCH FROM (COALESCE(e.delivered_at, e.report_finalized_at) - e.created_at)) / 60))
+                    END AS turnaround_minutes,
+                    a.status AS appointment_status,
+                    a.receptionist_id,
+                    a.nurse_id, a.technician_id,
+                    e.exam_id, e.appointment_id
+                FROM examinations e
+                JOIN appointments a ON e.appointment_id = a.appointment_id
+                JOIN patients p ON e.patient_id = p.patient_id
+                JOIN modalities m ON e.modality_id = m.modality_id
+                 LEFT JOIN last_event le ON le.exam_id = e.exam_id
+                 LEFT JOIN hold_totals ht ON ht.exam_id = e.exam_id AND ht.queue_stage = e.queue_stage
+                WHERE 1=1
+                ${filterClauses}
             ),
             stage_counts AS (
                 SELECT queue_stage, COUNT(*)::integer AS stage_count
