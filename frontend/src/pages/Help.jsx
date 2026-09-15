@@ -1192,6 +1192,7 @@ const ShortcutRow = ({ keys, label }) => {
 };
 
 const QuickCard = ({ article, isArabic }) => {
+    const { t } = useTranslation('help');
     const Icon = article.icon;
     const tone = COLOR_MAP[article.color] ?? COLOR_MAP.emerald;
     const label = isArabic ? article.titleAr : article.titleEn;
@@ -1209,7 +1210,7 @@ const QuickCard = ({ article, isArabic }) => {
                 </p>
                 <p className="mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold text-slate-400">
                     <ExternalLink size={10} />
-                    <span>{isArabic ? 'فتح الشاشة التفاعلية' : 'Open Workspace'}</span>
+                    <span>{t('openWorkspace')}</span>
                 </p>
             </div>
             <ChevronRight size={15} className="shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-teal-600 dark:text-slate-600 rtl:rotate-180" />
@@ -1218,6 +1219,7 @@ const QuickCard = ({ article, isArabic }) => {
 };
 
 const ArticleCard = ({ article, isArabic, canOpenRoute = true }) => {
+    const { t } = useTranslation('help');
     const [open, setOpen] = useState(false);
     const [feedback, setFeedback] = useState(() => getHelpFeedback()[article.id] || null);
     const tone = COLOR_MAP[article.color] ?? COLOR_MAP.emerald;
@@ -1272,7 +1274,7 @@ const ArticleCard = ({ article, isArabic, canOpenRoute = true }) => {
                     </p>
                     <div className="mt-2.5 flex items-center gap-2">
                         <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-                        <span className="text-[11px] font-bold text-slate-400">{steps.length} {isArabic ? 'خطوات تنفيذية واضحة' : 'actionable steps'}</span>
+                        <span className="text-[11px] font-bold text-slate-400">{steps.length} {t('actionableSteps')}</span>
                     </div>
                 </div>
 
@@ -1310,7 +1312,7 @@ const ArticleCard = ({ article, isArabic, canOpenRoute = true }) => {
                                 className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95"
                             >
                                 <Zap size={13} />
-                                <span>{isArabic ? 'فتح الشاشة التفاعلية المعنية' : 'Open Interactive Workspace'}</span>
+                                <span>{t('openInteractiveWorkspace')}</span>
                                 <ExternalLink size={11} />
                             </Link>
                         </div>
@@ -1318,17 +1320,17 @@ const ArticleCard = ({ article, isArabic, canOpenRoute = true }) => {
 
                     {article.route && !canOpenRoute && (
                         <p role="note" className="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-bold text-amber-800 dark:text-amber-300">
-                            {isArabic ? 'يمكنك قراءة هذا الدليل، لكن صلاحيتك الحالية لا تسمح بفتح الشاشة المرتبطة.' : 'You can read this guide, but your current access does not allow opening the linked workspace.'}
+                            {t('youCanReadThisGuideBut')}
                         </p>
                     )}
 
                     <div className="mt-4 flex items-center gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                        <span>{isArabic ? 'هل كان هذا الدليل مفيداً؟' : 'Was this guide helpful?'}</span>
+                        <span>{t('wasThisGuideHelpful')}</span>
                         <button type="button" aria-pressed={feedback === 'yes'} onClick={() => submitFeedback('yes')} className={`rounded-lg px-2.5 py-1 transition ${feedback === 'yes' ? 'bg-emerald-500 text-white' : 'bg-slate-200/70 hover:bg-emerald-500/20 dark:bg-slate-800'}`}>
-                            {isArabic ? 'نعم' : 'Yes'}
+                            {t('yes')}
                         </button>
                         <button type="button" aria-pressed={feedback === 'no'} onClick={() => submitFeedback('no')} className={`rounded-lg px-2.5 py-1 transition ${feedback === 'no' ? 'bg-rose-500 text-white' : 'bg-slate-200/70 hover:bg-rose-500/20 dark:bg-slate-800'}`}>
-                            {isArabic ? 'لا' : 'No'}
+                            {t('no')}
                         </button>
                     </div>
                 </div>
@@ -1338,6 +1340,7 @@ const ArticleCard = ({ article, isArabic, canOpenRoute = true }) => {
 };
 
 const CatalogResultCard = ({ item, isArabic, user }) => {
+    const { t } = useTranslation('help');
     const localized = getLocalizedHelpItem(item, isArabic ? 'ar' : 'en');
     const canOpen = itemCanOpen(item, user);
     const typeLabel = HELP_TYPE_LABELS[item.type]?.[isArabic ? 'ar' : 'en'] || item.type;
@@ -1353,11 +1356,11 @@ const CatalogResultCard = ({ item, isArabic, user }) => {
                     </div>
                     <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-300">{localized.summary || localized.description}</p>
                 </div>
-                {item.route && canOpen && <Link to={item.route} onClick={() => recordHelpEvent('help_route_opened', { itemId: item.id })} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-2 text-[11px] font-black text-white hover:bg-sky-500"><Zap size={12} />{isArabic ? 'فتح' : 'Open'}</Link>}
+                {item.route && canOpen && <Link to={item.route} onClick={() => recordHelpEvent('help_route_opened', { itemId: item.id })} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-2 text-[11px] font-black text-white hover:bg-sky-500"><Zap size={12} />{t('open')}</Link>}
             </div>
             {item.state && <p className="mt-2 text-[10px] font-black text-sky-700 dark:text-sky-300">{isArabic ? `الحالة: ${item.state}` : `Stage: ${item.state}`}</p>}
             {steps.length > 0 && <ol className="mt-3 space-y-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">{steps.slice(0, 3).map((step, index) => <li key={index} className="flex gap-2"><span className="font-black text-sky-600">{index + 1}.</span><span>{step}</span></li>)}</ol>}
-            {item.route && !canOpen && <p className="mt-3 text-[11px] font-bold text-amber-700 dark:text-amber-300">{isArabic ? 'المعلومة متاحة للقراءة، لكن الشاشة المرتبطة تتطلب صلاحية إضافية.' : 'Read-only guidance: the linked workspace requires additional access.'}</p>}
+            {item.route && !canOpen && <p className="mt-3 text-[11px] font-bold text-amber-700 dark:text-amber-300">{t('readOnlyGuidanceTheLinkedWorkspace')}</p>}
         </article>
     );
 };
@@ -1554,10 +1557,10 @@ const Help = () => {
         try {
             await navigator.clipboard.writeText(text);
             setCopied(true);
-            toast.success(isArabic ? 'تم نسخ التقرير الفني والتشخيصي بنجاح' : 'System diagnostics copied to clipboard');
+            toast.success(t('systemDiagnosticsCopiedToClipboard'));
             setTimeout(() => setCopied(false), 2000);
         } catch {
-            toast.error(isArabic ? 'تعذر النسخ' : 'Copy failed');
+            toast.error(t('copyFailed'));
         }
     };
 
@@ -1567,15 +1570,15 @@ const Help = () => {
                 icon={HelpCircle}
                 eyebrowIcon={Sparkles}
                 eyebrow={t('eyebrow', 'Knowledge Base & Operations Manual')}
-                title={isArabic ? 'مركز المعرفة والأدلة التشغيلية الشاملة' : 'Comprehensive Knowledge & Operations Center'}
+                title={t('comprehensiveKnowledgeOperationsCenter')}
                 description={isArabic ? `أدلة التشغيل والبروتوكولات المتاحة لدور ${t(`roles.${role}`, { defaultValue: role })}` : `Workflow manuals, clinical protocols, and troubleshooting guidance for ${role}`}
                 metrics={[
-                    { key: 'guides', icon: BookOpen, label: isArabic ? 'الأدلة المتاحة' : 'Available guides', value: roleArticleCount, tone: 'teal' },
-                    { key: 'results', icon: Search, label: isArabic ? 'نتائج البحث' : 'Search results', value: visibleArticles.length, tone: 'blue' },
-                    { key: 'categories', icon: Layers, label: isArabic ? 'التصنيفات' : 'Categories', value: Math.max(0, availableCategories.length - 1), tone: 'violet' },
-                    { key: 'network', icon: isOnline ? Wifi : WifiOff, label: isArabic ? 'حالة المعرفة' : 'Knowledge status', value: isOnline ? (isArabic ? 'متصل' : 'Online') : (isArabic ? 'دون اتصال' : 'Offline'), tone: isOnline ? 'emerald' : 'amber' }
+                    { key: 'guides', icon: BookOpen, label: t('availableGuides'), value: roleArticleCount, tone: 'teal' },
+                    { key: 'results', icon: Search, label: t('searchResults'), value: visibleArticles.length, tone: 'blue' },
+                    { key: 'categories', icon: Layers, label: t('categories'), value: Math.max(0, availableCategories.length - 1), tone: 'violet' },
+                    { key: 'network', icon: isOnline ? Wifi : WifiOff, label: t('knowledgeStatus'), value: isOnline ? (t('online')) : (t('offline')), tone: isOnline ? 'emerald' : 'amber' }
                 ]}
-                metricsLabel={isArabic ? 'مؤشرات سجل المساعدة' : 'Help record indicators'}
+                metricsLabel={t('helpRecordIndicators')}
             />
             {/* Top Knowledge Hero Command Deck */}
             <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8">
@@ -1599,11 +1602,11 @@ const Help = () => {
                                         : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
                                 }`}>
                                     {isOnline ? <Wifi size={10} /> : <WifiOff size={10} />}
-                                    <span>{isOnline ? (isArabic ? 'مزامنة مباشرة' : 'Online Sync') : (isArabic ? 'وضع عدم الاتصال' : 'Offline Mode')}</span>
+                                    <span>{isOnline ? (t('onlineSync')) : (t('offlineMode'))}</span>
                                 </span>
                             </div>
                             <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
-                                {isArabic ? 'مركز المعرفة والأدلة التشغيلية الشاملة' : 'Comprehensive Knowledge & Operations Center'}
+                                {t('comprehensiveKnowledgeOperationsCenter')}
                             </h1>
                             <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
                                 {isArabic ? `تغطية تشغيلية كاملة لجميع الأقسام والبروتوكولات السريرية لدور: ${t(`roles.${role}`, { defaultValue: role })}` : `Complete ${ARTICLES.length}-guide workflow manuals, clinical protocols, and troubleshooting diagnostics for ${role}`}
@@ -1618,7 +1621,7 @@ const Help = () => {
                         </span>
                         <span className="inline-flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs font-black text-sky-700 dark:text-sky-300">
                             <BookOpen size={14} />
-                            <span>{roleArticleCount} {isArabic ? 'دليل إرشادي' : 'Guides'}</span>
+                            <span>{roleArticleCount} {t('guides')}</span>
                         </span>
                     </div>
                 </div>
@@ -1630,8 +1633,8 @@ const Help = () => {
                         ref={searchRef}
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        placeholder={isArabic ? 'ابحث في مسارات العمل، بروتوكولات الفحص، اختصارات الكيبورد، أو رموز الأخطاء...' : 'Search workflows, exam protocols, shortcuts, or error codes...'}
-                        aria-label={isArabic ? 'البحث في أدلة المساعدة' : 'Search help guides'}
+                        placeholder={t('searchWorkflowsExamProtocolsShortcutsOr')}
+                        aria-label={t('searchHelpGuides')}
                         className="h-12 w-full rounded-2xl border border-slate-200/80 bg-slate-50/50 ps-11 pe-24 text-xs font-bold text-slate-800 outline-hidden transition focus:border-teal-500 focus:bg-white dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-200"
                     />
                     <div className="absolute end-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -1639,7 +1642,7 @@ const Help = () => {
                             <button
                                 type="button"
                                 onClick={clearSearch}
-                                aria-label={isArabic ? 'مسح البحث' : 'Clear search'}
+                                aria-label={t('clearSearch')}
                                 className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition"
                             >
                                 <X size={14} />
@@ -1652,14 +1655,14 @@ const Help = () => {
                 </div>
 
                 {/* Sub-Tabs Strip */}
-                <div role="tablist" aria-label={isArabic ? 'أقسام مركز المساعدة' : 'Help center sections'} className="mt-6 flex gap-1.5 overflow-x-auto border-t border-slate-100 pt-4 dark:border-slate-800 scrollbar-none">
+                <div role="tablist" aria-label={t('helpCenterSections')} className="mt-6 flex gap-1.5 overflow-x-auto border-t border-slate-100 pt-4 dark:border-slate-800 scrollbar-none">
                     {[
                         { id: 'guides', label: isArabic ? `أدلة مسارات العمل الشاملة (${ARTICLES.length} دليلاً)` : `Workflow Manuals (${ARTICLES.length} Guides)`, icon: BookOpen },
-                        { id: 'playbooks', label: isArabic ? 'دليل المهام اليومية للأدوار' : 'Role Daily Playbooks', icon: CheckSquare },
-                        { id: 'workflows', label: isArabic ? 'خريطة رحلة الفحص والتصعيد' : 'Study Journey & Escalation', icon: GitBranch },
-                        { id: 'protocols', label: isArabic ? 'بروتوكولات الفحوصات والتحضير السريري' : 'Clinical Exam Protocols & Prep', icon: HeartPulse },
-                        { id: 'troubleshooting', label: isArabic ? 'استكشاف الأخطاء والحلول' : 'Troubleshooting Matrix', icon: AlertTriangle },
-                        { id: 'shortcuts', label: isArabic ? 'اختصارات الكيبورد ومستعرض PACS' : 'Keyboard & PACS Shortcuts', icon: Keyboard },
+                        { id: 'playbooks', label: t('roleDailyPlaybooks'), icon: CheckSquare },
+                        { id: 'workflows', label: t('studyJourneyEscalation'), icon: GitBranch },
+                        { id: 'protocols', label: t('clinicalExamProtocolsPrep'), icon: HeartPulse },
+                        { id: 'troubleshooting', label: t('troubleshootingMatrix'), icon: AlertTriangle },
+                        { id: 'shortcuts', label: t('keyboardPacsShortcuts'), icon: Keyboard },
                     ].map(tab => {
                         const Icon = tab.icon;
                         const isActive = mainTab === tab.id;
@@ -1694,7 +1697,7 @@ const Help = () => {
                         <section aria-live="polite" className="rounded-3xl border border-sky-500/20 bg-white/90 p-5 shadow-sm dark:bg-slate-900/90">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div>
-                                    <h2 className="text-sm font-black text-slate-900 dark:text-white">{isArabic ? 'نتائج البحث في كل مركز المساعدة' : 'Results across the entire help center'}</h2>
+                                    <h2 className="text-sm font-black text-slate-900 dark:text-white">{t('resultsAcrossTheEntireHelpCenter')}</h2>
                                     <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{isArabic ? `${catalogResults.length} نتيجة في المهام والأدلة والبروتوكولات والأخطاء والاختصارات` : `${catalogResults.length} results across tasks, guides, protocols, errors, and shortcuts`}</p>
                                 </div>
                                 <span className="rounded-full bg-sky-500/10 px-3 py-1 text-xs font-black text-sky-700 dark:text-sky-300">{catalogResults.length}</span>
@@ -1704,7 +1707,7 @@ const Help = () => {
                                     {catalogResults.slice(0, 12).map((item) => <CatalogResultCard key={item.id} item={item} isArabic={isArabic} user={user} />)}
                                 </div>
                             ) : (
-                                <p className="mt-4 rounded-2xl bg-slate-100 p-4 text-xs font-bold text-slate-600 dark:bg-slate-950 dark:text-slate-300">{isArabic ? 'لا توجد نتيجة مطابقة. جرّب اسم حالة أو صلاحية أو رمز خطأ مثل 403.' : 'No matching result. Try a workflow state, permission, or error code such as 403.'}</p>
+                                <p className="mt-4 rounded-2xl bg-slate-100 p-4 text-xs font-bold text-slate-600 dark:bg-slate-950 dark:text-slate-300">{t('noMatchingResultTryAWorkflow')}</p>
                             )}
                         </section>
                     )}
@@ -1713,9 +1716,9 @@ const Help = () => {
                         <div className="flex items-center justify-between">
                             <div>
                                 <h2 id="quick-heading" className="text-sm font-black text-slate-900 dark:text-white">
-                                    {isArabic ? 'الشاشات الرئيسية الأكثر استخداماً' : 'Frequent Role Workspaces'}
+                                    {t('frequentRoleWorkspaces')}
                                 </h2>
-                                <p className="text-xs font-semibold text-slate-400">{isArabic ? 'اختصارات مباشرة لأهم مسارات العمل اليومية' : 'Direct shortcuts to critical workflows'}</p>
+                                <p className="text-xs font-semibold text-slate-400">{t('directShortcutsToCriticalWorkflows')}</p>
                             </div>
                             <span className="rounded-full bg-teal-500/10 px-3 py-0.5 text-[11px] font-black text-teal-700 dark:text-teal-300">
                                 {quickLinks.length}
@@ -1783,14 +1786,14 @@ const Help = () => {
                             {visibleArticles.length === 0 ? (
                                 <div className="flex min-h-64 flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50/50 p-8 text-center dark:border-slate-800 dark:bg-slate-950/30">
                                     <Search size={30} className="text-slate-300 dark:text-slate-600" />
-                                    <p className="mt-3 text-sm font-black text-slate-800 dark:text-slate-200">{isArabic ? 'لم يتم العثور على أدلة مطابقة' : 'No matching guides found'}</p>
-                                    <p className="mt-1 text-xs font-semibold text-slate-400">{isArabic ? 'جرّب كتابة كلمة بحث أخرى أو إعادة ضبط عوامل التصفية.' : 'Try refining your search keyword or reset filters.'}</p>
+                                    <p className="mt-3 text-sm font-black text-slate-800 dark:text-slate-200">{t('noMatchingGuidesFound')}</p>
+                                    <p className="mt-1 text-xs font-semibold text-slate-400">{t('tryRefiningYourSearchKeywordOr')}</p>
                                     <button
                                         type="button"
                                         onClick={() => { clearSearch(); setCategory('all'); }}
                                         className="mt-4 rounded-xl bg-teal-50 px-4 py-2 text-xs font-bold text-teal-700 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300"
                                     >
-                                        {isArabic ? 'إعادة ضبط البحث والتصنيفات' : 'Reset Search Filters'}
+                                        {t('resetSearchFilters')}
                                     </button>
                                 </div>
                             ) : (
@@ -1811,12 +1814,12 @@ const Help = () => {
                                         <LifeBuoy size={18} />
                                     </div>
                                     <div>
-                                        <h3 className="text-sm font-black text-slate-900 dark:text-white">{isArabic ? 'الدعم الفني والتشخيص' : 'Technical Support'}</h3>
-                                        <p className="text-[11px] font-semibold text-slate-400">{isArabic ? 'سجلات النظام والتصعيد' : 'Diagnostic logs & escalation'}</p>
+                                        <h3 className="text-sm font-black text-slate-900 dark:text-white">{t('technicalSupport')}</h3>
+                                        <p className="text-[11px] font-semibold text-slate-400">{t('diagnosticLogsEscalation')}</p>
                                     </div>
                                 </div>
                                 <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-bold text-amber-900 dark:text-amber-300 leading-relaxed">
-                                    {isArabic ? 'تواصل مع مسؤول نظام الأشعة أو الدعم الفني المعتمد عند حدوث أي انقطاع في خادم الـ PACS أو قاعدة البيانات.' : 'Contact the radiology center system administrator for critical database or PACS gateway alerts.'}
+                                    {t('contactTheRadiologyCenterSystemAdministrator')}
                                 </p>
                                 <button
                                     type="button"
@@ -1824,7 +1827,7 @@ const Help = () => {
                                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white py-2 text-xs font-black text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
                                 >
                                     {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                                    <span>{copied ? (isArabic ? 'تم نسخ التقرير' : 'Copied') : (isArabic ? 'نسخ تقرير التشخيص الفني' : 'Copy System Diagnostics')}</span>
+                                    <span>{copied ? (t('copied')) : (t('copySystemDiagnostics'))}</span>
                                 </button>
                             </div>
 
@@ -1832,10 +1835,10 @@ const Help = () => {
                             <div className="rounded-3xl border border-teal-500/30 bg-gradient-to-br from-teal-500/10 to-sky-500/10 p-5">
                                 <div className="flex items-center gap-2 text-xs font-black text-teal-900 dark:text-teal-300">
                                     <CheckCircle2 size={16} />
-                                    <span>{isArabic ? 'الحوكمة والسلامة الإشعاعية والسريرية' : 'Clinical Governance & Safety'}</span>
+                                    <span>{t('clinicalGovernanceSafety')}</span>
                                 </div>
                                 <p className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-400 leading-relaxed">
-                                {isArabic ? 'تخضع عمليات الوصول والتعديل والاعتماد للتقارير لسجلات تدقيق إلكترونية. يعتمد تسجيل جرعات الإشعاع على تكامل الجهاز وبيانات DICOM المتاحة في المنشأة.' : 'Report access, edits, and approvals are recorded in electronic audit trails. Radiation-dose capture depends on configured modality integration and available DICOM data.'}
+                                {t('reportAccessEditsAndApprovalsAre')}
                                 </p>
                             </div>
                         </aside>
@@ -1891,7 +1894,7 @@ const Help = () => {
                         <div className="space-y-3">
                             <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-teal-800 dark:text-teal-300">
                                 <CheckSquare size={15} />
-                                <span>{isArabic ? 'قائمة المهام اليومية الأساسية' : 'Daily Core Workflow Checklist'}</span>
+                                <span>{t('dailyCoreWorkflowChecklist')}</span>
                             </h3>
                             <div className="grid gap-3 sm:grid-cols-2">
                                 {selectedRolePlaybook.checklist.map((it, idx) => (
@@ -1910,7 +1913,7 @@ const Help = () => {
                         {/* Primary Workspaces Section */}
                         <div className="space-y-3 border-t border-slate-100 pt-5 dark:border-slate-800">
                             <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
-                                {isArabic ? 'أهم الشاشات التفاعلية المرتبطة بهذا الدور' : 'Primary Workspaces Linked to This Role'}
+                                {t('primaryWorkspacesLinkedToThisRole')}
                             </h3>
                             <div className="flex flex-wrap gap-2.5">
                                 {selectedRolePlaybook.primaryRoutes.filter(rt => canAccessRouteTarget(rt.path, user)).map(rt => (
@@ -1934,10 +1937,10 @@ const Help = () => {
                     <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                                <h2 className="text-base font-black text-slate-900 dark:text-white">{isArabic ? 'رحلة الفحص من التسجيل إلى التسليم' : 'Study journey from registration to delivery'}</h2>
-                                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{isArabic ? 'توضح المحطة والحالة والمسؤول والخطوة التالية ومسار التصعيد.' : 'Shows each station, state, owner, next action, and escalation path.'}</p>
+                                <h2 className="text-base font-black text-slate-900 dark:text-white">{t('studyJourneyFromRegistrationToDelivery')}</h2>
+                                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{t('showsEachStationStateOwnerNext')}</p>
                             </div>
-                            <span className="rounded-full bg-teal-500/10 px-3 py-1 text-xs font-black text-teal-700 dark:text-teal-300">{WORKFLOW_STAGES.length} {isArabic ? 'مراحل' : 'stages'}</span>
+                            <span className="rounded-full bg-teal-500/10 px-3 py-1 text-xs font-black text-teal-700 dark:text-teal-300">{WORKFLOW_STAGES.length} {t('stages')}</span>
                         </div>
                         <div className="mt-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
                             {WORKFLOW_STAGES.map((stage, index) => {
@@ -1954,7 +1957,7 @@ const Help = () => {
                                         </div>
                                         <p className="mt-3 text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-300">{isArabic ? stage.escalationAr : stage.escalationEn}</p>
                                         <div className="mt-3 flex flex-wrap gap-1.5">{stage.roles.map((stageRole) => <span key={stageRole} className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black text-slate-500 shadow-sm dark:bg-slate-900">{t(`roles.${stageRole}`, { defaultValue: stageRole })}</span>)}</div>
-                                        {canOpen && <Link to={stage.route} className="mt-4 inline-flex items-center gap-1.5 text-xs font-black text-teal-700 hover:text-teal-500 dark:text-teal-300"><ExternalLink size={12} />{isArabic ? 'فتح المحطة' : 'Open station'}</Link>}
+                                        {canOpen && <Link to={stage.route} className="mt-4 inline-flex items-center gap-1.5 text-xs font-black text-teal-700 hover:text-teal-500 dark:text-teal-300"><ExternalLink size={12} />{t('openStation')}</Link>}
                                     </article>
                                 );
                             })}
@@ -1967,16 +1970,16 @@ const Help = () => {
             {mainTab === 'protocols' && (
                 <section id="help-panel-protocols" role="tabpanel" aria-labelledby="help-tab-protocols" className="space-y-6">
                     <div role="note" className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-bold leading-relaxed text-amber-900 dark:text-amber-200">
-                        {isArabic ? 'مرجع سلامة سريري: هذه الإرشادات لا تستبدل بروتوكول المنشأة أو قرار الطبيب. يجب اعتماد كل بروتوكول محلياً ومراجعته دورياً قبل الاستخدام.' : 'Clinical safety reference: this guidance does not replace the facility protocol or a clinician decision. Each local protocol must be approved and reviewed before use.'}
-                        <span className="mt-2 block text-[10px] font-black uppercase tracking-wider">{isArabic ? 'المالك: الإدارة الطبية | الإصدار: 1.0 | آخر مراجعة: 2026-09-10' : 'Owner: Medical Director | Version: 1.0 | Reviewed: 2026-09-10'}</span>
+                        {t('clinicalSafetyReferenceThisGuidanceDoes')}
+                        <span className="mt-2 block text-[10px] font-black uppercase tracking-wider">{t('ownerMedicalDirectorVersion10')}</span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
                             <h2 className="text-base font-black text-slate-900 dark:text-white">
-                                {isArabic ? 'دليل بروتوكولات الفحوصات والتحضير السريري للأجهزة' : 'Clinical Modality Protocols & Patient Prep Directory'}
+                                {t('clinicalModalityProtocolsPatientPrepDirectory')}
                             </h2>
                             <p className="text-xs font-semibold text-slate-400 mt-0.5">
-                                {isArabic ? 'معايير التحضير، شروط الصيام، واحتياطات الصبغة الوريدية لكل جهاز' : 'Standard fasting instructions, contrast safety, and clinical scanning rules'}
+                                {t('standardFastingInstructionsContrastSafetyAnd')}
                             </p>
                         </div>
                     </div>
@@ -2023,7 +2026,7 @@ const Help = () => {
                                 <div className="space-y-2 text-xs">
                                     <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3">
                                         <p className="text-[10px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">
-                                            {isArabic ? 'تعليمات الصيام عن الطعام والشراب:' : 'Fasting & Hydration Instructions:'}
+                                            {t('fastingHydrationInstructions')}
                                         </p>
                                         <p className="mt-1 font-bold text-amber-950 dark:text-amber-200 leading-relaxed">
                                             {isArabic ? ex.fastingAr : ex.fasting}
@@ -2032,7 +2035,7 @@ const Help = () => {
 
                                     <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/40">
                                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                            {isArabic ? 'إجراءات واحتياطات السلامة السريرية:' : 'Clinical Safety & Pre-Exam Prep:'}
+                                            {t('clinicalSafetyPreExamPrep')}
                                         </p>
                                         <p className="mt-1 font-semibold text-slate-700 dark:text-slate-300 leading-relaxed">
                                             {isArabic ? ex.prepAr : ex.prep}
@@ -2041,7 +2044,7 @@ const Help = () => {
 
                                     <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 p-3">
                                         <p className="text-[10px] font-black uppercase tracking-wider text-sky-800 dark:text-sky-300">
-                                            {isArabic ? 'بروتوكول الصبغة الوريدية (IV Contrast):' : 'Intravenous Contrast Protocol:'}
+                                            {t('intravenousContrastProtocol')}
                                         </p>
                                         <p className="mt-1 font-bold text-sky-950 dark:text-sky-200 leading-relaxed">
                                             {isArabic ? ex.contrastAr : ex.contrast}
@@ -2059,10 +2062,10 @@ const Help = () => {
                 <section id="help-panel-troubleshooting" role="tabpanel" aria-labelledby="help-tab-troubleshooting" className="space-y-4">
                     <div className="mb-2">
                         <h2 className="text-base font-black text-slate-900 dark:text-white">
-                            {isArabic ? 'دليل استكشاف وحل المشكلات التشغيلية والفنية' : 'Operational & Technical Incident Resolver'}
+                            {t('operationalTechnicalIncidentResolver')}
                         </h2>
                         <p className="text-xs font-semibold text-slate-400">
-                            {isArabic ? 'حلول فورية ومجربة لأكثر الحالات والمشكلات شيوعاً في بيئة مركز الأشعة' : 'Instant troubleshooting steps for common radiology & IT workflow challenges'}
+                            {t('instantTroubleshootingStepsForCommonRadiology')}
                         </p>
                     </div>
 
@@ -2091,7 +2094,7 @@ const Help = () => {
 
                                     <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40 space-y-2">
                                         <p className="text-[10px] font-black uppercase tracking-wider text-teal-800 dark:text-teal-300">
-                                            {isArabic ? 'خطوات المعالجة الموصى بها:' : 'Recommended Resolution Steps:'}
+                                            {t('recommendedResolutionSteps')}
                                         </p>
                                         <ul className="space-y-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
                                             {item.solutions.map((sol, idx) => (
@@ -2114,10 +2117,10 @@ const Help = () => {
                 <section id="help-panel-shortcuts" role="tabpanel" aria-labelledby="help-tab-shortcuts" className="space-y-6">
                     <div className="mb-2">
                         <h2 className="text-base font-black text-slate-900 dark:text-white">
-                            {isArabic ? 'دليل الاختصارات السريعة ومستعرض DICOM PACS' : 'Complete Keyboard & DICOM Viewer Shortcuts'}
+                            {t('completeKeyboardDicomViewerShortcuts')}
                         </h2>
                         <p className="text-xs font-semibold text-slate-400">
-                            {isArabic ? 'اختصارات سريرية ولوحة المفاتيح لتسريع الإنتاجية وكتابة التقارير الطبية' : 'Power-user keyboard keys for rapid diagnostic viewing and reporting'}
+                            {t('powerUserKeyboardKeysForRapid')}
                         </p>
                     </div>
 

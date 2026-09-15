@@ -263,8 +263,8 @@ export default function Notifications() {
     // Actions
     const handleMarkAll = async () => {
         const scopeLabel = scope === 'personal'
-            ? (isAr ? 'صندوق إشعاراتي الشخصي' : 'your personal inbox')
-            : (isAr ? 'سجل الإرسال الصادر للمركز' : 'the center outbound log');
+            ? (t('yourPersonalInbox'))
+            : (t('theCenterOutboundLog'));
         if (!window.confirm(isAr
             ? `هل تريد تحديد جميع الإشعارات في ${scopeLabel} كمقروءة؟`
             : `Mark all notifications in ${scopeLabel} as read?`)) return;
@@ -274,9 +274,9 @@ export default function Notifications() {
             } else {
                 await markAllRead().unwrap();
             }
-            toast.success(isAr ? 'تم تحديد جميع الإشعارات كمقروءة' : 'All notifications marked as read');
+            toast.success(t('allNotificationsMarkedAsRead'));
         } catch (err) {
-            toast.error(getErrorMessage(err, isAr ? 'فشلت العملية' : 'Action failed'));
+            toast.error(getErrorMessage(err, t('actionFailed')));
         }
     };
 
@@ -287,9 +287,9 @@ export default function Notifications() {
             } else {
                 await markRead(id).unwrap();
             }
-            toast.success(isAr ? 'تم تحديد الإشعار كمقروء' : 'Notification marked as read');
+            toast.success(t('notificationMarkedAsRead'));
         } catch (err) {
-            toast.error(getErrorMessage(err, isAr ? 'فشلت العملية' : 'Action failed'));
+            toast.error(getErrorMessage(err, t('actionFailed')));
         }
     };
 
@@ -302,18 +302,18 @@ export default function Notifications() {
         if (!item?.entity_id) return;
         try {
             await acknowledgeCriticalResult({ examId: item.entity_id }).unwrap();
-            toast.success(isAr ? 'تم تأكيد استلام النتيجة الحرجة' : 'Critical result acknowledged');
+            toast.success(t('criticalResultAcknowledged'));
         } catch (error) {
-            toast.error(getErrorMessage(error, isAr ? 'تعذر تأكيد النتيجة الحرجة' : 'Could not acknowledge critical result'));
+            toast.error(getErrorMessage(error, t('couldNotAcknowledgeCriticalResult')));
         }
     };
 
     const handleCopy = async (item) => {
         try {
             await navigator.clipboard.writeText([item.subject, item.recipient, item.content, item.event_type].filter(Boolean).join('\n\n'));
-            toast.success(isAr ? 'تم نسخ بيانات الإشعار إلى الحافظة' : 'Copied notification to clipboard');
+            toast.success(t('copiedNotificationToClipboard'));
         } catch {
-            toast.error(isAr ? 'تعذر النسخ' : 'Could not copy');
+            toast.error(t('couldNotCopy'));
         }
     };
 
@@ -321,42 +321,32 @@ export default function Notifications() {
         if (type === 'reminder') {
             setManualForm((prev) => ({
                 ...prev,
-                subject: isAr ? 'تذكير بموعد الفحص الطبي' : 'Radiology Appointment Reminder',
-                body: isAr
-                    ? 'نود تذكيركم بموعد الفحص الإشعاعي الخاص بكم لدى مركز طيبة سكان. يُرجى الحضور قبل الموعد بـ 15 دقيقة مع إحضار بطاقة الهوية والفحوصات السابقة.'
-                    : 'Friendly reminder for your upcoming diagnostic exam at Tiba Scan. Please arrive 15 minutes before your scheduled slot with your ID and prior medical files.'
+                subject: t('radiologyAppointmentReminder'),
+                body: t('friendlyReminderForYourUpcomingDiagnostic')
             }));
         } else if (type === 'ready') {
             setManualForm((prev) => ({
                 ...prev,
-                subject: isAr ? 'التقرير التشخيصي والصور جاهزة للاستلام' : 'Diagnostic Report & Images Ready',
-                body: isAr
-                    ? 'نحيطكم علماً بأن التقرير الطبي وصور الفحص الإشعاعي تم اعتمادها رسمياً وأصبحت متاحة للتحميل عبر بوابة المريض الإلكترونية أو الاستلام المباشر.'
-                    : 'Your diagnostic radiology report and calibrated DICOM images have been signed off and are now available for secure download via the patient portal.'
+                subject: t('diagnosticReportImagesReady'),
+                body: t('yourDiagnosticRadiologyReportAndCalibrated')
             }));
         } else if (type === 'prep') {
             setManualForm((prev) => ({
                 ...prev,
-                subject: isAr ? 'تعليمات وإرشادات التحضير للفحص' : 'Exam Preparation Instructions',
-                body: isAr
-                    ? 'يُرجى الصيام لمدة 6 ساعات قبل موعد الفحص، وشرب كمية مناسبة من الماء، وتجنب ارتداء أي حلي أو معادن أثناء الفحص.'
-                    : 'Please fast for 6 hours prior to your scheduled exam, remain well-hydrated, and refrain from wearing metallic jewelry or accessories.'
+                subject: t('examPreparationInstructions'),
+                body: t('pleaseFastFor6HoursPrior')
             }));
         } else if (type === 'payment') {
             setManualForm((prev) => ({
                 ...prev,
-                subject: isAr ? 'تأكيد استلام السداد الإلكتروني' : 'Payment Receipt & Confirmation',
-                body: isAr
-                    ? 'تم استلام وتأكيد سداد فاتورة الخدمات التشخيصية بنجاح. يمكنكم تحميل الإيصال المعتمد عبر حسابكم.'
-                    : 'We confirm the successful receipt of your payment for diagnostic medical services. Your certified invoice is available in your portal.'
+                subject: t('paymentReceiptConfirmation'),
+                body: t('weConfirmTheSuccessfulReceiptOf')
             }));
         } else if (type === 'urgent') {
             setManualForm((prev) => ({
                 ...prev,
-                subject: isAr ? 'تنبيه سريري عاجل ومهم' : 'Urgent Clinical Notification',
-                body: isAr
-                    ? 'تنبيه سريري عاجل يتطلب مراجعة فورية من الطبيب المعالج أو المريض لاستكمال الخطة العلاجية.'
-                    : 'Urgent clinical communication requiring prompt review by the attending physician or patient.'
+                subject: t('urgentClinicalNotification'),
+                body: t('urgentClinicalCommunicationRequiringPromptReview')
             }));
         }
     };
@@ -374,11 +364,11 @@ export default function Notifications() {
                 subject: manualForm.channel === 'Email' ? manualForm.subject.trim() || undefined : undefined,
                 ...(manualForm.channel === 'Email' ? { recipientEmail: recipient } : { recipientPhone: recipient })
             }).unwrap();
-            toast.success(isAr ? 'تم إرسال الإشعار بنجاح' : 'Notification dispatched successfully');
+            toast.success(t('notificationDispatchedSuccessfully'));
             setManualForm({ recipient: '', channel: 'Email', subject: '', body: '' });
             setComposerOpen(false);
         } catch (err) {
-            toast.error(getErrorMessage(err, isAr ? 'تعذر إرسال الإشعار' : 'Could not dispatch notification'));
+            toast.error(getErrorMessage(err, t('couldNotDispatchNotification')));
         }
     };
 
@@ -393,11 +383,9 @@ export default function Notifications() {
             <PageHeader
                 icon={Bell}
                 eyebrowIcon={Activity}
-                eyebrow={isAr ? 'مركز الرسائل والتنبيهات السريرية والتشغيلية الموحد' : 'Unified Clinical & Operational Communications Hub'}
-                title={isAr ? 'مركز الإشعارات والتنبيهات والتواصل' : 'Notifications, System Alerts & Communications Hub'}
-                description={isAr
-                    ? 'إدارة ومتابعة إشعارات وتنبيهات النظام، الحالات السريرية الحرجة، أعطال الأجهزة، وسجل الرسائل الصادرة للمرضى والأطباء.'
-                    : 'Monitor clinical STAT alerts, system warnings, equipment maintenance notices, and multi-channel patient dispatches.'}
+                eyebrow={t('unifiedClinicalOperationalCommunicationsHub')}
+                title={t('notificationsSystemAlertsCommunicationsHub')}
+                description={t('monitorClinicalStatAlertsSystemWarnings')}
                 meta={
                     <div className="flex flex-wrap items-center gap-2">
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-bold text-teal-700 dark:text-teal-300">
@@ -405,17 +393,17 @@ export default function Notifications() {
                                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-400 opacity-75" />
                                 <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-500" />
                             </span>
-                            <span>{isAr ? 'محرك التنبيهات نشط ومباشر' : 'Live Realtime Push Active'}</span>
+                            <span>{t('liveRealtimePushActive')}</span>
                         </span>
                         {counts.unread > 0 && (
                             <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-bold text-rose-700 dark:text-rose-300">
                                 <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping" />
                                 <span className="font-mono">{counts.unread}</span>
-                                <span>{isAr ? 'غير مقروء' : 'unread'}</span>
+                                <span>{t('unread')}</span>
                             </span>
                         )}
                         <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                            {currentUser?.role || (isAr ? 'مستخدم النظام' : 'Staff')}
+                            {currentUser?.role || (t('staff'))}
                         </span>
                     </div>
                 }
@@ -428,7 +416,7 @@ export default function Notifications() {
                                 className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-xs font-black text-white shadow-md shadow-teal-600/20 transition hover:brightness-110"
                             >
                                 <Send size={14} />
-                                <span>{isAr ? 'إرسال إشعار مباشر' : 'New Dispatch'}</span>
+                                <span>{t('newDispatch')}</span>
                             </button>
                         )}
                         <button
@@ -437,7 +425,7 @@ export default function Notifications() {
                             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                         >
                             <Settings size={15} />
-                            <span>{isAr ? 'تفضيلات الإشعارات' : 'Preferences'}</span>
+                            <span>{t('preferences')}</span>
                         </button>
                         <button
                             type="button"
@@ -446,7 +434,7 @@ export default function Notifications() {
                             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                         >
                             <RefreshCw size={14} className={isFetching ? 'animate-spin text-teal-600' : ''} />
-                            <span>{isAr ? 'تحديث السجلات' : 'Refresh'}</span>
+                            <span>{t('refresh')}</span>
                         </button>
                     </div>
                 }
@@ -454,9 +442,9 @@ export default function Notifications() {
                     {
                         key: 'unread',
                         icon: Bell,
-                        label: isAr ? 'التنبيهات غير المقروءة' : 'Unread Alerts',
+                        label: t('unreadAlerts'),
                         value: counts.unread,
-                        detail: counts.unread > 0 ? (isAr ? 'تتطلب مراجعة ومتابعة' : 'Requires follow-up') : (isAr ? 'جميع التنبيهات مراجعة' : 'All clear'),
+                        detail: counts.unread > 0 ? (t('requiresFollowUp')) : (t('allClear')),
                         tone: counts.unread > 0 ? 'rose' : 'emerald',
                         loading: isLoading,
                         error: isError
@@ -464,9 +452,9 @@ export default function Notifications() {
                     {
                         key: 'critical',
                         icon: AlertOctagon,
-                        label: isAr ? 'التحذيرات والإنذارات الحرجة' : 'Critical / STAT Alerts',
+                        label: t('criticalStatAlerts'),
                         value: counts.critical,
-                        detail: counts.critical > 0 ? (isAr ? 'حالات عاجلة جداً' : 'STAT priority cases') : (isAr ? 'لا توجد إنذارات حرجة' : 'No critical alerts'),
+                        detail: counts.critical > 0 ? (t('statPriorityCases')) : (t('noCriticalAlerts')),
                         tone: counts.critical > 0 ? 'rose' : 'slate',
                         loading: isLoading,
                         error: isError
@@ -474,11 +462,11 @@ export default function Notifications() {
                     {
                         key: 'deliveryRate',
                         icon: CheckCheck,
-                        label: isAr ? 'نسبة نجاح تسليم الرسائل' : 'Delivery Success Rate',
+                        label: t('deliverySuccessRate'),
                          value: counts.deliveryRate === null ? '—' : `${counts.deliveryRate}%`,
                          detail: scope === 'outbound'
-                             ? `${counts.delivered} ${isAr ? 'تم تسليمها بنجاح' : 'delivered dispatches'}`
-                             : (isAr ? 'متاح في سجل الإرسال الصادر فقط' : 'Available for outbound logs only'),
+                             ? `${counts.delivered} ${t('deliveredDispatches')}`
+                             : (t('availableForOutboundLogsOnly')),
                         tone: counts.deliveryRate >= 90 ? 'emerald' : counts.deliveryRate >= 75 ? 'amber' : 'rose',
                         loading: isLoading,
                         error: isError
@@ -486,17 +474,17 @@ export default function Notifications() {
                     {
                         key: 'total',
                         icon: Activity,
-                        label: isAr ? 'إجمالي السجلات المسجلة' : 'Total Communication Logs',
+                        label: t('totalCommunicationLogs'),
                         value: counts.total,
                          detail: scope === 'outbound'
-                             ? `${counts.failed} ${isAr ? 'فشل إرسالها' : 'failed dispatches'}`
-                             : (isAr ? 'إشعارات صندوقك الشخصي' : 'Your personal inbox'),
+                             ? `${counts.failed} ${t('failedDispatches')}`
+                             : (t('yourPersonalInboxX')),
                         tone: 'indigo',
                         loading: isLoading,
                         error: isError
                     }
                 ]}
-                metricsLabel={isAr ? 'مؤشرات التنبيهات والرسائل' : 'Notification & Messaging Indicators'}
+                metricsLabel={t('notificationMessagingIndicators')}
             />
 
             {/* 2. Scope Selector Deck: Personal vs Center Outbound Logs */}
@@ -512,7 +500,7 @@ export default function Notifications() {
                         }`}
                     >
                         <UserCheck size={14} />
-                        <span>{isAr ? 'إشعاراتي وسير عملي الشخصي' : 'My Personal Workflow Alerts'}</span>
+                        <span>{t('myPersonalWorkflowAlerts')}</span>
                     </button>
                     {canViewOutbound && (
                         <button
@@ -525,7 +513,7 @@ export default function Notifications() {
                             }`}
                         >
                             <Send size={14} />
-                            <span>{isAr ? 'سجل تواصل ورسائل المركز الصادرة' : 'Center Outbound Dispatches'}</span>
+                            <span>{t('centerOutboundDispatches')}</span>
                         </button>
                     )}
                 </div>
@@ -539,7 +527,7 @@ export default function Notifications() {
                             className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3.5 text-xs font-black text-teal-700 transition hover:bg-teal-500/20 disabled:opacity-50 dark:text-teal-300"
                         >
                             {isMarkingAll ? <RefreshCw size={13} className="animate-spin" /> : <CheckCheck size={13} />}
-                            <span>{isAr ? 'تحديد الكل كمقروء' : 'Mark all as read'}</span>
+                            <span>{t('markAllAsRead')}</span>
                         </button>
                     )}
                 </div>
@@ -555,14 +543,14 @@ export default function Notifications() {
                             </span>
                             <div>
                                 <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                                    {isAr ? 'نافذة إرسال إشعار مباشر وسريع' : 'Direct Notification Dispatcher'}
+                                    {t('directNotificationDispatcher')}
                                 </h2>
                                 <p className="text-[10px] font-semibold text-slate-400">
-                                    {isAr ? 'إرسال رسائل وتنبيهات فورية للمرضى أو الأطباء عبر القنوات المعتمدة' : 'Dispatch instant messages via SMS, WhatsApp, or Email.'}
+                                    {t('dispatchInstantMessagesViaSmsWhatsapp')}
                                 </p>
                             </div>
                         </div>
-                         <button type="button" onClick={() => setComposerOpen(false)} aria-label={isAr ? 'إغلاق نافذة الإرسال' : 'Close dispatcher'} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                         <button type="button" onClick={() => setComposerOpen(false)} aria-label={t('closeDispatcher')} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                              <X size={16} aria-hidden="true" />
                         </button>
                     </div>
@@ -570,7 +558,7 @@ export default function Notifications() {
                     {/* Quick Clinical Templates */}
                     <div className="mb-3">
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
-                            {isAr ? 'قوالب سريرية وتشغيلية جاهزة:' : 'Clinical Quick Templates:'}
+                            {t('clinicalQuickTemplates')}
                         </span>
                         <div className="flex flex-wrap gap-1.5">
                             <button
@@ -579,7 +567,7 @@ export default function Notifications() {
                                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
                             >
                                 <Clock size={12} className="text-teal-600" />
-                                <span>{isAr ? 'تذكير بالموعد' : 'Appointment Reminder'}</span>
+                                <span>{t('appointmentReminder')}</span>
                             </button>
                             <button
                                 type="button"
@@ -587,7 +575,7 @@ export default function Notifications() {
                                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
                             >
                                 <Sparkles size={12} className="text-teal-600" />
-                                <span>{isAr ? 'التقرير والصور جاهزة' : 'Report Ready'}</span>
+                                <span>{t('reportReady')}</span>
                             </button>
                             <button
                                 type="button"
@@ -595,7 +583,7 @@ export default function Notifications() {
                                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
                             >
                                 <AlertCircle size={12} className="text-teal-600" />
-                                <span>{isAr ? 'إرشادات التحضير' : 'Prep Guidelines'}</span>
+                                <span>{t('prepGuidelines')}</span>
                             </button>
                             <button
                                 type="button"
@@ -603,7 +591,7 @@ export default function Notifications() {
                                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
                             >
                                 <DollarSign size={12} className="text-teal-600" />
-                                <span>{isAr ? 'تأكيد السداد' : 'Payment Confirmation'}</span>
+                                <span>{t('paymentConfirmation')}</span>
                             </button>
                             <button
                                 type="button"
@@ -611,7 +599,7 @@ export default function Notifications() {
                                 className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 transition"
                             >
                                 <AlertOctagon size={12} className="text-rose-600" />
-                                <span>{isAr ? 'تنبيه سريري عاجل' : 'Urgent Alert'}</span>
+                                <span>{t('urgentAlert')}</span>
                             </button>
                         </div>
                     </div>
@@ -640,7 +628,7 @@ export default function Notifications() {
                         <input
                             value={manualForm.subject}
                             onChange={(e) => setManualForm((curr) => ({ ...curr, subject: e.target.value }))}
-                            placeholder={isAr ? 'عنوان البريد الإلكتروني (اختياري)...' : 'Email Subject...'}
+                            placeholder={t('emailSubject')}
                             className={`${fieldClass} mt-3 w-full`}
                         />
                     )}
@@ -651,13 +639,13 @@ export default function Notifications() {
                         required
                         rows={3}
                         maxLength={2000}
-                        placeholder={isAr ? 'اكتب نص الرسالة بدقة للمستلم...' : 'Type message body here...'}
+                        placeholder={t('typeMessageBodyHere')}
                         className={`${fieldClass} mt-3 h-auto min-h-24 w-full py-2.5 leading-relaxed`}
                     />
 
                     <div className="mt-4 flex items-center justify-between">
                         <span className="text-[11px] font-bold text-slate-400 font-mono">
-                            {manualForm.body.length} / 2000 {isAr ? 'حرف' : 'chars'}
+                            {manualForm.body.length} / 2000 {t('chars')}
                         </span>
                         <button
                             type="submit"
@@ -665,7 +653,7 @@ export default function Notifications() {
                             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-600 px-6 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 disabled:opacity-40"
                         >
                             {sendingManual ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
-                            <span>{sendingManual ? (isAr ? 'جاري الإرسال...' : 'Sending...') : (isAr ? 'إرسال الإشعار' : 'Dispatch Notification')}</span>
+                            <span>{sendingManual ? (t('sending')) : (t('dispatchNotification'))}</span>
                         </button>
                     </div>
                 </form>
@@ -673,7 +661,7 @@ export default function Notifications() {
 
             {/* 4. Segmented Category Filter Bar */}
             <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-xs dark:border-slate-800 dark:bg-slate-900/90">
-                <nav aria-label={isAr ? 'تصنيفات الإشعارات' : 'Notification categories'} className="flex flex-wrap gap-1">
+                <nav aria-label={t('notificationCategories')} className="flex flex-wrap gap-1">
                     {categoryDefinitions.map((cat) => {
                         const Icon = cat.icon;
                         const isActive = category === cat.id;
@@ -698,9 +686,7 @@ export default function Notifications() {
 
             {searchLimited && (
                 <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200" role="status">
-                    {isAr
-                        ? 'نتائج البحث محدودة بأحدث السجلات المتاحة. ضيّق البحث للحصول على نتائج أدق.'
-                        : 'Search results are limited to the newest available records. Narrow the search for more complete results.'}
+                    {t('searchResultsAreLimitedToThe')}
                 </p>
             )}
 
@@ -715,11 +701,11 @@ export default function Notifications() {
                             <input
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
-                                placeholder={isAr ? 'بحث بالمستلم، العنوان، المحتوى، أو رقم الملف...' : 'Search recipient, subject, content, or MRN...'}
+                                placeholder={t('searchRecipientSubjectContentOrMrn')}
                                 className={`${fieldClass} w-full ps-10 pe-9`}
                             />
                              {query && (
-                                 <button type="button" onClick={() => setQuery('')} aria-label={isAr ? 'مسح البحث' : 'Clear search'} className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 transition">
+                                 <button type="button" onClick={() => setQuery('')} aria-label={t('clearSearch')} className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 transition">
                                      <X size={14} aria-hidden="true" />
                                 </button>
                             )}
@@ -729,7 +715,7 @@ export default function Notifications() {
                         <select value={channel} onChange={(e) => setChannel(e.target.value)} className={fieldClass}>
                             {CHANNELS.map((ch) => (
                                 <option key={ch} value={ch}>
-                                    {ch === 'all' ? (isAr ? 'جميع القنوات' : 'All Channels') : ch}
+                                    {ch === 'all' ? (t('allChannels')) : ch}
                                 </option>
                             ))}
                         </select>
@@ -738,7 +724,7 @@ export default function Notifications() {
                         <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldClass}>
                             {PRIORITIES.map((pri) => (
                                 <option key={pri} value={pri}>
-                                    {pri === 'all' ? (isAr ? 'جميع الأولويات' : 'All Priorities') : (isAr ? translatePriority(pri) : pri)}
+                                    {pri === 'all' ? (t('allPriorities')) : (isAr ? translatePriority(pri) : pri)}
                                 </option>
                             ))}
                         </select>
@@ -747,7 +733,7 @@ export default function Notifications() {
                         <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldClass}>
                             {STATUSES.map((st) => (
                                 <option key={st} value={st}>
-                                    {st === 'all' ? (isAr ? 'جميع الحالات' : 'All Statuses') : (isAr ? translateStatus(st) : st)}
+                                    {st === 'all' ? (t('allStatuses')) : (isAr ? translateStatus(st) : st)}
                                 </option>
                             ))}
                         </select>
@@ -759,10 +745,10 @@ export default function Notifications() {
                                     type="button"
                                     onClick={() => { setQuery(''); setChannel('all'); setStatus('all'); setPriority('all'); setReadFilter('all'); setCategory('all'); }}
                                     className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-rose-600 transition hover:bg-rose-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-rose-950/30"
-                                    title={isAr ? 'إعادة ضبط الفلاتر' : 'Reset Filters'}
+                                    title={t('resetFilters')}
                                 >
                                     <FilterX size={14} />
-                                    <span>{isAr ? 'مسح' : 'Reset'}</span>
+                                    <span>{t('reset')}</span>
                                 </button>
                             )}
                         </div>
@@ -771,8 +757,8 @@ export default function Notifications() {
                     {/* Secondary Status Pills (All, Unread Only, Read Only) */}
                     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800 pt-2.5">
                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
-                            <span>{isAr ? 'حالة القراءة:' : 'Read State:'}</span>
-                             <div className="inline-flex rounded-lg bg-slate-200/80 p-0.5 dark:bg-slate-800" role="group" aria-label={isAr ? 'حالة القراءة' : 'Read state'}>
+                            <span>{t('readState')}</span>
+                             <div className="inline-flex rounded-lg bg-slate-200/80 p-0.5 dark:bg-slate-800" role="group" aria-label={t('readStateX')}>
                                 {[
                                     { id: 'all', labelAr: 'الكل', labelEn: 'All' },
                                     { id: 'unread', labelAr: 'غير مقروء', labelEn: 'Unread' },
@@ -795,7 +781,7 @@ export default function Notifications() {
                         </div>
 
                         <span className="text-[11px] font-bold text-slate-400 font-mono">
-                            {filteredItems.length} {isAr ? 'إشعار مطابق' : 'matching records'}
+                            {filteredItems.length} {t('matchingRecords')}
                         </span>
                     </div>
                 </div>
@@ -806,24 +792,24 @@ export default function Notifications() {
                         <div className="flex min-h-[360px] flex-col items-center justify-center text-slate-400">
                             <RefreshCw size={24} className="animate-spin text-teal-600" />
                             <p className="mt-3 text-xs font-black text-slate-500">
-                                {isAr ? 'جاري تحميل سجل الإشعارات...' : 'Loading notification stream...'}
+                                {t('loadingNotificationStream')}
                             </p>
                         </div>
                     ) : isError ? (
                         <div className="flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
                             <AlertCircle size={28} className="text-rose-500" />
                             <p className="mt-3 text-sm font-black text-slate-800 dark:text-white">
-                                {isAr ? 'تعذر تحميل الإشعارات' : 'Unable to load notifications'}
+                                {t('unableToLoadNotifications')}
                             </p>
                             <p className="mt-1 max-w-sm text-xs font-semibold text-slate-400">
-                                {getErrorMessage(error, isAr ? 'يرجى التحقق من الاتصال بالخادم والمحاولة مرة أخرى.' : 'The notification service could not be reached.')}
+                                {getErrorMessage(error, t('theNotificationServiceCouldNotBe'))}
                             </p>
                             <button
                                 type="button"
                                 onClick={() => refetch()}
                                 className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white dark:bg-white dark:text-slate-900"
                             >
-                                {isAr ? 'إعادة المحاولة' : 'Retry'}
+                                {t('retry')}
                             </button>
                         </div>
                     ) : filteredItems.length === 0 ? (
@@ -832,10 +818,10 @@ export default function Notifications() {
                                 <Bell size={24} />
                             </div>
                             <p className="text-sm font-black text-slate-800 dark:text-white">
-                                {isAr ? 'لا توجد إشعارات تطابق معايير البحث' : 'No notifications found'}
+                                {t('noNotificationsFound')}
                             </p>
                             <p className="mt-1 text-xs font-semibold text-slate-400 max-w-sm">
-                                {isAr ? 'لم يتم العثور على أي سجلات تنبيهات مطابقة للتصنيف أو الفلاتر المختارة.' : 'No notification records match the selected scope or filter parameters.'}
+                                {t('noNotificationRecordsMatchTheSelected')}
                             </p>
                         </div>
                     ) : (
@@ -885,9 +871,9 @@ export default function Notifications() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-400">{isAr ? 'لكل صفحة:' : 'Per page:'}</span>
+                            <span className="text-xs font-bold text-slate-400">{t('perPage')}</span>
                             <select
-                                aria-label={isAr ? 'عدد الإشعارات في الصفحة' : 'Notifications per page'}
+                                aria-label={t('notificationsPerPage')}
                                 value={pageSize}
                                 onChange={(e) => setPageSize(Number(e.target.value))}
                                 className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
@@ -914,8 +900,9 @@ export default function Notifications() {
 // ─── Notification Card Component ──────────────────────────────────────────
 
 export const NotificationCard = ({ item, expanded, onToggle, onMarkRead, onCopy, onNavigate, onAcknowledge, marking, acknowledging, language, isAr }) => {
+    const { t } = useTranslation(['system', 'common', 'workspace']);
     const ChannelIcon = channelIcons[item.channel] || Bell;
-    const title = item.subject || item.event_type || item.channel || (isAr ? 'إشعار نظام' : 'System Alert');
+    const title = item.subject || item.event_type || item.channel || (t('systemAlert'));
     const priority = normalizePriority(item.priority, item.event_type);
     const priStyle = priorityStyles[priority] || priorityStyles.Normal;
     const badgeStyle = channelStyles[item.channel] || channelStyles.InApp;
@@ -1002,7 +989,7 @@ export const NotificationCard = ({ item, expanded, onToggle, onMarkRead, onCopy,
                                     className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 text-[10px] font-black text-teal-700 hover:bg-teal-500/20 transition dark:text-teal-300"
                                 >
                                     <ExternalLink size={11} aria-hidden="true" />
-                                    <span>{isAr ? 'فتح السجل المرتبط' : 'Open Target Record'}</span>
+                                    <span>{t('openTargetRecord')}</span>
                                 </button>
                             )}
                             <button
@@ -1011,7 +998,7 @@ export const NotificationCard = ({ item, expanded, onToggle, onMarkRead, onCopy,
                                 className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
                             >
                                 <Copy size={11} />
-                                <span>{isAr ? 'نسخ' : 'Copy'}</span>
+                                <span>{t('copy')}</span>
                             </button>
                             {!item.is_read && (
                                 <button
@@ -1021,7 +1008,7 @@ export const NotificationCard = ({ item, expanded, onToggle, onMarkRead, onCopy,
                                     className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 text-[10px] font-black text-teal-700 transition hover:bg-teal-500 hover:text-white disabled:opacity-50 dark:text-teal-300"
                                 >
                                     <Check size={11} />
-                                    <span>{isAr ? 'تحديد كمقروء' : 'Mark read'}</span>
+                                    <span>{t('markRead')}</span>
                                 </button>
                             )}
                             {item.acknowledgement_status === 'Pending' && item.entity_id && (
@@ -1032,7 +1019,7 @@ export const NotificationCard = ({ item, expanded, onToggle, onMarkRead, onCopy,
                                     className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 text-[10px] font-black text-rose-700 transition hover:bg-rose-600 hover:text-white disabled:opacity-50 dark:text-rose-300"
                                 >
                                     <ShieldCheck size={11} />
-                                    <span>{isAr ? 'تأكيد الاستلام الطبي' : 'Acknowledge critical result'}</span>
+                                    <span>{t('acknowledgeCriticalResult')}</span>
                                 </button>
                             )}
                         </div>
@@ -1041,10 +1028,10 @@ export const NotificationCard = ({ item, expanded, onToggle, onMarkRead, onCopy,
                                 type="button"
                                 onClick={onToggle}
                                 aria-expanded={expanded}
-                                aria-label={expanded ? (isAr ? 'إخفاء التفاصيل' : 'Collapse details') : (isAr ? 'عرض التفاصيل' : 'Show details')}
+                                aria-label={expanded ? (t('collapseDetails')) : (t('showDetails'))}
                                 className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition"
                         >
-                            <span>{expanded ? (isAr ? 'إخفاء التفاصيل' : 'Collapse') : (isAr ? 'عرض المزيد' : 'Details')}</span>
+                            <span>{expanded ? (t('collapse')) : (t('details'))}</span>
                             {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                         </button>
                     </div>

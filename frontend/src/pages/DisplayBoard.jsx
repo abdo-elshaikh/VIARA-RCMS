@@ -303,8 +303,8 @@ const DisplayBoard = () => {
 
     const center = board?.center || {};
     const centerLogo = center.logoLightUrl || center.logoUrl || VIARA_BRAND.centerLogoUrl || '/center-logo.png';
-    const centerName = board?.config?.boardTitle || center.nameAr || center.name || (isArabic ? 'مركز طيبة للأشعة' : 'Tiba Scan Center');
-    const centerAddress = center.addressAr || center.address || (isArabic ? 'صالة انتظار الأشعة التشخيصية' : 'Diagnostic Imaging Waiting Area');
+    const centerName = board?.config?.boardTitle || center.nameAr || center.name || (t('tibaScanCenter'));
+    const centerAddress = center.addressAr || center.address || (t('diagnosticImagingWaitingArea'));
     const summary = board?.summary || {};
     const allRooms = useMemo(() => {
         const rooms = [...(board?.rooms || [])];
@@ -482,7 +482,7 @@ const DisplayBoard = () => {
     }, [board?.broadcastCalls, isArabic, soundEnabled, voiceEnabled]);
 
     const formatPatientName = (name, orderNumber) => {
-        if (!name && !orderNumber) return isArabic ? 'حالة فحص' : 'Patient';
+        if (!name && !orderNumber) return t('patient');
         if (privacyMode === 'token_only') return parseTicketDisplay(orderNumber).short;
         if (privacyMode === 'masked' && name) {
             const parts = name.trim().split(/\s+/);
@@ -510,8 +510,8 @@ const DisplayBoard = () => {
                         <span className="absolute -bottom-1 -end-1 h-4 w-4 rounded-full bg-emerald-400 ring-2 ring-slate-900 animate-ping" />
                     </div>
                     <div className="text-center">
-                        <p className="text-lg font-black text-white">{isArabic ? 'جاري مزامنة شاشة العرض...' : 'Synchronizing display board...'}</p>
-                        <p className="text-sm text-slate-500 mt-1">{isArabic ? 'يرجى الانتظار' : 'Please wait'}</p>
+                        <p className="text-lg font-black text-white">{t('synchronizingDisplayBoard')}</p>
+                        <p className="text-sm text-slate-500 mt-1">{t('pleaseWait')}</p>
                     </div>
                 </div>
             </div>
@@ -525,7 +525,7 @@ const DisplayBoard = () => {
                     <ShieldAlert size={42} className="mx-auto text-rose-400" />
                     <h1 className="mt-4 text-xl font-black">{t('states.error')}</h1>
                     <button type="button" onClick={refetch} className="mt-5 rounded-xl bg-teal-500 px-5 py-2 text-sm font-black text-slate-950">
-                        {isArabic ? 'إعادة المحاولة' : 'Try again'}
+                        {t('tryAgain')}
                     </button>
                 </div>
             </div>
@@ -583,7 +583,7 @@ const DisplayBoard = () => {
                             </h1>
                             <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black ${isFetching ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400'}`}>
                                 <span className={`me-1 inline-block h-1.5 w-1.5 rounded-full ${isFetching ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
-                                {isFetching ? (isArabic ? 'تحديث' : 'SYNC') : (isArabic ? 'بث مباشر' : 'LIVE')}
+                                {isFetching ? (t('sync')) : (t('live'))}
                             </span>
                         </div>
                         <p className="mt-1 text-xs font-semibold text-teal-300/80 truncate max-w-md">
@@ -606,7 +606,7 @@ const DisplayBoard = () => {
                     <button
                         type="button"
                         onClick={handleToggleOperationMode}
-                        title={isArabic ? 'تبديل وضع النداء الآلي' : 'Toggle automatic calling'}
+                        title={t('toggleAutomaticCalling')}
                         aria-pressed={operationMode === 'auto'}
                         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition ${
                             operationMode === 'auto'
@@ -615,7 +615,7 @@ const DisplayBoard = () => {
                         }`}
                     >
                         {operationMode === 'auto' ? <Zap size={12} className="animate-pulse" /> : <Users size={12} />}
-                        <span className="hidden sm:inline">{operationMode === 'auto' ? (isArabic ? 'تلقائي' : 'Auto') : (isArabic ? 'يدوي' : 'Manual')}</span>
+                        <span className="hidden sm:inline">{operationMode === 'auto' ? (t('auto')) : (t('manual'))}</span>
                     </button>
 
                     {/* Room Filter */}
@@ -624,13 +624,13 @@ const DisplayBoard = () => {
                             type="button"
                             onClick={() => setIsRoomFilterOpen(!isRoomFilterOpen)}
                             aria-expanded={isRoomFilterOpen}
-                            aria-label={isArabic ? 'تصفية الغرف المعروضة' : 'Filter displayed rooms'}
+                            aria-label={t('filterDisplayedRooms')}
                             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition ${
                                 selectedRooms.length ? 'border-teal-500/40 bg-teal-500/10 text-teal-300' : 'border-slate-800 bg-slate-900 text-slate-400'
                             }`}
                         >
                             <Filter size={12} />
-                            {isArabic ? 'الغرف' : 'Rooms'}
+                            {t('rooms')}
                             {selectedRooms.length > 0 && (
                                 <span className="rounded-full bg-teal-500 text-slate-950 px-1.5 text-[9px] font-black">{selectedRooms.length}</span>
                             )}
@@ -640,10 +640,10 @@ const DisplayBoard = () => {
                                 <div className="fixed inset-0 z-30" onClick={() => setIsRoomFilterOpen(false)} />
                                 <div className="absolute end-0 top-full z-40 mt-2 w-64 rounded-2xl border border-slate-800 bg-slate-900/98 p-3 shadow-2xl backdrop-blur-xl">
                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
-                                        <span className="text-xs font-black text-white">{isArabic ? 'الغرف على هذه الشاشة:' : 'Rooms on this screen:'}</span>
+                                        <span className="text-xs font-black text-white">{t('roomsOnThisScreen')}</span>
                                         {selectedRooms.length > 0 && (
                                             <button type="button" onClick={handleClearRoomFilter} className="text-[10px] font-bold text-rose-400 hover:underline">
-                                                {isArabic ? 'الكل' : 'Show All'}
+                                                {t('showAll')}
                                             </button>
                                         )}
                                     </div>
@@ -674,13 +674,13 @@ const DisplayBoard = () => {
                         type="button"
                         onClick={() => setCallByName(!callByName)}
                         aria-pressed={callByName}
-                        title={isArabic ? 'التبديل بين النداء بالاسم أو الرقم' : 'Switch between name and token calling'}
+                        title={t('switchBetweenNameAndTokenCalling')}
                         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition ${
                             callByName ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-slate-800 bg-slate-900 text-slate-500'
                         }`}
                     >
                         <UserCheck size={12} />
-                        <span className="hidden lg:inline">{callByName ? (isArabic ? 'بالاسم' : 'By Name') : (isArabic ? 'بالرقم' : 'Token Only')}</span>
+                        <span className="hidden lg:inline">{callByName ? (t('byName')) : (t('tokenOnly'))}</span>
                     </button>
 
                     {/* Voice toggle */}
@@ -688,7 +688,7 @@ const DisplayBoard = () => {
                         type="button"
                         onClick={() => setVoiceEnabled(!voiceEnabled)}
                         aria-pressed={voiceEnabled}
-                        title={isArabic ? 'تشغيل أو كتم صوت النداء (M)' : 'Enable or mute announcements (M)'}
+                        title={t('enableOrMuteAnnouncementsM')}
                         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition ${
                             voiceEnabled ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300' : 'border-slate-800 bg-slate-900 text-slate-500'
                         }`}
@@ -704,7 +704,7 @@ const DisplayBoard = () => {
                         className="hidden xl:flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition text-[11px] font-bold"
                     >
                         <Play size={10} className="text-teal-400" />
-                        {isArabic ? 'تجربة' : 'Test'}
+                        {t('test')}
                     </button>
 
                     {/* Privacy */}
@@ -721,8 +721,8 @@ const DisplayBoard = () => {
                     <button
                         type="button"
                         onClick={toggleFullscreen}
-                        title={isArabic ? 'ملء الشاشة (F)' : 'Fullscreen (F)'}
-                        aria-label={isArabic ? 'ملء الشاشة' : 'Fullscreen'}
+                        title={t('fullscreenF')}
+                        aria-label={t('fullscreen')}
                         className="p-2 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition"
                     >
                         {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />}
@@ -794,7 +794,7 @@ const DisplayBoard = () => {
                                             <div className="flex items-center gap-2">
                                                 <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/15 px-2.5 py-0.5 text-[9.5px] font-black uppercase tracking-[0.14em] text-amber-300 shadow-sm">
                                                     <Radio size={11} className={isSpeaking ? 'animate-pulse text-rose-400' : ''} />
-                                                    <span>{isArabic ? 'نداء فوري نشط الآن' : 'Live Patient Call'}</span>
+                                                    <span>{t('livePatientCall')}</span>
                                                 </span>
                                                 {isSpeaking && <AudioWaveEqualizer isPlaying />}
                                             </div>
@@ -805,12 +805,12 @@ const DisplayBoard = () => {
                                                 </h3>
                                             ) : (
                                                 <p className="mt-1 text-sm sm:text-base font-extrabold text-amber-200/90">
-                                                    {isArabic ? 'يرجى مراجعة رقم الدور والتفضل بالدخول' : 'Please check your token and proceed'}
+                                                    {t('pleaseCheckYourTokenAndProceed')}
                                                 </p>
                                             )}
 
                                             <p className="hidden sm:block text-[11px] font-medium text-slate-400">
-                                                {isArabic ? 'تم إطلاق التنبيه الصوتي في قاعة الانتظار' : 'Voice broadcast active in waiting hall'}
+                                                {t('voiceBroadcastActiveInWaitingHall')}
                                             </p>
                                         </div>
                                     </div>
@@ -823,7 +823,7 @@ const DisplayBoard = () => {
                                         <div className="relative flex flex-col items-center justify-center rounded-2xl border border-amber-400/50 bg-black/60 px-4 py-1.5 sm:px-6 sm:py-2 shadow-inner shadow-amber-500/10" dir="ltr">
                                             <p className="mb-0.5 flex items-center justify-center gap-1 text-[8.5px] sm:text-[9.5px] font-black uppercase tracking-[0.18em] text-amber-300/80">
                                                 <Hash size={11} className="text-amber-400" />
-                                                <span>{isArabic ? 'رقم الدور' : 'Token'}</span>
+                                                <span>{t('token')}</span>
                                             </p>
                                             <p className="bg-gradient-to-b from-yellow-100 via-amber-300 to-amber-500 bg-clip-text font-mono text-3xl sm:text-4xl 2xl:text-5xl font-black leading-none text-transparent drop-shadow-[0_0_20px_rgba(245,158,11,0.5)]">
                                                 #{getSpokenToken(lastCalledCase.tokenNumber)}
@@ -843,7 +843,7 @@ const DisplayBoard = () => {
                                             </motion.span>
                                             <div className="min-w-0">
                                                 <p className="text-[9px] font-black uppercase tracking-[0.16em] text-teal-300/90">
-                                                    {isArabic ? 'يرجى التوجه فوراً إلى' : 'Proceed immediately to'}
+                                                    {t('proceedImmediatelyTo')}
                                                 </p>
                                                 <p className="mt-0.5 truncate text-base sm:text-lg 2xl:text-xl font-black text-white drop-shadow-[0_0_12px_rgba(45,212,191,0.4)]">
                                                     {lastCalledCase.roomName}
@@ -864,7 +864,7 @@ const DisplayBoard = () => {
                                             />
                                             <div className="flex flex-col text-start">
                                                 <span className="text-xs font-black text-slate-900 leading-tight">{centerName}</span>
-                                                <span className="text-[9px] font-bold text-emerald-700">{isArabic ? 'رعاية تشخيصية متقدمة' : 'Diagnostic Imaging'}</span>
+                                                <span className="text-[9px] font-bold text-emerald-700">{t('diagnosticImaging')}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -877,12 +877,12 @@ const DisplayBoard = () => {
                                             className="inline-flex h-10 sm:h-11 items-center gap-2 rounded-xl bg-gradient-to-b from-amber-300 via-amber-400 to-amber-500 px-3.5 sm:px-4 text-xs font-black text-slate-950 shadow-xl shadow-amber-500/30 transition hover:brightness-110 hover:shadow-amber-500/50 active:scale-95"
                                         >
                                             <PhoneCall size={15} />
-                                            <span className="hidden sm:inline">{isArabic ? 'إعادة النداء' : 'Repeat call'}</span>
+                                            <span className="hidden sm:inline">{t('repeatCall')}</span>
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => setLastCalledCase(null)}
-                                            aria-label={isArabic ? 'إغلاق النداء' : 'Dismiss call'}
+                                            aria-label={t('dismissCall')}
                                             className="grid h-10 w-10 sm:h-11 sm:w-11 place-items-center rounded-xl border border-slate-700/80 bg-slate-900/90 text-sm font-black text-slate-400 shadow-md transition hover:border-rose-500/50 hover:bg-rose-500/20 hover:text-rose-200 active:scale-95"
                                         >
                                             ✕
@@ -916,10 +916,10 @@ const DisplayBoard = () => {
                                 <DoorOpen size={14} className="text-teal-400" />
                             </div>
                             <h2 className="text-sm font-black tracking-wide text-slate-200 2xl:text-base">
-                                {isArabic ? 'أدوار الغرف والأجهزة' : 'Room Queue Status'}
+                                {t('roomQueueStatus')}
                             </h2>
                             <span className="rounded-full bg-teal-500/10 border border-teal-500/20 px-2 py-px text-[9.5px] font-black text-teal-400">
-                                {displayedRooms.length} {isArabic ? 'أجنحة' : 'Suites'}
+                                {displayedRooms.length} {t('suites')}
                             </span>
                         </div>
                         {totalRoomPages > 1 && (
@@ -952,9 +952,9 @@ const DisplayBoard = () => {
                             <div className="h-full flex items-center justify-center">
                                 <div className="text-center p-10 rounded-2xl border border-dashed border-slate-800">
                                     <DoorOpen size={40} className="mx-auto mb-3 text-slate-700" />
-                                    <p className="text-sm font-bold text-slate-600">{isArabic ? 'لا توجد غرف' : 'No rooms found'}</p>
+                                    <p className="text-sm font-bold text-slate-600">{t('noRoomsFound')}</p>
                                     <button type="button" onClick={handleClearRoomFilter} className="mt-2 text-xs text-teal-400 hover:underline font-bold">
-                                        {isArabic ? 'عرض الكل' : 'Show All'}
+                                        {t('showAllX')}
                                     </button>
                                 </div>
                             </div>
@@ -1004,13 +1004,13 @@ const DisplayBoard = () => {
                                                         <div className="min-w-0">
                                                             <h3 className="truncate text-sm font-black leading-tight text-white 2xl:text-base">{roomName}</h3>
                                                             <p className="mt-0.5 truncate text-[10px] font-medium text-slate-400 2xl:text-[11px]">
-                                                                {machines.map(m => m.machine_name).join(' • ') || (isArabic ? 'جناح فحص' : 'Exam Suite')}
+                                                                {machines.map(m => m.machine_name).join(' • ') || (t('examSuite'))}
                                                             </p>
                                                         </div>
                                                     </div>
                                                     <div className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[9.5px] font-black border ${isActive ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-amber-500/30 bg-amber-500/10 text-amber-400'}`}>
                                                         <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                                                        {isActive ? (isArabic ? 'متاح' : 'Active') : (isArabic ? 'صيانة' : 'Standby')}
+                                                        {isActive ? (t('active')) : (t('standby'))}
                                                     </div>
                                                 </div>
 
@@ -1032,12 +1032,12 @@ const DisplayBoard = () => {
                                                                     <div className="flex items-center justify-between mb-1.5">
                                                                         <span className="flex items-center gap-1.5 text-[9.5px] font-black uppercase tracking-widest text-teal-400">
                                                                             <span className="h-1.5 w-1.5 rounded-full bg-teal-400 animate-ping" />
-                                                                            {isArabic ? 'داخل الفحص' : 'In Exam'}
+                                                                            {t('inExam')}
                                                                         </span>
                                                                         {currentCase?.elapsed_minutes != null && (
                                                                             <span className="flex items-center gap-1 text-[9px] text-teal-300/70">
                                                                                 <Timer size={10} />
-                                                                                {currentCase.elapsed_minutes} {isArabic ? 'د' : 'm'}
+                                                                                {currentCase.elapsed_minutes} {t('m')}
                                                                             </span>
                                                                         )}
                                                                     </div>
@@ -1055,12 +1055,12 @@ const DisplayBoard = () => {
                                                                             </div>
                                                                             {currentCase.priority === 'Emergency' && (
                                                                                 <span className="rounded-lg bg-rose-500/20 border border-rose-500/30 px-2 py-0.5 text-[9px] font-black text-rose-400">
-                                                                                    {isArabic ? 'طوارئ' : 'STAT'}
+                                                                                    {t('stat')}
                                                                                 </span>
                                                                             )}
                                                                         </div>
                                                                     ) : (
-                                                                        <p className="text-xs text-slate-600 italic py-0.5">{isArabic ? 'الغرفة جاهزة' : 'Suite ready'}</p>
+                                                                        <p className="text-xs text-slate-600 italic py-0.5">{t('suiteReady')}</p>
                                                                     )}
                                                                 </div>
 
@@ -1069,7 +1069,7 @@ const DisplayBoard = () => {
                                                                     <div className="pointer-events-none absolute -end-8 -bottom-10 h-28 w-28 rounded-full bg-amber-400/[0.06] blur-2xl" />
                                                                     <div className="flex items-center justify-between mb-1.5">
                                                                         <span className="text-[9.5px] font-black uppercase tracking-widest text-amber-400">
-                                                                            {isArabic ? 'الدور التالي' : 'Up Next'}
+                                                                            {t('upNext')}
                                                                         </span>
                                                                         {nextCase && (
                                                                             <div className="flex items-center gap-1">
@@ -1079,7 +1079,7 @@ const DisplayBoard = () => {
                                                                                     className="flex items-center gap-0.5 rounded-lg bg-amber-500/20 border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-black text-amber-300 hover:bg-amber-500/30 transition active:scale-95"
                                                                                 >
                                                                                     <UserCheck size={9} />
-                                                                                    {isArabic ? 'نداء' : 'Call'}
+                                                                                    {t('call')}
                                                                                 </button>
                                                                                 <button
                                                                                     type="button"
@@ -1104,11 +1104,11 @@ const DisplayBoard = () => {
                                                                                 </bdi>
                                                                             </div>
                                                                             <span className="text-[9px] font-black text-amber-400 bg-amber-400/10 border border-amber-400/20 px-1.5 py-0.5 rounded-lg">
-                                                                                {isArabic ? 'استعد' : 'Ready'}
+                                                                                {t('ready')}
                                                                             </span>
                                                                         </div>
                                                                     ) : (
-                                                                        <p className="text-xs text-slate-600 italic py-0.5">{isArabic ? 'لا توجد حالة تالية' : 'No upcoming case'}</p>
+                                                                        <p className="text-xs text-slate-600 italic py-0.5">{t('noUpcomingCase')}</p>
                                                                     )}
                                                                 </div>
 
@@ -1116,7 +1116,7 @@ const DisplayBoard = () => {
                                                                 {queueList.length > 0 && (
                                                                     <div className={isWide ? 'sm:col-span-2' : ''}>
                                                                         <p className="text-[9px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                                                                            {isArabic ? 'قائمة الانتظار' : 'Queue'} ({waitingCount})
+                                                                            {t('queue')} ({waitingCount})
                                                                         </p>
                                                                         <div className="flex flex-wrap gap-1">
                                                                             {queueList.slice(0, 5).map((item, idx) => {
@@ -1156,26 +1156,26 @@ const DisplayBoard = () => {
                     {/* KPI Stats */}
                     <div className="grid grid-cols-4 gap-2">
                         <KpiTile
-                            label={isArabic ? 'متوسط الانتظار' : 'Avg. Wait'}
+                            label={t('avgWait')}
                             value={`~${formattedAverageWait}`}
-                            suffix={isArabic ? 'د' : 'min'}
+                            suffix={t('min')}
                             color="text-amber-400"
                             icon={Clock3}
                         />
                         <KpiTile
-                            label={isArabic ? 'منجزة اليوم' : 'Done Today'}
+                            label={t('doneToday')}
                             value={summary.completedToday ?? 0}
                             color="text-emerald-400"
                             icon={CheckCircle2}
                         />
                         <KpiTile
-                            label={isArabic ? 'قيد الفحص' : 'In Exam'}
+                            label={t('inExamX')}
                             value={summary.inExam ?? 0}
                             color="text-teal-400"
                             icon={Stethoscope}
                         />
                         <KpiTile
-                            label={isArabic ? 'في الانتظار' : 'Waiting'}
+                            label={t('waiting')}
                             value={summary.waiting ?? 0}
                             color="text-cyan-400"
                             icon={Users}
@@ -1200,11 +1200,11 @@ const DisplayBoard = () => {
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-2">
                                         <p className="text-[9.5px] font-black uppercase tracking-[0.18em] text-slate-500">
-                                            {isArabic ? 'دليل الاستعداد للفحص' : 'Exam preparation guide'}
+                                            {t('examPreparationGuide')}
                                         </p>
                                         <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[8.5px] font-black text-emerald-300">
                                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                                            {isArabic ? 'مهم' : 'Important'}
+                                            {t('important')}
                                         </span>
                                     </div>
                                     <p className="mt-0.5 truncate text-[11px] font-bold text-slate-200">
@@ -1217,7 +1217,7 @@ const DisplayBoard = () => {
                                 <button
                                     type="button"
                                     onClick={() => setAnnouncementIndex((current) => (current - 1 + activeAnnouncements.length) % activeAnnouncements.length)}
-                                    aria-label={isArabic ? 'الإرشاد السابق' : 'Previous guidance'}
+                                    aria-label={t('previousGuidance')}
                                     className="grid h-7 w-7 place-items-center rounded-lg border border-slate-700/80 bg-slate-900/70 text-slate-400 transition hover:border-teal-500/40 hover:text-teal-300"
                                 >
                                     <ChevronRight size={13} />
@@ -1228,7 +1228,7 @@ const DisplayBoard = () => {
                                 <button
                                     type="button"
                                     onClick={() => setAnnouncementIndex((current) => (current + 1) % activeAnnouncements.length)}
-                                    aria-label={isArabic ? 'الإرشاد التالي' : 'Next guidance'}
+                                    aria-label={t('nextGuidance')}
                                     className="grid h-7 w-7 place-items-center rounded-lg border border-slate-700/80 bg-slate-900/70 text-slate-400 transition hover:border-teal-500/40 hover:text-teal-300"
                                 >
                                     <ChevronLeft size={13} />
@@ -1285,7 +1285,7 @@ const DisplayBoard = () => {
                                         key={index}
                                         type="button"
                                         onClick={() => setAnnouncementIndex(index)}
-                                        aria-label={`${isArabic ? 'الإرشاد' : 'Guidance'} ${index + 1}`}
+                                        aria-label={`${t('guidance')} ${index + 1}`}
                                         className={`h-1.5 rounded-full transition-all duration-300 ${index === announcementIndex ? 'w-5 bg-teal-300' : 'w-1.5 bg-slate-700 hover:bg-slate-500'}`}
                                     />
                                 ))}
@@ -1300,7 +1300,7 @@ const DisplayBoard = () => {
                             <div className="min-w-0 flex-1">
                                 <div className="flex items-center justify-between gap-2 mb-1">
                                     <span className="inline-flex rounded-lg bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 text-[9.5px] font-black text-teal-400">
-                                        {isArabic ? 'بوابة المريض' : 'Patient Portal'}
+                                        {t('patientPortal')}
                                     </span>
                                     <div className="h-6 w-6 rounded-md bg-white p-0.5 flex items-center justify-center shadow-2xs">
                                         <img
@@ -1312,10 +1312,10 @@ const DisplayBoard = () => {
                                     </div>
                                 </div>
                                 <h4 className="text-sm font-black leading-snug text-white 2xl:text-base">
-                                    {isArabic ? 'استلام النتائج والتقارير' : 'Online Results & Reports'}
+                                    {t('onlineResultsReports')}
                                 </h4>
                                 <p className="mt-1 text-[11px] font-medium leading-relaxed text-slate-400">
-                                    {isArabic ? 'امسح بهاتفك لتحميل صور الأشعة والتقرير فوراً' : 'Scan to download DICOM images & reports instantly'}
+                                    {t('scanToDownloadDicomImagesReports')}
                                 </p>
                             </div>
                         </div>
@@ -1323,7 +1323,7 @@ const DisplayBoard = () => {
                             <div className="mt-2.5 pt-2 border-t border-slate-800/60 flex items-center gap-2 text-[10px] font-bold text-slate-500">
                                 <Phone size={10} className="text-teal-400 shrink-0" />
                                 <span dir="ltr" className="text-slate-400">{center.hotline || center.phone}</span>
-                                <span className="ms-auto text-slate-600">{isArabic ? 'خدمة 24/7' : '24/7 Support'}</span>
+                                <span className="ms-auto text-slate-600">{t('247Support')}</span>
                             </div>
                         )}
                     </div>
@@ -1349,10 +1349,10 @@ const DisplayBoard = () => {
                         </span>
                         <div className="leading-none">
                             <span className="block text-[9.5px] font-black uppercase tracking-[0.14em]">
-                                {isArabic ? 'تنبيهات المركز' : 'Center notices'}
+                                {t('centerNotices')}
                             </span>
                             <span className="mt-1 block text-[7.5px] font-bold text-teal-200/50">
-                                {isArabic ? 'معلومات مباشرة' : 'Live information'}
+                                {t('liveInformation')}
                             </span>
                         </div>
                     </div>
@@ -1391,7 +1391,7 @@ const DisplayBoard = () => {
                                     key={index}
                                     type="button"
                                     onClick={() => setTickerIndex(index)}
-                                    aria-label={`${isArabic ? 'التنبيه' : 'Notice'} ${index + 1}`}
+                                    aria-label={`${t('notice')} ${index + 1}`}
                                     className={`h-1.5 rounded-full transition-all ${index === tickerIndex ? 'w-4 bg-teal-300' : 'w-1.5 bg-slate-700 hover:bg-slate-500'}`}
                                 />
                             ))}
@@ -1401,7 +1401,7 @@ const DisplayBoard = () => {
                     <div className="hidden shrink-0 items-center gap-1.5 border-s border-slate-800 ps-3 xl:flex">
                         <span className={`h-1.5 w-1.5 rounded-full ${isFetching ? 'bg-amber-300 animate-pulse' : 'bg-emerald-400'}`} />
                         <span className="text-[8.5px] font-bold text-slate-500">
-                            {isFetching ? (isArabic ? 'جارٍ التحديث' : 'Syncing') : (isArabic ? 'آخر تحديث' : 'Updated')}
+                            {isFetching ? (t('syncing')) : (t('updated'))}
                         </span>
                         <span className="font-mono text-[9px] font-black text-slate-400" dir="ltr">
                             {board?.generatedAt ? new Date(board.generatedAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) : '--:--'}
@@ -1411,8 +1411,8 @@ const DisplayBoard = () => {
                         type="button"
                         onClick={() => window.open('/display/control', '_blank', 'noopener,noreferrer')}
                         className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-slate-800 bg-slate-900/80 text-slate-500 transition hover:border-teal-500/30 hover:text-teal-300"
-                        title={isArabic ? 'إعدادات شاشة العرض' : 'Display settings'}
-                        aria-label={isArabic ? 'إعدادات شاشة العرض' : 'Display settings'}
+                        title={t('displaySettings')}
+                        aria-label={t('displaySettings')}
                     >
                         <Settings2 size={13} />
                     </button>

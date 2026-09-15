@@ -258,7 +258,7 @@ const Equipment = () => {
     const handleSaveRoom = async (e) => {
         e.preventDefault();
         if (!roomForm.name.trim() || !roomForm.roomNumber.trim()) {
-            toast.error(isArabic ? 'يرجى إدخال اسم الغرفة ورقمها' : 'Room name and number required');
+            toast.error(t('roomNameAndNumberRequired'));
             return;
         }
         try {
@@ -267,16 +267,16 @@ const Equipment = () => {
                     id: editingRoom.room_id,
                     ...roomForm
                 }).unwrap();
-                toast.success(isArabic ? 'تم تحديث بيانات الجناح بنجاح' : 'Suite updated successfully');
+                toast.success(t('suiteUpdatedSuccessfully'));
             } else {
                 await createRoom(roomForm).unwrap();
-                toast.success(isArabic ? 'تم إنشاء الجناح السريري بنجاح' : 'Clinical suite created successfully');
+                toast.success(t('clinicalSuiteCreatedSuccessfully'));
             }
             setIsRoomCreateOpen(false);
             setEditingRoom(null);
             refreshHeader();
         } catch (err) {
-            toast.error(err?.data?.error || err?.data?.message || (isArabic ? 'فشل حفظ الغرفة' : 'Failed to save room'));
+            toast.error(err?.data?.error || err?.data?.message || (t('failedToSaveRoom')));
         }
     };
 
@@ -316,16 +316,16 @@ const Equipment = () => {
                     id: editingMachine.modality_id,
                     ...machineForm
                 }).unwrap();
-                toast.success(isArabic ? 'تم تحديث مواصفات الجهاز' : 'Machine updated successfully');
+                toast.success(t('machineUpdatedSuccessfully'));
             } else {
                 await createMachine(machineForm).unwrap();
-                toast.success(isArabic ? 'تم تسجيل الجهاز الطبي بنجاح' : 'Machine registered successfully');
+                toast.success(t('machineRegisteredSuccessfully'));
             }
             setIsMachineModalOpen(false);
             setEditingMachine(null);
             refreshHeader();
         } catch (err) {
-            toast.error(err?.data?.error || err?.data?.message || (isArabic ? 'فشل حفظ الجهاز' : 'Failed to save machine'));
+            toast.error(err?.data?.error || err?.data?.message || (t('failedToSaveMachine')));
         }
     };
 
@@ -333,11 +333,11 @@ const Equipment = () => {
         if (!machineDeleteTarget) return;
         try {
             await deleteMachine(machineDeleteTarget.modality_id).unwrap();
-            toast.success(isArabic ? 'تم حذف الجهاز بنجاح' : 'Machine deleted successfully');
+            toast.success(t('machineDeletedSuccessfully'));
             setMachineDeleteTarget(null);
             refreshHeader();
         } catch (err) {
-            toast.error(err?.data?.error || err?.data?.message || (isArabic ? 'تعذر حذف الجهاز' : 'Failed to delete machine'));
+            toast.error(err?.data?.error || err?.data?.message || (t('failedToDeleteMachine')));
         }
     };
 
@@ -394,16 +394,16 @@ const Equipment = () => {
                     id: editingExam.type_id,
                     ...payload
                 }).unwrap();
-                toast.success(isArabic ? 'تم تحديث بيانات الفحص بنجاح' : 'Procedure updated successfully');
+                toast.success(t('procedureUpdatedSuccessfully'));
             } else {
                 await createExam(payload).unwrap();
-                toast.success(isArabic ? 'تم إنشاء الفحص الطبي بنجاح' : 'Procedure created successfully');
+                toast.success(t('procedureCreatedSuccessfully'));
             }
             setIsExamModalOpen(false);
             setEditingExam(null);
             refreshHeader();
         } catch (err) {
-            toast.error(err?.data?.error || err?.data?.message || (isArabic ? 'فشل حفظ الفحص' : 'Failed to save procedure'));
+            toast.error(err?.data?.error || err?.data?.message || (t('failedToSaveProcedure')));
         }
     };
 
@@ -411,22 +411,22 @@ const Equipment = () => {
         if (!examDeleteTarget) return;
         try {
             await deleteExam(examDeleteTarget.type_id).unwrap();
-            toast.success(isArabic ? 'تم حذف الفحص بنجاح' : 'Procedure deleted successfully');
+            toast.success(t('procedureDeletedSuccessfully'));
             setExamDeleteTarget(null);
             refreshHeader();
         } catch (err) {
-            toast.error(err?.data?.error || err?.data?.message || (isArabic ? 'تعذر حذف الفحص' : 'Failed to delete procedure'));
+            toast.error(err?.data?.error || err?.data?.message || (t('failedToDeleteProcedure')));
         }
     };
 
     const tabs = useMemo(() => [
-        { id: 'matrix', icon: Network, label: isArabic ? 'الخريطة السريرية الهرمية' : 'Hierarchy Matrix', count: matrixData?.rooms?.length },
-        { id: 'rooms', icon: DoorClosed, label: isArabic ? 'الأجنحة والغرف السريرية' : 'Rooms & Suites', count: rooms.length },
-        { id: 'registry', icon: Server, label: isArabic ? 'سجل الأجهزة والمعدات' : 'Equipment Fleet', count: machines.length },
-        { id: 'procedures', icon: FileSpreadsheet, label: isArabic ? 'كتالوج الفحوصات الطبية' : 'Procedures Catalog', count: exams.length },
-        { id: 'maintenance', icon: Wrench, label: isArabic ? 'الصيانة الوقائية' : 'Maintenance', visible: canViewMaintenance, count: scheduledMaintenance || null },
-        { id: 'downtime', icon: AlertTriangle, label: isArabic ? 'سجلات الأعطال' : 'Downtime Logs', visible: true, count: activeDowntime || null },
-    ].filter(tab => tab.visible !== false), [isArabic, matrixData, rooms.length, machines.length, exams.length, canViewMaintenance, scheduledMaintenance, activeDowntime]);
+        { id: 'matrix', icon: Network, label: t('hierarchyMatrix'), count: matrixData?.rooms?.length },
+        { id: 'rooms', icon: DoorClosed, label: t('roomsSuites'), count: rooms.length },
+        { id: 'registry', icon: Server, label: t('equipmentFleet'), count: machines.length },
+        { id: 'procedures', icon: FileSpreadsheet, label: t('proceduresCatalog'), count: exams.length },
+        { id: 'maintenance', icon: Wrench, label: t('maintenance'), visible: canViewMaintenance, count: scheduledMaintenance || null },
+        { id: 'downtime', icon: AlertTriangle, label: t('downtimeLogs'), visible: true, count: activeDowntime || null },
+    ].filter(tab => tab.visible !== false), [t, isArabic, matrixData, rooms.length, machines.length, exams.length, canViewMaintenance, scheduledMaintenance, activeDowntime]);
 
     const safeTab = activeTab === 'maintenance' && !canViewMaintenance ? 'matrix' : activeTab;
 
@@ -436,11 +436,9 @@ const Equipment = () => {
             <PageHeader
                 icon={Server}
                 eyebrowIcon={Cpu}
-                eyebrow={isArabic ? 'إدارة العمليات والأصول السريرية الشاملة' : 'Comprehensive Clinical Operations Hub'}
-                title={isArabic ? 'مركز إدارة المعدات والغرف والفحوصات' : 'Equipment, Rooms & Procedures Command Center'}
-                description={isArabic
-                    ? 'مركز تشغيلي موحد يربط الأجنحة والغرف السريرية بأسطول الأجهزة والوحدات الإشعاعية وكتالوج الفحوصات الطبية، مع متابعة الصيانة الدورية وسجلات الأعطال ودعم الاستيراد والتصدير الفوري.'
-                    : 'A unified clinical management center bridging suites, modalities, exam catalogs, preventive maintenance, and downtime tracking in one seamless operational space.'}
+                eyebrow={t('comprehensiveClinicalOperationsHub')}
+                title={t('equipmentRoomsProceduresCommandCenter')}
+                description={t('aUnifiedClinicalManagementCenterBridging')}
                 actions={(
                     <div className="flex flex-wrap items-center gap-2">
                         {/* Import & Export buttons */}
@@ -448,20 +446,20 @@ const Equipment = () => {
                             type="button"
                             onClick={() => { setImportDefaultType(safeTab === 'procedures' ? 'procedures' : safeTab === 'registry' ? 'machines' : 'rooms'); setIsImportModalOpen(true); }}
                             className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-                            title={isArabic ? 'استيراد بيانات من ملف CSV' : 'Import from CSV'}
+                            title={t('importFromCsv')}
                         >
                             <Upload size={14} className="text-teal-600" />
-                            {isArabic ? 'استيراد CSV' : 'Import'}
+                            {t('import')}
                         </button>
 
                         <button
                             type="button"
                             onClick={() => setIsExportModalOpen(true)}
                             className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-                            title={isArabic ? 'تصدير البيانات بصيغة CSV أو JSON' : 'Export Data'}
+                            title={t('exportData')}
                         >
                             <Download size={14} className="text-cyan-600" />
-                            {isArabic ? 'تصدير' : 'Export'}
+                            {t('export')}
                         </button>
 
                         {/* Creation buttons */}
@@ -471,7 +469,7 @@ const Equipment = () => {
                             className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-teal-500/40 bg-teal-50 px-3 text-xs font-black text-teal-800 shadow-sm transition-all hover:bg-teal-100 dark:border-teal-900/60 dark:bg-teal-950/40 dark:text-teal-200"
                         >
                             <Plus size={14} />
-                            {isArabic ? 'إضافة جناح' : 'New Suite'}
+                            {t('newSuite')}
                         </button>
                         <button
                             type="button"
@@ -479,7 +477,7 @@ const Equipment = () => {
                             className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-50 px-3 text-xs font-black text-cyan-800 shadow-sm transition-all hover:bg-cyan-100 dark:border-cyan-900/60 dark:bg-cyan-950/40 dark:text-cyan-200"
                         >
                             <Plus size={14} />
-                            {isArabic ? 'تسجيل جهاز' : 'New Machine'}
+                            {t('newMachine')}
                         </button>
                         <button
                             type="button"
@@ -487,29 +485,29 @@ const Equipment = () => {
                             className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 text-xs font-black text-white shadow-md shadow-teal-600/20 transition-all hover:bg-teal-700"
                         >
                             <Plus size={14} />
-                            {isArabic ? 'إضافة فحص' : 'New Procedure'}
+                            {t('newProcedure')}
                         </button>
                         <button
                             type="button"
                             onClick={refreshHeader}
                             disabled={headerFetching}
                             className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-                            title={isArabic ? 'تحديث كافة الأصول والبيانات' : 'Refresh All Assets'}
+                            title={t('refreshAllAssets')}
                         >
                             <RefreshCw size={14} className={headerFetching ? 'animate-spin' : ''} />
-                            {isArabic ? 'تحديث' : 'Refresh'}
+                            {t('refresh')}
                         </button>
                     </div>
                 )}
                 metrics={[
-                    { key: 'rooms', icon: DoorClosed, label: isArabic ? 'الأجنحة والغرف' : 'Suites & Rooms', value: `${activeRooms}/${rooms.length}`, tone: 'teal', loading: headerLoading, error: roomsQuery.isError },
-                    { key: 'total', icon: Cpu, label: isArabic ? 'الأجهزة والوحدات' : 'Total Modalities', value: machines.length, tone: 'cyan', loading: headerLoading, error: machinesQuery.isError },
-                    { key: 'active', icon: CheckCircle2, label: isArabic ? 'أجهزة نشطة' : 'Active Modalities', value: activeMachines, tone: 'emerald', loading: headerLoading, error: machinesQuery.isError },
-                    { key: 'exams', icon: FileSpreadsheet, label: isArabic ? 'فحوصات معتمدة' : 'Clinical Procedures', value: exams.length, tone: 'blue', loading: examsQuery.isLoading, error: examsQuery.isError },
-                    { key: 'maintenance', icon: Clock3, label: isArabic ? 'صيانة مفتوحة' : 'Maintenance', value: scheduledMaintenance, tone: scheduledMaintenance ? 'amber' : 'emerald', loading: headerLoading, error: maintenanceQuery.isError },
-                    { key: 'downtime', icon: AlertTriangle, label: isArabic ? 'أعطال نشطة' : 'Active Outages', value: activeDowntime, tone: activeDowntime ? 'rose' : 'emerald', loading: headerLoading, error: downtimeQuery.isError },
+                    { key: 'rooms', icon: DoorClosed, label: t('suitesRooms'), value: `${activeRooms}/${rooms.length}`, tone: 'teal', loading: headerLoading, error: roomsQuery.isError },
+                    { key: 'total', icon: Cpu, label: t('totalModalities'), value: machines.length, tone: 'cyan', loading: headerLoading, error: machinesQuery.isError },
+                    { key: 'active', icon: CheckCircle2, label: t('activeModalities'), value: activeMachines, tone: 'emerald', loading: headerLoading, error: machinesQuery.isError },
+                    { key: 'exams', icon: FileSpreadsheet, label: t('clinicalProcedures'), value: exams.length, tone: 'blue', loading: examsQuery.isLoading, error: examsQuery.isError },
+                    { key: 'maintenance', icon: Clock3, label: t('maintenanceX'), value: scheduledMaintenance, tone: scheduledMaintenance ? 'amber' : 'emerald', loading: headerLoading, error: maintenanceQuery.isError },
+                    { key: 'downtime', icon: AlertTriangle, label: t('activeOutages'), value: activeDowntime, tone: activeDowntime ? 'rose' : 'emerald', loading: headerLoading, error: downtimeQuery.isError },
                 ]}
-                metricsLabel={isArabic ? 'مؤشرات العمليات والأصول السريرية' : 'Clinical operations and assets indicators'}
+                metricsLabel={t('clinicalOperationsAndAssetsIndicators')}
             />
 
             {/* Segmented Tab Navigation Bar */}
@@ -563,9 +561,7 @@ const Equipment = () => {
                                     type="text"
                                     value={matrixSearch}
                                     onChange={(e) => setMatrixSearch(e.target.value)}
-                                    placeholder={isArabic
-                                        ? 'بحث شامل في الغرف، الأجهزة، والفحوصات...'
-                                        : 'Search across rooms, modalities, and procedures...'}
+                                    placeholder={t('searchAcrossRoomsModalitiesAndProcedures')}
                                     className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2 ps-9 pe-3 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </div>
@@ -582,27 +578,27 @@ const Equipment = () => {
                                     }}
                                     className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
                                 >
-                                    {isArabic ? 'توسيع الكل' : 'Expand All'}
+                                    {t('expandAll')}
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => { setExpandedRoomIds(new Set()); setExpandedMachineIds(new Set()); }}
                                     className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
                                 >
-                                    {isArabic ? 'طي الكل' : 'Collapse All'}
+                                    {t('collapseAll')}
                                 </button>
                             </div>
                         </div>
 
                         {matrixQuery.isLoading ? (
                             <div className="p-16 text-center text-xs font-bold text-slate-400 animate-pulse">
-                                {isArabic ? 'جاري بناء خريطة الأصول السريرية الهرمية...' : 'Loading operational hierarchy matrix...'}
+                                {t('loadingOperationalHierarchyMatrix')}
                             </div>
                         ) : matrixRooms.length === 0 ? (
                             <div className="rounded-3xl border border-dashed border-slate-300 p-12 text-center dark:border-slate-800">
                                 <Network className="mx-auto text-slate-300 dark:text-slate-700" size={36} />
                                 <p className="mt-3 text-sm font-bold text-slate-600 dark:text-slate-400">
-                                    {isArabic ? 'لا توجد أجنحة مطابقة لمعايير البحث' : 'No matching elements found'}
+                                    {t('noMatchingElementsFound')}
                                 </p>
                             </div>
                         ) : (
@@ -637,14 +633,14 @@ const Equipment = () => {
                                                                     ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
                                                                     : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
                                                             }`}>
-                                                                {room.status === 'Active' ? (isArabic ? 'نشط' : 'Active') : (isArabic ? 'صيانة' : 'Maintenance')}
+                                                                {room.status === 'Active' ? (t('active')) : (t('maintenanceXX'))}
                                                             </span>
                                                         </div>
                                                         <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400 font-semibold">
                                                             <span>{room.type}</span>
                                                             {room.floor && <span>• {isArabic ? `الطابق: ${room.floor}` : `Floor: ${room.floor}`}</span>}
-                                                            <span>• {roomMachines.length} {isArabic ? 'أجهزة مثبتة' : 'machines'}</span>
-                                                            <span>• {room.total_procedures || 0} {isArabic ? 'فحوصات متاحة' : 'procedures'}</span>
+                                                            <span>• {roomMachines.length} {t('machines')}</span>
+                                                            <span>• {room.total_procedures || 0} {t('procedures')}</span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -656,7 +652,7 @@ const Equipment = () => {
                                                         className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                                                     >
                                                         <Activity size={12} className="text-teal-600" />
-                                                        {isArabic ? 'تفاصيل الجناح' : 'Details'}
+                                                        {t('details')}
                                                     </button>
                                                     <button
                                                         type="button"
@@ -664,7 +660,7 @@ const Equipment = () => {
                                                         className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-bold text-teal-700 hover:bg-teal-100 dark:border-teal-900/60 dark:bg-teal-950/40 dark:text-teal-300"
                                                     >
                                                         <Plus size={13} />
-                                                        {isArabic ? 'تثبيت جهاز' : 'Install Unit'}
+                                                        {t('installUnit')}
                                                     </button>
                                                     <span className="text-slate-400 p-1">
                                                         {isRoomExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
@@ -676,13 +672,13 @@ const Equipment = () => {
                                                 <div className="border-t border-slate-100 bg-slate-50/40 p-5 dark:border-slate-800/80 dark:bg-slate-950/30 space-y-3">
                                                     {roomMachines.length === 0 ? (
                                                         <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-xs font-bold text-slate-400 dark:border-slate-800">
-                                                            {isArabic ? 'لا توجد أجهزة مثبتة في هذا الجناح حالياً' : 'No equipment assigned to this suite.'}
+                                                            {t('noEquipmentAssignedToThisSuite')}
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleOpenCreateMachine(room)}
                                                                 className="mt-2 block mx-auto text-teal-600 font-black hover:underline"
                                                             >
-                                                                {isArabic ? '+ تسجيل وربط جهاز بالجناح' : '+ Add equipment to suite'}
+                                                                {t('addEquipmentToSuite')}
                                                             </button>
                                                         </div>
                                                     ) : (
@@ -722,7 +718,7 @@ const Equipment = () => {
                                                                                 <div className="mt-0.5 text-xs text-slate-400 font-semibold">
                                                                                     {[machine.manufacturer, machine.model, machine.serial_number ? `SN: ${machine.serial_number}` : null].filter(Boolean).join(' • ')}
                                                                                     <span className="ms-2 font-bold text-slate-600 dark:text-slate-300">
-                                                                                        ({procedures.length} {isArabic ? 'فحوصات' : 'procedures'})
+                                                                                        ({procedures.length} {t('proceduresX')})
                                                                                     </span>
                                                                                 </div>
                                                                             </div>
@@ -735,13 +731,13 @@ const Equipment = () => {
                                                                                 className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
                                                                             >
                                                                                 <Plus size={13} />
-                                                                                {isArabic ? 'إضافة فحص' : 'Add Procedure'}
+                                                                                {t('addProcedure')}
                                                                             </button>
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={(e) => { e.stopPropagation(); handleOpenEditMachine(machine); }}
                                                                                 className="p-1 text-slate-400 hover:text-slate-600"
-                                                                                title={isArabic ? 'تعديل الجهاز' : 'Edit Machine'}
+                                                                                title={t('editMachine')}
                                                                             >
                                                                                 <Edit3 size={15} />
                                                                             </button>
@@ -755,7 +751,7 @@ const Equipment = () => {
                                                                         <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
                                                                             {procedures.length === 0 ? (
                                                                                 <div className="p-3 text-center text-xs text-slate-400 italic">
-                                                                                    {isArabic ? 'لا توجد فحوصات مسندة لهذا الجهاز بعد' : 'No procedures configured for this modality yet.'}
+                                                                                    {t('noProceduresConfiguredForThisModality')}
                                                                                 </div>
                                                                             ) : (
                                                                                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -781,7 +777,7 @@ const Equipment = () => {
                                                                                                 <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 font-semibold">
                                                                                                     <span className="flex items-center gap-1">
                                                                                                         <Clock3 size={11} className="text-slate-400" />
-                                                                                                        {proc.duration_minutes} {isArabic ? 'دقيقة' : 'min'}
+                                                                                                        {proc.duration_minutes} {t('min')}
                                                                                                     </span>
                                                                                                     <span>{proc.body_part || 'General'}</span>
                                                                                                 </div>
@@ -793,7 +789,7 @@ const Equipment = () => {
                                                                                                     onClick={() => handleOpenEditExam(proc)}
                                                                                                     className="text-[11px] font-bold text-teal-600 hover:underline"
                                                                                                 >
-                                                                                                    {isArabic ? 'تعديل' : 'Edit'}
+                                                                                                    {t('edit')}
                                                                                                 </button>
                                                                                                 <span className="text-slate-300">•</span>
                                                                                                 <button
@@ -801,7 +797,7 @@ const Equipment = () => {
                                                                                                     onClick={() => setExamDeleteTarget(proc)}
                                                                                                     className="text-[11px] font-bold text-rose-600 hover:underline"
                                                                                                 >
-                                                                                                    {isArabic ? 'حذف' : 'Delete'}
+                                                                                                    {t('delete')}
                                                                                                 </button>
                                                                                             </div>
                                                                                         </div>
@@ -857,7 +853,7 @@ const Equipment = () => {
                                     type="text"
                                     value={procedureSearch}
                                     onChange={(e) => setProcedureSearch(e.target.value)}
-                                    placeholder={isArabic ? 'بحث باسم الفحص، الكود، العضو، أو الجهاز...' : 'Search procedure by name, code, anatomy...'}
+                                    placeholder={t('searchProcedureByNameCodeAnatomy')}
                                     className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2 ps-9 pe-3 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </div>
@@ -868,7 +864,7 @@ const Equipment = () => {
                                     onChange={(e) => setProcedureModalityFilter(e.target.value)}
                                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
                                 >
-                                    <option value="all">{isArabic ? 'كافة الأجهزة والوحدات' : 'All Modalities'}</option>
+                                    <option value="all">{t('allModalities')}</option>
                                     {machines.map(m => (
                                         <option key={m.modality_id} value={m.modality_id}>
                                             {m.name} ({m.type})
@@ -881,9 +877,9 @@ const Equipment = () => {
                                     onChange={(e) => setProcedureContrastFilter(e.target.value)}
                                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
                                 >
-                                    <option value="all">{isArabic ? 'كل متطلبات الصبغة' : 'All Contrast'}</option>
-                                    <option value="contrast">{isArabic ? 'يتطلب صبغة فقط' : 'Contrast Required'}</option>
-                                    <option value="plain">{isArabic ? 'بدون صبغة' : 'Non-Contrast'}</option>
+                                    <option value="all">{t('allContrast')}</option>
+                                    <option value="contrast">{t('contrastRequired')}</option>
+                                    <option value="plain">{t('nonContrast')}</option>
                                 </select>
 
                                 <button
@@ -892,7 +888,7 @@ const Equipment = () => {
                                     className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-black text-white shadow-md shadow-teal-600/20 hover:bg-teal-700"
                                 >
                                     <Plus size={15} />
-                                    {isArabic ? 'إضافة فحص جديد' : 'New Procedure'}
+                                    {t('newProcedureX')}
                                 </button>
                             </div>
                         </div>
@@ -923,18 +919,18 @@ const Equipment = () => {
                                         <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-bold">
                                             <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                                 <Clock3 size={12} className="text-slate-400" />
-                                                {exam.duration_minutes} {isArabic ? 'دقيقة إجبارية' : 'min duration'}
+                                                {exam.duration_minutes} {t('minDuration')}
                                             </span>
                                             {exam.contrast_required && (
                                                 <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-                                                    {isArabic ? 'يتطلب صبغة' : 'Contrast'}
+                                                    {t('contrast')}
                                                 </span>
                                             )}
                                         </div>
 
                                         {exam.preparation_instructions && (
                                             <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
-                                                <span className="font-bold text-slate-700 dark:text-slate-300">{isArabic ? 'التحضير:' : 'Prep:'}</span> {exam.preparation_instructions}
+                                                <span className="font-bold text-slate-700 dark:text-slate-300">{t('prep')}</span> {exam.preparation_instructions}
                                             </p>
                                         )}
                                     </div>
@@ -946,7 +942,7 @@ const Equipment = () => {
                                             className="text-xs font-bold text-teal-600 hover:underline inline-flex items-center gap-1"
                                         >
                                             <Edit3 size={13} />
-                                            {isArabic ? 'تعديل الفحص' : 'Edit Procedure'}
+                                            {t('editProcedure')}
                                         </button>
                                         <button
                                             type="button"
@@ -954,7 +950,7 @@ const Equipment = () => {
                                             className="text-xs font-bold text-rose-600 hover:underline inline-flex items-center gap-1"
                                         >
                                             <Trash2 size={13} />
-                                            {isArabic ? 'حذف' : 'Delete'}
+                                            {t('delete')}
                                         </button>
                                     </div>
                                 </div>
@@ -979,21 +975,21 @@ const Equipment = () => {
                 isOpen={isRoomCreateOpen}
                 onClose={() => { setIsRoomCreateOpen(false); setEditingRoom(null); }}
                 title={editingRoom
-                    ? (isArabic ? 'تعديل بيانات الجناح السريري' : 'Edit Suite')
-                    : (isArabic ? 'تسجيل جناح / غرفة سريرية جديدة' : 'Register New Suite')}
+                    ? (t('editSuite'))
+                    : (t('registerNewSuite'))}
                 size="md"
             >
                 <form onSubmit={handleSaveRoom} className="space-y-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            {isArabic ? 'اسم الغرفة أو الجناح السريري *' : 'Room / Suite Name *'}
+                            {t('roomSuiteName')}
                         </label>
                         <input
                             type="text"
                             required
                             value={roomForm.name}
                             onChange={(e) => setRoomForm({ ...roomForm, name: e.target.value })}
-                            placeholder={isArabic ? 'مثال: جناح الرنين المغناطيسي 2' : 'e.g. MRI Suite 2'}
+                            placeholder={t('eGMriSuite2')}
                             className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                         />
                     </div>
@@ -1001,7 +997,7 @@ const Equipment = () => {
                     <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                {isArabic ? 'كود / رقم الغرفة *' : 'Room Identifier *'}
+                                {t('roomIdentifier')}
                             </label>
                             <input
                                 type="text"
@@ -1015,13 +1011,13 @@ const Equipment = () => {
 
                         <div>
                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                {isArabic ? 'الطابق / القسم' : 'Floor / Wing'}
+                                {t('floorWing')}
                             </label>
                             <input
                                 type="text"
                                 value={roomForm.floor}
                                 onChange={(e) => setRoomForm({ ...roomForm, floor: e.target.value })}
-                                placeholder={isArabic ? 'مثال: الطابق الأول' : 'e.g. 1st Floor'}
+                                placeholder={t('eG1stFloor')}
                                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                             />
                         </div>
@@ -1030,46 +1026,46 @@ const Equipment = () => {
                     <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                {isArabic ? 'تصنيف الغرفة' : 'Room Type'}
+                                {t('roomType')}
                             </label>
                             <select
                                 value={roomForm.type}
                                 onChange={(e) => setRoomForm({ ...roomForm, type: e.target.value })}
                                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                             >
-                                <option value="Imaging">{isArabic ? 'جناح تصوير إشعاعي' : 'Imaging Suite'}</option>
-                                <option value="Preparation">{isArabic ? 'غرفة تحضير وحقن' : 'Preparation & Injection'}</option>
-                                <option value="Recovery">{isArabic ? 'غرفة إفاقة وملاحظة' : 'Post-Exam Recovery'}</option>
-                                <option value="Reporting">{isArabic ? 'غرفة قراءة وتشخيص' : 'Diagnostic Reading Room'}</option>
-                                <option value="Consultation">{isArabic ? 'عيادة استشارات' : 'Clinical Consultation'}</option>
+                                <option value="Imaging">{t('imagingSuite')}</option>
+                                <option value="Preparation">{t('preparationInjection')}</option>
+                                <option value="Recovery">{t('postExamRecovery')}</option>
+                                <option value="Reporting">{t('diagnosticReadingRoom')}</option>
+                                <option value="Consultation">{t('clinicalConsultation')}</option>
                             </select>
                         </div>
 
                         <div>
                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                {isArabic ? 'الحالة التشغيلية' : 'Status'}
+                                {t('status')}
                             </label>
                             <select
                                 value={roomForm.status}
                                 onChange={(e) => setRoomForm({ ...roomForm, status: e.target.value })}
                                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                             >
-                                <option value="Active">{isArabic ? 'نشط ومتاح' : 'Active & Available'}</option>
-                                <option value="Under Maintenance">{isArabic ? 'قيد الصيانة والتعقيم' : 'Under Maintenance'}</option>
-                                <option value="Out of Service">{isArabic ? 'خارج الخدمة مؤقتاً' : 'Out of Service'}</option>
+                                <option value="Active">{t('activeAvailable')}</option>
+                                <option value="Under Maintenance">{t('underMaintenance')}</option>
+                                <option value="Out of Service">{t('outOfService')}</option>
                             </select>
                         </div>
                     </div>
 
                     <div>
                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            {isArabic ? 'ملاحظات وتجهيزات الجناح' : 'Facility Notes'}
+                            {t('facilityNotes')}
                         </label>
                         <textarea
                             rows={3}
                             value={roomForm.notes}
                             onChange={(e) => setRoomForm({ ...roomForm, notes: e.target.value })}
-                            placeholder={isArabic ? 'مثال: عزل رصاصي، قفص فاراداي، حاقن صبغة آلي...' : 'e.g. RF shielding, automated injector...'}
+                            placeholder={t('eGRfShieldingAutomatedInjector')}
                             className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                         />
                     </div>
@@ -1080,14 +1076,14 @@ const Equipment = () => {
                             onClick={() => { setIsRoomCreateOpen(false); setEditingRoom(null); }}
                             className="rounded-xl px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
                         >
-                            {isArabic ? 'إلغاء' : 'Cancel'}
+                            {t('cancel')}
                         </button>
                         <button
                             type="submit"
                             disabled={isBusy}
                             className="rounded-xl bg-teal-600 px-5 py-2 text-xs font-black text-white shadow-md shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-50"
                         >
-                            {isBusy ? (isArabic ? 'جاري الحفظ...' : 'Saving...') : (isArabic ? 'حفظ الجناح' : 'Save Suite')}
+                            {isBusy ? (t('saving')) : (t('saveSuite'))}
                         </button>
                     </div>
                 </form>
@@ -1110,11 +1106,11 @@ const Equipment = () => {
                 isOpen={Boolean(machineDeleteTarget)}
                 onClose={() => setMachineDeleteTarget(null)}
                 onConfirm={handleDeleteMachine}
-                title={isArabic ? 'حذف الجهاز الطبي' : 'Delete Machine'}
+                title={t('deleteMachine')}
                 message={isArabic
                     ? `هل أنت متأكد من حذف الجهاز "${machineDeleteTarget?.name}"؟ سيتم فحص ارتباطه بالفحوصات والمواعيد أولاً.`
                     : `Are you sure you want to delete machine "${machineDeleteTarget?.name}"?`}
-                confirmLabel={isArabic ? 'تأكيد الحذف' : 'Confirm Delete'}
+                confirmLabel={t('confirmDelete')}
                 tone="danger"
             />
 
@@ -1136,11 +1132,11 @@ const Equipment = () => {
                 isOpen={Boolean(examDeleteTarget)}
                 onClose={() => setExamDeleteTarget(null)}
                 onConfirm={handleDeleteExam}
-                title={isArabic ? 'حذف الفحص الطبي' : 'Delete Procedure'}
+                title={t('deleteProcedure')}
                 message={isArabic
                     ? `هل أنت متأكد من حذف الفحص "${examDeleteTarget?.name}"؟`
                     : `Are you sure you want to delete procedure "${examDeleteTarget?.name}"?`}
-                confirmLabel={isArabic ? 'تأكيد الحذف' : 'Confirm Delete'}
+                confirmLabel={t('confirmDelete')}
                 tone="danger"
             />
 

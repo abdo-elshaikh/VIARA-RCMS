@@ -346,9 +346,9 @@ export default function UserActivityTracking() {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            toast.success(isAr ? 'تم تصدير سجل نشاط المستخدمين بنجاح' : 'User activity exported successfully');
+            toast.success(t('userActivityExportedSuccessfully'));
         } catch (error) {
-            toast.error(isAr ? 'تعذر تصدير السجل' : 'Failed to export activity log');
+            toast.error(t('failedToExportActivityLog'));
         } finally {
             setExporting(false);
         }
@@ -357,7 +357,7 @@ export default function UserActivityTracking() {
     const copyLogPayload = (log) => {
         navigator.clipboard.writeText(JSON.stringify(log, null, 2));
         setCopiedId(log.log_id);
-        toast.success(isAr ? 'تم نسخ بيانات النشاط' : 'Activity payload copied');
+        toast.success(t('activityPayloadCopied'));
         setTimeout(() => setCopiedId(null), 2000);
     };
 
@@ -425,11 +425,9 @@ export default function UserActivityTracking() {
             {/* Page Header */}
             <PageHeader
                 icon={Activity}
-                eyebrow={isAr ? 'إدارة الرقابة والحوكمة' : 'Governance & User Activity'}
-                title={isAr ? 'تتبع نشاط المستخدمين وحركات النظام' : 'User Activity & Movement Tracker'}
-                description={isAr
-                    ? 'رصد ومراقبة دقيقة لعمليات الإضافة، التعديل، الحذف، والاستعلام لكافة المستخدمين والموظفين لحظياً.'
-                    : 'Track and audit Creation, Modification, Deletion, and Inspection operations across all staff members in real time.'}
+                eyebrow={t('governanceUserActivity')}
+                title={t('userActivityMovementTracker')}
+                description={t('trackAndAuditCreationModificationDeletion')}
                 actions={
                     <div className="flex flex-wrap items-center gap-2">
                         <button
@@ -437,8 +435,8 @@ export default function UserActivityTracking() {
                             onClick={() => {
                                 setAutoRefresh(prev => !prev);
                                 toast.success(!autoRefresh
-                                    ? (isAr ? 'تم تفعيل المراقبة اللحظية (كل 12 ثانية)' : 'Live activity tracking enabled (12s)')
-                                    : (isAr ? 'تم إيقاف المراقبة اللحظية' : 'Live tracking paused'));
+                                    ? (t('liveActivityTrackingEnabled12s'))
+                                    : (t('liveTrackingPaused')));
                             }}
                             className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition ${autoRefresh
                                     ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
@@ -446,7 +444,7 @@ export default function UserActivityTracking() {
                                 }`}
                         >
                             <Radio size={14} className={autoRefresh ? 'text-emerald-600 animate-pulse' : 'text-slate-400'} />
-                            <span>{autoRefresh ? (isAr ? 'مراقبة حية' : 'Live Stream') : (isAr ? 'تحديث يدوي' : 'Manual')}</span>
+                            <span>{autoRefresh ? (t('liveStream')) : (t('manual'))}</span>
                         </button>
 
                         <button
@@ -455,7 +453,7 @@ export default function UserActivityTracking() {
                             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                         >
                             <BarChart3 size={14} className="text-teal-600 dark:text-teal-400" />
-                            <span>{showVisualAnalytics ? (isAr ? 'إخفاء الإحصاءات' : 'Hide Stats') : (isAr ? 'عرض الإحصاءات' : 'Show Stats')}</span>
+                            <span>{showVisualAnalytics ? (t('hideStats')) : (t('showStats'))}</span>
                         </button>
 
                         <button
@@ -464,7 +462,7 @@ export default function UserActivityTracking() {
                             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 print:hidden"
                         >
                             <Printer size={14} />
-                            <span>{isAr ? 'طباعة' : 'Print'}</span>
+                            <span>{t('print')}</span>
                         </button>
 
                         <button
@@ -474,7 +472,7 @@ export default function UserActivityTracking() {
                             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                         >
                             <RefreshCw size={14} className={isAuditFetching ? 'animate-spin' : ''} />
-                            <span>{isAr ? 'تحديث' : 'Refresh'}</span>
+                            <span>{t('refresh')}</span>
                         </button>
 
                         <button
@@ -484,18 +482,18 @@ export default function UserActivityTracking() {
                             className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
                         >
                             {exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
-                            <span>{isAr ? 'تصدير CSV' : 'Export CSV'}</span>
+                            <span>{t('exportCsv')}</span>
                         </button>
                     </div>
                 }
                 metrics={[
-                    { key: 'creates', icon: PlusCircle, label: isAr ? 'عمليات الإضافة' : 'Creations (+)', value: Number(summary.creates || 0).toLocaleString(locale), tone: 'emerald', loading: isAuditLoading },
-                    { key: 'updates', icon: Edit3, label: isAr ? 'عمليات التعديل' : 'Modifications (✎)', value: Number(summary.updates || 0).toLocaleString(locale), tone: 'blue', loading: isAuditLoading },
-                    { key: 'deletes', icon: Trash2, label: isAr ? 'عمليات الحذف' : 'Deletions (🗑)', value: Number(summary.deletes || 0).toLocaleString(locale), tone: 'rose', loading: isAuditLoading },
-                    { key: 'queries', icon: SearchCheck, label: isAr ? 'عمليات الاستعلام' : 'Queries / Views (👁)', value: Number(summary.queries || 0).toLocaleString(locale), tone: 'teal', loading: isAuditLoading },
-                    { key: 'failures', icon: ShieldAlert, label: isAr ? 'العمليات الفاشلة' : 'Failed Actions', value: Number(summary.failures || 0).toLocaleString(locale), tone: summary.failures ? 'amber' : 'emerald', loading: isAuditLoading },
+                    { key: 'creates', icon: PlusCircle, label: t('creations'), value: Number(summary.creates || 0).toLocaleString(locale), tone: 'emerald', loading: isAuditLoading },
+                    { key: 'updates', icon: Edit3, label: t('modifications'), value: Number(summary.updates || 0).toLocaleString(locale), tone: 'blue', loading: isAuditLoading },
+                    { key: 'deletes', icon: Trash2, label: t('deletions'), value: Number(summary.deletes || 0).toLocaleString(locale), tone: 'rose', loading: isAuditLoading },
+                    { key: 'queries', icon: SearchCheck, label: t('queriesViews'), value: Number(summary.queries || 0).toLocaleString(locale), tone: 'teal', loading: isAuditLoading },
+                    { key: 'failures', icon: ShieldAlert, label: t('failedActions'), value: Number(summary.failures || 0).toLocaleString(locale), tone: summary.failures ? 'amber' : 'emerald', loading: isAuditLoading },
                 ]}
-                metricsLabel={isAr ? 'مؤشرات العمليات السريرية والإدارية' : 'CRUD Operation Metrics'}
+                metricsLabel={t('crudOperationMetrics')}
             />
 
             {/* Out-of-Hours Activity Anomaly Banner */}
@@ -510,7 +508,7 @@ export default function UserActivityTracking() {
                                     : `Detected ${outOfHoursEvents.length} events logged outside standard working hours (10:00 PM - 06:00 AM).`}
                             </p>
                             <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                                {isAr ? 'يُنصح بالتحقق من الحركات الليلية لضمان الامتثال وسياسات الوصول.' : 'Review night-shift operations to ensure access policy compliance.'}
+                                {t('reviewNightShiftOperationsToEnsure')}
                             </p>
                         </div>
                     </div>
@@ -521,7 +519,7 @@ export default function UserActivityTracking() {
                         }}
                         className="rounded-xl border border-amber-300 bg-white px-3 py-1 text-xs font-bold text-amber-900 shadow-2xs hover:bg-amber-100 dark:border-amber-800 dark:bg-slate-900 dark:text-amber-200"
                     >
-                        {isAr ? 'فحص السجلات الليلية' : 'Inspect Night Events'}
+                        {t('inspectNightEvents')}
                     </button>
                 </div>
             )}
@@ -535,11 +533,11 @@ export default function UserActivityTracking() {
                             <div className="flex items-center gap-2">
                                 <TrendingUp size={16} className="text-teal-600 dark:text-teal-400" />
                                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                                    {isAr ? 'توزيع الحركات على ساعات اليوم' : 'Activity by Hour of Day'}
+                                    {t('activityByHourOfDay')}
                                 </h3>
                             </div>
                             <span className="text-[11px] font-mono text-slate-400">
-                                {isAr ? 'عينة الصفحة الحالية' : 'Current page sample'}
+                                {t('currentPageSample')}
                             </span>
                         </div>
                         <div className="mt-4 flex items-end justify-between gap-2 h-24 pt-2">
@@ -566,7 +564,7 @@ export default function UserActivityTracking() {
                             <div className="flex items-center gap-2">
                                 <Database size={16} className="text-sky-600 dark:text-sky-400" />
                                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                                    {isAr ? 'توزيع العمليات (CRUDQ)' : 'CRUDQ Operation Breakdown'}
+                                    {t('crudqOperationBreakdown')}
                                 </h3>
                             </div>
                         </div>
@@ -574,28 +572,28 @@ export default function UserActivityTracking() {
                             <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
                                 <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                                     <PlusCircle size={13} />
-                                    {isAr ? 'الإضافة والإنشاء (Create)' : 'Create (+)'}
+                                    {t('create')}
                                 </span>
                                 <span className="font-mono">{Number(summary.creates || 0)}</span>
                             </div>
                             <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
                                 <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
                                     <Edit3 size={13} />
-                                    {isAr ? 'التعديل والتحديث (Update)' : 'Update (✎)'}
+                                    {t('update')}
                                 </span>
                                 <span className="font-mono">{Number(summary.updates || 0)}</span>
                             </div>
                             <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
                                 <span className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400">
                                     <Trash2 size={13} />
-                                    {isAr ? 'الحذف والإلغاء (Delete)' : 'Delete (🗑)'}
+                                    {t('delete')}
                                 </span>
                                 <span className="font-mono">{Number(summary.deletes || 0)}</span>
                             </div>
                             <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300">
                                 <span className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400">
                                     <SearchCheck size={13} />
-                                    {isAr ? 'الاستعلام والاطلاع (Query)' : 'Query (👁)'}
+                                    {t('query')}
                                 </span>
                                 <span className="font-mono">{Number(summary.queries || 0)}</span>
                             </div>
@@ -610,7 +608,7 @@ export default function UserActivityTracking() {
                     <div className="flex items-center gap-2">
                         <Users size={16} className="text-teal-600 dark:text-teal-400" />
                         <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                            {isAr ? 'فحص نشاط موظف محدد' : 'Quick Staff Inspector'}
+                            {t('quickStaffInspector')}
                         </h2>
                     </div>
                     {selectedUser && (
@@ -621,7 +619,7 @@ export default function UserActivityTracking() {
                                 className="inline-flex items-center gap-1 text-xs font-bold text-sky-600 hover:text-sky-700 dark:text-sky-400"
                             >
                                 <Info size={13} />
-                                <span>{isAr ? 'لوحة تحليل الموظف' : 'Inspect Insights'}</span>
+                                <span>{t('inspectInsights')}</span>
                             </button>
                             <button
                                 type="button"
@@ -629,7 +627,7 @@ export default function UserActivityTracking() {
                                 className="inline-flex items-center gap-1 text-xs font-bold text-teal-600 hover:text-teal-700 dark:text-teal-400"
                             >
                                 <X size={13} />
-                                <span>{isAr ? 'عرض كافة الموظفين' : 'Show All Staff'}</span>
+                                <span>{t('showAllStaff')}</span>
                             </button>
                         </div>
                     )}
@@ -645,7 +643,7 @@ export default function UserActivityTracking() {
                             }`}
                     >
                         <Layers size={14} />
-                        <span>{isAr ? 'كافة الموظفين' : 'All Staff'}</span>
+                        <span>{t('allStaff')}</span>
                         <span className="rounded-full bg-slate-100 px-1.5 py-0.2 font-mono text-[10px] text-slate-500 dark:bg-slate-800">
                             {staffList.length}
                         </span>
@@ -690,7 +688,7 @@ export default function UserActivityTracking() {
             {/* Smart CRUDQ & Scenario Presets Strip */}
             <section className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-bold text-slate-500">
-                    {isAr ? 'مراقبة العمليات (CRUDQ):' : 'CRUDQ Operations:'}
+                    {t('crudqOperations')}
                 </span>
 
                 <button
@@ -701,7 +699,7 @@ export default function UserActivityTracking() {
                             : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
                         }`}
                 >
-                    {isAr ? 'كافة العمليات' : 'All Events'}
+                    {t('allEvents')}
                 </button>
 
                 <button
@@ -713,7 +711,7 @@ export default function UserActivityTracking() {
                         }`}
                 >
                     <PlusCircle size={13} />
-                    <span>{isAr ? '➕ الإضافة (Create)' : '➕ Create'}</span>
+                    <span>{t('createX')}</span>
                 </button>
 
                 <button
@@ -725,7 +723,7 @@ export default function UserActivityTracking() {
                         }`}
                 >
                     <Edit3 size={13} />
-                    <span>{isAr ? '✏️ التعديل (Update)' : '✏️ Update'}</span>
+                    <span>{t('updateX')}</span>
                 </button>
 
                 <button
@@ -737,7 +735,7 @@ export default function UserActivityTracking() {
                         }`}
                 >
                     <Trash2 size={13} />
-                    <span>{isAr ? '🗑️ الحذف (Delete)' : '🗑️ Delete'}</span>
+                    <span>{t('deleteX')}</span>
                 </button>
 
                 <button
@@ -749,7 +747,7 @@ export default function UserActivityTracking() {
                         }`}
                 >
                     <SearchCheck size={13} />
-                    <span>{isAr ? '👁️ الاستعلام (Query)' : '👁️ Query'}</span>
+                    <span>{t('queryX')}</span>
                 </button>
 
                 <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
@@ -763,7 +761,7 @@ export default function UserActivityTracking() {
                         }`}
                 >
                     <ShieldAlert size={13} />
-                    <span>{isAr ? 'أحداث عالية الخطورة' : 'High Risk'}</span>
+                    <span>{t('highRisk')}</span>
                 </button>
             </section>
 
@@ -773,20 +771,20 @@ export default function UserActivityTracking() {
                     <div className="flex items-center gap-2">
                         <Filter size={16} className="text-slate-500" />
                         <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                            {isAr ? 'محرك تصفية الأنشطة المتقدم' : 'Advanced Activity Filters'}
+                            {t('advancedActivityFilters')}
                         </h2>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
                         {/* Quick Date Presets */}
                         <button type="button" onClick={() => applyDatePreset(0)} className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                            {isAr ? 'اليوم' : 'Today'}
+                            {t('today')}
                         </button>
                         <button type="button" onClick={() => applyDatePreset(7)} className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                            {isAr ? '7 أيام' : '7 Days'}
+                            {t('7Days')}
                         </button>
                         <button type="button" onClick={() => applyDatePreset(30)} className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                            {isAr ? '30 يوماً' : '30 Days'}
+                            {t('30Days')}
                         </button>
 
                         <button
@@ -796,7 +794,7 @@ export default function UserActivityTracking() {
                             className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 shadow-2xs hover:bg-slate-50 disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                         >
                             <FilterX size={13} />
-                            <span>{isAr ? 'إعادة ضبط' : 'Reset'} {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}</span>
+                            <span>{t('reset')} {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}</span>
                         </button>
                     </div>
                 </div>
@@ -805,7 +803,7 @@ export default function UserActivityTracking() {
                     {/* Search Field */}
                     <div className="relative lg:col-span-2">
                         <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            {isAr ? 'بحث في الحركة' : 'Search Action / IP'}
+                            {t('searchActionIp')}
                         </span>
                         <div className="relative">
                             <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -813,7 +811,7 @@ export default function UserActivityTracking() {
                                 type="text"
                                 value={filters.q}
                                 onChange={(e) => updateFilter('q', e.target.value)}
-                                placeholder={isAr ? 'ابحث في الإجراء، المسار أو IP...' : 'Search action, path, details...'}
+                                placeholder={t('searchActionPathDetails')}
                                 className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 ps-9 pe-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
                             />
                         </div>
@@ -822,25 +820,25 @@ export default function UserActivityTracking() {
                     {/* Operation Type CRUD Selector */}
                     <div>
                         <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            {isAr ? 'نوع العملية (CRUD)' : 'Operation Type'}
+                            {t('operationType')}
                         </span>
                         <select
                             value={filters.operationType}
                             onChange={(e) => updateFilter('operationType', e.target.value)}
                             className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
                         >
-                            <option value="">{isAr ? 'كافة العمليات (All)' : 'All Operations'}</option>
-                            <option value="create">{isAr ? '➕ إضافة (Create)' : '➕ Create'}</option>
-                            <option value="update">{isAr ? '✏️ تعديل (Update)' : '✏️ Update'}</option>
-                            <option value="delete">{isAr ? '🗑️ حذف (Delete)' : '🗑️ Delete'}</option>
-                            <option value="query">{isAr ? '👁️ استعلام (Query)' : '👁️ Query'}</option>
+                            <option value="">{t('allOperations')}</option>
+                            <option value="create">{t('createXX')}</option>
+                            <option value="update">{t('updateXX')}</option>
+                            <option value="delete">{t('deleteXX')}</option>
+                            <option value="query">{t('queryXX')}</option>
                         </select>
                     </div>
 
                     {/* Target Resource Table */}
                     <div>
                         <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            {isAr ? 'الجدول / الهدف' : 'Target Resource'}
+                            {t('targetResource')}
                         </span>
                         <select
                             value={filters.targetType}
@@ -858,7 +856,7 @@ export default function UserActivityTracking() {
                     {/* Start Date */}
                     <div>
                         <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            {isAr ? 'من تاريخ' : 'Start Date'}
+                            {t('startDate')}
                         </span>
                         <input
                             type="date"
@@ -871,7 +869,7 @@ export default function UserActivityTracking() {
                     {/* End Date */}
                     <div>
                         <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            {isAr ? 'إلى تاريخ' : 'End Date'}
+                            {t('endDate')}
                         </span>
                         <input
                             type="date"
@@ -895,7 +893,7 @@ export default function UserActivityTracking() {
                             }`}
                     >
                         <List size={14} />
-                        <span>{isAr ? 'شريط الخط الزمني' : 'Activity Stream'}</span>
+                        <span>{t('activityStream')}</span>
                     </button>
 
                     <button
@@ -907,7 +905,7 @@ export default function UserActivityTracking() {
                             }`}
                     >
                         <TableIcon size={14} />
-                        <span>{isAr ? 'جدول السجل المكثف' : 'Compact Ledger Table'}</span>
+                        <span>{t('compactLedgerTable')}</span>
                     </button>
 
                     <button
@@ -919,12 +917,12 @@ export default function UserActivityTracking() {
                             }`}
                     >
                         <Trophy size={14} />
-                        <span>{isAr ? 'مقارنة نشاط وإنتاجية الموظفين' : 'Staff Leaderboard'}</span>
+                        <span>{t('staffLeaderboard')}</span>
                     </button>
                 </div>
 
                 <span className="text-xs font-mono text-slate-400">
-                    {total} {isAr ? 'حركة مسجلة' : 'logged entries'}
+                    {total} {t('loggedEntries')}
                 </span>
             </div>
 
@@ -934,13 +932,13 @@ export default function UserActivityTracking() {
                     <div className="flex items-center gap-2 border-b border-slate-100 pb-3 dark:border-slate-800 mb-4">
                         <Award size={18} className="text-amber-500" />
                         <h3 className="text-sm font-black uppercase text-slate-900 dark:text-white">
-                            {isAr ? 'ترتيب الموظفين الأكثر نشاطاً في الفترة المحددة' : 'Staff Activity Volume Ranking'}
+                            {t('staffActivityVolumeRanking')}
                         </h3>
                     </div>
 
                     {staffLeaderboard.length === 0 ? (
                         <p className="text-center text-xs text-slate-400 py-8">
-                            {isAr ? 'لا توجد بيانات كافية للترتيب.' : 'No activity logged for leaderboard.'}
+                            {t('noActivityLoggedForLeaderboard')}
                         </p>
                     ) : (
                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -977,17 +975,17 @@ export default function UserActivityTracking() {
                                                     {item.total}
                                                 </span>
                                                 <p className="text-[9px] font-bold text-slate-400 uppercase">
-                                                    {isAr ? 'عملية' : 'actions'}
+                                                    {t('actions')}
                                                 </p>
                                             </div>
                                         </div>
 
                                         {/* CRUD Breakdown Chips */}
                                         <div className="flex items-center justify-between border-t border-slate-200/60 pt-2 text-[10px] font-mono dark:border-slate-800">
-                                            <span className="text-emerald-600 dark:text-emerald-400">+{item.creates} {isAr ? 'إضافة' : 'add'}</span>
-                                            <span className="text-blue-600 dark:text-blue-400">✎{item.updates} {isAr ? 'تعديل' : 'edit'}</span>
-                                            <span className="text-rose-600 dark:text-rose-400">🗑{item.deletes} {isAr ? 'حذف' : 'del'}</span>
-                                            <span className="text-purple-600 dark:text-purple-400">👁{item.queries} {isAr ? 'استعلام' : 'view'}</span>
+                                            <span className="text-emerald-600 dark:text-emerald-400">+{item.creates} {t('add')}</span>
+                                            <span className="text-blue-600 dark:text-blue-400">✎{item.updates} {t('edit')}</span>
+                                            <span className="text-rose-600 dark:text-rose-400">🗑{item.deletes} {t('del')}</span>
+                                            <span className="text-purple-600 dark:text-purple-400">👁{item.queries} {t('view')}</span>
                                         </div>
                                     </div>
                                 );
@@ -1003,13 +1001,13 @@ export default function UserActivityTracking() {
                     <table className="w-full text-start text-xs">
                         <thead className="border-b border-slate-200 bg-slate-50 font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
                             <tr>
-                                <th className="p-3.5 text-start">{isAr ? 'التوقيت' : 'Time'}</th>
-                                <th className="p-3.5 text-start">{isAr ? 'الموظف' : 'Staff'}</th>
-                                <th className="p-3.5 text-start">{isAr ? 'العملية (CRUD)' : 'Operation'}</th>
-                                <th className="p-3.5 text-start">{isAr ? 'الإجراء' : 'Event Action'}</th>
-                                <th className="p-3.5 text-start">{isAr ? 'التصنيف' : 'Category'}</th>
-                                <th className="p-3.5 text-start">{isAr ? 'الهدف / المورد' : 'Target'}</th>
-                                <th className="p-3.5 text-start">{isAr ? 'النتيجة' : 'Outcome'}</th>
+                                <th className="p-3.5 text-start">{t('time')}</th>
+                                <th className="p-3.5 text-start">{t('staff')}</th>
+                                <th className="p-3.5 text-start">{t('operation')}</th>
+                                <th className="p-3.5 text-start">{t('eventAction')}</th>
+                                <th className="p-3.5 text-start">{t('category')}</th>
+                                <th className="p-3.5 text-start">{t('target')}</th>
+                                <th className="p-3.5 text-start">{t('outcome')}</th>
                                 <th className="p-3.5 text-start">IP</th>
                             </tr>
                         </thead>
@@ -1065,7 +1063,7 @@ export default function UserActivityTracking() {
                     <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-slate-800 sm:px-6">
                         <div>
                             <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                                {isAr ? 'سجل حركات ونشاط الموظفين' : 'User Activity Feed'}
+                                {t('userActivityFeed')}
                             </h2>
                             <p className="mt-0.5 text-xs text-slate-400">
                                 {isAr
@@ -1076,7 +1074,7 @@ export default function UserActivityTracking() {
 
                         {selectedUser && (
                             <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-slate-500">{isAr ? 'تصفية حسب:' : 'Filtered by:'}</span>
+                                <span className="text-xs font-bold text-slate-500">{t('filteredBy')}</span>
                                 <span className="inline-flex items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-50 px-3 py-1 text-xs font-bold text-teal-800 dark:bg-teal-950/60 dark:text-teal-300">
                                     <span>{selectedUser.full_name}</span>
                                     <button type="button" onClick={() => setSelectedUser(null)} className="text-teal-500 hover:text-teal-800">
@@ -1097,24 +1095,24 @@ export default function UserActivityTracking() {
                         <div className="p-12 text-center">
                             <AlertTriangle size={32} className="mx-auto text-rose-500" />
                             <p className="mt-3 font-bold text-slate-900 dark:text-white">
-                                {isAr ? 'تعذر تحميل سجل النشاط' : 'Failed to load activity stream'}
+                                {t('failedToLoadActivityStream')}
                             </p>
                             <button
                                 type="button"
                                 onClick={() => refetchAudit()}
                                 className="mt-3 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white dark:bg-white dark:text-slate-900"
                             >
-                                {isAr ? 'إعادة المحاولة' : 'Retry'}
+                                {t('retry')}
                             </button>
                         </div>
                     ) : logs.length === 0 ? (
                         <div className="p-12 text-center">
                             <Activity size={36} className="mx-auto text-slate-300 dark:text-slate-600" />
                             <p className="mt-3 font-bold text-slate-900 dark:text-white">
-                                {isAr ? 'لا توجد حركات مسجلة تطابق التصفية' : 'No user activities match current filter'}
+                                {t('noUserActivitiesMatchCurrentFilter')}
                             </p>
                             <p className="mt-1 text-xs text-slate-400">
-                                {isAr ? 'جرب تغيير شروط البحث أو اختيار نوع عملية آخر.' : 'Try changing date presets or selecting another operation type.'}
+                                {t('tryChangingDatePresetsOrSelecting')}
                             </p>
                         </div>
                     ) : (
@@ -1145,7 +1143,7 @@ export default function UserActivityTracking() {
                                                 <div className="min-w-0">
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <span className="font-bold text-slate-900 dark:text-white text-sm">
-                                                            {log.actor_name || log.user_name || (isAr ? 'النظام' : 'SYSTEM')}
+                                                            {log.actor_name || log.user_name || (t('system'))}
                                                         </span>
                                                         {(log.actor_role || log.user_role) && (
                                                             <span className={`rounded-md border px-2 py-0.5 font-mono text-[10px] font-bold ${roleTheme.border} ${roleTheme.text}`}>
@@ -1205,7 +1203,7 @@ export default function UserActivityTracking() {
                                                     <button
                                                         type="button"
                                                         onClick={() => copyLogPayload(log)}
-                                                        title={isAr ? 'نسخ بيانات الحركة' : 'Copy JSON'}
+                                                        title={t('copyJson')}
                                                         className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
                                                     >
                                                         {copiedId === log.log_id ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
@@ -1215,7 +1213,7 @@ export default function UserActivityTracking() {
                                                         type="button"
                                                         onClick={() => setExpandedLogId(isExpanded ? null : log.log_id)}
                                                         aria-expanded={isExpanded}
-                                                        title={isAr ? 'عرض التفاصيل الكاملة' : 'Toggle details'}
+                                                        title={t('toggleDetails')}
                                                         className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
                                                     >
                                                         <ChevronDown size={15} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
@@ -1247,7 +1245,7 @@ export default function UserActivityTracking() {
                                                     className="inline-flex items-center gap-1 rounded-lg bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 text-[10.5px] font-bold text-teal-700 hover:bg-teal-500/20 dark:text-teal-300 transition"
                                                 >
                                                     <ExternalLink size={10} />
-                                                    <span>{isAr ? 'المريض' : 'Patient'} #{String(log.patient_id).slice(0, 8)}</span>
+                                                    <span>{t('patient')} #{String(log.patient_id).slice(0, 8)}</span>
                                                 </Link>
                                             )}
 
@@ -1257,7 +1255,7 @@ export default function UserActivityTracking() {
                                                     className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 text-[10.5px] font-bold text-cyan-700 hover:bg-cyan-500/20 dark:text-cyan-300 transition"
                                                 >
                                                     <ExternalLink size={10} />
-                                                    <span>{isAr ? 'فحص الأشعة' : 'Exam Study'}</span>
+                                                    <span>{t('examStudy')}</span>
                                                 </Link>
                                             )}
 
@@ -1267,7 +1265,7 @@ export default function UserActivityTracking() {
                                                     className="inline-flex items-center gap-1 rounded-lg bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10.5px] font-bold text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 transition"
                                                 >
                                                     <ExternalLink size={10} />
-                                                    <span>{isAr ? 'الفاتورة' : 'Invoice'}</span>
+                                                    <span>{t('invoice')}</span>
                                                 </Link>
                                             )}
                                         </div>
@@ -1277,7 +1275,7 @@ export default function UserActivityTracking() {
                                             <div className="mt-3.5 space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-white animate-in fade-in duration-150">
                                                 <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                                                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                                        {isAr ? 'التفاصيل التقنية للحدث' : 'Technical Event Context'}
+                                                        {t('technicalEventContext')}
                                                     </span>
                                                     <span className="font-mono text-[10px] text-slate-500">Log ID #{log.log_id}</span>
                                                 </div>
@@ -1286,7 +1284,7 @@ export default function UserActivityTracking() {
                                                     <div className="grid gap-2 sm:grid-cols-2">
                                                         <div className="rounded-xl border border-rose-900/30 bg-rose-950/20 p-3">
                                                             <span className="text-[10px] font-bold text-rose-400">
-                                                                {isAr ? 'الحالة السابقة (-)' : '- Previous State'}
+                                                                {t('previousState')}
                                                             </span>
                                                             <pre className="mt-1 max-h-32 overflow-auto font-mono text-[11px] text-rose-200">
                                                                 {JSON.stringify(log.previous_value, null, 2)}
@@ -1294,7 +1292,7 @@ export default function UserActivityTracking() {
                                                         </div>
                                                         <div className="rounded-xl border border-emerald-900/30 bg-emerald-950/20 p-3">
                                                             <span className="text-[10px] font-bold text-emerald-400">
-                                                                {isAr ? 'الحالة الجديدة (+)' : '+ New State'}
+                                                                {t('newState')}
                                                             </span>
                                                             <pre className="mt-1 max-h-32 overflow-auto font-mono text-[11px] text-emerald-200">
                                                                 {JSON.stringify(log.new_value, null, 2)}
@@ -1330,7 +1328,7 @@ export default function UserActivityTracking() {
                     pageCount={pageCount}
                     onPageChange={setPage}
                     isRtl={isAr}
-                    ariaLabel={isAr ? 'صفحات سجل النشاط' : 'Activity pagination'}
+                    ariaLabel={t('activityPagination')}
                     className="border-t border-slate-100 px-4 dark:border-slate-800 sm:px-6"
                 />
             ) : null}
@@ -1360,15 +1358,15 @@ export default function UserActivityTracking() {
                         <div className="grid grid-cols-2 gap-3">
                             <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
                                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                    {isAr ? 'حالة الحساب' : 'Account Status'}
+                                    {t('accountStatus')}
                                 </span>
                                 <p className="font-bold text-xs text-emerald-600 mt-1">
-                                    {inspectingUser.is_active ? (isAr ? 'نشط ومفعل' : 'Active') : (isAr ? 'معطل' : 'Disabled')}
+                                    {inspectingUser.is_active ? (t('active')) : (t('disabled'))}
                                 </p>
                             </div>
                             <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
                                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                    {isAr ? 'تاريخ التسجيل' : 'Joined Date'}
+                                    {t('joinedDate')}
                                 </span>
                                 <p className="font-mono text-xs text-slate-700 dark:text-slate-300 mt-1">
                                     {inspectingUser.created_at ? new Date(inspectingUser.created_at).toLocaleDateString(locale) : '—'}
@@ -1385,7 +1383,7 @@ export default function UserActivityTracking() {
                                 className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2 text-xs font-bold text-white hover:bg-teal-500"
                             >
                                 <ExternalLink size={13} />
-                                <span>{isAr ? 'الانتقال لملف الموظف الكامل' : 'Open Full User Profile'}</span>
+                                <span>{t('openFullUserProfile')}</span>
                             </button>
                         </div>
                     </div>

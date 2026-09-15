@@ -250,11 +250,11 @@ export default function UserDetailPage() {
                 general_comments: evalForm.general_comments
             }).unwrap();
 
-            toast.success(isArabic ? 'تم حفظ تقييم الموظف بنجاح' : 'Staff evaluation saved successfully');
+            toast.success(t('staffEvaluationSavedSuccessfully'));
             setEvalModalOpen(false);
             refetchEvaluations();
         } catch (err) {
-            toast.error(getErrorMessage(err, isArabic ? 'تعذر حفظ التقييم' : 'Failed to save evaluation'));
+            toast.error(getErrorMessage(err, t('failedToSaveEvaluation')));
         }
     };
 
@@ -274,30 +274,30 @@ export default function UserDetailPage() {
         <div className="space-y-6 p-4 sm:p-6 lg:p-8" dir={isRtl ? 'rtl' : 'ltr'}>
             <PageHeader
                 icon={User}
-                eyebrow={isArabic ? 'الملف الشامل للموظف 360°' : 'Comprehensive Staff Dossier 360°'}
+                eyebrow={t('comprehensiveStaffDossier360')}
                 title={user.full_name}
                 description={`${user.email || '—'} · ${user.department || user.department_name || roleInfo.label}`}
                 metrics={[
-                    { key: 'shifts', icon: Calendar, label: isArabic ? 'الورديات' : 'Shifts', value: shiftsList.length, tone: 'teal' },
-                    { key: 'attendance', icon: CheckCircle2, label: isArabic ? 'جلسات الحضور' : 'Attendance', value: attendanceRecords.length, tone: 'emerald' },
-                    { key: 'eval', icon: Award, label: isArabic ? 'التقييم' : 'Rating', value: averageRating ? `★ ${averageRating}/5` : '—', tone: 'amber' },
-                    { key: 'deductions', icon: Receipt, label: isArabic ? 'إجمالي الخصم' : 'Deductions', value: `${(totalDeductionsAmount + totalPenaltiesAmount).toLocaleString()} EGP`, tone: totalDeductionsAmount + totalPenaltiesAmount > 0 ? 'rose' : 'slate' },
-                    { key: 'status', icon: user.is_active ? ShieldCheck : Lock, label: isArabic ? 'حالة الحساب' : 'Status', value: user.is_active ? (isArabic ? 'نشط' : 'Active') : (isArabic ? 'معطل' : 'Disabled'), tone: user.is_active ? 'emerald' : 'rose' }
+                    { key: 'shifts', icon: Calendar, label: t('shifts'), value: shiftsList.length, tone: 'teal' },
+                    { key: 'attendance', icon: CheckCircle2, label: t('attendance'), value: attendanceRecords.length, tone: 'emerald' },
+                    { key: 'eval', icon: Award, label: t('rating'), value: averageRating ? `★ ${averageRating}/5` : '—', tone: 'amber' },
+                    { key: 'deductions', icon: Receipt, label: t('deductions'), value: `${(totalDeductionsAmount + totalPenaltiesAmount).toLocaleString()} EGP`, tone: totalDeductionsAmount + totalPenaltiesAmount > 0 ? 'rose' : 'slate' },
+                    { key: 'status', icon: user.is_active ? ShieldCheck : Lock, label: t('status'), value: user.is_active ? (t('active')) : (t('disabled')), tone: user.is_active ? 'emerald' : 'rose' }
                 ]}
-                metricsLabel={isArabic ? 'مؤشرات الأداء والسجل الوظيفي' : 'Staff performance & service indicators'}
+                metricsLabel={t('staffPerformanceServiceIndicators')}
                 actions={
                     <>
                         <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
                             <ArrowLeft size={14} className={isRtl ? 'rotate-180 me-1.5' : 'me-1.5'} />
-                            {isArabic ? 'رجوع' : 'Back'}
+                            {t('back')}
                         </Button>
                         <Button variant="outline" size="sm" onClick={refetchAll}>
                             <RefreshCw size={14} className="me-1.5" />
-                            {isArabic ? 'تحديث' : 'Refresh'}
+                            {t('refresh')}
                         </Button>
                         <Button size="sm" onClick={() => navigate('/communications')}>
                             <Mail size={14} className="me-1.5" />
-                            {isArabic ? 'مراسلة' : 'Message'}
+                            {t('message')}
                         </Button>
                     </>
                 }
@@ -306,7 +306,7 @@ export default function UserDetailPage() {
             {/* 7-Tab Navigation — responsive grid */}
             <div
                 role="tablist"
-                aria-label={isArabic ? 'أقسام ملف الموظف' : 'Staff dossier sections'}
+                aria-label={t('staffDossierSections')}
                 className="grid select-none grid-cols-4 gap-1 sm:flex sm:flex-wrap sm:gap-1.5 border-b border-slate-200/80 pb-2.5 dark:border-slate-800"
             >
                 {TABS.map((tab) => {
@@ -355,10 +355,10 @@ export default function UserDetailPage() {
                     <div className="flex items-center justify-between">
                         <div>
                             <h3 className="text-base font-black text-slate-900 dark:text-white">
-                                {isArabic ? 'سجل الحضور والانصراف التفصيلي' : 'Detailed Attendance Logs'}
+                                {t('detailedAttendanceLogs')}
                             </h3>
                             <p className="text-xs text-slate-500">
-                                {isArabic ? 'استعراض مواعيد الدخول والخروج والمدة المحتسبة وطريقة التوثيق.' : 'Clock-in/out timestamps, active durations, and biometric/geo verification.'}
+                                {t('clockInOutTimestampsActiveDurations')}
                             </p>
                         </div>
                     </div>
@@ -368,7 +368,7 @@ export default function UserDetailPage() {
                             <div className="p-8 text-center text-slate-400">
                                 <Clock size={32} className="mx-auto mb-2 text-slate-300 dark:text-slate-600" />
                                 <p className="text-xs font-bold text-slate-600 dark:text-slate-400">
-                                    {isArabic ? 'لا توجد تسجيلات حضور لهذا الموظف حتى الآن.' : 'No attendance logs recorded for this staff member.'}
+                                    {t('noAttendanceLogsRecordedForThis')}
                                 </p>
                             </div>
                         ) : (
@@ -376,13 +376,13 @@ export default function UserDetailPage() {
                                 <table className="w-full text-start text-xs">
                                     <thead className="border-b border-slate-200/80 bg-slate-50/80 font-black text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
                                         <tr>
-                                            <th className="p-3.5 text-start">{isArabic ? 'التاريخ' : 'Date'}</th>
-                                            <th className="p-3.5 text-start">{isArabic ? 'وقت الحضور' : 'Clock In'}</th>
-                                            <th className="p-3.5 text-start">{isArabic ? 'وقت الانصراف' : 'Clock Out'}</th>
-                                            <th className="p-3.5 text-start">{isArabic ? 'المدة' : 'Duration'}</th>
-                                            <th className="p-3.5 text-start">{isArabic ? 'طريقة التحقق' : 'Verification'}</th>
-                                            <th className="p-3.5 text-start">{isArabic ? 'الحالة' : 'Status'}</th>
-                                            <th className="p-3.5 text-start">{isArabic ? 'ملاحظات' : 'Notes'}</th>
+                                            <th className="p-3.5 text-start">{t('date')}</th>
+                                            <th className="p-3.5 text-start">{t('clockIn')}</th>
+                                            <th className="p-3.5 text-start">{t('clockOut')}</th>
+                                            <th className="p-3.5 text-start">{t('duration')}</th>
+                                            <th className="p-3.5 text-start">{t('verification')}</th>
+                                            <th className="p-3.5 text-start">{t('statusX')}</th>
+                                            <th className="p-3.5 text-start">{t('notes')}</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium text-slate-700 dark:text-slate-300">
@@ -400,7 +400,7 @@ export default function UserDetailPage() {
                                                         {rec.clock_in ? new Date(rec.clock_in).toLocaleTimeString(isArabic ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' }) : '—'}
                                                     </td>
                                                     <td className="p-3.5 text-rose-600 dark:text-rose-400 font-bold whitespace-nowrap">
-                                                        {rec.clock_out ? new Date(rec.clock_out).toLocaleTimeString(isArabic ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' }) : (isArabic ? 'جلسة نشطة...' : 'Active...')}
+                                                        {rec.clock_out ? new Date(rec.clock_out).toLocaleTimeString(isArabic ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' }) : (t('activeX'))}
                                                     </td>
                                                     <td className="p-3.5 whitespace-nowrap">
                                                         {durationMinutes !== null
@@ -418,7 +418,7 @@ export default function UserDetailPage() {
                                                                 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                                                                 : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                                                         }`}>
-                                                            {!rec.clock_out ? (isArabic ? 'متواجد' : 'Clocked In') : (isArabic ? 'مكتمل' : 'Completed')}
+                                                            {!rec.clock_out ? (t('clockedIn')) : (t('completed'))}
                                                         </span>
                                                     </td>
                                                     <td className="p-3.5 max-w-xs truncate text-slate-500">
@@ -442,25 +442,25 @@ export default function UserDetailPage() {
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="rounded-2xl border border-rose-200/70 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20">
                             <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 dark:text-rose-400">
-                                {isArabic ? 'إجمالي الخصومات الشهرية' : 'Total Payroll Deductions'}
+                                {t('totalPayrollDeductions')}
                             </span>
                             <p className="mt-1 text-2xl font-black text-rose-900 dark:text-rose-100">
                                 {totalDeductionsAmount.toLocaleString()} <span className="text-xs font-bold">EGP</span>
                             </p>
                             <p className="mt-1 text-[11px] text-rose-600/80">
-                                {deductionsList.length} {isArabic ? 'حالة خصم مسجلة' : 'deduction records'}
+                                {deductionsList.length} {t('deductionRecords')}
                             </p>
                         </div>
 
                         <div className="rounded-2xl border border-amber-200/70 bg-amber-50/50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
                             <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                                {isArabic ? 'إجمالي الجزاءات والمخالفات' : 'Total Disciplinary Penalties'}
+                                {t('totalDisciplinaryPenalties')}
                             </span>
                             <p className="mt-1 text-2xl font-black text-amber-900 dark:text-amber-100">
                                 {totalPenaltiesAmount.toLocaleString()} <span className="text-xs font-bold">EGP</span>
                             </p>
                             <p className="mt-1 text-[11px] text-amber-600/80">
-                                {penaltiesList.length} {isArabic ? 'مخالفة أو جزاء مسجل' : 'penalty records'}
+                                {penaltiesList.length} {t('penaltyRecords')}
                             </p>
                         </div>
                     </div>
@@ -468,22 +468,22 @@ export default function UserDetailPage() {
                     {/* Deductions Ledger */}
                     <div className="space-y-2">
                         <h4 className="text-sm font-black text-slate-900 dark:text-white">
-                            {isArabic ? 'سجل الخصومات المالية' : 'Payroll Deductions'}
+                            {t('payrollDeductions')}
                         </h4>
                         <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900">
                             {deductionsList.length === 0 ? (
                                 <p className="p-6 text-center text-xs text-slate-400">
-                                    {isArabic ? 'لا توجد خصومات مالية مسجلة على الموظف.' : 'No deductions recorded.'}
+                                    {t('noDeductionsRecorded')}
                                 </p>
                             ) : (
                                 <table className="w-full text-start text-xs">
                                     <thead className="border-b border-slate-100 bg-slate-50 font-black text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
                                         <tr>
-                                            <th className="p-3 text-start">{isArabic ? 'النوع' : 'Type'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'المبلغ' : 'Amount'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'السبب' : 'Reason'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'الحالة' : 'Status'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'التاريخ' : 'Date'}</th>
+                                            <th className="p-3 text-start">{t('type')}</th>
+                                            <th className="p-3 text-start">{t('amount')}</th>
+                                            <th className="p-3 text-start">{t('reason')}</th>
+                                            <th className="p-3 text-start">{t('statusX')}</th>
+                                            <th className="p-3 text-start">{t('date')}</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -509,22 +509,22 @@ export default function UserDetailPage() {
                     {/* Penalties Ledger */}
                     <div className="space-y-2">
                         <h4 className="text-sm font-black text-slate-900 dark:text-white">
-                            {isArabic ? 'سجل الجزاءات الإدارية' : 'Administrative Penalties'}
+                            {t('administrativePenalties')}
                         </h4>
                         <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900">
                             {penaltiesList.length === 0 ? (
                                 <p className="p-6 text-center text-xs text-slate-400">
-                                    {isArabic ? 'لا توجد جزاءات أو مخالفات إدارية مسجلة.' : 'No penalties recorded.'}
+                                    {t('noPenaltiesRecorded')}
                                 </p>
                             ) : (
                                 <table className="w-full text-start text-xs">
                                     <thead className="border-b border-slate-100 bg-slate-50 font-black text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
                                         <tr>
-                                            <th className="p-3 text-start">{isArabic ? 'المخالفة' : 'Infraction'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'درجة الخطورة' : 'Severity'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'الغرامة المالية' : 'Fine'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'الحالة' : 'Status'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'التاريخ' : 'Date'}</th>
+                                            <th className="p-3 text-start">{t('infraction')}</th>
+                                            <th className="p-3 text-start">{t('severity')}</th>
+                                            <th className="p-3 text-start">{t('fine')}</th>
+                                            <th className="p-3 text-start">{t('statusX')}</th>
+                                            <th className="p-3 text-start">{t('date')}</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -559,22 +559,22 @@ export default function UserDetailPage() {
                     {/* Shift Swap / Mod Requests */}
                     <div className="space-y-2">
                         <h4 className="text-sm font-black text-slate-900 dark:text-white">
-                            {isArabic ? 'طلبات تبديل وتعديل الورديات' : 'Shift Swap & Modification Requests'}
+                            {t('shiftSwapModificationRequests')}
                         </h4>
                         <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900">
                             {shiftRequestsList.length === 0 ? (
                                 <p className="p-6 text-center text-xs text-slate-400">
-                                    {isArabic ? 'لا توجد طلبات ورديات مسجلة.' : 'No shift requests filed.'}
+                                    {t('noShiftRequestsFiled')}
                                 </p>
                             ) : (
                                 <table className="w-full text-start text-xs">
                                     <thead className="border-b border-slate-100 bg-slate-50 font-black text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
                                         <tr>
-                                            <th className="p-3 text-start">{isArabic ? 'نوع الطلب' : 'Type'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'التفاصيل والمقترح' : 'Proposed'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'السبب' : 'Reason'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'الحالة' : 'Status'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'تاريخ التقديم' : 'Date'}</th>
+                                            <th className="p-3 text-start">{t('typeX')}</th>
+                                            <th className="p-3 text-start">{t('proposed')}</th>
+                                            <th className="p-3 text-start">{t('reason')}</th>
+                                            <th className="p-3 text-start">{t('statusX')}</th>
+                                            <th className="p-3 text-start">{t('dateX')}</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -584,12 +584,12 @@ export default function UserDetailPage() {
                                                     <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-black ${
                                                         r.request_type === 'Swap' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
                                                     }`}>
-                                                        {r.request_type === 'Swap' ? (isArabic ? 'تبديل' : 'Swap') : (isArabic ? 'تعديل' : 'Modification')}
+                                                        {r.request_type === 'Swap' ? (t('swap')) : (t('modification'))}
                                                     </span>
                                                 </td>
                                                 <td className="p-3 font-medium">
                                                     {r.request_type === 'Swap'
-                                                        ? `${isArabic ? 'تبديل مع: ' : 'Target Colleague: '} ${r.target_user_name || r.target_user_id}`
+                                                        ? `${t('targetColleague')} ${r.target_user_name || r.target_user_id}`
                                                         : `${new Date(r.proposed_start_time).toLocaleTimeString()} - ${new Date(r.proposed_end_time).toLocaleTimeString()}`}
                                                 </td>
                                                 <td className="p-3 max-w-xs truncate text-slate-600">{r.reason || '—'}</td>
@@ -612,22 +612,22 @@ export default function UserDetailPage() {
                     {/* Attendance Early Departure / Late Arrival Permissions */}
                     <div className="space-y-2">
                         <h4 className="text-sm font-black text-slate-900 dark:text-white">
-                            {isArabic ? 'أذونات الحضور والانصراف الاستثنائية' : 'Attendance Exception Permissions'}
+                            {t('attendanceExceptionPermissions')}
                         </h4>
                         <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900">
                             {permissionsList.length === 0 ? (
                                 <p className="p-6 text-center text-xs text-slate-400">
-                                    {isArabic ? 'لا توجد أذونات حضور أو انصراف مسجلة.' : 'No permissions filed.'}
+                                    {t('noPermissionsFiled')}
                                 </p>
                             ) : (
                                 <table className="w-full text-start text-xs">
                                     <thead className="border-b border-slate-100 bg-slate-50 font-black text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
                                         <tr>
-                                            <th className="p-3 text-start">{isArabic ? 'نوع الإذن' : 'Permission Type'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'الدقائق الممنوحة' : 'Minutes'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'تاريخ السريان' : 'Date'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'السبب' : 'Reason'}</th>
-                                            <th className="p-3 text-start">{isArabic ? 'الحالة' : 'Status'}</th>
+                                            <th className="p-3 text-start">{t('permissionType')}</th>
+                                            <th className="p-3 text-start">{t('minutes')}</th>
+                                            <th className="p-3 text-start">{t('dateXX')}</th>
+                                            <th className="p-3 text-start">{t('reason')}</th>
+                                            <th className="p-3 text-start">{t('statusX')}</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -662,23 +662,23 @@ export default function UserDetailPage() {
             {activeTab === 'leaves' && (
                 <div className="space-y-4">
                     <h4 className="text-sm font-black text-slate-900 dark:text-white">
-                        {isArabic ? 'سجل طلبات الإجازة والرصيد' : 'Leave Requests & Balances'}
+                        {t('leaveRequestsBalances')}
                     </h4>
                     <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900">
                         {leaveRequestsList.length === 0 ? (
                             <p className="p-8 text-center text-xs text-slate-400">
-                                {isArabic ? 'لا توجد طلبات إجازة مسجلة للموظف.' : 'No leave requests recorded.'}
+                                {t('noLeaveRequestsRecorded')}
                             </p>
                         ) : (
                             <table className="w-full text-start text-xs">
                                 <thead className="border-b border-slate-100 bg-slate-50 font-black text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
                                     <tr>
-                                        <th className="p-3 text-start">{isArabic ? 'نوع الإجازة' : 'Leave Type'}</th>
-                                        <th className="p-3 text-start">{isArabic ? 'من تاريخ' : 'Start Date'}</th>
-                                        <th className="p-3 text-start">{isArabic ? 'إلى تاريخ' : 'End Date'}</th>
-                                        <th className="p-3 text-start">{isArabic ? 'الأيام' : 'Days'}</th>
-                                        <th className="p-3 text-start">{isArabic ? 'السبب' : 'Reason'}</th>
-                                        <th className="p-3 text-start">{isArabic ? 'الحالة' : 'Status'}</th>
+                                        <th className="p-3 text-start">{t('leaveType')}</th>
+                                        <th className="p-3 text-start">{t('startDate')}</th>
+                                        <th className="p-3 text-start">{t('endDate')}</th>
+                                        <th className="p-3 text-start">{t('days')}</th>
+                                        <th className="p-3 text-start">{t('reason')}</th>
+                                        <th className="p-3 text-start">{t('statusX')}</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -687,7 +687,7 @@ export default function UserDetailPage() {
                                             <td className="p-3 font-bold">{l.leave_type || 'Annual'}</td>
                                             <td className="p-3 font-medium">{l.start_date}</td>
                                             <td className="p-3 font-medium">{l.end_date}</td>
-                                            <td className="p-3 font-black text-teal-600">{l.days_count || l.days || 1} {isArabic ? 'أيام' : 'days'}</td>
+                                            <td className="p-3 font-black text-teal-600">{l.days_count || l.days || 1} {t('daysX')}</td>
                                             <td className="p-3 max-w-xs truncate text-slate-600">{l.reason || '—'}</td>
                                             <td className="p-3">
                                                 <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
@@ -711,10 +711,10 @@ export default function UserDetailPage() {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                             <h3 className="text-base font-black text-slate-900 dark:text-white">
-                                {isArabic ? 'سجل تقييمات الأداء ومؤشرات الجودة' : 'Performance Evaluations & KPI Reviews'}
+                                {t('performanceEvaluationsKpiReviews')}
                             </h3>
                             <p className="text-xs text-slate-500">
-                                {isArabic ? 'مراجعات الجودة الإكلينيكية، الانضباط في المواعيد، والعمل الجماعي.' : 'Clinical quality metrics, punctuality records, and peer/manager reviews.'}
+                                {t('clinicalQualityMetricsPunctualityRecordsAnd')}
                             </p>
                         </div>
                         <button
@@ -723,7 +723,7 @@ export default function UserDetailPage() {
                             className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-black text-white shadow-xs hover:bg-teal-700 active:scale-95"
                         >
                             <Plus size={15} />
-                            {isArabic ? 'إضافة تقييم جديد' : 'New Evaluation'}
+                            {t('newEvaluation')}
                         </button>
                     </div>
 
@@ -735,7 +735,7 @@ export default function UserDetailPage() {
                             </div>
                             <div>
                                 <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                                    {isArabic ? 'متوسط تقييم الأداء العام' : 'Overall KPI Average'}
+                                    {t('overallKpiAverage')}
                                 </span>
                                 <p className="text-xl font-black text-amber-900 dark:text-amber-100">
                                     {averageRating} <span className="text-sm font-semibold">/ 5.0</span>
@@ -750,7 +750,7 @@ export default function UserDetailPage() {
                             <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-slate-400 dark:border-slate-800">
                                 <Award size={36} className="mx-auto text-slate-300 dark:text-slate-600" />
                                 <p className="mt-2 text-xs font-bold text-slate-600 dark:text-slate-400">
-                                    {isArabic ? 'لا توجد تقييمات مسجلة لهذا الموظف بعد. اضغط "إضافة تقييم جديد" للبدء.' : 'No evaluations recorded yet. Click "New Evaluation" to file one.'}
+                                    {t('noEvaluationsRecordedYetClickNew')}
                                 </p>
                             </div>
                         ) : (
@@ -766,7 +766,7 @@ export default function UserDetailPage() {
                                                     {ev.evaluation_period}
                                                 </h4>
                                                 <p className="text-[11px] text-slate-400">
-                                                    {isArabic ? 'المقيّم: ' : 'Evaluator: '} {ev.evaluator_name || 'HR Management'}
+                                                    {t('evaluator')} {ev.evaluator_name || 'HR Management'}
                                                 </p>
                                             </div>
                                         </div>
@@ -777,28 +777,28 @@ export default function UserDetailPage() {
 
                                     <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[11px]">
                                         <div className="rounded-xl bg-slate-50 p-2 dark:bg-slate-950">
-                                            <span className="text-slate-400 block text-[10px]">{isArabic ? 'الجودة الإكلينيكية' : 'Clinical Quality'}</span>
+                                            <span className="text-slate-400 block text-[10px]">{t('clinicalQuality')}</span>
                                             <span className="font-bold text-slate-700 dark:text-slate-200">{ev.clinical_quality_score || '—'} / 5</span>
                                         </div>
                                         <div className="rounded-xl bg-slate-50 p-2 dark:bg-slate-950">
-                                            <span className="text-slate-400 block text-[10px]">{isArabic ? 'الانضباط والحضور' : 'Punctuality'}</span>
+                                            <span className="text-slate-400 block text-[10px]">{t('punctuality')}</span>
                                             <span className="font-bold text-slate-700 dark:text-slate-200">{ev.attendance_punctuality_score || '—'} / 5</span>
                                         </div>
                                         <div className="rounded-xl bg-slate-50 p-2 dark:bg-slate-950">
-                                            <span className="text-slate-400 block text-[10px]">{isArabic ? 'العمل الجماعي' : 'Teamwork'}</span>
+                                            <span className="text-slate-400 block text-[10px]">{t('teamwork')}</span>
                                             <span className="font-bold text-slate-700 dark:text-slate-200">{ev.teamwork_score || '—'} / 5</span>
                                         </div>
                                     </div>
 
                                     {ev.strengths && (
                                         <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-                                            <strong className="text-emerald-600">{isArabic ? 'نقاط القوة: ' : 'Strengths: '}</strong>
+                                            <strong className="text-emerald-600">{t('strengths')}</strong>
                                             {ev.strengths}
                                         </p>
                                     )}
                                     {ev.areas_for_improvement && (
                                         <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                                            <strong className="text-amber-600">{isArabic ? 'فرص التحسين: ' : 'Improvements: '}</strong>
+                                            <strong className="text-amber-600">{t('improvements')}</strong>
                                             {ev.areas_for_improvement}
                                         </p>
                                     )}
@@ -968,14 +968,14 @@ export default function UserDetailPage() {
             <Modal
                 isOpen={evalModalOpen}
                 onClose={() => setEvalModalOpen(false)}
-                title={isArabic ? 'إضافة تقييم أداء جديد للموظف' : 'Add Staff Performance Evaluation'}
+                title={t('addStaffPerformanceEvaluation')}
                 size="default"
             >
                 <form onSubmit={handleCreateEvaluation} className="space-y-4 p-1 text-slate-800 dark:text-slate-200">
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                             <label className="text-xs font-black text-slate-700 dark:text-slate-300">
-                                {isArabic ? 'فترة التقييم' : 'Evaluation Period'}
+                                {t('evaluationPeriod')}
                             </label>
                             <input
                                 type="text"
@@ -987,7 +987,7 @@ export default function UserDetailPage() {
                         </div>
                         <div className="space-y-1.5">
                             <label className="text-xs font-black text-slate-700 dark:text-slate-300">
-                                {isArabic ? 'التقييم الإجمالي (من 5)' : 'Overall Score (out of 5)'}
+                                {t('overallScoreOutOf5')}
                             </label>
                             <input
                                 type="number"
@@ -1003,7 +1003,7 @@ export default function UserDetailPage() {
 
                     <div className="grid grid-cols-3 gap-2">
                         <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">{isArabic ? 'الجودة' : 'Quality'}</label>
+                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">{t('quality')}</label>
                             <input
                                 type="number"
                                 min="1"
@@ -1014,7 +1014,7 @@ export default function UserDetailPage() {
                             />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">{isArabic ? 'الانضباط' : 'Punctuality'}</label>
+                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">{t('punctualityX')}</label>
                             <input
                                 type="number"
                                 min="1"
@@ -1025,7 +1025,7 @@ export default function UserDetailPage() {
                             />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">{isArabic ? 'العمل الجماعي' : 'Teamwork'}</label>
+                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">{t('teamwork')}</label>
                             <input
                                 type="number"
                                 min="1"
@@ -1039,26 +1039,26 @@ export default function UserDetailPage() {
 
                     <div className="space-y-1.5">
                         <label className="text-xs font-black text-slate-700 dark:text-slate-300">
-                            {isArabic ? 'نقاط القوة والإشادة' : 'Key Strengths'}
+                            {t('keyStrengths')}
                         </label>
                         <textarea
                             rows={2}
                             value={evalForm.strengths}
                             onChange={(e) => setEvalForm({ ...evalForm, strengths: e.target.value })}
-                            placeholder={isArabic ? 'أبرز الإنجازات ونقاط القوة...' : 'Highlight notable strengths and accomplishments...'}
+                            placeholder={t('highlightNotableStrengthsAndAccomplishments')}
                             className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs font-bold outline-none focus:border-teal-500 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                         />
                     </div>
 
                     <div className="space-y-1.5">
                         <label className="text-xs font-black text-slate-700 dark:text-slate-300">
-                            {isArabic ? 'فرص ومجالات التحسين' : 'Areas for Improvement'}
+                            {t('areasForImprovement')}
                         </label>
                         <textarea
                             rows={2}
                             value={evalForm.areas_for_improvement}
                             onChange={(e) => setEvalForm({ ...evalForm, areas_for_improvement: e.target.value })}
-                            placeholder={isArabic ? 'التوصيات التدريبية والتحسين...' : 'Recommended training or improvement areas...'}
+                            placeholder={t('recommendedTrainingOrImprovementAreas')}
                             className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs font-bold outline-none focus:border-teal-500 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                         />
                     </div>
@@ -1069,7 +1069,7 @@ export default function UserDetailPage() {
                             onClick={() => setEvalModalOpen(false)}
                             className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-900"
                         >
-                            {isArabic ? 'إلغاء' : 'Cancel'}
+                            {t('cancel')}
                         </button>
                         <button
                             type="submit"
@@ -1077,7 +1077,7 @@ export default function UserDetailPage() {
                             className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-black text-white shadow-xs hover:bg-teal-700 active:scale-95 disabled:opacity-50"
                         >
                             <Save size={14} />
-                            {isSubmittingEval ? (isArabic ? 'جارِ الحفظ...' : 'Saving...') : (isArabic ? 'حفظ التقييم' : 'Save Evaluation')}
+                            {isSubmittingEval ? (t('saving')) : (t('saveEvaluation'))}
                         </button>
                     </div>
                 </form>

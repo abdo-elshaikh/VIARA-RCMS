@@ -58,7 +58,9 @@ describe('staff notification cards', () => {
             </MemoryRouter>
         );
 
-        const action = screen.getByRole('button', { name: /Open Target Record/i });
+        // t() is mocked to return the key (no i18n provider in tests), so the
+        // migrated button's accessible name is the translation key.
+        const action = screen.getByRole('button', { name: /openTargetRecord/i });
         expect(action).toBeInTheDocument();
         fireEvent.click(action);
         expect(onNavigate).toHaveBeenCalledWith('/worklist?examId=exam-1');
