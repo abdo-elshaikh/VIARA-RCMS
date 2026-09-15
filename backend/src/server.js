@@ -87,6 +87,9 @@ const inventoryRoutes = require('./routes/inventoryRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const portalRoutes = require('./routes/portalRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const roomRoutes = require('./routes/roomRoutes');
+const receptionRoutes = require('./routes/receptionRoutes');
+const displayRoutes = require('./routes/displayRoutes');
 
 // Background Workers
 const { startIntegrationWorker } = require('./jobs/integrationWorker');
@@ -203,6 +206,8 @@ const pool = new Pool({
 });
 configureAuthDatabase(pool);
 realtimeService.setRealtimePool(pool);
+// Failed-login actor attribution in auditLogger (best-effort only).
+auditLogger.setDbPoolForAudit(pool);
 
 const lifecycle = createServerLifecycle({
     pool,
@@ -535,6 +540,18 @@ app.get('/metrics', async (req, res) => {
         if (!auth || auth !== `Bearer ${configuredToken}`) {
             return res.status(403).json({ error: 'Forbidden' });
         }
+    } else {
+        // No token configured — restrict to loopback and private RFC-1918 ranges only.
+        const ip = req.ip || req.socket?.remoteAddress || '';
+        const stripped = ip.replace(/^::ffff:/, '');
+        const isLocal = stripped === '127.0.0.1'
+            || stripped === '::1'
+            || /^10\./.test(stripped)
+            || /^172\.(1[6-9]|2\d|3[01])\./.test(stripped)
+            || /^192\.168\./.test(stripped);
+        if (!isLocal) {
+            return res.status(403).json({ error: 'Forbidden: metrics endpoint requires METRICS_TOKEN or private network access' });
+        }
     }
     try {
         res.set('Content-Type', metricsRegistry.contentType);
@@ -725,6 +742,9 @@ app.use('/api/system', systemRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/clinical', safetyRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/import', importRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/pacs', pacsRoutes(pool, authenticateToken, authorizeRole));
+app.use('/api/rooms', roomRoutes(pool, authenticateToken, authorizeRole));
+app.use('/api/reception', receptionRoutes(pool, authenticateToken, authorizeRole));
+app.use('/api/display', displayRoutes(pool, authenticateToken, authorizeRole));
 
 app.use('/api/crm', crmRoutes(pool));
 app.use('/api', inventoryRoutes(pool));

@@ -7,6 +7,11 @@ const {
 } = require('../services/auditTaxonomy');
 const logger = require('../config/logger');
 
+// Pool reference injected from server.js (setDbPoolForAudit). Only used for
+// best-effort actor attribution on failed login events; never required.
+let dbPoolRef = null;
+const setDbPoolForAudit = (pool) => { dbPoolRef = pool; };
+
 const SENSITIVE_KEYS = new Set([
   'password',
   'passwordhash',
@@ -155,6 +160,22 @@ const auditLogger = (auditService) => (req, res, next) => {
       const actorNameFromResponse = capturedResponse?.user?.name
         || capturedResponse?.user?.full_name
         || null;
+      // Failed logins carry no user payload: resolve the actor name from the
+      // account email on the request (the account identifier, not a secret) so
+      // failed-auth events remain attributable in the audit trail.
+      let actorNameFromLoginAttempt = null;
+      if (!actorNameFromResponse && outcomeFromStatus(res.statusCode) !== AUDIT_OUTCOME.SUCCESS
+          && /^\/api\/(auth\/login|portal\/login|doctor-portal\/login)/.test(req.originalUrl.split('?')[0])
+          && typeof req.body?.email === 'string' && req.body.email.length <= 150) {
+        try {
+          const email = req.body.email.toLowerCase();
+          const nameRow = await dbPoolRef.query(
+            'SELECT full_name FROM users WHERE LOWER(email) = $1 LIMIT 1',
+            [email]
+          );
+          actorNameFromLoginAttempt = nameRow.rows[0]?.full_name || null;
+        } catch { /* attribution is best-effort; never block the audit write */ }
+      }
       const requestPath = req.originalUrl.split('?')[0];
       const action = `${req.method} ${requestPath}`;
       const ipAddress = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || null;
@@ -182,7 +203,7 @@ const auditLogger = (auditService) => (req, res, next) => {
             type: userId ? AUDIT_ACTOR_TYPE.USER : AUDIT_ACTOR_TYPE.SYSTEM,
             userId,
             role: req.user?.role || null,
-            name: req.user?.full_name || req.user?.name || actorNameFromResponse || null,
+            name: req.user?.full_name || req.user?.name || actorNameFromResponse || actorNameFromLoginAttempt || null,
           },
           event: {
             code: action || 'UNKNOWN_ACTION',
@@ -226,3 +247,4 @@ const auditLogger = (auditService) => (req, res, next) => {
 };
 
 module.exports = auditLogger;
+module.exports.setDbPoolForAudit = setDbPoolForAudit;
