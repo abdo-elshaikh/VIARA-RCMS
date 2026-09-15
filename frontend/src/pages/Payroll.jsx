@@ -122,22 +122,23 @@ const WORKFLOW_STEPS = ['Draft', 'Calculated', 'Reviewed', 'Approved', 'Paid', '
 
 /* ── Comprehensive Official Employment & Appointment Contract Modal ────────────────────── */
 const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
+    const { t } = useTranslation('payroll');
     if (!profile) return null;
     const contractId = `CTR-${(profile.profile_id || 'PRO').slice(0, 8).toUpperCase()}`;
     const issueDate = new Date().toISOString().slice(0, 10);
     const startDate = profile.effective_from?.slice(0, 10) || issueDate;
-    const endDate = profile.effective_to ? profile.effective_to.slice(0, 10) : (isArabic ? 'عقد غير محدد المدة (يتجدد تلقائياً)' : 'Indefinite duration (auto-renewing)');
+    const endDate = profile.effective_to ? profile.effective_to.slice(0, 10) : (t('indefiniteDurationAutoRenewing'));
     const standardHours = profile.standard_hours_per_day || 8;
     const standardDays = profile.standard_days_per_period || 22;
     const monthlyRate = profile.salary_type === 'Monthly' ? Number(profile.base_salary || 0) : Number(profile.hourly_rate || 0) * standardHours * standardDays;
     const legalName = isArabic
         ? (identity?.legal_name_ar || identity?.legal_name)
         : (identity?.legal_name || identity?.legal_name_ar);
-    const organizationName = legalName || identity?.displayName || identity?.centerName || (isArabic ? 'المنشأة الطبية' : 'Medical Center');
+    const organizationName = legalName || identity?.displayName || identity?.centerName || (t('medicalCenter'));
     const legalReferences = [
-        identity?.medicalLicense && `${isArabic ? 'ترخيص وزارة الصحة' : 'Health Ministry Lic'}: ${identity.medicalLicense}`,
-        identity?.commercialRegistration && `${isArabic ? 'س.ت' : 'CR'}: ${identity.commercialRegistration}`,
-        identity?.taxNumber && `${isArabic ? 'ر.ض' : 'Tax ID'}: ${identity.taxNumber}`,
+        identity?.medicalLicense && `${t('healthMinistryLic')}: ${identity.medicalLicense}`,
+        identity?.commercialRegistration && `${t('cr')}: ${identity.commercialRegistration}`,
+        identity?.taxNumber && `${t('taxId')}: ${identity.taxNumber}`,
     ].filter(Boolean);
 
     return createPortal(
@@ -152,14 +153,14 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                         <div>
                             <div className="flex items-center gap-2">
                                 <h2 className="text-base font-black text-slate-900 dark:text-white">
-                                    {isArabic ? 'عقد عمل وتعيين رسمي موحد للكادر الطبي والإداري' : 'Unified Official Employment & Appointment Contract'}
+                                    {t('unifiedOfficialEmploymentAppointmentContract')}
                                 </h2>
                                 <span className="rounded-full bg-teal-500/10 px-2 py-0.5 text-[10px] font-black text-teal-800 dark:text-teal-300 border border-teal-500/30">
-                                    {profile.salary_type === 'Monthly' ? (isArabic ? 'دوام كامل' : 'Full-Time') : (isArabic ? 'عمل بالساعة' : 'Part-Time')}
+                                    {profile.salary_type === 'Monthly' ? (t('fullTime')) : (t('partTime'))}
                                 </span>
                             </div>
                             <p className="text-xs font-semibold text-slate-400">
-                                {isArabic ? `رقم التوثيق: ${contractId} · تاريخ التحرير: ${issueDate}` : `Document Ref: ${contractId} · Issue Date: ${issueDate}`}
+                                {t('payslip.docRef', { contractId, issueDate })}
                             </p>
                         </div>
                     </div>
@@ -170,7 +171,7 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                             className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-3.5 py-1.5 text-xs font-black text-white shadow-xs transition hover:brightness-110"
                         >
                             <Printer size={14} />
-                            <span>{isArabic ? 'طباعة العقد الرسمي' : 'Print Contract'}</span>
+                            <span>{t('printContract')}</span>
                         </button>
                         <button
                             type="button"
@@ -206,17 +207,17 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                                 <p className="mt-1 text-[11px] font-semibold text-slate-600 dark:text-slate-400">
                                     {legalReferences.length
                                         ? legalReferences.join(' · ')
-                                        : (isArabic ? 'بيانات المنشأة والفرع المعتمدة في النظام' : 'Registered center and branch identity')}
+                                        : (t('registeredCenterAndBranchIdentity'))}
                                 </p>
                                 </div>
                             </div>
                             <div className="rounded-xl border border-teal-500/30 bg-white/90 p-2.5 text-start sm:text-end dark:bg-slate-900 shadow-2xs shrink-0">
                                 <p className="text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
-                                    {isArabic ? 'كود العقد المالي والإداري' : 'Contract Ref'}
+                                    {t('contractRef')}
                                 </p>
                                 <p className="font-mono text-sm font-black text-slate-900 dark:text-white">{contractId}</p>
                                 <p className="text-[9.5px] font-bold text-emerald-600 dark:text-emerald-400">
-                                    {isArabic ? '✓ موثق في السجل الإلكتروني' : '✓ Verified Digital Contract'}
+                                    {t('verifiedDigitalContract')}
                                 </p>
                             </div>
                         </div>
@@ -236,33 +237,33 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                         <div className="rounded-2xl border border-teal-200/90 bg-teal-50/50 p-4 dark:border-teal-500/20 dark:bg-slate-950/50">
                             <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-teal-800 dark:text-teal-300">
                                 <ShieldCheck size={12} />
-                                {isArabic ? 'الطرف الأول: (صاحب العمل / المنشأة الطبية)' : 'First Party: (Employer / Medical Center)'}
+                                {t('firstPartyEmployerMedicalCenter')}
                             </span>
                             <p className="mt-1.5 text-sm font-black text-slate-900 dark:text-white">
                                 {organizationName}
                             </p>
                             <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
-                                {isArabic ? 'يمثلها قانونياً: المدير الطبي والمدير التنفيذي للمركز' : 'Represented by: Medical & Managing Director'}
+                                {t('representedByMedicalManagingDirector')}
                             </p>
                             <p className="mt-0.5 text-[10.5px] text-slate-500">
                                 {identity?.address
-                                    ? `${isArabic ? 'العنوان' : 'Location'}: ${identity.address}`
-                                    : (isArabic ? 'العنوان المسجل للفرع غير مضاف بعد' : 'Branch address is not configured yet')}
+                                    ? `${t('location')}: ${identity.address}`
+                                    : (t('branchAddressIsNotConfiguredYet'))}
                             </p>
                         </div>
                         <div className="rounded-2xl border border-teal-200/90 bg-teal-50/50 p-4 dark:border-teal-500/20 dark:bg-slate-950/50">
                             <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-teal-800 dark:text-teal-300">
                                 <UserCheck size={12} />
-                                {isArabic ? 'الطرف الثاني: (الموظف / الطرف المتعاقد)' : 'Second Party: (Employee / Physician / Staff)'}
+                                {t('secondPartyEmployeePhysicianStaff')}
                             </span>
                             <p className="mt-1.5 text-sm font-black text-slate-900 dark:text-white">
                                 {profile.employee_name}
                             </p>
                             <p className="mt-0.5 text-xs font-bold text-teal-700 dark:text-teal-300">
-                                {isArabic ? `المسمى الوظيفي: ${profile.role}` : `Designation: ${profile.role}`}
+                                {t('payslip.designation', { role: profile.role })}
                             </p>
                             <p className="mt-0.5 text-[10.5px] text-slate-500">
-                                {isArabic ? `المعرف الوظيفي: ${profile.user_id ? profile.user_id.slice(0, 8).toUpperCase() : '-'}` : `Staff ID: ${profile.user_id ? profile.user_id.slice(0, 8).toUpperCase() : '-'}`}
+                                {t('payslip.staffId', { id: profile.user_id ? profile.user_id.slice(0, 8).toUpperCase() : '-' })}
                             </p>
                         </div>
                     </div>
@@ -270,31 +271,31 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                     {/* Financial Summary Strip */}
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/60">
                         <h3 className="text-xs font-black uppercase tracking-wider text-teal-900 dark:text-teal-200 mb-3">
-                            {isArabic ? 'ملخص الهيكل المالي والمخصصات التعاقدية' : 'Contracted Compensation Summary'}
+                            {t('contractedCompensationSummary')}
                         </h3>
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                             <div className="rounded-xl bg-white p-3 border border-slate-200/80 dark:bg-slate-900 dark:border-slate-800">
-                                <p className="text-[10px] font-bold text-slate-400">{isArabic ? 'الراتب الأساسي' : 'Base Salary'}</p>
+                                <p className="text-[10px] font-bold text-slate-400">{t('baseSalary')}</p>
                                 <p className="mt-1 font-mono text-sm font-black whitespace-nowrap text-teal-700 dark:text-teal-300">
                                     {profile.salary_type === 'Monthly' ? money(profile.base_salary, currency) : `${money(profile.hourly_rate, currency)}/hr`}
                                 </p>
                             </div>
                             <div className="rounded-xl bg-white p-3 border border-slate-200/80 dark:bg-slate-900 dark:border-slate-800">
-                                <p className="text-[10px] font-bold text-slate-400">{isArabic ? 'أجر الساعة الإضافية' : 'Overtime Rate'}</p>
+                                <p className="text-[10px] font-bold text-slate-400">{t('overtimeRate')}</p>
                                 <p className="mt-1 font-mono text-sm font-black whitespace-nowrap text-slate-800 dark:text-slate-200">
                                     {money(Number(profile.hourly_rate || (profile.base_salary ? profile.base_salary / (standardDays * standardHours) : 0)), currency)}
                                 </p>
                             </div>
                             <div className="rounded-xl bg-white p-3 border border-slate-200/80 dark:bg-slate-900 dark:border-slate-800">
-                                <p className="text-[10px] font-bold text-slate-400">{isArabic ? 'ساعات العمل اليومية' : 'Daily Hours'}</p>
+                                <p className="text-[10px] font-bold text-slate-400">{t('dailyHours')}</p>
                                 <p className="mt-1 font-mono text-sm font-black text-slate-800 dark:text-slate-200">
-                                    {standardHours} {isArabic ? 'ساعات / يوم' : 'hrs/day'}
+                                    {standardHours} {t('hrsDay')}
                                 </p>
                             </div>
                             <div className="rounded-xl bg-white p-3 border border-slate-200/80 dark:bg-slate-900 dark:border-slate-800">
-                                <p className="text-[10px] font-bold text-slate-400">{isArabic ? 'أيام العمل الشهرية' : 'Monthly Days'}</p>
+                                <p className="text-[10px] font-bold text-slate-400">{t('monthlyDays')}</p>
                                 <p className="mt-1 font-mono text-sm font-black text-slate-800 dark:text-slate-200">
-                                    {standardDays} {isArabic ? 'يوماً / شهر' : 'days/period'}
+                                    {standardDays} {t('daysPeriod')}
                                 </p>
                             </div>
                         </div>
@@ -305,7 +306,7 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                         {/* Clause 1 */}
                         <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800">
                             <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 text-teal-800 dark:text-teal-300">
-                                {isArabic ? 'البند الأول: التعيين والمهام والتبعية الوظيفية' : 'Clause 1: Appointment, Duties & Reporting'}
+                                {t('clause1AppointmentDutiesReporting')}
                             </h4>
                             <p className="text-slate-600 dark:text-slate-300">
                                 {isArabic
@@ -317,7 +318,7 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                         {/* Clause 2 */}
                         <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800">
                             <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 text-teal-800 dark:text-teal-300">
-                                {isArabic ? 'البند الثاني: مدة العقد وفترة الاختبار والتجديد' : 'Clause 2: Term, Probation & Auto-Renewal'}
+                                {t('clause2TermProbationAutoRenewal')}
                             </h4>
                             <p className="text-slate-600 dark:text-slate-300">
                                 {isArabic
@@ -329,7 +330,7 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                         {/* Clause 3 */}
                         <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800">
                             <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 text-teal-800 dark:text-teal-300">
-                                {isArabic ? 'البند الثالث: الراتب والمخصصات ونظام الصرف الدوري' : 'Clause 3: Compensation & Monthly Disbursement'}
+                                {t('clause3CompensationMonthlyDisbursement')}
                             </h4>
                             <p className="text-slate-600 dark:text-slate-300">
                                 {isArabic
@@ -341,7 +342,7 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                         {/* Clause 4 */}
                         <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800">
                             <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 text-teal-800 dark:text-teal-300">
-                                {isArabic ? 'البند الرابع: مواعيد العمل ونظام الورديات والنوبتجيات' : 'Clause 4: Working Hours, Roster & Shifts'}
+                                {t('clause4WorkingHoursRosterShifts')}
                             </h4>
                             <p className="text-slate-600 dark:text-slate-300">
                                 {isArabic
@@ -353,72 +354,60 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                         {/* Clause 5 */}
                         <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800">
                             <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 text-teal-800 dark:text-teal-300">
-                                {isArabic ? 'البند الخامس: السلامة الإشعاعية والمهنية والوقاية (Radiation Safety)' : 'Clause 5: Radiation & Clinical Safety Standards'}
+                                {t('clause5RadiationClinicalSafetyStandards')}
                             </h4>
                             <p className="text-slate-600 dark:text-slate-300">
-                                {isArabic
-                                    ? 'يلتزم الطرف الثاني التزاماً صارماً بكافة معايير الوقاية من الإشعاع وقواعد السلامة المهنية، وارتداء شارة قياس الجرعات الإشعاعية الشخصية (TLD Badge) واستخدام السترات الواقية من الرصاص، والإبلاغ الفوري عن أي عطل في أجهزة الأشعة أو الفحص.'
-                                    : 'The Second Party must strictly observe all radiation protection and clinical safety protocols, wear designated dosimeter (TLD) badges, use personal protective equipment, and report equipment variances.'}
+                                {t('theSecondPartyMustStrictlyObserve')}
                             </p>
                         </div>
 
                         {/* Clause 6 */}
                         <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800">
                             <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 text-teal-800 dark:text-teal-300">
-                                {isArabic ? 'البند السادس: الإجازات السنوية والرسمية والمرضية' : 'Clause 6: Annual, Public & Medical Leaves'}
+                                {t('clause6AnnualPublicMedicalLeaves')}
                             </h4>
                             <p className="text-slate-600 dark:text-slate-300">
-                                {isArabic
-                                    ? 'يستحق الطرف الثاني إجازة سنوية مدفوعة الأجر قدرها (٢١) يوماً عن كل عام عمل كامل، بالإضافة إلى العطلات الرسمية المقررة قانوناً، وتخضع مواعيد القيام بالإجازات لموافقة الإدارة المسبقة بما لا يخل بانتظام الخدمة الطبية.'
-                                    : 'The Second Party is entitled to 21 days of paid annual leave per full year of service, in addition to official statutory holidays, scheduled with prior management approval.'}
+                                {t('theSecondPartyIsEntitledTo')}
                             </p>
                         </div>
 
                         {/* Clause 7 */}
                         <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800">
                             <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 text-teal-800 dark:text-teal-300">
-                                {isArabic ? 'البند السابع: التأمينات الاجتماعية والرعاية الصحية' : 'Clause 7: Social Insurance & Healthcare Coverage'}
+                                {t('clause7SocialInsuranceHealthcareCoverage')}
                             </h4>
                             <p className="text-slate-600 dark:text-slate-300">
-                                {isArabic
-                                    ? 'تلتزم المنشأة بالتأمين الاجتماعي على الطرف الثاني وسداد اشتراكات صاحب العمل والتأمين الصحي وفقاً للأنظمة واللوائح القانونية السارية.'
-                                    : 'The Employer commits to registering the Second Party in the national social insurance and healthcare systems in accordance with prevailing laws.'}
+                                {t('theEmployerCommitsToRegisteringThe')}
                             </p>
                         </div>
 
                         {/* Clause 8 */}
                         <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800">
                             <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 text-teal-800 dark:text-teal-300">
-                                {isArabic ? 'البند الثامن: السرية المهنية وحماية بيانات المرضى (HIPAA/GDPR Compliance)' : 'Clause 8: Medical Record Confidentiality'}
+                                {t('clause8MedicalRecordConfidentiality')}
                             </h4>
                             <p className="text-slate-600 dark:text-slate-300">
-                                {isArabic
-                                    ? 'يتعهد الطرف الثاني بالمحافظة التامة على سرية بيانات المرضى والتقارير الطبية ونتائج الفحوصات وصور الأشعة، ويحظر حظراً باتاً تصوير أو نقل أو تسريب أي مستندات أو سجلات تخص المنشأة أو المرضى، ويتحمل المسؤولية الجنائية والمدنية في حال المخالفة.'
-                                    : 'The Second Party is strictly bound to maintain absolute confidentiality of all diagnostic images, medical reports, and patient health data (HIPAA/GDPR compliance). Unauthorized disclosure constitutes legal breach.'}
+                                {t('theSecondPartyIsStrictlyBound')}
                             </p>
                         </div>
 
                         {/* Clause 9 */}
                         <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800">
                             <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 text-teal-800 dark:text-teal-300">
-                                {isArabic ? 'البند التاسع: العهد والأجهزة الطبية وإنهاء التعاقد' : 'Clause 9: Custody of Equipment & Termination'}
+                                {t('clause9CustodyOfEquipmentTermination')}
                             </h4>
                             <p className="text-slate-600 dark:text-slate-300">
-                                {isArabic
-                                    ? 'يتحمل الطرف الثاني مسؤولية المحافظة على كافة الأجهزة والمعدات الطبية وأجهزة الحاسوب المسلمة إليه كعهدة، ويلتزم بتسليمها كاملة وبحالة جيدة للإدارة عند انتهاء التعاقد وإجراء إخلاء طرف رسمي.'
-                                    : 'The Second Party is custodian of all medical instruments, machines, and computers assigned, and must return them intact upon formal handover and clearance at contract termination.'}
+                                {t('theSecondPartyIsCustodianOf')}
                             </p>
                         </div>
 
                         {/* Clause 10 */}
                         <div>
                             <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 text-teal-800 dark:text-teal-300">
-                                {isArabic ? 'البند العاشر: القانون الواجب التطبيق وتحرير النسخ' : 'Clause 10: Governing Law & Jurisdiction'}
+                                {t('clause10GoverningLawJurisdiction')}
                             </h4>
                             <p className="text-slate-600 dark:text-slate-300">
-                                {isArabic
-                                    ? 'يخضع هذا العقد ويفسر طبقاً لأحكام قانون العمل الساري، وتختص المحاكم المختصة بنظر أي نزاع لا قدر الله. وحُرر هذا العقد من نسختين أصليتين، بيد كل طرف نسخة للعمل بموجبها عند اللزوم.'
-                                    : 'This contract is governed by applicable labor and healthcare laws. Executed in two original copies, one for each party.'}
+                                {t('thisContractIsGovernedByApplicable')}
                             </p>
                         </div>
                     </div>
@@ -427,26 +416,26 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                     <div className="grid grid-cols-2 gap-4 pt-4 border-t-2 border-slate-200 dark:border-slate-800">
                         <div className="rounded-2xl border-2 border-slate-200 bg-slate-50/60 p-4 text-center dark:border-slate-800 dark:bg-slate-950/40">
                             <p className="font-black text-slate-900 dark:text-white mb-1">
-                                {isArabic ? 'الطرف الأول (عن المنشأة الطبية)' : 'First Party (Medical Center)'}
+                                {t('firstPartyMedicalCenter')}
                             </p>
                             <p className="text-[10px] font-semibold text-slate-500 mb-8">
-                                {isArabic ? 'المدير الطبي والإداري' : 'Medical & Admin Director'}
+                                {t('medicalAdminDirector')}
                             </p>
                             <div className="border-t border-dashed border-slate-400 pt-2 text-[10.5px] text-slate-500 flex flex-col items-center">
-                                <span>{isArabic ? 'التوقيع: ............................' : 'Signature: ............................'}</span>
-                                <span className="mt-1 font-bold text-teal-800 dark:text-teal-300">{isArabic ? '[ خاتم المركز الرسمي ]' : '[ Official Seal ]'}</span>
+                                <span>{t('signature')}</span>
+                                <span className="mt-1 font-bold text-teal-800 dark:text-teal-300">{t('officialSeal')}</span>
                             </div>
                         </div>
                         <div className="rounded-2xl border-2 border-slate-200 bg-slate-50/60 p-4 text-center dark:border-slate-800 dark:bg-slate-950/40">
                             <p className="font-black text-slate-900 dark:text-white mb-1">
-                                {isArabic ? 'الطرف الثاني (الموظف / الطبيب)' : 'Second Party (Employee)'}
+                                {t('secondPartyEmployee')}
                             </p>
                             <p className="text-[10px] font-semibold text-slate-500 mb-8">
                                 {profile.employee_name} ({profile.role})
                             </p>
                             <div className="border-t border-dashed border-slate-400 pt-2 text-[10.5px] text-slate-500 flex flex-col items-center">
-                                <span>{isArabic ? 'التوقيع: ............................' : 'Signature: ............................'}</span>
-                                <span className="mt-1">{isArabic ? 'الرقم القومي / الهوية: ............................' : 'National ID: ............................'}</span>
+                                <span>{t('signature')}</span>
+                                <span className="mt-1">{t('nationalId')}</span>
                             </div>
                         </div>
                     </div>
@@ -460,14 +449,14 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                         className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 py-2 text-xs font-black text-white shadow-xs hover:brightness-110 transition"
                     >
                         <Printer size={14} />
-                        <span>{isArabic ? 'طباعة العقد الرسمي (Print Contract)' : 'Print Official Contract'}</span>
+                        <span>{t('printOfficialContract')}</span>
                     </button>
                     <button
                         type="button"
                         onClick={onClose}
                         className="rounded-xl border border-slate-200 bg-white px-5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                     >
-                        {isArabic ? 'إغلاق' : 'Close'}
+                        {t('close')}
                     </button>
                 </div>
             </div>
@@ -478,6 +467,7 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
 
 /* ── Itemized Payslip Modal ─────────────────────────────────── */
 const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) => {
+    const { t } = useTranslation('payroll');
     if (!item) return null;
     const gross = Number(item.gross_earnings || 0);
     const deductions = Number(item.total_deductions || 0);
@@ -497,7 +487,7 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
                         </div>
                         <div>
                             <h2 className="text-base font-black text-slate-900 dark:text-white">
-                                {isArabic ? 'كشف الراتب الإلكتروني المفصل' : 'Official Electronic Payslip'}
+                                {t('officialElectronicPayslip')}
                             </h2>
                             <p className="text-xs font-semibold text-slate-400">
                                 {period?.name} ({period?.start_date?.slice(0, 10)} - {period?.end_date?.slice(0, 10)})
@@ -531,17 +521,17 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
                             )}
                             <div className="min-w-0">
                                 <p className="truncate text-sm font-black text-slate-900 dark:text-white">
-                                    {identity?.centerName || (isArabic ? 'المنشأة الطبية' : 'Medical Center')}
+                                    {identity?.centerName || (t('medicalCenter'))}
                                 </p>
                                 <p className="truncate text-[11px] font-bold text-teal-700 dark:text-teal-300">
-                                    {identity?.branchName || (isArabic ? 'الفرع الرئيسي' : 'Main branch')}
+                                    {identity?.branchName || (t('mainBranch'))}
                                     {identity?.branch_code ? ` · ${identity.branch_code}` : ''}
                                 </p>
                             </div>
                         </div>
                         <div className="shrink-0 text-end text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                            {identity?.medicalLicense ? <p>{isArabic ? 'ترخيص' : 'License'}: {identity.medicalLicense}</p> : null}
-                            {identity?.taxNumber ? <p>{isArabic ? 'رقم ضريبي' : 'Tax ID'}: {identity.taxNumber}</p> : null}
+                            {identity?.medicalLicense ? <p>{t('license')}: {identity.medicalLicense}</p> : null}
+                            {identity?.taxNumber ? <p>{t('taxIdX')}: {identity.taxNumber}</p> : null}
                         </div>
                     </div>
 
@@ -561,7 +551,7 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
                     {/* Financial Ledger Breakdown */}
                     <div className="space-y-3">
                         <h3 className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                            {isArabic ? 'تفاصيل الاستحقاقات والاستقطاعات' : 'Earnings & Adjustments Ledger'}
+                            {t('earningsAdjustmentsLedger')}
                         </h3>
 
                         <div className="rounded-2xl border border-slate-100 divide-y divide-slate-100 dark:border-slate-800 dark:divide-slate-800">
@@ -581,23 +571,23 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
                             })}
                             {!lineItems.length && (
                                 <div className="p-3.5 text-center font-semibold text-slate-400">
-                                    {isArabic ? 'لا توجد بنود تفصيلية محفوظة' : 'No itemized lines are available'}
+                                    {t('noItemizedLinesAreAvailable')}
                                 </div>
                             )}
                             <div className="flex items-center justify-between p-3.5">
-                                <span className="font-bold text-slate-700 dark:text-slate-300">{isArabic ? 'إجمالي الراتب والاستحقاقات' : 'Gross Earnings & Allowances'}</span>
+                                <span className="font-bold text-slate-700 dark:text-slate-300">{t('grossEarningsAllowances')}</span>
                                 <span className="font-mono font-black whitespace-nowrap text-slate-900 dark:text-white">{money(gross, currency)}</span>
                             </div>
                             <div className="flex items-center justify-between p-3.5">
-                                <span className="font-bold text-slate-700 dark:text-slate-300">{isArabic ? 'الاستقطاعات والتأمينات' : 'Deductions & Contributions'}</span>
+                                <span className="font-bold text-slate-700 dark:text-slate-300">{t('deductionsContributions')}</span>
                                 <span className="font-mono font-black whitespace-nowrap text-amber-600 dark:text-amber-400">- {money(deductions, currency)}</span>
                             </div>
                             <div className="flex items-center justify-between p-3.5">
-                                <span className="font-bold text-slate-700 dark:text-slate-300">{isArabic ? 'الجزاءات والخصومات الإدارية' : 'Penalties & Violations'}</span>
+                                <span className="font-bold text-slate-700 dark:text-slate-300">{t('penaltiesViolations')}</span>
                                 <span className="font-mono font-black whitespace-nowrap text-rose-600 dark:text-rose-400">- {money(penalties, currency)}</span>
                             </div>
                             <div className="flex items-center justify-between p-3.5">
-                                <span className="font-bold text-slate-700 dark:text-slate-300">{isArabic ? 'مساهمات جهة العمل (لا تخصم من الصافي)' : 'Employer contributions (not deducted from net)'}</span>
+                                <span className="font-bold text-slate-700 dark:text-slate-300">{t('employerContributionsNotDeductedFromNet')}</span>
                                 <span className="font-mono font-black whitespace-nowrap text-indigo-600 dark:text-indigo-400">{money(employerContributions, currency)}</span>
                             </div>
                         </div>
@@ -606,7 +596,7 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
                         <div className="rounded-2xl border border-teal-500/30 bg-teal-500/10 p-4">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <p className="text-[10px] font-black uppercase tracking-wider text-teal-800 dark:text-teal-300">{isArabic ? 'صافي الراتب المستحق للصرف' : 'Net Disbursed Amount'}</p>
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-teal-800 dark:text-teal-300">{t('netDisbursedAmount')}</p>
                                     <p className="mt-1 font-mono text-2xl font-black whitespace-nowrap text-teal-900 dark:text-teal-200">{money(net, currency)}</p>
                                 </div>
                                 <span className="grid h-10 w-10 place-items-center rounded-xl bg-teal-600 text-white shadow-xs">
@@ -625,14 +615,14 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
                         className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3.5 py-2 text-xs font-black text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                     >
                         <Printer size={14} />
-                        <span>{isArabic ? 'طباعة كشف الراتب' : 'Print Payslip'}</span>
+                        <span>{t('printPayslip')}</span>
                     </button>
                     <button
                         type="button"
                         onClick={onClose}
                         className="rounded-xl bg-teal-600 px-5 py-2 text-xs font-black text-white shadow-xs hover:bg-teal-500 transition"
                     >
-                        {isArabic ? 'إغلاق' : 'Close'}
+                        {t('close')}
                     </button>
                 </div>
             </div>
@@ -649,11 +639,11 @@ const adjustmentActions = (kind, status) => {
     return [];
 };
 
-const actionLabel = (status, isArabic) => ({
-    Approved: isArabic ? 'اعتماد' : 'Approve',
-    Rejected: isArabic ? 'رفض' : 'Reject',
-    Paused: isArabic ? 'إيقاف مؤقت' : 'Pause',
-    Cancelled: isArabic ? 'إلغاء' : 'Cancel',
+const actionLabel = (status, t) => ({
+    Approved: t('approve'),
+    Rejected: t('reject'),
+    Paused: t('pause'),
+    Cancelled: t('cancel'),
 }[status] || status);
 
 /* ── Main Payroll Suite ──────────────────────────────────────── */
@@ -782,7 +772,7 @@ const Payroll = () => {
         }),
         [centerSettings, i18n.language, selectedPeriod]
     );
-    const branchName = documentIdentity.branchName || (isArabic ? 'الفرع الرئيسي' : 'Main branch');
+    const branchName = documentIdentity.branchName || (t('mainBranch'));
     const branchCode = documentIdentity.branch_code || centerSettings.branch_code || '';
 
     const activePeriodId = selectedPeriod?.period_id;
@@ -944,7 +934,7 @@ const Payroll = () => {
         }
         const exportItems = run?.items || [];
         if (!exportItems.length) {
-            toast.error(isArabic ? 'لا توجد بيانات رواتب للتصدير' : 'No payroll data to export');
+            toast.error(t('noPayrollDataToExport'));
             return;
         }
         const headers = ['Employee Name', 'Role', 'Gross Earnings', 'Deductions', 'Penalties', 'Employer Contributions', 'Net Pay', 'Currency', 'Period', 'Payment Date', 'Payment Method', 'Payment Reference', 'Run Status'];
@@ -968,7 +958,7 @@ const Payroll = () => {
         const branchFilePart = String(branchCode || branchName || 'branch').replace(/[^\p{L}\p{N}-]+/gu, '-');
         Object.assign(document.createElement('a'), { href: url, download: `payroll-bank-register-${branchFilePart}-${selectedPeriod?.name || 'run'}-${new Date().toISOString().slice(0, 10)}.csv` }).click();
         URL.revokeObjectURL(url);
-        toast.success(isArabic ? 'تم تصدير سجل الرواتب والتحويل البنكي بنجاح' : 'Payroll bank register exported');
+        toast.success(t('payrollBankRegisterExported'));
     };
 
     const onCreateCompensation = async (e) => {
@@ -1036,9 +1026,9 @@ const Payroll = () => {
             await mutation({
                 id,
                 status,
-                notes: isArabic ? 'تم الإجراء من مساحة عمل الرواتب' : 'Action completed from payroll workspace'
+                notes: t('actionCompletedFromPayrollWorkspace')
             }).unwrap();
-            toast.success(isArabic ? 'تم تحديث الحالة' : 'Status updated');
+            toast.success(t('statusUpdated'));
             setSetupDecision(null);
         } catch (error) {
             toast.error(getErrorMessage(error, t('toast.statusFailed')));
@@ -1052,9 +1042,9 @@ const Payroll = () => {
                 id: profile.profile_id,
                 effectiveTo,
                 isActive: true,
-                notes: isArabic ? 'إغلاق فترة التعويض من شاشة الرواتب' : 'Compensation period closed from payroll workspace'
+                notes: t('compensationPeriodClosedFromPayrollWorkspace')
             }).unwrap();
-            toast.success(isArabic ? 'تم تحديد نهاية ملف التعويض' : 'Compensation end date saved');
+            toast.success(t('compensationEndDateSaved'));
         } catch (error) {
             toast.error(getErrorMessage(error, t('toast.saveFailed')));
         }
@@ -1067,37 +1057,37 @@ const Payroll = () => {
     const navTabs = [
         {
             id: 'overview',
-            label: isArabic ? 'مسار الرواتب والاعتماد' : 'Runs & Workflow',
+            label: t('runsWorkflow'),
             icon: LayoutDashboard,
             badge: runStatus
         },
         {
             id: 'compensation',
-            label: isArabic ? 'هيكل الرواتب والعقود' : 'Compensation Profiles & Contracts',
+            label: t('compensationProfilesContracts'),
             icon: FileCheck,
             badge: `${compensation.length}`
         },
         {
             id: 'adjustments',
-            label: isArabic ? 'الاستقطاعات والجزاءات' : 'Deductions & Penalties',
+            label: t('deductionsPenalties'),
             icon: MinusCircle,
             badge: `${deductions.length + penalties.length}`
         },
         {
             id: 'rules',
-            label: isArabic ? 'قواعد وسياسات الحساب' : 'Payroll Rules',
+            label: t('payrollRules'),
             icon: Settings2,
             badge: `${rules.length}`
         }
     ];
 
     const sopSteps = [
-        { step: 1, title: isArabic ? 'هيكل العقود والبدلات' : 'Contract & Compensation Setup', desc: isArabic ? 'تحديد الراتب الأساسي، أجر الساعة، وساعات العمل التعاقدية لكل موظف.' : 'Set contracted base salary, hourly rates, and standard hours.' },
-        { step: 2, title: isArabic ? 'فتح الفترة الشهرية' : 'Period Initialization', desc: isArabic ? 'إنشاء فترة الرواتب للشهر المستهدف بالتواريخ والعملة المحددة.' : 'Create payroll period with defined date bounds.' },
-        { step: 3, title: isArabic ? 'الاحتساب التلقائي' : 'Automated Run Calculation', desc: isArabic ? 'دمج الرواتب مع الحضور والانصراف والبدلات والجزاءات المعتمدة.' : 'Compute earnings, approved penalties, and deductions.' },
-        { step: 4, title: isArabic ? 'التدقيق والمراجعة' : 'Audit & Review', desc: isArabic ? 'مراجعة الكشوف والمطابقة والتحقق من الفروقات قبل الاعتماد.' : 'Audit itemized payslips and resolve discrepancies.' },
-        { step: 5, title: isArabic ? 'الاعتماد التنفيذي' : 'Executive Approval', desc: isArabic ? 'اعتماد المسير النهائي من المدير الطبي والمالي.' : 'Official management approval with audit log.' },
-        { step: 6, title: isArabic ? 'الصرف والترحيل المالي' : 'Disbursement & Ledger Lock', desc: isArabic ? 'تصدير ملف البنك، تسجيل إيصال السداد، وإقفال الفترة وترحيلها لدفتر الأستاذ.' : 'Bank transfer export, idempotent payment, and period lock.' },
+        { step: 1, title: t('contractCompensationSetup'), desc: t('setContractedBaseSalaryHourlyRates') },
+        { step: 2, title: t('periodInitialization'), desc: t('createPayrollPeriodWithDefinedDate') },
+        { step: 3, title: t('automatedRunCalculation'), desc: t('computeEarningsApprovedPenaltiesAndDeductions') },
+        { step: 4, title: t('auditReview'), desc: t('auditItemizedPayslipsAndResolveDiscrepancies') },
+        { step: 5, title: t('executiveApproval'), desc: t('officialManagementApprovalWithAuditLog') },
+        { step: 6, title: t('disbursementLedgerLock'), desc: t('bankTransferExportIdempotentPaymentAnd') },
     ];
 
     return (
@@ -1118,7 +1108,7 @@ const Payroll = () => {
                         </span>
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-bold text-teal-700 dark:text-teal-300">
                             <Zap size={13} className="text-teal-600 dark:text-teal-400" />
-                            <span>{selectedPeriod?.name || (isArabic ? 'لا توجد فترة محددة' : 'No period selected')}</span>
+                            <span>{selectedPeriod?.name || (t('noPeriodSelected'))}</span>
                         </span>
                         <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
                             {currency} · {t('header.controlled')}
@@ -1132,7 +1122,7 @@ const Payroll = () => {
                     {
                         key: 'net',
                         icon: Banknote,
-                        label: isArabic ? 'صافي الرواتب المستحق' : 'Net payroll',
+                        label: t('netPayroll'),
                         value: money(overview?.total_net ?? (run?.total_net ?? selectedPeriod?.total_net ?? 0), currency),
                         detail: t('stats.netDetail'),
                         tone: 'emerald'
@@ -1140,7 +1130,7 @@ const Payroll = () => {
                     {
                         key: 'gross',
                         icon: Scale,
-                        label: isArabic ? 'إجمالي المستحقات' : 'Gross earnings',
+                        label: t('grossEarnings'),
                         value: money(overview?.total_gross ?? (run?.total_gross ?? selectedPeriod?.total_gross ?? 0), currency),
                         detail: t('stats.grossDetail'),
                         tone: 'teal'
@@ -1148,21 +1138,21 @@ const Payroll = () => {
                     {
                         key: 'controls',
                         icon: MinusCircle,
-                        label: isArabic ? 'الاستقطاعات والجزاءات' : 'Deductions & Penalties',
+                        label: t('deductionsPenalties'),
                         value: money((Number(overview?.total_deductions || 0) + Number(overview?.total_penalties || 0)), currency),
-                        detail: `${overview?.pending_penalties || 0} ${isArabic ? 'معلق' : 'pending'}`,
+                        detail: `${overview?.pending_penalties || 0} ${t('pending')}`,
                         tone: 'amber'
                     },
                     {
                         key: 'employer',
                         icon: Briefcase,
-                        label: isArabic ? 'مساهمات جهة العمل' : 'Employer contributions',
+                        label: t('employerContributions'),
                         value: money(overview?.total_employer_contributions || 0, currency),
-                        detail: isArabic ? 'تكلفة تأمينية إضافية' : 'Additional cost',
+                        detail: t('additionalCost'),
                         tone: 'indigo'
                     }
                 ]}
-                metricsLabel={isArabic ? 'مؤشرات سجل الرواتب' : 'Payroll record indicators'}
+                metricsLabel={t('payrollRecordIndicators')}
                 actions={
                     <div className="flex flex-wrap items-center gap-2">
                         <button
@@ -1171,7 +1161,7 @@ const Payroll = () => {
                             className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/90 px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
                         >
                             <BookOpen size={14} className="text-teal-600" />
-                            <span>{isArabic ? 'دليل مسار العمل' : 'Operating SOP'}</span>
+                            <span>{t('operatingSop')}</span>
                             {showSopGuide ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                         </button>
                         <button
@@ -1192,7 +1182,7 @@ const Payroll = () => {
                             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                         >
                             <Download size={14} />
-                            <span>{isArabic ? 'تصدير السجل البنكي' : 'Export Bank File'}</span>
+                            <span>{t('exportBankFile')}</span>
                         </button>
                         <button
                             type="button"
@@ -1200,13 +1190,13 @@ const Payroll = () => {
                             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                         >
                             <RefreshCw size={14} className={periodsLoading ? 'animate-spin' : ''} />
-                            {isArabic ? 'تحديث' : 'Refresh'}
+                            {t('refresh')}
                         </button>
                     </div>
                 }
             />
 
-            <section className="flex flex-col gap-3 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:flex-row sm:items-center sm:justify-between" aria-label={isArabic ? 'نطاق بيانات الرواتب' : 'Payroll data scope'}>
+            <section className="flex flex-col gap-3 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:flex-row sm:items-center sm:justify-between" aria-label={t('payrollDataScope')}>
                 <div className="flex min-w-0 items-center gap-3">
                     {documentIdentity.logoUrl ? (
                         <img
@@ -1235,10 +1225,10 @@ const Payroll = () => {
                     <LockKeyhole size={14} />
                     <span>
                         {centerSettingsLoading
-                            ? (isArabic ? 'جار تحميل بيانات الفرع...' : 'Loading branch data...')
+                            ? (t('loadingBranchData'))
                             : hasExplicitBranch
-                                ? (isArabic ? 'الفترات والمؤشرات مقيدة بهذا الفرع' : 'Periods and totals are scoped to this branch')
-                                : (isArabic ? 'يستخدم النظام الفرع المالي الافتراضي' : 'Using the default financial branch')}
+                                ? (t('periodsAndTotalsAreScopedTo'))
+                                : (t('usingTheDefaultFinancialBranch'))}
                     </span>
                 </div>
             </section>
@@ -1250,7 +1240,7 @@ const Payroll = () => {
                         <div className="flex items-center gap-2">
                             <BookOpen size={16} className="text-teal-700 dark:text-teal-400" />
                             <h3 className="text-xs font-black uppercase tracking-wider text-teal-950 dark:text-teal-200">
-                                {isArabic ? 'دليل دورة ومسار العمل المحاسبي للرواتب (Operating SOP Rhythm)' : 'Standard Operating Payroll Workflow'}
+                                {t('standardOperatingPayrollWorkflow')}
                             </h3>
                         </div>
                     </div>
@@ -1270,7 +1260,7 @@ const Payroll = () => {
 
             {/* 3. Single-Tier Segmented Tabs Navigation Bar */}
 <div data-workspace-tabs className="rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
-                <nav aria-label={isArabic ? 'أقسام الرواتب' : 'Payroll sections'} className="flex flex-wrap gap-1">
+                <nav aria-label={t('payrollSections')} className="flex flex-wrap gap-1">
                     {navTabs.map((tab) => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.id;
@@ -1333,7 +1323,7 @@ const Payroll = () => {
                                     <Building2 size={15} className="shrink-0 text-teal-700 dark:text-teal-300" />
                                     <div className="min-w-0">
                                         <p className="text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
-                                            {isArabic ? 'فرع فترة الرواتب' : 'Payroll period branch'}
+                                            {t('payrollPeriodBranch')}
                                         </p>
                                         <p className="truncate text-xs font-black text-slate-900 dark:text-white">{branchName}</p>
                                     </div>
@@ -1401,14 +1391,14 @@ const Payroll = () => {
                                 onClick={() => setShowCreatePeriodModal(false)}
                                 className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300"
                             >
-                                {isArabic ? 'إلغاء' : 'Cancel'}
+                                {t('cancel')}
                             </button>
                             <button
                                 type="submit"
                                 disabled={creatingPeriod}
                                 className="rounded-xl bg-teal-600 px-5 py-2 text-xs font-black text-white shadow-sm hover:bg-teal-500 disabled:opacity-50"
                             >
-                                {creatingPeriod ? (isArabic ? 'جار الإنشاء...' : 'Creating...') : t('actions.createPeriod')}
+                                {creatingPeriod ? (t('creating')) : t('actions.createPeriod')}
                             </button>
                         </div>
                     </form>
@@ -1478,7 +1468,7 @@ const Payroll = () => {
                                     <input
                                         value={runSearch}
                                         onChange={e => setRunSearch(e.target.value)}
-                                        placeholder={isArabic ? 'بحث بالاسم أو الوظيفة...' : 'Search staff...'}
+                                        placeholder={t('searchStaff')}
                                         className="h-8 w-full rounded-xl border border-slate-200 bg-white ps-8 pe-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
                                     />
                                 </div>
@@ -1514,7 +1504,7 @@ const Payroll = () => {
                                                 <p className="font-mono text-xs font-black whitespace-nowrap text-teal-700 dark:text-teal-400">{money(item.net_pay, currency)}</p>
                                                 <span className="inline-flex items-center gap-1 text-[9.5px] font-black text-slate-400 group-hover:text-teal-600">
                                                     <Eye size={10} />
-                                                    <span>{isArabic ? 'عرض كشف الراتب' : 'Payslip'}</span>
+                                                    <span>{t('payslip')}</span>
                                                 </span>
                                             </div>
                                         </div>
@@ -1645,7 +1635,7 @@ const Payroll = () => {
 
                                 {/* Payment Details Section */}
                                 <div className="space-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-                                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{isArabic ? 'بيانات الصرف والتحويل البنكي' : 'Disbursement details'}</p>
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{t('disbursementDetails')}</p>
                                     <div className="grid grid-cols-2 gap-2">
                                         <input
                                             className="h-8 rounded-xl border border-slate-200 bg-white px-2 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
@@ -1699,7 +1689,7 @@ const Payroll = () => {
                         <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
                             <FileCheck size={16} className="text-teal-600" />
                             <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                                {isArabic ? 'إضافة وتوثيق عقد تعويض جديد' : 'New Compensation Contract'}
+                                {t('newCompensationContract')}
                             </h2>
                         </div>
                         <label className="block">
@@ -1712,8 +1702,8 @@ const Payroll = () => {
                         <label className="block">
                             <span className="mb-1 block text-xs font-bold text-slate-500">{t('fields.salaryType')}</span>
                             <select className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" value={compForm.salaryType} onChange={(e) => setCompForm({ ...compForm, salaryType: e.target.value })}>
-                                <option value="Monthly">{isArabic ? 'راتب شهري ثابت (Monthly Base)' : 'Monthly Base'}</option>
-                                <option value="Hourly">{isArabic ? 'أجر بالساعة (Hourly Rate)' : 'Hourly Rate'}</option>
+                                <option value="Monthly">{t('monthlyBase')}</option>
+                                <option value="Hourly">{t('hourlyRate')}</option>
                             </select>
                         </label>
                         <div className="grid grid-cols-2 gap-2">
@@ -1728,11 +1718,11 @@ const Payroll = () => {
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                             <label className="block">
-                                <span className="mb-1 block text-xs font-bold text-slate-500">{isArabic ? 'الساعات القياسية يومياً' : 'Standard hours/day'}</span>
+                                <span className="mb-1 block text-xs font-bold text-slate-500">{t('standardHoursDay')}</span>
                                 <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="number" min="0.25" max="24" step="0.25" required value={compForm.standardHoursPerDay} onChange={(e) => setCompForm({ ...compForm, standardHoursPerDay: e.target.value })} />
                             </label>
                             <label className="block">
-                                <span className="mb-1 block text-xs font-bold text-slate-500">{isArabic ? 'أيام العمل القياسية' : 'Standard days/period'}</span>
+                                <span className="mb-1 block text-xs font-bold text-slate-500">{t('standardDaysPeriod')}</span>
                                 <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="number" min="1" max="31" required value={compForm.standardDaysPerPeriod} onChange={(e) => setCompForm({ ...compForm, standardDaysPerPeriod: e.target.value })} />
                             </label>
                         </div>
@@ -1741,7 +1731,7 @@ const Payroll = () => {
                             <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="date" required value={compForm.effectiveFrom} onChange={(e) => setCompForm({ ...compForm, effectiveFrom: e.target.value })} />
                         </label>
                         <button type="submit" disabled={savingCompensation} className="w-full h-9 rounded-xl bg-teal-600 text-xs font-black text-white shadow-xs hover:bg-teal-500 disabled:opacity-50">
-                            {savingCompensation ? (isArabic ? 'جار الحفظ...' : 'Saving...') : (isArabic ? 'حفظ وتوثيق العقد' : 'Save & Certify Contract')}
+                            {savingCompensation ? (t('saving')) : (t('saveCertifyContract'))}
                         </button>
                     </form>
 
@@ -1749,15 +1739,15 @@ const Payroll = () => {
                     <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
                             <div>
-                                <h3 className="text-sm font-black text-slate-900 dark:text-white">{isArabic ? 'سجل عقود ورواتب الموظفين' : 'Employee Contracts & Compensation'}</h3>
-                                <p className="text-xs font-semibold text-slate-400">{filteredCompensation.length} {isArabic ? 'عقد موثق' : 'certified contracts'}</p>
+                                <h3 className="text-sm font-black text-slate-900 dark:text-white">{t('employeeContractsCompensation')}</h3>
+                                <p className="text-xs font-semibold text-slate-400">{filteredCompensation.length} {t('certifiedContracts')}</p>
                             </div>
                             <div className="relative min-w-[200px]">
                                 <Search size={13} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
                                 <input
                                     value={compSearch}
                                     onChange={e => setCompSearch(e.target.value)}
-                                    placeholder={isArabic ? 'بحث بالاسم أو الوظيفة...' : 'Search staff...'}
+                                    placeholder={t('searchStaff')}
                                     className="h-8 w-full rounded-xl border border-slate-200 bg-white ps-8 pe-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </div>
@@ -1771,7 +1761,7 @@ const Payroll = () => {
                                             <div className="flex items-center gap-2">
                                                 <p className="truncate text-xs font-black text-slate-900 dark:text-white">{profile.employee_name}</p>
                                                 <span className="rounded-full border border-teal-500/30 bg-teal-500/10 px-2 py-0.2 text-[9px] font-black text-teal-800 dark:text-teal-300">
-                                                    {profile.salary_type === 'Monthly' ? (isArabic ? 'دوام كامل' : 'Full-Time') : (isArabic ? 'بالساعة' : 'Hourly')}
+                                                    {profile.salary_type === 'Monthly' ? (t('fullTime')) : (t('hourly'))}
                                                 </span>
                                             </div>
                                             <p className="mt-0.5 text-[10px] font-semibold text-slate-400">{profile.role} · {profile.standard_hours_per_day || 8}h/day</p>
@@ -1781,12 +1771,12 @@ const Payroll = () => {
                                                 {profile.salary_type === 'Monthly' ? money(profile.base_salary, currency) : `${money(profile.hourly_rate, currency)}/hr`}
                                             </p>
                                             <span className={`inline-flex rounded-full px-2 py-0.2 text-[9px] font-black ${profile.is_active ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500'}`}>
-                                                {profile.is_active ? (isArabic ? 'عقد ساري' : 'Active') : (isArabic ? 'عقد منتهي' : 'Terminated')}
+                                                {profile.is_active ? (t('active')) : (t('terminated'))}
                                             </span>
                                         </div>
                                     </div>
                                     <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-[11px] font-semibold text-slate-500 dark:border-slate-800">
-                                        <span>{isArabic ? 'السريان:' : 'Term:'} {profile.effective_from?.slice(0, 10)} {profile.effective_to ? `→ ${profile.effective_to.slice(0, 10)}` : (isArabic ? '→ ساري' : '→ Ongoing')}</span>
+                                        <span>{t('term')} {profile.effective_from?.slice(0, 10)} {profile.effective_to ? `→ ${profile.effective_to.slice(0, 10)}` : (t('ongoing'))}</span>
                                         <div className="flex items-center gap-1.5">
                                             <button
                                                 type="button"
@@ -1794,7 +1784,7 @@ const Payroll = () => {
                                                 className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-2.5 py-1 text-[10px] font-black text-teal-800 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300 transition"
                                             >
                                                 <FileText size={11} />
-                                                <span>{isArabic ? 'عرض وثيقة العقد' : 'View Contract'}</span>
+                                                <span>{t('viewContract')}</span>
                                             </button>
                                             {!profile.effective_to && (
                                                 <div className="flex items-center gap-1">
@@ -1810,7 +1800,7 @@ const Payroll = () => {
                                                         onClick={() => onCloseCompensation(profile)}
                                                         className="rounded-md bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300"
                                                     >
-                                                        {isArabic ? 'إنهاء' : 'End'}
+                                                        {t('end')}
                                                     </button>
                                                 </div>
                                             )}
@@ -1835,10 +1825,10 @@ const Payroll = () => {
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2.5 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
                         <div className="flex flex-wrap gap-1">
                             {[
-                                { key: 'all', label: isArabic ? 'كافة الاستقطاعات والجزاءات' : 'All Adjustments' },
-                                { key: 'Pending Approval', label: isArabic ? 'قيد الاعتماد' : 'Pending Approval' },
-                                { key: 'Approved', label: isArabic ? 'معتمدة ومدرجة' : 'Approved' },
-                                { key: 'Paused', label: isArabic ? 'موقوفة مؤقتاً' : 'Paused' },
+                                { key: 'all', label: t('allAdjustments') },
+                                { key: 'Pending Approval', label: t('pendingApproval') },
+                                { key: 'Approved', label: t('approved') },
+                                { key: 'Paused', label: t('paused') },
                             ].map(filter => (
                                 <button
                                     key={filter.key}
@@ -1879,7 +1869,7 @@ const Payroll = () => {
                                             <span className="font-mono">{row.deduction_type === 'Percentage' ? `${Number(row.percentage || 0)}%` : money(row.amount, currency)}</span>
                                             {row.remaining_amount != null && ['Installment', 'Advance', 'Loan'].includes(row.deduction_type) && (
                                                 <span className="text-amber-700 dark:text-amber-400 font-mono text-[11px]">
-                                                    {isArabic ? 'المتبقي:' : 'Rem:'} {money(row.remaining_amount, currency)}
+                                                    {t('rem')} {money(row.remaining_amount, currency)}
                                                 </span>
                                             )}
                                         </div>
@@ -1893,7 +1883,7 @@ const Payroll = () => {
                                                         onClick={() => setSetupDecision({ kind: 'deduction', id: row.deduction_id, status, name: row.name })}
                                                         className={`rounded-lg px-2.5 py-1 text-[10px] font-black text-white ${status === 'Approved' ? 'bg-emerald-600' : status === 'Paused' ? 'bg-amber-600' : 'bg-rose-600'}`}
                                                     >
-                                                        {actionLabel(status, isArabic)}
+                                                        {actionLabel(status, t)}
                                                     </button>
                                                 ))}
                                             </div>
@@ -1939,7 +1929,7 @@ const Payroll = () => {
                                                         onClick={() => setSetupDecision({ kind: 'penalty', id: row.penalty_id, status, name: row.penalty_type })}
                                                         className={`rounded-lg px-2.5 py-1 text-[10px] font-black text-white ${status === 'Approved' ? 'bg-emerald-600' : 'bg-rose-600'}`}
                                                     >
-                                                        {actionLabel(status, isArabic)}
+                                                        {actionLabel(status, t)}
                                                     </button>
                                                 ))}
                                             </div>
@@ -1963,7 +1953,7 @@ const Payroll = () => {
                         <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
                             <Settings2 size={16} className="text-teal-600" />
                             <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                                {isArabic ? 'إضافة وتفعيل قاعدة حساب' : 'Add Calculation Rule'}
+                                {t('addCalculationRule')}
                             </h2>
                         </div>
                         <label className="block">
@@ -1994,7 +1984,7 @@ const Payroll = () => {
                             </label>
                         </div>
                         <button type="submit" disabled={savingRule} className="w-full h-9 rounded-xl bg-teal-600 text-xs font-black text-white shadow-xs hover:bg-teal-500 disabled:opacity-50">
-                            {savingRule ? (isArabic ? 'جار الحفظ...' : 'Saving...') : (isArabic ? 'حفظ القاعدة' : 'Save Rule')}
+                            {savingRule ? (t('saving')) : (t('saveRule'))}
                         </button>
                     </form>
 
@@ -2029,7 +2019,7 @@ const Payroll = () => {
                     <TextPromptDialog
                         isOpen={Boolean(workflowDecision)}
                         title={workflowDecision.title}
-                        message={isArabic ? 'يرجى كتابة ملاحظات القرار' : 'Please provide decision notes'}
+                        message={t('pleaseProvideDecisionNotes')}
                         onConfirm={executeWorkflowDecision}
                         onClose={() => setWorkflowDecision(null)}
                     />
@@ -2037,7 +2027,7 @@ const Payroll = () => {
                     <ConfirmDialog
                         isOpen={Boolean(workflowDecision)}
                         title={workflowDecision.title}
-                        message={isArabic ? 'هل أنت متأكد من تنفيذ هذا الإجراء؟' : 'Are you sure you want to proceed with this action?'}
+                        message={t('areYouSureYouWantTo')}
                         onConfirm={() => executeWorkflowDecision('')}
                         onClose={() => setWorkflowDecision(null)}
                     />
@@ -2048,7 +2038,7 @@ const Payroll = () => {
                 <ConfirmDialog
                     isOpen={Boolean(setupDecision)}
                     title={setupDecision.name}
-                    message={isArabic ? `تغيير الحالة إلى ${setupDecision.status}؟` : `Change status to ${setupDecision.status}?`}
+                    message={t('payrollSetup.changeStatusConfirm', { status: setupDecision.status })}
                     onConfirm={executeSetupDecision}
                     onClose={() => setSetupDecision(null)}
                 />
