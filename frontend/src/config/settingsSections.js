@@ -7,9 +7,9 @@ export const SETTINGS_SECTION_ACCESS = Object.freeze({
     audit: { roles: ['*'] },
     team: { roles: ['Developer', 'Admin', 'HR'] },
     facility: { roles: ['Developer', 'Admin'], permissions: ['MANAGE_SETTINGS'] },
-    clinical: { roles: ['Developer', 'Admin'], permissions: ['MANAGE_EQUIPMENT', 'MANAGE_EXAM_CATALOG'] },
+    portalBuilder: { roles: ['Developer', 'Admin'], permissions: ['MANAGE_SETTINGS'] },
     integrations: { roles: ['Developer', 'Admin'], permissions: ['MANAGE_INTEGRATIONS'] },
-    pacs: { roles: ['Developer', 'Admin'], permissions: ['MANAGE_PACS'] },
+    pacs: { roles: ['Developer'], permissions: ['MANAGE_PACS'], allowPermissionOverride: true },
     admin: { roles: ['Developer', 'Admin'] },
     roles: {
         roles: ['Developer', 'Admin'],
@@ -19,7 +19,12 @@ export const SETTINGS_SECTION_ACCESS = Object.freeze({
     backups: { roles: ['Developer', 'Admin'], permissions: ['MANAGE_BACKUPS'] },
     auditLogs: {
         roles: ['Developer', 'Admin'],
-        permissions: ['VIEW_AUDIT_TRAILS', 'VIEW_AUDIT_LOGS'],
+        permissions: ['VIEW_AUDIT_TRAILS'],
+        // Migration 087 deliberately grants VIEW_AUDIT_TRAILS to Accountants so
+        // they can inspect trails during finance reconciliation. Honour that
+        // here too, otherwise the UI hides a section the backend will happily
+        // serve. Note this is the *trail* permission: VIEW_AUDIT_LOGS is the
+        // narrower "limited staff activity" claim and must not open this page.
         allowPermissionOverride: true,
     },
     ai: { roles: ['Developer'], permissions: ['MANAGE_SECRET_SETTINGS'] },

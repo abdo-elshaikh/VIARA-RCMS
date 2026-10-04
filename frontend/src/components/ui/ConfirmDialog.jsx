@@ -39,14 +39,14 @@ const ConfirmDialog = ({
     const variants = {
         danger: {
             icon: AlertTriangle,
-            iconBg: 'bg-red-100',
-            iconColor: 'text-red-600',
+            iconBg: 'bg-[var(--VIARA-danger-soft)]',
+            iconColor: 'text-[var(--VIARA-danger)]',
             confirmVariant: 'danger',
         },
         warning: {
             icon: AlertTriangle,
-            iconBg: 'bg-amber-100',
-            iconColor: 'text-amber-600',
+            iconBg: 'bg-[var(--VIARA-warning-soft)]',
+            iconColor: 'text-[var(--VIARA-warning)]',
             confirmVariant: 'primary',
         },
         info: {
@@ -57,7 +57,7 @@ const ConfirmDialog = ({
         },
     };
 
-    const config = variants[variant];
+    const config = variants[variant] || variants.danger;
     const Icon = config.icon;
 
     return (
@@ -94,7 +94,7 @@ const ConfirmDialog = ({
 
                 {/* Message */}
                 <div className="flex-1">
-                    <p className="text-slate-700 leading-relaxed dark:text-slate-200">
+                    <p className="text-[var(--VIARA-ink)] leading-relaxed">
                         {message}
                     </p>
                     {children && <div className="mt-4">{children}</div>}

@@ -22,7 +22,7 @@ const BackupManagement = ({ embedded = false }) => {
     const { t, i18n } = useTranslation('governance');
     const currentUser = useSelector(selectCurrentUser);
     const canRestore = currentUser?.role === 'Developer';
-    const { data: backups = [], isLoading } = useGetBackupsQuery();
+    const { data: backups = [], isLoading, isError, refetch } = useGetBackupsQuery();
     const [generateBackup, { isLoading: isGenerating }] = useGenerateBackupMutation();
     const [restoreBackup, { isLoading: isRestoring }] = useRestoreBackupMutation();
     const [restoreCandidate, setRestoreCandidate] = useState(null);
@@ -58,7 +58,11 @@ const BackupManagement = ({ embedded = false }) => {
         if (!restoreCandidate) return false;
         try {
             const response = await restoreBackup({ filename: restoreCandidate.filename, confirm: true }).unwrap();
-            toast.success(t('backups.restored', { count: response.restoredRows }));
+            if (response.partial) {
+                toast.error(t('backups.partialRestore', { tables: response.skippedTables.join(', ') }));
+            } else {
+                toast.success(t('backups.restored', { count: response.restoredRows }));
+            }
             return true;
         } catch (error) {
             toast.error(error?.data?.message || t('backups.restoreError'));
@@ -85,7 +89,7 @@ const BackupManagement = ({ embedded = false }) => {
                         <div className="min-w-0">
                             <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
                                 <HardDrive size={11} />
-                                <span>Disaster Recovery & Persistence</span>
+                                <span>{t('backups.eyebrow')}</span>
                             </span>
                             <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('backups.title', { defaultValue: 'Database Snapshot & Backup Operations' })}
@@ -116,7 +120,7 @@ const BackupManagement = ({ embedded = false }) => {
                             <Database size={16} className="text-teal-600 dark:text-teal-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Snapshots</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('backups.totalSnapshots')}</p>
                             <p className="font-mono text-base font-black text-slate-900 dark:text-white">{totalSnapshots}</p>
                         </div>
                     </div>
@@ -126,7 +130,7 @@ const BackupManagement = ({ embedded = false }) => {
                             <HardDrive size={16} className="text-emerald-600 dark:text-emerald-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">Verified & Encrypted</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">{t('backups.verifiedEncrypted')}</p>
                             <p className="font-mono text-base font-black text-emerald-900 dark:text-white">{verifiedSnapshots}</p>
                         </div>
                     </div>
@@ -136,7 +140,7 @@ const BackupManagement = ({ embedded = false }) => {
                             <Download size={16} className="text-sky-600 dark:text-sky-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">Storage Volume</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">{t('backups.storageVolume')}</p>
                             <p className="font-mono text-base font-black text-sky-900 dark:text-white">{formatBytes(totalVolumeBytes)}</p>
                         </div>
                     </div>
@@ -146,8 +150,8 @@ const BackupManagement = ({ embedded = false }) => {
                             <Clock size={16} className="text-amber-600 dark:text-amber-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">Retention Scope</p>
-                            <p className="font-mono text-base font-black text-amber-900 dark:text-white">{t('backups.retentionValue', { defaultValue: '30-Day Automated' })}</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">{t('backups.retention')}</p>
+                            <p className="text-sm font-bold text-amber-900 dark:text-white">{t('backups.retentionValue')}</p>
                         </div>
                     </div>
                 </div>
@@ -172,6 +176,14 @@ const BackupManagement = ({ embedded = false }) => {
                     <div className="flex flex-col items-center justify-center p-16">
                         <span className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
                         <p className="mt-4 text-sm font-semibold text-slate-500">{t('backups.loading')}</p>
+                    </div>
+                ) : isError ? (
+                    <div className="flex flex-col items-center justify-center p-20 text-center" role="alert">
+                        <ShieldAlert size={36} className="text-rose-500" />
+                        <h3 className="mt-5 text-lg font-bold text-slate-800 dark:text-slate-200">{t('backups.loadError', { defaultValue: 'Backups could not be loaded.' })}</h3>
+                        <button type="button" onClick={refetch} className="mt-4 rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold dark:border-slate-700">
+                            {t('backups.retry', { defaultValue: 'Retry' })}
+                        </button>
                     </div>
                 ) : backups.length === 0 ? (
                     <div className="flex flex-col items-center justify-center p-20 text-center">

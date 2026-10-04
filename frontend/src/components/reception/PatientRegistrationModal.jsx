@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { AlertCircle, Calendar, Hash, Lock, MapPin, Phone, Sparkles, User, UserCheck } from 'lucide-react';
 import Modal from '../ui/Modal';
 import FieldError from '../ui/FieldError';
 import { inputClass, labelClass, primaryBtn, secondaryBtn } from '../../utils/designTokens';
 import { toLocalDateInput } from './receptionLogic';
+import { toDicomPatientName } from '../../utils/arabicTransliteration';
 
 const PatientRegistrationModal = ({
     errors,
@@ -19,8 +20,19 @@ const PatientRegistrationModal = ({
     submitForm,
     similarPatients = [],
     onSelectExistingPatient,
+    fullNameValue = '',
     t
-}) => (
+}) => {
+    const dicomNamePreview = useMemo(() => {
+        const trimmed = String(fullNameValue || '').trim();
+        if (!trimmed || !/[\u0600-\u06FF]/.test(trimmed)) return null;
+        const tokens = trimmed.split(/\s+/).filter(Boolean);
+        const firstName = tokens[0] || '';
+        const lastName = tokens.length > 1 ? tokens.slice(1).join(' ') : 'Unknown';
+        return toDicomPatientName(lastName, firstName);
+    }, [fullNameValue]);
+
+    return (
     <Modal
         isOpen={isOpen}
         onClose={() => {
@@ -104,6 +116,17 @@ const PatientRegistrationModal = ({
                     aria-describedby={errors.fullName ? 'register-full-name-error' : undefined}
                 />
                 <FieldError id="register-full-name-error" error={errors.fullName} />
+                {dicomNamePreview && (
+                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-teal-200/80 bg-teal-50/70 p-2 text-xs text-teal-900 shadow-2xs dark:border-teal-800/50 dark:bg-teal-950/40 dark:text-teal-200">
+                        <span className="flex items-center gap-1.5">
+                            <span className="font-bold text-teal-700 dark:text-teal-300">DICOM (MWL):</span>
+                            <span className="font-mono font-black tracking-wide text-slate-900 dark:text-teal-100">{dicomNamePreview}</span>
+                        </span>
+                        <span className="rounded bg-teal-100/80 px-1.5 py-0.5 text-[10px] font-semibold text-teal-800 dark:bg-teal-900/60 dark:text-teal-200">
+                            {t('register.autoTransliterated', { defaultValue: 'Auto-transliterated for scanners' })}
+                        </span>
+                    </div>
+                )}
             </div>
 
             {/* ── Auto-Generated Patient MRN (Disabled / Read-Only) ── */}
@@ -266,6 +289,7 @@ const PatientRegistrationModal = ({
             </div>
         </form>
     </Modal>
-);
+    );
+};
 
 export default PatientRegistrationModal;

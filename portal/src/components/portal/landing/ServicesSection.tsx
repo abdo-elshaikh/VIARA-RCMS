@@ -144,9 +144,11 @@ const placementClasses: Record<string, string> = {
 interface ServicesSectionProps {
   onSelectService?: (serviceId: string) => void;
   onViewAllServices?: () => void;
+  heading?: string;
+  subheading?: string;
 }
 
-export const ServicesSection = ({ onSelectService, onViewAllServices }: ServicesSectionProps) => {
+export const ServicesSection = ({ onSelectService, onViewAllServices, heading, subheading }: ServicesSectionProps) => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith("ar");
   const reduceMotion = useReducedMotion();
@@ -203,12 +205,12 @@ export const ServicesSection = ({ onSelectService, onViewAllServices }: Services
               {isRtl ? "خدمات التصوير لدينا" : "Our imaging services"}
             </span>
             <h2 className="mt-3 max-w-full break-words text-2xl font-bold leading-tight text-[#0B2348] dark:text-white sm:text-3xl lg:text-4xl">
-              {isRtl ? "الفحص المناسب، بمعلومة أوضح" : "The right exam, explained clearly"}
+              {heading || (isRtl ? "الفحص المناسب، بمعلومة أوضح" : "The right exam, explained clearly")}
             </h2>
             <p className="mt-3 max-w-xl break-words text-sm leading-7 text-muted-foreground">
-              {isRtl
+              {subheading || (isRtl
                 ? "تعرف سريعاً على فحوصات التصوير المتاحة لدينا، ثم اختر الخدمة التي تناسب احتياجك."
-                : "Quickly compare the imaging exams we operate, then choose the service that fits your needs."}
+                : "Quickly compare the imaging exams we operate, then choose the service that fits your needs.")}
             </p>
           </div>
 

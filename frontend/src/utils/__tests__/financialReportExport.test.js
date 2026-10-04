@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeSpreadsheetCell } from '../financialReportExport';
+import { buildFinancialReportCsv, sanitizeSpreadsheetCell } from '../financialReportExport';
 
 describe('financialReportExport', () => {
     it('neutralizes spreadsheet formula injection prefixes', () => {
@@ -12,5 +12,25 @@ describe('financialReportExport', () => {
     it('preserves ordinary financial report values', () => {
         expect(sanitizeSpreadsheetCell('Gross revenue')).toBe('Gross revenue');
         expect(sanitizeSpreadsheetCell('EGP 100.00')).toBe('EGP 100.00');
+    });
+
+    it('uses localized metadata labels in exported CSV reports', () => {
+        const csv = buildFinancialReportCsv({
+            title: 'تقرير مالي',
+            subtitle: 'نطاق التقرير',
+            generatedAt: '2026-10-02',
+            exportLabels: {
+                generatedAt: 'تاريخ الإنشاء',
+                summary: 'الملخص',
+                metric: 'المؤشر',
+                value: 'القيمة',
+            },
+            summary: [],
+            sections: [],
+        });
+
+        expect(csv).toContain('تاريخ الإنشاء');
+        expect(csv).toContain('الملخص');
+        expect(csv).toContain('المؤشر,القيمة');
     });
 });

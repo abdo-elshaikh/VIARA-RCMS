@@ -158,7 +158,7 @@ const csvEscape = (value) => {
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 
-const GeneralLedger = () => {
+const GeneralLedger = ({ dateRange: externalDateRange, onDateRangeChange }) => {
     const { i18n } = useTranslation('workspace');
     const language = i18n.language;
     const isArabic = language?.startsWith('ar');
@@ -167,8 +167,8 @@ const GeneralLedger = () => {
     const date = useCallback((value) => formatFinancialDate(value, language), [language]);
 
     const [filters, setFilters] = useState({
-        startDate: monthStart(),
-        endDate: today(),
+        startDate: externalDateRange?.startDate || monthStart(),
+        endDate: externalDateRange?.endDate || today(),
         accountCode: '',
         sourceFilter: 'all',
         sourceId: '',
@@ -176,25 +176,34 @@ const GeneralLedger = () => {
         offset: 0
     });
 
+    const effectiveStartDate = externalDateRange?.startDate || filters.startDate;
+    const effectiveEndDate = externalDateRange?.endDate || filters.endDate;
+
+    const handleDateChange = (field, value) => {
+        const nextRange = { startDate: effectiveStartDate, endDate: effectiveEndDate, [field]: value };
+        setFilters((current) => ({ ...current, [field]: value, offset: 0 }));
+        onDateRangeChange?.(nextRange, 'custom');
+    };
+
     const selectedSource = useMemo(
         () => SOURCE_OPTIONS.find((option) => option.value === filters.sourceFilter) || SOURCE_OPTIONS[0],
         [filters.sourceFilter]
     );
 
     const queryParams = useMemo(() => ({
-        startDate: filters.startDate,
-        endDate: filters.endDate,
+        startDate: effectiveStartDate,
+        endDate: effectiveEndDate,
         accountCode: filters.accountCode.trim().toUpperCase() || undefined,
         sourceType: selectedSource.mode === 'exact' ? selectedSource.value : undefined,
         sourceTypePrefix: selectedSource.mode === 'prefix' ? selectedSource.value : undefined,
         sourceId: filters.sourceId.trim() || undefined,
         limit: filters.limit,
         offset: filters.offset
-    }), [filters.accountCode, filters.endDate, filters.limit, filters.offset, filters.sourceId, filters.startDate, selectedSource.mode, selectedSource.value]);
+    }), [effectiveStartDate, effectiveEndDate, filters.accountCode, filters.limit, filters.offset, filters.sourceId, selectedSource.mode, selectedSource.value]);
 
     const trialBalanceQuery = useGetTrialBalanceQuery({
-        startDate: filters.startDate,
-        endDate: filters.endDate
+        startDate: effectiveStartDate,
+        endDate: effectiveEndDate
     });
     const ledgerQuery = useGetJournalLedgerQuery(queryParams);
 
@@ -309,8 +318,8 @@ const GeneralLedger = () => {
                 </div>
 
                 <div className="grid gap-3 border-b border-slate-100 p-4 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-6">
-                    <DateInput label={text.startDate} value={filters.startDate} max={filters.endDate} onChange={(value) => setField('startDate', value)} />
-                    <DateInput label={text.endDate} value={filters.endDate} min={filters.startDate} onChange={(value) => setField('endDate', value)} />
+                    <DateInput label={text.startDate} value={effectiveStartDate} max={effectiveEndDate} onChange={(value) => handleDateChange('startDate', value)} />
+                    <DateInput label={text.endDate} value={effectiveEndDate} min={effectiveStartDate} onChange={(value) => handleDateChange('endDate', value)} />
                     <TextInput icon={Search} label={text.accountCode} value={filters.accountCode} onChange={(value) => setField('accountCode', value)} placeholder={text.accountPlaceholder} dir="ltr" />
                     <SelectInput
                         label={text.source}

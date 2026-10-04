@@ -7,6 +7,7 @@ const {
     isProtectedRole
 } = require('../utils/roleGovernance');
 const { triggerEventForRole } = require('../services/notificationJobService');
+const { assertQuota } = require('../services/quotaService');
 
 const getAllStaff = (db) => async (req, res, next) => {
     try {
@@ -40,6 +41,7 @@ const createStaff = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await assertQuota(client, 'users', { transaction: true });
         const result = await client.query(
             "INSERT INTO users (full_name, email, password_hash, role, must_change_password) VALUES ($1, $2, $3, $4, TRUE) RETURNING user_id, full_name, email, role",
             [fullName, email, hashedPassword, role]
@@ -122,6 +124,8 @@ const updateStaff = (db) => async (req, res, next) => {
         }
 
         if (fields.length === 0) throw new AppError('No fields to update', 400);
+
+        if (role || isActive === false || password) fields.push('current_session_id = NULL');
 
         values.push(id);
         const query = `UPDATE users SET ${fields.join(', ')} WHERE user_id = $${idx} RETURNING user_id, full_name, role, is_active`;
@@ -207,7 +211,7 @@ const deleteStaff = (db) => async (req, res, next) => {
         if (!targetResult.rows.length) throw new AppError('User not found', 404);
         await assertProtectedUserMutation(client, req.user, targetResult.rows[0], targetResult.rows[0].role, false);
         const result = await client.query(
-            "UPDATE users SET is_active = false WHERE user_id = $1 RETURNING user_id",
+            "UPDATE users SET is_active = false, current_session_id = NULL WHERE user_id = $1 RETURNING user_id",
             [id]
         );
         // Stamp the termination date so the final payroll period prorates the

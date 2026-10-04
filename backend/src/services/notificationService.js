@@ -106,6 +106,10 @@ const computeActionUrl = (item = {}, context = {}) => {
     const audienceType = item.audience_type || getAudienceType(context);
     const audienceRole = item.audience_role || context.audienceRole || '';
 
+    if (event === 'SHIFT_CLOSED_WITH_PENDING_EXAMS') {
+        return item.variables?.review_url || context.variables?.review_url || '/reception?tab=end-of-day';
+    }
+
     if (audienceType === 'Patient') {
         if (event.includes('REPORT') || event.includes('RESULT') || event.includes('EXAM')) {
             return entityId
@@ -216,7 +220,12 @@ const notifyClients = async (db, notificationId) => {
             } else if (notification.referring_doctor_id) {
                 realtimeService.sendToDoctor(notification.referring_doctor_id, 'NEW_NOTIFICATION', decryptedPayload);
             } else if (notification.audience_type === 'Global') {
-                realtimeService.broadcastToStaff('NEW_NOTIFICATION', decryptedPayload);
+                // Keep realtime delivery aligned with getMyNotifications(): Global
+                // in-app notifications are visible only to administrators. Use
+                // role dispatch so the event also reaches other app instances.
+                for (const role of ['Admin', 'Developer']) {
+                    realtimeService.sendToRole(role, 'NEW_NOTIFICATION', decryptedPayload);
+                }
             } else {
                 console.warn('[NotificationRealtimePushSkipped] In-app notification has no explicit audience', notification.notification_id);
             }

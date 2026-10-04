@@ -1,6 +1,7 @@
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 const { assertInvoiceFullyPaid, assertInvoiceTransactionAllowed } = require('../services/partialPaymentExceptionService');
+const { assertInsuranceAuthorization } = require('../services/insuranceAuthorizationService');
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 const { validateEnum, validateUUID, VALID_QUEUE_STAGES, VALID_STATIONS, VALID_PRIORITIES } = require('../utils/queryValidator');
 const { decrypt } = require('../utils/crypto');
@@ -18,6 +19,7 @@ const {
     assignTask,
     releaseTask
 } = require('../services/clinicalTaskAssignmentService');
+const { handleOnTimeArrivalReward, handleVisitCompletionReward } = require('../services/loyaltyRewardService');
 
 const QUEUE_STAGES = [
     'Registered',
@@ -27,6 +29,8 @@ const QUEUE_STAGES = [
     'Prep Pending',
     'Ready for Exam',
     'In Exam',
+    'Images Ready',
+    'Images Delivered',
     'Reporting',
     'Finalized',
     'Delivered',
@@ -40,8 +44,10 @@ const VALID_TRANSITIONS = {
     'Payment Pending': ['Prep Pending', 'Ready for Exam', 'Cancelled'],
     'Prep Pending': ['Ready for Exam', 'Cancelled'],
     'Ready for Exam': ['In Exam', 'Cancelled'],
-    'In Exam': ['Reporting', 'Cancelled'],
-    Reporting: ['Finalized', 'Cancelled'],
+    'In Exam': ['Cancelled'],
+    'Images Ready': [],
+    'Images Delivered': [],
+    Reporting: ['Cancelled'],
     Finalized: ['Delivered'],
     Delivered: [],
     Cancelled: []
@@ -50,7 +56,7 @@ const VALID_TRANSITIONS = {
 const ROLE_STAGE_PERMISSIONS = {
     Developer: QUEUE_STAGES,
     Admin: QUEUE_STAGES,
-    Receptionist: ['Registered', 'Scheduled', 'Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam', 'Cancelled'],
+    Receptionist: ['Registered', 'Scheduled', 'Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam', 'Images Ready', 'Images Delivered', 'Cancelled'],
     Accountant: ['Payment Pending', 'Prep Pending', 'Ready for Exam', 'Cancelled'],
     Nurse: ['Prep Pending', 'Ready for Exam'],
     Technician: ['In Exam', 'Reporting'],
@@ -65,6 +71,8 @@ const STAGE_STATION = {
     'Prep Pending': 'Nurse',
     'Ready for Exam': 'Modality',
     'In Exam': 'Modality',
+    'Images Ready': 'Delivery',
+    'Images Delivered': 'Delivery',
     Reporting: 'Radiologist',
     Finalized: 'Delivery',
     Delivered: 'Delivery'
@@ -78,6 +86,8 @@ const STAGE_EXAM_STATUS = {
     'Prep Pending': 'Checked-in',
     'Ready for Exam': 'Checked-in',
     'In Exam': 'Scanning',
+    'Images Ready': 'Completed',
+    'Images Delivered': 'Completed',
     Reporting: 'Reporting',
     Finalized: 'Finalized',
     Delivered: 'Finalized',
@@ -92,6 +102,8 @@ const OVERDUE_MINUTES = {
     'Prep Pending': 30,
     'Ready for Exam': 20,
     'In Exam': 60,
+    'Images Ready': 60,
+    'Images Delivered': 0,
     Reporting: 120,
     Finalized: 60,
     Delivered: 0,
@@ -203,8 +215,12 @@ const getQueueKpiAggregate = async (db, kpiQuery, kpiValues) => {
     return value;
 };
 
+const QUEUE_LIST_CACHE_TTL_MS = 2500;
+const queueListCache = new Map();
+
 const invalidateQueueKpiCache = () => {
     queueKpiCache.clear();
+    queueListCache.clear();
 };
 
 const getQueue = (db) => async (req, res, next) => {
@@ -218,6 +234,28 @@ const getQueue = (db) => async (req, res, next) => {
             scope = 'all'
         } = req.query;
         const { limit, offset } = getPagination(req.query, { defaultLimit: 200, maxLimit: 500 });
+
+        let canViewFinancialData = req.user?.role === 'Developer'
+            || (Array.isArray(req.user?.elevatedPermissions)
+                && req.user.elevatedPermissions.includes('VIEW_INVOICES'));
+        if (!canViewFinancialData) {
+            const permissionResult = await db.query(`
+                SELECT 1
+                FROM role_permissions rp
+                JOIN permissions p ON p.permission_id = rp.permission_id
+                WHERE rp.role_name = $1 AND p.name = 'VIEW_INVOICES'
+                LIMIT 1
+            `, [req.user?.role]);
+            canViewFinancialData = permissionResult.rows.length > 0;
+        }
+
+        const cacheKey = `${req.user?.user_id || ''}:${req.user?.role || ''}:${canViewFinancialData ? 'finance' : 'no-finance'}:${stage || ''}:${station || ''}:${priority || ''}:${date || ''}:${includeDelivered}:${scope}:${limit}:${offset}`;
+        if (process.env.NODE_ENV !== 'test') {
+            const cached = queueListCache.get(cacheKey);
+            if (cached && (Date.now() - cached.at < QUEUE_LIST_CACHE_TTL_MS)) {
+                return res.json(cached.value);
+            }
+        }
 
         // Input validation to prevent SQL injection
         validateEnum(stage, VALID_QUEUE_STAGES, 'stage');
@@ -247,6 +285,8 @@ const getQueue = (db) => async (req, res, next) => {
                    e.exam_completed_at, e.reporting_started_at, e.report_finalized_at, e.delivered_at,
                    e.is_on_hold, e.hold_started_at, e.hold_released_at, e.hold_reason,
                    e.order_number, e.priority, e.clinical_indication, e.body_part, e.contrast_required,
+                   e.report_request_status, e.report_requested_at, e.report_requested_by,
+                   e.report_request_source, e.images_ready_at, e.images_delivered_at,
                    e.pregnancy_safety_status, e.implant_safety_status, e.renal_safety_status,
                     e.is_follow_up, e.prior_exam_id, e.follow_up_reason,
                     e.report_status,
@@ -329,21 +369,21 @@ const getQueue = (db) => async (req, res, next) => {
                         ELSE COALESCE(le.last_event_at, e.arrived_at, e.created_at)
                     END as stage_started_at,
                     CASE
-                        WHEN e.queue_stage IN ('Delivered', 'Cancelled') THEN 0
+                        WHEN e.queue_stage IN ('Images Delivered', 'Delivered', 'Cancelled') THEN 0
                         ELSE GREATEST(0, ROUND(EXTRACT(EPOCH FROM (NOW() - CASE
                             WHEN e.queue_stage = 'Scheduled' THEN a.start_time
                             ELSE COALESCE(le.last_event_at, e.arrived_at, e.created_at)
                         END)) / 60))
                     END as stage_elapsed_minutes,
                     CASE
-                        WHEN e.queue_stage IN ('Delivered', 'Cancelled') THEN 0
+                        WHEN e.queue_stage IN ('Images Delivered', 'Delivered', 'Cancelled') THEN 0
                         ELSE GREATEST(0, ROUND((EXTRACT(EPOCH FROM (NOW() - CASE
                             WHEN e.queue_stage = 'Scheduled' THEN a.start_time
                             ELSE COALESCE(le.last_event_at, e.arrived_at, e.created_at)
                         END)) - COALESCE(ht.hold_seconds, 0)) / 60))
                     END as active_stage_minutes,
                     CASE
-                        WHEN e.queue_stage IN ('Delivered', 'Cancelled') THEN 0
+                        WHEN e.queue_stage IN ('Images Delivered', 'Delivered', 'Cancelled') THEN 0
                         ELSE GREATEST(0, ROUND((EXTRACT(EPOCH FROM (NOW() - CASE
                             WHEN e.queue_stage = 'Scheduled' THEN a.start_time
                             ELSE COALESCE(le.last_event_at, e.arrived_at, e.created_at)
@@ -440,17 +480,20 @@ const getQueue = (db) => async (req, res, next) => {
         }
 
         if (includeDelivered !== 'true') {
-            filterClauses += ` AND e.queue_stage != 'Delivered'`;
+            filterClauses += ` AND e.queue_stage NOT IN ('Images Delivered', 'Delivered')`;
         }
 
         const clinicalTaskConfig = ROLE_CONFIG[req.user.role];
-        if (clinicalTaskConfig) {
-            if (station && station !== clinicalTaskConfig.station) {
-                return next(new AppError('Queue station is not available for this clinical role', 403, true, 'ROLE_NOT_ELIGIBLE'));
-            }
+        const isQueryingOwnStation = !station || (clinicalTaskConfig && station === clinicalTaskConfig.station);
+
+        if (clinicalTaskConfig && isQueryingOwnStation) {
             if (!station) {
                 filterClauses += ` AND e.current_station = $${param++}`;
                 values.push(clinicalTaskConfig.station);
+            }
+            if (!stage && Array.isArray(clinicalTaskConfig.stages) && clinicalTaskConfig.stages.length > 0) {
+                filterClauses += ` AND e.queue_stage = ANY($${param++}::text[])`;
+                values.push(clinicalTaskConfig.stages);
             }
 
             const assignmentColumn = clinicalTaskConfig.table === 'appointments'
@@ -467,9 +510,9 @@ const getQueue = (db) => async (req, res, next) => {
                 filterClauses += ` AND (${assignmentColumn} = $${param++} OR ${assignmentColumn} IS NULL)`;
                 values.push(req.user.user_id);
             }
-        } else if (['Receptionist', 'Cashier', 'Admin', 'Developer'].includes(req.user.role)) {
-            // Receptionists, Cashiers, and Admins can see all cases across clinical stations for holistic workflow tracking
-            if (scope === 'mine') {
+        } else if (['Receptionist', 'Cashier', 'Admin', 'Developer'].includes(req.user.role) || (clinicalTaskConfig && !isQueryingOwnStation)) {
+            // Receptionists, Cashiers, Admins, and clinical staff reviewing other stations can view cases across stations for holistic tracking
+            if (scope === 'mine' && req.user.role === 'Receptionist') {
                 filterClauses += ` AND a.receptionist_id = $${param++}`;
                 values.push(req.user.user_id);
             }
@@ -533,7 +576,7 @@ const getQueue = (db) => async (req, res, next) => {
                         ELSE NULL
                     END AS task_started_at,
                     CASE
-                        WHEN e.queue_stage IN ('Delivered', 'Cancelled') THEN 0
+                        WHEN e.queue_stage IN ('Images Delivered', 'Delivered', 'Cancelled') THEN 0
                         ELSE GREATEST(0, ROUND((EXTRACT(EPOCH FROM (NOW() - CASE
                             WHEN e.queue_stage = 'Scheduled' THEN a.start_time
                             ELSE COALESCE(le.last_event_at, e.arrived_at, e.created_at)
@@ -580,7 +623,7 @@ const getQueue = (db) => async (req, res, next) => {
                     WHERE task_assignee_id = ${currentUserParam}::uuid AND is_on_hold
                 )::integer AS on_hold,
                 COUNT(*) FILTER (
-                    WHERE queue_stage NOT IN ('Delivered', 'Cancelled')
+                    WHERE queue_stage NOT IN ('Images Delivered', 'Delivered', 'Cancelled')
                       AND NOT is_on_hold
                       AND COALESCE(waiting_minutes, 0) > CASE queue_stage
                         WHEN 'Registered' THEN 15
@@ -596,7 +639,7 @@ const getQueue = (db) => async (req, res, next) => {
                     END
                 )::integer AS overdue,
                 COALESCE(ROUND(AVG(COALESCE(waiting_minutes, 0)) FILTER (
-                    WHERE queue_stage NOT IN ('Delivered', 'Cancelled')
+                    WHERE queue_stage NOT IN ('Images Delivered', 'Delivered', 'Cancelled')
                 )), 0)::integer AS average_waiting_minutes,
                 COALESCE(ROUND(AVG(turnaround_minutes) FILTER (WHERE turnaround_minutes IS NOT NULL)), 0)::integer AS average_turnaround_minutes,
                 COALESCE(
@@ -634,7 +677,7 @@ const getQueue = (db) => async (req, res, next) => {
                             ? 'In Progress'
                             : 'Assigned',
                 is_assigned_to_me: String(row.task_assignee_id || '') === String(req.user.user_id),
-                is_overdue: !['Delivered', 'Cancelled'].includes(row.queue_stage)
+                is_overdue: !['Images Delivered', 'Delivered', 'Cancelled'].includes(row.queue_stage)
                     && !row.is_on_hold
                     && Number(row.waiting_minutes || 0) > (OVERDUE_MINUTES[row.queue_stage] ?? 60),
                 sla_threshold_minutes: OVERDUE_MINUTES[row.queue_stage] ?? 60,
@@ -647,6 +690,25 @@ const getQueue = (db) => async (req, res, next) => {
             }
             delete mapped.first_name_enc;
             delete mapped.last_name_enc;
+            if (!canViewFinancialData) {
+                [
+                    'invoice_id',
+                    'invoice_number',
+                    'invoice_status',
+                    'invoice_paid_amount',
+                    'invoice_balance_amount',
+                    'payment_exception_id',
+                    'payment_exception_status',
+                    'payment_exception_reason',
+                    'payment_exception_review_notes',
+                    'payment_exception_requested_at',
+                    'payment_exception_reviewed_at',
+                    'payment_exception_expires_at',
+                    'payment_exception_target_stage',
+                    'payment_exception_requested_by_name',
+                    'payment_exception_reviewed_by_name'
+                ].forEach((field) => delete mapped[field]);
+            }
             return mapped;
         });
 
@@ -664,7 +726,13 @@ const getQueue = (db) => async (req, res, next) => {
             byStage: aggregate.by_stage || {}
         };
 
-        res.json({ data: rows, kpis });
+        const responseData = { data: rows, kpis };
+        queueListCache.set(cacheKey, { at: Date.now(), value: responseData });
+        if (queueListCache.size >= 300) {
+            const oldest = queueListCache.keys().next().value;
+            queueListCache.delete(oldest);
+        }
+        res.json(responseData);
     } catch (error) {
         next(error);
     }
@@ -707,9 +775,33 @@ const transitionQueue = (db) => async (req, res, next) => {
 
         const existing = existingResult.rows[0];
 
+        // Authorization: check the target stage before any session/shift lookups.
+        if (toStage && !canRoleTransition(req.user.role, toStage)) {
+            await client.query('ROLLBACK');
+            return next(new AppError('Your role cannot move an item to this queue stage', 403));
+        }
+
         // Reception work is single-owner: every reception-stage action must
         // come from the receptionist who claimed the appointment.
         const isReceptionStage = existing.current_station === 'Reception';
+        if (req.user.role === 'Receptionist') {
+            const openShift = await client.query(`
+                SELECT session_id, desk_identifier, scope, room_ids, modality_ids
+                FROM reception_shift_sessions
+                WHERE user_id = $1 AND status = 'Open'
+                LIMIT 1
+            `, [req.user.user_id]);
+            if (!openShift.rows.length) {
+                await client.query('ROLLBACK');
+                return next(new AppError(
+                    'Start your reception shift and set its workstation scope before managing queue stages. | يجب فتح وردية الاستقبال وتحديد محطة العمل قبل معالجة وتغيير مراحل المرضى في قائمة الانتظار.',
+                    409,
+                    true,
+                    'RECEPTION_SHIFT_REQUIRED'
+                ));
+            }
+        }
+
         if (isReceptionStage && existing.receptionist_id
             && String(existing.receptionist_id) !== String(req.user.user_id)
             && !['Admin', 'Developer'].includes(req.user.role)) {
@@ -737,10 +829,6 @@ const transitionQueue = (db) => async (req, res, next) => {
             existing.receptionist_assignment_version = newVersion;
         }
 
-        if (toStage && !canRoleTransition(req.user.role, toStage)) {
-            await client.query('ROLLBACK');
-            return next(new AppError('Your role cannot move an item to this queue stage', 403));
-        }
 
         const activeTaskRole = roleForStation(existing.current_station);
         const activeAssignment = activeTaskRole ? assignmentFromRow(existing, activeTaskRole) : null;
@@ -1013,6 +1101,34 @@ const transitionQueue = (db) => async (req, res, next) => {
             return next(new AppError('Release this queue item before moving it forward', 409));
         }
 
+        if (toStage === 'Finalized') {
+            await client.query('ROLLBACK');
+            return next(new AppError(
+                'Finalize the diagnostic report from the report editor after approval; the queue cannot finalize reports.',
+                409,
+                true,
+                'REPORT_FINALIZATION_REQUIRED'
+            ));
+        }
+        if (['Images Ready', 'Images Delivered'].includes(toStage)) {
+            await client.query('ROLLBACK');
+            return next(new AppError(
+                'Use the acquisition completion or image delivery action for this stage.',
+                409,
+                true,
+                'DEDICATED_WORKFLOW_REQUIRED'
+            ));
+        }
+        if (existing.queue_stage === 'In Exam' && toStage === 'Reporting') {
+            await client.query('ROLLBACK');
+            return next(new AppError(
+                'Use the acquisition completion action and choose whether a report is required.',
+                409,
+                true,
+                'ACQUISITION_COMPLETION_REQUIRED'
+            ));
+        }
+
         const allowedNextStages = VALID_TRANSITIONS[existing.queue_stage] || [];
         if (!allowedNextStages.includes(toStage) && !['Developer', 'Admin'].includes(req.user.role)) {
             await client.query('ROLLBACK');
@@ -1023,7 +1139,7 @@ const transitionQueue = (db) => async (req, res, next) => {
         if (enteringClinical && existing.priority !== 'Emergency') {
             const invoiceResult = await client.query(`
                 WITH latest_invoice AS (
-                    SELECT i.invoice_id, i.invoice_status, i.patient_payable_amount
+                    SELECT i.invoice_id, i.invoice_status, i.patient_payable_amount, i.insurance_covered_amount
                     FROM invoices i
                     WHERE i.invoice_status <> 'Voided'
                       AND (i.exam_id = $1 OR i.appointment_id = $2)
@@ -1044,6 +1160,7 @@ const transitionQueue = (db) => async (req, res, next) => {
                 SELECT li.invoice_id,
                        li.invoice_status,
                        li.patient_payable_amount,
+                       li.insurance_covered_amount,
                        COALESCE(pt.paid_amount, 0) AS paid_amount,
                        COALESCE(pt.refunded_amount, 0) AS refunded_amount,
                        COALESCE(pt.credited_amount, 0) AS credited_amount
@@ -1064,6 +1181,9 @@ const transitionQueue = (db) => async (req, res, next) => {
                     targetStage: toStage,
                     transactionLabel: 'moving this exam forward'
                 });
+                if (Number(invoice.insurance_covered_amount || 0) > 0) {
+                    await assertInsuranceAuthorization(client, invoice.invoice_id);
+                }
             } catch (error) {
                 await client.query('ROLLBACK');
                 return next(error);
@@ -1095,21 +1215,39 @@ const transitionQueue = (db) => async (req, res, next) => {
         // check above handles this path first).
         if (toStage === 'In Exam' && existing.pregnancy_safety_status === 'At Risk' && existing.priority !== 'Emergency') {
             await client.query('ROLLBACK');
-            return next(new AppError('تحذير أمان: لا يمكن بدء الفحص وحالة أمان الحمل (At Risk) لم يتم اعتمادها أو فحصها سريرياً.', 409));
+            return next(new AppError('Safety guard: the exam cannot start while the pregnancy safety status is At Risk and has not been clinically reviewed. | تحذير أمان: لا يمكن بدء الفحص وحالة أمان الحمل (At Risk) لم يتم اعتمادها أو فحصها سريرياً.', 409, true, 'PREGNANCY_SAFETY_AT_RISK'));
         }
 
         // Mandatory contrast check before reporting or finalizing contrast exams
         if (['Reporting', 'Finalized'].includes(toStage) && existing.contrast_required) {
             const contrastLogged = await client.query(`
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM stock_movements sm
-                    JOIN inventory_items inventory_item ON inventory_item.item_id = sm.item_id
-                    WHERE sm.reference_type = 'Exam'
-                      AND sm.reference_id = $1
-                      AND sm.movement_type = 'Consume'
-                      AND sm.quantity_change < 0
-                      AND inventory_item.is_contrast_agent = true
+                SELECT (
+                    EXISTS (
+                        SELECT 1
+                        FROM stock_movements sm
+                        JOIN inventory_items inventory_item ON inventory_item.item_id = sm.item_id
+                        WHERE sm.reference_type = 'Exam'
+                          AND sm.reference_id = $1
+                          AND sm.movement_type = 'Consume'
+                          AND sm.quantity_change < 0
+                          AND (
+                              inventory_item.is_contrast_agent = true
+                              OR LOWER(TRIM(COALESCE(inventory_item.category, ''))) IN ('contrast', 'contrast agent')
+                              OR inventory_item.name ILIKE '%صبغة%'
+                              OR inventory_item.name ILIKE '%contrast%'
+                          )
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM invoice_items ii
+                        JOIN invoices inv ON inv.invoice_id = ii.invoice_id
+                        WHERE (inv.exam_id = $1 OR inv.appointment_id = (SELECT appointment_id FROM examinations WHERE exam_id = $1))
+                          AND (
+                              ii.description ILIKE '%صبغة%'
+                              OR ii.description ILIKE '%contrast%'
+                              OR ii.description ILIKE '%dye%'
+                          )
+                    )
                 ) AS has_verified_contrast
             `, [examId]);
 
@@ -1180,12 +1318,27 @@ const transitionQueue = (db) => async (req, res, next) => {
                 SET status = 'Checked-in'
                 WHERE appointment_id = $1
             `, [existing.appointment_id]);
+
+            // Instant Loyalty Reward: On-Time Arrival (+15 pts)
+            handleOnTimeArrivalReward(client, {
+                patientId: existing.patient_id,
+                appointmentId: existing.appointment_id,
+                client
+            }).catch(err => console.warn('Failed to award on-time reward:', err.message));
         } else if (['Finalized', 'Delivered'].includes(toStage)) {
             await client.query(`
                 UPDATE appointments
                 SET status = 'Completed'
                 WHERE appointment_id = $1
             `, [existing.appointment_id]);
+
+            // Instant Loyalty Reward: Visit Completion / Milestones / Recall (+25 to +100 pts)
+            handleVisitCompletionReward(client, {
+                patientId: existing.patient_id,
+                appointmentId: existing.appointment_id,
+                isFollowUp: existing.is_follow_up,
+                client
+            }).catch(err => console.warn('Failed to award visit completion reward:', err.message));
         } else if (toStage === 'Cancelled') {
             await client.query(`
                 UPDATE appointments
@@ -1338,6 +1491,376 @@ const transitionQueue = (db) => async (req, res, next) => {
     }
 };
 
+const assertAcquisitionContrastRecorded = async (client, exam) => {
+    if (!exam.contrast_required) return;
+
+    const contrastLogged = await client.query(`
+        SELECT (
+            EXISTS (
+                SELECT 1
+                FROM stock_movements sm
+                JOIN inventory_items item ON item.item_id = sm.item_id
+                WHERE sm.reference_type = 'Exam'
+                  AND sm.reference_id = $1
+                  AND sm.movement_type = 'Consume'
+                  AND sm.quantity_change < 0
+                  AND (
+                      item.is_contrast_agent = TRUE
+                      OR LOWER(TRIM(COALESCE(item.category, ''))) IN ('contrast', 'contrast agent')
+                      OR item.name ILIKE '%contrast%'
+                      OR item.name ILIKE '%صبغة%'
+                  )
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM invoice_items ii
+                JOIN invoices inv ON inv.invoice_id = ii.invoice_id
+                WHERE (inv.exam_id = $1 OR inv.appointment_id = $2)
+                  AND (ii.description ILIKE '%contrast%' OR ii.description ILIKE '%dye%' OR ii.description ILIKE '%صبغة%')
+            )
+        ) AS has_verified_contrast
+    `, [exam.exam_id, exam.appointment_id]);
+
+    if (!contrastLogged.rows[0]?.has_verified_contrast) {
+        throw new AppError(
+            'Register and dispense the required contrast and consumables before completing this examination.',
+            400,
+            true,
+            'CONTRAST_REQUIRED',
+            { action: 'dispense_contrast_consumables', examId: exam.exam_id }
+        );
+    }
+};
+
+const completeAcquisition = (db) => async (req, res, next) => {
+    let client;
+    let committed = false;
+    try {
+        validateUUID(req.params.examId, 'examId');
+        const { resultMode, notes } = req.body;
+        const imagesOnly = resultMode === 'ImagesOnly';
+        const toStage = imagesOnly ? 'Images Ready' : 'Reporting';
+        const toStation = imagesOnly ? 'Delivery' : 'Radiologist';
+        const nextStatus = imagesOnly ? 'Completed' : 'Reporting';
+
+        client = await db.connect();
+        await client.query('BEGIN');
+        const existingResult = await client.query(`
+            SELECT e.*,
+                   a.technician_id, a.technician_assigned_at, a.technician_task_available_at,
+                   a.technician_task_started_at, a.technician_assignment_version,
+                   a.nurse_id, a.nurse_assigned_at, a.nurse_task_available_at,
+                   a.nurse_task_started_at, a.nurse_assignment_version
+            FROM examinations e
+            JOIN appointments a ON a.appointment_id = e.appointment_id
+            WHERE e.exam_id = $1
+            FOR UPDATE OF e, a
+        `, [req.params.examId]);
+        const existing = existingResult.rows[0];
+        if (!existing) throw new AppError('Examination not found', 404);
+
+        if (existing.queue_stage === toStage) {
+            await client.query('COMMIT');
+            committed = true;
+            return res.json(existing);
+        }
+        if (existing.queue_stage !== 'In Exam') {
+            throw new AppError('Only an examination currently in progress can be completed', 409, true, 'INVALID_QUEUE_TRANSITION');
+        }
+        if (req.user.role === 'Technician'
+            && String(existing.technician_id || '') !== String(req.user.user_id || '')) {
+            throw new AppError('Examination is assigned to another technician', 404);
+        }
+
+        await assertAcquisitionContrastRecorded(client, existing);
+
+        const updateResult = await client.query(`
+            UPDATE examinations
+            SET status = $2::exam_status,
+                queue_stage = $3,
+                current_station = $4,
+                exam_completed_at = COALESCE(exam_completed_at, NOW()),
+                images_ready_at = COALESCE(images_ready_at, NOW()),
+                report_request_status = $5,
+                report_requested_at = CASE WHEN $6::boolean THEN NULL ELSE COALESCE(report_requested_at, NOW()) END,
+                report_requested_by = CASE WHEN $6::boolean THEN NULL ELSE report_requested_by END,
+                report_request_source = CASE WHEN $6::boolean THEN 'Patient' ELSE report_request_source END,
+                reporting_started_at = CASE WHEN $6::boolean THEN reporting_started_at ELSE COALESCE(reporting_started_at, NOW()) END
+            WHERE exam_id = $1
+            RETURNING *
+        `, [
+            existing.exam_id,
+            nextStatus,
+            toStage,
+            toStation,
+            imagesOnly ? 'NotRequested' : 'Requested',
+            imagesOnly
+        ]);
+
+        await client.query(`
+            UPDATE appointments
+            SET status = 'Completed'
+            WHERE appointment_id = $1
+        `, [existing.appointment_id]);
+
+        await client.query(`
+            INSERT INTO queue_events (
+                exam_id, appointment_id, from_stage, to_stage, from_station, to_station,
+                event_type, reason, notes, changed_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, 'AcquisitionCompleted', $7, $8, $9)
+        `, [
+            existing.exam_id,
+            existing.appointment_id,
+            existing.queue_stage,
+            toStage,
+            existing.current_station,
+            toStation,
+            imagesOnly ? 'Images requested without report' : 'Report requested after acquisition',
+            notes || null,
+            req.user.user_id
+        ]);
+
+        await client.query(`
+            INSERT INTO order_status_history (
+                appointment_id, exam_id, old_status, new_status, event_type, notes, changed_by
+            ) VALUES ($1, $2, $3, $4, 'AcquisitionCompleted', $5, $6)
+        `, [existing.appointment_id, existing.exam_id, existing.status, nextStatus, notes || resultMode, req.user.user_id]);
+
+        if (imagesOnly || existing.report_request_status !== 'Requested') {
+            await client.query(`
+                INSERT INTO report_request_events (
+                    exam_id, old_status, new_status, source, reason, changed_by
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+            `, [
+                existing.exam_id,
+                existing.report_request_status || 'Requested',
+                imagesOnly ? 'NotRequested' : 'Requested',
+                imagesOnly ? 'Patient' : 'Automatic',
+                notes || null,
+                req.user.user_id
+            ]);
+        }
+
+        await completeTask(client, existing, 'Technician', req.user.user_id);
+        if (!imagesOnly) await markTaskAvailable(client, existing, 'Radiologist');
+
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'ACQUISITION_COMPLETED',
+            resourceId: existing.exam_id,
+            resourceTable: 'examinations',
+            ipAddress: req.ip,
+            details: { resultMode, fromStage: existing.queue_stage, toStage, notes: notes || null }
+        });
+
+        await client.query('COMMIT');
+        committed = true;
+        const updated = updateResult.rows[0];
+        publishQueueTaskChange(updated, 'ACQUISITION_COMPLETED');
+
+        const payload = {
+            entityType: 'Exam',
+            entityId: existing.exam_id,
+            channels: ['InApp'],
+            priority: 'Normal',
+            variables: {
+                order_number: existing.order_number || '',
+                from_stage: existing.queue_stage,
+                to_stage: toStage,
+                station: toStation
+            }
+        };
+        if (imagesOnly) {
+            triggerEventForRole(db, 'ExamStatusChanged', 'Receptionist', payload).catch(() => {});
+        } else {
+            notifyClinicalTask(db, 'Radiologist', existing.performing_radiologist_id, payload).catch(() => {});
+        }
+        return res.json(updated);
+    } catch (error) {
+        if (client && !committed) {
+            try { await client.query('ROLLBACK'); } catch (_) { /* preserve original error */ }
+        }
+        return next(error);
+    } finally {
+        client?.release();
+    }
+};
+
+const requestDeferredReport = (db) => async (req, res, next) => {
+    let client;
+    let committed = false;
+    try {
+        validateUUID(req.params.examId, 'examId');
+        const { source = 'Reception', reason } = req.body;
+        client = await db.connect();
+        await client.query('BEGIN');
+        const existingResult = await client.query(`
+            SELECT e.*
+            FROM examinations e
+            WHERE e.exam_id = $1
+            FOR UPDATE
+        `, [req.params.examId]);
+        const existing = existingResult.rows[0];
+        if (!existing) throw new AppError('Examination not found', 404);
+
+        if (['Finalized', 'Amended'].includes(existing.report_status) || existing.report_locked) {
+            throw new AppError('The report is already finalized', 409, true, 'REPORT_ALREADY_FINALIZED');
+        }
+        if (existing.report_request_status === 'Requested' && existing.queue_stage === 'Reporting') {
+            await client.query('COMMIT');
+            committed = true;
+            return res.json(existing);
+        }
+        if (!['Images Ready', 'Images Delivered'].includes(existing.queue_stage) || existing.status !== 'Completed') {
+            throw new AppError('A deferred report can only be requested after an images-only examination is completed', 409, true, 'REPORT_REQUEST_NOT_AVAILABLE');
+        }
+
+        const updateResult = await client.query(`
+            UPDATE examinations
+            SET status = 'Reporting'::exam_status,
+                queue_stage = 'Reporting',
+                current_station = 'Radiologist',
+                report_request_status = 'Requested',
+                report_requested_at = NOW(),
+                report_requested_by = $2,
+                report_request_source = $3,
+                reporting_started_at = NOW()
+            WHERE exam_id = $1
+            RETURNING *
+        `, [existing.exam_id, req.user.user_id, source]);
+
+        await client.query(`
+            INSERT INTO report_request_events (
+                exam_id, old_status, new_status, source, reason, changed_by
+            ) VALUES ($1, $2, 'Requested', $3, $4, $5)
+        `, [existing.exam_id, existing.report_request_status, source, reason || null, req.user.user_id]);
+        await client.query(`
+            INSERT INTO queue_events (
+                exam_id, appointment_id, from_stage, to_stage, from_station, to_station,
+                event_type, reason, changed_by
+            ) VALUES ($1, $2, $3, 'Reporting', $4, 'Radiologist', 'ReportRequested', $5, $6)
+        `, [
+            existing.exam_id,
+            existing.appointment_id,
+            existing.queue_stage,
+            existing.current_station,
+            reason || 'Deferred report requested',
+            req.user.user_id
+        ]);
+
+        await markTaskAvailable(client, existing, 'Radiologist');
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'DEFERRED_REPORT_REQUESTED',
+            resourceId: existing.exam_id,
+            resourceTable: 'examinations',
+            ipAddress: req.ip,
+            details: { source, reason: reason || null, imagesDeliveredAt: existing.images_delivered_at || null }
+        });
+        await client.query('COMMIT');
+        committed = true;
+
+        const updated = updateResult.rows[0];
+        publishQueueTaskChange(updated, 'REPORT_REQUESTED');
+        notifyClinicalTask(db, 'Radiologist', existing.performing_radiologist_id, {
+            entityType: 'Exam',
+            entityId: existing.exam_id,
+            channels: ['InApp'],
+            priority: 'Normal',
+            variables: {
+                order_number: existing.order_number || '',
+                from_stage: existing.queue_stage,
+                to_stage: 'Reporting',
+                station: 'Radiologist'
+            }
+        }).catch(() => {});
+        return res.json(updated);
+    } catch (error) {
+        if (client && !committed) {
+            try { await client.query('ROLLBACK'); } catch (_) { /* preserve original error */ }
+        }
+        return next(error);
+    } finally {
+        client?.release();
+    }
+};
+
+const deferReportForImages = (db) => async (req, res, next) => {
+    let client;
+    let committed = false;
+    try {
+        validateUUID(req.params.examId, 'examId');
+        const { reason = 'Patient requested images only without waiting for report' } = req.body || {};
+        client = await db.connect();
+        await client.query('BEGIN');
+        const existingResult = await client.query(`
+            SELECT e.*
+            FROM examinations e
+            WHERE e.exam_id = $1
+            FOR UPDATE
+        `, [req.params.examId]);
+        const existing = existingResult.rows[0];
+        if (!existing) throw new AppError('Examination not found', 404);
+
+        if (['Finalized', 'Amended'].includes(existing.report_status) || existing.report_locked) {
+            throw new AppError('The report is already finalized', 409, true, 'REPORT_ALREADY_FINALIZED');
+        }
+        if (existing.report_request_status === 'NotRequested' && existing.queue_stage === 'Images Ready') {
+            await client.query('COMMIT');
+            committed = true;
+            return res.json(existing);
+        }
+
+        const updateResult = await client.query(`
+            UPDATE examinations
+            SET status = 'Completed'::exam_status,
+                queue_stage = 'Images Ready',
+                current_station = 'Delivery',
+                report_request_status = 'NotRequested',
+                report_requested_at = NULL,
+                report_requested_by = NULL,
+                report_request_source = 'Patient',
+                images_ready_at = COALESCE(images_ready_at, NOW())
+            WHERE exam_id = $1
+            RETURNING *
+        `, [existing.exam_id]);
+
+        await client.query(`
+            INSERT INTO report_request_events (
+                exam_id, old_status, new_status, source, reason, changed_by
+            ) VALUES ($1, $2, 'NotRequested', 'Patient', $3, $4)
+        `, [existing.exam_id, existing.report_request_status, reason, req.user.user_id]);
+
+        await client.query(`
+            INSERT INTO queue_events (
+                exam_id, appointment_id, from_stage, to_stage, from_station, to_station,
+                event_type, reason, changed_by
+            ) VALUES ($1, $2, $3, 'Images Ready', $4, 'Delivery', 'ReportDeferred', $5, $6)
+        `, [existing.exam_id, existing.appointment_id, existing.queue_stage, existing.current_station, reason, req.user.user_id]);
+
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'REPORT_DEFERRED_FOR_IMAGES',
+            resourceId: existing.exam_id,
+            resourceTable: 'examinations',
+            ipAddress: req.ip,
+            details: { reason, previousStage: existing.queue_stage }
+        });
+        await client.query('COMMIT');
+        committed = true;
+        const updated = updateResult.rows[0];
+        publishQueueTaskChange(updated, 'REPORT_DEFERRED_FOR_IMAGES');
+        return res.json(updated);
+    } catch (error) {
+        if (client && !committed) {
+            try { await client.query('ROLLBACK'); } catch (_) {}
+        }
+        return next(error);
+    } finally {
+        client?.release();
+    }
+};
+
 const rollbackQuietly = async (client) => {
     if (!client) return;
     try {
@@ -1460,6 +1983,9 @@ const releaseQueueTaskAssignment = (db) => async (req, res, next) => {
 module.exports = {
     getQueue,
     transitionQueue,
+    completeAcquisition,
+    requestDeferredReport,
+    deferReportForImages,
     claimQueueTask,
     assignQueueTask,
     releaseQueueTaskAssignment

@@ -1,5 +1,6 @@
 const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
+const { getLicense } = require('./licenseService');
 const {
     normalizeCenterSettings,
     reportSections,
@@ -10,6 +11,22 @@ const {
     detectClinicalContentMismatch,
     buildVerificationPayload,
 } = require('./pdfService');
+
+/**
+ * Returns true when the currently loaded license is a trial edition.
+ * Used to stamp a non-removable "TRIAL" overlay on every printed page so
+ * trial output can never be mistaken for a production clinical document.
+ *
+ * @returns {boolean}
+ */
+const isTrialEdition = () => {
+    try {
+        const lic = getLicense();
+        return !!(lic && lic.edition === 'trial');
+    } catch {
+        return false;
+    }
+};
 
 const COLORS = {
     navy: '#0B2348',
@@ -68,9 +85,9 @@ const buildReportPdf = async (report, centerSettings = {}) => {
     const { standard, customSections } = reportSections(report);
     const title = plainText(report.exam_type_name || report.procedure_name || report.modality_name || 'Diagnostic Imaging Report');
     const mismatch = detectClinicalContentMismatch(title, standard);
-    const finalized = ['Finalized', 'Amended', 'Signed'].includes(report.report_status)
-        || report.report_locked
-        || report.status === 'Finalized';
+    const finalized = ['Finalized', 'Amended'].includes(report.report_status)
+        && Boolean(report.report_locked)
+        && Boolean(report.report_finalized_at);
     const statusLabel = report.report_status || (finalized ? 'Finalized' : 'Draft');
     const verificationHash = report.digital_signature_hash || (finalized
         ? `VIARA-VERIFIED-${String(report.exam_id || report.order_number || '').slice(0, 12).toUpperCase()}`
@@ -116,6 +133,30 @@ const buildReportPdf = async (report, centerSettings = {}) => {
         // Top accent line (emerald + navy gradient aesthetic)
         doc.rect(0, 0, PAGE.width * 0.55, 4).fill(COLORS.emerald);
         doc.rect(PAGE.width * 0.55, 0, PAGE.width * 0.45, 4).fill(COLORS.navy);
+
+        // Trial edition overlay — drawn on every page, cannot be removed by
+        // the client customization panel, and never shown for paid editions.
+        if (isTrialEdition()) {
+            doc.save();
+            doc.fillColor(COLORS.danger).opacity(0.45);
+            doc.font('Helvetica-Bold').fontSize(13);
+            const label = 'TRIAL';
+            const labelWidth = doc.widthOfString(label);
+            const cx = PAGE.width / 2;
+            const cy = PAGE.height / 2;
+            doc.save();
+            doc.translate(cx, cy);
+            doc.rotate(-30);
+            // Bordered badge so it survives print-to-PDF and copy/paste
+            const padX = 10;
+            const padY = 4;
+            doc.roundedRect(-labelWidth / 2 - padX, -13 / 2 - padY, labelWidth + padX * 2, 13 + padY * 2, 4)
+                .lineWidth(1.2).stroke(COLORS.danger);
+            doc.text(label, -labelWidth / 2, -13 / 2 + 1, { width: labelWidth, align: 'center' });
+            doc.restore();
+            doc.opacity(1);
+            doc.restore();
+        }
         doc.restore();
     };
 

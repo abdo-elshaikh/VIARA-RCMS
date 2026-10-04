@@ -1,7 +1,7 @@
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 const { AppError } = require('../middleware/errorHandler');
-const { createStoredZip } = require('../utils/zipStore');
+const { createStoredZipStream } = require('../utils/zipStore');
 const { writeAudit } = require('./pacsReconcileService');
 const { triggerEventForRole } = require('./notificationJobService');
 const { assertStudyAccess, getRemoteIp } = require('./pacsAccessPolicyService');
@@ -129,10 +129,10 @@ const auditPacsStudyExport = async (db, req, study, format, detail = {}) => {
     }).catch(() => { });
 };
 
-const streamOrthancStudyPackage = async ({ orthancUrl, auth, orthancStudyId, mode, filename, res }) => {
+const streamOrthancStudyPackage = async ({ orthancUrl, auth, orthancStudyId, mode, filename, res, signal }) => {
     const endpoint = mode === 'cd' ? 'media' : 'archive';
     const response = await fetch(`${orthancUrl}/studies/${encodeURIComponent(orthancStudyId)}/${endpoint}`, {
-        headers: { Authorization: auth, Accept: 'application/zip, application/octet-stream;q=0.9, */*;q=0.1' }
+        signal, headers: { Authorization: auth, Accept: 'application/zip, application/octet-stream;q=0.9, */*;q=0.1' }
     });
 
     if (!response.ok) {
@@ -153,7 +153,7 @@ const streamOrthancStudyPackage = async ({ orthancUrl, auth, orthancStudyId, mod
         res.end();
         return;
     }
-    await pipeline(Readable.fromWeb(response.body), res);
+    await pipeline(Readable.fromWeb(response.body), res, { signal });
 };
 
 const extensionForImage = (contentType = '') => {
@@ -162,76 +162,46 @@ const extensionForImage = (contentType = '') => {
     return 'jpg';
 };
 
-const exportRenderedImagesZip = async ({ orthancUrl, auth, orthancStudyId, study, filename, res }) => {
-    const studyInfo = await fetchOrthancJson(orthancUrl, auth, `/studies/${encodeURIComponent(orthancStudyId)}`);
-    const seriesIds = Array.isArray(studyInfo.Series) ? studyInfo.Series : [];
-    const files = [{
-        name: 'README.txt',
-        data: [
-            'VIARA PACS rendered image export',
-            `StudyInstanceUID: ${study.study_instance_uid || ''}`,
-            `Accession: ${study.order_number || ''}`,
-            'Images are rendered previews for review/sharing. Use the DICOM export for diagnostic fidelity.',
-            ''
-        ].join('\r\n')
-    }];
-    const manifest = {
-        exportedAt: new Date().toISOString(),
-        format: 'images',
-        studyInstanceUid: study.study_instance_uid || null,
-        accessionNumber: study.order_number || null,
-        examId: study.exam_id || null,
-        series: []
-    };
-
-    for (let s = 0; s < seriesIds.length; s += 1) {
-        const seriesId = seriesIds[s];
-        const seriesInfo = await fetchOrthancJson(orthancUrl, auth, `/series/${encodeURIComponent(seriesId)}`);
-        const seriesNumber = seriesInfo.MainDicomTags?.SeriesNumber || String(s + 1).padStart(2, '0');
-        const seriesLabel = safeFileStem(seriesInfo.MainDicomTags?.SeriesDescription || `series-${seriesNumber}`, `series-${seriesNumber}`);
-        const instances = Array.isArray(seriesInfo.Instances) ? seriesInfo.Instances : [];
-        const manifestSeries = {
-            seriesId,
-            seriesNumber,
-            description: seriesInfo.MainDicomTags?.SeriesDescription || null,
-            images: []
-        };
-
-        for (let i = 0; i < instances.length; i += 1) {
-            const instanceId = instances[i];
-            const preview = await fetch(`${orthancUrl}/instances/${encodeURIComponent(instanceId)}/preview`, {
-                headers: { Authorization: auth, Accept: 'image/jpeg, image/png;q=0.9, image/bmp;q=0.8, */*;q=0.1' }
-            });
-            if (!preview.ok) continue;
-            const data = Buffer.from(await preview.arrayBuffer());
-            const contentType = preview.headers.get('content-type') || 'image/jpeg';
-            const ext = extensionForImage(contentType);
-            const imageName = `${String(i + 1).padStart(4, '0')}.${ext}`;
-            const path = `images/series-${String(seriesNumber).padStart(2, '0')}-${seriesLabel}/${imageName}`;
-            files.push({ name: path, data });
-            manifestSeries.images.push({ instanceId, file: path, contentType });
+const exportRenderedImagesZip = async ({ orthancUrl, auth, orthancStudyId, study, filename, res, signal }) => {
+    const studyInfo = await fetchOrthancJson(orthancUrl, auth, `/studies/${encodeURIComponent(orthancStudyId)}`, { signal });
+    const manifest = { exportedAt: new Date().toISOString(), format: 'images', studyInstanceUid: study.study_instance_uid, complete: false, series: [] };
+    let imageCount = 0;
+    async function* entries() {
+        yield { name: 'README.txt', data: 'Rendered previews for sharing, not diagnostic originals. Every frame is exported. A failed frame aborts this archive; use DICOM export for diagnostic fidelity.\r\n' };
+        for (const [index, seriesId] of (studyInfo.Series || []).entries()) {
+            const series = await fetchOrthancJson(orthancUrl, auth, `/series/${encodeURIComponent(seriesId)}`, { signal });
+            const number = index + 1;
+            const description = safeFileStem(series.MainDicomTags?.SeriesDescription || 'series');
+            const descriptor = { seriesId, images: [] };
+            manifest.series.push(descriptor);
+            for (const [instanceIndex, instanceId] of (series.Instances || []).entries()) {
+                const frames = await fetchOrthancJson(orthancUrl, auth, `/instances/${encodeURIComponent(instanceId)}/frames`, { signal });
+                if (!Array.isArray(frames) || !frames.length) throw new AppError('PACS instance has no renderable frames', 502);
+                for (const frame of frames) {
+                    const preview = await fetch(`${orthancUrl}/instances/${encodeURIComponent(instanceId)}/frames/${frame}/preview`, {
+                        signal, headers: { Authorization: auth, Accept: 'image/jpeg, image/png;q=0.9, image/bmp;q=0.8' }
+                    });
+                    if (!preview.ok) throw new AppError(`Image export failed for frame ${Number(frame) + 1} (${preview.status}); no complete archive was generated`, 502);
+                    const contentType = preview.headers.get('content-type') || 'image/jpeg';
+                    const name = `images/series-${number}-${description}/${String(instanceIndex + 1).padStart(4, '0')}-frame-${Number(frame) + 1}.${extensionForImage(contentType)}`;
+                    const data = Buffer.from(await preview.arrayBuffer());
+                    descriptor.images.push({ instanceId, frame: Number(frame) + 1, file: name, contentType });
+                    imageCount += 1;
+                    yield { name, data };
+                }
+            }
         }
-        manifest.series.push(manifestSeries);
+        if (!imageCount) throw new AppError('No rendered images were available', 502);
+        manifest.complete = true;
+        yield { name: 'manifest.json', data: JSON.stringify(manifest, null, 2) };
     }
-
-    if (files.length === 1) {
-        throw new AppError('No rendered images were available for this study export', 502);
-    }
-
-    files.push({
-        name: 'manifest.json',
-        data: JSON.stringify(manifest, null, 2)
-    });
-
-    const zip = createStoredZip(files);
     res.status(200);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Length', String(zip.length));
     res.setHeader('X-VIARA-PACS-Export-Format', 'images');
-    res.end(zip);
-    return { imageCount: files.length - 2, seriesCount: manifest.series.length };
+    await pipeline(Readable.from(createStoredZipStream(entries())), res, { signal });
+    return { imageCount, seriesCount: manifest.series.length, complete: true };
 };
 
 module.exports = {

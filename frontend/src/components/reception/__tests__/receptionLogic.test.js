@@ -120,6 +120,7 @@ describe('receptionLogic', () => {
         expect(canTransitionQueue('Delivered', 'Arrived')).toBe(false);
         expect(canTransitionQueue('Finalized', 'Delivered')).toBe(true);
         expect(canTransitionQueue('Ready for Exam', 'Prep Pending')).toBe(false);
+        expect(canTransitionQueue('In Exam', 'Reporting')).toBe(false);
     });
 
     it('identifies actionable cashier items when supplies are added during later workflow stages', () => {

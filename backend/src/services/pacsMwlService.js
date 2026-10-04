@@ -46,11 +46,15 @@ const toDicomDate = (value) => {
     return match ? `${match[1]}${match[2]}${match[3]}` : '';
 };
 
-const toDicomTime = (date) => {
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+const scheduledParts = (date) => {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) throw new Error('Invalid scheduled examination date');
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: process.env.PACS_TIMEZONE || 'Africa/Cairo',
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    }).formatToParts(date);
+    const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return { date: value.year + value.month + value.day, time: value.hour + value.minute + value.second };
 };
+const toDicomTime = date => scheduledParts(date).time;
 
 const toDicomSex = (gender) => {
     const g = String(gender || '').toUpperCase();
@@ -68,10 +72,12 @@ const safeDecrypt = (value) => {
     }
 };
 
-// DICOM PN: "Family^Given". Strip the caret from source fields to avoid corrupting components.
+const { toDicomPatientName } = require('../utils/arabicTransliteration');
+
+// DICOM PN: "Family^Given". Transliterates Arabic names to clean Latin characters to prevent
+// modality console Mojibake/reversals and allow technician search with standard English keyboards.
 const buildPatientName = (last, first) => {
-    const clean = (s) => String(s || '').replace(/\^/g, ' ').trim();
-    return `${clean(last)}^${clean(first)}`;
+    return toDicomPatientName(last, first, { dualGroup: true, nativeFirst: true });
 };
 
 /**
@@ -83,28 +89,31 @@ const fetchScheduledWorklist = async (pool, options = {}) => {
     const date = options.date || null;
     const modalityId = options.modalityId || null;
     const includeInvalid = Boolean(options.includeInvalid);
+    const autoProvision = Boolean(options.autoProvision);
 
-    // Auto-create missing examination rows for scheduled appointments
-    try {
-        await pool.query(`
-            INSERT INTO examinations (
-                appointment_id, patient_id, modality_id, exam_type_id,
-                status, queue_stage, order_number, priority, clinical_indication
-            )
-            SELECT a.appointment_id, a.patient_id, a.modality_id, a.exam_type_id,
-                   CASE WHEN a.status = 'Arrived' THEN 'Checked-in'::exam_status ELSE 'Scheduled'::exam_status END,
-                   CASE WHEN a.status = 'Arrived' THEN 'Arrived' ELSE 'Scheduled' END,
-                   COALESCE(a.order_number, 'ORD-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || SUBSTRING(a.appointment_id::text, 1, 6)),
-                   COALESCE(a.priority, 'Routine'),
-                   a.clinical_indication
-            FROM appointments a
-            WHERE a.status::text IN ('Scheduled', 'Confirmed', 'Arrived', 'In-Progress', 'Checked-in')
-              AND NOT EXISTS (
-                  SELECT 1 FROM examinations e WHERE e.appointment_id = a.appointment_id
-              )
-        `);
-    } catch (err) {
-        logger.warn('MWL: Auto-provisioning examinations for appointments failed silently', { error: err.message });
+    // Auto-create missing examination rows for scheduled appointments (only when generating/syncing)
+    if (autoProvision) {
+        try {
+            await pool.query(`
+                INSERT INTO examinations (
+                    appointment_id, patient_id, modality_id, exam_type_id,
+                    status, queue_stage, order_number, priority, clinical_indication
+                )
+                SELECT a.appointment_id, a.patient_id, a.modality_id, a.exam_type_id,
+                       CASE WHEN a.status = 'Arrived' THEN 'Checked-in'::exam_status ELSE 'Scheduled'::exam_status END,
+                       CASE WHEN a.status = 'Arrived' THEN 'Arrived' ELSE 'Scheduled' END,
+                       COALESCE(a.order_number, 'ORD-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || SUBSTRING(a.appointment_id::text, 1, 6)),
+                       COALESCE(a.priority, 'Routine'),
+                       a.clinical_indication
+                FROM appointments a
+                WHERE a.status::text IN ('Scheduled', 'Confirmed', 'Arrived', 'In-Progress', 'Checked-in')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM examinations e WHERE e.appointment_id = a.appointment_id
+                  )
+            `);
+        } catch (err) {
+            logger.warn('MWL: Auto-provisioning examinations for appointments failed silently', { error: err.message });
+        }
     }
 
     const values = [];
@@ -171,10 +180,13 @@ const buildWorklistBuffer = (row, serverAet) => {
     const scheduled = row.scheduled_datetime instanceof Date
         ? row.scheduled_datetime
         : new Date(row.scheduled_datetime);
+    const stationAet = String(row.scheduled_station_aet || serverAet || '').trim();
+    if (!stationAet || stationAet.length > 16 || /[\\\x00-\x1f\x7f]/.test(stationAet)) throw new Error('Scheduled station AET must contain 1-16 valid characters');
     const modality = toDicomModality(row.modality_type);
     const sopInstanceUid = DicomMetaDictionary.uid();
 
     const naturalDataset = {
+        SpecificCharacterSet: 'ISO_IR 192',
         SOPClassUID: MWL_FIND_SOP_CLASS_UID,
         SOPInstanceUID: sopInstanceUid,
 
@@ -194,8 +206,8 @@ const buildWorklistBuffer = (row, serverAet) => {
         // Scheduled Procedure Step Sequence (0040,0100)
         ScheduledProcedureStepSequence: [{
             Modality: modality,
-            ScheduledStationAETitle: row.scheduled_station_aet || serverAet,
-            ScheduledProcedureStepStartDate: toDicomDate(scheduled),
+            ScheduledStationAETitle: stationAet,
+            ScheduledProcedureStepStartDate: scheduledParts(scheduled).date,
             ScheduledProcedureStepStartTime: toDicomTime(scheduled),
             ScheduledProcedureStepDescription: row.procedure_name || 'Imaging Procedure',
             ScheduledProcedureStepID: row.order_number,
@@ -231,7 +243,7 @@ const regenerateWorklists = async (pool) => {
     fs.mkdirSync(WORKLIST_DIR, { recursive: true });
 
     const serverAet = await settingsService.get('pacs_server_aet', process.env.ORTHANC_AET || 'MiPACS2');
-    const rows = await fetchScheduledWorklist(pool);
+    const rows = await fetchScheduledWorklist(pool, { autoProvision: true });
     const expected = new Set();
     let written = 0;
 
@@ -241,7 +253,10 @@ const regenerateWorklists = async (pool) => {
         expected.add(fileName);
         try {
             const buffer = buildWorklistBuffer(row, serverAet);
-            fs.writeFileSync(path.join(WORKLIST_DIR, fileName), buffer);
+            const target = path.join(WORKLIST_DIR, fileName);
+            const temporary = target + '.' + require('crypto').randomUUID() + '.tmp';
+            try { fs.writeFileSync(temporary, buffer, { flag: 'wx', mode: 0o600 }); fs.renameSync(temporary, target); }
+            finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
             written += 1;
         } catch (err) {
             logger.error('Failed to write worklist entry', {

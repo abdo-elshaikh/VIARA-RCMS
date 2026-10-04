@@ -212,6 +212,8 @@
     "tomorrow": "الغد",
     "in2days": "بعد يومين",
     "nextWeek": "بعد أسبوع",
+    "reactivateNotice": "هذا الموعد ملغى. إعادة جدولته ستعيد تنشيطه كموعد مؤكد.",
+    "reactivateConfirm": "إعادة تنشيط وجدولة",
     "reasonPlaceholder": "وضّح سبب نقل الموعد..."
   },
   "command": {

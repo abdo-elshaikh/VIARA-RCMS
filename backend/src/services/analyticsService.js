@@ -482,7 +482,7 @@ class AnalyticsService {
             ), revenue AS (
                 SELECT doctor_id, SUM(amount) AS total_revenue FROM activity GROUP BY doctor_id
             )
-            SELECT v.full_name AS doctor_name, v.clinic_hospital AS clinic_name,
+            SELECT v.doctor_id, v.full_name AS doctor_name, v.clinic_hospital AS clinic_name,
                    v.total_exams, COALESCE(r.total_revenue, 0) AS total_revenue
             FROM volume v
             LEFT JOIN revenue r ON r.doctor_id = v.doctor_id
@@ -500,6 +500,7 @@ class AnalyticsService {
                 value: parseInt(row.value, 10)
             })),
             topDoctors: docRes.rows.map(row => ({
+                doctorId: row.doctor_id,
                 doctorName: row.doctor_name,
                 clinicName: row.clinic_name,
                 totalExams: parseInt(row.total_exams, 10),

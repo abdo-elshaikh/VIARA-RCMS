@@ -116,7 +116,7 @@ describe('reception operational shift controls', () => {
             query: jest.fn(async (sql, values) => {
                 const text = String(sql);
                 if (text === 'BEGIN' || text === 'ROLLBACK') return { rows: [] };
-                if (text.includes('SELECT * FROM reception_shift_sessions')) {
+                if (text.includes('reception_shift_sessions') && text.includes('WHERE session_id = $1')) {
                     return { rows: [{ session_id: sessionId, user_id: userId, status: 'Open', started_at: '2026-09-05T08:00:00Z' }] };
                 }
                 if (text.includes('FROM cashier_shifts')) return { rows: [] };
@@ -165,4 +165,107 @@ describe('reception operational shift controls', () => {
         expect(result.renewed).toBe(1);
         expect(result.shift.session_id).toBe(sessionId);
     });
+
+    test('rejects opening reception shift if attendance clock-in is missing', async () => {
+        const client = {
+            query: jest.fn(async (sql) => {
+                const text = String(sql);
+                if (text === 'BEGIN' || text === 'ROLLBACK' || text.includes('pg_advisory_xact_lock')) return { rows: [] };
+                if (text.includes("WHERE user_id = $1 AND status = 'Open'")) return { rows: [] };
+                if (text.includes('LOWER(desk_identifier)')) return { rows: [] };
+                if (text.includes('FROM attendance_logs')) return { rows: [] }; // No active attendance
+                throw new Error(`Unexpected SQL: ${text}`);
+            }),
+            release: jest.fn(),
+        };
+        const db = { connect: jest.fn(async () => client) };
+        const next = jest.fn();
+
+        await openReceptionShift(db)({
+            user,
+            body: { desk: 'شباك 1', scope: 'all' },
+            ip: '127.0.0.1',
+        }, {}, next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            statusCode: 403,
+            code: 'ATTENDANCE_REQUIRED_BEFORE_SHIFT',
+        }));
+        expect(client.release).toHaveBeenCalled();
+    });
+
+    test('rejects opening reception shift if active attendance session is stale (> 24 hours)', async () => {
+        const staleClockIn = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+        const client = {
+            query: jest.fn(async (sql) => {
+                const text = String(sql);
+                if (text === 'BEGIN' || text === 'ROLLBACK' || text.includes('pg_advisory_xact_lock')) return { rows: [] };
+                if (text.includes("WHERE user_id = $1 AND status = 'Open'")) return { rows: [] };
+                if (text.includes('LOWER(desk_identifier)')) return { rows: [] };
+                if (text.includes('FROM attendance_logs')) {
+                    return { rows: [{ log_id: 'log-stale', clock_in: staleClockIn, shift_id: null }] };
+                }
+                throw new Error(`Unexpected SQL: ${text}`);
+            }),
+            release: jest.fn(),
+        };
+        const db = { connect: jest.fn(async () => client) };
+        const next = jest.fn();
+
+        await openReceptionShift(db)({
+            user,
+            body: { desk: 'شباك 1', scope: 'all' },
+            ip: '127.0.0.1',
+        }, {}, next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            statusCode: 403,
+            code: 'ATTENDANCE_STALE_SESSION',
+        }));
+        expect(client.release).toHaveBeenCalled();
+    });
+
+    test('successfully opens reception shift when valid attendance session exists', async () => {
+        const freshClockIn = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const openedShift = {
+            session_id: sessionId,
+            user_id: userId,
+            desk_identifier: 'شباك 1',
+            scope: 'all',
+            room_ids: [],
+            modality_ids: [],
+            status: 'Open',
+        };
+        const client = {
+            query: jest.fn(async (sql) => {
+                const text = String(sql);
+                if (text === 'BEGIN' || text === 'COMMIT' || text.includes('pg_advisory_xact_lock')) return { rows: [] };
+                if (text.includes("WHERE user_id = $1 AND status = 'Open'")) return { rows: [] };
+                if (text.includes('LOWER(desk_identifier)')) return { rows: [] };
+                if (text.includes('FROM attendance_logs')) {
+                    return { rows: [{ log_id: 'log-1', clock_in: freshClockIn, shift_id: 'shift-1' }] };
+                }
+                if (text.includes('INSERT INTO reception_shift_sessions')) {
+                    return { rows: [openedShift] };
+                }
+                if (text.includes('UPDATE reception_work_items')) return { rows: [] };
+                throw new Error(`Unexpected SQL: ${text}`);
+            }),
+            release: jest.fn(),
+        };
+        const db = { connect: jest.fn(async () => client) };
+        const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+        const next = jest.fn();
+
+        await openReceptionShift(db)({
+            user,
+            body: { desk: 'شباك 1', scope: 'all' },
+            ip: '127.0.0.1',
+        }, res, next);
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(res.json).toHaveBeenCalledWith(openedShift);
+        expect(client.release).toHaveBeenCalled();
+    });
 });
+

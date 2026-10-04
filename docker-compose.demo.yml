@@ -1,0 +1,58 @@
+# VIARA — Demo stack overlay
+#
+# Purpose
+# -------
+# Lets a second, third, ... VIARA stack run on a host that already runs the main
+# stack. The blocker is that `docker-compose.yml` pins `container_name` on all
+# seven services. A fixed container name defeats Compose project namespacing:
+# `docker compose -p viara-demo-acme up` still asks Docker for a container
+# literally named `VIARA_db`, which collides with the running main stack.
+#
+# `!reset` (Compose v2.24+) removes those keys so containers fall back to the
+# standard `<project>-<service>-<index>` naming and are namespaced by `-p`.
+#
+# The main `docker-compose.yml` is deliberately NOT modified. The one exception
+# is `ORTHANC_REST_PORT`, which was made a variable there (default unchanged at
+# 8042) so demo stacks can be given their own REST port.
+#
+# Usage
+# -----
+#   docker compose -p viara-demo-acme \
+#     -f docker-compose.yml -f docker-compose.demo.yml \
+#     --env-file .env.demo-acme up -d
+#
+# Never use this overlay for the production stack.
+# See docs/adr-001-demo-isolation.md.
+
+services:
+  postgres:
+    container_name: !reset null
+
+  clamav:
+    container_name: !reset null
+
+  backend:
+    container_name: !reset null
+    environment:
+      NODE_ENV: production
+      LICENSE_KEY: ${LICENSE_KEY:?A signed trial license is required for demo deployments}
+
+  frontend:
+    container_name: !reset null
+
+  portal:
+    container_name: !reset null
+
+  orthanc:
+    container_name: !reset null
+
+  ohif:
+    container_name: !reset null
+
+# `pacs_ai_worker` is deliberately NOT listed here. It is gated behind
+# `profiles: ["ai"]` in the base file, and naming a profile-gated service in an
+# override pulls it into the default (no-profile) set — where it has no build
+# context in scope, and `docker compose config` fails with
+#   "service \"pacs_ai_worker\" has neither an image nor a build context specified".
+# Demo stacks do not need the optional AI worker. If one ever does, add
+# `profiles: ["ai"]` alongside `container_name: !reset null` here.

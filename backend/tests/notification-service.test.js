@@ -3,7 +3,8 @@ jest.mock('../src/services/realtimeService', () => ({
     sendToRole: jest.fn(),
     sendToPatient: jest.fn(),
     sendToDoctor: jest.fn(),
-    broadcastToStaff: jest.fn()
+    broadcastToStaff: jest.fn(),
+    broadcastToStaffMatching: jest.fn()
 }));
 
 jest.mock('../src/utils/crypto', () => ({
@@ -97,6 +98,27 @@ describe('notification realtime routing', () => {
         }));
         expect(payload).not.toHaveProperty('recipient');
         expect(payload).not.toHaveProperty('content');
+    });
+
+    test('routes legacy Global in-app notifications only to inbox-authorized roles', async () => {
+        const notification = {
+            notification_id: 'n-global',
+            channel: 'InApp',
+            audience_type: 'Global',
+            recipient: 'v2:all-staff',
+            subject: 'v2:System update',
+            content: 'v2:Maintenance'
+        };
+
+        await notifyClients(buildDb(notification), 'n-global');
+
+        expect(realtimeService.sendToRole).toHaveBeenNthCalledWith(
+            1, 'Admin', 'NEW_NOTIFICATION', expect.objectContaining({ notification_id: 'n-global' })
+        );
+        expect(realtimeService.sendToRole).toHaveBeenNthCalledWith(
+            2, 'Developer', 'NEW_NOTIFICATION', expect.objectContaining({ notification_id: 'n-global' })
+        );
+        expect(realtimeService.broadcastToStaff).not.toHaveBeenCalledWith('NEW_NOTIFICATION', expect.anything());
     });
 });
 

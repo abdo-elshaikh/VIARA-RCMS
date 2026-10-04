@@ -90,8 +90,7 @@ describe('BillingTab Date-Scoping', () => {
             expect.any(Object)
         );
 
-        expect(screen.getByText('2026-09-02')).toBeInTheDocument();
-        expect(screen.getByText('بيانات يوم:')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('2026-09-02')).toBeInTheDocument();
         expect(screen.getAllByText('INV-2026-001').length).toBeGreaterThan(0);
     });
 
@@ -115,17 +114,17 @@ describe('BillingTab Date-Scoping', () => {
         render(<BillingTab selectedDate="2026-09-02" />);
 
         // Switch to Refunds Hub
-        const refundsTab = screen.getByRole('button', { name: /طلبات واستردادات المدفوعات/i });
+        const refundsTab = screen.getByRole('button', { name: /مركز المرتجعات والموافقات|الاستردادات|طلبات واستردادات/i });
         fireEvent.click(refundsTab);
         expect(screen.getByText('قائمة اعتماد الاستردادات')).toBeInTheDocument();
 
         // Switch to Corporate & Insurance Tab
-        const insuranceTab = screen.getByRole('button', { name: /فواتير ومطالبات التأمين/i });
+        const insuranceTab = screen.getByRole('button', { name: /التأمين/i });
         fireEvent.click(insuranceTab);
         expect(screen.getByText('إجمالي مطالبات التأمين')).toBeInTheDocument();
 
         // Switch to Financial Statement Tab
-        const statementTab = screen.getByRole('button', { name: /كشف الإغلاق والتقرير المالي/i });
+        const statementTab = screen.getByRole('button', { name: /كشف الإغلاق/i });
         fireEvent.click(statementTab);
         expect(screen.getByText('كشف الإقفال والتسوية المالية اليومية')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /طباعة كشف الإقفال اليومي/i })).toBeInTheDocument();
@@ -147,6 +146,17 @@ describe('BillingTab Date-Scoping', () => {
         const tableButton = screen.getByRole('button', { name: 'جدول' });
         fireEvent.click(tableButton);
         expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+
+    it('filters invoices table by self-pay category correctly', () => {
+        render(<BillingTab selectedDate="2026-09-02" />);
+
+        const selfPayButtons = screen.getAllByRole('button', { name: /حساب خاص/i });
+        fireEvent.click(selfPayButtons[0]);
+
+        expect(screen.getByRole('table')).toBeInTheDocument();
+        expect(screen.getAllByText('INV-2026-001').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('حساب خاص').length).toBeGreaterThan(0);
     });
 });
 

@@ -444,7 +444,7 @@ async function executeLogQuery(db, rawEntry) {
     }
   };
 
-  const runWithFallback = async (query, values, fallback) => {
+  const runWithFallback = async (query, values, fallback, retries = 2) => {
     try {
       await createSavepoint();
       const logId = await tryInsert(db, query, values);
@@ -452,12 +452,16 @@ async function executeLogQuery(db, rawEntry) {
       return logId;
     } catch (err) {
       await rollbackSavepoint();
+      if (retries > 0 && ['40P01', '40001', '55P03'].includes(err.code)) {
+        await new Promise(res => setTimeout(res, 30 * (3 - retries)));
+        return runWithFallback(query, values, fallback, retries - 1);
+      }
       if (fallback && ['42703', '42P01'].includes(err.code)) {
         return fallback();
       }
       await releaseSavepoint();
-       logger.error('AuditService: Logging failed', { error: err.message, action: entry.action });
-       return null;
+      logger.error('AuditService: Logging failed', { error: err.message, action: entry.action });
+      return null;
     }
   };
 

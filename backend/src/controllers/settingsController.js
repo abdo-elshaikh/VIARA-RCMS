@@ -11,6 +11,7 @@ const {
     testDatabaseConfigSchema
 } = require('../schemas/settingsSchema');
 const settingsService = require('../services/settingsService');
+const portalBuilderService = require('../services/portalBuilderService');
 const aiReportService = require('../services/aiReportService');
 const { decrypt, encrypt } = require('../utils/crypto');
 const { getPacsAiConfig } = require('../services/pacsAiAnalysisService');
@@ -20,6 +21,7 @@ const {
     normalizeOpenAiCompatibleChatUrl
 } = require('../services/cloudVisionService');
 const aiProfileService = require('../services/aiProfileService');
+const demoSeedService = require('../services/demoSeedService');
 const { GEMINI_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL } = require('../services/aiModelPolicy');
 const { validateCustomAiEndpointUrl } = require('../utils/customAiEndpointUrl');
 
@@ -270,11 +272,14 @@ const getCenterSettings = (db) => async (req, res, next) => {
             currency: allSettings['center.currency'] || '',
             vat_enabled: parseBool(allSettings['center.vat_enabled'], false),
             vat_rate: Number.parseFloat(allSettings['center.vat_rate'] || '0') || 0,
+            urgent_priority_fee: Number.parseFloat(allSettings['center.urgent_priority_fee'] || '0') || 0,
+            emergency_priority_fee: Number.parseFloat(allSettings['center.emergency_priority_fee'] || '0') || 0,
             showPoweredByViara: parseBool(allSettings['center.show_powered_by_viara'], true),
             working_hours: parseJSONSafe(allSettings['center.working_hours']),
             print_settings: parseJSONSafe(allSettings['center.print_settings']),
-            homepage_settings: parseJSONSafe(allSettings['center.homepage_settings'])
-            ,workstation_presets: parseJSONSafe(allSettings['center.workstation_presets']) || []
+            homepage_settings: parseJSONSafe(allSettings['center.homepage_settings']),
+            branches: parseJSONSafe(allSettings['center.branches']) || [],
+            workstation_presets: parseJSONSafe(allSettings['center.workstation_presets']) || []
         };
 
         res.json(data);
@@ -285,6 +290,8 @@ const getCenterSettings = (db) => async (req, res, next) => {
 
 const getPublicCenterSettings = (db) => async (req, res, next) => {
     try {
+        const publishedHome = await portalBuilderService.readPublic(db, req.get('X-Portal-Preview'));
+        res.set('Cache-Control', 'no-store');
         const allSettings = await settingsService.getAll();
         const parseJSONSafe = (str) => {
             if (!str) return null;
@@ -319,7 +326,7 @@ const getPublicCenterSettings = (db) => async (req, res, next) => {
             portal_welcome_message_ar: allSettings['center.portal_welcome_message_ar'] || '',
             showPoweredByViara: parseBool(allSettings['center.show_powered_by_viara'], true),
             working_hours: parseJSONSafe(allSettings['center.working_hours']),
-            homepage_settings: parseJSONSafe(allSettings['center.homepage_settings'])
+            homepage_settings: publishedHome
         });
     } catch (error) {
         next(error);
@@ -400,6 +407,12 @@ const updateCenterSettings = (db) => async (req, res, next) => {
         if (data.vat_rate !== undefined) {
             updates['center.vat_rate'] = data.vat_rate === null ? '' : String(data.vat_rate);
         }
+        if (data.urgent_priority_fee !== undefined) {
+            updates['center.urgent_priority_fee'] = data.urgent_priority_fee === null ? '0' : String(data.urgent_priority_fee);
+        }
+        if (data.emergency_priority_fee !== undefined) {
+            updates['center.emergency_priority_fee'] = data.emergency_priority_fee === null ? '0' : String(data.emergency_priority_fee);
+        }
         if (data.showPoweredByViara !== undefined) {
             updates['center.show_powered_by_viara'] = String(data.showPoweredByViara !== false);
         }
@@ -411,6 +424,18 @@ const updateCenterSettings = (db) => async (req, res, next) => {
         }
         if (data.homepage_settings !== undefined) {
             updates['center.homepage_settings'] = JSON.stringify(data.homepage_settings);
+        }
+        if (data.branches !== undefined) {
+            updates['center.branches'] = JSON.stringify(data.branches || []);
+            const mainBranch = Array.isArray(data.branches) ? (data.branches.find(b => b.isMain) || data.branches[0]) : null;
+            if (mainBranch) {
+                if (mainBranch.id && data.branch_id === undefined) updates['center.branch_id'] = String(mainBranch.id);
+                if (mainBranch.code && data.branch_code === undefined) updates['center.branch_code'] = String(mainBranch.code);
+                if (mainBranch.name && data.branch_name === undefined) updates['center.branch'] = String(mainBranch.name);
+                if (mainBranch.nameAr && data.branch_name_ar === undefined) updates['center.branch_name_ar'] = String(mainBranch.nameAr);
+                if (mainBranch.displayName && data.branch_display_name === undefined) updates['center.branch_display_name'] = String(mainBranch.displayName);
+                if (mainBranch.displayNameAr && data.branch_display_name_ar === undefined) updates['center.branch_display_name_ar'] = String(mainBranch.displayNameAr);
+            }
         }
         if (data.workstation_presets !== undefined) {
             updates['center.workstation_presets'] = JSON.stringify(data.workstation_presets || []);
@@ -485,8 +510,9 @@ const updateCenterSettings = (db) => async (req, res, next) => {
             showPoweredByViara: allSettings['center.show_powered_by_viara'] !== 'false',
             working_hours: parseJSONSafe(allSettings['center.working_hours']),
             print_settings: parseJSONSafe(allSettings['center.print_settings']),
-            homepage_settings: parseJSONSafe(allSettings['center.homepage_settings'])
-            ,workstation_presets: parseJSONSafe(allSettings['center.workstation_presets']) || []
+            homepage_settings: parseJSONSafe(allSettings['center.homepage_settings']),
+            branches: parseJSONSafe(allSettings['center.branches']) || [],
+            workstation_presets: parseJSONSafe(allSettings['center.workstation_presets']) || []
         });
     } catch (error) {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
@@ -1026,6 +1052,43 @@ const updateGovernancePolicies = () => async (req, res, next) => {
     }
 };
 
+const seedDemoData = (pool) => async (req, res, next) => {
+    try {
+        const actorId = req.user?.userId || req.user?.id || null;
+        const result = await demoSeedService.seedDemoData(pool, { actorId });
+        res.json({
+            success: true,
+            ...result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const clearDemoData = (pool) => async (req, res, next) => {
+    try {
+        const result = await demoSeedService.clearDemoData(pool);
+        res.json({
+            success: true,
+            ...result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getDemoStatus = (pool) => async (req, res, next) => {
+    try {
+        const status = await demoSeedService.getDemoStatus(pool);
+        res.json({
+            success: true,
+            ...status
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getCenterSettings,
     getPublicCenterSettings,
@@ -1046,5 +1109,8 @@ module.exports = {
     createAiProfile,
     updateAiProfile,
     activateAiProfile,
-    deleteAiProfile
+    deleteAiProfile,
+    seedDemoData,
+    clearDemoData,
+    getDemoStatus
 };

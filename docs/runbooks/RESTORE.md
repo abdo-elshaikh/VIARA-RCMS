@@ -79,39 +79,72 @@ entries — you will compare after restore.
 
 ---
 
-## 4. Restore into the target database
+## 4. Automated One-Command Restore (Recommended)
 
-### Option A — Docker deployment (recommended)
+In production package or docker deployments, use the unified restore runner:
 
-```powershell
-# Copy the decrypted dump into the postgres container
-docker cp pre-restore.decrypt.dump <VIARA_db container>:/tmp/restore.dump
+### Linux / Docker Host:
+```bash
+# List available backup archives
+./scripts/restore.sh --list
 
-# Drop existing connections, then restore.
-# WARNING: --clean drops database objects before recreating them.
-docker exec -it <VIARA_db container> psql -U VIARA -d VIARA `
-  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='VIARA' AND pid <> pg_backend_pid();"
+# Verify backup and PACS integrity without modifying database (Dry-Run)
+./scripts/restore.sh VIARA_pg_20261005_uuid.dump.enc --verify-only
 
-docker exec -it <VIARA_db container> pg_restore `
-  --username VIARA --dbname VIARA `
-  --clean --if-exists --no-owner --no-privileges `
-  --jobs 4 /tmp/restore.dump
+# Execute full automated restore (PostgreSQL + Orthanc PACS)
+./scripts/restore.sh VIARA_pg_20261005_uuid.dump.enc --confirm
 ```
 
-### Option B — Host psql
+### Windows Host:
+```bat
+REM List available backups
+scripts\restore.bat --list
 
-```powershell
-$env:PGPASSWORD = '<db-password>'
-pg_restore --clean --if-exists --no-owner --no-privileges --jobs 4 `
-  --dbname "$env:DATABASE_URL" pre-restore.decrypt.dump
+REM Verify backup without modifying database (Dry-Run)
+scripts\restore.bat VIARA_pg_20261005_uuid.dump.enc --verify-only
+
+REM Execute full automated restore (PostgreSQL + Orthanc PACS)
+scripts\restore.bat VIARA_pg_20261005_uuid.dump.enc --confirm
 ```
 
-`pg_restore` exit code 0 = success. Non-zero with `--jobs` can still be a
-partial success — check §5 counts, and re-run without `--jobs` if unsure.
+The script automatically:
+1. Validates the filename and checks AES-256-GCM authentication tags.
+2. Decrypts to a transient in-memory/restricted temporary file.
+3. Tests dump table TOC via `pg_restore --list`.
+4. Decrypts companion PACS archive (`.pacs.zip.enc`), verifies SHA-256 hashes against `manifest.json`.
+5. Executes `pg_restore` against the database container with `--clean --if-exists --no-owner --no-privileges`.
+6. Restores all DICOM instances to Orthanc via authenticated REST API.
+7. Automatically cleans up all temporary decrypted files in `finally` blocks.
 
 ---
 
-## 5. Post-restore verification (mandatory)
+## 5. Manual CLI Step-by-Step Restore (Alternative)
+
+### Option A — Direct Node Runner
+```bash
+# Inside backend container or backend folder:
+node scripts/restorePostgresBackup.js --file=VIARA_pg_20261005_uuid.dump.enc --confirm
+```
+
+### Option B — Raw pg_restore
+```bash
+# 1. Decrypt dump
+node scripts/decryptBackup.js backups/VIARA_pg_20261005_uuid.dump.enc /tmp/restore.dump
+
+# 2. Terminate active sessions & restore
+psql -U viara -d viara -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='viara' AND pid <> pg_backend_pid();"
+pg_restore -U viara -d viara --clean --if-exists --no-owner --no-privileges /tmp/restore.dump
+
+# 3. Restore PACS companion (if exists)
+node scripts/restorePacsBackup.js --file=backups/VIARA_pg_20261005_uuid.pacs.zip.enc --target=http://orthanc:8042
+
+# 4. Remove unencrypted temporary dump
+rm -f /tmp/restore.dump
+```
+
+---
+
+## 6. Post-restore verification (mandatory)
 
 ```powershell
 # Core row counts — compare with pre-incident expectations / audit trail
@@ -128,47 +161,22 @@ docker exec <VIARA_db container> psql -U VIARA -d VIARA -c "
   SELECT COUNT(*) AS applied_migrations FROM schema_migrations;"
 
 # Audit chain integrity must hold across the restored history
-# (in-app: Admin → Audit → "Verify integrity", or:)
 docker exec <VIARA_db container> psql -U VIARA -d VIARA -c "
   SELECT COUNT(*) FROM system_logs WHERE prev_hash IS NOT NULL AND is_valid = FALSE;"
 ```
 
 Then start the backend and smoke-test: login, patient search (blind indexes),
-patient detail (field decryption), invoice list, audit log page.
-
-> If patient names render as garbage or searches return nothing, the
-> `ENCRYPTION_KEY`/`BLIND_INDEX_KEY` in the target `.env` do not match the keys
-> that were live when the backup was taken. Obtain the correct keys from the
-> secret store (this is exactly why key rotation must follow
-> `docs/runbooks/KEY_ROTATION.md`).
+patient detail (field decryption), invoice list, audit log page, and PACS study viewer.
 
 ---
 
-## 6. Known gaps — do not discover these during an incident
+## 7. Known Architectural Invariants
 
-1. **Orthanc DICOM storage is not in these backups.** `pg_dump` covers the RIS
-   database only. The `orthanc_storage` volume (all images) must be restored
-   from volume snapshots / object storage separately, and the Orthanc index
-   (currently SQLite inside the same volume) comes back with it.
-2. **No stored checksum.** The dump's SHA-256 is logged at creation time but
-   not persisted as a sidecar; §3's `pg_restore --list` + GCM tag is the
-   practical integrity check today.
-3. **RTO estimate (~1–2h)** assumes artifacts are on-host. If offsite S3
-   replication is configured, add download time for the artifact size.
+1. **Integrated PACS Companion:** `createPostgresBackup` automatically bundles a `.pacs.zip.enc` companion containing all Orthanc DICOM instances verified against a SHA-256 manifest. Restoring with `./scripts/restore.sh --confirm` restores both database state and DICOM imagery in lockstep.
+2. **Authenticated Encryption:** All backups use AES-256-GCM (`VIARABKP2` header) with 96-bit random IVs and 128-bit authentication tags. Tampered dumps fail immediately at decryption time before touching the database.
+3. **Encryption Keys:** If patient names or encrypted fields render encrypted or searches fail after restore, ensure the `ENCRYPTION_KEY` and `BLIND_INDEX_KEY` in the target `.env` match the production secrets at the time of backup creation (see `docs/runbooks/KEY_ROTATION.md`).
+4. **Maintenance Window:** In-app `/api/backups/restore` intentionally blocks PostgreSQL `.dump` and `.dump.enc` restores to prevent connection drops and race conditions during production operations.
 
 ---
 
-## 7. Restore drill (quarterly, staging only)
-
-1. Create a scratch database (`VIARA_drill`).
-2. Take yesterday's encrypted artifact and run §3–§5 against the scratch DB.
-3. Record elapsed time (this is your real RTO), any errors, and row-count
-   deltas; file issues for anything that was not one command.
-4. Drop the scratch database and delete the decrypted dump immediately —
-   decrypted artifacts contain PHI.
-
----
-
-*Related: `docs/runbooks/KEY_ROTATION.md` (key rotation before/after restore),
-`backend/scripts/decryptBackup.js` (decrypt tool),
-`backend/src/services/postgresBackupService.js` (backup creation).*
+*Related: `docs/DISASTER_RECOVERY_RUNBOOK_AR.md`, `viara-production-package/scripts/restore.sh`, `backend/scripts/restorePostgresBackup.js`, `backend/src/services/postgresBackupService.js`.*

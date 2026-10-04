@@ -20,11 +20,11 @@ const BUCKETS = [
     { label: 'Over 90 days', key: '90_plus', color: 'bg-rose-500', surface: 'border-rose-200/70 bg-rose-50/70 dark:border-rose-500/20 dark:bg-rose-500/10', text: 'text-rose-800 dark:text-rose-300' }
 ];
 
-const AgingReceivables = () => {
+const AgingReceivables = ({ asOfDate }) => {
     const { t, i18n } = useTranslation('workspace');
     const isAr = i18n.language?.startsWith('ar');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
-    const { data: aging, isLoading, isError } = useGetReceivablesAgingQuery();
+    const { data: aging, isLoading, isError } = useGetReceivablesAgingQuery(asOfDate ? { asOfDate } : undefined);
 
     if (isLoading) {
         return (

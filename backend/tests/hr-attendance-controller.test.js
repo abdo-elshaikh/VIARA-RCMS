@@ -19,6 +19,7 @@ const {
     updateAttendanceSchema, manualAttendanceSchema, updateLeaveBalanceSchema,
     createAttendancePermissionSchema, updateAttendancePermissionStatusSchema, updateAttendanceSettingsSchema
 } = require('../src/schemas/hrSchema');
+const { invalidateAttendanceConfigCache } = require('../src/services/attendanceConfigCache');
 
 const USER_ID = '00000000-0000-4000-8000-000000000001';
 
@@ -55,6 +56,7 @@ const makeDb = (client) => ({
 describe('HR attendance controller', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        invalidateAttendanceConfigCache();
     });
 
     test('attendance corrections require a reason and ordered timestamps', () => {

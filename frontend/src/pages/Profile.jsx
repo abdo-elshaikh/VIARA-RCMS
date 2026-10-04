@@ -1,250 +1,294 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import {
     Briefcase,
-    Calendar,
+    Building2,
     CalendarOff,
     Camera,
     CheckCircle2,
     Clock,
     KeyRound,
     Mail,
+    Shield,
     ShieldCheck,
+    Sparkles,
     UserRound,
+    Receipt,
 } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
-import { useSearchParams } from 'react-router-dom';
 import ProfileSettings from '../components/settings/ProfileSettings';
+import PageHeader from '../components/ui/PageHeader';
 import SecuritySettings from '../components/settings/SecuritySettings';
 import LeaveManager from '../components/hr/LeaveManager';
 import StaffShiftSchedule from '../components/hr/attendance/StaffShiftSchedule';
+import ReceptionSupervisionProfile from '../components/hr/ReceptionSupervisionProfile';
+import StaffSupervisionProfile from '../components/hr/StaffSupervisionProfile';
+import EmployeePayrollPenalties from '../components/hr/EmployeePayrollPenalties';
 import { selectCurrentUser, updateCurrentUser } from '../store/authSlice';
-import { useUpdateProfileMutation } from '../store/api';
-import PageHeader from '../components/ui/PageHeader';
+import { useUpdateProfileMutation, useGetReceptionSupervisorAssignmentsQuery, useGetStaffSupervisorAssignmentsQuery } from '../store/api';
 
-/* ─── Avatar ──────────────────────────────────────────────────────── */
-const ProfileAvatar = ({ currentUser, initials, isRtl }) => {
+/* ─── Role Tone Map ─────────────────────────────────────────────────── */
+const ROLE_THEMES = {
+    Receptionist: {
+        badge: 'bg-teal-50 text-teal-700 border-teal-200/80 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800',
+        ring: 'ring-teal-500/20',
+        gradient: 'from-teal-600 to-cyan-700',
+    },
+    Nurse: {
+        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800',
+        ring: 'ring-emerald-500/20',
+        gradient: 'from-emerald-600 to-teal-700',
+    },
+    Technician: {
+        badge: 'bg-blue-50 text-blue-700 border-blue-200/80 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800',
+        ring: 'ring-blue-500/20',
+        gradient: 'from-blue-600 to-indigo-700',
+    },
+    Radiologist: {
+        badge: 'bg-purple-50 text-purple-700 border-purple-200/80 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800',
+        ring: 'ring-purple-500/20',
+        gradient: 'from-purple-600 to-violet-700',
+    },
+    Admin: {
+        badge: 'bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800',
+        ring: 'ring-rose-500/20',
+        gradient: 'from-rose-600 to-red-700',
+    },
+    HR: {
+        badge: 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800',
+        ring: 'ring-amber-500/20',
+        gradient: 'from-amber-600 to-orange-700',
+    },
+    Default: {
+        badge: 'bg-slate-100 text-slate-700 border-slate-200/80 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+        ring: 'ring-slate-500/20',
+        gradient: 'from-slate-700 to-slate-900',
+    },
+};
+
+/* ─── Modern Interactive Profile Avatar ──────────────────────────────── */
+const ModernProfileAvatar = ({ currentUser, initials, onAvatarChange, isRtl }) => {
     const fileRef = useRef(null);
     const [imgFailed, setImgFailed] = useState(false);
-    const { t } = useTranslation(['settings', 'common']);
+    const theme = ROLE_THEMES[currentUser?.role] || ROLE_THEMES.Default;
+
+    const handleFileChange = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            toast.error(isRtl ? 'يرجى اختيار ملف صورة صالح' : 'Please select a valid image file');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            if (event.target?.result && onAvatarChange) {
+                onAvatarChange(event.target.result);
+            }
+        };
+        reader.readAsDataURL(file);
+    };
 
     return (
-        <div className="relative shrink-0">
-            <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-tr from-slate-900 via-teal-900 to-emerald-950 text-2xl font-black text-white shadow-lg ring-2 ring-white dark:ring-slate-800 sm:h-24 sm:w-24">
+        <div className="relative shrink-0 group">
+            <div className={`relative flex h-24 w-24 sm:h-28 sm:w-28 items-center justify-center overflow-hidden rounded-3xl bg-gradient-to-br ${theme.gradient} text-2xl sm:text-3xl font-black text-white shadow-xl ring-4 ring-white/90 dark:ring-slate-800/90 transition-transform duration-300 group-hover:scale-[1.02]`}>
                 {currentUser?.avatarUrl && !imgFailed ? (
                     <img
                         src={currentUser.avatarUrl}
-                        alt={t('settings.profilePage.avatarAlt', { defaultValue: isRtl ? 'صورة الملف الشخصي' : 'Profile picture' })}
+                        alt={currentUser?.fullName || 'Avatar'}
                         className="h-full w-full object-cover"
                         onError={() => setImgFailed(true)}
                     />
                 ) : (
-                    initials || <UserRound size={30} aria-hidden="true" />
+                    <span>{initials || <UserRound size={36} />}</span>
                 )}
+
+                {/* Hover Camera Overlay */}
+                <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    aria-label={isRtl ? 'تغيير الصورة الشخصية' : 'Change profile picture'}
+                    className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer text-white backdrop-blur-[2px]"
+                >
+                    <Camera size={20} className="mb-1" />
+                    <span className="text-[10px] font-bold">
+                        {isRtl ? 'تغيير الصورة' : 'Change'}
+                    </span>
+                </button>
             </div>
-            {/* Upload hint overlay */}
-            <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                aria-label={t('settings.profilePage.changeAvatar', { defaultValue: isRtl ? 'تغيير الصورة الشخصية' : 'Change profile picture' })}
-                className="absolute inset-0 flex items-end justify-center overflow-hidden rounded-2xl opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100"
-            >
-                <span className="flex w-full items-center justify-center gap-1.5 bg-slate-900/70 py-1.5 text-[10px] font-bold text-white backdrop-blur-sm">
-                    <Camera size={12} aria-hidden="true" />
-                    {isRtl ? 'تغيير' : 'Change'}
-                </span>
-            </button>
-            <input ref={fileRef} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden="true" />
-            {/* Online dot */}
+
+            <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="hidden"
+            />
+
+            {/* Online Status Indicator */}
             <span
-                aria-hidden="true"
-                className="absolute -bottom-0.5 -end-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900"
+                className="absolute -bottom-1 -end-1 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 ring-4 ring-white dark:ring-slate-900 shadow-sm"
+                title={isRtl ? 'الحساب متصل ونشط' : 'Online & Active'}
             >
-                <span className="h-2 w-2 rounded-full bg-white" />
+                <span className="h-2.5 w-2.5 rounded-full bg-white animate-pulse" />
             </span>
         </div>
     );
 };
 
-/* ─── Stat fact pill ──────────────────────────────────────────────── */
-const ProfileFact = ({ icon: Icon, label, value, ltr = false, tone = 'default' }) => {
-    const toneClasses = {
-        default: 'border-slate-200/80 bg-slate-50/80 dark:border-slate-800/80 dark:bg-slate-950/40',
-        emerald: 'border-emerald-200/70 bg-emerald-50/60 dark:border-emerald-800/50 dark:bg-emerald-950/30',
-        amber: 'border-amber-200/70  bg-amber-50/60  dark:border-amber-800/50  dark:bg-amber-950/30',
-        blue: 'border-[rgba(var(--VIARA-accent-rgb),0.26)] bg-[var(--VIARA-accent-soft)] dark:border-[rgba(var(--VIARA-accent-rgb),0.32)] dark:bg-[rgba(var(--VIARA-accent-rgb),0.14)]',
-    };
-    const iconTones = {
-        default: 'text-slate-400 dark:text-slate-500',
-        emerald: 'text-emerald-600 dark:text-emerald-400',
-        amber: 'text-amber-600 dark:text-amber-400',
-        blue: 'text-[var(--VIARA-accent)] dark:text-[var(--VIARA-accent-text)]',
-    };
-    return (
-        <div className={`min-w-0 rounded-2xl border p-3 ${toneClasses[tone] ?? toneClasses.default}`}>
-            <div className={`flex items-center gap-2 text-[11px] font-bold ${iconTones[tone] ?? iconTones.default}`}>
-                <Icon size={13} aria-hidden="true" />
-                <span className="text-slate-500 dark:text-slate-400">{label}</span>
-            </div>
-            <p dir={ltr ? 'ltr' : 'auto'} className="mt-1.5 truncate text-xs font-black text-slate-900 dark:text-white">
-                {value || '—'}
-            </p>
-        </div>
-    );
-};
-
-/* ─── Section tab card ────────────────────────────────────────────── */
-const SectionTab = ({ section, active, disabled, onClick }) => {
-    const Icon = section.icon;
-    return (
-        <button
-            type="button"
-            onClick={() => onClick(section.id)}
-            disabled={disabled}
-            aria-current={active ? 'page' : undefined}
-            className={`flex items-start gap-3.5 rounded-2xl border p-4 text-start transition-all disabled:cursor-not-allowed disabled:opacity-40 ${active
-                    ? 'border-emerald-500 bg-emerald-50/80 text-emerald-950 shadow-sm ring-2 ring-emerald-500/20 dark:border-emerald-500/80 dark:bg-emerald-950/30 dark:text-emerald-100'
-                    : 'border-slate-200/80 bg-white/90 text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800/80 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-900'
-                }`}
-        >
-            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors ${active
-                    ? 'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-slate-950'
-                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'
-                }`}>
-                <Icon size={19} aria-hidden="true" />
-            </span>
-            <span className="min-w-0">
-                <span className="block text-xs font-black uppercase tracking-wider">{section.label}</span>
-                <span className="mt-1 block text-xs font-semibold leading-relaxed text-slate-500 dark:text-slate-400">
-                    {section.description}
-                </span>
-            </span>
-        </button>
-    );
-};
-
-/* ─── Leave section header ────────────────────────────────────────── */
-const LeaveHeader = ({ isRtl }) => {
-    const { t } = useTranslation('workspace');
-    return (
-        <header className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50/50 to-amber-50/40 p-5 shadow-sm backdrop-blur-xl dark:border-white/10 dark:from-slate-950 dark:via-slate-900/90 dark:to-amber-950/20 sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-4">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 ring-1 ring-amber-200 shadow-sm dark:bg-amber-500/20 dark:text-amber-300 dark:ring-amber-500/30">
-                        <CalendarOff size={22} aria-hidden="true" />
-                    </span>
-                    <div>
-                        <p className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                            {t('leave.eyebrow', { defaultValue: isRtl ? 'خدمة ذاتية للموظف' : 'Staff self-service' })}
-                        </p>
-                        <h2 className="mt-0.5 text-xl font-black tracking-tight text-slate-900 dark:text-white sm:text-2xl">
-                            {t('leave.title', { defaultValue: isRtl ? 'إجازاتي' : 'My Leave' })}
-                        </h2>
-                        <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500 dark:text-slate-400 sm:text-sm">
-                            {t('leave.description', { defaultValue: isRtl ? 'قدّم طلبات الإجازة وتابع حالة الموافقة.' : 'Submit leave requests and track your approval status.' })}
-                        </p>
-                    </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/80 bg-amber-50/90 px-3 py-1 text-xs font-bold text-amber-800 shadow-sm dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-                        <Clock size={13} aria-hidden="true" />
-                        {t('leave.meta.pending', { defaultValue: isRtl ? 'متابعة الموافقة' : 'Approval tracked' })}
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50/90 px-3 py-1 text-xs font-bold text-emerald-800 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-                        <ShieldCheck size={13} aria-hidden="true" />
-                        {t('leave.meta.controlled', { defaultValue: isRtl ? 'مراجعة الموارد البشرية' : 'Reviewed by HR' })}
-                    </span>
-                </div>
-            </div>
-        </header>
-    );
-};
-
-/* ─── Main Profile page ───────────────────────────────────────────── */
+/* ─── Profile Component ─────────────────────────────────────────────── */
 const Profile = () => {
-    const { t, i18n } = useTranslation(['settings', 'common']);
+    const { t, i18n } = useTranslation(['settings', 'common', 'workspace']);
     const currentUser = useSelector(selectCurrentUser);
     const dispatch = useDispatch();
     const [searchParams, setSearchParams] = useSearchParams();
     const isRtl = i18n.dir() === 'rtl';
     const [updateProfile] = useUpdateProfileMutation();
 
+    const isReceptionist = currentUser?.role === 'Receptionist';
+
+    // Query supervisor assignments ONLY for roles eligible for reception supervision
+    const { data: supervisorAssignments = [] } = useGetReceptionSupervisorAssignmentsQuery(undefined, {
+        skip: !isReceptionist,
+    });
+    const eligibleForDepartmentSupervision = ['Receptionist', 'Nurse', 'Technician', 'Radiologist', 'Cashier', 'Accountant', 'Insurance_Staff', 'Marketing', 'HR', 'Admin', 'Developer'].includes(currentUser?.role);
+    const { data: departmentAssignments = [] } = useGetStaffSupervisorAssignmentsQuery(undefined, {
+        skip: !eligibleForDepartmentSupervision,
+    });
+    const isDepartmentSupervisor = Array.isArray(departmentAssignments) && departmentAssignments.some((item) =>
+        new Date(item.starts_at) <= new Date() && (!item.ends_at || new Date(item.ends_at) > new Date()));
+
+    // Check whether current user is an active supervisor
+    const isSupervisor = useMemo(() => {
+        if (!isReceptionist) return false;
+        return Array.isArray(supervisorAssignments) && supervisorAssignments.length > 0;
+    }, [isReceptionist, supervisorAssignments]);
+
     const displayName = currentUser?.fullName || currentUser?.full_name || currentUser?.name
         || currentUser?.email
-        || t('settings.accountFallback', { defaultValue: 'VIARA User' });
+        || (isRtl ? 'مستخدم المنظومة' : 'VIARA User');
     const email = currentUser?.email || '—';
-    const role = currentUser?.role || t('common:staff', { defaultValue: 'Staff' });
+    const role = currentUser?.role || 'Staff';
     const department = currentUser?.department || currentUser?.department_name || null;
     const jobTitle = currentUser?.jobTitle || currentUser?.job_title || null;
     const mustChangePassword = Boolean(currentUser?.mustChangePassword);
 
+    const theme = ROLE_THEMES[role] || ROLE_THEMES.Default;
+
+    // Build available sections, omitting supervision completely if the user is not a supervisor
+    const sections = useMemo(() => {
+        const list = [
+            {
+                id: 'identity',
+                icon: UserRound,
+                label: isRtl ? 'الهوية والمهنة' : 'Identity & Profession',
+                badgeText: isRtl ? 'البيانات الشخصية' : 'Personal Details',
+                description: isRtl
+                    ? 'الاسم، الصورة الشخصية، بيانات الاتصال، القسم، والترخيص الطبي'
+                    : 'Name, avatar, contact details, department, and medical license',
+            },
+            {
+                id: 'shifts',
+                icon: Clock,
+                label: isRtl ? 'جدول الورديات' : 'Shift Schedule',
+                badgeText: isRtl ? 'المناوبات' : 'Rotations',
+                description: isRtl
+                    ? 'استعراض مواعيد الورديات المجدولة وتقديم طلبات التبديل'
+                    : 'View scheduled shifts and submit shift swap requests',
+            },
+        ];
+
+        // "وقائمة الاشراف لاتظهر لغير المشرفين": ONLY show if user is verified supervisor
+        if (isSupervisor || isDepartmentSupervisor) {
+            list.push({
+                id: 'supervision',
+                icon: ShieldCheck,
+                label: isRtl ? 'الإشراف الإداري' : 'My Supervision',
+                badgeText: isRtl ? 'مهام إشرافية' : 'Supervisory',
+                description: isRtl
+                    ? 'إدارة الفريق، تسليمات الوردية، وتوزيع المهام الإشرافية'
+                    : 'Team oversight, shift handovers, and supervisory assignments',
+            });
+        }
+
+        list.push({
+            id: 'security',
+            icon: KeyRound,
+            label: isRtl ? 'الأمان والحساب' : 'Security & Access',
+            badgeText: isRtl ? 'الحماية والتوثيق' : 'Authentication',
+            description: isRtl
+                ? 'تغيير كلمة المرور، التحقق الثنائي، والجلسات النشطة'
+                : 'Password changes, two-factor authentication, and active sessions',
+        });
+
+        list.push({
+            id: 'leave',
+            icon: CalendarOff,
+            label: isRtl ? 'الإجازات والغياب' : 'Leave & Absence',
+            badgeText: isRtl ? 'الرصيد والطلبات' : 'Self-Service',
+            description: isRtl
+                ? 'تقديم طلبات الإجازة ومتابعة اعتماد الموارد البشرية'
+                : 'Submit leave requests and track HR approvals',
+        });
+
+        if (currentUser?.user_id && currentUser?.role !== 'Developer') {
+            list.push({
+                id: 'payroll',
+                icon: Receipt,
+                label: isRtl ? 'جزاءاتي' : 'My penalties',
+                badgeText: isRtl ? 'الرواتب' : 'Payroll',
+                description: isRtl
+                    ? 'عرض الجزاءات المعتمدة والإقرار بها أو إرسال اعتراض مسبب.'
+                    : 'View approved penalties, acknowledge them, or submit a reasoned dispute.',
+            });
+        }
+
+        return list;
+    }, [currentUser?.role, currentUser?.user_id, isRtl, isSupervisor, isDepartmentSupervisor]);
+
+    // Active Section resolution with fallback
     const requestedSection = searchParams.get('section');
-    const activeSection = mustChangePassword || requestedSection === 'security'
-        ? 'security'
-        : requestedSection === 'leave'
-            ? 'leave'
-            : requestedSection === 'shifts'
-                ? 'shifts'
-                : requestedSection === 'preferences'
-                    ? 'preferences'
-                    : 'identity';
+    const activeSection = useMemo(() => {
+        if (mustChangePassword) return 'security';
+        const found = sections.find((s) => s.id === requestedSection);
+        return found ? found.id : 'identity';
+    }, [mustChangePassword, requestedSection, sections]);
 
     const initials = displayName
         .split(/\s+/).filter(Boolean).slice(0, 2)
         .map((p) => p[0]).join('').toUpperCase();
 
-    /* ── Section definitions ──────────────────────────────────────── */
-    const sections = useMemo(() => [
-        {
-            id: 'identity',
-            icon: UserRound,
-            label: t('settings.profilePage.identity', { defaultValue: isRtl ? 'بيانات الهوية والمهنة' : 'Identity & Professional Info' }),
-            description: t('settings.profilePage.identityDesc', { defaultValue: isRtl ? 'الاسم، الترخيص الطبي، الصورة، القسم، والمسمى الوظيفي.' : 'Name, medical license, contact, department, job title, and staff bio.' }),
-        },
-        {
-            id: 'shifts',
-            icon: Clock,
-            label: t('settings.profilePage.shifts', { defaultValue: isRtl ? 'جدول الورديات' : 'Shift Schedule' }),
-            description: t('settings.profilePage.shiftsDesc', { defaultValue: isRtl ? 'عرض الورديات المخصصة، وتقديم طلبات تبديل أو تعديل مع الزملاء.' : 'View assigned shifts and request swaps or schedule modifications.' }),
-        },
-        {
-            id: 'security',
-            icon: KeyRound,
-            label: t('settings.profilePage.security', { defaultValue: isRtl ? 'الأمان والحماية' : 'Security & Authentication' }),
-            description: t('settings.profilePage.securityDesc', { defaultValue: isRtl ? 'تغيير كلمة المرور، التحقق الثنائي، والجلسات النشطة.' : 'Password changes, two-factor authentication, active sessions, and protection.' }),
-        },
-        {
-            id: 'leave',
-            icon: CalendarOff,
-            label: t('settings.profilePage.leave', { defaultValue: isRtl ? 'إجازاتي' : 'My Leave' }),
-            description: t('settings.profilePage.leaveDesc', { defaultValue: isRtl ? 'قدّم طلبات الإجازة وتابع حالة الموافقة من الموارد البشرية.' : 'Submit leave requests and track HR approval status.' }),
-        },
-    ], [t, isRtl]);
-
-    const changeSection = (section) => {
+    const changeSection = (sectionId) => {
         const next = new URLSearchParams(searchParams);
-        if (section === 'security') next.set('section', 'security');
-        else if (section === 'leave') next.set('section', 'leave');
-        else if (section === 'shifts') next.set('section', 'shifts');
-        else if (section === 'preferences') next.set('section', 'preferences');
-        else next.delete('section');
+        if (sectionId === 'identity') {
+            next.delete('section');
+        } else {
+            next.set('section', sectionId);
+        }
         setSearchParams(next, { replace: true });
     };
 
-    /* ── Active content ───────────────────────────────────────────── */
+    const handleAvatarUpload = async (dataUrl) => {
+        try {
+            const result = await updateProfile({ avatarUrl: dataUrl }).unwrap();
+            dispatch(updateCurrentUser({ avatarUrl: result?.avatarUrl || dataUrl }));
+            toast.success(isRtl ? 'تم تحديث الصورة الشخصية بنجاح' : 'Profile picture updated successfully');
+        } catch {
+            toast.error(isRtl ? 'تعذر تحديث الصورة الشخصية' : 'Failed to update profile picture');
+        }
+    };
+
+    /* ── Render Content View ────────────────────────────────────────── */
     const renderContent = () => {
         if (activeSection === 'security') return <SecuritySettings />;
-        if (activeSection === 'leave') return (
-            <div className="space-y-5">
-                <LeaveHeader isRtl={isRtl} />
-                <LeaveManager selfServiceOnly />
-            </div>
-        );
-        if (activeSection === 'shifts') return (
-            <StaffShiftSchedule selfService />
-        );
+        if (activeSection === 'leave') return <LeaveManager selfServiceOnly />;
+        if (activeSection === 'payroll') return <EmployeePayrollPenalties />;
+        if (activeSection === 'shifts') return <StaffShiftSchedule selfService />;
+        if (activeSection === 'supervision' && (isSupervisor || isDepartmentSupervisor)) return <div className="space-y-6">
+            {isSupervisor && <ReceptionSupervisionProfile />}
+            {isDepartmentSupervisor && <StaffSupervisionProfile />}
+        </div>;
         return <ProfileSettings />;
     };
 
@@ -252,146 +296,164 @@ const Profile = () => {
         <div
             dir={isRtl ? 'rtl' : 'ltr'}
             lang={isRtl ? 'ar' : 'en'}
-            className="mx-auto max-w-[1240px] space-y-6"
+            className="mx-auto max-w-[1240px] space-y-6 pb-12"
         >
-            {/* ── Executive identity card ───────────────────────── */}
+            {/* ── UNIFIED EXECUTIVE PROFILE HEADER ──────────────────────── */}
             <PageHeader
-                icon={UserRound}
-                eyebrow={t('settings.profilePage.eyebrow', { defaultValue: isRtl ? 'الملف الشخصي للحساب' : 'Account Profile' })}
+                leading={(
+                    <ModernProfileAvatar
+                        currentUser={currentUser}
+                        initials={initials}
+                        onAvatarChange={handleAvatarUpload}
+                        isRtl={isRtl}
+                    />
+                )}
+                eyebrow={isRtl ? 'الملف الشخصي' : 'Staff Profile'}
+                eyebrowIcon={Sparkles}
                 title={displayName}
-                description={t('settings.profilePage.description', { defaultValue: isRtl ? 'أدر بيانات الهوية والأمان والإجازات من مساحة موحدة.' : 'Manage identity, security, and leave from one workspace.' })}
+                description={jobTitle
+                    ? `${jobTitle}${department ? ` · ${department}` : ''}`
+                    : department || (isRtl ? 'القسم الطبي والإداري' : 'Clinical & Administrative Staff')}
+                meta={(
+                    <>
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-xs font-black shadow-2xs ${theme.badge}`}>
+                            <Briefcase size={12} aria-hidden="true" />
+                            <span>{role}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200/80 bg-emerald-50/90 px-2.5 py-0.5 text-xs font-bold text-emerald-800 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            <CheckCircle2 size={12} aria-hidden="true" />
+                            <span>{isRtl ? 'حساب نشط وموثق' : 'Active & Verified'}</span>
+                        </span>
+                        {isSupervisor && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/80 bg-amber-50 px-2.5 py-0.5 text-xs font-black text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/40 dark:text-amber-300">
+                                <Sparkles size={11} aria-hidden="true" />
+                                <span>{isRtl ? 'مشرف معتمد' : 'Authorized Supervisor'}</span>
+                            </span>
+                        )}
+                    </>
+                )}
                 metrics={[
-                    { key: 'role', icon: Briefcase, label: t('settings.role', { defaultValue: isRtl ? 'الدور الوظيفي' : 'Role' }), value: role || '-', tone: 'teal' },
-                    { key: 'department', icon: UserRound, label: t('settings.department', { defaultValue: isRtl ? 'القسم' : 'Department' }), value: department || '-', tone: 'blue' },
-                    { key: 'email', icon: Mail, label: t('settings.email', { defaultValue: isRtl ? 'البريد الإلكتروني' : 'Email' }), value: email || '-', tone: 'slate' },
-                    { key: 'section', icon: sections.find((section) => section.id === activeSection)?.icon || UserRound, label: t('settings.activeSection', { defaultValue: isRtl ? 'القسم الحالي' : 'Active section' }), value: sections.find((section) => section.id === activeSection)?.label || sections[0]?.label, tone: 'emerald' }
+                    {
+                        key: 'email',
+                        icon: Mail,
+                        label: isRtl ? 'البريد الإلكتروني' : 'Email Address',
+                        value: email,
+                        tone: 'teal',
+                    },
+                    {
+                        key: 'department',
+                        icon: Building2,
+                        label: isRtl ? 'القسم' : 'Department',
+                        value: department || (isRtl ? 'الاستقبال والعمليات' : 'Operations'),
+                        tone: 'teal',
+                    },
+                    {
+                        key: 'access',
+                        icon: Shield,
+                        label: isRtl ? 'مستوى الوصول' : 'Access Level',
+                        value: role,
+                        tone: 'slate',
+                    },
+                    {
+                        key: 'security',
+                        icon: ShieldCheck,
+                        label: isRtl ? 'حالة الحماية' : 'Security',
+                        value: isRtl ? 'محمي بكلمة مرور' : 'Protected',
+                        tone: mustChangePassword ? 'amber' : 'emerald',
+                    },
                 ]}
-                metricsLabel={isRtl ? 'مؤشرات سجل الحساب' : 'Account record indicators'}
-            />
-            <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
-                {/* Decorative top band */}
-                <div className="h-2 w-full bg-gradient-to-r from-teal-600 via-emerald-500 to-teal-400" />
+                metricsLabel={isRtl ? 'مؤشرات الملف الشخصي' : 'Profile record indicators'}
+            >
+                <p className="hidden max-w-xl text-xs font-medium text-slate-400 sm:block dark:text-slate-500">
+                    {isRtl
+                        ? 'أدر بيانات الهوية المهنية، تراخيص المزاولة، أمان الحساب، ومناوبات العمل من لوحة تحكم واحدة محكمة.'
+                        : 'Manage your professional identity, clinical credentials, security preferences, and shifts from a centralized dashboard.'}
+                </p>
+            </PageHeader>
 
-                <div className="p-5 sm:p-6">
-                    {/* Top row: avatar + name + badges */}
-                    <div className="flex flex-wrap items-start gap-5">
-                        <ProfileAvatar
-                            currentUser={currentUser}
-                            initials={initials}
-                            isRtl={isRtl}
-                            onAvatarChange={async (dataUrl) => {
-                                try {
-                                    const result = await updateProfile({ avatarUrl: dataUrl }).unwrap();
-                                    dispatch(updateCurrentUser({ avatarUrl: result?.avatarUrl || dataUrl }));
-                                    toast.success(isRtl ? 'تم تحديث الصورة الشخصية' : 'Profile picture updated');
-                                } catch {
-                                    toast.error(isRtl ? 'فشل تحديث الصورة' : 'Failed to update profile picture');
-                                }
-                            }}
-                        />
-
-                        <div className="min-w-0 flex-1">
-                            {/* Eyebrow + active badge */}
-                            <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-[11px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                                    {t('settings.profilePage.eyebrow', { defaultValue: isRtl ? 'الملف الشخصي للحساب' : 'Account Profile' })}
-                                </p>
-                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800">
-                                    <CheckCircle2 size={11} aria-hidden="true" />
-                                    {t('settings.active', { defaultValue: isRtl ? 'حساب نشط' : 'Active Account' })}
-                                </span>
-                            </div>
-
-                            {/* Full name */}
-                            <h2 className="mt-1.5 truncate text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-                                {displayName}
-                            </h2>
-
-                            {/* Role + department subtitle */}
-                            <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-                                {jobTitle
-                                    ? `${jobTitle}${department ? ` · ${department}` : ''}`
-                                    : department || role}
-                            </p>
-
-                            {/* Description */}
-                            <p className="mt-2 max-w-2xl text-xs font-semibold leading-relaxed text-slate-500 dark:text-slate-400 sm:text-sm">
-                                {t('settings.profilePage.description', {
-                                    defaultValue: isRtl
-                                        ? 'أدر بيانات الهوية، معلومات الاتصال، الترخيص الطبي، كلمة المرور، التحقق الثنائي، والجلسات النشطة، وطلبات الإجازة.'
-                                        : 'Manage your clinical identity, contact details, medical license, password, two-factor security, active sessions, and leave requests.',
-                                })}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Fact strip */}
-                    <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        <ProfileFact
-                            icon={Mail}
-                            label={t('settings.email', { defaultValue: isRtl ? 'البريد الإلكتروني' : 'Email' })}
-                            value={email}
-                            ltr
-                            tone="default"
-                        />
-                        <ProfileFact
-                            icon={Briefcase}
-                            label={t('settings.role', { defaultValue: isRtl ? 'الدور الوظيفي' : 'Role' })}
-                            value={role}
-                            tone="blue"
-                        />
-                        <ProfileFact
-                            icon={ShieldCheck}
-                            label={t('settings.status', { defaultValue: isRtl ? 'حالة الحماية' : 'Security' })}
-                            value={t('settings.protected', { defaultValue: isRtl ? 'محمي وموثّق' : 'Protected' })}
-                            tone="emerald"
-                        />
-                        <ProfileFact
-                            icon={CalendarOff}
-                            label={t('settings.profilePage.leaveLabel', { defaultValue: isRtl ? 'الإجازات' : 'Leave' })}
-                            value={t('settings.profilePage.leaveHint', { defaultValue: isRtl ? 'انقر لعرض الطلبات' : 'View requests' })}
-                            tone="amber"
-                        />
-                    </div>
-                </div>
-            </section>
-
-            {/* ── Must-change-password alert ────────────────────── */}
+            {/* ── MUST CHANGE PASSWORD ALERT ──────────────────────────── */}
             {mustChangePassword && (
                 <div
                     role="alert"
-                    className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
+                    className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100 shadow-sm"
                 >
                     <KeyRound size={20} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300" aria-hidden="true" />
                     <div>
                         <p className="text-xs font-black uppercase tracking-wider">
-                            {t('settings.passwordRequired.title', { defaultValue: isRtl ? 'أمّن حسابك المؤقت' : 'Change Password Required' })}
+                            {isRtl ? 'مطلوب تعيين كلمة مرور جديدة' : 'Password Change Required'}
                         </p>
                         <p className="mt-1 text-xs font-semibold leading-relaxed text-amber-800 dark:text-amber-200">
-                            {t('settings.passwordRequired.description', { defaultValue: isRtl ? 'غيّر كلمة المرور المؤقتة قبل الوصول إلى بقية إعدادات مساحة العمل.' : 'Change your temporary password before accessing the rest of your workspace.' })}
+                            {isRtl
+                                ? 'يجب تحديث كلمة المرور المؤقتة قبل التمكن من الوصول إلى أقسام المنظومة الأخرى.'
+                                : 'Please update your temporary password before accessing other system features.'}
                         </p>
                     </div>
                 </div>
             )}
 
-            {/* ── Section switcher tabs ─────────────────────────── */}
+            {/* ── MODERN TAB NAVIGATION BAR ────────────────────────────── */}
             <nav
-                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
-                aria-label={t('settings.profilePage.sections', { defaultValue: isRtl ? 'أقسام الملف الشخصي' : 'Profile sections' })}
+                className={`grid gap-2.5 ${sections.length === 5 ? 'sm:grid-cols-2 lg:grid-cols-5' : 'sm:grid-cols-2 lg:grid-cols-4'}`}
+                aria-label={isRtl ? 'أقسام الملف الشخصي' : 'Profile Sections'}
             >
-                {sections.map((section) => (
-                    <SectionTab
-                        key={section.id}
-                        section={section}
-                        active={activeSection === section.id}
-                        disabled={mustChangePassword && section.id !== 'security'}
-                        onClick={changeSection}
-                    />
-                ))}
+                {sections.map((section) => {
+                    const Icon = section.icon;
+                    const isActive = activeSection === section.id;
+                    const isDisabled = mustChangePassword && section.id !== 'security';
+
+                    return (
+                        <button
+                            key={section.id}
+                            type="button"
+                            onClick={() => changeSection(section.id)}
+                            disabled={isDisabled}
+                            aria-current={isActive ? 'page' : undefined}
+                            className={`group relative flex flex-col justify-between rounded-2xl border p-4 text-start transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer ${
+                                isActive
+                                    ? 'border-teal-500/80 bg-white text-slate-900 shadow-md ring-2 ring-teal-500/20 dark:border-teal-400 dark:bg-slate-900 dark:text-white'
+                                    : 'border-slate-200/80 bg-white/70 text-slate-600 hover:border-slate-300 hover:bg-white dark:border-slate-800/80 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:bg-slate-900'
+                            }`}
+                        >
+                            <div className="flex items-center justify-between gap-2">
+                                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                                    isActive
+                                        ? 'bg-gradient-to-br from-teal-600 to-emerald-600 text-white shadow-sm shadow-teal-600/30'
+                                        : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:group-hover:bg-slate-700'
+                                }`}>
+                                    <Icon size={18} />
+                                </span>
+                                <span className={`text-[10px] font-bold rounded-md px-2 py-0.5 ${
+                                    isActive
+                                        ? 'bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300'
+                                        : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
+                                }`}>
+                                    {section.badgeText}
+                                </span>
+                            </div>
+
+                            <div className="mt-3 min-w-0">
+                                <h3 className={`text-xs sm:text-sm font-black transition-colors ${
+                                    isActive ? 'text-teal-900 dark:text-teal-200' : 'text-slate-800 dark:text-slate-200'
+                                }`}>
+                                    {section.label}
+                                </h3>
+                                <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-relaxed text-slate-500 dark:text-slate-400">
+                                    {section.description}
+                                </p>
+                            </div>
+
+                            {isActive && (
+                                <span className="absolute bottom-0 inset-x-6 h-0.5 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500" />
+                            )}
+                        </button>
+                    );
+                })}
             </nav>
 
-            {/* ── Active section content ────────────────────────── */}
-            {renderContent()}
+            {/* ── ACTIVE SECTION CONTENT ───────────────────────────────── */}
+            <main className="animate-in fade-in-50 duration-200">
+                {renderContent()}
+            </main>
         </div>
     );
 };

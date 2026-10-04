@@ -212,6 +212,8 @@
     "tomorrow": "Tomorrow",
     "in2days": "+2 days",
     "nextWeek": "+1 week",
+    "reactivateNotice": "This appointment is cancelled. Rescheduling will reactivate it as a confirmed order.",
+    "reactivateConfirm": "Reactivate & reschedule",
     "reasonPlaceholder": "Explain why the appointment is being moved..."
   },
   "command": {

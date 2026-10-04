@@ -1,13 +1,10 @@
-/* eslint-disable react-refresh/only-export-components -- form defaults and catalog are intentionally co-located */
 import React from 'react';
 import { Edit3, Server, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Modal from '../../ui/Modal';
 import { Status, Field, Select, Actions } from './SharedComponents';
 import { useGetRoomsQuery } from '../../../store/api';
-
-export const machineTypes = ['MRI', 'CT', 'X-Ray', 'Ultrasound', 'Mammography', 'Cath Lab', 'Panoramic X-Ray', 'PET-CT', 'Fluoroscopy', 'DEXA'];
-export const emptyMachine = { name: '', type: 'MRI', roomId: '', roomNumber: '', serialNumber: '', manufacturer: '', model: '', installationDate: '', location: '', status: 'Active' };
+import { MACHINE_TYPES, emptyMachine } from '../../../types/equipment';
 
 export const MachineCatalog = ({ records, t: propT, onEdit, onDelete }) => {
     const { t: hookT } = useTranslation('settings');
@@ -102,7 +99,7 @@ export const MachineDialog = ({ open, editing, form, setForm, onClose, onSave, b
                         required
                         value={form.type}
                         onChange={value => setForm({ ...form, type: value })}
-                        options={machineTypes}
+                        options={MACHINE_TYPES}
                     />
                     <div>
                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">

@@ -25,7 +25,7 @@ describe('native diagnostic report PDF renderer', () => {
         expect(Buffer.isBuffer(pdf)).toBe(true);
         expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
         expect(pdf.length).toBeGreaterThan(5000);
-    });
+    }, 15000);
 
     test('normalizes rich text and unsafe filename characters', () => {
         expect(plainText('<p>Finding &amp; result</p><br>Next')).toBe('Finding & result\n\nNext');

@@ -80,10 +80,9 @@ const toIso = (value) => {
 };
 
 const finalReportAvailable = (row) => Boolean(
-    row.report_finalized_at
-    || row.report_locked
-    || ['Finalized', 'Amended'].includes(row.report_status)
-    || row.status === 'Finalized'
+    ['Finalized', 'Amended'].includes(row.report_status)
+    && row.report_locked
+    && row.report_finalized_at
 );
 
 const createPublicReportAccessToken = (examId, challengeId) => jwt.sign(
@@ -633,6 +632,11 @@ const createPublicAppointmentRequest = (db) => async (req, res, next) => {
     }
 };
 
+const PUBLIC_LANDING_CACHE_TTL_MS = 15000;
+let landingOverviewCache = null;
+let landingOverviewCacheTime = 0;
+let landingOverviewInflight = null;
+
 /**
  * Public, privacy-safe operational summary for the landing page.
  * Only aggregate counts and durations are returned; no patient, staff,
@@ -640,12 +644,24 @@ const createPublicAppointmentRequest = (db) => async (req, res, next) => {
  */
 const getPublicLandingOverview = (db) => async (req, res, next) => {
     try {
-        const [operations, finance, deliveries, modalityMix, activeModalities] = await Promise.all([
+        const now = Date.now();
+        if (process.env.NODE_ENV !== 'test' && landingOverviewCache && (now - landingOverviewCacheTime < PUBLIC_LANDING_CACHE_TTL_MS)) {
+            res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=45');
+            return res.json({
+                ...landingOverviewCache,
+                generatedAt: new Date().toISOString()
+            });
+        }
+
+        if (!landingOverviewInflight) {
+            landingOverviewInflight = (async () => {
+                const [operations, finance, deliveries, modalityMix, activeModalities] = await Promise.all([
             db.query(`
                 SELECT
                     COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS studies_today,
                     COUNT(*) FILTER (
-                        WHERE status != 'Finalized'
+                        WHERE report_request_status = 'Requested'
+                          AND status != 'Finalized'
                           AND (report_status IS NULL OR report_status NOT IN ('Finalized', 'Amended'))
                     )::int AS pending_reports,
                     COUNT(*) FILTER (
@@ -665,11 +681,11 @@ const getPublicLandingOverview = (db) => async (req, res, next) => {
                           AND priority IN ('Urgent', 'Emergency')
                     )::int AS priority_today,
                     COUNT(*) FILTER (
-                        WHERE created_at::date = CURRENT_DATE
-                          AND (status = 'Finalized' OR report_status IN ('Finalized', 'Amended'))
+                        WHERE exam_completed_at::date = CURRENT_DATE
                     )::int AS completed_today,
                     COUNT(*) FILTER (
-                        WHERE status != 'Finalized'
+                        WHERE report_request_status = 'Requested'
+                          AND status != 'Finalized'
                           AND (report_status IS NULL OR report_status NOT IN ('Finalized', 'Amended'))
                           AND created_at < CURRENT_TIMESTAMP - INTERVAL '24 hours'
                     )::int AS delayed_reports,
@@ -735,8 +751,7 @@ const getPublicLandingOverview = (db) => async (req, res, next) => {
             ? null
             : (studiesToday === 0 ? 0 : Math.round((completedToday / studiesToday) * 100));
 
-        res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=45');
-        res.json({
+        const payload = {
             generatedAt: new Date().toISOString(),
             period: {
                 operationalDay: 'today',
@@ -794,6 +809,22 @@ const getPublicLandingOverview = (db) => async (req, res, next) => {
                     return Math.min(100, Math.round((waiting * 2) + pending + (delayed * 3) + (priority * 4)));
                 })(),
             },
+        };
+                if (process.env.NODE_ENV !== 'test') {
+                    landingOverviewCache = payload;
+                    landingOverviewCacheTime = Date.now();
+                }
+                return payload;
+            })().finally(() => {
+                landingOverviewInflight = null;
+            });
+        }
+
+        const data = await landingOverviewInflight;
+        res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=45');
+        res.json({
+            ...data,
+            generatedAt: new Date().toISOString(),
         });
     } catch (error) {
         next(error);
@@ -833,7 +864,9 @@ const verifyReportAuthenticity = (db) => async (req, res, next) => {
             JOIN patients p ON e.patient_id = p.patient_id
             LEFT JOIN appointments a ON e.appointment_id = a.appointment_id
             WHERE UPPER(e.digital_signature_hash) = UPPER($1)
-              AND e.report_status = 'Finalized'
+              AND e.report_status IN ('Finalized', 'Amended')
+              AND e.report_locked = TRUE
+              AND e.report_finalized_at IS NOT NULL
             LIMIT 1
         `, [rawCode]);
 
@@ -877,7 +910,7 @@ const verifyReportAuthenticity = (db) => async (req, res, next) => {
             finalizedAt: row.report_finalized_at,
             radiologist: row.digital_signature_name || 'Licensed Radiologist',
             radiologistRole: row.digital_signature_role || 'Reporting Radiologist',
-            centerName: centerMap['center.name'] || 'TIBA SCAN CENTER',
+            centerName: centerMap['center.name'] || centerMap['center_name'] || 'VIARA DIAGNOSTIC CENTER',
             branchName: centerMap['center.branch_name'] || 'Main Hospital Branch',
             verificationHash: row.digital_signature_hash,
             integrityConfirmed: true

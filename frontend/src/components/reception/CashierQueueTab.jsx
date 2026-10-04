@@ -1,14 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
     AlertCircle,
     AlertTriangle,
     Banknote,
+    Bell,
     Calculator,
     CheckCircle2,
+    ChevronDown,
     Clock3,
     CreditCard,
     FilePlus2,
+    Filter,
     LayoutGrid,
+    Landmark,
     List,
     LockKeyhole,
     PackagePlus,
@@ -17,6 +21,7 @@ import {
     RefreshCw,
     RotateCcw,
     Search,
+    Shield,
     ShieldCheck,
     SlidersHorizontal,
     User,
@@ -25,6 +30,9 @@ import {
     X,
     Zap
 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { useBroadcastPatientCallMutation } from '../../store/api';
+import { playHospitalChime } from '../../utils/audioChime';
 import { formatDuration } from '../../utils/dateFormat';
 import ConsumeItemModal from '../inventory/ConsumeItemModal';
 import PriorityBadge from '../ui/PriorityBadge';
@@ -39,11 +47,15 @@ import CashDrawerReconciliation from './CashDrawerReconciliation';
 import ShiftSupervisorPanel from './ShiftSupervisorPanel';
 
 const priorityRank = { Emergency: 0, Urgent: 1, Routine: 2 };
-const PAGE_SIZE_OPTIONS = [6, 12, 24, 48];
+const PAGE_SIZE_OPTIONS = [10, 20, 40, 80];
 
 const getPaymentState = (item) => {
     if (!item.invoice || item.invoice.invoice_status === 'Voided') return 'MissingInvoice';
     return Number(item.invoice.balance_amount || 0) > 0 ? 'PaymentDue' : 'Paid';
+};
+const matchesWorkstationSelection = (selection, candidates) => {
+    const candidateKeys = new Set(candidates.filter(Boolean).map((value) => String(value).trim().toLocaleLowerCase()));
+    return selection.some((value) => candidateKeys.has(String(value).trim().toLocaleLowerCase()));
 };
 
 const stateStyles = {
@@ -59,6 +71,7 @@ const CashierQueueTab = ({
     canReconcileShifts = false,
     canReviewShiftVariance = false,
     currentShift,
+    currentUserId = null,
     invoices = [],
     isLoadingShift = false,
     items = [],
@@ -73,54 +86,100 @@ const CashierQueueTab = ({
     partialPaymentExceptions = [],
     onRequestPartialPaymentException,
     onShiftAction,
+    receptionScope = 'all',
+    selectedRooms = [],
+    selectedModalities = [],
     receptionShift,
     stockMovements = [],
     t
 }) => {
     const isAr = locale?.startsWith('ar');
-
-    // Sub-Navigation Tabs: 'queue' | 'reconciliation' | 'ledger' | 'supervisor'
     const [activeSubTab, setActiveSubTab] = useState('queue');
-    const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
-
+    const [viewMode, setViewMode] = useState(() => {
+        try { return localStorage.getItem('viara_cashier_view') || 'table'; } catch { return 'table'; }
+    });
     const [search, setSearch] = useState('');
+    const deferredSearch = useDeferredValue(search);
     const [readiness, setReadiness] = useState('All');
     const [exceptionFilter, setExceptionFilter] = useState('All');
     const [sortBy, setSortBy] = useState('urgency');
+    const [showFilters, setShowFilters] = useState(false);
     const [supplyExamId, setSupplyExamId] = useState(null);
     const [consumedExamIds, setConsumedExamIds] = useState(() => new Set());
     const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(12);
+    const [pageSize, setPageSize] = useState(20);
 
     const currency = useMemo(() => new Intl.NumberFormat(locale === 'ar' ? 'ar-EG' : 'en-US', {
-        style: 'currency',
-        currency: 'EGP',
-        maximumFractionDigits: 2
+        style: 'currency', currency: 'EGP', maximumFractionDigits: 2
     }), [locale]);
 
-    // Derived queue with computed financial & supply state
-    const queue = useMemo(() => items.map(item => {
-        const consumedSupplies = stockMovements.filter((movement) => movement.reference_type === 'Exam' && movement.reference_id === item.exam_id);
-        const invoice = item.invoice || invoices.find((inv) => (item.exam_id && inv.exam_id === item.exam_id) || (item.appointment_id && inv.appointment_id === item.appointment_id));
+    useEffect(() => {
+        try { localStorage.setItem('viara_cashier_view', viewMode); } catch { /* ignore restricted storage */ }
+    }, [viewMode]);
+
+    const [broadcastPatientCall] = useBroadcastPatientCallMutation();
+    const handleCallPatient = useCallback(async (item) => {
+        const token = item.order_number || item.invoice?.invoice_number || '---';
+        const patName = item.patient_name || item.invoice?.patient_name || '';
+        try {
+            await broadcastPatientCall({
+                orderNumber: token,
+                patientName: patName,
+                queueNumber: item.queue_number || null,
+                roomName: isAr ? 'الخزينة' : 'Cashier',
+                deskIdentifier: 'الخزينة',
+                modalityId: item.modality_id || null,
+                callByName: Boolean(patName),
+            }).unwrap();
+            playHospitalChime();
+            toast.success(isAr ? `تم نداء المريض ${patName || token} للتوجه إلى الخزينة` : `Patient ${patName || token} called to Cashier`);
+        } catch (error) {
+            toast.error(isAr ? '\u062a\u0639\u0630\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0646\u062f\u0627\u0621. \u062d\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649.' : (error?.data?.message || 'Could not send the patient call. Please try again.'));
+        }
+    }, [broadcastPatientCall, isAr]);
+
+    // Pre-index invoice and stock data once. This avoids repeatedly scanning large arrays for every queue row.
+    const invoiceIndex = useMemo(() => {
+        const byExam = new Map();
+        const byAppointment = new Map();
+        invoices.forEach((invoice) => {
+            if (invoice.exam_id) byExam.set(String(invoice.exam_id), invoice);
+            if (invoice.appointment_id) byAppointment.set(String(invoice.appointment_id), invoice);
+        });
+        return { byExam, byAppointment };
+    }, [invoices]);
+
+    const movementIndex = useMemo(() => {
+        const map = new Map();
+        stockMovements.forEach((movement) => {
+            if (movement.reference_type !== 'Exam' || !movement.reference_id) return;
+            const key = String(movement.reference_id);
+            const list = map.get(key) || [];
+            list.push(movement);
+            map.set(key, list);
+        });
+        return map;
+    }, [stockMovements]);
+
+    const queue = useMemo(() => items.map((item) => {
+        const consumedSupplies = movementIndex.get(String(item.exam_id)) || [];
+        const invoice = item.invoice
+            || (item.exam_id ? invoiceIndex.byExam.get(String(item.exam_id)) : null)
+            || (item.appointment_id ? invoiceIndex.byAppointment.get(String(item.appointment_id)) : null);
         const movementSupplyTotal = consumedSupplies.reduce((sum, movement) => sum + Number(movement.total_amount || (Math.abs(Number(movement.quantity_change || 0)) * Number(movement.unit_price || 0))), 0);
         const invoiceSupplyItems = (invoice?.items || []).filter(i => /مستلزم|supply|contrast|صبغة|سرنجة|قسطرة|شاش/i.test(i.description || ''));
         const invoiceSupplyTotal = invoiceSupplyItems.reduce((sum, i) => sum + Number(i.total_amount || 0), 0);
-        const isOptimisticallyConsumed = consumedExamIds.has(item.exam_id);
+        const optimistic = consumedExamIds.has(item.exam_id);
         const hasExamSupplies = Boolean(item.has_supplies || item.hasSupplies) || (item.supplies && item.supplies.length > 0) || (item.consumed_supplies && item.consumed_supplies.length > 0);
-        const supplyTotal = Math.max(movementSupplyTotal, invoiceSupplyTotal, isOptimisticallyConsumed ? 1 : 0);
+        const supplyTotal = Math.max(movementSupplyTotal, invoiceSupplyTotal, optimistic ? 1 : 0);
         const supplyCount = Math.max(
             consumedSupplies.reduce((sum, movement) => sum + Math.abs(Number(movement.quantity_change || 0)), 0),
             invoiceSupplyItems.length,
-            isOptimisticallyConsumed || hasExamSupplies ? 1 : 0
+            optimistic || hasExamSupplies ? 1 : 0
         );
         const hasNurse = Boolean(item.nurse_name || item.nurse_id);
         const exceptionTargetStage = hasNurse ? 'Prep Pending' : 'Ready for Exam';
-        const paymentException = findPartialPaymentException(
-            partialPaymentExceptions,
-            invoice?.invoice_id,
-            exceptionTargetStage
-        );
-
+        const paymentException = findPartialPaymentException(partialPaymentExceptions, invoice?.invoice_id, exceptionTargetStage);
         return {
             ...item,
             sourceItem: item,
@@ -131,53 +190,7 @@ const CashierQueueTab = ({
             paymentException,
             paymentExceptionStatus: getEffectivePartialPaymentExceptionStatus(paymentException),
         };
-    }), [consumedExamIds, invoices, items, partialPaymentExceptions, stockMovements]);
-
-    // Filter and Sort queue items
-    const filteredAndSorted = useMemo(() => {
-        const tokens = search.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-        let list = queue.filter((item) => {
-            const searchable = [item.patient_name, item.mrn, item.exam_type_name, item.modality_name, item.invoice?.invoice_number]
-                .filter(Boolean)
-                .join(' ')
-                .toLocaleLowerCase();
-            return (readiness === 'All' || getPaymentState(item) === readiness)
-                && (exceptionFilter === 'All' || item.paymentExceptionStatus === exceptionFilter)
-                && tokens.every((token) => searchable.includes(token));
-        });
-
-        list.sort((first, second) => {
-            if (sortBy === 'urgency') {
-                return (priorityRank[first.priority] ?? 3) - (priorityRank[second.priority] ?? 3)
-                    || Number(second.waiting_minutes || 0) - Number(first.waiting_minutes || 0);
-            }
-            if (sortBy === 'wait') {
-                return Number(second.waiting_minutes || 0) - Number(first.waiting_minutes || 0);
-            }
-            if (sortBy === 'balance') {
-                return Number(second.invoice?.balance_amount || 0) - Number(first.invoice?.balance_amount || 0);
-            }
-            if (sortBy === 'name') {
-                return (first.patient_name || '').localeCompare(second.patient_name || '');
-            }
-            return 0;
-        });
-
-        return list;
-    }, [exceptionFilter, queue, readiness, search, sortBy]);
-
-    // Reset pagination on filter change
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [exceptionFilter, search, readiness, sortBy, pageSize]);
-
-    const paginationState = useMemo(() => {
-        return getPaginationState(filteredAndSorted.length, currentPage, pageSize);
-    }, [filteredAndSorted.length, currentPage, pageSize]);
-
-    const paginatedItems = useMemo(() => {
-        return filteredAndSorted.slice(paginationState.startIndex, paginationState.endIndex);
-    }, [filteredAndSorted, paginationState.startIndex, paginationState.endIndex]);
+    }), [consumedExamIds, invoiceIndex, items, movementIndex, partialPaymentExceptions]);
 
     const summary = useMemo(() => ({
         urgent: queue.filter((item) => ['Emergency', 'Urgent'].includes(item.priority)).length,
@@ -193,533 +206,314 @@ const CashierQueueTab = ({
         opening: Number(currentShift?.opening_balance || 0),
         collected: Number(currentShift?.collected_amount || 0),
         payments: Number(currentShift?.payment_count || 0),
-        queueBalance: summary.outstanding,
-    }), [currentShift, summary.outstanding]);
+    }), [currentShift]);
 
-    // Collect all completed shift receipts from available shift data or invoices
-    const shiftReceipts = useMemo(() => {
-        if (Array.isArray(currentShift?.payments) && currentShift.payments.length > 0) {
-            return currentShift.payments;
-        }
-        const receipts = [];
-        const seenPaymentIds = new Set();
-        invoices.forEach((inv) => {
-            (inv.payments || []).forEach((pay) => {
-                if (pay.payment_status === 'Completed') {
-                    if (pay.payment_id && seenPaymentIds.has(pay.payment_id)) return;
-                    if (pay.payment_id) seenPaymentIds.add(pay.payment_id);
-                    receipts.push({
-                        ...pay,
-                        patient_name: inv.patient_name || pay.patient_name || t('table.patientFallback'),
-                        mrn: inv.mrn || pay.mrn || '-',
-                        invoice_number: inv.invoice_number || pay.invoice_number || '-',
-                        invoice_id: inv.invoice_id || pay.invoice_id,
-                    });
-                }
-            });
+    const filteredAndSorted = useMemo(() => {
+        const tokens = deferredSearch.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+        let list = queue.filter((item) => {
+            const searchable = [item.patient_name, item.mrn, item.exam_type_name, item.modality_name, item.invoice?.invoice_number, item.order_number]
+                .filter(Boolean).join(' ').toLocaleLowerCase();
+            return (readiness === 'All' || getPaymentState(item) === readiness)
+                && (exceptionFilter === 'All' || item.paymentExceptionStatus === exceptionFilter)
+                && tokens.every((token) => searchable.includes(token));
         });
+        if (receptionScope === 'rooms' && selectedRooms.length === 0) list = [];
+        if (receptionScope === 'modalities' && selectedModalities.length === 0) list = [];
+        if (selectedRooms.length > 0) {
+            list = list.filter((item) => matchesWorkstationSelection(selectedRooms, [
+                item.room_id,
+                item.room_number,
+                item.room_name,
+                item.appointment?.room_id,
+                item.appointment?.room_number,
+                item.appointment?.room_name,
+            ]));
+        }
+        if (selectedModalities.length > 0) {
+            list = list.filter((item) => matchesWorkstationSelection(selectedModalities, [
+                item.modality_id,
+                item.modality_name,
+                item.modality_type,
+                item.machine_name,
+                item.appointment?.modality_id,
+                item.appointment?.modality_name,
+                item.appointment?.modality_type,
+                item.appointment?.machine_name,
+            ]));
+        }
+        if (receptionScope === 'mine') {
+            list = list.filter((item) => {
+                const assignedTo = item.receptionist_id ?? item.assigned_receptionist_id ?? item.assignee_id ?? item.appointment?.receptionist_id ?? item.appointment?.assigned_receptionist_id;
+                return assignedTo !== null && assignedTo !== undefined && String(assignedTo) === String(currentUserId);
+            });
+        } else if (receptionScope === 'unclaimed') {
+            list = list.filter((item) => {
+                const assignedTo = item.receptionist_id ?? item.assigned_receptionist_id ?? item.assignee_id ?? item.appointment?.receptionist_id ?? item.appointment?.assigned_receptionist_id;
+                return !assignedTo;
+            });
+        } else if (receptionScope === 'attention') {
+            list = list.filter((item) => {
+                const assignedTo = item.receptionist_id ?? item.assigned_receptionist_id ?? item.assignee_id ?? item.appointment?.receptionist_id ?? item.appointment?.assigned_receptionist_id;
+                const unclaimed = !assignedTo && ['Scheduled', 'Arrived'].includes(item.queue_stage);
+                return ['Emergency', 'Urgent'].includes(item.priority) || Boolean(item.is_overdue) || unclaimed;
+            });
+        } else if (receptionScope === 'emergency') {
+            list = list.filter((item) => ['Emergency', 'Urgent'].includes(item.priority));
+        } else if (receptionScope === 'inExam') {
+            list = list.filter((item) => item.queue_stage === 'In Exam');
+        }
+        list.sort((first, second) => {
+            if (sortBy === 'urgency') return (priorityRank[first.priority] ?? 3) - (priorityRank[second.priority] ?? 3) || Number(second.waiting_minutes || 0) - Number(first.waiting_minutes || 0);
+            if (sortBy === 'wait') return Number(second.waiting_minutes || 0) - Number(first.waiting_minutes || 0);
+            if (sortBy === 'balance') return Number(second.invoice?.balance_amount || 0) - Number(first.invoice?.balance_amount || 0);
+            if (sortBy === 'name') return (first.patient_name || '').localeCompare(second.patient_name || '');
+            return 0;
+        });
+        return list;
+    }, [currentUserId, deferredSearch, exceptionFilter, queue, readiness, receptionScope, selectedModalities, selectedRooms, sortBy]);
+
+    useEffect(() => { setCurrentPage(1); }, [exceptionFilter, deferredSearch, readiness, sortBy, pageSize]);
+    const paginationState = useMemo(() => getPaginationState(filteredAndSorted.length, currentPage, pageSize), [filteredAndSorted.length, currentPage, pageSize]);
+    const paginatedItems = useMemo(() => filteredAndSorted.slice(paginationState.startIndex, paginationState.endIndex), [filteredAndSorted, paginationState.endIndex, paginationState.startIndex]);
+
+    const shiftReceipts = useMemo(() => {
+        if (Array.isArray(currentShift?.payments) && currentShift.payments.length > 0) return currentShift.payments;
+        const receipts = [];
+        const seen = new Set();
+        invoices.forEach((inv) => (inv.payments || []).forEach((pay) => {
+            if (pay.payment_status !== 'Completed') return;
+            if (pay.payment_id && seen.has(pay.payment_id)) return;
+            if (pay.payment_id) seen.add(pay.payment_id);
+            receipts.push({ ...pay, patient_name: inv.patient_name || pay.patient_name || t('table.patientFallback'), mrn: inv.mrn || pay.mrn || '-', invoice_number: inv.invoice_number || pay.invoice_number || '-', invoice_id: inv.invoice_id || pay.invoice_id });
+        }));
         receipts.sort((a, b) => new Date(b.transaction_date || b.created_at) - new Date(a.transaction_date || a.created_at));
         return receipts;
     }, [currentShift, invoices, t]);
 
-    const isSupervisorOrAdmin = Boolean(canReviewShiftVariance || canReconcileShifts);
+    const paymentMethodTotals = useMemo(() => shiftReceipts.reduce((acc, rec) => {
+        const raw = String(rec.method || 'Cash');
+        const key = /cash/i.test(raw) ? 'Cash'
+            : /card|credit/i.test(raw) ? 'Card'
+                : /wallet/i.test(raw) ? 'Wallet'
+                    : /bank/i.test(raw) ? 'Bank Transfer'
+                        : 'Other';
+        acc[key] = (acc[key] || 0) + Number(rec.amount || 0);
+        return acc;
+    }, { Cash: 0, Card: 0, Wallet: 0, 'Bank Transfer': 0, Other: 0 }), [shiftReceipts]);
+
+    const activeFilterCount = Number(readiness !== 'All') + Number(exceptionFilter !== 'All') + Number(sortBy !== 'urgency');
+
+    const chooseReadiness = (value) => {
+        setReadiness(value);
+        setActiveSubTab('queue');
+    };
+
+    const readinessChips = [
+        { id: 'All', label: isAr ? 'الكل' : 'All', count: queue.length, tone: 'teal' },
+        { id: 'PaymentDue', label: isAr ? 'مطلوب تحصيل' : 'Payment due', count: summary.due, tone: 'amber' },
+        { id: 'MissingInvoice', label: isAr ? 'بدون فاتورة' : 'No invoice', count: summary.missing, tone: 'rose' },
+        { id: 'Paid', label: isAr ? 'تم السداد' : 'Paid', count: summary.paid, tone: 'emerald' },
+    ];
+
+    const subTabs = [
+        { id: 'queue', icon: CreditCard, label: isAr ? 'التحصيل' : 'Collection', count: queue.length },
+        { id: 'ledger', icon: Receipt, label: isAr ? 'الإيصالات' : 'Receipts', count: shiftSummary.payments },
+        ...(canCloseShift ? [{ id: 'reconciliation', icon: Calculator, label: isAr ? 'جرد الدرج' : 'Drawer count' }] : []),
+        ...(canReviewShiftVariance ? [{ id: 'supervisor', icon: ShieldCheck, label: isAr ? 'الإشراف' : 'Supervisor' }] : []),
+    ];
 
     return (
-        <div className="space-y-5">
-            {/* Header Telemetry HUD */}
-            <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 sm:p-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
-                                <Zap size={11} />
-                                <span>{t('cashier.commandCenter', { defaultValue: 'عمليات الدفع والخزينة' })}</span>
+        <div className="space-y-3">
+            {/* Compact finance command deck */}
+            <section className="overflow-hidden rounded-[22px] border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-[0_18px_50px_-36px_rgba(15,23,42,.45)]">
+                <header className="border-b border-[var(--VIARA-line)] bg-gradient-to-br from-teal-500/[0.07] via-[var(--VIARA-surface)] to-emerald-500/[0.03] px-4 py-3.5 sm:px-5">
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-sm shadow-teal-600/20">
+                                <WalletCards size={19} />
                             </span>
-                            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-black ${
-                                currentShift
-                                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                                    : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                            }`}>
-                                <span className="relative flex h-2 w-2">
-                                    {currentShift && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />}
-                                    <span className={`relative inline-flex h-2 w-2 rounded-full ${currentShift ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                                </span>
-                                <span>{currentShift ? (isAr ? 'الوردية مفتوحة ونشطة' : 'Shift Active') : (isAr ? 'الوردية مغلقة حالياً' : 'Shift Closed')}</span>
-                            </span>
+                            <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <h2 className="text-base font-black text-[var(--VIARA-ink)] sm:text-lg">{isAr ? 'الخزينة والتحصيل' : 'Cashier & Collection'}</h2>
+                                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-black ${currentShift ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'}`}>
+                                        <span className={`h-1.5 w-1.5 rounded-full ${currentShift ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                        {currentShift ? (isAr ? 'الوردية مفتوحة' : 'Shift open') : (isAr ? 'الوردية مغلقة' : 'Shift closed')}
+                                    </span>
+                                    {summary.urgent > 0 && (
+                                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+                                            <AlertTriangle size={10} /> {summary.urgent} {isAr ? 'عاجل' : 'urgent'}
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="mt-0.5 truncate text-xs font-medium text-[var(--VIARA-muted)]">{isAr ? 'تحصيل أسرع، متابعة الرصيد، الإيصالات، وجرد الوردية من شاشة واحدة.' : 'Collect payments, track balances, receipts and drawer reconciliation from one workspace.'}</p>
+                            </div>
                         </div>
-                        <h2 className="mt-1 text-xl font-black text-slate-950 dark:text-white sm:text-2xl">
-                            {t('cashier.title', { defaultValue: 'الخزينة والتحصيل المالي' })}
-                        </h2>
-                        <p className="mt-1 max-w-2xl text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
-                            {t('cashier.subtitle', { defaultValue: 'تحصيل مدفوعات المرضى، معالجة الاستثناءات، ومطابقة وجرد عهدة الخزينة اليومية.' })}
-                        </p>
-                    </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                        {currentShift && canCloseShift ? (
-                            <button
-                                type="button"
-                                onClick={() => onShiftAction?.('close')}
-                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 text-xs font-black text-rose-700 shadow-xs transition hover:bg-rose-100 active:scale-95 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300"
-                            >
-                                <LockKeyhole size={14} />
-                                <span>{t('billing.closeShift', { defaultValue: 'إغلاق الوردية وجرد الدرج' })}</span>
-                            </button>
-                        ) : !currentShift && canOpenShift ? (
-                            <button
-                                type="button"
-                                onClick={() => onShiftAction?.('open')}
-                                disabled={isLoadingShift}
-                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 text-xs font-black text-white shadow-teal-600/20 shadow-md transition hover:bg-teal-500 disabled:opacity-50 active:scale-95"
-                            >
-                                <WalletCards size={14} />
-                                <span>{t('billing.openShift', { defaultValue: 'فتح وردية جديدة' })}</span>
-                            </button>
-                        ) : null}
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                            <div className="hidden rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1.5 text-[10.5px] font-bold text-[var(--VIARA-muted)] md:block">
+                                <span>{isAr ? 'العهدة' : 'Float'} </span>
+                                <strong className="font-mono text-[var(--VIARA-ink)]">{currency.format(shiftSummary.opening)}</strong>
+                            </div>
+                            {currentShift && canCloseShift ? (
+                                <button type="button" onClick={() => onShiftAction?.('close')} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 text-[11px] font-black text-rose-700 transition hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+                                    <LockKeyhole size={13} /> {isAr ? 'تقفيل الوردية' : 'Close shift'}
+                                </button>
+                            ) : !currentShift && canOpenShift ? (
+                                <button type="button" onClick={() => onShiftAction?.('open')} disabled={isLoadingShift} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-600 px-3 text-[11px] font-black text-white shadow-sm transition hover:bg-teal-500 disabled:opacity-50">
+                                    <WalletCards size={13} /> {isAr ? 'فتح وردية' : 'Open shift'}
+                                </button>
+                            ) : null}
+                        </div>
                     </div>
+                </header>
+
+                {/* High-value operational metrics; clicking takes the operator straight to work. */}
+                <div className="grid grid-cols-2 border-b border-[var(--VIARA-line)] lg:grid-cols-4">
+                    <button type="button" onClick={() => setActiveSubTab('ledger')} className="group border-e border-b border-[var(--VIARA-line)] p-3 text-start transition hover:bg-emerald-50/40 dark:hover:bg-emerald-950/15 lg:border-b-0">
+                        <span className="flex items-center justify-between text-[10px] font-black uppercase tracking-[.08em] text-[var(--VIARA-muted)]"><span>{isAr ? 'متحصل الوردية' : 'Shift collected'}</span><Receipt size={13} className="text-emerald-600" /></span>
+                        <strong className="mt-1 block font-mono text-lg font-black text-emerald-700 dark:text-emerald-300">{currency.format(shiftSummary.collected)}</strong>
+                        <span className="text-[10px] font-semibold text-[var(--VIARA-muted)]">{shiftSummary.payments} {isAr ? 'عملية' : 'payments'}</span>
+                    </button>
+                    <button type="button" onClick={() => chooseReadiness('PaymentDue')} className="group border-b border-[var(--VIARA-line)] p-3 text-start transition hover:bg-amber-50/50 dark:hover:bg-amber-950/15 lg:border-e lg:border-b-0">
+                        <span className="flex items-center justify-between text-[10px] font-black uppercase tracking-[.08em] text-[var(--VIARA-muted)]"><span>{isAr ? 'مطلوب تحصيله' : 'Outstanding'}</span><CreditCard size={13} className="text-amber-600" /></span>
+                        <strong className="mt-1 block font-mono text-lg font-black text-amber-700 dark:text-amber-300">{currency.format(summary.outstanding)}</strong>
+                        <span className="text-[10px] font-semibold text-[var(--VIARA-muted)]">{summary.due} {isAr ? 'حالة' : 'cases'}</span>
+                    </button>
+                    <button type="button" onClick={() => chooseReadiness('MissingInvoice')} className="group border-e border-[var(--VIARA-line)] p-3 text-start transition hover:bg-rose-50/40 dark:hover:bg-rose-950/15">
+                        <span className="flex items-center justify-between text-[10px] font-black uppercase tracking-[.08em] text-[var(--VIARA-muted)]"><span>{isAr ? 'تحتاج فاتورة' : 'Need invoice'}</span><FilePlus2 size={13} className="text-rose-600" /></span>
+                        <strong className="mt-1 block font-mono text-lg font-black text-[var(--VIARA-ink)]">{summary.missing}</strong>
+                        <span className="text-[10px] font-semibold text-[var(--VIARA-muted)]">{isAr ? 'جاهزة للإنشاء' : 'ready to create'}</span>
+                    </button>
+                    <button type="button" onClick={() => chooseReadiness('All')} className="group p-3 text-start transition hover:bg-teal-50/40 dark:hover:bg-teal-950/15">
+                        <span className="flex items-center justify-between text-[10px] font-black uppercase tracking-[.08em] text-[var(--VIARA-muted)]"><span>{isAr ? 'طابور الخزينة' : 'Cashier queue'}</span><User size={13} className="text-teal-600" /></span>
+                        <strong className="mt-1 block font-mono text-lg font-black text-[var(--VIARA-ink)]">{queue.length}</strong>
+                        <span className="text-[10px] font-semibold text-[var(--VIARA-muted)]">{summary.paid} {isAr ? 'مسدد' : 'paid'}</span>
+                    </button>
                 </div>
 
-                {/* 4 Telemetry Metrics */}
-                <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/50">
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                                {t('billing.openingBalance', { defaultValue: 'الرصيد الافتتاحي' })}
-                            </span>
-                            <span className="grid h-7 w-7 place-items-center rounded-lg bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                <Banknote size={15} />
-                            </span>
-                        </div>
-                        <p className="mt-1 text-xl font-black tabular-nums text-slate-900 dark:text-white">
-                            {currency.format(shiftSummary.opening)}
-                        </p>
-                        <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-500">
-                            {isAr ? 'العهدة النقدية ببدء الوردية' : 'Initial drawer float'}
-                        </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-3.5 dark:border-emerald-900/40 dark:bg-emerald-950/20">
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10.5px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                                {t('billing.netCollected', { defaultValue: 'المتحصل بالوردية' })}
-                            </span>
-                            <span className="grid h-7 w-7 place-items-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                                <Receipt size={15} />
-                            </span>
-                        </div>
-                        <p className="mt-1 text-xl font-black tabular-nums text-emerald-700 dark:text-emerald-300">
-                            {currency.format(shiftSummary.collected)}
-                        </p>
-                        <p className="mt-0.5 truncate text-[10px] font-semibold text-emerald-600/90 dark:text-emerald-400/80">
-                            {isAr ? `${shiftSummary.payments} عملية دفع مكتملة` : `${shiftSummary.payments} completed payments`}
-                        </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-amber-200/80 bg-amber-50/50 p-3.5 dark:border-amber-900/40 dark:bg-amber-950/20">
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10.5px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">
-                                {t('cashier.metrics.outstanding', { defaultValue: 'المتبقي في الطابور' })}
-                            </span>
-                            <span className="grid h-7 w-7 place-items-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
-                                <CreditCard size={15} />
-                            </span>
-                        </div>
-                        <p className="mt-1 text-xl font-black tabular-nums text-amber-800 dark:text-amber-300">
-                            {currency.format(summary.outstanding)}
-                        </p>
-                        <p className="mt-0.5 truncate text-[10px] font-semibold text-amber-700/90 dark:text-amber-400/80">
-                            {isAr ? `${summary.due} حالة بانتظار السداد` : `${summary.due} cases pending payment`}
-                        </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-teal-200/80 bg-teal-50/50 p-3.5 dark:border-teal-900/40 dark:bg-teal-950/20">
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10.5px] font-black uppercase tracking-wider text-teal-800 dark:text-teal-300">
-                                {t('cashier.metrics.waiting', { defaultValue: 'حالات الطابور' })}
-                            </span>
-                            <span className="grid h-7 w-7 place-items-center rounded-lg bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300">
-                                <CheckCircle2 size={15} />
-                            </span>
-                        </div>
-                        <p className="mt-1 text-xl font-black tabular-nums text-teal-900 dark:text-teal-200">
-                            {queue.length} <span className="text-xs font-semibold text-slate-400">({summary.paid} {isAr ? 'مسدد' : 'paid'})</span>
-                        </p>
-                        <p className="mt-0.5 truncate text-[10px] font-semibold text-teal-700 dark:text-teal-400">
-                            {summary.urgent > 0 ? (
-                                <span className="text-rose-600 font-bold">{summary.urgent} {isAr ? 'حالات عاجلة' : 'urgent cases'}</span>
-                            ) : (
-                                isAr ? 'جميع الحالات في المسار الطبيعي' : 'All routine cases'
-                            )}
-                        </p>
-                    </div>
-                </div>
-
-                {/* Sub-Navigation Tabs */}
-                <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
-                    <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-slate-100 p-1 dark:bg-slate-950/80">
-                        <button
-                            type="button"
-                            onClick={() => setActiveSubTab('queue')}
-                            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${
-                                activeSubTab === 'queue'
-                                    ? 'bg-white text-teal-800 shadow-xs dark:bg-slate-800 dark:text-teal-300'
-                                    : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-                            }`}
-                        >
-                            <CreditCard size={14} />
-                            <span>{t('cashier.subTabs.queue', { defaultValue: 'طابور التحصيل والمطالبات' })}</span>
-                            <span className="rounded-full bg-slate-200 px-2 py-0.2 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
-                                {queue.length}
-                            </span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => setActiveSubTab('reconciliation')}
-                            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${
-                                activeSubTab === 'reconciliation'
-                                    ? 'bg-white text-teal-800 shadow-xs dark:bg-slate-800 dark:text-teal-300'
-                                    : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-                            }`}
-                        >
-                            <Calculator size={14} />
-                            <span>{t('cashier.subTabs.reconciliation', { defaultValue: 'جرد ومطابقة الدرج' })}</span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => setActiveSubTab('ledger')}
-                            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${
-                                activeSubTab === 'ledger'
-                                    ? 'bg-white text-teal-800 shadow-xs dark:bg-slate-800 dark:text-teal-300'
-                                    : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-                            }`}
-                        >
-                            <Receipt size={14} />
-                            <span>{t('cashier.subTabs.ledger', { defaultValue: 'سجل متحصلات الوردية' })}</span>
-                            <span className="rounded-full bg-slate-200 px-2 py-0.2 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
-                                {shiftSummary.payments}
-                            </span>
-                        </button>
-
-                        {isSupervisorOrAdmin && (
-                            <button
-                                type="button"
-                                onClick={() => setActiveSubTab('supervisor')}
-                                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${
-                                    activeSubTab === 'supervisor'
-                                        ? 'bg-white text-teal-800 shadow-xs dark:bg-slate-800 dark:text-teal-300'
-                                        : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-                                }`}
-                            >
-                                <ShieldCheck size={14} />
-                                <span>{t('cashier.subTabs.supervisor', { defaultValue: 'لوحة الإشراف المالي' })}</span>
+                {/* Secondary navigation kept inside the same surface to save vertical space. */}
+                <nav className="flex items-center gap-1 overflow-x-auto px-2 py-2" aria-label={isAr ? 'أقسام الخزينة' : 'Cashier sections'}>
+                    {subTabs.map(({ id, icon: Icon, label, count }) => {
+                        const active = activeSubTab === id;
+                        return (
+                            <button key={id} type="button" onClick={() => setActiveSubTab(id)} className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-3 text-[11px] font-black transition ${active ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/15' : 'text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface-muted)] hover:text-[var(--VIARA-ink)]'}`}>
+                                <Icon size={13} /> <span>{label}</span>
+                                {count !== undefined && <span className={`rounded-full px-1.5 py-0.5 font-mono text-[9px] ${active ? 'bg-white/20 text-white' : 'bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)]'}`}>{count}</span>}
                             </button>
+                        );
+                    })}
+                </nav>
+            </section>
+
+            {activeSubTab === 'queue' && (
+                <section className="overflow-hidden rounded-[22px] border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-[0_18px_50px_-36px_rgba(15,23,42,.42)]">
+                    <div className="border-b border-[var(--VIARA-line)] px-4 py-3 sm:px-5">
+                        <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center">
+                            <label className="relative min-w-0 flex-1 xl:max-w-xl">
+                                <Search size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-teal-600 dark:text-teal-400" />
+                                <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={isAr ? 'ابحث بالاسم، MRN، الفحص، رقم الفاتورة أو الطلب...' : 'Search patient, MRN, exam, invoice or order...'} className="h-10 w-full rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] ps-10 pe-10 text-sm font-bold text-[var(--VIARA-ink)] outline-none transition placeholder:font-medium placeholder:text-[var(--VIARA-muted)] focus:border-teal-500 focus:bg-[var(--VIARA-surface)] focus:ring-4 focus:ring-teal-500/10" />
+                                {search && <button type="button" onClick={() => setSearch('')} className="absolute end-2.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface)]"><X size={13} /></button>}
+                            </label>
+
+                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 xl:justify-end">
+                                <select
+                                    aria-label={t('cashier.readinessFilter')}
+                                    value={readiness}
+                                    onChange={(e) => setReadiness(e.target.value)}
+                                    className="sr-only"
+                                >
+                                    <option value="All">{t('cashier.filters.All', { defaultValue: 'All' })}</option>
+                                    <option value="MissingInvoice">{t('cashier.filters.MissingInvoice', { defaultValue: 'MissingInvoice' })}</option>
+                                    <option value="PaymentDue">{t('cashier.filters.PaymentDue', { defaultValue: 'PaymentDue' })}</option>
+                                    <option value="Paid">{t('cashier.filters.Paid', { defaultValue: 'Paid' })}</option>
+                                </select>
+                                <select
+                                    aria-label={t('cashier.exceptionFilter', { defaultValue: 'Filter by exception request status' })}
+                                    value={exceptionFilter}
+                                    onChange={(e) => setExceptionFilter(e.target.value)}
+                                    className="sr-only"
+                                >
+                                    <option value="All">{t('cashier.exceptionFilters.All', { defaultValue: 'All' })}</option>
+                                    <option value="Pending">{t('cashier.exceptionFilters.Pending', { defaultValue: 'Pending' })}</option>
+                                    <option value="Approved">{t('cashier.exceptionFilters.Approved', { defaultValue: 'Approved' })}</option>
+                                    <option value="Rejected">{t('cashier.exceptionFilters.Rejected', { defaultValue: 'Rejected' })}</option>
+                                </select>
+                                {readinessChips.map((chip) => {
+                                    const active = readiness === chip.id;
+                                    return <button key={chip.id} type="button" onClick={() => setReadiness(chip.id)} className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-black transition ${active ? 'border-teal-600 bg-teal-600 text-white shadow-sm' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)]'}`}><span>{chip.label}</span><span className={`rounded-full px-1.5 py-0.5 font-mono text-[9px] ${active ? 'bg-white/20' : 'bg-[var(--VIARA-surface-muted)]'}`}>{chip.count}</span></button>;
+                                })}
+                                <button type="button" onClick={() => setShowFilters(v => !v)} className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-black transition ${showFilters || activeFilterCount ? 'border-teal-300 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-300' : 'border-[var(--VIARA-line)] text-[var(--VIARA-muted)]'}`}><Filter size={13} />{isAr ? 'فلاتر' : 'Filters'}{activeFilterCount > 0 && <span className="rounded-full bg-teal-600 px-1.5 py-0.5 font-mono text-[9px] text-white">{activeFilterCount}</span>}<ChevronDown size={11} className={showFilters ? 'rotate-180' : ''} /></button>
+                                <div className="inline-flex rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-0.5">
+                                    <button type="button" onClick={() => setViewMode('table')} className={`grid h-8 w-8 place-items-center rounded-lg transition ${viewMode === 'table' ? 'bg-[var(--VIARA-surface)] text-teal-700 shadow-sm' : 'text-[var(--VIARA-muted)]'}`} title={isAr ? 'جدول' : 'Table'}><List size={14} /></button>
+                                    <button type="button" onClick={() => setViewMode('grid')} className={`grid h-8 w-8 place-items-center rounded-lg transition ${viewMode === 'grid' ? 'bg-[var(--VIARA-surface)] text-teal-700 shadow-sm' : 'text-[var(--VIARA-muted)]'}`} title={isAr ? 'بطاقات' : 'Cards'}><LayoutGrid size={14} /></button>
+                                </div>
+                                {onRefresh && <button type="button" onClick={onRefresh} className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--VIARA-line)] text-[var(--VIARA-muted)] transition hover:text-teal-700" title={isAr ? 'تحديث' : 'Refresh'}><RefreshCw size={13} /></button>}
+                            </div>
+                        </div>
+
+                        {showFilters && (
+                            <div className="mt-2.5 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-800 dark:bg-[#091222] sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
+                                <select aria-label={t('cashier.exceptionFilter', { defaultValue: 'Filter by exception request status' })} value={exceptionFilter} onChange={(e) => setExceptionFilter(e.target.value)} className="h-9 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 text-xs font-bold text-[var(--VIARA-ink)] outline-none focus:border-teal-500">
+                                    <option value="All">{isAr ? 'كل الاستثناءات' : 'All exceptions'}</option><option value="Pending">{isAr ? 'استثناء قيد المراجعة' : 'Pending exception'}</option><option value="Approved">{isAr ? 'استثناء معتمد' : 'Approved exception'}</option><option value="Rejected">{isAr ? 'استثناء مرفوض' : 'Rejected exception'}</option>
+                                </select>
+                                <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="h-9 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 text-xs font-bold text-[var(--VIARA-ink)] outline-none focus:border-teal-500">
+                                    <option value="urgency">{isAr ? 'الأولوية ثم الانتظار' : 'Urgency then wait'}</option><option value="wait">{isAr ? 'الأطول انتظاراً' : 'Longest wait'}</option><option value="balance">{isAr ? 'أعلى رصيد' : 'Highest balance'}</option><option value="name">{isAr ? 'اسم المريض' : 'Patient name'}</option>
+                                </select>
+                                <button type="button" onClick={() => { setExceptionFilter('All'); setSortBy('urgency'); }} className="h-9 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 text-[11px] font-black text-[var(--VIARA-muted)] hover:text-rose-600">{isAr ? 'إعادة ضبط' : 'Reset'}</button>
+                            </div>
+                        )}
+
+                        {(summary.pendingExceptions > 0 || summary.approvedExceptions > 0) && (
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px] font-bold text-[var(--VIARA-muted)]">
+                                {summary.pendingExceptions > 0 && <button type="button" onClick={() => { setExceptionFilter('Pending'); setShowFilters(true); }} className="inline-flex items-center gap-1 rounded-lg bg-amber-500/10 px-2 py-1 text-amber-700 dark:text-amber-300"><ShieldCheck size={11} />{summary.pendingExceptions} {isAr ? 'طلبات استثناء تنتظر المراجعة' : 'exception requests pending'}</button>}
+                                {summary.approvedExceptions > 0 && <button type="button" onClick={() => { setExceptionFilter('Approved'); setShowFilters(true); }} className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2 py-1 text-emerald-700 dark:text-emerald-300"><CheckCircle2 size={11} />{summary.approvedExceptions} {isAr ? 'استثناءات معتمدة جاهزة للاستكمال' : 'approved exceptions ready'}</button>}
+                            </div>
                         )}
                     </div>
 
-                    {activeSubTab === 'queue' && (
-                        <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
-                            <button
-                                type="button"
-                                onClick={() => setViewMode('grid')}
-                                className={`rounded-lg p-1.5 transition ${viewMode === 'grid' ? 'bg-white text-teal-700 shadow-xs dark:bg-slate-800 dark:text-teal-300' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'}`}
-                                title={t('cashier.viewModes.grid', { defaultValue: 'عرض البطاقات' })}
-                            >
-                                <LayoutGrid size={15} />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setViewMode('table')}
-                                className={`rounded-lg p-1.5 transition ${viewMode === 'table' ? 'bg-white text-teal-700 shadow-xs dark:bg-slate-800 dark:text-teal-300' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'}`}
-                                title={t('cashier.viewModes.table', { defaultValue: 'عرض الجدول السريع' })}
-                            >
-                                <List size={15} />
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </section>
-
-            {/* TAB 1: Collection Queue */}
-            {activeSubTab === 'queue' && (
-                <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    {/* Search & Filter Toolbar */}
-                    <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
-                        <label className="relative w-full lg:max-w-md">
-                            <span className="sr-only">{t('cashier.search')}</span>
-                            <Search size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input
-                                type="search"
-                                value={search}
-                                onChange={(event) => setSearch(event.target.value)}
-                                placeholder={t('cashier.searchPlaceholder')}
-                                className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/50 ps-10 pe-10 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                            />
-                            {search && (
-                                <button
-                                    type="button"
-                                    onClick={() => setSearch('')}
-                                    className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
-                                >
-                                    <X size={13} />
-                                </button>
-                            )}
-                        </label>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                            <select
-                                aria-label={t('cashier.readinessFilter')}
-                                value={readiness}
-                                onChange={(event) => setReadiness(event.target.value)}
-                                className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/50 px-3.5 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-                            >
-                                <option value="All">{t('cashier.filters.All')}</option>
-                                <option value="PaymentDue">{t('cashier.filters.PaymentDue')}</option>
-                                <option value="Paid">{t('cashier.filters.Paid')}</option>
-                                <option value="MissingInvoice">{t('cashier.filters.MissingInvoice')}</option>
-                            </select>
-
-                            <select
-                                aria-label={t('cashier.exceptionFilter', { defaultValue: 'Filter by exception request status' })}
-                                value={exceptionFilter}
-                                onChange={(event) => setExceptionFilter(event.target.value)}
-                                className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/50 px-3.5 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-                            >
-                                <option value="All">{t('cashier.exceptionFilters.All')}</option>
-                                <option value="Pending">{t('cashier.exceptionFilters.Pending')}</option>
-                                <option value="Approved">{t('cashier.exceptionFilters.Approved')}</option>
-                                <option value="Rejected">{t('cashier.exceptionFilters.Rejected')}</option>
-                            </select>
-
-                            <select
-                                aria-label="Sort queue"
-                                value={sortBy}
-                                onChange={(event) => setSortBy(event.target.value)}
-                                className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/50 px-3.5 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-                            >
-                                <option value="urgency">{t('cashier.sorted', { defaultValue: 'الأولوية ثم الأطول انتظاراً' })}</option>
-                                <option value="wait">{isAr ? 'أطول فترة انتظار' : 'Longest Wait'}</option>
-                                <option value="balance">{isAr ? 'أعلى متبقي مالي' : 'Highest Balance'}</option>
-                                <option value="name">{isAr ? 'اسم المريض' : 'Patient Name'}</option>
-                            </select>
-
-                            {onRefresh && (
-                                <button
-                                    type="button"
-                                    onClick={onRefresh}
-                                    title={t('command.refresh', { defaultValue: 'تحديث' })}
-                                    className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200/80 bg-slate-50/50 text-slate-600 transition hover:bg-white hover:text-teal-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900"
-                                >
-                                    <RefreshCw size={14} />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Content View: Table vs Grid */}
                     {filteredAndSorted.length === 0 ? (
-                        <div className="p-8">
-                            <EmptyState
-                                icon={CreditCard}
-                                title={t('cashier.empty')}
-                                description={search || readiness !== 'All' ? t('cashier.noFilterResults') : t('cashier.emptySubtitle')}
-                            />
-                        </div>
+                        <div className="p-8"><EmptyState icon={CreditCard} title={t('cashier.empty')} description={search || readiness !== 'All' || exceptionFilter !== 'All' ? t('cashier.noFilterResults') : t('cashier.emptySubtitle')} /></div>
                     ) : viewMode === 'table' ? (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-start text-xs">
-                                <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-black uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-400">
-                                    <tr>
-                                        <th className="px-4 py-3 text-start">{t('table.patient')}</th>
-                                        <th className="px-3 py-3 text-start">{t('table.machineExam')}</th>
-                                        <th className="px-3 py-3 text-center">{t('cashier.waiting')}</th>
-                                        <th className="px-3 py-3 text-start">{t('table.financialStatus')}</th>
-                                        <th className="px-3 py-3 text-end">{t('cashier.balance')}</th>
-                                        <th className="px-4 py-3 text-end">{t('table.actions')}</th>
-                                    </tr>
+                        <div className="max-h-[62vh] overflow-auto">
+                            <table className="w-full min-w-[920px] text-start text-xs">
+                                <thead className="sticky top-0 z-10 border-b-2 border-slate-300 bg-slate-100 text-[10px] font-black uppercase tracking-[.07em] text-slate-700 dark:border-slate-700 dark:bg-[#091222] dark:text-slate-300">
+                                    <tr><th className="px-4 py-2.5 text-start">{t('table.patient')}</th><th className="px-3 py-2.5 text-start">{t('table.machineExam')}</th><th className="px-3 py-2.5 text-center">{t('cashier.waiting')}</th><th className="px-3 py-2.5 text-start">{t('table.financialStatus')}</th><th className="px-3 py-2.5 text-end">{t('cashier.balance')}</th><th className="px-4 py-2.5 text-end">{t('table.actions')}</th></tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                                    {paginatedItems.map((item) => (
-                                        <QueueTableRow
-                                            key={item.work_item_id || item.appointment_id || item.exam_id}
-                                            currency={currency}
-                                            currentShift={currentShift}
-                                            consumedExamIds={consumedExamIds}
-                                            item={item}
-                                            locale={locale}
-                                            canAppendSupplies={canAppendSupplies}
-                                            onCreateInvoice={onCreateInvoice}
-                                            onMoveQueue={onMoveQueue}
-                                            onOpenPayment={onOpenPayment}
-                                            onRequestPartialPaymentException={onRequestPartialPaymentException}
-                                            onSetSupplyExamId={setSupplyExamId}
-                                            t={t}
-                                        />
-                                    ))}
-                                </tbody>
+                                <tbody className="divide-y divide-[var(--VIARA-line)]">{paginatedItems.map((item) => <QueueTableRow key={item.work_item_id || item.appointment_id || item.exam_id} currency={currency} currentShift={currentShift} consumedExamIds={consumedExamIds} item={item} locale={locale} canAppendSupplies={canAppendSupplies} onCreateInvoice={onCreateInvoice} onMoveQueue={onMoveQueue} onOpenPayment={onOpenPayment} onRequestPartialPaymentException={onRequestPartialPaymentException} onSetSupplyExamId={setSupplyExamId} onCallPatient={handleCallPatient} t={t} />)}</tbody>
                             </table>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 gap-3.5 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-3">
-                            {paginatedItems.map((item) => (
-                                <QueueCard
-                                    key={item.work_item_id || item.appointment_id || item.exam_id}
-                                    currency={currency}
-                                    currentShift={currentShift}
-                                    consumedExamIds={consumedExamIds}
-                                    item={item}
-                                    locale={locale}
-                                    canAppendSupplies={canAppendSupplies}
-                                    onCreateInvoice={onCreateInvoice}
-                                    onMoveQueue={onMoveQueue}
-                                    onOpenPayment={onOpenPayment}
-                                    onRequestPartialPaymentException={onRequestPartialPaymentException}
-                                    onSetSupplyExamId={setSupplyExamId}
-                                    t={t}
-                                />
-                            ))}
-                        </div>
+                        <div className="grid grid-cols-1 gap-3.5 p-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 3xl:grid-cols-5">{paginatedItems.map((item) => <QueueCard key={item.work_item_id || item.appointment_id || item.exam_id} currency={currency} currentShift={currentShift} consumedExamIds={consumedExamIds} item={item} locale={locale} canAppendSupplies={canAppendSupplies} onCreateInvoice={onCreateInvoice} onMoveQueue={onMoveQueue} onOpenPayment={onOpenPayment} onRequestPartialPaymentException={onRequestPartialPaymentException} onSetSupplyExamId={setSupplyExamId} onCallPatient={handleCallPatient} t={t} />)}</div>
                     )}
 
-                    {/* Pagination */}
-                    {filteredAndSorted.length > 0 && (
-                        <div className="border-t border-slate-100 p-4 dark:border-slate-800">
-                            <Pagination
-                                currentPage={paginationState.currentPage}
-                                totalPages={paginationState.totalPages}
-                                totalItems={filteredAndSorted.length}
-                                pageSize={pageSize}
-                                onPageChange={setCurrentPage}
-                                onPageSizeChange={setPageSize}
-                                pageSizeOptions={PAGE_SIZE_OPTIONS}
-                            />
-                        </div>
-                    )}
+                    {filteredAndSorted.length > 0 && <div className="border-t border-[var(--VIARA-line)] p-3"><Pagination currentPage={paginationState.currentPage} totalPages={paginationState.totalPages} totalItems={filteredAndSorted.length} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} pageSizeOptions={PAGE_SIZE_OPTIONS} /></div>}
                 </section>
             )}
 
-            {/* TAB 2: Cash Drawer Reconciliation */}
-            {activeSubTab === 'reconciliation' && (
-                <CashDrawerReconciliation
-                    currentShift={currentShift}
-                    reconciliationData={currentShift}
-                    onReconcile={onReconcile}
-                    isLoading={isLoadingShift}
-                    t={t}
-                />
-            )}
+            {activeSubTab === 'reconciliation' && <CashDrawerReconciliation currentShift={currentShift} reconciliationData={currentShift} onReconcile={onReconcile} isLoading={isLoadingShift} t={t} />}
 
-            {/* TAB 3: Shift Receipts Ledger */}
             {activeSubTab === 'ledger' && (
-                <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-5">
-                        <div>
-                            <h3 className="text-base font-black text-slate-900 dark:text-white">
-                                {t('cashier.ledger.title', { defaultValue: 'سجل عمليات التحصيل للوردية الحالية' })}
-                            </h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {t('cashier.ledger.subtitle', { defaultValue: 'استعراض تفصيلي للمقبوضات مصنفة بوسيلة الدفع وإعادة طباعة الإيصالات' })}
-                            </p>
-                        </div>
-                        <div className="inline-flex items-center gap-2 rounded-2xl bg-teal-50 px-4 py-2 text-xs font-black text-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
-                            <span>{t('cashier.ledger.totalShiftReceipts', { defaultValue: 'إجمالي المقبوضات' })}:</span>
-                            <span className="text-sm font-black tabular-nums">{currency.format(shiftSummary.collected)}</span>
-                        </div>
+                <section className="overflow-hidden rounded-[22px] border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-[0_18px_50px_-36px_rgba(15,23,42,.42)]">
+                    <header className="flex flex-col gap-3 border-b border-[var(--VIARA-line)] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                        <div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"><Receipt size={17} /></span><div><h3 className="text-sm font-black text-[var(--VIARA-ink)]">{isAr ? 'سجل متحصلات الوردية' : 'Shift receipts ledger'}</h3><p className="text-[10.5px] font-medium text-[var(--VIARA-muted)]">{isAr ? 'كل عمليات الدفع المكتملة مع إعادة طباعة الإيصال.' : 'Completed payments with instant receipt reprint.'}</p></div></div>
+                        <strong className="font-mono text-base font-black text-emerald-700 dark:text-emerald-300">{currency.format(shiftSummary.collected)}</strong>
+                    </header>
+                    <div className="grid grid-cols-2 border-b border-[var(--VIARA-line)] sm:grid-cols-5">
+                        {[
+                            ['Cash', Banknote, paymentMethodTotals.Cash],
+                            ['Card', CreditCard, paymentMethodTotals.Card],
+                            ['Wallet', Wallet, paymentMethodTotals.Wallet],
+                            ['Bank Transfer', Landmark, paymentMethodTotals['Bank Transfer']],
+                            ['Other', Receipt, paymentMethodTotals.Other]
+                        ].map(([key, Icon, amount], idx) => <div key={key} className={`p-3 ${idx < 4 ? 'border-e border-[var(--VIARA-line)]' : ''}`}><span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]"><Icon size={12} className="text-teal-600" />{key === 'Other' ? (isAr ? 'أخرى' : 'Other') : t(`billing.methods.${key}`, { defaultValue: key })}</span><strong className="mt-1 block font-mono text-sm font-black text-[var(--VIARA-ink)]">{currency.format(amount)}</strong></div>)}
                     </div>
-
-                    {shiftReceipts.length === 0 ? (
-                        <div className="p-8">
-                            <EmptyState
-                                icon={Receipt}
-                                title={t('cashier.ledger.empty', { defaultValue: 'لا توجد متحصلات مسجلة في هذه الوردية حتى الآن' })}
-                                description={isAr ? 'سيظهر هنا كل إيصال دفع يتم تحصيله فور إتمام العملية.' : 'Every payment collected during this shift will appear here with instant receipt reprint actions.'}
-                            />
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-800">
-                            <table className="w-full text-start text-xs">
-                                <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-black uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-400">
-                                    <tr>
-                                        <th className="px-4 py-3 text-start">{t('cashier.ledger.paymentTime', { defaultValue: 'وقت العملية' })}</th>
-                                        <th className="px-3 py-3 text-start">{t('cashier.ledger.patient', { defaultValue: 'المريض' })}</th>
-                                        <th className="px-3 py-3 text-start">{t('cashier.ledger.invoiceNumber', { defaultValue: 'رقم الفاتورة' })}</th>
-                                        <th className="px-3 py-3 text-start">{t('cashier.ledger.method', { defaultValue: 'وسيلة الدفع' })}</th>
-                                        <th className="px-3 py-3 text-end">{t('cashier.ledger.amount', { defaultValue: 'المبلغ المحصل' })}</th>
-                                        <th className="px-4 py-3 text-end">{t('table.actions')}</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                                    {shiftReceipts.map((rec) => (
-                                        <tr key={rec.payment_id} className="transition hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                                            <td className="px-4 py-3 font-mono text-[11px] font-bold text-slate-500">
-                                                {new Date(rec.transaction_date || rec.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </td>
-                                            <td className="px-3 py-3 font-black text-slate-900 dark:text-white">
-                                                <div>{rec.patient_name}</div>
-                                                <div className="font-mono text-[10px] text-slate-400">{rec.mrn}</div>
-                                            </td>
-                                            <td className="px-3 py-3 font-mono font-bold text-teal-700 dark:text-teal-400">
-                                                {rec.invoice_number || '-'}
-                                            </td>
-                                            <td className="px-3 py-3">
-                                                <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10.5px] font-bold dark:border-slate-700 dark:bg-slate-800">
-                                                    {rec.method === 'Cash' && <Banknote size={12} className="text-emerald-600" />}
-                                                    {rec.method === 'Card' && <CreditCard size={12} className="text-blue-600" />}
-                                                    {rec.method === 'Wallet' && <Wallet size={12} className="text-purple-600" />}
-                                                    <span>{rec.method || 'Cash'}</span>
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-3 text-end font-mono text-sm font-black text-emerald-700 dark:text-emerald-400">
-                                                {currency.format(Number(rec.amount || 0))}
-                                            </td>
-                                            <td className="px-4 py-3 text-end">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => window.open(`/print/receipt/${rec.payment_id}`, '_blank')}
-                                                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                                                >
-                                                    <Printer size={13} />
-                                                    <span>{t('cashier.ledger.reprintReceipt', { defaultValue: 'طباعة الإيصال' })}</span>
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
+                    {shiftReceipts.length === 0 ? <div className="p-8"><EmptyState icon={Receipt} title={isAr ? 'لا توجد متحصلات في هذه الوردية' : 'No payments in this shift'} description={isAr ? 'ستظهر الإيصالات هنا فور إتمام التحصيل.' : 'Receipts appear here immediately after collection.'} /></div> : <div className="max-h-[60vh] overflow-auto"><table className="w-full min-w-[760px] text-start text-xs"><thead className="sticky top-0 z-10 border-b border-[var(--VIARA-line-strong)] bg-[var(--VIARA-surface-muted)] text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]"><tr><th className="px-4 py-2.5 text-start">{isAr ? 'الوقت' : 'Time'}</th><th className="px-3 py-2.5 text-start">{isAr ? 'المريض' : 'Patient'}</th><th className="px-3 py-2.5 text-start">{isAr ? 'الفاتورة' : 'Invoice'}</th><th className="px-3 py-2.5 text-start">{isAr ? 'الوسيلة' : 'Method'}</th><th className="px-3 py-2.5 text-end">{isAr ? 'المبلغ' : 'Amount'}</th><th className="px-4 py-2.5 text-end">{isAr ? 'الإجراء' : 'Action'}</th></tr></thead><tbody className="divide-y divide-[var(--VIARA-line)]">{shiftReceipts.map((rec) => <tr key={rec.payment_id} className="transition hover:bg-[var(--VIARA-surface-muted)]/60"><td className="px-4 py-3 font-mono text-[11px] font-bold text-[var(--VIARA-muted)]">{new Date(rec.transaction_date || rec.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td><td className="px-3 py-3"><strong className="block text-[var(--VIARA-ink)]">{rec.patient_name}</strong><span className="font-mono text-[10px] text-[var(--VIARA-muted)]">{rec.mrn}</span></td><td className="px-3 py-3 font-mono font-bold text-[var(--VIARA-accent-text)]">{rec.invoice_number || '-'}</td><td className="px-3 py-3"><span className="rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2 py-1 text-[10px] font-black text-[var(--VIARA-ink)]">{rec.method || 'Cash'}</span></td><td className="px-3 py-3 text-end font-mono text-sm font-black text-[var(--VIARA-success)]">{currency.format(Number(rec.amount || 0))}</td><td className="px-4 py-3 text-end"><button type="button" onClick={() => window.open(`/print/receipt/${rec.payment_id}`, '_blank')} className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] px-2.5 text-[10.5px] font-black text-[var(--VIARA-muted)] transition hover:text-[var(--VIARA-accent-text)] hover:border-[var(--VIARA-accent)]"><Printer size={12} />{isAr ? 'طباعة' : 'Print'}</button></td></tr>)}</tbody></table></div>}
                 </section>
             )}
 
-            {/* TAB 4: Supervisor Panel */}
-            {activeSubTab === 'supervisor' && isSupervisorOrAdmin && (
-                <ShiftSupervisorPanel
-                    currentShift={currentShift}
-                    onOpenShift={() => onShiftAction?.('open')}
-                    onCloseShift={() => onShiftAction?.('close')}
-                    onReviewClosure={onReviewClosure}
-                    t={t}
-                />
-            )}
+            {activeSubTab === 'supervisor' && canReviewShiftVariance && <ShiftSupervisorPanel currentShift={currentShift} onOpenShift={() => onShiftAction?.('open')} onCloseShift={() => onShiftAction?.('close')} onReviewClosure={onReviewClosure} t={t} />}
 
-            {/* Consume Item Modal */}
-            {supplyExamId && (
-                <ConsumeItemModal
-                    isOpen={Boolean(supplyExamId)}
-                    examId={supplyExamId}
-                    referenceId={supplyExamId}
-                    referenceType="Exam"
-                    onClose={() => setSupplyExamId(null)}
-                    onSuccess={({ examId }) => {
-                        setSupplyExamId(null);
-                        if (examId) {
-                            setConsumedExamIds((prev) => new Set([...prev, examId]));
-                        }
-                        onSupplyConsumed?.(examId);
-                    }}
-                />
-            )}
+            {supplyExamId && <ConsumeItemModal isOpen={Boolean(supplyExamId)} examId={supplyExamId} referenceId={supplyExamId} referenceType="Exam" onClose={() => setSupplyExamId(null)} onSuccess={({ examId }) => { setSupplyExamId(null); if (examId) setConsumedExamIds((prev) => new Set([...prev, examId])); onSupplyConsumed?.(examId); }} />}
         </div>
     );
 };
@@ -737,12 +531,15 @@ const QueueTableRow = ({
     onOpenPayment,
     onRequestPartialPaymentException,
     onSetSupplyExamId,
+    onCallPatient,
     t
 }) => {
     const state = getPaymentState(item);
     const balance = Number(item.invoice?.balance_amount || 0);
     const waiting = Number(item.waiting_minutes || 0);
+    const paymentException = item.paymentException;
     const exceptionStatus = item.paymentExceptionStatus;
+    const exceptionTargetStage = item.exceptionTargetStage;
     const isOngoingExam = ['Prep Pending', 'Ready for Exam', 'In Exam', 'Reporting', 'Finalized'].includes(item.queue_stage);
     const isContrastRequired = Boolean(
         item.contrast_required ||
@@ -757,6 +554,21 @@ const QueueTableRow = ({
         || (item.supplies && item.supplies.length > 0)
         || (item.consumed_supplies && item.consumed_supplies.length > 0)
         || (item.invoice?.items || []).some(i => /صبغة|contrast|dye/i.test(i.description || ''));
+    const isPartialInvoice = item.invoice?.invoice_status === 'Partial' && balance > 0;
+    const canRequestException = isPartialInvoice
+        && ['Arrived', 'Payment Pending'].includes(item.queue_stage)
+        && Boolean(onRequestPartialPaymentException);
+    const canRetryException = canRequestException && ['Rejected', 'Expired', 'Used'].includes(exceptionStatus);
+    const canAdvanceWithException = exceptionStatus === 'Approved'
+        && item.queue_stage === 'Payment Pending'
+        && (!isContrastRequired || hasSupplies);
+    const requestException = () => onRequestPartialPaymentException({
+        invoice: item.invoice,
+        transactionType: 'ClinicalQueueTransition',
+        amount: balance,
+        targetStage: exceptionTargetStage,
+        notes: `Requested queue exception to move case into ${exceptionTargetStage}`,
+    });
 
     return (
         <tr className={`transition hover:bg-slate-50/70 dark:hover:bg-slate-800/40 ${state === 'PaymentDue' ? 'bg-amber-50/20' : ''}`}>
@@ -789,9 +601,31 @@ const QueueTableRow = ({
             </td>
             <td className="px-3 py-3 text-end font-mono text-xs font-black">
                 {balance > 0 ? (
-                    <span className="text-amber-700 dark:text-amber-400">{currency.format(balance)}</span>
+                    <div>
+                        <span className="text-amber-700 dark:text-amber-400">{currency.format(balance)}</span>
+                        <div className="mt-1 flex justify-end">
+                            <PaymentMethodBadge
+                                method={item.invoice?.expected_payment_method || item.payment_method}
+                                isInsurance={Boolean(item.invoice?.insurance_covered_amount > 0 || item.invoice?.expected_payment_method === 'Insurance')}
+                                providerName={item.invoice?.provider_name}
+                                isAr={locale?.startsWith('ar')}
+                            />
+                        </div>
+                    </div>
                 ) : (
-                    <span className="text-emerald-700 dark:text-emerald-400">{isPaymentZeroOrCovered(item) ? (locale?.startsWith('ar') ? 'خالص' : 'Fully Paid') : '-'}</span>
+                    <div>
+                        <span className="text-emerald-700 dark:text-emerald-400">{isPaymentZeroOrCovered(item) ? (locale?.startsWith('ar') ? 'خالص' : 'Fully Paid') : '-'}</span>
+                        {Boolean(item.invoice?.insurance_covered_amount > 0) && (
+                            <div className="mt-1 flex justify-end">
+                                <PaymentMethodBadge
+                                    method="Insurance"
+                                    isInsurance
+                                    providerName={item.invoice?.provider_name}
+                                    isAr={locale?.startsWith('ar')}
+                                />
+                            </div>
+                        )}
+                    </div>
                 )}
             </td>
             <td className="px-4 py-3 text-end">
@@ -832,15 +666,47 @@ const QueueTableRow = ({
                         )
                     )}
 
-                    {state === 'Paid' && (
+                    {canAdvanceWithException && (
                         <button
                             type="button"
-                            onClick={() => onMoveQueue(item, item.nurse_id ? 'Prep Pending' : 'Ready for Exam')}
+                            onClick={() => onMoveQueue(item, exceptionTargetStage)}
                             className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-bold text-white transition hover:bg-slate-800 dark:bg-teal-600 dark:hover:bg-teal-500"
                         >
                             <CheckCircle2 size={12} />
-                            <span>{item.nurse_id ? t('cashier.paidNurse') : t('cashier.paidTech')}</span>
+                            <span>{exceptionTargetStage === 'Prep Pending' ? t('cashier.paidNurse') : t('cashier.paidTech')}</span>
                         </button>
+                    )}
+
+                    {canRequestException && (!paymentException || canRetryException) && (
+                        <button
+                            type="button"
+                            onClick={requestException}
+                            className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-800 transition hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                        >
+                            {canRetryException ? <RotateCcw size={12} /> : <ShieldCheck size={12} />}
+                            <span>{canRetryException ? t('billing.retryException', { defaultValue: 'Request again' }) : t('billing.requestException', { defaultValue: 'Request exception' })}</span>
+                        </button>
+                    )}
+
+                    {state === 'Paid' && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => onMoveQueue(item, 'Prep Pending')}
+                                className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-bold text-teal-700 transition hover:bg-teal-100 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300"
+                            >
+                                <CheckCircle2 size={12} />
+                                <span>{t('cashier.paidNurse')}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onMoveQueue(item, 'Ready for Exam')}
+                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                            >
+                                <CheckCircle2 size={12} />
+                                <span>{t('cashier.paidTech')}</span>
+                            </button>
+                        </>
                     )}
 
                     {canAppendSupplies && item.exam_id && (
@@ -851,6 +717,18 @@ const QueueTableRow = ({
                             title={t('cashier.addSupply')}
                         >
                             <PackagePlus size={13} />
+                        </button>
+                    )}
+
+                    {onCallPatient && (
+                        <button
+                            type="button"
+                            onClick={() => onCallPatient(item)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-amber-300 bg-amber-50 text-amber-700 hover:border-amber-400 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 transition active:scale-95 shadow-2xs"
+                            title={locale?.startsWith('ar') ? 'نداء المريض إلى الخزينة على شاشات العرض' : 'Call patient to Cashier on display board'}
+                            aria-label={locale?.startsWith('ar') ? 'نداء المريض إلى الخزينة' : 'Call patient to Cashier'}
+                        >
+                            <Bell size={12} />
                         </button>
                     )}
                 </div>
@@ -876,6 +754,7 @@ const QueueCard = ({
     onOpenPayment,
     onRequestPartialPaymentException,
     onSetSupplyExamId,
+    onCallPatient,
     t
 }) => {
     const state = getPaymentState(item);
@@ -1013,7 +892,15 @@ const QueueCard = ({
 
                 <div className="mt-2.5 flex items-center justify-between rounded-xl bg-slate-50/80 p-2.5 dark:bg-slate-950/60">
                     <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('cashier.balance')}</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('cashier.balance')}</span>
+                            <PaymentMethodBadge
+                                method={item.invoice?.expected_payment_method || item.payment_method}
+                                isInsurance={Boolean(item.invoice?.insurance_covered_amount > 0 || item.invoice?.expected_payment_method === 'Insurance')}
+                                providerName={item.invoice?.provider_name}
+                                isAr={locale?.startsWith('ar')}
+                            />
+                        </div>
                         <p className="font-mono text-base font-black text-slate-900 dark:text-white">
                             {currency.format(balance)}
                         </p>
@@ -1058,6 +945,18 @@ const QueueCard = ({
                             {t('billing.collectPayment')}
                         </button>
                     )
+                )}
+
+                {onCallPatient && (
+                    <button
+                        type="button"
+                        onClick={() => onCallPatient(item)}
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-amber-300 bg-amber-50 text-amber-700 hover:border-amber-400 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 transition active:scale-95 shadow-2xs"
+                        title={locale?.startsWith('ar') ? 'نداء المريض إلى الخزينة على شاشات العرض' : 'Call patient to Cashier on display board'}
+                        aria-label={locale?.startsWith('ar') ? 'نداء المريض إلى الخزينة' : 'Call patient to Cashier'}
+                    >
+                        <Bell size={13} />
+                    </button>
                 )}
 
                 {canAdvanceWithException && (
@@ -1145,6 +1044,47 @@ const ExceptionStatusBadge = ({ status, t }) => {
     return (
         <span className={`inline-flex items-center rounded-lg border px-2 py-0.5 text-[9.5px] font-black ${item.className}`}>
             {item.label}
+        </span>
+    );
+};
+
+const PaymentMethodBadge = ({ method, isInsurance, providerName, isAr }) => {
+    if (!method && !isInsurance) return null;
+    const isCard = method === 'Card' || method === 'Credit Card';
+    const isWallet = method === 'Wallet';
+    const isBank = method === 'Bank Transfer';
+    const isCash = method === 'Cash';
+
+    let text = method || 'Cash';
+    let colorClass = 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+    let Icon = Banknote;
+
+    if (isInsurance || method === 'Insurance') {
+        text = providerName ? `${isAr ? 'تأمين' : 'Insurance'} · ${providerName}` : (isAr ? 'تأمين / تعاقد' : 'Insurance');
+        colorClass = 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300';
+        Icon = Shield;
+    } else if (isCard) {
+        text = isAr ? 'بطاقة / فيزا' : 'Card';
+        colorClass = 'border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300';
+        Icon = CreditCard;
+    } else if (isWallet) {
+        text = isAr ? 'محفظة إلكترونية' : 'Wallet';
+        colorClass = 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300';
+        Icon = Wallet;
+    } else if (isBank) {
+        text = isAr ? 'تحويل بنكي' : 'Bank Transfer';
+        colorClass = 'border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-300';
+        Icon = Landmark;
+    } else if (isCash) {
+        text = isAr ? 'نقدي' : 'Cash';
+        colorClass = 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300';
+        Icon = Banknote;
+    }
+
+    return (
+        <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9.5px] font-bold ${colorClass}`}>
+            <Icon size={10} className="shrink-0" />
+            <span className="truncate max-w-[130px]">{text}</span>
         </span>
     );
 };

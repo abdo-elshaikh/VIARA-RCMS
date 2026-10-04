@@ -5,6 +5,21 @@ import ReceptionCaseDetailsModal from '../ReceptionCaseDetailsModal';
 
 const mockUpdateAppointment = vi.fn().mockReturnValue({ unwrap: vi.fn().mockResolvedValue({}) });
 
+// Stable references: the modal memoizes on these query results, so fresh literals
+// on every render would retrigger the edit-form effect indefinitely.
+const apiData = vi.hoisted(() => ({
+    staff: [
+        { id: 'nurse-1', name: 'Mona Nurse', role: 'Nurse' },
+        { id: 'tech-1', name: 'Ali Tech', role: 'Technician' },
+        { id: 'rad-1', name: 'Dr. Youssef', role: 'Radiologist' }
+    ],
+    machines: [{ id: 'mach-1', name: 'MRI Magnetom', modality: 'MRI', room_id: 'room-1' }],
+    examTypes: [{ id: 'exam-1', name: 'Lumbar Spine MRI', modality: 'MRI' }],
+    rooms: [{ room_id: 'room-1', name: 'MRI Suite 1', room_number: '101', status: 'Active' }],
+    shifts: [{ shift_id: 'shift-1', user_id: 'tech-1', room_id: 'room-1', start_time: '2026-09-02T08:00:00Z', end_time: '2026-09-02T16:00:00Z' }],
+    attendance: [{ attendance_id: 'att-1', user_id: 'tech-1', clock_in: '2026-09-02T08:05:00Z', status: 'Present' }]
+}));
+
 vi.mock('react-redux', () => ({
     useSelector: (selector) => selector ? selector({ auth: { user: { user_id: 'user-1', role: 'Receptionist' } } }) : { user_id: 'user-1', role: 'Receptionist' },
     useDispatch: () => vi.fn()
@@ -12,28 +27,12 @@ vi.mock('react-redux', () => ({
 
 vi.mock('../../../store/api', () => ({
     useUpdateAppointmentMutation: () => [mockUpdateAppointment, { isLoading: false }],
-    useGetStaffQuery: () => ({
-        data: [
-            { id: 'nurse-1', name: 'Mona Nurse', role: 'Nurse' },
-            { id: 'tech-1', name: 'Ali Tech', role: 'Technician' },
-            { id: 'rad-1', name: 'Dr. Youssef', role: 'Radiologist' }
-        ]
-    }),
-    useGetMachinesQuery: () => ({
-        data: [{ id: 'mach-1', name: 'MRI Magnetom', modality: 'MRI', room_id: 'room-1' }]
-    }),
-    useGetExamTypesQuery: () => ({
-        data: [{ id: 'exam-1', name: 'Lumbar Spine MRI', modality: 'MRI' }]
-    }),
-    useGetRoomsQuery: () => ({
-        data: [{ room_id: 'room-1', name: 'MRI Suite 1', room_number: '101', status: 'Active' }]
-    }),
-    useGetShiftsQuery: () => ({
-        data: [{ shift_id: 'shift-1', user_id: 'tech-1', room_id: 'room-1', start_time: '2026-09-02T08:00:00Z', end_time: '2026-09-02T16:00:00Z' }]
-    }),
-    useGetAttendanceQuery: () => ({
-        data: [{ attendance_id: 'att-1', user_id: 'tech-1', clock_in: '2026-09-02T08:05:00Z', status: 'Present' }]
-    }),
+    useGetStaffQuery: () => ({ data: apiData.staff }),
+    useGetMachinesQuery: () => ({ data: apiData.machines }),
+    useGetExamTypesQuery: () => ({ data: apiData.examTypes }),
+    useGetRoomsQuery: () => ({ data: apiData.rooms }),
+    useGetShiftsQuery: () => ({ data: apiData.shifts }),
+    useGetAttendanceQuery: () => ({ data: apiData.attendance }),
 }));
 
 const mockArrivedCase = {
@@ -94,29 +93,36 @@ describe('ReceptionCaseDetailsModal', () => {
                 onOpenPayment={onOpenPayment}
                 canManageQueue={true}
                 canDeliverResults={true}
+                canViewInvoices={true}
                 locale="ar"
             />
         );
 
         // Header & Patient Info
         expect(screen.getByText('Hassan Mahmoud')).toBeInTheDocument();
-        expect(screen.getByText('MRN-888')).toBeInTheDocument();
-        expect(screen.getByText(/01012345678/)).toBeInTheDocument();
+        expect(screen.getByText(/MRN:\s*MRN-888/)).toBeInTheDocument();
         expect(screen.getByText('PAT-101')).toBeInTheDocument();
 
         // Clinical details
         expect(screen.getByText('Lumbar Spine MRI')).toBeInTheDocument();
         expect(screen.getByText(/MRI Magnetom/)).toBeInTheDocument();
-        expect(screen.getByText('Needs special positioning')).toBeInTheDocument();
 
         // Assigned staff
+        fireEvent.click(screen.getByRole('button', { name: /الفريق الطبي والإسناد/ }));
         expect(screen.getByText('Mona Nurse')).toBeInTheDocument();
         expect(screen.getByText('Ali Tech')).toBeInTheDocument();
         expect(screen.getByText('Dr. Youssef')).toBeInTheDocument();
         expect(screen.getByText('Sara Desk')).toBeInTheDocument();
 
-        // Financial status
-        expect(screen.getByText('INV-2026-00888')).toBeInTheDocument();
+        // Financial status (billing tab is gated behind canViewInvoices)
+        fireEvent.click(screen.getByRole('button', { name: /المالية والفاتورة/ }));
+        expect(screen.getByText(/#INV-2026-00888/)).toBeInTheDocument();
+
+        // Contact details and case notes live in the notes tab
+        fireEvent.click(screen.getByRole('button', { name: /التشخيص والملاحظات/ }));
+        expect(screen.getByText('رقم الهاتف')).toBeInTheDocument();
+        expect(screen.getByText(/01012345678/)).toBeInTheDocument();
+        expect(screen.getByText('Needs special positioning')).toBeInTheDocument();
 
         // Close button
         const closeButtons = screen.getAllByRole('button', { name: 'إغلاق' });
@@ -180,7 +186,10 @@ describe('ReceptionCaseDetailsModal', () => {
 
         // Should display locked indicator
         expect(screen.getAllByText(/الحجز مقفل/i).length).toBeGreaterThan(0);
-        expect(screen.getByText(/مقفل سريرياً/i)).toBeInTheDocument();
+
+        // Care team assignment is locked as well once the case moved to nursing
+        fireEvent.click(screen.getByRole('button', { name: /الفريق الطبي والإسناد/ }));
+        expect(screen.getAllByText(/الإسناد مقفل/i).length).toBeGreaterThan(0);
     });
 
     it('synchronizes room with modality and classifies duty staff by shifts and attendance in edit mode', () => {
@@ -203,8 +212,8 @@ describe('ReceptionCaseDetailsModal', () => {
         const editButton = screen.getAllByRole('button', { name: /تعديل الحجز/i })[0];
         fireEvent.click(editButton);
 
-        // Workstation scope banner should be visible
-        expect(screen.getByText(/تصفية نشطة حسب مكتب الاستقبال: MRI Desk/)).toBeInTheDocument();
+// Workstation scope toggle should be available while the desk scope is active
+expect(screen.getByRole('button', { name: /عرض كل الغرف والأجهزة/i })).toBeInTheDocument();
 
         // Clinical Room label and option should be rendered
         expect(screen.getByText('الغرفة / الجناح')).toBeInTheDocument();

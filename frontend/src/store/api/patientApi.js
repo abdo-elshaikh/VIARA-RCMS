@@ -139,8 +139,8 @@ export const patientApi = api.injectEndpoints({
             invalidatesTags: ['Patients'],
         }),
         updateLoyaltyPoints: builder.mutation({
-            query: ({ patientId, points }) => ({ url: `/crm/loyalty/${patientId}`, method: 'PUT', body: { points } }),
-            invalidatesTags: ['Patients', 'PatientHistory'],
+            query: ({ patientId, ...body }) => ({ url: `/crm/loyalty/${patientId}`, method: 'PUT', body }),
+            invalidatesTags: ['Patients', 'PatientHistory', 'LoyaltyHistory'],
         }),
     }),
     overrideExisting: false,

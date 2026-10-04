@@ -2,6 +2,7 @@ import React from "react";
 import { FileText, MessageCircle, Stethoscope } from "lucide-react";
 import { DetailRow } from "../ui/DataBlocks";
 import StatusBadge from "../ui/StatusBadge";
+import { isFinalizedRecord } from "../../utils/recordStatus";
 
 interface CaseDetailPanelProps {
   item: any;
@@ -99,7 +100,7 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
         )}
 
         <div className="grid gap-3 pt-2">
-          {item.report_status === "Finalized" && item.exam_id ? (
+          {isFinalizedRecord(item) && item.exam_id ? (
             <button
               type="button"
               onClick={() => onReport(item.exam_id)}

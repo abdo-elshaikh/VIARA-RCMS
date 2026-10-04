@@ -16,7 +16,7 @@ if (!process.env.DATABASE_URL && process.env.POSTGRES_PASSWORD) {
 process.env.PORT ||= '3000';
 
 if (result.error) {
-    console.warn('⚠️  No root or backend .env file found — relying on environment variables');
+    console.warn('⚠︝  No root or backend .env file found — relying on environment variables');
 }
 
 // NOTE: minor no-op change to trigger nodemon reload when env files are updated
@@ -29,6 +29,18 @@ try {
     console.error('\n❌ Environment Validation Failed:\n');
     console.error(error.message);
     console.error('\nPlease check the root .env file or the backend process environment.\n');
+    process.exit(1);
+}
+
+// ── License Engine ────────────────────────────────────────────────────────────
+// Must run BEFORE the HTTP server starts so we fail fast on invalid/missing keys.
+const { loadLicense } = require('./services/licenseService');
+try {
+    loadLicense();
+} catch (licenseError) {
+    console.error('\n❌ License Validation Failed:\n');
+    console.error(licenseError.message);
+    console.error('\nSet a valid LICENSE_KEY in .env or contact VIARA support.\n');
     process.exit(1);
 }
 
@@ -54,6 +66,8 @@ const { tracingMiddleware } = require('./middleware/tracing');
 const { errorHandler, notFoundHandler, AppError } = require('./middleware/errorHandler');
 const logger = require('./config/logger');
 const AuditService = require('./services/auditService');
+const trialGuard = require('./middleware/trialGuard');
+const checkFeature = require('./middleware/checkFeature');
 
 // Routes
 const auditRoutes = require('./routes/auditRoutes');
@@ -65,6 +79,7 @@ const integrationRoutes = require('./routes/integrationRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const backupRoutes = require('./routes/backupRoutes');
 const systemRoutes = require('./routes/systemRoutes');
+const licenseRoutes = require('./routes/licenseRoutes');
 const safetyRoutes = require('./routes/safetyRoutes');
 const importRoutes = require('./routes/importRoutes');
 const { verifyWebhookSignature } = require('./middleware/webhookAuth');
@@ -90,6 +105,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const receptionRoutes = require('./routes/receptionRoutes');
 const displayRoutes = require('./routes/displayRoutes');
+const endOfDayRoutes = require('./routes/endOfDayRoutes');
 
 // Background Workers
 const { startIntegrationWorker } = require('./jobs/integrationWorker');
@@ -98,6 +114,11 @@ const { startPacsMwlJob } = require('./jobs/pacsMwlJob');
 const { startPacsTieringJob } = require('./jobs/pacsTieringJob');
 const { startPacsAiAnalysisJob } = require('./jobs/pacsAiAnalysisJob');
 const { startAuditDetectionJob } = require('./jobs/auditDetectionJob');
+const { startShiftGuardJob, settleStaleAttendanceSessions } = require('./jobs/shiftGuardJob');
+const { startEndOfDayJob } = require('./jobs/endOfDayJob');
+const { startLicensePingJob } = require('./jobs/licensePingJob');
+const { startTrialReportJob } = require('./jobs/trialReportJob');
+const { startCredentialExpiryJob } = require('./jobs/credentialExpiryJob');
 const { startWorker: startPacsReconciliationWorker } = require('./services/pacsReconciliationQueue');
 const { syncRegisteredModalitiesToOrthanc } = require('./services/pacsModalityRegistryService');
 
@@ -197,13 +218,14 @@ const connectionString = process.env.DATABASE_URL;
 
 const pool = new Pool({
     connectionString,
-    min: 5,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    min: Number(process.env.DB_POOL_MIN || 5),
+    max: Number(process.env.DB_POOL_MAX || 50),
+    idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_TIMEOUT || 30000),
+    connectionTimeoutMillis: Number(process.env.DB_POOL_TIMEOUT || 5000),
     statement_timeout: 30000,
     query_timeout: 30000
 });
+require('./services/attendanceConfigCache').setAttendanceConfigPool(pool);
 configureAuthDatabase(pool);
 realtimeService.setRealtimePool(pool);
 // Failed-login actor attribution in auditLogger (best-effort only).
@@ -277,7 +299,7 @@ if (process.env.NODE_ENV !== 'test') {
             const httpServer = app.listen(PORT, () => {
                 logger.info(`🚀 VIARA Server running on port ${PORT}`);
                 logger.info(`📊 Environment: ${process.env.NODE_ENV}`);
-                logger.info(`🌐 Client URL: ${process.env.CLIENT_URL}`);
+                logger.info(`🌝 Client URL: ${process.env.CLIENT_URL}`);
 
                 // Start workers only after the required schema is ready and the API is listening.
                 lifecycle.addStopCallback(startIntegrationWorker(pool));
@@ -291,6 +313,12 @@ if (process.env.NODE_ENV !== 'test') {
                 lifecycle.addStopCallback(startPacsTieringJob(pool));
                 lifecycle.addStopCallback(startPacsAiAnalysisJob(pool));
                 lifecycle.addStopCallback(startAuditDetectionJob(pool));
+                lifecycle.addStopCallback(startShiftGuardJob(pool));
+                lifecycle.addStopCallback(startEndOfDayJob(pool));
+                lifecycle.addStopCallback(startLicensePingJob(pool));
+                lifecycle.addStopCallback(startTrialReportJob(pool));
+                lifecycle.addStopCallback(startCredentialExpiryJob(pool));
+                settleStaleAttendanceSessions(pool).catch((err) => logger.error('Initial stale attendance sweep error', { error: err.message }));
 
                 // Start PACS reconciliation queue worker
                 const pacsQueueWorker = startPacsReconciliationWorker(pool);
@@ -481,6 +509,15 @@ app.use('/api', apiLimiter);
 // Audit logging for all state-changing methods
 app.use(auditLogger(auditService));
 
+// Trial enforcement, applied once across the whole API.
+//
+// It used to be attached per-router, which left the first several route
+// groups (patients, appointments, dashboard, profile) unguarded, so an expired
+// trial could still read patient data. Mounting it here makes the lock
+// uniform. /api/license/* stays readable so the SPA can render the expiry
+// banner; see trialGuard.js.
+app.use('/api', trialGuard);
+
 // --- ROUTES ---
 
 // Interactive API Documentation (OpenAPI 3.0.3)
@@ -573,6 +610,8 @@ app.post('/api/auth/passkeys/authenticate/verify', authLimiter, validateRequest(
 
 app.post('/api/auth/refresh', refresh(pool));
 app.post('/api/auth/logout', logout(pool));
+app.post('/api/portal/auth/refresh', refresh(pool));
+app.post('/api/portal/auth/logout', logout(pool));
 
 // 2FA Routes (Protected & Public)
 app.post('/api/auth/setup-2fa', authenticateToken, setup2FA(pool));
@@ -645,6 +684,9 @@ app.use('/api', equipmentRoutes(pool));
 app.use('/api', appointmentRoutes(pool, auditService));
 
 // ─── Modular Domain Routers: Finance & Insurance ─────────────────────────────
+// The licence gate now lives inside each router (see financeRoutes.js). It was
+// previously mounted on the bare '/api' prefix here, which made it run for every
+// route registered below and refuse trial licences on unrelated endpoints.
 app.use('/api', financeRoutes(pool, auditService));
 app.use('/api', insuranceRoutes(pool, auditService));
 
@@ -653,10 +695,10 @@ app.use('/api', clinicalExamRoutes(pool, auditService));
 app.use('/api', hrRoutes(pool, auditService));
 
 // Phase 17: CRM & Marketing Routes
-app.use('/api/audit-logs', auditRoutes(pool, authenticateToken, authorizeRole));
+app.use('/api/audit-logs', checkFeature('audit'), auditRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/rbac', rbacRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/privacy', privacyRoutes(pool, authenticateToken, authorizeRole));
-app.use('/api/analytics', analyticsRoutes(pool, authenticateToken, authorizeRole));
+app.use('/api/analytics', checkFeature('analytics'), analyticsRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/documents', documentRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/integrations', integrationRoutes(pool, authenticateToken, authorizeRole));
 
@@ -737,20 +779,34 @@ app.post('/api/webhooks/twilio', verifyWebhookSignature(pool, 'Twilio'), async (
     }
 });
 app.use('/api/settings', settingsRoutes(pool, authenticateToken, authorizeRole));
-app.use('/api/backups', backupRoutes(pool, authenticateToken, authorizeRole));
+app.use('/api/backups', checkFeature('backup'), backupRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/system', systemRoutes(pool, authenticateToken, authorizeRole));
+app.use('/api/license', licenseRoutes(pool, authenticateToken));
+
+// Trial Analytics (Admin only - sales dashboard data)
+app.get('/api/admin/trial-analytics', authenticateToken, authorizeRole(['Admin']), async (req, res, next) => {
+    try {
+        const { getTrialDashboardStats, getWeeklySummary } = require('./services/trialAnalyticsService');
+        const [stats, weekly] = await Promise.all([
+            getTrialDashboardStats(pool),
+            getWeeklySummary(pool),
+        ]);
+        res.json({ stats, weekly });
+    } catch (err) { next(err); }
+});
 app.use('/api/clinical', safetyRoutes(pool, authenticateToken, authorizeRole));
-app.use('/api/import', importRoutes(pool, authenticateToken, authorizeRole));
-app.use('/api/pacs', pacsRoutes(pool, authenticateToken, authorizeRole));
+app.use('/api/import', checkFeature('import'), importRoutes(pool, authenticateToken, authorizeRole));
+app.use('/api/pacs', checkFeature('pacs'), pacsRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/rooms', roomRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/reception', receptionRoutes(pool, authenticateToken, authorizeRole));
 app.use('/api/display', displayRoutes(pool, authenticateToken, authorizeRole));
+app.use('/api/end-of-day', checkFeature('end-of-day'), endOfDayRoutes(pool, authenticateToken, authorizeRole));
 
-app.use('/api/crm', crmRoutes(pool));
+app.use('/api/crm', checkFeature('crm'), crmRoutes(pool));
 app.use('/api', inventoryRoutes(pool));
 app.use('/api', portalRoutes(pool, auditService));
 app.use('/api', notificationRoutes(pool));
-app.use('/api', chatRoutes(pool));
+app.use('/api', chatRoutes(pool, auditService));
 
 // ─── Real-time SSE Connection ────────────────────────────────────────────────
 // SSE session endpoint: exchanges a valid Bearer JWT for a short-lived
@@ -758,7 +814,14 @@ app.use('/api', chatRoutes(pool));
 // opening the EventSource stream to avoid placing the access JWT in the URL.
 app.post('/api/realtime/session', authenticateToken, (req, res) => {
     const sessionToken = realtimeService.createSseSession(req.user);
-    res.json({ token: sessionToken });
+    res.cookie('viaraSseSession', sessionToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 5 * 60 * 1000,
+        path: '/api/realtime'
+    });
+    res.json({ ok: true });
 });
 app.get('/api/realtime/stream', realtimeService.registerClient);
 

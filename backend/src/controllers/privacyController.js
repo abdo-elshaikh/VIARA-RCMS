@@ -105,6 +105,17 @@ const assertPermission = async (db, req, permission) => {
 const syncConsentFlag = async (db, patientId, type, active) => {
     const column = CONSENT_FLAG_BY_TYPE[type];
     if (!column) return;
+
+    if (type === 'Marketing') {
+        await db.query(`
+            UPDATE patients
+            SET consent_marketing = $2,
+                opt_in_marketing = $2
+            WHERE patient_id = $1
+        `, [patientId, active]);
+        return;
+    }
+
     await db.query(`UPDATE patients SET ${column} = $2 WHERE patient_id = $1`, [patientId, active]);
 };
 
@@ -122,7 +133,7 @@ const collectPatientData = async (db, patientId) => {
     ] = await Promise.all([
         db.query('SELECT * FROM appointments WHERE patient_id = $1 ORDER BY start_time DESC NULLS LAST', [patientId]),
         db.query('SELECT * FROM examinations WHERE patient_id = $1 OR appointment_id IN (SELECT appointment_id FROM appointments WHERE patient_id = $1)', [patientId]),
-        db.query('SELECT * FROM invoices WHERE patient_id = $1 ORDER BY created_at DESC NULLS LAST', [patientId]),
+        db.query('SELECT * FROM invoices WHERE patient_id = $1 ORDER BY generated_at DESC NULLS LAST', [patientId]),
         db.query('SELECT document_id, appointment_id, exam_id, type, file_name, mime_type, uploaded_at, notes FROM documents WHERE patient_id = $1 ORDER BY uploaded_at DESC NULLS LAST', [patientId]).catch(() => ({ rows: [] })),
         db.query('SELECT consent_id, type, status, signed_at, revoked_at, source, document_url FROM patient_consents WHERE patient_id = $1 ORDER BY signed_at DESC', [patientId]),
         db.query('SELECT delivery_id, exam_id, delivery_method, delivery_status, delivered_at, acknowledged_at FROM result_deliveries WHERE patient_id = $1 ORDER BY delivered_at DESC NULLS LAST', [patientId]).catch(() => ({ rows: [] }))
@@ -139,6 +150,69 @@ const collectPatientData = async (db, patientId) => {
         consents: consents.rows,
         resultDeliveries: deliveries.rows
     };
+};
+
+const scrubResidualPatientData = async (client, patientId) => {
+    await Promise.all([
+        client.query(`
+            UPDATE documents
+            SET file_name = 'redacted.pdf',
+                notes = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE patient_id = $1
+        `, [patientId]),
+        client.query(`
+            UPDATE patient_portal_documents
+            SET title = 'Redacted',
+                file_url = 'redacted://document',
+                notes = NULL,
+                is_patient_visible = FALSE
+            WHERE patient_id = $1
+        `, [patientId]),
+        client.query(`
+            UPDATE patient_portal_messages
+            SET subject = 'Redacted',
+                body = '[Anonymized by privacy review]'
+            WHERE patient_id = $1
+        `, [patientId]),
+        client.query(`
+            UPDATE patient_appointment_requests
+            SET clinical_notes = NULL,
+                staff_notes = NULL
+            WHERE patient_id = $1
+        `, [patientId]),
+        client.query(`
+            UPDATE appointments
+            SET clinical_indication = NULL,
+                provisional_diagnosis = NULL,
+                follow_up_reason = NULL,
+                notes = NULL,
+                cancellation_reason = NULL,
+                no_show_reason = NULL,
+                referring_doctor = NULL
+            WHERE patient_id = $1
+        `, [patientId]),
+        client.query(`
+            UPDATE examinations
+            SET clinical_indication = NULL,
+                provisional_diagnosis = NULL,
+                follow_up_reason = NULL,
+                hold_reason = NULL,
+                report_content = NULL,
+                report_sections = '{}'::jsonb,
+                amendment_reason = NULL,
+                digital_signature_name = 'Anonymized Patient'
+            WHERE patient_id = $1
+        `, [patientId]),
+        client.query(`
+            UPDATE result_deliveries
+            SET recipient_name = 'Anonymized Patient',
+                recipient_contact = NULL,
+                notes = NULL,
+                acknowledged_by_name = NULL
+            WHERE patient_id = $1
+        `, [patientId])
+    ]);
 };
 
 const createExportArtifact = async (db, req, request, exportData) => {
@@ -188,7 +262,7 @@ const getCurrentPatientConsents = (db) => async (req, res, next) => {
         }
         const [patientResult, historyResult] = await Promise.all([
             db.query(`
-                SELECT consent_sms, consent_email, consent_whatsapp, consent_marketing, consent_data_sharing
+                SELECT consent_sms, consent_email, consent_whatsapp, consent_marketing, consent_data_sharing, opt_in_marketing
                 FROM patients
                 WHERE patient_id = $1
             `, [patientId]),
@@ -400,6 +474,7 @@ const resolvePrivacyRequest = (db) => async (req, res, next) => {
 
         if (action === 'CompleteAnonymization') {
             if (!notes) throw new AppError('Manual review confirmation notes are required', 400);
+            await scrubResidualPatientData(client, request.patient_id);
             const updated = await client.query(`
                 UPDATE data_privacy_requests
                 SET status = 'Completed', completed_at = CURRENT_TIMESTAMP,
@@ -543,6 +618,7 @@ const resolvePrivacyRequest = (db) => async (req, res, next) => {
                     consent_email = FALSE,
                     consent_whatsapp = FALSE,
                     consent_marketing = FALSE,
+                    opt_in_marketing = FALSE,
                     consent_data_sharing = FALSE,
                     patient_status = 'Anonymized'
                 WHERE patient_id = $1

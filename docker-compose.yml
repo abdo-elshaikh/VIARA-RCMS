@@ -71,6 +71,19 @@ services:
     environment:
       PORT: 3000
       NODE_ENV: ${NODE_ENV:-development}
+      LICENSE_KEY: ${LICENSE_KEY:-}
+      LICENSE_PUBLIC_KEY: ${LICENSE_PUBLIC_KEY:-}
+      LICENSE_STORAGE_FILE: /app/license/license.key
+      LICENSE_ACTIVATION_FILE: /app/license/activation
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-VIARA}
+      PACS_OIDC_ISSUER: ${PACS_OIDC_ISSUER:-}
+      PACS_OIDC_AUDIENCE: ${PACS_OIDC_AUDIENCE:-}
+      PACS_OIDC_JWKS_URL: ${PACS_OIDC_JWKS_URL:-}
+      PACS_OIDC_USER_ID_CLAIM: ${PACS_OIDC_USER_ID_CLAIM:-viara_user_id}
+      PACS_OIDC_REQUIRED_SCOPE: ${PACS_OIDC_REQUIRED_SCOPE:-pacs.read}
+      PACS_OIDC_MAX_TOKEN_TTL_SECONDS: ${PACS_OIDC_MAX_TOKEN_TTL_SECONDS:-300}
       DATABASE_URL: postgresql://${POSTGRES_USER:-VIARA}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-VIARA}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the root .env file}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in the root .env file}
@@ -88,6 +101,7 @@ services:
       BACKUP_RETENTION_DAYS: 30
       BACKUP_MAX_FILES: 30
       BACKUP_SCHEDULE_ENABLED: "true"
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       BACKUP_SCHEDULE_HOUR_UTC: 2
       BACKUP_OFFSITE_ENDPOINT: ${BACKUP_OFFSITE_ENDPOINT:-}
       BACKUP_OFFSITE_BUCKET: ${BACKUP_OFFSITE_BUCKET:-}
@@ -102,6 +116,9 @@ services:
       ORTHANC_AET: ${ORTHANC_AET:-MiPACS2}
       PACS_WEBHOOK_SECRET: ${PACS_WEBHOOK_SECRET:?Set PACS_WEBHOOK_SECRET in the root .env file}
       PACS_WORKLIST_DIR: /app/pacs-worklists
+      PACS_COLD_STORAGE_DIR: /app/pacs-cold
+      PACS_BACKUP_ENABLED: "true"
+      PACS_TIMEZONE: ${PACS_TIMEZONE:-Africa/Cairo}
       PACS_MWL_ENABLED: ${PACS_MWL_ENABLED:-true}
       # Optional asynchronous PACS image-analysis worker
       PACS_AI_ENABLED: ${PACS_AI_ENABLED:-false}
@@ -116,7 +133,9 @@ services:
     volumes:
       - ./backend/src:/app/src
       - backup_data:/app/backups
+      - pacs_cold_archive:/app/pacs-cold
       - upload_data:/app/uploads
+      - license_data:/app/license
       - ./pacs-worklists:/app/pacs-worklists
     depends_on:
       migrate:
@@ -130,13 +149,34 @@ services:
       retries: 5
       start_period: 45s
 
+  # Local-only identity provider for OIDC integration testing. Not for production.
+  keycloak:
+    profiles: ["oidc-dev"]
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.3.3}
+    container_name: VIARA_keycloak_dev
+    restart: unless-stopped
+    command: ["start-dev", "--http-port=8080"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_DEV_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_DEV_ADMIN_PASSWORD:-}
+      KC_HOSTNAME: http://localhost:8081
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8081:8080"
+    networks: [app]
+    mem_limit: 1536m
+    cpus: 2.0
+    stop_grace_period: 30s
+    volumes:
+      - keycloak_dev_data:/opt/keycloak/data
+
   # Frontend App
   # VITE_OHIF_URL is baked in at build time by Vite (ARG → ENV in the Dockerfile).
   frontend:
     build:
       context: ./frontend
       args:
-        VITE_OHIF_URL: "${VITE_OHIF_URL:?Set VITE_OHIF_URL to the public HTTPS OHIF URL}"
+        VITE_OHIF_URL: "${VITE_OHIF_URL:-/pacs-viewer/}"
         VITE_PORTAL_PUBLIC_URL: "${PORTAL_PUBLIC_URL:?Set PORTAL_PUBLIC_URL to the public HTTPS portal URL}"
     image: viara-frontend:local
     container_name: VIARA_frontend
@@ -191,7 +231,7 @@ services:
       # DICOM must be reachable from modalities on the LAN/VPN for C-ECHO, C-STORE, and MWL.
       # Keep REST loopback-only; set PACS_DICOM_BIND=127.0.0.1 for workstation-only development.
       - "${PACS_DICOM_BIND:-127.0.0.1}:${PACS_DICOM_PORT:-4242}:4242"
-      - "127.0.0.1:8042:8042"
+      - "${ORTHANC_REST_BIND:-127.0.0.1}:${ORTHANC_REST_PORT:-8042}:8042"
     networks: [app, data]
     mem_limit: 2g
     cpus: 2.0
@@ -240,8 +280,14 @@ services:
     stop_grace_period: 15s
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    environment:
+      VIARA_API_UPSTREAM: backend:3000
+      VIARA_APP_ORIGIN: ${CLIENT_URL:-http://localhost:5173}
+    depends_on:
+      backend:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/"]
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/health/ready"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -294,10 +340,13 @@ services:
       start_period: 30s
 
 volumes:
+  license_data:
   postgres_data:
+  keycloak_dev_data:
   backup_data:
   upload_data:
   orthanc_storage:
+  pacs_cold_archive:
   ai_model_cache:
   clamav_signatures:
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
@@ -16,14 +16,17 @@ import {
     useHeartbeatReceptionTasksMutation,
     useGetCurrentReceptionShiftQuery,
     useOpenReceptionShiftMutation,
-    useCloseReceptionShiftMutation
+    useCloseReceptionShiftMutation,
+    useGetAttendanceQuery
 } from '../../store/api';
 import {
+    AlertCircle,
     Building2,
     CalendarCheck2,
     CalendarDays,
     CalendarPlus,
     CircleDollarSign,
+    ClipboardCheck,
     MonitorPlay,
     RefreshCw,
     UserPlus,
@@ -31,16 +34,8 @@ import {
     WalletCards,
     Wifi,
     Sparkles,
-    CheckCircle2,
     Clock,
-    Activity,
     AlertTriangle,
-    CreditCard,
-    ArrowLeft,
-    ArrowRight,
-    Users,
-    Filter,
-    Search,
     ChevronLeft,
     ChevronRight,
     ShieldCheck
@@ -51,13 +46,10 @@ import { useReceptionData } from '../../hooks/useReceptionData';
 import { usePaymentFlow } from '../../hooks/usePaymentFlow';
 import { useShiftFlow } from '../../hooks/useShiftFlow';
 import { usePatientRegistration } from '../../hooks/usePatientRegistration';
-import { buildReceptionTabs, shiftLocalDateInput, toLocalDateInput } from './receptionLogic';
+import { buildReceptionTabs, getCurrentUserId, shiftLocalDateInput, toLocalDateInput } from './receptionLogic';
 import ReceptionTabNav from './ReceptionTabNav';
-import ScheduleView from './ScheduleView';
-import PatientDirectory from './PatientDirectory';
-import CashierQueueTab from './CashierQueueTab';
-import BillingTab from './BillingTab';
 import ShiftActionModal from './ShiftActionModal';
+import UnifiedShiftCloseWizardModal from './UnifiedShiftCloseWizardModal';
 import PaymentCollectionModal from './PaymentCollectionModal';
 import PatientRegistrationModal from './PatientRegistrationModal';
 import ReceptionWorkstationBar from './ReceptionWorkstationBar';
@@ -67,14 +59,53 @@ import PageHeader from '../ui/PageHeader';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 import { readWorkstationPresets } from './workstationPresets';
 
+// Keep the landing bundle lean, while allowing intent-based prefetching on hover/focus.
+const lazyWithPreload = (factory) => {
+    let promise;
+    const load = () => {
+        promise ||= factory();
+        return promise;
+    };
+    const Component = lazy(load);
+    Component.preload = load;
+    return Component;
+};
+
+const ScheduleView = lazyWithPreload(() => import('./ScheduleView'));
+const PatientDirectory = lazyWithPreload(() => import('./PatientDirectory'));
+const CashierQueueTab = lazyWithPreload(() => import('./CashierQueueTab'));
+const BillingTab = lazyWithPreload(() => import('./BillingTab'));
+const EndOfDayReview = lazyWithPreload(() => import('../../pages/EndOfDayReview'));
+
+const TAB_COMPONENTS = {
+    schedule: ScheduleView,
+    patients: PatientDirectory,
+    cashier: CashierQueueTab,
+    billing: BillingTab,
+    'end-of-day': EndOfDayReview,
+};
+
+const WorkspaceFallback = ({ isArabic }) => (
+    <div className="space-y-2 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-4">
+        <div className="h-10 animate-pulse rounded-xl bg-[var(--VIARA-surface-muted)]" />
+        <div className="h-14 animate-pulse rounded-xl bg-[var(--VIARA-surface-muted)]/80" />
+        <div className="h-48 animate-pulse rounded-xl bg-[var(--VIARA-surface-muted)]/60" />
+        <span className="sr-only">{isArabic ? 'جاري تحميل مساحة العمل' : 'Loading workspace'}</span>
+    </div>
+);
+
 const TAB_ICONS = {
     schedule: CalendarCheck2,
     patients: UsersRound,
     cashier: CircleDollarSign,
     billing: WalletCards,
+    'end-of-day': ClipboardCheck,
 };
 
 const DEFAULT_RECEPTION_DESK = 'شباك 1 - الاستقبال العام';
+
+const ASSIGNMENT_SCOPES = ['rooms', 'modalities', 'emergency'];
+const VIEW_FILTER_SCOPES = ['mine', 'unclaimed', 'attention', 'inExam'];
 
 const readSavedWorkstation = (userId) => {
     try {
@@ -82,12 +113,13 @@ const readSavedWorkstation = (userId) => {
         const saved = raw ? JSON.parse(raw) : {};
         return {
             desk: saved.desk || localStorage.getItem('viara_reception_desk') || DEFAULT_RECEPTION_DESK,
+            deskId: saved.deskId || null,
             scope: saved.scope || 'all',
             rooms: Array.isArray(saved.rooms) ? saved.rooms : [],
             modalities: Array.isArray(saved.modalities) ? saved.modalities : [],
         };
     } catch {
-        return { desk: DEFAULT_RECEPTION_DESK, scope: 'all', rooms: [], modalities: [] };
+        return { desk: DEFAULT_RECEPTION_DESK, deskId: null, scope: 'all', rooms: [], modalities: [] };
     }
 };
 
@@ -107,11 +139,19 @@ const ReceptionOperations = () => {
     const { data: linkedInvoice } = useGetInvoiceQuery(linkedInvoiceId, { skip: !linkedInvoiceId });
     const { data: rawCenterSettings } = useGetCenterSettingsQuery();
     const centerLogo = rawCenterSettings?.logo_url || '/center-logo.png';
-    const { data: clinicalRooms = [] } = useGetRoomsQuery(undefined, { pollingInterval: 60000 });
-    const { data: clinicalMachines = [] } = useGetMachinesQuery(undefined, { pollingInterval: 60000 });
+    const operationalTabActive = ['schedule', 'cashier'].includes(activeTab);
+    const { data: clinicalRooms = [] } = useGetRoomsQuery(undefined, {
+        pollingInterval: operationalTabActive ? 60_000 : 0,
+        refetchOnFocus: operationalTabActive,
+    });
+    const { data: clinicalMachines = [] } = useGetMachinesQuery(undefined, {
+        pollingInterval: operationalTabActive ? 60_000 : 0,
+        refetchOnFocus: operationalTabActive,
+    });
 
     // Multi-Desk Workstation & Clinical Scope State
     const [activeDesk, setActiveDesk] = useState(() => savedWorkstation.desk);
+    const [activeDeskId, setActiveDeskId] = useState(() => savedWorkstation.deskId);
     const [selectedScope, setSelectedScope] = useState(() => savedWorkstation.scope);
     const [selectedRooms, setSelectedRooms] = useState(() => savedWorkstation.rooms);
     const [selectedModalities, setSelectedModalities] = useState(() => savedWorkstation.modalities);
@@ -121,7 +161,13 @@ const ReceptionOperations = () => {
 
     useEffect(() => {
         if (Array.isArray(rawCenterSettings?.workstation_presets) && rawCenterSettings.workstation_presets.length > 0) {
-            setDeskPresets(rawCenterSettings.workstation_presets);
+            setDeskPresets((current) => {
+                const incoming = rawCenterSettings.workstation_presets;
+                if (JSON.stringify(current) === JSON.stringify(incoming)) {
+                    return current;
+                }
+                return incoming;
+            });
         }
     }, [rawCenterSettings?.workstation_presets]);
 
@@ -136,9 +182,18 @@ const ReceptionOperations = () => {
     }, []);
 
     const permissions = useReceptionPermissions();
-    const { has, canProcessPayments, canOpenCashierShift, canCloseCashierShift, canDiscount, canAppendSupplies, canManageQueue, canDeliverResults } = permissions;
+    const { has, canProcessPayments, canViewInvoices, canViewExams, canOpenCashierShift, canCloseCashierShift, canDiscount, canAppendSupplies, canManageQueue, canDeliverResults } = permissions;
+    const canViewAppointments = has('VIEW_APPOINTMENTS');
+    const canUseCashier = canProcessPayments && canViewInvoices;
+    // End-of-day review is available to Receptionists, Admins, and Developers.
+    // A dedicated permission (REVIEW_END_OF_DAY) can be granted for fine-grained
+    // control; absence of the permission falls back to a role check so that no
+    // extra DB migration is needed for existing deployments.
+    const canReviewEndOfDay = has('REVIEW_END_OF_DAY')
+        || ['Receptionist', 'Admin', 'Developer'].includes(user?.role);
     const [heartbeatReceptionTasks] = useHeartbeatReceptionTasksMutation();
-    const receptionShiftEnabled = Boolean(user?.user_id && ['Receptionist', 'Admin', 'Developer'].includes(user.role));
+    const currentUserId = getCurrentUserId(user);
+    const receptionShiftEnabled = Boolean(currentUserId && ['Receptionist', 'Admin', 'Developer'].includes(user?.role));
     const {
         data: currentReceptionShift,
         isFetching: isReceptionShiftLoading,
@@ -150,6 +205,32 @@ const ReceptionOperations = () => {
     const [openReceptionShift, { isLoading: isOpeningReceptionShift }] = useOpenReceptionShiftMutation();
     const [closeReceptionShift, { isLoading: isClosingReceptionShift }] = useCloseReceptionShiftMutation();
     const hydratedShiftIdRef = useRef(null);
+
+    // Active attendance session query to ensure clock-in precedes opening shift
+    const { data: attendanceData } = useGetAttendanceQuery(
+        { userId: currentUserId, activeOnly: true, limit: 1 },
+        {
+            skip: !currentUserId,
+            refetchOnFocus: true,
+        }
+    );
+
+    const attendanceRecords = useMemo(() => {
+        if (Array.isArray(attendanceData)) return attendanceData;
+        if (Array.isArray(attendanceData?.items)) return attendanceData.items;
+        if (Array.isArray(attendanceData?.records)) return attendanceData.records;
+        return [];
+    }, [attendanceData]);
+
+    const activeAttendanceSession = useMemo(
+        () => attendanceRecords.find((record) => !record.clock_out),
+        [attendanceRecords]
+    );
+
+    const isClockedIn = Boolean(activeAttendanceSession);
+    const [isCloseWizardOpen, setIsCloseWizardOpen] = useState(false);
+    const [closedReceptionSessionId, setClosedReceptionSessionId] = useState(() => searchParams.get('sessionId') || null);
+    const [closedReceptionShiftDate, setClosedReceptionShiftDate] = useState(() => searchParams.get('date') || null);
 
     useEffect(() => {
         if (!receptionShiftEnabled) return undefined;
@@ -194,41 +275,73 @@ const ReceptionOperations = () => {
             hydratedShiftIdRef.current = null;
             return;
         }
-        setActiveDesk(currentReceptionShift.desk_identifier || DEFAULT_RECEPTION_DESK);
+        const shiftDesk = currentReceptionShift.desk_identifier || DEFAULT_RECEPTION_DESK;
+        const matchedPreset = deskPresets.find((preset) => preset.label === shiftDesk);
+        setActiveDesk(shiftDesk);
+        setActiveDeskId(matchedPreset?.id || null);
         setSelectedRooms(Array.isArray(currentReceptionShift.room_ids) ? currentReceptionShift.room_ids : []);
         setSelectedModalities(Array.isArray(currentReceptionShift.modality_ids) ? currentReceptionShift.modality_ids : []);
         if (hydratedShiftIdRef.current !== currentReceptionShift.session_id) {
-            setSelectedScope(currentReceptionShift.scope || 'all');
+            const shiftScope = currentReceptionShift.scope || 'all';
+            setSelectedScope((prev) => {
+                // A view filter (mine/unclaimed/attention/inExam) is display-only and
+                // must survive shift hydration; assignment scopes come from the shift.
+                if (VIEW_FILTER_SCOPES.includes(prev) && !ASSIGNMENT_SCOPES.includes(shiftScope)) return prev;
+                return shiftScope;
+            });
             hydratedShiftIdRef.current = currentReceptionShift.session_id;
         }
-    }, [currentReceptionShift]);
+    }, [currentReceptionShift, deskPresets]);
 
     useEffect(() => {
-        if (!user?.user_id || !['Receptionist', 'Admin', 'Developer'].includes(user.role)) return undefined;
-        const renew = () => heartbeatReceptionTasks({
-            desk: activeDesk,
-            scope: selectedScope,
-            rooms: selectedRooms,
-            modalities: selectedModalities,
-        }).unwrap().catch(() => undefined);
+        if (!currentUserId || !['Receptionist', 'Admin', 'Developer'].includes(user?.role)) return undefined;
+        // The heartbeat only renews task leases and liveness. The shift desk, scope,
+        // and assignments are deliberately immutable server-side while the shift is
+        // open, so no workstation state is sent here.
+        const renew = () => heartbeatReceptionTasks({}).unwrap().catch(() => undefined);
         renew();
         const interval = window.setInterval(renew, 60_000);
         return () => window.clearInterval(interval);
-    }, [activeDesk, heartbeatReceptionTasks, selectedModalities, selectedRooms, selectedScope, user?.role, user?.user_id]);
+    }, [currentUserId, heartbeatReceptionTasks, user?.role]);
 
     const handleOpenReceptionShift = useCallback(async () => {
-        try {
-            const assignmentScope = selectedRooms.length > 0
+        if (!isClockedIn) {
+            toast.error(isArabic
+                ? 'يجب تسجيل الحضور أولاً بناءً على جدول وردياتك قبل بدء وردية الاستقبال.'
+                : 'Attendance clock-in is required before starting the reception shift.');
+            return;
+        }
+
+        const assignmentScope = selectedScope === 'emergency'
+            ? 'emergency'
+            : selectedScope === 'rooms'
                 ? 'rooms'
-                : selectedModalities.length > 0
+                : selectedScope === 'modalities'
                     ? 'modalities'
-                    : selectedScope === 'emergency' ? 'emergency' : 'all';
+                    : selectedRooms.length > 0
+                        ? 'rooms'
+                        : selectedModalities.length > 0
+                            ? 'modalities'
+                            : 'all';
+        if (assignmentScope === 'rooms' && selectedRooms.length === 0) {
+            toast.error(isArabic ? 'اختر غرفة واحدة على الأقل قبل بدء وردية بنطاق الغرف.' : 'Select at least one room before starting a room-scoped shift.');
+            return;
+        }
+        if (assignmentScope === 'modalities' && selectedModalities.length === 0) {
+            toast.error(isArabic ? 'اختر جهازًا واحدًا على الأقل قبل بدء وردية بنطاق الأجهزة.' : 'Select at least one device before starting a device-scoped shift.');
+            return;
+        }
+
+        try {
+            const branchId = user?.branch_id || user?.branchId || undefined;
             const openedShift = await openReceptionShift({
                 desk: activeDesk,
                 scope: assignmentScope,
-                rooms: selectedRooms,
-                modalities: selectedModalities,
+                rooms: assignmentScope === 'rooms' ? selectedRooms : [],
+                modalities: assignmentScope === 'modalities' ? selectedModalities : [],
+                ...(branchId ? { branchId } : {}),
             }).unwrap();
+            setClosedReceptionSessionId(null);
             await cacheReceptionShift(openedShift);
             notifyReceptionShiftChanged();
             toast.success(isArabic ? 'تم بدء وردية الاستقبال وربطها بمحطة العمل' : 'Reception shift started and linked to this workstation');
@@ -257,42 +370,28 @@ const ReceptionOperations = () => {
             }
             toast.error(getErrorMessage(error, isArabic ? 'تعذر بدء وردية الاستقبال' : 'Could not start reception shift'));
         }
-    }, [activeDesk, cacheReceptionShift, isArabic, notifyReceptionShiftChanged, openReceptionShift, refetchReceptionShift, selectedModalities, selectedRooms, selectedScope]);
+    }, [activeDesk, cacheReceptionShift, isArabic, isClockedIn, notifyReceptionShiftChanged, openReceptionShift, refetchReceptionShift, selectedModalities, selectedRooms, selectedScope, user?.branchId, user?.branch_id]);
 
-    const handleCloseReceptionShift = useCallback(async () => {
+    const handleCloseReceptionShift = useCallback(() => {
         if (!currentReceptionShift?.session_id) return;
-        const confirmed = window.confirm(isArabic
-            ? 'سيتم تقفيل الوردية وحفظ إحصاءاتها. يجب تحويل أو تحرير كل المهام النشطة أولاً. هل تريد المتابعة؟'
-            : 'This will close the shift and save its statistics. Transfer or release active tasks first. Continue?');
-        if (!confirmed) return;
-        try {
-            const closed = await closeReceptionShift({ sessionId: currentReceptionShift.session_id }).unwrap();
-            await cacheReceptionShift(null);
-            notifyReceptionShiftChanged();
-            const completed = closed?.metrics?.completed || 0;
-            toast.success(isArabic ? `تم تقفيل الوردية — ${completed} مهمة مكتملة` : `Shift closed — ${completed} completed tasks`);
-        } catch (error) {
-            const code = error?.data?.code;
-            if (code === 'ACTIVE_RECEPTION_TASKS') {
-                const count = error?.data?.details?.activeTasks || '';
-                toast.error(
-                    isArabic
-                        ? `يوجد مهام نشطة بالاستقبال (${count}). يرجى تحويلها أو إنجازها قبل إغلاق الوردية.`
-                        : `Active tasks exist (${count}). Please transfer or release them before closing the shift.`,
-                    { duration: 6000 }
-                );
-            } else if (code === 'OPEN_CASHIER_SHIFT') {
-                toast.error(
-                    isArabic
-                        ? 'يجب إغلاق وردية الخزينة وجرد الدرج أولاً قبل إغلاق وردية الاستقبال.'
-                        : 'Close the cashier shift and reconcile its balance before closing the reception shift.',
-                    { duration: 6000 }
-                );
-            } else {
-                toast.error(getErrorMessage(error, isArabic ? 'تعذر تقفيل الوردية' : 'Could not close reception shift'));
-            }
+        setIsCloseWizardOpen(true);
+    }, [currentReceptionShift?.session_id]);
+
+    const handleCloseWizardSuccess = useCallback(async (closedShift) => {
+        setIsCloseWizardOpen(false);
+        setClosedReceptionSessionId(closedShift?.session_id || currentReceptionShift?.session_id || null);
+        setClosedReceptionShiftDate(closedShift?.shift_date || null);
+        await cacheReceptionShift(null);
+        notifyReceptionShiftChanged();
+        if (canReviewEndOfDay) {
+            const next = new URLSearchParams(searchParams);
+            next.set('tab', 'end-of-day');
+            if (closedShift?.session_id) next.set('sessionId', closedShift.session_id);
+            if (closedShift?.shift_date) next.set('date', closedShift.shift_date);
+            next.set('fromShiftClose', 'true');
+            setSearchParams(next);
         }
-    }, [cacheReceptionShift, closeReceptionShift, currentReceptionShift?.session_id, isArabic, notifyReceptionShiftChanged]);
+    }, [cacheReceptionShift, canReviewEndOfDay, currentReceptionShift?.session_id, notifyReceptionShiftChanged, searchParams, setSearchParams]);
 
     const handleOpenDisplayBoard = useCallback(() => {
         const params = new URLSearchParams();
@@ -311,10 +410,11 @@ const ReceptionOperations = () => {
         }
         setSelectedRooms((prev) => {
             const next = prev.includes(room) ? prev.filter((r) => r !== room) : [...prev, room];
-            setSelectedScope(next.length > 0 ? 'rooms' : (selectedModalities.length > 0 ? 'modalities' : 'all'));
+            setSelectedScope(next.length > 0 ? 'rooms' : 'all');
             return next;
         });
-    }, [currentReceptionShift?.session_id, isArabic, selectedModalities.length]);
+        setSelectedModalities([]);
+    }, [currentReceptionShift?.session_id, isArabic]);
 
     const handleToggleModality = useCallback((mod) => {
         if (currentReceptionShift?.session_id) {
@@ -323,10 +423,11 @@ const ReceptionOperations = () => {
         }
         setSelectedModalities((prev) => {
             const next = prev.includes(mod) ? prev.filter((m) => m !== mod) : [...prev, mod];
-            setSelectedScope(next.length > 0 ? 'modalities' : (selectedRooms.length > 0 ? 'rooms' : 'all'));
+            setSelectedScope(next.length > 0 ? 'modalities' : 'all');
             return next;
         });
-    }, [currentReceptionShift?.session_id, isArabic, selectedRooms.length]);
+        setSelectedRooms([]);
+    }, [currentReceptionShift?.session_id, isArabic]);
 
     const handleClearRooms = useCallback(() => {
         if (currentReceptionShift?.session_id) return;
@@ -345,11 +446,20 @@ const ReceptionOperations = () => {
         setSelectedScope('all');
     }, [currentReceptionShift?.session_id]);
 
+    const handleWorkstationScopeChange = useCallback((scope) => {
+        if (scope === 'emergency' && !currentReceptionShift?.session_id) {
+            setSelectedRooms([]);
+            setSelectedModalities([]);
+        }
+        setSelectedScope(scope);
+    }, [currentReceptionShift?.session_id]);
+
     useEffect(() => {
         try {
             localStorage.setItem('viara_reception_desk', activeDesk);
             localStorage.setItem(`viara_reception_workspace:${user?.user_id || 'anonymous'}`, JSON.stringify({
                 desk: activeDesk,
+                deskId: activeDeskId,
                 scope: selectedScope,
                 rooms: selectedRooms,
                 modalities: selectedModalities,
@@ -357,7 +467,7 @@ const ReceptionOperations = () => {
         } catch {
             // Storage can be unavailable in privacy-restricted browsers.
         }
-    }, [activeDesk, selectedModalities, selectedRooms, selectedScope, user?.user_id]);
+    }, [activeDesk, activeDeskId, selectedModalities, selectedRooms, selectedScope, user?.user_id]);
 
     const buildNewAppointmentUrl = useCallback((extraParams = {}) => {
         const params = new URLSearchParams();
@@ -380,7 +490,12 @@ const ReceptionOperations = () => {
         return () => window.removeEventListener('SSE_CONNECTION_STATUS', updateStatus);
     }, []);
     const shiftFlow = useShiftFlow({ skip: !permissions.canProcessPayments && !permissions.canReconcileShifts });
-    const receptionData = useReceptionData({ selectedDate });
+    const receptionData = useReceptionData({
+        selectedDate,
+        canViewAppointments,
+        canViewQueue: canViewAppointments && canViewExams,
+        canViewInvoices,
+    });
     const {
         appointments,
         queueItems,
@@ -394,10 +509,13 @@ const ReceptionOperations = () => {
         isWorkspaceFetching,
         isRefreshing,
         isDeliveringResult,
+        isRequestingReport,
         refreshWorkspace,
         moveQueue,
         createAppointmentInvoice,
         confirmPickup,
+        requestReport,
+        deferReport,
         pickupTarget,
         setPickupTarget,
     } = receptionData;
@@ -405,6 +523,8 @@ const ReceptionOperations = () => {
     const paymentFlow = usePaymentFlow({
         currentShift: shiftFlow.currentShift,
         queueItems,
+        refreshWorkspace,
+        canManageQueue,
     });
     const { openPayment } = paymentFlow;
     const stockMovementParams = useMemo(() => ({
@@ -414,7 +534,7 @@ const ReceptionOperations = () => {
     }), [queueItems]);
     const { data: stockMovements = [], isFetching: isStockRefreshing, refetch: refetchStockMovements } = useGetStockMovementsQuery(stockMovementParams, {
         pollingInterval: 30000,
-        skip: !canProcessPayments || !stockMovementParams.referenceIds,
+        skip: activeTab !== 'cashier' || !canProcessPayments || !stockMovementParams.referenceIds,
     });
     const registration = usePatientRegistration({ navigate, selectedDate });
     const [requestPartialPaymentException, partialExceptionMutation] = useRequestPartialPaymentExceptionMutation();
@@ -423,13 +543,14 @@ const ReceptionOperations = () => {
         transactionType: 'ClinicalQueueTransition',
         limit: 500,
     }, {
-        skip: !canUsePartialPaymentExceptions,
-        pollingInterval: 15000,
+        skip: !canUsePartialPaymentExceptions || !['schedule', 'cashier'].includes(activeTab),
+        pollingInterval: 30000,
     });
 
     const tabs = useMemo(
-        () => buildReceptionTabs({ canProcessPayments, t }).map((tab) => ({ ...tab, icon: TAB_ICONS[tab.id] })),
-        [canProcessPayments, t]
+        () => buildReceptionTabs({ canProcessPayments, has, t, canReviewEndOfDay })
+                  .map((tab) => ({ ...tab, icon: TAB_ICONS[tab.id] })),
+        [canProcessPayments, canReviewEndOfDay, has, t]
     );
 
     // Dynamic Room and Modality sets connected to real clinical database
@@ -498,14 +619,37 @@ const ReceptionOperations = () => {
         setActiveDesk(desk);
 
         const preset = deskPresets.find((item) => item.label === desk);
-        if (!preset) return;
+        if (!preset) {
+            setActiveDeskId(null);
+            setSelectedRooms([]);
+            setSelectedModalities([]);
+            setSelectedScope('all');
+            return;
+        }
+        setActiveDeskId(preset.id || null);
 
         const linkedRooms = (preset.roomIds || []).filter((roomId) =>
             availableRooms.some((room) => String(room.room) === String(roomId) || String(room.roomNumber) === String(roomId) || String(room.id) === String(roomId))
         );
-        setSelectedModalities([]);
-        setSelectedRooms(linkedRooms);
-        setSelectedScope(preset.scope || (linkedRooms.length ? 'rooms' : 'all'));
+        const presetScope = preset.scope && preset.scope !== 'all'
+            ? preset.scope
+            : (preset.roomIds || []).length > 0
+                ? 'rooms'
+                : (preset.modalityIds || []).length > 0 ? 'modalities' : 'all';
+        if (presetScope === 'emergency') {
+            setSelectedRooms([]);
+            setSelectedModalities([]);
+        } else if (presetScope === 'rooms') {
+            setSelectedRooms(linkedRooms);
+            setSelectedModalities([]);
+        } else if (presetScope === 'modalities') {
+            setSelectedRooms([]);
+            setSelectedModalities((preset.modalityIds || []).map(String));
+        } else {
+            setSelectedRooms([]);
+            setSelectedModalities([]);
+        }
+        setSelectedScope(presetScope);
         if (preset.tab && (!currentReceptionShift?.session_id || preset.tab !== 'cashier' || canProcessPayments)) {
             const next = new URLSearchParams(searchParams);
             next.set('tab', preset.tab);
@@ -583,29 +727,61 @@ const ReceptionOperations = () => {
     }, [clinicalMachines, appointments, queueItems]);
 
     const workstationCounts = useMemo(() => {
-        const total = appointments?.length || 0;
-        const mine = (appointments || []).filter(
-            (a) => String(a.receptionist_id) === String(user?.user_id)
-        ).length;
-        const unclaimed = (appointments || []).filter(
-            (a) => !a.receptionist_id && ['Scheduled', 'Arrived'].includes(a.status)
-        ).length;
-        const inExam = (appointments || []).filter(
-            (a) => a.status === 'In Exam' || a.queue_stage === 'In Exam'
-        ).length;
-        const emergency = (appointments || []).filter(
-            (a) => ['Emergency', 'Urgent'].includes(a.priority)
-        ).length;
-        return { total, mine, unclaimed, inExam, emergency };
-    }, [appointments, user?.user_id]);
+        if (!canViewAppointments) {
+            return { total: 0, mine: 0, unclaimed: 0, inExam: 0, emergency: 0, overdue: 0, attention: 0 };
+        }
+
+        const queueByAppointment = new Map();
+        const queueByExam = new Map();
+        (queueItems || []).forEach((item) => {
+            if (item?.appointment_id) queueByAppointment.set(String(item.appointment_id), item);
+            if (item?.exam_id) queueByExam.set(String(item.exam_id), item);
+        });
+
+        let mine = 0;
+        let unclaimed = 0;
+        let inExam = 0;
+        let emergency = 0;
+        let overdue = 0;
+        let attention = 0;
+
+        (appointments || []).forEach((appointment) => {
+            const queue = queueByAppointment.get(String(appointment?.appointment_id))
+                || queueByExam.get(String(appointment?.exam_id));
+            const receptionistId = appointment?.receptionist_id ?? queue?.receptionist_id;
+            const stage = queue?.queue_stage || appointment?.queue_stage || appointment?.status || 'Scheduled';
+            const priority = appointment?.priority || queue?.priority || 'Routine';
+            const urgent = ['Emergency', 'Urgent'].includes(priority);
+            const isOverdue = Boolean(queue?.is_overdue);
+            const isUnclaimed = !receptionistId && ['Scheduled', 'Arrived'].includes(stage);
+
+            if (String(receptionistId ?? '') === String(currentUserId ?? '')) mine += 1;
+            if (isUnclaimed) unclaimed += 1;
+            if (stage === 'In Exam' || appointment?.status === 'In Exam') inExam += 1;
+            if (urgent) emergency += 1;
+            if (isOverdue) overdue += 1;
+            if (urgent || isOverdue || isUnclaimed) attention += 1;
+        });
+
+        return {
+            total: appointments?.length || 0,
+            mine,
+            unclaimed,
+            inExam,
+            emergency,
+            overdue,
+            attention,
+        };
+    }, [appointments, queueItems, currentUserId, canViewAppointments]);
 
     useEffect(() => {
-        if (!tabs.some((tab) => tab.id === activeTab)) {
+        const endOfDayTabIsAllowed = activeTab === 'end-of-day' && canReviewEndOfDay;
+        if (!tabs.some((tab) => tab.id === activeTab) && !endOfDayTabIsAllowed) {
             const next = new URLSearchParams(searchParams);
             next.set('tab', tabs[0]?.id || 'schedule');
             setSearchParams(next, { replace: true });
         }
-    }, [activeTab, tabs, searchParams, setSearchParams]);
+    }, [activeTab, canReviewEndOfDay, tabs, searchParams, setSearchParams]);
 
     useEffect(() => {
         const requestedInvoiceId = searchParams.get('invoiceId');
@@ -628,11 +804,46 @@ const ReceptionOperations = () => {
     }, [canProcessPayments, canUsePartialPaymentExceptions, refetchPartialPaymentExceptions, refetchStockMovements, refreshWorkspace]);
 
     const handleTabChange = useCallback((nextTab) => {
-        if (!tabs.some((tab) => tab.id === nextTab)) return;
+        if (!tabs.some((tab) => tab.id === nextTab) && !(nextTab === 'end-of-day' && canReviewEndOfDay)) return;
         const nextParams = new URLSearchParams(searchParams);
         nextParams.set('tab', nextTab);
         setSearchParams(nextParams);
-    }, [searchParams, setSearchParams, tabs]);
+    }, [canReviewEndOfDay, searchParams, setSearchParams, tabs]);
+
+    const handleTabIntent = useCallback((nextTab) => {
+        TAB_COMPONENTS[nextTab]?.preload?.();
+    }, []);
+
+    useEffect(() => {
+        const onShortcut = (event) => {
+            if (!event.altKey || event.ctrlKey || event.metaKey) return;
+            const target = event.target;
+            const typing = target instanceof HTMLInputElement
+                || target instanceof HTMLTextAreaElement
+                || target instanceof HTMLSelectElement
+                || target?.isContentEditable;
+            if (typing) return;
+
+            const key = event.key.toLowerCase();
+            const tabByKey = { '1': 'schedule', '2': 'patients', '3': 'cashier', '4': 'billing' };
+            if (tabByKey[key] && tabs.some((tab) => tab.id === tabByKey[key])) {
+                event.preventDefault();
+                handleTabChange(tabByKey[key]);
+                return;
+            }
+            if (key === 'b' && has('CREATE_APPOINTMENTS')) {
+                event.preventDefault();
+                navigate(buildNewAppointmentUrl());
+                return;
+            }
+            if (key === 'r') {
+                event.preventDefault();
+                handleRefresh();
+            }
+        };
+        window.addEventListener('keydown', onShortcut);
+        return () => window.removeEventListener('keydown', onShortcut);
+    }, [buildNewAppointmentUrl, handleRefresh, handleTabChange, has, navigate, tabs]);
 
     const submitPartialPaymentException = useCallback(async (reason) => {
         if (!partialExceptionTarget?.invoice?.invoice_id) return false;
@@ -690,42 +901,73 @@ const ReceptionOperations = () => {
     const isToday = selectedDate === toLocalDateInput();
 
     return (
-        <div className="mx-auto max-w-[1600px] space-y-5 pb-12">
+        <div className="mx-auto max-w-[1720px] space-y-4 pb-10 sm:space-y-5">
             {hasDataError && (
-                <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50/80 p-4 shadow-sm dark:border-rose-900/50 dark:bg-rose-950/20">
+                <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm dark:border-rose-900/60 dark:bg-[#1a080c]">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 mt-0.5">
                         <AlertTriangle size={16} />
                     </div>
                     <div className="min-w-0 flex-1">
                         <p className="text-sm font-black text-rose-800 dark:text-rose-200">
-                            {isArabic ? 'تعذر تحميل بعض بيانات الاستقبال' : 'Some reception data could not be loaded'}
+                            {t('states.partialDataTitle')}
                         </p>
                         <p className="mt-0.5 text-xs font-medium text-rose-600/80 dark:text-rose-300/80">
-                            {isArabic
-                                ? `المصادر المتأثرة: ${dataErrors.map(({ source }) => source).join('، ')}. لا تعتمد على الأرقام الصفرية قبل إعادة المحاولة.`
-                                : `Affected: ${dataErrors.map(({ source }) => source).join(', ')}. Do not treat zero values as authoritative until refresh succeeds.`}
+                            {t('states.partialDataHint', { sources: dataErrors.map(({ source }) => source).join(isArabic ? '\u060c ' : ', ') })}
                         </p>
                     </div>
                 </div>
             )}
             <PageHeader
+                compact
                 logoUrl={centerLogo}
                 icon={Building2}
                 eyebrowIcon={Sparkles}
                 eyebrow={t('command.live', { defaultValue: 'Reception Command Center' })}
                 title={t('title', { defaultValue: 'Patient Reception & Operations' })}
-                description={`${displayDate} · ${t('command.signedIn', { name: user?.name || user?.fullName || (isArabic ? 'موظف الاستقبال' : 'Reception Staff') })}`}
-                meta={<span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-700 dark:text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-500" />{isWorkspaceFetching || isRefreshing ? (isArabic ? 'جاري التحديث' : 'Updating') : (isArabic ? 'مزامنة مباشرة' : 'Live Sync')}</span>}
+                description={`${displayDate} · ${t('command.signedIn', { name: user?.name || user?.fullName || t('fallback.staff') })}`}
+                metrics={[
+                    {
+                        key: 'unclaimed',
+                        icon: ClipboardCheck,
+                        label: t('command.metricUnclaimed', 'Unclaimed'),
+                        value: workstationCounts.unclaimed,
+                        tone: workstationCounts.unclaimed > 0 ? 'amber' : 'teal',
+                        detail: t('command.metricUnclaimedDetail', 'Awaiting first claim'),
+                    },
+                    {
+                        key: 'inExam',
+                        icon: Clock,
+                        label: t('command.metricInExam', 'In exam'),
+                        value: workstationCounts.inExam,
+                        tone: 'teal',
+                    },
+                    {
+                        key: 'attention',
+                        icon: AlertTriangle,
+                        label: t('command.metricAttention', 'Needs attention'),
+                        value: workstationCounts.attention,
+                        tone: workstationCounts.attention > 0 ? 'rose' : 'slate',
+                    },
+                    {
+                        key: 'total',
+                        icon: UsersRound,
+                        label: t('command.metricTotal', 'Today'),
+                        value: workstationCounts.total,
+                        tone: 'slate',
+                    },
+                ]}
+                metricsLabel={t('command.metricsLabel', 'Reception workload indicators')}
+                meta={<span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-700 dark:text-emerald-300"><span className={`h-2 w-2 rounded-full bg-emerald-500 ${isWorkspaceFetching || isRefreshing ? 'animate-pulse' : ''}`} />{isWorkspaceFetching || isRefreshing ? t('command.updating') : t('command.online')}</span>}
                 actions={(
-                    <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 w-full sm:w-auto">
                         {/* Quick Date Stepper */}
-                        <div className="flex items-center rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
+                        <div className="flex min-h-10 sm:min-h-11 items-center rounded-xl border border-slate-200 bg-white p-0.5 sm:p-1 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
                             <button
                                 type="button"
                                 onClick={() => shiftDate(-1)}
-                                title={isArabic ? 'اليوم السابق' : 'Previous Day'}
-                                aria-label={isArabic ? 'اليوم السابق' : 'Previous Day'}
-                                className="grid h-8 w-8 place-items-center rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                title={t('previousDay')}
+                                aria-label={t('previousDay')}
+                                className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                             >
                                 <ChevronLeft size={16} className="rtl:rotate-180" />
                             </button>
@@ -734,14 +976,14 @@ const ReceptionOperations = () => {
                                 value={selectedDate}
                                 onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
                                 required
-                                className="h-8 border-none bg-transparent px-2 text-xs font-black text-slate-800 outline-hidden dark:text-slate-200"
+                                className="h-9 min-w-0 border-none bg-transparent px-1 text-xs font-black text-slate-800 outline-hidden dark:text-slate-200 sm:px-2"
                             />
                             <button
                                 type="button"
                                 onClick={() => shiftDate(1)}
-                                title={isArabic ? 'اليوم التالي' : 'Next Day'}
-                                aria-label={isArabic ? 'اليوم التالي' : 'Next Day'}
-                                className="grid h-8 w-8 place-items-center rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                                title={t('nextDay')}
+                                aria-label={t('nextDay')}
+                                className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                             >
                                 <ChevronRight size={16} className="rtl:rotate-180" />
                             </button>
@@ -751,17 +993,17 @@ const ReceptionOperations = () => {
                                     onClick={() => setSelectedDate(toLocalDateInput())}
                                     className="ms-1 rounded-xl bg-teal-500/10 px-2.5 py-1 text-[10.5px] font-black text-teal-700 dark:text-teal-300 hover:bg-teal-500/20 transition"
                                 >
-                                    {isArabic ? 'اليوم' : 'Today'}
+                                    {t('dateToday')}
                                 </button>
                             )}
                         </div>
 
-                        {has('CREATE_PATIENTS') && <button
+                        {(canViewAppointments || canViewInvoices || has('VIEW_PATIENTS')) && <button
                             type="button"
                             onClick={handleRefresh}
                             disabled={isRefreshing || isStockRefreshing || isWorkspaceFetching}
                             title={t('command.refresh', { defaultValue: 'Refresh' })}
-                            className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200/80 bg-white text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                            className="grid h-10 w-10 sm:h-11 sm:w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                         >
                             <RefreshCw size={15} className={isRefreshing || isStockRefreshing || isWorkspaceFetching ? 'animate-spin' : ''} />
                         </button>}
@@ -769,7 +1011,7 @@ const ReceptionOperations = () => {
                         {has('CREATE_APPOINTMENTS') && <button
                             type="button"
                             onClick={registration.open}
-                            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-4 text-xs font-black text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                            className="inline-flex h-10 sm:h-11 items-center justify-center gap-1.5 sm:gap-2 rounded-xl border border-slate-200 bg-white px-3 sm:px-4 text-xs font-black text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                         >
                             <UserPlus size={15} />
                             <span>{t('command.addPatient', { defaultValue: 'Add Patient' })}</span>
@@ -779,7 +1021,7 @@ const ReceptionOperations = () => {
                             <button
                                 type="button"
                                 onClick={() => navigate(buildNewAppointmentUrl())}
-                                className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-5 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95"
+                                className="inline-flex h-10 sm:h-11 items-center justify-center gap-1.5 sm:gap-2 rounded-xl bg-teal-600 px-3.5 sm:px-5 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95"
                             >
                                 <CalendarPlus size={15} />
                                 <span>{t('booking.title', { defaultValue: 'Book Appointment' })}</span>
@@ -787,106 +1029,50 @@ const ReceptionOperations = () => {
                         )}
                     </div>
                 )}
-                metrics={[
-                    {
-                        key: 'booked',
-                        label: t('overview.booked', { defaultValue: 'Today Bookings' }),
-                        value: scheduleSummary.booked || 0,
-                        icon: CalendarCheck2,
-                        tone: 'teal',
-                        detail: isArabic ? 'إجمالي الحالات المجدولة' : 'Scheduled exams',
-                        loading: appLoading,
-                        error: hasDataError,
-                        onClick: () => handleKpiClick({ stage: 'all', priority: 'all' }, 'schedule')
-                    },
-                    {
-                        key: 'ready',
-                        label: t('overview.ready', { defaultValue: 'Arrived & In Prep' }),
-                        value: scheduleSummary.ready || 0,
-                        icon: CheckCircle2,
-                        tone: 'emerald',
-                        detail: isArabic ? 'حاضرون بالاستقبال' : 'Checked-in patients',
-                        loading: appLoading,
-                        error: hasDataError,
-                        onClick: () => handleKpiClick({ stage: 'Arrived', priority: 'all' }, 'schedule')
-                    },
-                    {
-                        key: 'exam',
-                        label: isArabic ? 'داخل غرف الأشعة' : 'In Examination',
-                        value: Math.max(
-                            queueItems.filter(q => (q.queue_stage || q.queueStage) === 'In Exam').length,
-                            (appointments || []).filter(a => a.status === 'In Exam' || a.queue_stage === 'In Exam').length
-                        ),
-                        icon: Activity,
-                        tone: 'blue',
-                        detail: isArabic ? 'فحوصات جارية حالياً' : 'Active modality scans',
-                        loading: appLoading,
-                        error: hasDataError,
-                        onClick: () => handleKpiClick({ stage: 'In Exam', priority: 'all' }, 'schedule')
-                    },
-                    {
-                        key: 'priority',
-                        label: t('overview.priority', { defaultValue: 'Priority & STAT' }),
-                        value: scheduleSummary.urgent || 0,
-                        icon: AlertTriangle,
-                        tone: 'amber',
-                        detail: isArabic ? 'حالات طارئة وعاجلة' : 'High-priority cases',
-                        loading: appLoading,
-                        error: hasDataError,
-                        onClick: () => handleKpiClick({ stage: 'all', priority: 'Emergency' }, 'schedule')
-                    },
-                    canProcessPayments && {
-                        key: 'cashier',
-                        label: isArabic ? 'التحصيل المعلق' : 'Cashier Pending',
-                        value: cashierPending.length,
-                        icon: CreditCard,
-                        tone: 'violet',
-                        detail: isArabic ? 'فواتير غير مسددة' : 'Awaiting payment',
-                        loading: appLoading,
-                        error: hasDataError,
-                        onClick: () => handleKpiClick(null, 'cashier')
-                    },
-                ].filter(Boolean)}
-                metricsLabel={isArabic ? 'مؤشرات سجل الاستقبال' : 'Reception record indicators'}
             />
 
 
-            {/* Sub-Tabs Nav */}
-            <ReceptionTabNav
-                activeTab={activeTab}
-                cashierPending={cashierPending.length}
-                scheduleCount={scheduleSummary.booked || 0}
-                onTabChange={handleTabChange}
-                tabs={tabs}
-                t={t}
-            />
+            {/* Sticky operational control deck: navigation + workstation in one compact surface. */}
+            <div className="sticky top-2 z-40 overflow-visible space-y-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-md dark:border-slate-800 dark:bg-[#070e1a] sm:top-3 sm:rounded-3xl sm:p-2.5">
+                <ReceptionTabNav
+                    activeTab={activeTab}
+                    cashierPending={canUseCashier ? cashierPending.length : 0}
+                    scheduleCount={canViewAppointments ? scheduleSummary.booked || 0 : 0}
+                    onTabChange={handleTabChange}
+                    onTabIntent={handleTabIntent}
+                    tabs={tabs}
+                    t={t}
+                />
 
-            {/* Reception Multi-Desk Workstation & Work Division Scope Bar */}
-            <ReceptionWorkstationBar
-                activeDesk={activeDesk}
-                onDeskChange={handleDeskChange}
-                selectedScope={selectedScope}
-                onScopeChange={setSelectedScope}
-                selectedRooms={selectedRooms}
-                onToggleRoom={handleToggleRoom}
-                selectedModalities={selectedModalities}
-                onToggleModality={handleToggleModality}
-                onClearRooms={handleClearRooms}
-                onClearModalities={handleClearModalities}
-                onClearAll={handleClearAllFilters}
-                availableRooms={availableRooms}
-                availableModalities={availableModalities}
-                counts={workstationCounts}
-                onOpenDisplayBoard={handleOpenDisplayBoard}
-                currentUser={user}
-                isRealtimeConnected={isRealtimeConnected}
-                receptionShift={currentReceptionShift}
-                workstationLocked={Boolean(currentReceptionShift?.session_id)}
-                isShiftLoading={isReceptionShiftLoading || isOpeningReceptionShift || isClosingReceptionShift}
-                onOpenShift={handleOpenReceptionShift}
-                onCloseShift={handleCloseReceptionShift}
-                deskPresets={deskPresets}
-            />
+                {canViewAppointments && ['schedule', 'cashier'].includes(activeTab) && (
+                    <ReceptionWorkstationBar
+                        activeDesk={activeDesk}
+                        activeDeskId={activeDeskId}
+                        onDeskChange={handleDeskChange}
+                        selectedScope={selectedScope}
+                        onScopeChange={handleWorkstationScopeChange}
+                        selectedRooms={selectedRooms}
+                        onToggleRoom={handleToggleRoom}
+                        selectedModalities={selectedModalities}
+                        onToggleModality={handleToggleModality}
+                        onClearRooms={handleClearRooms}
+                        onClearModalities={handleClearModalities}
+                        onClearAll={handleClearAllFilters}
+                        availableRooms={availableRooms}
+                        availableModalities={availableModalities}
+                        counts={workstationCounts}
+                        onOpenDisplayBoard={handleOpenDisplayBoard}
+                        currentUser={user}
+                        isRealtimeConnected={isRealtimeConnected}
+                        receptionShift={currentReceptionShift}
+                        workstationLocked={Boolean(currentReceptionShift?.session_id)}
+                        isShiftLoading={isReceptionShiftLoading || isOpeningReceptionShift || isClosingReceptionShift}
+                        onOpenShift={handleOpenReceptionShift}
+                        onCloseShift={handleCloseReceptionShift}
+                        deskPresets={deskPresets}
+                    />
+                )}
+            </div>
 
             {/* Main Tab Workspaces */}
             <main
@@ -896,6 +1082,7 @@ const ReceptionOperations = () => {
                 aria-labelledby={`reception-tab-${activeTab}`}
                 tabIndex={0}
             >
+                <Suspense fallback={<WorkspaceFallback isArabic={isArabic} />}>
                 {activeTab === 'schedule' && (
                     <ScheduleView
                         displayDate={displayDate}
@@ -903,7 +1090,7 @@ const ReceptionOperations = () => {
                         appLoading={appLoading}
                         scheduleSummary={scheduleSummary}
                         invoices={invoices}
-                        createAppointmentInvoice={createAppointmentInvoice}
+                        createAppointmentInvoice={has('CREATE_INVOICES') ? createAppointmentInvoice : undefined}
                         moveQueue={moveQueue}
                         i18n={i18n}
                         t={t}
@@ -912,10 +1099,14 @@ const ReceptionOperations = () => {
                         queueKpis={queueKpis}
                         canManageQueue={canManageQueue}
                         canDeliverResults={canDeliverResults}
+                        canViewInvoices={canViewInvoices}
                         canManageWaitlist={has('MANAGE_WAITLIST')}
                         canCreateAppointments={has('CREATE_APPOINTMENTS')}
                         onQueueMove={moveQueue}
                         onPickup={setPickupTarget}
+                        onRequestReport={requestReport}
+                        isRequestingReport={isRequestingReport}
+                        onDeferReport={deferReport}
                         onOpenPayment={paymentFlow.openPayment}
                         partialPaymentExceptions={partialPaymentExceptions}
                         onRequestPartialPaymentException={canUsePartialPaymentExceptions ? setPartialExceptionTarget : undefined}
@@ -926,6 +1117,7 @@ const ReceptionOperations = () => {
                         externalModalities={selectedModalities}
                         onDeskChange={handleDeskChange}
                         onScopeChange={setSelectedScope}
+                        hasActiveReceptionShift={Boolean(currentReceptionShift?.session_id)}
                     />
                 )}
 
@@ -946,9 +1138,13 @@ const ReceptionOperations = () => {
                         canReconcileShifts={permissions.canReconcileShifts}
                         canReviewShiftVariance={permissions.canReviewShiftVariance}
                         currentShift={shiftFlow.currentShift}
+                        currentUserId={currentUserId}
                         invoices={invoices}
                         isLoadingShift={shiftFlow.isLoadingShift}
                         items={cashierPending}
+                        receptionScope={selectedScope}
+                        selectedRooms={selectedRooms}
+                        selectedModalities={selectedModalities}
                         stockMovements={stockMovements}
                         locale={i18n.language}
                         onCreateInvoice={createAppointmentInvoice}
@@ -965,10 +1161,56 @@ const ReceptionOperations = () => {
                     />
                 )}
 
-                {activeTab === 'billing' && <BillingTab selectedDate={selectedDate} receptionShift={currentReceptionShift} />}
+                {activeTab === 'billing' && (
+                    <BillingTab
+                        selectedDate={selectedDate}
+                        receptionShift={currentReceptionShift}
+                        currentUserId={currentUserId}
+                        receptionScope={selectedScope}
+                        onOpenPayment={paymentFlow.openPayment}
+                    />
+                )}
+                {activeTab === 'end-of-day' && canReviewEndOfDay && (
+                    <EndOfDayReview
+                        embedded
+                        sessionId={currentReceptionShift?.session_id ?? closedReceptionSessionId}
+                        fromShiftClose={Boolean(closedReceptionSessionId)}
+                        initialDate={closedReceptionShiftDate}
+                        currentShift={currentReceptionShift}
+                        onBack={() => handleTabChange('schedule')}
+                    />
+                )}
+
+                {activeTab === 'end-of-day' && !canReviewEndOfDay && (
+                    <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-2xl border border-rose-200/70 bg-rose-50/50 p-8 text-center dark:border-rose-900/50 dark:bg-rose-950/20">
+                        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                            <ShieldCheck size={22} />
+                        </span>
+                        <p className="text-sm font-black text-rose-800 dark:text-rose-200">
+                            {isArabic ? 'غير مصرح' : 'Unauthorised'}
+                        </p>
+                        <p className="max-w-xs text-xs font-medium text-rose-700/80 dark:text-rose-300/80">
+                            {isArabic
+                                ? 'ليس لديك صلاحية الوصول إلى مراجعة نهاية الوردية.'
+                                : 'You do not have permission to access End-of-Shift Review.'}
+                        </p>
+                    </div>
+                )}
+
+                </Suspense>
             </main>
 
             {/* Modals & Dialogs */}
+            <UnifiedShiftCloseWizardModal
+                isOpen={isCloseWizardOpen}
+                onClose={() => setIsCloseWizardOpen(false)}
+                currentReceptionShift={currentReceptionShift}
+                currentCashierShift={shiftFlow?.currentShift}
+                activeTasksCount={currentReceptionShift?.metrics?.active || 0}
+                onSuccess={handleCloseWizardSuccess}
+                isRtl={isArabic}
+            />
+
             <ShiftActionModal {...shiftFlow.shiftModalProps} />
 
             <PaymentCollectionModal
@@ -1001,13 +1243,23 @@ const ReceptionOperations = () => {
                 isOpen={Boolean(pickupTarget)}
                 onClose={() => setPickupTarget(null)}
                 onConfirm={confirmPickup}
-                title={t('pickup.title', { defaultValue: 'Confirm Report Delivery' })}
-                message={t('pickup.description', {
-                    patient: pickupTarget?.patient_name || (isArabic ? 'المريض' : 'Patient'),
-                    mrn: pickupTarget?.mrn || '-',
-                })}
+                title={pickupTarget?.queue_stage === 'Images Ready'
+                    ? t('pickup.imagesTitle', { defaultValue: 'Confirm Image Delivery' })
+                    : t('pickup.title', { defaultValue: 'Confirm Report Delivery' })}
+                message={pickupTarget?.queue_stage === 'Images Ready'
+                    ? t('pickup.imagesDescription', {
+                        patient: pickupTarget?.patient_name || (isArabic ? 'المريض' : 'Patient'),
+                        mrn: pickupTarget?.mrn || '-',
+                        defaultValue: 'Confirm delivery of images only for {{patient}} ({{mrn}}). No diagnostic report is included.'
+                    })
+                    : t('pickup.description', {
+                        patient: pickupTarget?.patient_name || (isArabic ? 'المريض' : 'Patient'),
+                        mrn: pickupTarget?.mrn || '-',
+                    })}
                 label={t('pickup.recipient', { defaultValue: 'Recipient Name' })}
-                placeholder={t('pickup.recipientPlaceholder', { defaultValue: 'Name of the person receiving the report...' })}
+                placeholder={pickupTarget?.queue_stage === 'Images Ready'
+                    ? t('pickup.imagesRecipientPlaceholder', { defaultValue: 'Name of the person receiving the images...' })
+                    : t('pickup.recipientPlaceholder', { defaultValue: 'Name of the person receiving the report...' })}
                 initialValue={pickupTarget?.patient_name || ''}
                 confirmLabel={t('pickup.confirm', { defaultValue: 'Confirm Delivery' })}
                 cancelLabel={t('pickup.cancel', { defaultValue: 'Cancel' })}

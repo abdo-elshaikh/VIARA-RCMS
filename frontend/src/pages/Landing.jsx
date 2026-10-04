@@ -1,960 +1,1048 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
     Activity,
+    ArrowLeft,
     ArrowRight,
-    BarChart3,
-    Clock3,
-    Database,
-    HeartPulse,
-    KeyRound,
-    Languages,
-    Layers,
+    CalendarCheck,
+    CalendarDays,
+    Check,
+    ChevronDown,
+    FileText,
+    Info,
+    Globe,
+    LayoutDashboard,
+    Link2,
+    Lock,
+    MoreHorizontal,
     Moon,
-    Pause,
-    Play,
-    Radio,
-    Shield,
+    ScanLine,
+    Search,
+    Send,
+    Settings,
     ShieldCheck,
-    Sparkles,
     Stethoscope,
     Sun,
-    User,
-    UserCheck,
+    UserRound,
     Users,
-    Workflow,
     Zap,
 } from 'lucide-react';
-import { useGetPublicLandingOverviewQuery } from '../store/api';
+import {
+    AnimatePresence,
+    animate,
+    motion,
+    useInView,
+    useMotionValue,
+    useReducedMotion,
+    useScroll,
+    useSpring,
+    useTransform,
+} from 'framer-motion';
 import { selectPreferences, setLanguage, setTheme } from '../store/preferencesSlice';
 import { VIARA_BRAND } from '../config/brand';
-
+import LandingServiceHealthModal from './LandingServiceHealthModal';
 import './LandingIllustrative.css';
 
-const SLIDE_DURATION_MS = 14000;
+const EASE = [0.22, 0.68, 0.2, 1];
 
-const SLIDE_ARTWORK = Object.freeze({
-    operations: '/images/landing/viara-slide-operations-vector-v3.png',
-    intelligence: '/images/landing/viara-slide-intelligence-vector-v3.png',
-    workflow: '/images/landing/viara-slide-workflow-vector-v3.png',
-    gateway: '/images/landing/viara-slide-gateway-vector-v3.png',
-});
+/* ─────────────────────────── Content ─────────────────────────── */
 
-const SLIDE_EASE = [0.16, 1, 0.3, 1];
-
-const narrativeVariants = {
-    enter: (slideDirection) => ({
-        opacity: 0,
-        x: slideDirection * 38,
-        scale: 0.992,
-    }),
-    center: {
-        opacity: 1,
-        x: 0,
-        scale: 1,
-        transition: {
-            duration: 0.72,
-            ease: SLIDE_EASE,
-            staggerChildren: 0.085,
-            delayChildren: 0.08,
-        },
+const WORKLIST_ROWS = [
+    {
+        id: 'VR-240421',
+        patientAr: 'مريض 001', patientEn: 'Patient 001',
+        modalityAr: 'CT\nأشعة مقطعية', modalityEn: 'CT\nComputed Tomography',
+        date: '2024/04/21 - 10:30',
+        statusAr: 'مكتمل', statusEn: 'Completed', statusType: 'done',
+        thumb: '/images/suite-ct.jpg',
     },
-    exit: (slideDirection) => ({
-        opacity: 0,
-        x: slideDirection * -24,
-        scale: 0.996,
-        transition: {
-            duration: 0.36,
-            ease: [0.4, 0, 1, 1],
-            staggerChildren: 0.04,
-            staggerDirection: -1,
-        },
-    }),
-};
-
-const narrativeItemVariants = {
-    enter: (slideDirection) => ({ opacity: 0, x: slideDirection * 10, y: 14 }),
-    center: { opacity: 1, x: 0, y: 0, transition: { duration: 0.54, ease: SLIDE_EASE } },
-    exit: (slideDirection) => ({
-        opacity: 0,
-        x: slideDirection * -7,
-        y: -7,
-        transition: { duration: 0.26, ease: 'easeIn' },
-    }),
-};
-
-const hudVariants = {
-    enter: (slideDirection) => ({ opacity: 0, x: slideDirection * 12, y: 18, scale: 0.985 }),
-    center: {
-        opacity: 1,
-        x: 0,
-        y: 0,
-        scale: 1,
-        transition: { duration: 0.64, ease: SLIDE_EASE, staggerChildren: 0.075, delayChildren: 0.12 },
+    {
+        id: 'VR-240422',
+        patientAr: 'مريض 002', patientEn: 'Patient 002',
+        modalityAr: 'MR\nرنين مغناطيسي', modalityEn: 'MR\nMagnetic Resonance',
+        date: '2024/04/21 - 14:15',
+        statusAr: 'قيد التنفيذ', statusEn: 'In Progress', statusType: 'progress',
+        thumb: '/images/suite-mri.jpg',
     },
-    exit: (slideDirection) => ({
-        opacity: 0,
-        x: slideDirection * -8,
-        y: -8,
-        transition: { duration: 0.28, ease: 'easeIn' },
-    }),
-};
-
-const hudPartVariants = {
-    enter: { opacity: 0, y: 9 },
-    center: {
-        opacity: 1,
-        y: 0,
-        transition: { duration: 0.46, ease: SLIDE_EASE, staggerChildren: 0.06, delayChildren: 0.04 },
+    {
+        id: 'VR-240423',
+        patientAr: 'مريض 003', patientEn: 'Patient 003',
+        modalityAr: 'US\nموجات فوق صوتية', modalityEn: 'US\nUltrasound',
+        date: '2024/04/22 - 09:00',
+        statusAr: 'مجدول', statusEn: 'Scheduled', statusType: 'scheduled',
+        thumb: '/images/ultrasound-suite.jpg',
     },
-    exit: { opacity: 0, y: -5, transition: { duration: 0.22 } },
-};
+];
 
-const artworkVariants = {
-    enter: (slideDirection) => ({
-        opacity: 0,
-        x: slideDirection * 48,
-        scale: 0.955,
-        rotate: slideDirection * 0.6,
-    }),
-    center: {
-        opacity: 1,
-        x: 0,
-        scale: 1,
-        rotate: 0,
-        transition: { duration: 0.82, ease: SLIDE_EASE },
+const MODALITIES = [
+    { code: 'CT', ar: 'أشعة مقطعية', en: 'Computed Tomography', planeAr: 'مقطع محوري', planeEn: 'Axial' },
+    { code: 'MR', ar: 'رنين مغناطيسي', en: 'Magnetic Resonance', planeAr: 'مقطع سهمي', planeEn: 'Sagittal' },
+    { code: 'US', ar: 'موجات فوق صوتية', en: 'Ultrasound', planeAr: 'بث مباشر', planeEn: 'Live' },
+    { code: 'DX', ar: 'أشعة سينية', en: 'Digital X-Ray', planeAr: 'إسقاط أمامي', planeEn: 'AP view' },
+    { code: 'MG', ar: 'تصوير الثدي', en: 'Mammography', planeAr: 'إسقاط علوي', planeEn: 'CC view' },
+];
+
+const FEATURES = [
+    {
+        id: 'patient-journey', Icon: Link2, visual: 'journey', tone: 'teal',
+        titleAr: 'رحلة مريض مترابطة', titleEn: 'Connected Patient Journey',
+        descAr: 'تجربة متكاملة من الحجز والاستقبال إلى التصوير وتسليم التقرير.',
+        descEn: 'End-to-end experience from booking and reception to imaging and report delivery.',
     },
-    exit: (slideDirection) => ({
-        opacity: 0,
-        x: slideDirection * -34,
-        scale: 0.975,
-        rotate: slideDirection * -0.35,
-        transition: { duration: 0.38, ease: [0.4, 0, 1, 1] },
+    {
+        id: 'workspace', Icon: Users, visual: 'roles', tone: 'violet',
+        titleAr: 'مساحة عمل لكل تخصص', titleEn: 'Workspace for Every Role',
+        descAr: 'أدوات مصممة لاحتياجات أطباء الأشعة والفنيين والإداريين.',
+        descEn: 'Purpose-built tools for radiologists, technicians, and administrators.',
+    },
+    {
+        id: 'reporting', Icon: FileText, visual: 'report', tone: 'cyan',
+        titleAr: 'متابعة واضحة للتقارير', titleEn: 'Clear Report Tracking',
+        descAr: 'من التصوير إلى اعتماد التقرير، بكل شفافية وفي مكان واحد.',
+        descEn: 'From imaging to report approval, with full transparency in one place.',
+    },
+];
+
+const FLOW_STEPS = [
+    {
+        id: 'booking', Icon: CalendarCheck,
+        titleAr: 'الحجز والاستقبال', titleEn: 'Booking & Reception',
+        descAr: 'حجز المواعيد وتسجيل بيانات المريض في خطوة واحدة.',
+        descEn: 'Schedule appointments and register patients in one step.',
+    },
+    {
+        id: 'imaging', Icon: ScanLine,
+        titleAr: 'التصوير', titleEn: 'Imaging',
+        descAr: 'استلام صور DICOM من الأجهزة وربطها بطلب الفحص.',
+        descEn: 'Receive DICOM images from the modality and tie them to the order.',
+    },
+    {
+        id: 'reporting', Icon: Stethoscope,
+        titleAr: 'قراءة وكتابة التقرير', titleEn: 'Reading & Reporting',
+        descAr: 'يقرأ الطبيب الصور ويكتب التقرير ويعتمده من الشاشة نفسها.',
+        descEn: 'The radiologist reads the study, writes and signs the report in one view.',
+    },
+    {
+        id: 'delivery', Icon: Send,
+        titleAr: 'التسليم', titleEn: 'Delivery',
+        descAr: 'يصل التقرير والصور إلى المريض والطبيب المُحيل.',
+        descEn: 'Reports and images reach the patient and the referring physician.',
+    },
+];
+
+const METRICS = [
+    { Icon: Activity, value: 'RIS + PACS', labelAr: 'مساحة عمل مترابطة', labelEn: 'Connected Workspace', subAr: 'من التسجيل إلى التقارير', subEn: 'From registration to reporting' },
+    { Icon: Zap, value: 'DICOM', labelAr: 'تكامل التصوير الطبي', labelEn: 'Imaging Integration', subAr: 'وفق إعدادات المركز والأجهزة', subEn: 'Based on center and modality configuration' },
+    { Icon: ShieldCheck, value: 'RBAC', labelAr: 'صلاحيات حسب الدور', labelEn: 'Role-Based Access', subAr: 'إدارة وصول مهيأة للمؤسسة', subEn: 'Access configured for your organization' },
+    { Icon: Lock, value: 'Audit Trail', labelAr: 'تتبّع العمليات', labelEn: 'Activity Traceability', subAr: 'سجل للأحداث المهمة في النظام', subEn: 'Key events recorded in the system' }
+];
+
+const FAQ_ITEMS = [
+    {
+        qAr: 'كيف يضمن VIARA عدم تشوه الأسماء العربية على أجهزة الأشعة؟',
+        qEn: 'How does VIARA prevent Arabic patient names from corrupting on scanners?',
+        aAr: 'يمكن للنظام إنشاء اسم لاتيني للاستخدام مع أجهزة الأشعة التي لا تعرض العربية بصورة سليمة، مع الاحتفاظ بالاسم العربي الأصلي في بيانات المركز. تعتمد النتيجة على إعدادات التكامل وطريقة تعامل الجهاز مع حقول DICOM.',
+        aEn: 'VIARA can provide a Latin alias for modalities that do not display Arabic reliably while retaining the original Arabic name in center records. Results depend on the integration configuration and how each modality handles DICOM fields.'
+    },
+    {
+        qAr: 'هل يدعم النظام الربط المباشر مع أجهزة الأشعة عبر قائمة العمل (Modality Worklist)؟',
+        qEn: 'Does VIARA support direct integration with scanners via Modality Worklist (MWL)?',
+        aAr: 'تتوفر إمكانات لقوائم عمل DICOM بحسب تكامل المركز وإعداد الأجهزة. يلزم التحقق من توافق كل جهاز وإعداد الاتصال قبل الاعتماد على إرسال بيانات المواعيد دون إدخال يدوي.',
+        aEn: 'DICOM worklist capabilities are available according to the center integration and modality configuration. Each device and connection should be validated before relying on worklist delivery to avoid manual re-entry.'
+    },
+    {
+        qAr: 'كيف يتم تسليم التقارير والصور إلى المرضى والأطباء المحولين؟',
+        qEn: 'How are reports and diagnostic images delivered to patients and referring doctors?',
+        aAr: 'تتيح بوابة النتائج متابعة حالة الفحص والتقرير بحسب صلاحيات المستخدم. ويمكن تفعيل قنوات الإشعار وعرض الصور المتاحة وفق إعدادات المركز والتكاملات المنشورة.',
+        aEn: 'The results portal provides access to study and report status according to user permissions. Notification channels and image viewing are available based on the center configuration and enabled integrations.'
+    },
+    {
+        qAr: 'ما هي معايير الأمان وحماية البيانات المطبقة في النظام؟',
+        qEn: 'What security standards and data protection measures are in place?',
+        aAr: 'يوفر النظام أدوات لإدارة الصلاحيات وتسجيل أحداث مهمة وحماية البيانات. أما الامتثال التنظيمي فيعتمد على إعداد النشر والسياسات والإجراءات التشغيلية، ويجب تقييمه لدى الجهة المشغّلة قبل تقديم أي ضمان امتثال.',
+        aEn: 'The platform provides access-control and audit capabilities alongside data-protection controls. Regulatory compliance also depends on deployment configuration and operational policies, and must be assessed by the operating organization before making a compliance claim.'
+    }
+];
+
+/* ─────────────────────────── Motion variants ─────────────────────────── */
+
+const staggerContainer = {
+    hidden: {},
+    visible: { transition: { staggerChildren: 0.12, delayChildren: 0.1 } },
+};
+
+const riseIn = {
+    hidden: { opacity: 0, y: 26 },
+    visible: (delay = 0) => ({
+        opacity: 1, y: 0,
+        transition: { duration: 0.7, ease: EASE, delay },
     }),
 };
 
-const CURTAIN_EASE = [0.22, 1, 0.36, 1];
+const rowVariant = {
+    hidden: { opacity: 0, x: 16 },
+    visible: { opacity: 1, x: 0, transition: { duration: 0.42, ease: 'easeOut' } },
+};
 
-function CurtainIdentity({ brandName, title, logoUrl, phase, index, total }) {
-    const isVisible = phase === 'cover' || phase === 'hold';
+const featureVariant = {
+    hidden: { opacity: 0, y: 34, scale: 0.98 },
+    visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.6, ease: EASE } },
+};
+
+const stepVariant = {
+    hidden: { opacity: 0, y: 24 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.55, ease: EASE } },
+};
+
+/* ─────────────────────────── Small reusable pieces ─────────────────────────── */
+
+/* Headline: words rise out of a mask. Word-level (never letter-level) so Arabic joining stays intact. */
+function WordLine({ text, delay = 0, gradient = false, reduce }) {
+    const words = text.split(' ');
+    return (
+        <span className="vlp__line" aria-hidden="true">
+            {words.map((word, i) => (
+                <span className="vlp__word" key={`${word}-${i}`}>
+                    <motion.span
+                        className={`vlp__word-in${gradient ? ' vlp__word-in--grad' : ''}`}
+                        initial={reduce ? false : { y: '118%', opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ duration: 0.85, ease: EASE, delay: delay + i * 0.1 }}
+                    >
+                        {word}
+                    </motion.span>
+                </span>
+            ))}
+        </span>
+    );
+}
+
+/* Section headings: words rise out of a mask on scroll (word-level keeps Arabic joining intact) */
+function WordReveal({ text, className, delay = 0 }) {
+    const reduce = useReducedMotion();
+    const ref = useRef(null);
+    const inView = useInView(ref, { once: true, margin: '0px 0px -12% 0px' });
+    return (
+        <h2 ref={ref} className={className} aria-label={text}>
+            {text.split(' ').map((word, i) => (
+                <React.Fragment key={`${word}-${i}`}>
+                    <span className="vlp__word" aria-hidden="true">
+                        <motion.span
+                            className="vlp__word-in"
+                            initial={reduce ? false : { y: '110%', opacity: 0 }}
+                            animate={inView || reduce ? { y: 0, opacity: 1 } : undefined}
+                            transition={{ duration: 0.7, ease: EASE, delay: delay + i * 0.06 }}
+                        >
+                            {word}
+                        </motion.span>
+                    </span>{' '}
+                </React.Fragment>
+            ))}
+        </h2>
+    );
+}
+
+/* Blur-in on scroll — used for section headings and short copy */
+function Reveal({ children, className, delay = 0, as = 'div' }) {
+    const reduce = useReducedMotion();
+    const ref = useRef(null);
+    const inView = useInView(ref, { once: true, margin: '0px 0px -12% 0px' });
+    const Tag = motion[as] || motion.div;
+    return (
+        <Tag
+            ref={ref}
+            className={className}
+            initial={reduce ? false : { opacity: 0, y: 26, filter: 'blur(8px)' }}
+            animate={inView || reduce ? { opacity: 1, y: 0, filter: 'blur(0px)' } : undefined}
+            transition={{ duration: 0.75, ease: EASE, delay }}
+        >
+            {children}
+        </Tag>
+    );
+}
+
+/* ─────────────────────────── Hero visual ─────────────────────────── */
+
+function ScanHud({ t, reduce }) {
+    const [index, setIndex] = useState(0);
+    const slice = useMotionValue(1);
+    const sliceText = useTransform(slice, (v) => String(Math.round(v)).padStart(3, '0'));
+
+    useEffect(() => {
+        if (reduce) return undefined;
+        const id = setInterval(() => setIndex((v) => (v + 1) % MODALITIES.length), 3800);
+        return () => clearInterval(id);
+    }, [reduce]);
+
+    useEffect(() => {
+        if (reduce) return undefined;
+        const controls = animate(slice, 320, { duration: 20, ease: 'linear', repeat: Infinity, repeatType: 'loop' });
+        return () => controls.stop();
+    }, [reduce, slice]);
+
+    const m = MODALITIES[index];
+
+    return (
+        <>
+            <div className="vlp__hud vlp__hud--modality">
+                <span className="vlp__hud-live" aria-hidden="true" />
+                <AnimatePresence mode="wait" initial={false}>
+                    <motion.span
+                        key={m.code}
+                        className="vlp__hud-text"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.28 }}
+                    >
+                        <b dir="ltr">{m.code}</b>
+                        <span>{t(m.ar, m.en)}</span>
+                        <em>{t(m.planeAr, m.planeEn)}</em>
+                    </motion.span>
+                </AnimatePresence>
+            </div>
+
+            <div className="vlp__hud vlp__hud--slice" dir="ltr" aria-hidden="true">
+                <span>Slice</span>
+                <motion.b>{sliceText}</motion.b>
+                <span>/ 320</span>
+            </div>
+        </>
+    );
+}
+
+function WorklistCard({ isRtl, t }) {
+    const railIcons = [LayoutDashboard, Users, CalendarDays, FileText, Settings];
     return (
         <motion.div
-            className="viara-curtain-identity"
-            initial={{ opacity: 0, y: 14, scale: 0.96 }}
-            animate={isVisible
-                ? { opacity: 1, y: 0, scale: 1 }
-                : { opacity: 0, y: -12, scale: 0.98 }}
-            transition={{
-                duration: isVisible ? 0.65 : 0.45,
-                delay: isVisible ? 0.22 : 0,
-                ease: CURTAIN_EASE,
-            }}
+            className="vlp__worklist-card"
+            initial={{ opacity: 0, y: 40, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.9, ease: EASE, delay: 0.75 }}
         >
-            <span className="viara-curtain-identity__index" aria-hidden="true">
-                {String(index + 1).padStart(2, '0')}
-            </span>
-            <span className="viara-curtain-identity__logo">
-                <img src={logoUrl} alt="" aria-hidden="true" />
-            </span>
-            <span className="viara-curtain-identity__copy">
-                <small dir="ltr">{brandName} · {String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}</small>
-                <strong>{title}</strong>
-                <i aria-hidden="true"><b /></i>
-            </span>
+            <div className="vlp__wl-rail" aria-hidden="true">
+                <b>V</b>
+                {railIcons.map((Icon, i) => (
+                    <span key={i} className={`vlp__wl-rail-icon${i === 0 ? ' vlp__wl-rail-icon--active' : ''}`}>
+                        <Icon size={15} strokeWidth={1.9} />
+                    </span>
+                ))}
+            </div>
+
+            <div className="vlp__wl-body">
+                <div className="vlp__wl-topbar">
+                    <div className="vlp__wl-heading">
+                        <span className="vlp__wl-caption">{t('مساحة عمل موحدة', 'One connected workspace')}</span>
+                        <strong className="vlp__wl-title">{t('قائمة الفحوصات', 'Examination List')} <span className="vlp__wl-count">03</span></strong>
+                    </div>
+                    <div className="vlp__wl-search">
+                        <Search size={13} strokeWidth={2.4} aria-hidden="true" />
+                        <span>{t('ابحث عن مريض أو رقم طلب...', 'Search patient or order...')}</span>
+                    </div>
+                </div>
+
+                <div className="vlp__wl-cols">
+                    <span>{t('المريض', 'Patient')}</span>
+                    <span>{t('نوع الفحص', 'Exam Type')}</span>
+                    <span>{t('تاريخ الموعد', 'Date')}</span>
+                    <span>{t('الحالة', 'Status')}</span>
+                    <span>{t('الإجراءات', 'Actions')}</span>
+                </div>
+
+                <motion.div
+                    variants={staggerContainer}
+                    initial="hidden"
+                    animate="visible"
+                    transition={{ delayChildren: 1.15 }}
+                    style={{ display: 'contents' }}
+                >
+                    {WORKLIST_ROWS.map((row) => (
+                        <motion.div className="vlp__wl-row" key={row.id} variants={rowVariant}>
+                            <span className="vlp__wl-patient">
+                                <img
+                                    className="vlp__wl-thumb"
+                                    src={row.thumb}
+                                    alt=""
+                                    onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
+                                />
+                                <span>
+                                    <b>{isRtl ? row.patientAr : row.patientEn}</b>
+                                    <small dir="ltr">#{row.id}</small>
+                                </span>
+                            </span>
+                            <span className="vlp__wl-modality">
+                                {(isRtl ? row.modalityAr : row.modalityEn).split('\n').map((line, i) => (
+                                    <span key={i}>{line}</span>
+                                ))}
+                            </span>
+                            <span className="vlp__wl-date" dir="ltr">{row.date}</span>
+                            <span className={`vlp__wl-status vlp__wl-status--${row.statusType}`}>
+                                {row.statusType === 'done'
+                                    ? <Check size={11} strokeWidth={3} aria-hidden="true" />
+                                    : <span className="vlp__wl-dot" aria-hidden="true" />}
+                                {isRtl ? row.statusAr : row.statusEn}
+                            </span>
+                            <span className="vlp__wl-actions" aria-hidden="true">
+                                <MoreHorizontal size={16} />
+                            </span>
+                        </motion.div>
+                    ))}
+                </motion.div>
+
+                <div className="vlp__wl-footer">
+                    <Info size={13} aria-hidden="true" />
+                    <span>{t('بيانات توضيحية', 'Demo data')}</span>
+                </div>
+            </div>
         </motion.div>
     );
 }
 
-function SlideCurtain({ curtain, brandName, logoUrl, onCovered, onComplete }) {
-    const [phase, setPhase] = useState('cover'); // 'cover' -> 'hold' -> 'reveal'
-    const { direction: curtainDirection, title, targetIndex, index, total } = curtain;
-    const startSide = curtainDirection > 0 ? '-102%' : '102%';
-    const endSide = curtainDirection > 0 ? '102%' : '-102%';
-    const holdTimerRef = useRef(null);
-    const hasCoveredRef = useRef(false);
+function ScanStage({ isRtl, t, reduce }) {
+    const stageRef = useRef(null);
+    const { scrollYProgress } = useScroll({ target: stageRef, offset: ['start end', 'end start'] });
+    const imgY = useTransform(scrollYProgress, [0, 1], ['-5%', '5%']);
 
-    const isCovering = phase === 'cover';
-    const isHolding = phase === 'hold';
-    const isRevealing = phase === 'reveal';
-
-    const handleCoverComplete = useCallback(() => {
-        if (!hasCoveredRef.current) {
-            hasCoveredRef.current = true;
-            // Slide content changes ONLY here when the screen is completely covered
-            if (typeof onCovered === 'function') {
-                onCovered(targetIndex);
-            }
-        }
-        setPhase('hold');
-        holdTimerRef.current = setTimeout(() => {
-            setPhase('reveal');
-        }, 550); // Pause for 550ms so user can enjoy the slide identity title clearly
-    }, [onCovered, targetIndex]);
-
-    const handleRevealComplete = useCallback(() => {
-        onComplete(curtain.id);
-    }, [curtain.id, onComplete]);
-
-    useEffect(() => {
-        return () => {
-            if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-        };
-    }, []);
-
-    const identity = (
-        <CurtainIdentity
-            brandName={brandName}
-            title={title}
-            logoUrl={logoUrl}
-            phase={phase}
-            index={index}
-            total={total}
-        />
-    );
+    const floatLoop = (offset) => (reduce
+        ? undefined
+        : { y: [0, -9, 0], transition: { duration: 5.5, ease: 'easeInOut', repeat: Infinity, delay: offset } });
 
     return (
-        <div className="viara-curtain-layer viara-curtain-layer--wipe" aria-hidden="true">
+        <div className="vlp__stage" ref={stageRef}>
             <motion.div
-                className="viara-curtain-panel"
-                data-direction={curtainDirection > 0 ? 'forward' : 'backward'}
-                data-phase={phase}
-                initial={{ x: startSide }}
-                animate={{
-                    x: isCovering || isHolding ? '0%' : endSide,
-                }}
-                transition={{
-                    duration: isCovering ? 1.15 : 1.25, // Silky slow transition
-                    ease: CURTAIN_EASE,
-                }}
-                onAnimationComplete={() => {
-                    if (isCovering) {
-                        handleCoverComplete();
-                    } else if (isRevealing) {
-                        handleRevealComplete();
-                    }
-                }}
+                className="vlp__monitor"
+                initial={reduce ? false : { opacity: 0, scale: 1.04, clipPath: 'inset(8% 8% 8% 8% round 28px)' }}
+                animate={{ opacity: 1, scale: 1, clipPath: 'inset(0% 0% 0% 0% round 28px)' }}
+                transition={{ duration: 1.15, ease: EASE, delay: 0.25 }}
             >
-                <span className="viara-curtain-panel__grid" aria-hidden="true" />
-                <span className="viara-curtain-panel__glow-orb" aria-hidden="true" />
-                {identity}
+                <motion.div className="vlp__monitor-img" style={reduce ? undefined : { y: imgY }} aria-hidden="true" />
+                <div className="vlp__monitor-tint" aria-hidden="true" />
+                <div className="vlp__monitor-grid" aria-hidden="true" />
+                <span className="vlp__reticle vlp__reticle--tl" aria-hidden="true" />
+                <span className="vlp__reticle vlp__reticle--tr" aria-hidden="true" />
+                <span className="vlp__reticle vlp__reticle--bl" aria-hidden="true" />
+                <span className="vlp__reticle vlp__reticle--br" aria-hidden="true" />
+                {!reduce && <div className="vlp__sweep" aria-hidden="true" />}
+                <ScanHud t={t} reduce={reduce} />
             </motion.div>
+
+            <motion.div
+                className="vlp__chip vlp__chip--a"
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1, ...(floatLoop(0) || {}) }}
+                transition={{ duration: 0.6, ease: EASE, delay: 1.4 }}
+            >
+                <span className="vlp__chip-icon"><ScanLine size={15} aria-hidden="true" /></span>
+                <span>
+                    <b>{t('تم استلام DICOM', 'DICOM received')}</b>
+                    <small>{t('CT - 320 مقطع', 'CT - 320 slices')}</small>
+                </span>
+            </motion.div>
+
+            <motion.div
+                className="vlp__chip vlp__chip--b"
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1, ...(floatLoop(1.6) || {}) }}
+                transition={{ duration: 0.6, ease: EASE, delay: 1.7 }}
+            >
+                <span className="vlp__chip-icon vlp__chip-icon--ok"><Check size={15} strokeWidth={3} aria-hidden="true" /></span>
+                <span>
+                    <b>{t('تم اعتماد التقرير', 'Report signed')}</b>
+                    <small>{t('جاهز للتسليم', 'Ready for delivery')}</small>
+                </span>
+            </motion.div>
+
+            <WorklistCard isRtl={isRtl} t={t} />
         </div>
     );
 }
 
-export default function Landing() {
-    const dispatch = useDispatch();
-    const navigate = useNavigate();
-    const preferences = useSelector(selectPreferences);
-    const { t, i18n } = useTranslation(['landing', 'common', 'auth']);
-    const prefersReducedMotion = useReducedMotion();
+/* ─────────────────────────── Modality marquee ─────────────────────────── */
 
-    const isRtl = (typeof i18n.dir === 'function' ? i18n.dir() === 'rtl' : i18n.language === 'ar')
-        || preferences.language === 'ar';
-    const dark = preferences.theme === 'dark';
-    const brandName = VIARA_BRAND.name || 'VIARA';
-    const { data: landingData } = useGetPublicLandingOverviewQuery(undefined, {
-        pollingInterval: 30000,
-        refetchOnFocus: false,
-    });
+function ModalityMarquee({ t }) {
+    const group = (suffix) => (
+        <div className="vlp__marquee-group" aria-hidden={suffix === 'b' ? 'true' : undefined} key={suffix}>
+            {MODALITIES.map((m) => (
+                <span className="vlp__modality" key={`${suffix}-${m.code}`}>
+                    <b dir="ltr">{m.code}</b>
+                    <span>{t(m.ar, m.en)}</span>
+                </span>
+            ))}
+        </div>
+    );
+    return (
+        <section className="vlp__marquee-wrap" aria-label={t('أنواع الفحوصات المدعومة', 'Supported modalities')}>
+            <p className="vlp__marquee-caption">
+                {t('يدعم جميع أنواع الفحوصات التصويرية', 'Built for every imaging modality')}
+            </p>
+            <div className="vlp__marquee">
+                <div className="vlp__marquee-track">
+                    {group('a')}
+                    {group('b')}
+                </div>
+            </div>
+        </section>
+    );
+}
 
-    // Main Slide States
-    const [activeSceneIndex, setActiveSceneIndex] = useState(0);
-    const [isAutoPlaying, setIsAutoPlaying] = useState(true);
-    const [progressPercent, setProgressPercent] = useState(0);
-    const [direction, setDirection] = useState(1);
-    const [curtainTransition, setCurtainTransition] = useState(null);
+/* ─────────────────────────── Features ─────────────────────────── */
 
-    const progressTimerRef = useRef(null);
-    const progressStartTimeRef = useRef(Date.now());
-    const curtainSequenceRef = useRef(0);
+function FeatureVisual({ type, t }) {
+    if (type === 'journey') {
+        return (
+            <div className="vlp__mini vlp__mini--journey" aria-hidden="true">
+                <span className="vlp__mini-line" />
+                <span className="vlp__mini-pulse" />
+                {[0, 1, 2, 3].map((i) => (
+                    <span key={i} className="vlp__mini-node" style={{ '--i': i }} />
+                ))}
+            </div>
+        );
+    }
+    if (type === 'roles') {
+        const roles = [
+            { Icon: Stethoscope, ar: 'طبيب الأشعة', en: 'Radiologist' },
+            { Icon: ScanLine, ar: 'فني الأشعة', en: 'Technician' },
+            { Icon: LayoutDashboard, ar: 'الإدارة', en: 'Admin' },
+        ];
+        return (
+            <div className="vlp__mini vlp__mini--roles" aria-hidden="true">
+                {roles.map(({ Icon, ar, en }) => (
+                    <span key={en} className="vlp__role">
+                        <Icon size={14} strokeWidth={2} />
+                        {t(ar, en)}
+                    </span>
+                ))}
+            </div>
+        );
+    }
+    return (
+        <div className="vlp__mini vlp__mini--report" aria-hidden="true">
+            <div className="vlp__mini-bar"><i /></div>
+            <div className="vlp__mini-pills">
+                <span className="vlp__pill vlp__pill--done"><Check size={11} strokeWidth={3} />{t('تم التصوير', 'Imaged')}</span>
+                <span className="vlp__pill vlp__pill--done"><Check size={11} strokeWidth={3} />{t('تمت القراءة', 'Read')}</span>
+                <span className="vlp__pill vlp__pill--wait"><span className="vlp__wl-dot" />{t('بانتظار الاعتماد', 'Awaiting sign-off')}</span>
+            </div>
+        </div>
+    );
+}
 
-    // Helper to sanitize workflow times
-    const sanitizeMinutes = (val, fallback) => {
-        const num = Number(val);
-        if (!num || isNaN(num) || num > 60) return fallback;
-        return Math.round(num);
+function FeatureCard({ feature, t }) {
+    const { Icon, titleAr, titleEn, descAr, descEn, visual, tone } = feature;
+    const ref = useRef(null);
+
+    const onMove = (e) => {
+        const el = ref.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        el.style.setProperty('--mx', `${e.clientX - r.left}px`);
+        el.style.setProperty('--my', `${e.clientY - r.top}px`);
     };
 
-    // Live Metrics directly connected to backend overview API with clean fallbacks
-    const liveMetrics = useMemo(() => {
-        const baseStudies = Number(landingData?.metrics?.studiesToday) || 148;
-        const basePending = Number(landingData?.metrics?.pendingReports) || 27;
-        const baseModalities = Number(landingData?.metrics?.activeModalities) || 8;
-        const baseCompletion = Number(landingData?.metrics?.completionRate) || 96;
+    return (
+        <motion.article
+            ref={ref}
+            className="vlp__feature-card"
+            data-tone={tone}
+            variants={featureVariant}
+            onMouseMove={onMove}
+            whileHover={{ y: -6, transition: { duration: 0.25, ease: 'easeOut' } }}
+        >
+            <motion.span
+                className="vlp__feature-icon"
+                whileHover={{ scale: 1.1, rotate: -6 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 16 }}
+            >
+                <Icon size={26} strokeWidth={1.7} aria-hidden="true" />
+            </motion.span>
+            <div className="vlp__feature-text">
+                <h3>{t(titleAr, titleEn)}</h3>
+                <p>{t(descAr, descEn)}</p>
+            </div>
+            <FeatureVisual type={visual} t={t} />
+        </motion.article>
+    );
+}
 
-        const waitingCount = landingData?.pipeline?.find((p) => p.code === 'waiting')?.count ?? 5;
-        const imagingCount = landingData?.pipeline?.find((p) => p.code === 'imaging')?.count ?? 12;
-        const reportingCount = landingData?.pipeline?.find((p) => p.code === 'reporting')?.count ?? 27;
-        const deliveredCount = landingData?.pipeline?.find((p) => p.code === 'delivered')?.count ?? baseStudies;
+function FeaturesSection({ t }) {
+    const ref = useRef(null);
+    const inView = useInView(ref, { once: true, margin: '0px 0px -10% 0px' });
+    return (
+        <section id="vlp-features" className="vlp__section" aria-label={t('المميزات', 'Features')}>
+            <div className="vlp__section-head">
+                <WordReveal text={t('أدوات واضحة لكل فريق المركز', 'Clear tools for your whole team')} />
+                <Reveal as="p" delay={0.1}>
+                    {t(
+                        'استقبال وتصوير وتقارير في نظام واحد مترابط، دون تنقل بين برامج مختلفة.',
+                        'Reception, imaging and reports in one connected system, with no switching between tools.',
+                    )}
+                </Reveal>
+            </div>
+            <motion.div
+                ref={ref}
+                className="vlp__features-grid"
+                variants={staggerContainer}
+                initial="hidden"
+                animate={inView ? 'visible' : 'hidden'}
+            >
+                {FEATURES.map((feature) => (
+                    <FeatureCard key={feature.id} feature={feature} t={t} />
+                ))}
+            </motion.div>
+        </section>
+    );
+}
 
-        return {
-            studiesToday: Math.max(1, Math.round(baseStudies)),
-            pendingReports: Math.max(2, Math.round(basePending)),
-            activeModalities: baseModalities,
-            completionRate: baseCompletion,
-            pressureScore: landingData?.workload?.pressureScore ?? 34,
-            studiesThisWeek: Math.round(landingData?.services?.studiesThisWeek ?? 421),
-            pipeline: {
-                waiting: Math.round(waitingCount),
-                imaging: Math.round(imagingCount),
-                reporting: Math.round(reportingCount),
-                delivered: Math.round(deliveredCount),
-            },
-            workflow: {
-                registration: sanitizeMinutes(landingData?.workflow?.registrationMinutes, 2),
-                imaging: sanitizeMinutes(landingData?.workflow?.imagingMinutes, 12),
-                reporting: sanitizeMinutes(landingData?.workflow?.reportingMinutes, 5),
-                delivery: sanitizeMinutes(landingData?.workflow?.deliveryMinutes, 1),
-            },
-        };
-    }, [landingData]);
+/* ─────────────────────────── Workflow ─────────────────────────── */
 
-    const scenes = useMemo(() => [
-        {
-            id: 'center',
-            badge: isRtl ? 'المركز التشغيلي الموحد' : 'Unified Clinical Operations',
-            navLabel: isRtl ? 'المركز التشغيلي' : 'Operations',
-            shortKey: '1',
-            titleLead: isRtl ? 'شغّل مركز الأشعة بالكامل' : 'Run Every Radiology Workflow',
-            titleAccent: isRtl ? 'من مساحة واحدة أكثر ذكاءً.' : 'From One Connected Workspace.',
-            kicker: isRtl ? 'نظام تشغيل موحّد لمراكز الأشعة' : 'UNIFIED RADIOLOGY OPERATING SYSTEM',
-            description: isRtl
-                ? 'وحّد الاستقبال والتصوير وPACS والتقارير والفوترة في تدفق تشغيلي واحد؛ واضح للفريق ومتصل لحظة بلحظة.'
-                : 'Unify intake, imaging, PACS, reporting, and billing in one live workflow that keeps every team aligned.',
-            icon: Layers,
-            highlightPills: [
-                { icon: Users, label: isRtl ? 'استقبال ذكي واستيعاب فوري' : 'Automated Intake' },
-                { icon: Radio, label: isRtl ? 'تنسيق أجهزة الفحص المتزامنة' : 'Multi-Modality Orchestration' },
-                { icon: Database, label: isRtl ? 'مزامنة سحابية مع PACS' : 'Real-time PACS Bridge' },
-            ],
-            type: 'operations',
-            artwork: SLIDE_ARTWORK.operations,
-            artworkWidth: 1536,
-            artworkHeight: 1024,
-            artworkAlt: isRtl
-                ? 'فريق سريري يتعاون داخل مساحة عمليات VIARA الموحّدة'
-                : 'Clinical team collaborating in the unified VIARA operations studio',
-            artworkCaption: isRtl ? 'مركز العمليات السريرية الموحّد' : 'Unified Clinical Operations Studio',
-        },
-        {
-            id: 'intelligence',
-            badge: isRtl ? 'المساعد التشخيصي الذكي' : 'Radiology AI Diagnostic Copilot',
-            navLabel: isRtl ? 'المساعد الذكي' : 'AI Copilot',
-            shortKey: '2',
-            titleLead: isRtl ? 'حوّل صور الأشعة والبيانات' : 'Turn Imaging and Data',
-            titleAccent: isRtl ? 'إلى قرار سريري أسرع.' : 'Into Faster Clinical Decisions.',
-            kicker: isRtl ? 'مساعد تشخيصي وفرز ذكي' : 'AI DIAGNOSTIC COPILOT & TRIAGE',
-            description: isRtl
-                ? 'رتّب الحالات الحرجة، وتوقّع ضغط العمل، وساعد طبيب الأشعة في القياسات ومسودة التقرير دون تعطيل أسلوبه السريري.'
-                : 'Prioritize urgent cases, forecast workload, and assist radiologists with measurements and report drafts without disrupting clinical judgment.',
-            icon: BarChart3,
-            highlightPills: [
-                { icon: Activity, label: isRtl ? 'تنبؤ ذكي بمعدل التدفق' : 'Throughput Forecasting' },
-                { icon: Clock3, label: isRtl ? 'تقليل زمن التقرير 45%' : '45% Faster Turnaround' },
-                { icon: Sparkles, label: isRtl ? 'مسودات تقارير بالذكاء الاصطناعي' : 'AI-Assisted Drafts' },
-            ],
-            type: 'intelligence',
-            artwork: SLIDE_ARTWORK.intelligence,
-            artworkWidth: 1448,
-            artworkHeight: 1086,
-            artworkAlt: isRtl
-                ? 'طبيبة أشعة ومختص بيانات يراجعان مؤشرات VIARA الذكية'
-                : 'Radiologist and data specialist reviewing VIARA intelligence',
-            artworkCaption: isRtl ? 'مختبر الذكاء الاصطناعي والتشخيص' : 'Radiology AI Diagnostic Studio',
-        },
-        {
-            id: 'workflow',
-            badge: isRtl ? 'المسار السريري الشامل' : 'Connected Clinical Workflow',
-            navLabel: isRtl ? 'مسار الفحوصات' : 'Clinical Flow',
-            shortKey: '3',
-            titleLead: isRtl ? 'اربط رحلة كل فحص' : 'Connect Every Patient Journey',
-            titleAccent: isRtl ? 'من الإحالة حتى النتيجة.' : 'From Referral to Result.',
-            kicker: isRtl ? 'مسار سريري متصل من البداية للنهاية' : 'CONNECTED END-TO-END CLINICAL FLOW',
-            description: isRtl
-                ? 'حافظ على سياق المريض بين التسجيل والتصوير والمراجعة والتسليم، مع وصول آمن وتنبيهات فورية في كل محطة.'
-                : 'Keep patient context moving across registration, imaging, review, and delivery with secure access and timely notifications.',
-            icon: Workflow,
-            highlightPills: [
-                { icon: Stethoscope, label: isRtl ? 'بوابة الأطباء المحيلين' : 'Referring Doctor Portal' },
-                { icon: HeartPulse, label: isRtl ? 'بوابة المرضى المباشرة' : 'Secure Patient Portal' },
-                { icon: ShieldCheck, label: isRtl ? 'تشفير وحماية فائقة' : 'Zero-Trust RBAC' },
-            ],
-            type: 'workflow',
-            artwork: SLIDE_ARTWORK.workflow,
-            artworkWidth: 1672,
-            artworkHeight: 941,
-            artworkAlt: isRtl
-                ? 'رحلة المريض المتصلة من الاستقبال إلى التصوير والتقرير عبر VIARA'
-                : 'Connected VIARA patient journey from intake to imaging and reporting',
-            artworkCaption: isRtl ? 'المسار السريري الشامل للمريض' : 'Connected Patient Journey',
-        },
-        {
-            id: 'gateway',
-            badge: isRtl ? 'بوابة الكوادر السريرية' : 'Staff Command Gateway',
-            navLabel: isRtl ? 'دخول الكوادر' : 'Staff Gateway',
-            shortKey: '4',
-            titleLead: isRtl ? 'امنح كل موظف مساحته' : 'Give Every Staff Member',
-            titleAccent: isRtl ? 'بأمان وسرعة.' : 'The Right Secure Workspace.',
-            kicker: isRtl ? 'وصول آمن يتكيّف مع الدور الوظيفي' : 'ROLE-AWARE SECURE ACCESS',
-            description: isRtl
-                ? 'وجّه الأطباء والفنيين والاستقبال والإدارة مباشرة إلى أدواتهم، مع تسجيل سريع ومفاتيح مرور بيومترية.'
-                : 'Route radiologists, technologists, receptionists, and administrators directly to their tools with fast, biometric-ready sign-in.',
-            icon: KeyRound,
-            highlightPills: [
-                { icon: Shield, label: isRtl ? 'معايير HIPAA & DICOM 3.0' : 'HIPAA & DICOM 3.0 Ready' },
-                { icon: Zap, label: isRtl ? 'تسجيل سريع بنقرة واحدة' : '1-Click Role Presets' },
-                { icon: UserCheck, label: isRtl ? 'لوحة تحكم فورية' : 'Live Operations Hub' },
-            ],
-            type: 'gateway',
-            artwork: SLIDE_ARTWORK.gateway,
-            artworkWidth: 1448,
-            artworkHeight: 1086,
-            artworkAlt: isRtl
-                ? 'موظفة سريرية تستخدم بوابة VIARA الآمنة حسب الدور'
-                : 'Clinical professional using the secure role-aware VIARA gateway',
-            artworkCaption: isRtl ? 'بوابة التحكم والوصول السريري' : 'Clinical Staff Command Gateway',
-        },
-    ], [isRtl]);
+function FlowSection({ t, reduce }) {
+    const sectionRef = useRef(null);
+    const inView = useInView(sectionRef, { once: true, margin: '0px 0px -15% 0px' });
+    const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start 78%', 'end 62%'] });
+    const progress = useSpring(scrollYProgress, { stiffness: 110, damping: 26, restDelta: 0.001 });
 
-    const currentScene = scenes[activeSceneIndex] || scenes[0];
-    const SceneIcon = currentScene.icon;
-    const transitionDirection = direction * (isRtl ? -1 : 1);
+    return (
+        <section id="vlp-workflow" className="vlp__section" aria-label={t('مسار العمل', 'Workflow')}>
+            <div className="vlp__section-head">
+                <WordReveal text={t('من الحجز حتى التسليم', 'From booking to delivery')} />
+                <Reveal as="p" delay={0.1}>
+                    {t(
+                        'كل مرحلة تنتقل تلقائيًا إلى التي بعدها، ويعرف الفريق دائمًا أين وصل الفحص.',
+                        'Every stage hands off to the next, so the team always knows where a study stands.',
+                    )}
+                </Reveal>
+            </div>
+
+            <motion.ol
+                ref={sectionRef}
+                className="vlp__flow"
+                variants={staggerContainer}
+                initial="hidden"
+                animate={inView || reduce ? 'visible' : 'hidden'}
+            >
+                <li className="vlp__flow-track" aria-hidden="true">
+                    <motion.i className="vlp__flow-fill vlp__flow-fill--x" style={{ scaleX: progress }} />
+                    <motion.i className="vlp__flow-fill vlp__flow-fill--y" style={{ scaleY: progress }} />
+                </li>
+                {FLOW_STEPS.map(({ id, Icon, titleAr, titleEn, descAr, descEn }, i) => (
+                    <motion.li className="vlp__step" key={id} variants={stepVariant}>
+                        <span className="vlp__step-node">
+                            <Icon size={22} strokeWidth={1.8} aria-hidden="true" />
+                            <em aria-hidden="true">{i + 1}</em>
+                        </span>
+                        <div className="vlp__step-text">
+                            <h3>{t(titleAr, titleEn)}</h3>
+                            <p>{t(descAr, descEn)}</p>
+                        </div>
+                    </motion.li>
+                ))}
+            </motion.ol>
+        </section>
+    );
+}
+
+/* ─────────────────────────── Live Metrics Strip ─────────────────────────── */
+
+function MetricsSection({ t, isRtl }) {
+    return (
+        <section className="vlp__metrics-strip" aria-label={t('مؤشرات الأداء', 'Key Metrics')}>
+            <div className="vlp__metrics-grid">
+                {METRICS.map((m, i) => (
+                    <motion.div
+                        key={i}
+                        className="vlp__metric-card"
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true, margin: '-40px' }}
+                        transition={{ duration: 0.5, delay: i * 0.1 }}
+                        whileHover={{ y: -5, transition: { duration: 0.22 } }}
+                    >
+                        <div className="vlp__metric-header">
+                            <span className="vlp__metric-icon" aria-hidden="true">
+                                <m.Icon size={18} strokeWidth={2.2} />
+                            </span>
+                        </div>
+                        <strong className="vlp__metric-val" dir="ltr">{m.value}</strong>
+                        <span className="vlp__metric-label">{isRtl ? m.labelAr : m.labelEn}</span>
+                        <small className="vlp__metric-sub">{isRtl ? m.subAr : m.subEn}</small>
+                    </motion.div>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+/* ─────────────────────────── Interactive FAQ Accordion ─────────────────────────── */
+
+function FaqSection({ t, isRtl }) {
+    const [openIndex, setOpenIndex] = useState(0);
+
+    return (
+        <section id="vlp-faq" className="vlp__section" aria-label={t('الأسئلة الشائعة', 'Frequently Asked Questions')}>
+            <div className="vlp__section-head">
+                <WordReveal text={t('كل ما يهمك معرفته عن VIARA', 'Frequently Asked Questions')} />
+                <Reveal as="p" delay={0.1}>
+                    {t(
+                        'إجابات شاملة عن معايير الربط، الأمان، وتكامل خدمات مركز الأشعة.',
+                        'Detailed answers on imaging integration, security, and center workflow.',
+                    )}
+                </Reveal>
+            </div>
+
+            <div className="vlp__faq-list">
+                {FAQ_ITEMS.map((item, i) => {
+                    const isOpen = openIndex === i;
+                    const num = String(i + 1).padStart(2, '0');
+                    return (
+                        <div key={i} className={`vlp__faq-item ${isOpen ? 'vlp__faq-item--open' : ''}`}>
+                            <button
+                                id={`vlp-faq-trigger-${i}`}
+                                type="button"
+                                className="vlp__faq-trigger"
+                                onClick={() => setOpenIndex(isOpen ? -1 : i)}
+                                aria-expanded={isOpen}
+                                aria-controls={`vlp-faq-answer-${i}`}
+                            >
+                                <span className="vlp__faq-trigger-content">
+                                    <span className="vlp__faq-num" aria-hidden="true">{num}</span>
+                                    <span>{isRtl ? item.qAr : item.qEn}</span>
+                                </span>
+                                <span className="vlp__faq-icon" aria-hidden="true">
+                                    <ChevronDown
+                                        size={18}
+                                        style={{
+                                            transform: isOpen ? 'rotate(180deg)' : 'none',
+                                            transition: 'transform 0.25s ease',
+                                        }}
+                                    />
+                                </span>
+                            </button>
+                            <AnimatePresence>
+                                {isOpen && (
+                                    <motion.div
+                                        id={`vlp-faq-answer-${i}`}
+                                        role="region"
+                                        aria-labelledby={`vlp-faq-trigger-${i}`}
+                                        className="vlp__faq-answer"
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        transition={{ duration: 0.28, ease: 'easeInOut' }}
+                                    >
+                                        <p>{isRtl ? item.aAr : item.aEn}</p>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    );
+                })}
+            </div>
+        </section>
+    );
+}
+
+/* ─────────────────────────── Closing CTA ─────────────────────────── */
+
+function CtaBand({ t, DirectionArrow, onOpenServices }) {
+    return (
+        <section className="vlp__cta" aria-label={t('ابدأ الآن', 'Get started')}>
+            <Reveal className="vlp__cta-panel">
+                <span className="vlp__cta-aurora" aria-hidden="true" />
+                <span className="vlp__cta-grid" aria-hidden="true" />
+                <div className="vlp__cta-copy">
+                    <h2>{t('أدِر مركزك من مكان واحد', 'Run your center from one place')}</h2>
+                    <p>
+                        {t(
+                            'سجّل الدخول وابدأ متابعة الفحوصات والتقارير الآن.',
+                            'Sign in to start tracking studies and reports right away.',
+                        )}
+                    </p>
+                </div>
+                <div className="vlp__cta-actions">
+                    <motion.div whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }}>
+                        <Link to="/login" className="vlp__button vlp__button--light vlp__button--large">
+                            {t('الدخول إلى النظام', 'Open the System')}
+                            <DirectionArrow size={20} aria-hidden="true" />
+                        </Link>
+                    </motion.div>
+                    <button type="button" className="vlp__ghost" onClick={onOpenServices}>
+                        <Activity size={16} aria-hidden="true" />
+                        {t('حالة الخدمات', 'Service health')}
+                    </button>
+                </div>
+            </Reveal>
+        </section>
+    );
+}
+
+/* ─────────────────────────── Page ─────────────────────────── */
+
+export default function Landing() {
+    const dispatch = useDispatch();
+    const preferences = useSelector(selectPreferences);
+    const { i18n } = useTranslation();
+    const reduce = useReducedMotion();
+    const isRtl = i18n.dir() === 'rtl';
+    const [systemDark] = useState(
+        () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false,
+    );
+    const dark = preferences.theme === 'dark' || (preferences.theme === 'system' && systemDark);
+    const [languageBusy, setLanguageBusy] = useState(false);
+    const [brandFailed, setBrandFailed] = useState(false);
+    const [serviceModalOpen, setServiceModalOpen] = useState(false);
+    const [stuck, setStuck] = useState(false);
+    const brandName = VIARA_BRAND.name || 'VIARA';
+    const DirectionArrow = isRtl ? ArrowLeft : ArrowRight;
+    const t = (ar, en) => (isRtl ? ar : en);
+
+    const { scrollYProgress: pageProgress } = useScroll();
+    const progressX = useSpring(pageProgress, { stiffness: 120, damping: 30, restDelta: 0.001 });
 
     useEffect(() => {
-        scenes.forEach(({ artwork }) => {
-            const preload = new Image();
-            preload.src = artwork;
+        const onScroll = () => setStuck((prev) => {
+            const next = window.scrollY > 12;
+            return prev === next ? prev : next;
         });
-    }, [scenes]);
-
-    const [targetNavIndex, setTargetNavIndex] = useState(0);
-
-    const handleCurtainCovered = useCallback((newIndex) => {
-        setActiveSceneIndex(newIndex);
+        onScroll();
+        window.addEventListener('scroll', onScroll, { passive: true });
+        return () => window.removeEventListener('scroll', onScroll);
     }, []);
 
-    const changeSlide = useCallback((newIndex, newDirection = 1) => {
-        const normalizedIndex = ((newIndex % scenes.length) + scenes.length) % scenes.length;
-        if (normalizedIndex === activeSceneIndex && !curtainTransition) return;
-
-        setDirection(newDirection);
-        setTargetNavIndex(normalizedIndex);
-        setProgressPercent(0);
-        progressStartTimeRef.current = Date.now();
-
-        if (prefersReducedMotion) {
-            setActiveSceneIndex(normalizedIndex);
-        } else {
-            curtainSequenceRef.current += 1;
-            setCurtainTransition({
-                id: curtainSequenceRef.current,
-                direction: newDirection * (isRtl ? -1 : 1),
-                title: scenes[normalizedIndex].navLabel,
-                index: normalizedIndex,
-                targetIndex: normalizedIndex,
-                total: scenes.length,
-            });
-        }
-    }, [activeSceneIndex, curtainTransition, isRtl, prefersReducedMotion, scenes]);
-
-    const handleCurtainComplete = useCallback((transitionId) => {
-        setCurtainTransition((current) => (current?.id === transitionId ? null : current));
-    }, []);
-
-    const nextSlide = useCallback(() => {
-        const nextIdx = (activeSceneIndex + 1) % scenes.length;
-        changeSlide(nextIdx, 1);
-    }, [activeSceneIndex, scenes.length, changeSlide]);
-
-    const prevSlide = useCallback(() => {
-        const prevIdx = (activeSceneIndex - 1 + scenes.length) % scenes.length;
-        changeSlide(prevIdx, -1);
-    }, [activeSceneIndex, scenes.length, changeSlide]);
-
-    // Slide autoplay ticker
-    useEffect(() => {
-        if (!isAutoPlaying || prefersReducedMotion) return undefined;
-
-        const interval = 50;
-        progressStartTimeRef.current = Date.now();
-
-        progressTimerRef.current = setInterval(() => {
-            const elapsed = Date.now() - progressStartTimeRef.current;
-            const pct = Math.min(100, (elapsed / SLIDE_DURATION_MS) * 100);
-            setProgressPercent(pct);
-
-            if (elapsed >= SLIDE_DURATION_MS) {
-                nextSlide();
-            }
-        }, interval);
-
-        return () => {
-            if (progressTimerRef.current) clearInterval(progressTimerRef.current);
-        };
-    }, [isAutoPlaying, activeSceneIndex, prefersReducedMotion, nextSlide]);
-
-    // Keyboard navigation for the slide deck
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-                return;
-            }
-
-            if (e.key === 'ArrowRight') {
-                if (isRtl) prevSlide();
-                else nextSlide();
-            } else if (e.key === 'ArrowLeft') {
-                if (isRtl) nextSlide();
-                else prevSlide();
-            } else if ((e.key === ' ' || e.code === 'Space') && !['BUTTON', 'A', 'SELECT', 'TEXTAREA', 'INPUT'].includes(e.target.tagName) && !e.target.isContentEditable) {
-                // Never preventDefault while an interactive element has focus:
-                // Space must keep activating focused buttons/links for keyboard users.
-                e.preventDefault();
-                setIsAutoPlaying((prev) => !prev);
-            } else if (e.key >= '1' && e.key <= '4') {
-                const idx = parseInt(e.key, 10) - 1;
-                if (idx >= 0 && idx < scenes.length) {
-                    changeSlide(idx, idx > activeSceneIndex ? 1 : -1);
-                }
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isRtl, nextSlide, prevSlide, changeSlide, scenes.length, activeSceneIndex]);
-
-    const toggleTheme = () => {
-        dispatch(setTheme(dark ? 'light' : 'dark'));
+    const goTo = (id) => (e) => {
+        e.preventDefault();
+        document.getElementById(id)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
     };
 
     const toggleLanguage = async () => {
+        if (languageBusy) return;
         const next = isRtl ? 'en' : 'ar';
+        setLanguageBusy(true);
         try {
             await i18n.changeLanguage(next);
-        } catch {
-            return;
-        }
-        dispatch(setLanguage(next));
-        try {
-            localStorage.setItem('VIARA_lang', next);
-        } catch {
-            // Optional
-        }
+            dispatch(setLanguage(next));
+            try { localStorage.setItem('VIARA_lang', next); } catch { /* noop */ }
+        } catch { /* noop */ } finally { setLanguageBusy(false); }
     };
 
-    const currentDisplayNavIndex = curtainTransition ? targetNavIndex : activeSceneIndex;
+    const line1 = t('رؤية أوضح.', 'Clearer Vision.');
+    const line2 = t('إدارة أكثر سلاسة.', 'Smoother Management.');
+    const line1Words = line1.split(' ').length;
 
     return (
-        <main
-            className={`viara-landing-slide-os ${dark ? 'is-dark' : 'is-light'}`}
+        <div
+            className={`vlp ${dark ? 'vlp--dark' : ''}`}
             dir={isRtl ? 'rtl' : 'ltr'}
             lang={isRtl ? 'ar' : 'en'}
         >
-            {curtainTransition && (
-                <SlideCurtain
-                    key={curtainTransition.id}
-                    curtain={curtainTransition}
-                    brandName={brandName}
-                    logoUrl={VIARA_BRAND.iconUrl || '/logo.png'}
-                    onCovered={handleCurtainCovered}
-                    onComplete={handleCurtainComplete}
-                />
-            )}
-            <div className="viara-slide-master-frame">
-                {/* MINIMAL COMPACT MOTION-DRIVEN HEADER */}
-                <motion.header
-                    className="viara-editorial-navbar"
-                    role="banner"
-                    initial={prefersReducedMotion ? false : { opacity: 0, y: -16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.58, ease: SLIDE_EASE }}
+            <motion.div className="vlp__progress" style={{ scaleX: progressX }} aria-hidden="true" />
+
+            <div className="vlp__backdrop" aria-hidden="true">
+                <span className="vlp__grid" />
+                <span className="vlp__aurora vlp__aurora--a" />
+                <span className="vlp__aurora vlp__aurora--b" />
+            </div>
+
+            {/* ── Header ── */}
+            <motion.header
+                className={`vlp__header${stuck ? ' vlp__header--stuck' : ''}`}
+                initial={{ y: -80, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 0.65, ease: EASE }}
+            >
+                <motion.div
+                    className="vlp__brand-wrap"
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    transition={{ type: 'spring', stiffness: 320, damping: 22 }}
                 >
-                    {/* Brand Logo Lockup with Framer Motion hover */}
-                    <Link to="/" className="viara-editorial-logo-link" aria-label="VIARA Home">
-                        <motion.div
-                            className="viara-header-logo-shell"
-                            whileHover={{ scale: 1.05, rotate: 2 }}
-                            whileTap={{ scale: 0.95 }}
-                            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                        >
+                    <Link to="/" className="vlp__brand" aria-label={brandName}>
+                        {!brandFailed ? (
                             <img
-                                src={VIARA_BRAND.iconUrl || '/logo.png'}
-                                alt={brandName}
-                                className="viara-header-logo-img"
-                                onError={(e) => { e.currentTarget.src = '/logo.png'; }}
+                                src={VIARA_BRAND.iconUrl || VIARA_BRAND.logoUrl || '/logo.png'}
+                                alt=""
+                                width="40"
+                                height="40"
+                                onError={() => setBrandFailed(true)}
                             />
-                        </motion.div>
-                        <div className="viara-logo-text-wrap">
-                            <span className="viara-logo-name">{brandName}</span>
-                            <span className="viara-logo-tagline">{VIARA_BRAND.tagline || (isRtl ? 'نظام الأشعة السحابي الموحد' : 'Unified Clinical OS')}</span>
-                        </div>
+                        ) : (
+                            <span className="vlp__brand-fallback" aria-hidden="true">V</span>
+                        )}
+                        <strong dir="ltr">{brandName}</strong>
                     </Link>
+                </motion.div>
 
-                    {/* Minimal Compact Floating Scene Navigation Island (Center) */}
-                    <motion.nav
-                        className="viara-editorial-nav-island"
-                        aria-label={isRtl ? 'مشاهد مركز القيادة' : 'Command center scenes'}
-                        initial={prefersReducedMotion ? false : { opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.5, delay: 0.08, ease: SLIDE_EASE }}
+                <nav className="vlp__nav" aria-label={t('التنقل', 'Navigation')}>
+                    <a href="#vlp-features" onClick={goTo('vlp-features')}>{t('المميزات', 'Features')}</a>
+                    <a href="#vlp-workflow" onClick={goTo('vlp-workflow')}>{t('مسار العمل', 'Workflow')}</a>
+                    <a href="#vlp-faq" onClick={goTo('vlp-faq')}>{t('الأسئلة الشائعة', 'FAQ')}</a>
+                    <Link to="/portal" className="vlp__nav-portal">{t('بوابة النتائج', 'Results Portal')}</Link>
+                </nav>
+
+                <div className="vlp__actions">
+                    <motion.button
+                        className="vlp__util-service"
+                        type="button"
+                        onClick={() => setServiceModalOpen(true)}
+                        aria-label={t('حالة الخدمات', 'Service health')}
+                        whileHover={{ y: -1 }}
+                        whileTap={{ scale: 0.96 }}
                     >
-                        {scenes.map((scene, index) => {
-                            const NavIcon = scene.icon;
-                            const isActive = currentDisplayNavIndex === index;
-                            return (
-                                <motion.button
-                                    key={scene.id}
-                                    type="button"
-                                    className={`viara-editorial-nav-item ${isActive ? 'is-active' : ''}`}
-                                    aria-label={scene.navLabel}
-                                    aria-current={isActive ? 'true' : undefined}
-                                    onClick={() => changeSlide(index, index >= activeSceneIndex ? 1 : -1)}
-                                    whileHover={prefersReducedMotion ? undefined : { y: -1 }}
-                                    whileTap={prefersReducedMotion ? undefined : { scale: 0.97 }}
-                                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                >
-                                    <motion.span
-                                        className="viara-nav-item-icon"
-                                        animate={isActive ? { scale: [1, 1.15, 1] } : { scale: 1 }}
-                                        transition={{ duration: 0.3 }}
-                                    >
-                                        <NavIcon size={12.5} strokeWidth={2.4} />
-                                    </motion.span>
-                                    <span className="viara-nav-item-label">{scene.navLabel}</span>
-                                    {isActive && (
-                                        <motion.span
-                                            layoutId="minimalNavPill"
-                                            className="viara-nav-active-glow"
-                                            transition={{ type: 'spring', stiffness: 500, damping: 36 }}
-                                        />
-                                    )}
-                                </motion.button>
-                            );
-                        })}
-                    </motion.nav>
+                        <Activity size={16} aria-hidden="true" />
+                        <span>{t('الخدمات', 'Services')}</span>
+                        <i aria-hidden="true" />
+                    </motion.button>
 
-                    {/* Compact Right Action Hub */}
-                    <motion.div
-                        className="viara-editorial-nav-actions"
-                        initial={prefersReducedMotion ? false : { opacity: 0, x: isRtl ? -10 : 10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.5, delay: 0.14, ease: SLIDE_EASE }}
+                    <motion.button
+                        className="vlp__util-icon"
+                        type="button"
+                        onClick={() => dispatch(setTheme(dark ? 'light' : 'dark'))}
+                        aria-label={dark ? t('المظهر الفاتح', 'Light mode') : t('المظهر الداكن', 'Dark mode')}
+                        whileHover={{ rotate: 14 }}
+                        whileTap={{ scale: 0.9 }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 18 }}
                     >
-                        {/* Language Switch Pill with micro motion */}
-                        <motion.button
-                            type="button"
-                            className="viara-util-circle-btn"
-                            onClick={toggleLanguage}
-                            aria-label={isRtl ? 'Switch to English' : 'Switch to Arabic'}
-                            title={isRtl ? 'Switch to English' : 'التبديل إلى العربية'}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.92 }}
-                        >
-                            <Languages size={13} />
-                            <span className="viara-util-btn-lang-code" dir="ltr">{isRtl ? 'EN' : 'عربي'}</span>
-                        </motion.button>
-
-                        {/* Theme Switch Circle with rotate motion */}
-                        <motion.button
-                            type="button"
-                            className="viara-util-circle-btn"
-                            onClick={toggleTheme}
-                            aria-label={dark ? 'Light mode' : 'Dark mode'}
-                            title={dark ? (isRtl ? 'الوضع الفاتح' : 'Light mode') : (isRtl ? 'الوضع الداكن' : 'Dark mode')}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.92, rotate: 180 }}
-                        >
-                            <motion.span
-                                key={dark ? 'dark' : 'light'}
-                                initial={{ rotate: -90, opacity: 0 }}
-                                animate={{ rotate: 0, opacity: 1 }}
-                                transition={{ duration: 0.25 }}
-                            >
-                                {dark ? <Sun size={13} /> : <Moon size={13} />}
-                            </motion.span>
-                        </motion.button>
-
-                        {/* Direct Staff Sign In CTA Pill */}
-                        <motion.div
-                            whileHover={{ scale: 1.03 }}
-                            whileTap={{ scale: 0.96 }}
-                            transition={{ type: 'spring', stiffness: 450, damping: 28 }}
-                        >
-                            <Link to="/login" className="viara-pill-signin-btn">
-                                <User size={13} />
-                                <span>{t('actions.signIn', { ns: 'common', defaultValue: isRtl ? 'دخول الكوادر' : 'Sign In' })}</span>
-                            </Link>
-                        </motion.div>
-                    </motion.div>
-                </motion.header>
-
-                {/*SPLIT HERO WORKSPACE */}
-                <div className="viara-split-hero-container">
-                    {/* ─── Column 1: Left Narrative Content + Interactive Clinical HUD ─── */}
-                    <section className="viara-split-left-pane" aria-label="Clinical Overview Narrative">
-                        <AnimatePresence mode="popLayout" initial={false} custom={transitionDirection}>
-                            <motion.div
-                                key={currentScene.id}
-                                className="viara-slide-narrative"
-                                custom={transitionDirection}
-                                variants={narrativeVariants}
-                                initial={prefersReducedMotion ? false : 'enter'}
-                                animate="center"
-                                exit={prefersReducedMotion ? undefined : 'exit'}
-                            >
-                                {/* Eyebrow Pill Badge + Live Status + Scene Mini Switcher */}
-                                <motion.div className="viara-eyebrow-container" custom={transitionDirection} variants={narrativeItemVariants}>
-                                    <div className="viara-eyebrow-left-group">
-                                        <span className="viara-pill-badge">
-                                            <SceneIcon size={13} strokeWidth={2.2} />
-                                            <span>{currentScene.badge}</span>
-                                        </span>
-                                        <span className="viara-live-pulse-badge">
-                                            <span className="viara-pulse-dot" aria-hidden="true" />
-                                            <span className="viara-pulse-label">{isRtl ? 'نظام حي' : 'Live System'}</span>
-                                        </span>
-                                    </div>
-
-                                    {/* Mini Interactive Controls */}
-                                    <div className="viara-scene-quick-ctrls">
-                                        <button
-                                            type="button"
-                                            className="viara-autoplay-toggle-btn"
-                                            onClick={() => setIsAutoPlaying((prev) => !prev)}
-                                            title={isAutoPlaying ? (isRtl ? 'إيقاف مؤقت' : 'Pause Autoplay') : (isRtl ? 'تشغيل تلقائي' : 'Start Autoplay')}
-                                            aria-label={isAutoPlaying ? 'Pause slide autoplay' : 'Start slide autoplay'}
-                                        >
-                                            {isAutoPlaying ? <Pause size={11} /> : <Play size={11} />}
-                                        </button>
-                                        <div className="viara-scene-mini-dots" role="tablist" aria-label="Slide Dots">
-                                            {scenes.map((s, idx) => (
-                                                <button
-                                                    key={s.id}
-                                                    type="button"
-                                                    role="tab"
-                                                    aria-selected={activeSceneIndex === idx}
-                                                    aria-label={s.navLabel}
-                                                    className={`viara-mini-dot ${activeSceneIndex === idx ? 'is-active' : ''}`}
-                                                    onClick={() => changeSlide(idx, idx >= activeSceneIndex ? 1 : -1)}
-                                                />
-                                            ))}
-                                        </div>
-                                        <span className="viara-slide-counter-badge" dir="ltr">
-                                            0{activeSceneIndex + 1} / 0{scenes.length}
-                                        </span>
-                                    </div>
-                                </motion.div>
-
-                                {/* Main Display Title */}
-                                <motion.h1
-                                    className="viara-editorial-hero-title"
-                                    aria-label={`${currentScene.titleLead} ${currentScene.titleAccent}`}
-                                    custom={transitionDirection}
-                                    variants={narrativeItemVariants}
-                                >
-                                    <span>{currentScene.titleLead} </span>
-                                    <span className="viara-editorial-hero-title-accent">{currentScene.titleAccent}</span>
-                                </motion.h1>
-
-                                {/* Tracked Uppercase Kicker */}
-                                <motion.div className="viara-tracked-kicker" custom={transitionDirection} variants={narrativeItemVariants}>
-                                    <span className="viara-kicker-bar" aria-hidden="true" />
-                                    <span>{currentScene.kicker}</span>
-                                </motion.div>
-
-                                {/* Editorial Description */}
-                                <motion.p className="viara-editorial-hero-desc" custom={transitionDirection} variants={narrativeItemVariants}>
-                                    {currentScene.description}
-                                </motion.p>
-
-                                {/* Feature Highlight Pills Cluster */}
-                                <motion.div className="viara-feature-pills-cluster" custom={transitionDirection} variants={narrativeItemVariants}>
-                                    {currentScene.highlightPills?.map((pill, pIdx) => {
-                                        const PillIcon = pill.icon;
-                                        return (
-                                            <div key={pIdx} className="viara-feature-pill-chip">
-                                                <span className="viara-feature-pill-icon">
-                                                    <PillIcon size={13} strokeWidth={2.4} />
-                                                </span>
-                                                <span className="viara-feature-pill-label">{pill.label}</span>
-                                            </div>
-                                        );
-                                    })}
-                                </motion.div>
-
-                                {/* Dual Pill Action Cluster */}
-                                <motion.div className="viara-pill-cta-cluster" custom={transitionDirection} variants={narrativeItemVariants}>
-                                    <Link to="/login" className="viara-cta-pill-primary">
-                                        <ShieldCheck size={16} />
-                                        <span>{isRtl ? 'فتح مساحة عمل الكوادر' : 'Launch Staff Console'}</span>
-                                        <ArrowRight size={15} className={isRtl ? 'rotate-180' : ''} />
-                                    </Link>
-
-                                    <button
-                                        type="button"
-                                        className="viara-cta-pill-outline"
-                                        onClick={nextSlide}
-                                    >
-                                        <span>{isRtl ? 'استعراض المسارات السريرية' : 'Explore Workflows'}</span>
-                                        <ArrowRight size={14} className={isRtl ? 'rotate-180' : ''} />
-                                    </button>
-                                </motion.div>
-
-                                {/* Enhanced Live Clinical Telemetry HUD Strip */}
-                                <motion.div
-                                    className="viara-number-counter-strip"
-                                    variants={hudVariants}
-                                    style={{ '--scene-progress': `${progressPercent}%` }}
-                                >
-                                    <div className="viara-counter-progress-rail" aria-hidden="true">
-                                        <div className="viara-counter-progress-fill" style={{ width: `${progressPercent}%` }} />
-                                    </div>
-                                    <div className="viara-number-counter-items">
-                                        <motion.div className="viara-number-counter" variants={hudPartVariants}>
-                                            <dt>
-                                                <span className="viara-dt-dot is-emerald" />
-                                                {isRtl ? 'فحوص اليوم' : 'Studies today'}
-                                            </dt>
-                                            <dd>{liveMetrics.studiesToday}</dd>
-                                        </motion.div>
-                                        <motion.div className="viara-number-counter" variants={hudPartVariants}>
-                                            <dt>
-                                                <span className="viara-dt-dot is-amber" />
-                                                {isRtl ? 'قيد المراجعة' : 'Pending'}
-                                            </dt>
-                                            <dd className="is-terracotta">{liveMetrics.pendingReports}</dd>
-                                        </motion.div>
-                                        <motion.div className="viara-number-counter" variants={hudPartVariants}>
-                                            <dt>
-                                                <span className="viara-dt-dot is-mint" />
-                                                {isRtl ? 'أجهزة نشطة' : 'Modalities'}
-                                            </dt>
-                                            <dd className="is-mint">{liveMetrics.activeModalities}</dd>
-                                        </motion.div>
-                                        <motion.div className="viara-number-counter viara-number-counter--rate" variants={hudPartVariants}>
-                                            <dt>
-                                                <span className="viara-dt-dot is-cyan" />
-                                                {isRtl ? 'نسبة الإنجاز' : 'Completion'}
-                                            </dt>
-                                            <dd className="is-cyan">{liveMetrics.completionRate}%</dd>
-                                        </motion.div>
-                                    </div>
-                                </motion.div>
-                            </motion.div>
-                        </AnimatePresence>
-                    </section>
-
-                    {/* ─── Column 2: Brand illustration studio ─── */}
-                    <section
-                        className="viara-split-right-pane"
-                        aria-label={isRtl ? 'رسومات توضيحية لمنصة VIARA' : 'VIARA platform illustrations'}
-                    >
-                        <div className="viara-workstation-scene-stage">
-                            <AnimatePresence mode="popLayout" initial={false} custom={transitionDirection}>
-                                <motion.figure
-                                    key={currentScene.id}
-                                    className="viara-slide-illustration"
-                                    data-scene={currentScene.type}
-                                    custom={transitionDirection}
-                                    variants={artworkVariants}
-                                    initial={prefersReducedMotion ? false : 'enter'}
-                                    animate="center"
-                                    exit={prefersReducedMotion ? undefined : 'exit'}
-                                >
-                                    <div className="viara-slide-illustration__canvas">
-                                        <span className="viara-slide-illustration__wash" aria-hidden="true" />
-                                        <span className="viara-slide-illustration__orbit" aria-hidden="true" />
-                                        <img
-                                            className="viara-slide-illustration__image"
-                                            src={currentScene.artwork}
-                                            alt={currentScene.artworkAlt}
-                                            width={currentScene.artworkWidth}
-                                            height={currentScene.artworkHeight}
-                                            loading={activeSceneIndex === 0 ? 'eager' : 'lazy'}
-                                            decoding="async"
-                                        />
-                                    </div>
-                                    {/* <figcaption className="viara-slide-illustration__caption">
-                                        <span className="viara-slide-illustration__brand">
-                                            <span className="viara-slide-illustration__logo-shell">
-                                                <img src={VIARA_BRAND.iconUrl || '/logo.png'} alt="" aria-hidden="true" />
-                                            </span>
-                                            <span>
-                                                <small>{brandName}</small>
-                                                <strong>{currentScene.artworkCaption}</strong>
-                                            </span>
-                                        </span>
-                                        <span className="viara-slide-illustration__counter" dir="ltr" aria-hidden="true">
-                                            {String(activeSceneIndex + 1).padStart(2, '0')}
-                                            <i />
-                                            {String(scenes.length).padStart(2, '0')}
-                                        </span>
-                                    </figcaption> */}
-                                </motion.figure>
-                            </AnimatePresence>
-                        </div>
-                    </section>
-                </div>
-
-                {/* SEAMLESS INTEGRATED FOOTER DOCK */}
-                <motion.footer
-                    className="viara-editorial-bottom-dock"
-                    role="contentinfo"
-                    initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.58, delay: 0.16, ease: SLIDE_EASE }}
-                >
-                    <div className="viara-dock-left-group">
-                        <div className="viara-dock-brand-pill">
-                            <span className="viara-dock-copyright-note" dir="ltr">
-                                © {new Date().getFullYear()} {brandName}
-                            </span>
-                            <span className="viara-dock-sep" aria-hidden="true">•</span>
-                            <span className="viara-dock-edition-badge">{isRtl ? 'نظام الأشعة السحابي' : 'Cloud Radiology OS'}</span>
-                        </div>
-                    </div>
-
-                    {/* Center Integrated Scene Breadcrumb & Progress */}
-                    <div className="viara-dock-center-scene-pill">
-                        <span className="viara-dock-scene-counter" dir="ltr">0{activeSceneIndex + 1} / 0{scenes.length}</span>
                         <AnimatePresence mode="wait" initial={false}>
                             <motion.span
-                                key={currentScene.id}
-                                className="viara-dock-scene-name"
-                                initial={prefersReducedMotion ? false : { opacity: 0, y: 5 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
-                                transition={{ duration: 0.24, ease: SLIDE_EASE }}
+                                key={dark ? 'sun' : 'moon'}
+                                initial={{ rotate: -90, opacity: 0, scale: 0.7 }}
+                                animate={{ rotate: 0, opacity: 1, scale: 1 }}
+                                exit={{ rotate: 90, opacity: 0, scale: 0.7 }}
+                                transition={{ duration: 0.24 }}
+                                style={{ display: 'flex' }}
                             >
-                                {currentScene.badge}
+                                {dark ? <Sun size={18} /> : <Moon size={18} />}
                             </motion.span>
                         </AnimatePresence>
-                        <div className="viara-dock-progress-track" aria-hidden="true">
-                            <motion.div
-                                className="viara-dock-progress-bar"
-                                animate={{ width: `${progressPercent}%` }}
-                                transition={{ duration: 0.12, ease: 'linear' }}
-                            />
-                        </div>
-                    </div>
+                    </motion.button>
 
-                    <div className="viara-dock-right-group">
-                        <div className="viara-dock-status-pill" role="status">
-                            <motion.span
-                                className="viara-dock-pulse-dot"
-                                aria-hidden="true"
-                                animate={prefersReducedMotion ? undefined : { opacity: [0.72, 1, 0.72], scale: [0.9, 1.08, 0.9] }}
-                                transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-                            />
-                            <span className="viara-dock-status-text">{isRtl ? 'جميع الأنظمة تعمل' : 'All systems operational'}</span>
-                        </div>
-                    </div>
-                </motion.footer>
-            </div>
-        </main>
+                    <motion.button
+                        className="vlp__util-lang"
+                        type="button"
+                        onClick={toggleLanguage}
+                        disabled={languageBusy}
+                        aria-label={isRtl
+                            ? t('التبديل إلى الإنجليزية', 'Switch to English')
+                            : t('التبديل إلى العربية', 'Switch to Arabic')}
+                        whileTap={{ scale: 0.96 }}
+                    >
+                        <Globe size={19} aria-hidden="true" />
+                        <span>{isRtl ? 'EN' : 'عربي'}</span>
+                    </motion.button>
+
+                    <span className="vlp__util-sep" aria-hidden="true" />
+
+                    <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}>
+                        <Link className="vlp__button vlp__header-signin" to="/login">
+                            <UserRound size={15} aria-hidden="true" />
+                            {t('تسجيل الدخول', 'Sign In')}
+                        </Link>
+                    </motion.div>
+                </div>
+            </motion.header>
+
+            {/* ── Hero ── */}
+            <section className="vlp__hero" aria-label={t('نظرة عامة', 'Overview')}>
+                <div className="vlp__copy">
+                    <motion.p
+                        className="vlp__eyebrow"
+                        variants={riseIn}
+                        custom={0}
+                        initial={reduce ? false : 'hidden'}
+                        animate="visible"
+                    >
+                        <span className="vlp__eyebrow-dot" aria-hidden="true" />
+                        {t('نظام متكامل لإدارة مراكز الأشعة', 'Integrated Radiology Center Management')}
+                    </motion.p>
+
+                    <h1 className="vlp__title" aria-label={`${line1} ${line2}`}>
+                        <WordLine text={line1} delay={0.15} reduce={reduce} />
+                        <WordLine text={line2} delay={0.15 + line1Words * 0.1 + 0.08} gradient reduce={reduce} />
+                    </h1>
+
+                    <motion.p
+                        className="vlp__description"
+                        variants={riseIn}
+                        custom={0.75}
+                        initial={reduce ? false : 'hidden'}
+                        animate="visible"
+                    >
+                        {t(
+                            'من استقبال المريض إلى تسليم التقرير، تجربة عمل واحدة تجمع فريقك وخدمات مركزك.',
+                            'From patient reception to report delivery, one unified workspace for your team and center.',
+                        )}
+                    </motion.p>
+
+                    <motion.div
+                        className="vlp__cta-row"
+                        variants={riseIn}
+                        custom={0.9}
+                        initial={reduce ? false : 'hidden'}
+                        animate="visible"
+                    >
+                        <motion.div
+                            whileHover={{ y: -3 }}
+                            whileTap={{ scale: 0.97 }}
+                            transition={{ type: 'spring', stiffness: 340, damping: 22 }}
+                        >
+                            <Link to="/login" className="vlp__button vlp__button--large">
+                                {t('الدخول إلى النظام', 'Open the System')}
+                                <DirectionArrow size={20} aria-hidden="true" />
+                            </Link>
+                        </motion.div>
+                        <a href="#vlp-features" className="vlp__explore" onClick={goTo('vlp-features')}>
+                            {t('استكشف المنصة', 'Explore Platform')}
+                            <DirectionArrow size={17} aria-hidden="true" />
+                        </a>
+                    </motion.div>
+
+                    <motion.ul
+                        className="vlp__trust"
+                        variants={riseIn}
+                        custom={1.05}
+                        initial={reduce ? false : 'hidden'}
+                        animate="visible"
+                        aria-label={t('الأمان والمعايير', 'Security and standards')}
+                    >
+                        <li><ShieldCheck size={15} aria-hidden="true" /><span dir="ltr">RBAC</span></li>
+                        <li><Lock size={15} aria-hidden="true" /><span dir="ltr">Audit Trail</span></li>
+                        <li><ScanLine size={15} aria-hidden="true" /><span dir="ltr">DICOM</span></li>
+                    </motion.ul>
+                </div>
+
+                <ScanStage isRtl={isRtl} t={t} reduce={reduce} />
+            </section>
+
+            <ModalityMarquee t={t} />
+            <MetricsSection t={t} isRtl={isRtl} />
+            <FeaturesSection t={t} />
+            <FlowSection t={t} reduce={reduce} />
+            <FaqSection t={t} isRtl={isRtl} />
+            <CtaBand t={t} DirectionArrow={DirectionArrow} onOpenServices={() => setServiceModalOpen(true)} />
+
+            {/* ── Footer ── */}
+            <footer className="vlp__footer" id="vlp-platform">
+                <span className="vlp__footer-copy">
+                    {t(
+                        `© ${new Date().getFullYear()} VIARA. جميع الحقوق محفوظة.`,
+                        `© ${new Date().getFullYear()} VIARA. All rights reserved.`,
+                    )}
+                </span>
+                <div className="vlp__footer-links">
+                    <a href="/login">{t('الدعم الفني', 'Technical Support')}</a>
+                    <span aria-hidden="true">|</span>
+                    <a href="/login">{t('اتصل بنا', 'Contact Us')}</a>
+                </div>
+            </footer>
+
+            {serviceModalOpen && (
+                <LandingServiceHealthModal
+                    isRtl={isRtl}
+                    onClose={() => setServiceModalOpen(false)}
+                />
+            )}
+        </div>
     );
 }

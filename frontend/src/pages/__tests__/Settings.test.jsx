@@ -1,11 +1,31 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import Settings from '../Settings';
 import i18n from '../../i18n';
 
 let currentUser;
+
+// Surfaces the router location so redirect behaviour can be asserted.
+const LocationProbe = () => {
+    const location = useLocation();
+    return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
+};
+
+// Surfaces the router location so redirect behaviour can be asserted, and
+// renders Settings only on its own route — real routing unmounts the page when
+// it navigates away, which is what stops it normalising the URL afterwards.
+const RoutedSettings = () => {
+    const { pathname } = useLocation();
+    if (!pathname.startsWith('/settings')) return <LocationProbe />;
+    return (
+        <>
+            <LocationProbe />
+            <Settings />
+        </>
+    );
+};
 
 vi.mock('react-redux', () => ({
     useSelector: () => currentUser
@@ -19,7 +39,6 @@ vi.mock('../../components/settings/DeveloperSettings', () => ({ default: () => <
 vi.mock('../../components/settings/AuditSettings', () => ({ default: () => <div>Audit panel</div> }));
 vi.mock('../../components/settings/IntegrationsSettings', () => ({ default: () => <div>Integrations panel</div> }));
 vi.mock('../../components/settings/TeamSettings', () => ({ default: () => <div>Team panel</div> }));
-vi.mock('../../components/settings/ClinicalOperationsSettings', () => ({ default: () => <div>Clinical operations panel</div> }));
 vi.mock('../../components/settings/AiProviderSettings', () => ({ default: () => <div>AI providers panel</div> }));
 vi.mock('../CenterSettings', () => ({ default: () => <div>Facility panel</div> }));
 
@@ -39,7 +58,8 @@ describe('Settings workspace', () => {
         renderSettings();
 
         expect(screen.getByText('Settings & preferences')).toBeInTheDocument();
-        expect(screen.getAllByRole('button', { name: /Clinical operations Machines and examination catalog/i }).length).toBeGreaterThan(0);
+        // Clinical operations now live under Equipment, not Settings.
+        expect(screen.queryByRole('button', { name: /Clinical operations/i })).not.toBeInTheDocument();
         expect(screen.getAllByRole('button', { name: /Team Members and access roles/i }).length).toBeGreaterThan(0);
         expect(screen.getAllByRole('button', { name: /Integrations Connected clinical services/i }).length).toBeGreaterThan(0);
 
@@ -66,6 +86,23 @@ describe('Settings workspace', () => {
 
         expect(screen.getAllByText('API credentials and webhooks').length).toBeGreaterThan(0);
         expect(screen.getByText('Developer panel')).toBeInTheDocument();
+    });
+
+    it('redirects the legacy clinical settings deep link to Equipment', async () => {
+        // Clinical operations moved to the Equipment workspace, so old links
+        // and bookmarks must still land somewhere useful.
+        render(
+            <MemoryRouter
+                initialEntries={['/settings?tab=clinical']}
+                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+            >
+                <RoutedSettings />
+            </MemoryRouter>
+        );
+
+        await waitFor(() => {
+            expect(screen.getByTestId('location')).toHaveTextContent('/equipment?tab=rooms');
+        });
     });
 
     it('hides administrative sections that are not granted by explicit RBAC claims', () => {

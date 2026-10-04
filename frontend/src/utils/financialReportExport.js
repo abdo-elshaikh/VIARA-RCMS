@@ -1,3 +1,4 @@
+import { openPrintDocument } from './printDocument';
 import {
     AlignmentType,
     BorderStyle,
@@ -49,13 +50,14 @@ const downloadBlob = (content, filename, type) => {
 };
 
 const sectionRowsForCsv = (report) => {
+    const labels = report.exportLabels || {};
     const rows = [
         [report.title],
         [report.subtitle],
-        ['Generated at', report.generatedAt],
+        [labels.generatedAt || 'Generated at', report.generatedAt],
         [],
-        ['Summary'],
-        ['Metric', 'Value'],
+        [labels.summary || 'Summary'],
+        [labels.metric || 'Metric', labels.value || 'Value'],
         ...(report.summary || []).map((item) => [item.label, item.value]),
         [],
     ];
@@ -70,6 +72,10 @@ const sectionRowsForCsv = (report) => {
     });
     return rows;
 };
+
+export const buildFinancialReportCsv = (report) => (
+    `\uFEFF${sectionRowsForCsv(report).map((row) => row.map(escapeCsv).join(',')).join('\r\n')}`
+);
 
 const buildHtmlReport = (report) => {
     const isRtl = /[\u0600-\u06FF]/.test(`${report.title} ${report.subtitle} ${(report.sections || []).map(section => section.title).join(' ')}`);
@@ -141,6 +147,7 @@ const buildHtmlReport = (report) => {
 
 const exportExcelWorkbook = async (report, filename) => {
     const { default: writeExcelFile } = await import('write-excel-file/browser');
+    const labels = report.exportLabels || {};
     const titleCell = (value) => ({ value: sanitizeSpreadsheetCell(value), fontWeight: 'bold', fontSize: 18, color: '#0F172A' });
     const headerCell = (value) => ({
         value: sanitizeSpreadsheetCell(value),
@@ -154,9 +161,9 @@ const exportExcelWorkbook = async (report, filename) => {
     const summaryData = [
         [titleCell(report.title)],
         [{ value: sanitizeSpreadsheetCell(report.subtitle), color: '#475569' }],
-        [{ value: 'Generated at', fontWeight: 'bold' }, sanitizeSpreadsheetCell(report.generatedAt)],
+        [{ value: sanitizeSpreadsheetCell(labels.generatedAt || 'Generated at'), fontWeight: 'bold' }, sanitizeSpreadsheetCell(report.generatedAt)],
         [],
-        [headerCell('Metric'), headerCell('Value')],
+        [headerCell(labels.metric || 'Metric'), headerCell(labels.value || 'Value')],
         ...(report.summary || []).map(item => [sanitizeSpreadsheetCell(item.label), sanitizeSpreadsheetCell(item.value)])
     ];
     const sheets = [{
@@ -191,7 +198,7 @@ export const exportFinancialReport = async (report, format) => {
     const filename = safeFilename(`${report.filename || report.title}-${new Date().toISOString().slice(0, 10)}`);
 
     if (format === 'csv') {
-        const csv = `\uFEFF${sectionRowsForCsv(report).map((row) => row.map(escapeCsv).join(',')).join('\r\n')}`;
+        const csv = buildFinancialReportCsv(report);
         downloadBlob(csv, `${filename}.csv`, 'text/csv;charset=utf-8');
         return;
     }
@@ -203,13 +210,7 @@ export const exportFinancialReport = async (report, format) => {
 
     if (format === 'pdf') {
         const html = buildHtmlReport(report);
-        const printWindow = window.open('', '_blank', 'noopener,noreferrer');
-        if (printWindow) {
-            printWindow.document.write(html);
-            printWindow.document.close();
-            printWindow.focus();
-            setTimeout(() => printWindow.print(), 350);
-        } else {
+        if (!openPrintDocument(html)) {
             downloadBlob(html, `${filename}-print.html`, 'text/html;charset=utf-8');
         }
         return;

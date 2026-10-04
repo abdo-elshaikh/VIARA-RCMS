@@ -5,6 +5,59 @@ import {
     resolveDocumentIdentity
 } from './documentIdentity';
 
+export const BRANCH_TYPES = [
+    { value: 'main', labelKey: 'branches.types.main', defaultLabel: 'Main HQ / Flagship' },
+    { value: 'branch', labelKey: 'branches.types.branch', defaultLabel: 'Full-Service Branch' },
+    { value: 'satellite', labelKey: 'branches.types.satellite', defaultLabel: 'Satellite Center' },
+    { value: 'clinic', labelKey: 'branches.types.clinic', defaultLabel: 'Specialized Clinic' },
+    { value: 'mobile', labelKey: 'branches.types.mobile', defaultLabel: 'Mobile Imaging Unit' },
+    { value: 'lab', labelKey: 'branches.types.lab', defaultLabel: 'Diagnostic Lab' }
+];
+
+export const BRANCH_STATUSES = [
+    { value: 'active', labelKey: 'branches.statuses.active', defaultLabel: 'Active / Operational', color: 'emerald' },
+    { value: 'maintenance', labelKey: 'branches.statuses.maintenance', defaultLabel: 'Under Maintenance', color: 'amber' },
+    { value: 'inactive', labelKey: 'branches.statuses.inactive', defaultLabel: 'Inactive / Suspended', color: 'slate' }
+];
+
+export const AVAILABLE_MODALITIES = [
+    'MRI', 'CT', 'X-RAY', 'ULTRASOUND', 'MAMMOGRAPHY', 'DEXA', 'FLUOROSCOPY', 'PET-CT', 'LAB'
+];
+
+export const normalizeBranch = (branch = {}, fallbackIndex = 1) => {
+    return {
+        id: branch.id || `branch-${Date.now()}-${fallbackIndex}`,
+        code: branch.code || `BR-${String(fallbackIndex).padStart(2, '0')}`,
+        name: branch.name || (branch.isMain ? 'Main Branch' : `Branch ${fallbackIndex}`),
+        nameAr: branch.nameAr || (branch.isMain ? 'الفرع الرئيسي' : `فرع ${fallbackIndex}`),
+        displayName: branch.displayName || branch.name || '',
+        displayNameAr: branch.displayNameAr || branch.nameAr || '',
+        type: branch.type || (branch.isMain ? 'main' : 'branch'),
+        status: branch.status || 'active',
+        isMain: branch.isMain === true || fallbackIndex === 1,
+        phone: branch.phone || '',
+        alternativePhone: branch.alternativePhone || '',
+        hotline: branch.hotline || '',
+        whatsapp: branch.whatsapp || '',
+        email: branch.email || '',
+        address: branch.address || '',
+        addressAr: branch.addressAr || '',
+        governorate: branch.governorate || '',
+        city: branch.city || '',
+        postalCode: branch.postalCode || '',
+        medicalLicense: branch.medicalLicense || '',
+        commercialRegistration: branch.commercialRegistration || '',
+        taxNumber: branch.taxNumber || '',
+        managerName: branch.managerName || '',
+        invoicePrefix: branch.invoicePrefix || '',
+        reportHeaderOverride: branch.reportHeaderOverride || '',
+        reportFooterOverride: branch.reportFooterOverride || '',
+        workingHoursOverride: branch.workingHoursOverride || null,
+        modalities: Array.isArray(branch.modalities) ? branch.modalities : ['MRI', 'CT', 'X-RAY', 'ULTRASOUND'],
+        notes: branch.notes || ''
+    };
+};
+
 const DEFAULT_CENTER_SETTINGS = {
     center_id: DEFAULT_CENTER_IDENTITY.center_id,
     center_name: DEFAULT_CENTER_IDENTITY.center_name,
@@ -17,6 +70,7 @@ const DEFAULT_CENTER_SETTINGS = {
     branch_name_ar: '',
     branch_display_name: '',
     branch_display_name_ar: '',
+    branches: [],
     logo_url: '',
     logo_dark_url: '',
     logo_light_url: '',
@@ -61,6 +115,8 @@ const DEFAULT_CENTER_SETTINGS = {
     currency: 'EGP',
     vat_enabled: false,
     vat_rate: 0,
+    urgent_priority_fee: 0,
+    emergency_priority_fee: 0,
     showPoweredByViara: true,
     working_hours: { start: 6, end: 22, workingDays: [0, 1, 2, 3, 4, 5, 6], holidays: [] },
     print_settings: {
@@ -110,10 +166,59 @@ export const normalizeCenterSettings = (settings = {}) => {
     const printSettings = settings.print_settings || {};
     const homepageSettings = settings.homepage_settings || {};
 
+    let normalizedBranches = [];
+    if (Array.isArray(settings.branches) && settings.branches.length > 0) {
+        normalizedBranches = settings.branches.map((b, idx) => normalizeBranch(b, idx + 1));
+        // Ensure exactly one branch is marked isMain
+        const hasMain = normalizedBranches.some(b => b.isMain);
+        if (!hasMain) {
+            normalizedBranches[0].isMain = true;
+        }
+    } else {
+        // Fallback: seed 1 primary branch from existing top-level branch fields
+        normalizedBranches = [
+            normalizeBranch({
+                id: settings.branch_id || '00000000-0000-4000-8000-000000000001',
+                code: settings.branch_code || 'MAIN-01',
+                name: settings.branch_name || 'Main Flagship Center',
+                nameAr: settings.branch_name_ar || 'المركز الرئيسي',
+                displayName: settings.branch_display_name || settings.branch_name || 'Main Center',
+                displayNameAr: settings.branch_display_name_ar || settings.branch_name_ar || 'الفرع الرئيسي',
+                type: 'main',
+                status: 'active',
+                isMain: true,
+                phone: settings.phone || '',
+                alternativePhone: settings.alternative_phone || '',
+                hotline: settings.hotline || '',
+                whatsapp: settings.whatsapp || '',
+                email: settings.email || '',
+                address: settings.address || '',
+                addressAr: settings.address_ar || '',
+                governorate: settings.governorate || '',
+                city: settings.city || '',
+                postalCode: settings.postal_code || '',
+                medicalLicense: settings.medical_license || '',
+                commercialRegistration: settings.commercial_registration || '',
+                taxNumber: settings.tax_number || settings.tax_id || '',
+                invoicePrefix: settings.invoice_prefix || 'INV-',
+                modalities: ['MRI', 'CT', 'X-RAY', 'ULTRASOUND', 'MAMMOGRAPHY', 'DEXA']
+            }, 1)
+        ];
+    }
+
+    const primaryBranch = normalizedBranches.find(b => b.isMain) || normalizedBranches[0];
+
     return {
         ...DEFAULT_CENTER_SETTINGS,
         ...settings,
         center_name: settings.center_name || DEFAULT_CENTER_SETTINGS.center_name,
+        branch_id: settings.branch_id || primaryBranch?.id || '',
+        branch_code: settings.branch_code || primaryBranch?.code || '',
+        branch_name: settings.branch_name || primaryBranch?.name || '',
+        branch_name_ar: settings.branch_name_ar || primaryBranch?.nameAr || '',
+        branch_display_name: settings.branch_display_name || primaryBranch?.displayName || '',
+        branch_display_name_ar: settings.branch_display_name_ar || primaryBranch?.displayNameAr || '',
+        branches: normalizedBranches,
         working_hours: {
             ...DEFAULT_CENTER_SETTINGS.working_hours,
             ...workingHours,
@@ -185,6 +290,7 @@ export const buildReportFooter = (settings = {}) => {
 
 export {
     buildDocumentFooter,
+    DEFAULT_CENTER_SETTINGS,
     buildDocumentHeader,
     resolveDocumentIdentity
 };

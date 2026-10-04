@@ -24,16 +24,17 @@ const claimTask = (db) => async (req, res, next) => {
     try {
         const appointmentId = req.params.appointmentId;
         validateUUID(appointmentId, 'appointmentId');
+        const body = req.body || {};
 
         client = await db.connect();
         await client.query('BEGIN');
 
         const assignment = await claimReceptionTask(client, {
             appointmentId,
-            examId: req.body.examId,
+            examId: body.examId,
             user: req.user,
-            desk: req.body.desk,
-            expectedVersion: req.body.expectedVersion
+            desk: body.desk,
+            expectedVersion: body.expectedVersion
         });
 
         await logAction(client, {
@@ -64,6 +65,7 @@ const releaseTask = (db) => async (req, res, next) => {
     try {
         const appointmentId = req.params.appointmentId;
         validateUUID(appointmentId, 'appointmentId');
+        const body = req.body || {};
 
         client = await db.connect();
         await client.query('BEGIN');
@@ -71,7 +73,7 @@ const releaseTask = (db) => async (req, res, next) => {
         const assignment = await releaseReceptionTask(client, {
             appointmentId,
             user: req.user,
-            reason: req.body.reason
+            reason: body.reason
         });
 
         await logAction(client, {
@@ -81,7 +83,7 @@ const releaseTask = (db) => async (req, res, next) => {
             resourceTable: 'appointments',
             ipAddress: req.ip,
             details: {
-                reason: req.body.reason
+                reason: body.reason || null
             }
         });
 
@@ -101,7 +103,8 @@ const transferTask = (db) => async (req, res, next) => {
     try {
         const appointmentId = req.params.appointmentId;
         validateUUID(appointmentId, 'appointmentId');
-        validateUUID(req.body.targetUserId, 'targetUserId');
+        const body = req.body || {};
+        validateUUID(body.targetUserId, 'targetUserId');
 
         client = await db.connect();
         await client.query('BEGIN');
@@ -109,9 +112,9 @@ const transferTask = (db) => async (req, res, next) => {
         const assignment = await transferReceptionTask(client, {
             appointmentId,
             user: req.user,
-            targetUserId: req.body.targetUserId,
-            desk: req.body.desk,
-            reason: req.body.reason
+            targetUserId: body.targetUserId,
+            desk: body.desk,
+            reason: body.reason
         });
 
         await logAction(client, {

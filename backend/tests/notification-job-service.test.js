@@ -17,9 +17,14 @@ const {
     scheduleAppointmentReminder,
     cancelPendingAppointmentReminders,
     isQuietHours,
-    dispatchWithFallback
-    , triggerEvent,
-    processCriticalResultEscalations
+    dispatchWithFallback,
+    triggerEvent,
+    buildIdempotencyKey,
+    processCriticalResultEscalations,
+    getRepairableNotificationJobs,
+    repairRetryableNotificationJobs,
+    normalizeNotificationLanguage,
+    isOptedIn
 } = require('../src/services/notificationJobService');
 const { encrypt } = require('../src/utils/crypto');
 const { dispatch } = require('../src/services/notificationService');
@@ -27,6 +32,18 @@ const { dispatch } = require('../src/services/notificationService');
 describe('notification job service hardening', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+    });
+
+    test.each([
+        ['ar', 'ar'],
+        ['ar-EG', 'ar'],
+        ['Arabic', 'ar'],
+        ['العربية', 'ar'],
+        ['en-US', 'en'],
+        ['English', 'en'],
+        ['', 'en']
+    ])('normalizes notification language %s to %s', (input, expected) => {
+        expect(normalizeNotificationLanguage(input)).toBe(expected);
     });
 
     test('schedules idempotent jobs with encrypted recipient contact', async () => {
@@ -52,6 +69,47 @@ describe('notification job service hardening', () => {
         expect(db.query.mock.calls[0][1][4]).toBe('enc:+201000000000');
         expect(db.query.mock.calls[0][1][9]).toBe('ManualSend:SMS:Custom:+201000000000:Appointment:appt-1');
         expect(db.query.mock.calls[0][1][10]).toBe('Action');
+    });
+
+    test('redacts patient names before storing marketing queue payloads', async () => {
+        const db = {
+            query: jest.fn().mockResolvedValue({ rows: [{ job_id: 'job-1' }] })
+        };
+
+        await scheduleJob(db, {
+            eventType: 'MarketingCampaign',
+            channel: 'Email',
+            recipientType: 'Patient',
+            recipientId: 'patient-1',
+            entityType: 'Campaign',
+            entityId: 'campaign-1',
+            variables: { patient_name: 'Ali Hassan', campaign_message: 'Welcome to the clinic' },
+            priority: 'Normal'
+        });
+
+        expect(db.query).toHaveBeenCalledTimes(1);
+        expect(db.query.mock.calls[0][1][7]).toEqual(expect.objectContaining({
+            patient_name: 'Patient',
+            campaign_message: 'Welcome to the clinic'
+        }));
+    });
+
+    test('marketing jobs honor the canonical consent and legacy opt-in fallback together', async () => {
+        const db = {
+            query: jest.fn()
+                .mockResolvedValueOnce({ rows: [{ consent_email: true, consent_sms: true, consent_whatsapp: true, consent_marketing: null, opt_in_marketing: true }] })
+                .mockResolvedValueOnce({ rows: [{ event_ok: true, channel_ok: true }] })
+        };
+
+        const result = await isOptedIn(db, {
+            event_type: 'MarketingCampaign',
+            channel: 'Email',
+            recipient_type: 'Patient',
+            recipient_id: 'patient-1'
+        });
+
+        expect(result).toBe(true);
+        expect(db.query).toHaveBeenNthCalledWith(1, expect.stringContaining('SELECT consent_email, consent_sms, consent_whatsapp, consent_marketing, opt_in_marketing'), ['patient-1']);
     });
 
     test('counts claimed jobs and retries when contact resolution fails', async () => {
@@ -124,6 +182,17 @@ describe('notification job service hardening', () => {
         }));
         expect(insertCalls[1][1][9]).toBe('AppointmentReminder:WhatsApp:Patient:patient-1:Appointment:appt-1:2099-07-31T10:00:00.000Z');
         expect(insertCalls[0][1][7].occurrence_key).toBe('2099-07-31T10:00:00.000Z');
+    });
+
+    test('builds an idempotency key for dated operational events without inventing a UUID entity id', () => {
+        expect(buildIdempotencyKey({
+            eventType: 'SHIFT_CLOSED_WITH_PENDING_EXAMS',
+            channel: 'InApp',
+            recipientType: 'Staff',
+            recipientId: 'staff-1',
+            entityType: 'DailyEndOfDayReview',
+            occurrenceKey: '2026-09-23'
+        })).toBe('SHIFT_CLOSED_WITH_PENDING_EXAMS:InApp:Staff:staff-1:DailyEndOfDayReview:2026-09-23');
     });
 
     test('uses the same reminder occurrence key for creation and periodic scheduling', async () => {
@@ -246,6 +315,110 @@ describe('notification job service hardening', () => {
         expect(dispatch.mock.calls[1][5].idempotencyKey).toBe('notification-job:job-1:SMS');
     });
 
+    test('selects the Arabic template for language names and regional tags', async () => {
+        const db = {
+            query: jest.fn(async (sql, params = []) => {
+                if (String(sql).includes('FROM users WHERE user_id')) {
+                    return { rows: [{ user_id: 'user-1' }] };
+                }
+                if (String(sql).includes('FROM notification_templates')) {
+                    expect(params[2]).toBe('ar');
+                    return { rows: [{ subject: 'تم إنشاء الفحص', body: 'تم إنشاء الفحص {{order_number}}.' }] };
+                }
+                return { rows: [] };
+            })
+        };
+        dispatch.mockResolvedValue({ success: true, notificationId: 'notification-ar' });
+
+        const result = await dispatchWithFallback(db, {
+            job_id: 'job-ar', event_type: 'ExamCreated', channel: 'InApp',
+            priority: 'Normal', recipient_type: 'Staff', recipient_id: 'user-1',
+            variables: { language: 'Arabic', order_number: 'ORD-42', force_delivery: true }
+        }, [{ allowed_channels: ['InApp'], min_priority: 'Normal', inapp_enabled: true }]);
+
+        expect(result.success).toBe(true);
+        expect(dispatch.mock.calls[0].slice(0, 4)).toEqual([
+            'InApp', 'user-1', 'تم إنشاء الفحص', 'تم إنشاء الفحص ORD-42.'
+        ]);
+    });
+
+    test('uses the staff account language when an event has no explicit language', async () => {
+        const db = {
+            query: jest.fn(async (sql, params = []) => {
+                const text = String(sql);
+                if (text.includes('FROM users WHERE user_id')) {
+                    return { rows: [{ user_id: 'user-ar' }] };
+                }
+                if (text.includes("preferences->>'language'")) {
+                    expect(params).toEqual(['user-ar']);
+                    return { rows: [{ language: 'ar-EG' }] };
+                }
+                if (text.includes('FROM notification_templates')) {
+                    expect(params[2]).toBe('ar');
+                    return { rows: [{ subject: 'تنبيه جديد', body: 'لديك تحديث.' }] };
+                }
+                return { rows: [] };
+            })
+        };
+        dispatch.mockResolvedValue({ success: true, notificationId: 'notification-staff-ar' });
+
+        const result = await dispatchWithFallback(db, {
+            job_id: 'job-staff-ar', event_type: 'ExamCreated', channel: 'InApp',
+            priority: 'Normal', recipient_type: 'Staff', recipient_id: 'user-ar',
+            variables: { force_delivery: true }
+        }, [{ allowed_channels: ['InApp'], min_priority: 'Normal', inapp_enabled: true }]);
+
+        expect(result.success).toBe(true);
+        expect(dispatch.mock.calls[0].slice(0, 4)).toEqual([
+            'InApp', 'user-ar', 'تنبيه جديد', 'لديك تحديث.'
+        ]);
+    });
+
+    test('uses a generic Arabic in-app message when a catalogued event has no template', async () => {
+        const db = { query: jest.fn(async sql => {
+            const text = String(sql);
+            if (text.includes('FROM users WHERE user_id')) return { rows: [{ user_id: 'user-1' }] };
+            if (text.includes('FROM notification_event_catalog')) return { rows: [{ exists: 1 }] };
+            return { rows: [] };
+        }) };
+        dispatch.mockResolvedValue({ success: true, notificationId: 'notification-1' });
+
+        const result = await dispatchWithFallback(db, {
+            job_id: 'job-generic', event_type: 'ExamCreated', channel: 'InApp',
+            recipient_type: 'Staff', recipient_id: 'user-1', priority: 'Normal',
+            variables: { force_delivery: true, language: 'ar-EG', patient_name: 'PRIVATE' }
+        }, [{ allowed_channels: ['InApp'], min_priority: 'Normal', inapp_enabled: true }]);
+
+        expect(result.success).toBe(true);
+        expect(dispatch.mock.calls[0].slice(0, 4)).toEqual([
+            'InApp', 'user-1', 'تحديث جديد', 'يوجد تحديث جديد يتطلب المراجعة داخل النظام.'
+        ]);
+        expect(dispatch.mock.calls[0][3]).not.toContain('PRIVATE');
+    });
+
+    test('does not invent an external message without a template or explicit body', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+        const result = await dispatchWithFallback(db, {
+            job_id: 'job-no-template', event_type: 'ManualSend', channel: 'Email',
+            recipient_type: 'Custom', recipient_contact: 'test@example.com', variables: {}
+        });
+        expect(result.success).toBe(false);
+        expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    test('allows explicit external content without a database template', async () => {
+        const db = { query: jest.fn() };
+        dispatch.mockResolvedValue({ success: true });
+        const result = await dispatchWithFallback(db, {
+            job_id: 'job-explicit', event_type: 'ManualSend', channel: 'Email',
+            recipient_type: 'Custom', recipient_contact: 'test@example.com',
+            variables: { notification_subject: 'Hello', notification_body: 'Message' }
+        });
+        expect(result.success).toBe(true);
+        expect(dispatch.mock.calls[0].slice(0, 4)).toEqual(['Email', 'test@example.com', 'Hello', 'Message']);
+        expect(db.query).not.toHaveBeenCalled();
+    });
+
     test('uses catalog defaults and adds an available in-app portal channel', async () => {
         const insertedChannels = [];
         const db = {
@@ -319,6 +492,144 @@ describe('notification job service hardening', () => {
 
         expect(result.success).toBe(false);
         expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    test('only dry-runs repairable jobs when event catalog and template contract are valid', async () => {
+        const db = { query: jest.fn(async (sql, params = []) => {
+            const text = String(sql);
+            if (text.includes('FROM notification_jobs')) {
+                return { rows: [
+                    { job_id: 'job-safe', event_type: 'ExamCreated', channel: 'InApp', recipient_type: 'Staff', entity_id: 'exam-1', status: 'Failed', error_message: 'No active template for ExamCreated/InApp', retry_count: 0, max_retries: 3, variables: {} },
+                    { job_id: 'job-unknown', event_type: 'GhostEvent', channel: 'InApp', status: 'DeadLetter', error_message: 'Unknown event', retry_count: 0, max_retries: 3, variables: {} }
+                ] };
+            }
+            if (text.includes('FROM notification_event_catalog')) {
+                const eventType = params[0];
+                return eventType === 'GhostEvent' ? { rows: [] } : { rows: [{ required_variables: [], event_type: eventType }] };
+            }
+            if (text.includes('FROM notification_templates')) {
+                const eventType = params[0];
+                return eventType === 'ExamCreated' ? { rows: [{ template_id: 1, subject: 'New exam', body: 'Body' }] } : { rows: [] };
+            }
+            if (text.includes('FROM examinations')) return { rows: [{ status: 'Scheduled' }] };
+            return { rows: [] };
+        }) };
+
+        const preview = await getRepairableNotificationJobs(db, { dryRun: true, limit: 20 });
+        expect(preview.eligibleIds).toEqual(['job-safe']);
+        expect(preview.eligible).toHaveLength(1);
+        expect(preview.blocked).toHaveLength(1);
+
+        const repair = await repairRetryableNotificationJobs(db, { dryRun: true, limit: 20 });
+        expect(repair.requeued).toBe(1);
+        expect(repair.skipped).toBe(1);
+        expect(db.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE notification_jobs'))).toBe(false);
+    });
+
+    test('marks a failed staff in-app job repairable without a template', async () => {
+        const db = { query: jest.fn(async sql => {
+            const text = String(sql);
+            if (text.includes('FROM notification_jobs')) return { rows: [{
+                job_id: 'job-1', event_type: 'ExamCreated', channel: 'InApp',
+                recipient_type: 'Staff', entity_id: 'exam-1', status: 'Failed', variables: {}
+            }] };
+            if (text.includes('FROM notification_event_catalog')) return { rows: [{ required_variables: [] }] };
+            if (text.includes('FROM examinations')) return { rows: [{ status: 'Scheduled' }] };
+            return { rows: [] };
+        }) };
+        const preview = await getRepairableNotificationJobs(db);
+        expect(preview.eligibleIds).toEqual(['job-1']);
+        expect(preview.eligible[0].template.body).toBe('There is a new update to review in the system.');
+    });
+
+    test('keeps a stale appointment reminder out of the repair preview', async () => {
+        const db = { query: jest.fn(async sql => {
+            const text = String(sql);
+            if (text.includes('FROM notification_jobs')) return { rows: [{
+                job_id: 'old-reminder', event_type: 'AppointmentReminder',
+                channel: 'Email', recipient_type: 'Patient',
+                entity_type: 'Appointment', entity_id: 'appointment-1',
+                status: 'Failed', variables: {
+                    appointment_time: '2026-01-01', occurrence_key: '2026-01-01T10:00:00.000Z'
+                }
+            }] };
+            if (text.includes('FROM notification_event_catalog')) return { rows: [{ required_variables: ['appointment_time'] }] };
+            if (text.includes('FROM notification_templates')) return { rows: [{ subject: 'Reminder', body: 'Your appointment is {{appointment_time}}' }] };
+            if (text.includes('FROM appointments')) return { rows: [{ status: 'Scheduled', start_time: '2026-01-01T10:00:00.000Z' }] };
+            return { rows: [] };
+        }) };
+
+        const preview = await getRepairableNotificationJobs(db);
+        expect(preview.eligibleIds).toEqual([]);
+        expect(preview.blocked[0].reason).toBe('Appointment reminder is stale or not due');
+    });
+
+    test('never requeues a batch without explicit job IDs', async () => {
+        const db = { query: jest.fn() };
+        await expect(repairRetryableNotificationJobs(db, { dryRun: false, limit: 200 }))
+            .rejects.toThrow('Select 1 to 20 jobIds');
+        expect(db.query).not.toHaveBeenCalled();
+    });
+
+    test('does not offer patient reminders for repair without channel consent', async () => {
+        const startTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        const db = { query: jest.fn(async sql => {
+            const text = String(sql);
+            if (text.includes('FROM notification_jobs')) return { rows: [{
+                job_id: 'reminder-no-consent', event_type: 'AppointmentReminder',
+                channel: 'SMS', recipient_type: 'Patient', recipient_id: 'patient-1',
+                entity_type: 'Appointment', entity_id: 'appointment-1',
+                status: 'Failed', variables: {
+                    appointment_time: startTime, occurrence_key: startTime
+                }
+            }] };
+            if (text.includes('FROM notification_event_catalog')) return { rows: [{ required_variables: ['appointment_time'] }] };
+            if (text.includes('FROM notification_templates')) return { rows: [{ subject: '', body: 'Appointment at {{appointment_time}}' }] };
+            if (text.includes('FROM appointments')) return { rows: [{ status: 'Scheduled', start_time: startTime }] };
+            if (text.includes('FROM patients')) return { rows: [{ consent_sms: false, consent_email: false, consent_whatsapp: false }] };
+            return { rows: [] };
+        }) };
+
+        const preview = await getRepairableNotificationJobs(db);
+        expect(preview.eligibleIds).toEqual([]);
+        expect(preview.blocked[0].reason).toBe('Recipient consent or preference does not allow this channel');
+    });
+
+    test('blocks replay of a staff alert that has no entity or event details', async () => {
+        const db = { query: jest.fn(async sql => {
+            const text = String(sql);
+            if (text.includes('FROM notification_jobs')) return { rows: [{
+                job_id: 'contextless', event_type: 'ExamStatusChanged',
+                channel: 'InApp', recipient_type: 'Staff', recipient_id: 'user-1',
+                entity_id: null, status: 'DeadLetter', variables: { role: 'Radiologist', requested_channels: ['InApp'] }
+            }] };
+            if (text.includes('FROM notification_event_catalog')) return { rows: [{ required_variables: [] }] };
+            if (text.includes('FROM notification_templates')) return { rows: [{ subject: 'Exam update', body: 'Review exam' }] };
+            return { rows: [] };
+        }) };
+
+        const preview = await getRepairableNotificationJobs(db);
+        expect(preview.eligibleIds).toEqual([]);
+        expect(preview.blocked[0].reason).toBe('Notification has no event context for replay');
+    });
+
+    test('does not replay a new-exam alert after the exam has progressed', async () => {
+        const db = { query: jest.fn(async sql => {
+            const text = String(sql);
+            if (text.includes('FROM notification_jobs')) return { rows: [{
+                job_id: 'old-exam', event_type: 'ExamCreated',
+                channel: 'InApp', recipient_type: 'Staff', recipient_id: 'user-1',
+                entity_type: 'Exam', entity_id: 'exam-1', status: 'DeadLetter', variables: { role: 'Radiologist' }
+            }] };
+            if (text.includes('FROM notification_event_catalog')) return { rows: [{ required_variables: [] }] };
+            if (text.includes('FROM notification_templates')) return { rows: [{ subject: 'New exam', body: 'A new exam was created' }] };
+            if (text.includes('FROM examinations')) return { rows: [{ status: 'Reporting' }] };
+            return { rows: [] };
+        }) };
+
+        const preview = await getRepairableNotificationJobs(db);
+        expect(preview.eligibleIds).toEqual([]);
+        expect(preview.blocked[0].reason).toBe('Exam has moved beyond the notified state');
     });
 
     test('creates idempotent admin acknowledgement tasks before marking a critical escalation', async () => {

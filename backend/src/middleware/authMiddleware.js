@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { getActiveEmergencyGrant } = require('../services/emergencyAccessService');
+const { requireActiveAttendance } = require('./attendanceWorkGate');
+const pacsOidcTokenService = require('../services/pacsOidcTokenService');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 let authDatabase;
@@ -12,7 +14,7 @@ const configureAuthDatabase = (db) => {
     authDatabase = db;
 };
 
-const enforcePasswordChange = (req, res, next) => {
+const enforcePasswordChange = async (req, res, next) => {
     const checkPath = String(req.originalUrl || req.path || req.url || '').split('?')[0];
     const whitelistedPaths = new Set(['/api/profile', '/api/profile/password', '/api/auth/logout', '/api/auth/refresh', '/api/auth/change-password']);
     const whitelistedPrefixes = ['/api/auth/sessions'];
@@ -23,7 +25,7 @@ const enforcePasswordChange = (req, res, next) => {
     if (req.user.must_change_password && !isWhitelisted) {
         return res.status(403).json({ error: 'Password change required', code: 'PASSWORD_CHANGE_REQUIRED' });
     }
-    return next();
+    return requireActiveAttendance(authDatabase, req, res, next);
 };
 
 const authenticatePersonalAccessToken = async (req, res, next, token) => {
@@ -104,31 +106,44 @@ const authenticateToken = async (req, res, next) => {
             return res.status(401).json({ error: 'Invalid Token', code: 'INVALID_ACCESS_TOKEN' });
         }
 
-        // Single Active Session Verification
-        if (user.session_id && authDatabase) {
+        // Refresh-token revocation alone cannot invalidate an issued JWT.
+        if (!authDatabase) return res.status(503).json({ error: 'Authentication service unavailable' });
+        if (!user.session_id) return res.status(401).json({ error: 'Invalid Token', code: 'INVALID_ACCESS_TOKEN' });
+        {
             let tableName, idColumn, idValue;
             if (user.user_id) {
                 tableName = 'users';
                 idColumn = 'user_id';
                 idValue = user.user_id;
-            } else if (user.patientId || user.patient_id) {
+            } else if (user.patientId || user.patient_id || (user.role === 'Patient' && user.userId)) {
                 tableName = 'patients';
                 idColumn = 'patient_id';
-                idValue = user.patientId || user.patient_id;
+                idValue = user.patientId || user.patient_id || user.userId;
             } else if (user.doctorId || user.doctor_id) {
                 tableName = 'referring_doctors';
                 idColumn = 'doctor_id';
                 idValue = user.doctorId || user.doctor_id;
             }
 
+            if (!tableName) return res.status(401).json({ error: 'Invalid Token', code: 'INVALID_ACCESS_TOKEN' });
             if (tableName) {
+                const accountFields = tableName === 'users'
+                    ? 'is_active, role, must_change_password'
+                    : tableName === 'patients'
+                        ? "(patient_status = 'Active') AS is_active, 'Patient' AS role, FALSE AS must_change_password"
+                        : "(is_active AND portal_is_active) AS is_active, 'Doctor' AS role, FALSE AS must_change_password";
                 const sessionRes = await authDatabase.query(
-                    `SELECT current_session_id FROM ${tableName} WHERE ${idColumn} = $1`,
+                    `SELECT current_session_id, ${accountFields} FROM ${tableName} WHERE ${idColumn} = $1`,
                     [idValue]
                 );
-                if (sessionRes.rows.length > 0 && sessionRes.rows[0].current_session_id !== user.session_id) {
+                const owner = sessionRes.rows[0];
+                if (!owner || !owner.is_active || owner.role !== user.role) {
+                    return res.status(401).json({ error: 'Account access changed. Please sign in again.', code: 'INVALID_ACCESS_TOKEN' });
+                }
+                if (owner.current_session_id !== user.session_id) {
                     return res.status(401).json({ error: 'Logged out. Account accessed from another device.', code: 'CONCURRENT_LOGIN' });
                 }
+                user.must_change_password = owner.must_change_password;
             }
         }
 
@@ -192,24 +207,95 @@ const authorizeStaffIdentity = (req, res, next) => {
  * The pacs-viewer JWT must carry `scope === 'pacs-viewer'`; it is rejected by
  * authenticateToken intentionally so is handled here explicitly.
  */
+const acceptViewerSession = async (decoded, req, res, next, authType) => {
+    if (!authDatabase) return res.status(503).json({ error: 'Authentication service unavailable' });
+    if (!decoded.session_id || !decoded.user_id) {
+        return res.status(401).json({ error: 'Viewer session must be renewed', code: 'INVALID_VIEWER_SESSION' });
+    }
+    const { rows } = await authDatabase.query(
+        'SELECT role, current_session_id, is_active, must_change_password FROM users WHERE user_id = $1',
+        [decoded.user_id]
+    );
+    const owner = rows[0];
+    if (!owner?.is_active || owner.must_change_password || owner.current_session_id !== decoded.session_id || owner.role !== decoded.role) {
+        return res.status(401).json({ error: 'Viewer session revoked', code: 'VIEWER_SESSION_REVOKED' });
+    }
+    req.user = decoded;
+    req.authType = authType;
+    return next();
+};
+
 const authenticateDicomWeb = async (req, res, next) => {
     if (req.headers.authorization) {
-        // Peek at the token: if it's a pacs-viewer scoped JWT, handle it here;
-        // otherwise fall through to the standard authenticateToken path.
-        const [, token] = req.headers.authorization.split(' ');
-        if (token) {
+        const [scheme, token, extra] = req.headers.authorization.trim().split(/\s+/);
+        if (scheme?.toLowerCase() !== 'bearer' || !token || extra || token.length > 16384) {
+            return authenticateToken(req, res, next);
+        }
+        let viaraJwt = false;
+        try {
+            const decoded = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
+            viaraJwt = true;
+            if (decoded.scope === 'pacs-viewer') {
+                return await acceptViewerSession(decoded, req, res, next, 'pacs_viewer_bearer');
+            }
+        } catch {
+            // Non-VIARA JWTs may be validated by the configured PACS OIDC provider.
+        }
+        if (viaraJwt || token.startsWith('VIARA_live_')) {
+            return authenticateToken(req, res, next);
+        }
+        if (pacsOidcTokenService.isConfigured()) {
             try {
-                const decoded = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
-                if (decoded.scope === 'pacs-viewer') {
-                    req.user = decoded;
-                    req.authType = 'pacs_viewer_bearer';
-                    return next();
+                const { userId } = await pacsOidcTokenService.verifyPacsOidcToken(token);
+                if (!authDatabase) return res.status(503).json({ error: 'Authentication service unavailable' });
+                const { rows } = await authDatabase.query(
+                    `SELECT user_id, role, email, full_name, must_change_password
+                     FROM users
+                     WHERE user_id = $1 AND is_active = TRUE`,
+                    [userId]
+                );
+                const owner = rows[0];
+                if (!owner || owner.must_change_password) {
+                    return res.status(401).json({ error: 'PACS OIDC user is inactive or requires a password change', code: 'PACS_OIDC_USER_UNAVAILABLE' });
                 }
-            } catch {
-                // Not a valid pacs-viewer JWT — fall through to authenticateToken
-                // which will handle regular JWTs and PATs.
+                req.user = {
+                    user_id: owner.user_id,
+                    role: owner.role,
+                    email: owner.email,
+                    full_name: owner.full_name,
+                    must_change_password: owner.must_change_password
+                };
+                req.authType = 'pacs_oidc';
+                return next();
+            } catch (error) {
+                if (error.code === 'PACS_OIDC_KEY_SERVICE_UNAVAILABLE') {
+                    return res.status(503).json({ error: 'PACS identity provider is unavailable', code: error.code });
+                }
+                if (error.code === 'PACS_OIDC_CONFIGURATION') {
+                    return res.status(503).json({ error: 'PACS identity provider is not configured correctly', code: error.code });
+                }
+                if (error.code === 'PACS_OIDC_INVALID_TOKEN' || error.name === 'JsonWebTokenError'
+                    || error.name === 'TokenExpiredError' || error.name === 'NotBeforeError') {
+                    return res.status(401).json({ error: 'Invalid PACS identity token', code: 'INVALID_PACS_OIDC_TOKEN' });
+                }
+                return next(error);
             }
         }
+        return authenticateToken(req, res, next);
+    }
+
+    const queryToken = req.query?.token || req.query?.access_token;
+    if (queryToken) {
+        try {
+            const decoded = jwt.verify(queryToken, getJwtSecret(), { algorithms: ['HS256'] });
+            if (decoded.scope === 'pacs-viewer') {
+                return await acceptViewerSession(decoded, req, res, next, 'pacs_viewer_query');
+            }
+        } catch {
+            // Not a pacs-viewer JWT — fall through to authenticateToken
+        }
+        req.headers = req.headers || {};
+        req.headers.authorization = `Bearer ${queryToken}`;
         return authenticateToken(req, res, next);
     }
 
@@ -223,9 +309,7 @@ const authenticateDicomWeb = async (req, res, next) => {
         if (decoded.scope !== 'pacs-viewer') {
             return res.status(401).json({ error: 'Invalid Token', code: 'INVALID_ACCESS_TOKEN' });
         }
-        req.user = decoded;
-        req.authType = 'pacs_viewer_cookie';
-        return next();
+        return await acceptViewerSession(decoded, req, res, next, 'pacs_viewer_cookie');
     } catch (error) {
         if (error instanceof jwt.TokenExpiredError) {
             return res.status(401).json({ error: 'Access token expired', code: 'TOKEN_EXPIRED' });

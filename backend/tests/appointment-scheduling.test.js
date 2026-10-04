@@ -64,6 +64,23 @@ test('waiting-list query statuses include contacted and offered entries', () => 
     expect(VALID_WAITING_LIST_STATUSES).toEqual(['Waiting', 'Contacted', 'Offered', 'Scheduled', 'Declined', 'Expired', 'Cancelled']);
 });
 
+describe('marketing conversion tracking', () => {
+    test('marks active campaign recipients as converted when a patient books an appointment', async () => {
+        const { markPatientCampaignConversion } = require('../src/services/notificationJobService');
+        const db = {
+            query: jest.fn().mockResolvedValue({ rows: [{ campaign_id: 'campaign-1', patient_id: 'patient-1', channel: 'Email' }] })
+        };
+
+        await markPatientCampaignConversion(db, 'patient-1');
+
+        expect(db.query).toHaveBeenCalledTimes(1);
+        const sql = db.query.mock.calls[0][0];
+        expect(sql).toContain("status = 'Converted'");
+        expect(sql).toContain('converted_at = NOW()');
+        expect(db.query.mock.calls[0][1]).toEqual(['patient-1']);
+    });
+});
+
 describe('patient conflict detection in appointment scheduling', () => {
     test('createAppointment includes patient_id conflict check with FOR UPDATE', async () => {
         const { createAppointment } = require('../src/controllers/appointmentController');

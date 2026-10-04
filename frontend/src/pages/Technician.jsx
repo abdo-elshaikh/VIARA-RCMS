@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import {
@@ -8,6 +8,7 @@ import {
     AlertTriangle,
     ArrowRight,
     Baby,
+    Bell,
     CheckCircle2,
     Clock,
     Clock3,
@@ -32,10 +33,18 @@ import {
     UserRound,
     Zap
 } from 'lucide-react';
-import { useGetWorklistQuery, useUpdateReportMutation, useTransitionQueueMutation } from '../store/api';
+import {
+    useGetWorklistQuery,
+    useUpdateReportMutation,
+    useTransitionQueueMutation,
+    useCompleteAcquisitionMutation,
+    useBroadcastPatientCallMutation,
+    useGetEquipmentDowntimeQuery
+} from '../store/api';
 import PageHeader from '../components/ui/PageHeader';
 import EmptyState from '../components/ui/EmptyState';
 import Pagination from '../components/ui/Pagination';
+import Modal from '../components/ui/Modal';
 import { getPaginationState } from '../utils/pagination';
 import { formatLocalizedDate } from '../utils/localizedDate';
 
@@ -115,13 +124,21 @@ const Technician = () => {
     const [modalityFilter, setModalityFilter] = useState('all');
     const [priorityFilter, setPriorityFilter] = useState('all');
     const [viewFilter, setViewFilter] = useState('all'); // all, checked_in, scanning
+    const [completionTarget, setCompletionTarget] = useState(null);
 
     const { data: examsResponse, isLoading, refetch, isFetching } = useGetWorklistQuery(undefined, {
         pollingInterval: 15000,
         refetchOnFocus: true
     });
+    const { data: downtimeRecords = [] } = useGetEquipmentDowntimeQuery(undefined, { pollingInterval: 30000 });
+
+    const activeDowntimes = useMemo(() => {
+        return (Array.isArray(downtimeRecords) ? downtimeRecords : []).filter(r => r.status !== 'Resolved');
+    }, [downtimeRecords]);
     const [updateStatus, { isLoading: isUpdating }] = useUpdateReportMutation();
     const [transitionQueue] = useTransitionQueueMutation();
+    const [completeAcquisition, { isLoading: isCompleting }] = useCompleteAcquisitionMutation();
+    const [broadcastPatientCall] = useBroadcastPatientCallMutation();
 
     const allExams = useMemo(() => {
         const rows = Array.isArray(examsResponse) ? examsResponse : examsResponse?.data || [];
@@ -221,7 +238,24 @@ const Technician = () => {
             toast.success(targetStatus === 'Scanning' || targetStatus === 'In Exam' ? (isAr ? ar.scanStarted : 'Scan started.') : (isAr ? ar.scanCompleted : 'Scan completed. Sent to reporting.'));
             refetch();
         } catch (error) {
-            toast.error(error?.data?.message || 'Action failed.');
+            toast.error(error?.data?.message || t('actionFailed', { ns: 'common' }));
+        }
+    };
+
+    const completeScan = async (resultMode) => {
+        if (!completionTarget?.exam_id) return;
+        try {
+            await completeAcquisition({
+                examId: completionTarget.exam_id,
+                resultMode
+            }).unwrap();
+            toast.success(resultMode === 'ImagesOnly'
+                ? (isAr ? 'تم إنهاء الفحص وتجهيز الصور للاستلام دون تقرير.' : 'Examination completed. Images are ready for pickup without a report.')
+                : (isAr ? 'تم إنهاء الفحص وإرساله إلى قائمة التقارير.' : 'Examination completed and sent to reporting.'));
+            setCompletionTarget(null);
+            refetch();
+        } catch (error) {
+            toast.error(error?.data?.message || (isAr ? 'تعذر إنهاء الفحص.' : 'Could not complete the examination.'));
         }
     };
 
@@ -243,15 +277,24 @@ const Technician = () => {
                     </span>
                 }
                 actions={
-                    <button
-                        type="button"
-                        onClick={() => refetch()}
-                        disabled={isFetching}
-                        className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 px-4 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800"
-                    >
-                        <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
-                        <span>{tr(t, 'actions.refresh', 'Refresh Queue', 'تحديث القائمة', isAr)}</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <Link
+                            to="/equipment"
+                            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 px-4 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                            <Monitor size={14} className="text-teal-600 dark:text-teal-400" />
+                            <span>{isAr ? 'حالة الأجهزة' : 'Equipment Status'}</span>
+                        </Link>
+                        <button
+                            type="button"
+                            onClick={() => refetch()}
+                            disabled={isFetching}
+                            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 px-4 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                            <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
+                            <span>{tr(t, 'actions.refresh', 'Refresh Queue', 'تحديث القائمة', isAr)}</span>
+                        </button>
+                    </div>
                 }
                 metrics={[
                     { key: 'checked-in', icon: Timer, tone: 'amber', label: tr(t, 'technician.checkedIn', 'Waiting / Checked-In', ar.checkedIn, isAr), value: metrics.checkedIn, onClick: () => setViewFilter(viewFilter === 'checked_in' ? 'all' : 'checked_in'), loading: isLoading },
@@ -261,6 +304,35 @@ const Technician = () => {
                 ]}
                 metricsLabel={isAr ? 'مؤشرات سجل فحوص الفني' : 'Technician work record indicators'}
             />
+
+            {/* Equipment Downtime Warning Banner for Technicians */}
+            {activeDowntimes.length > 0 && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50/90 p-4 text-xs font-semibold text-amber-950 shadow-xs dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                            <AlertTriangle size={18} />
+                        </div>
+                        <div>
+                            <p className="font-black text-slate-900 dark:text-white">
+                                {isAr
+                                    ? `تنبيه صيانة الأجهزة: يوجد (${activeDowntimes.length}) جهاز في حالة توقف أو صيانة حالياً.`
+                                    : `Equipment Maintenance Alert: (${activeDowntimes.length}) machine(s) currently under maintenance.`}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-amber-800 dark:text-amber-300">
+                                {isAr
+                                    ? 'يرجى التنسيق مع مهندسي الصيانة والطب الحيوي، وتوجيه الحالات للأجهزة البديلة الشاغرة.'
+                                    : 'Please coordinate with biomedical engineering and route scans to operational units.'}
+                            </p>
+                        </div>
+                    </div>
+                    <Link
+                        to="/equipment?tab=downtime"
+                        className="inline-flex items-center justify-center shrink-0 rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-black text-white shadow-xs hover:bg-amber-700 transition"
+                    >
+                        {isAr ? 'سجل الأعطال والصيانة' : 'View Maintenance'}
+                    </Link>
+                </div>
+            )}
 
             {/* Top Telemetry Metric HUD */}
             <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -552,13 +624,41 @@ const Technician = () => {
                                             <Activity size={13} className="text-teal-600 dark:text-teal-400" />
                                             <span>{tr(t, 'actions.case', 'Case', ar.viewCase, isAr)}</span>
                                         </button>
+
+                                        {/* Call Patient Broadcast Button */}
+                                        {!isScanning && (
+                                            <button
+                                                type="button"
+                                                onClick={async () => {
+                                                    try {
+                                                        await broadcastPatientCall({
+                                                            orderNumber: exam.order_number || exam.accession_number || String(exam.exam_id),
+                                                            patientName: exam.patient_name || '',
+                                                            queueNumber: exam.queue_number || null,
+                                                            roomName: exam.room_name || exam.machine_name || exam.modality_name || (isAr ? 'غرفة الفحص' : 'Exam Suite'),
+                                                            modalityId: exam.modality_id || null,
+                                                            callByName: Boolean(exam.patient_name)
+                                                        }).unwrap();
+                                                        toast.success(isAr ? `🔔 تم إرسال نداء للمريض ${exam.patient_name || exam.order_number || ''} لشاشات الانتظار` : '🔔 Patient call sent to waiting display');
+                                                    } catch {
+                                                        toast.error(isAr ? 'تعذر إرسال نداء المريض للشاشة' : 'Could not broadcast call');
+                                                    }
+                                                }}
+                                                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-800 transition hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 active:scale-95 shadow-2xs"
+                                                title={isAr ? 'نداء المريض إلى غرفة الفحص على شاشات العرض' : 'Call patient to exam suite on display board'}
+                                                aria-label={isAr ? 'نداء المريض' : 'Call patient'}
+                                            >
+                                                <Bell size={13} className="text-amber-600 dark:text-amber-400" />
+                                                <span>{isAr ? 'نداء' : 'Call'}</span>
+                                            </button>
+                                        )}
                                     </div>
 
                                     {/* Primary Workflow Trigger */}
                                     <button
                                         type="button"
-                                        onClick={() => handleAction(exam, isScanning ? 'Reporting' : 'Scanning')}
-                                        disabled={isUpdating}
+                                        onClick={() => isScanning ? setCompletionTarget(exam) : handleAction(exam, 'Scanning')}
+                                        disabled={isUpdating || isCompleting}
                                         className={`inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl px-4 text-xs font-black text-white shadow-xs transition active:scale-95 disabled:opacity-50 ${
                                             isScanning
                                                 ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20'
@@ -611,6 +711,45 @@ const Technician = () => {
                     )}
                 </div>
             )}
+
+            <Modal
+                isOpen={Boolean(completionTarget)}
+                onClose={() => !isCompleting && setCompletionTarget(null)}
+                title={isAr ? 'إنهاء الفحص' : 'Complete examination'}
+                size="sm"
+            >
+                <div className="space-y-4 p-5">
+                    <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                        {isAr
+                            ? 'اختر مسار النتيجة لهذا الفحص. يمكن طلب التقرير لاحقًا إذا استلم المريض الصور فقط.'
+                            : 'Choose the result path for this examination. A report can be requested later after images-only pickup.'}
+                    </p>
+                    <button
+                        type="button"
+                        disabled={isCompleting}
+                        onClick={() => completeScan('ReportAndImages')}
+                        className="flex w-full items-start gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-start transition hover:border-violet-400 hover:bg-violet-100 disabled:opacity-50 dark:border-violet-800 dark:bg-violet-950/30"
+                    >
+                        <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-violet-600" />
+                        <span>
+                            <strong className="block text-sm text-violet-900 dark:text-violet-200">{isAr ? 'إرسال للتقرير' : 'Send to reporting'}</strong>
+                            <span className="mt-1 block text-xs leading-5 text-violet-700 dark:text-violet-300">{isAr ? 'إنهاء التصوير وبدء مهمة إعداد التقرير.' : 'Complete acquisition and start the reporting task.'}</span>
+                        </span>
+                    </button>
+                    <button
+                        type="button"
+                        disabled={isCompleting}
+                        onClick={() => completeScan('ImagesOnly')}
+                        className="flex w-full items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-start transition hover:border-emerald-400 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/30"
+                    >
+                        <ScanLine size={20} className="mt-0.5 shrink-0 text-emerald-600" />
+                        <span>
+                            <strong className="block text-sm text-emerald-900 dark:text-emerald-200">{isAr ? 'صور فقط — دون تقرير' : 'Images only — no report'}</strong>
+                            <span className="mt-1 block text-xs leading-5 text-emerald-700 dark:text-emerald-300">{isAr ? 'إنهاء الفحص وتجهيز الصور للاستلام، مع إمكانية طلب التقرير لاحقًا.' : 'Finish the examination and prepare images for pickup; the report may be requested later.'}</span>
+                        </span>
+                    </button>
+                </div>
+            </Modal>
         </div>
     );
 };

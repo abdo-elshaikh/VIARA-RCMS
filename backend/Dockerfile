@@ -1,4 +1,4 @@
-FROM node:20.19-alpine
+FROM node:22.23.3-alpine
 
 WORKDIR /app
 
@@ -22,6 +22,8 @@ RUN if [ "$BACKUP_OFFSITE_ENABLED" = "true" ]; then \
 
 COPY --chown=node:node . .
 COPY clamd.conf /etc/clamav/clamd.conf
+
+RUN mkdir -p /app/license /app/pacs-cold /app/pacs-worklists && chown node:node /app/license /app/pacs-cold /app/pacs-worklists
 
 USER node
 

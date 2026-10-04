@@ -1,3 +1,4 @@
+import { openPrintDocument } from './printDocument';
 import {
     AlignmentType,
     BorderStyle,
@@ -423,13 +424,7 @@ export const exportAnalyticsReport = async (dashboardData, format) => {
 
     if (format === 'pdf' || format === 'print') {
         const html = buildHtmlReport(dashboardData);
-        const printWindow = window.open('', '_blank', 'noopener,noreferrer');
-        if (printWindow) {
-            printWindow.document.write(html);
-            printWindow.document.close();
-            printWindow.focus();
-            setTimeout(() => printWindow.print(), 350);
-        } else {
+        if (!openPrintDocument(html)) {
             downloadBlob(html, `${filename}-print.html`, 'text/html;charset=utf-8');
         }
         return;

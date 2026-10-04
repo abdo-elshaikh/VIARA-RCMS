@@ -16,7 +16,7 @@ describe('exportReportToWord', () => {
             exam: {
                 exam_id: 'exam-1', order_number: 'ORD-100', mrn: 'MRN-100', patient_name: 'Test Patient',
                 exam_type_name: 'CT Chest', modality_type: 'CT', priority: 'Routine', report_status: 'Finalized',
-                report_locked: true, radiologist_name: 'Dr Test', digital_signature_name: 'Dr Test'
+                report_locked: true, report_finalized_at: '2026-08-07T16:00:00.000Z', radiologist_name: 'Dr Test', digital_signature_name: 'Dr Test'
             },
             sections: {
                 clinicalHistory: 'Cough', technique: 'CT without contrast', findings: 'No focal opacity.',

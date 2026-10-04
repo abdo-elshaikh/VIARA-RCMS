@@ -52,10 +52,9 @@ describe('appearance and preference settings experience', () => {
         apiMocks.exportData.mockImplementation(() => ({ unwrap: () => Promise.resolve({}) }));
     });
 
-    it('shows a live appearance specimen and persists accessible pressed choices', async () => {
+    it('persists accessible pressed choices across the appearance sections', async () => {
         const { store } = renderSettings(AppearanceSettings);
 
-        expect(screen.getByRole('region', { name: 'Live appearance preview' })).toBeInTheDocument();
         expect(screen.getByRole('navigation', { name: 'Appearance setting sections' })).toBeInTheDocument();
 
         const darkChoice = screen.getByRole('button', { name: /Dark Lower-glare surfaces/i });

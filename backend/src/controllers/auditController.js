@@ -215,6 +215,150 @@ const getAuditLogs = (db) => async (req, res, next) => {
     }
 };
 
+// Staff activity is a deliberately smaller view than the security audit
+// trail. Keep its scope and projection enforced by the API, regardless of
+// filters supplied by the client.
+const STAFF_ACTIVITY_CATEGORIES = ['DATA_WRITE', 'BILLING', 'CONFIG'];
+const STAFF_ACTIVITY_SELECT = `
+    s.log_id, s.user_id, u.full_name as user_name, u.role as user_role,
+    COALESCE(s.event_code, s.http_method, 'OPERATION_RECORDED') AS action,
+    s.resource_table, s.timestamp, s.category, s.outcome,
+    s.http_method, s.event_code, s.target_type,
+    s.actor_type, s.actor_role, s.actor_name
+`;
+
+const buildStaffActivityWhere = (query) => {
+    const safeFilters = {
+        userId: query.userId,
+        startDate: query.startDate,
+        endDate: query.endDate,
+        category: query.category,
+        outcome: query.outcome,
+        targetType: query.targetType,
+        operationType: query.operationType,
+    };
+    const { where, params, nextIndex } = buildAuditFilters(safeFilters);
+    if (!query.q) return { where, params, nextIndex };
+    return {
+        where: `(${where}) AND (s.event_code ILIKE $${nextIndex} OR s.http_method ILIKE $${nextIndex} OR s.actor_name ILIKE $${nextIndex} OR u.full_name ILIKE $${nextIndex})`,
+        params: [...params, `%${query.q}%`],
+        nextIndex: nextIndex + 1,
+    };
+};
+
+const getStaffActivityLogs = (db) => async (req, res, next) => {
+    try {
+        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 500);
+        const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
+        const { where: requestedWhere, params, nextIndex } = buildStaffActivityWhere(req.query);
+        const scopeParam = nextIndex;
+        const where = `(${requestedWhere}) AND s.category = ANY($${scopeParam}::text[])`;
+        const scopedParams = [...params, STAFF_ACTIVITY_CATEGORIES];
+
+        const listResult = await db.query(`
+            SELECT ${STAFF_ACTIVITY_SELECT}
+            FROM system_logs s
+            LEFT JOIN users u ON COALESCE(s.actor_user_id, s.user_id) = u.user_id
+            WHERE ${where}
+            ORDER BY s.timestamp DESC, s.log_id DESC
+            LIMIT $${scopeParam + 1} OFFSET $${scopeParam + 2}
+        `, [...scopedParams, limit, offset]);
+
+        const countResult = await db.query(`
+            SELECT COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE s.http_method = 'POST' OR s.action ILIKE '%CREATE%' OR s.action ILIKE '%INSERT%')::int AS creates,
+                COUNT(*) FILTER (WHERE s.http_method IN ('PUT', 'PATCH') OR s.action ILIKE '%UPDATE%' OR s.action ILIKE '%EDIT%' OR s.action ILIKE '%MODIFY%')::int AS updates,
+                COUNT(*) FILTER (WHERE s.http_method = 'DELETE' OR s.action ILIKE '%DELETE%' OR s.action ILIKE '%REMOVE%')::int AS deletes,
+                COUNT(*) FILTER (WHERE s.http_method = 'GET' OR s.action ILIKE '%VIEW%' OR s.action ILIKE '%READ%' OR s.action ILIKE '%SEARCH%')::int AS queries,
+                COUNT(*) FILTER (WHERE s.outcome = 'failure' OR s.outcome = 'denied')::int AS exceptions
+            FROM system_logs s
+            LEFT JOIN users u ON COALESCE(s.actor_user_id, s.user_id) = u.user_id
+            WHERE ${where}
+        `, scopedParams);
+
+        const summary = countResult.rows[0] || {};
+        res.json({
+            logs: listResult.rows,
+            total: summary.total || 0,
+            summary: {
+                total: summary.total || 0,
+                creates: summary.creates || 0,
+                updates: summary.updates || 0,
+                deletes: summary.deletes || 0,
+                queries: summary.queries || 0,
+                failures: summary.exceptions || 0,
+                denied: 0,
+                phiAccess: 0,
+                elevated: 0,
+                risky: 0,
+                systemEvents: 0,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const exportStaffActivityLogs = (db) => async (req, res, next) => {
+    try {
+        const { where: requestedWhere, params, nextIndex } = buildStaffActivityWhere(req.query);
+        const where = `(${requestedWhere}) AND s.category = ANY($${nextIndex}::text[])`;
+        const categories = [...params, STAFF_ACTIVITY_CATEGORIES];
+        const cap = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 10000, 1), 50000);
+        const result = await db.query(`
+            SELECT ${STAFF_ACTIVITY_SELECT}
+            FROM system_logs s
+            LEFT JOIN users u ON COALESCE(s.actor_user_id, s.user_id) = u.user_id
+            WHERE ${where}
+            ORDER BY s.timestamp DESC, s.log_id DESC
+            LIMIT $${nextIndex + 1}
+        `, [...categories, cap]);
+
+        const header = ['Timestamp', 'Actor Type', 'User', 'Role', 'Event', 'Category', 'Outcome', 'Method', 'Target'];
+        const lines = [header.map(csvCell).join(',')];
+        for (const row of result.rows) {
+            lines.push([
+                row.timestamp,
+                row.actor_type,
+                row.actor_name || row.user_name,
+                row.actor_role || row.user_role,
+                row.event_code || row.action,
+                row.category,
+                row.outcome,
+                row.http_method,
+                row.target_type || row.resource_table,
+            ].map(csvCell).join(','));
+        }
+
+        await auditAdminAction(db, req, {
+            eventCode: AUDIT_EVENT_CODES.AUDIT_EXPORT_CREATED,
+            target: { type: 'staff_activity' },
+            details: {
+                exportedRows: result.rows.length,
+                cap,
+                filters: {
+                    userId: req.query.userId || null,
+                    category: req.query.category || null,
+                    outcome: req.query.outcome || null,
+                    targetType: req.query.targetType || null,
+                    operationType: req.query.operationType || null,
+                    startDate: req.query.startDate || null,
+                    endDate: req.query.endDate || null,
+                },
+            },
+            riskScore: 30,
+            riskReason: 'Staff activity export was generated.',
+            required: true,
+        });
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="staff-activity-${new Date().toISOString().slice(0, 10)}.csv"`);
+        res.send(`\uFEFF${lines.join('\r\n')}`);
+    } catch (error) {
+        next(error);
+    }
+};
+
 // Server-side CSV export honoring the same filters (capped to keep memory bounded).
 const csvCell = (value) => {
     if (value === null || value === undefined) return '';
@@ -586,6 +730,8 @@ const runAuditDetections = (db) => async (req, res, next) => {
 
 module.exports = {
     getAuditLogs,
+    getStaffActivityLogs,
+    exportStaffActivityLogs,
     getMyAuditLogs,
     exportAuditLogs,
     verifyAuditChain,

@@ -91,7 +91,7 @@ const AuditSettings = ({ embedded = false }) => {
                                 {stats.failed > 0 && (
                                     <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-0.5 text-[10px] font-black text-rose-700 dark:text-rose-300">
                                         <AlertTriangle size={11} />
-                                        <span>{stats.failed} Suspicious / Failed</span>
+                                        <span>{stats.failed} {t('settings.audit.suspiciousFailed')}</span>
                                     </span>
                                 )}
                             </div>
@@ -106,15 +106,15 @@ const AuditSettings = ({ embedded = false }) => {
 
                     <div className="grid grid-cols-3 gap-2.5">
                         <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-2xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/60 text-center">
-                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">Total</span>
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">{t('settings.audit.metricTotal')}</span>
                             <p className="mt-1 text-xs font-black text-slate-900 dark:text-white">{stats.total}</p>
                         </div>
                         <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-2xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/60 text-center">
-                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">Auth</span>
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">{t('settings.audit.metricAuth')}</span>
                             <p className="mt-1 text-xs font-black text-teal-700 dark:text-teal-300">{stats.auth}</p>
                         </div>
                         <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-2xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/60 text-center">
-                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">Alerts</span>
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">{t('settings.audit.metricAlerts')}</span>
                             <p className={`mt-1 text-xs font-black ${stats.failed > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>{stats.failed}</p>
                         </div>
                     </div>
@@ -172,7 +172,7 @@ const AuditSettings = ({ embedded = false }) => {
                     {!isLoading && !isError && visibleLogs.length === 0 ? (
                         <State icon={Eye} title={query ? t('settings.audit.noMatch') : t('settings.audit.noActivity')} description={query ? t('settings.audit.noMatchHint') : t('settings.audit.noActivityHint')} />
                     ) : null}
-                    {!isLoading && !isError && visibleLogs.map(log => <AuditRow key={log.id} log={log} t={t} />)}
+                    {!isLoading && !isError && visibleLogs.map(log => <AuditRow key={log.id} log={log} t={t} locale={i18n.resolvedLanguage || i18n.language} />)}
                     {!isLoading && !isError && stats.total > pageSize ? (
                         <Pagination currentPage={page} pageCount={pageCount} onPageChange={setPage} isRtl={i18n.language?.startsWith('ar')} />
                     ) : null}
@@ -182,7 +182,7 @@ const AuditSettings = ({ embedded = false }) => {
     );
 };
 
-const AuditRow = ({ log, t }) => {
+const AuditRow = ({ log, t, locale }) => {
     const [expanded, setExpanded] = useState(false);
     const [copied, setCopied] = useState(false);
     const meta = classify(log.event);
@@ -197,10 +197,10 @@ const AuditRow = ({ log, t }) => {
         try {
             await navigator.clipboard.writeText(jsonStr);
             setCopied(true);
-            toast.success(t('common.copied', { defaultValue: 'Copied to clipboard' }));
+            toast.success(t('settings.audit.copied'));
             setTimeout(() => setCopied(false), 2000);
         } catch {
-            toast.error('Failed to copy');
+            toast.error(t('settings.audit.copyFailed'));
         }
     };
 
@@ -223,18 +223,18 @@ const AuditRow = ({ log, t }) => {
                             {hasRedaction && (
                                 <span className="inline-flex items-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2 py-0.5 text-[9px] font-bold text-teal-700 dark:text-teal-300">
                                     <Lock size={9} />
-                                    <span>HIPAA Sanitized</span>
+                                    <span>{t('settings.audit.hipaaSanitized')}</span>
                                 </span>
                             )}
                         </div>
                         <p className="mt-0.5 break-all text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                            {log.ip ? <span className="font-mono text-slate-600 dark:text-slate-300">IP: {log.ip}</span> : <span className="text-slate-400">Internal Session</span>}
+                            {log.ip ? <span className="font-mono text-slate-600 dark:text-slate-300">IP: {log.ip}</span> : <span className="text-slate-400">{t('settings.audit.internalSession')}</span>}
                         </p>
                     </div>
                 </div>
 
                 <div className="flex shrink-0 items-center gap-3">
-                    <span className="whitespace-nowrap font-mono text-[11px] font-semibold text-slate-400">{formatRelativeTime(log.time)}</span>
+                    <span className="whitespace-nowrap font-mono text-[11px] font-semibold text-slate-400">{formatRelativeTime(log.time, locale)}</span>
                     {hasMetadata ? (
                         <span className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${expanded ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200' : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200 dark:bg-slate-800 dark:group-hover:bg-slate-700'}`}>
                             {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -247,14 +247,14 @@ const AuditRow = ({ log, t }) => {
                 <div className="px-4 pb-4 sm:px-6">
                     <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-300 space-y-2">
                         <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Event Payload Snapshot</span>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{t('settings.audit.payloadSnapshot')}</span>
                             <button
                                 type="button"
                                 onClick={handleCopy}
                                 className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] font-bold text-slate-300 hover:bg-slate-800 transition"
                             >
                                 {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-                                <span>{copied ? 'Copied' : 'Copy JSON'}</span>
+                                <span>{copied ? t('settings.audit.copied') : t('settings.audit.copyJson')}</span>
                             </button>
                         </div>
                         <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-slate-300">

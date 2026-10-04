@@ -6,9 +6,11 @@ import { useLandingContent } from '../../../hooks/use-landing-content';
 
 interface CareSupportBandProps {
   onBook?: () => void;
+  heading?: string;
+  subheading?: string;
 }
 
-export const CareSupportBand = ({ onBook }: CareSupportBandProps) => {
+export const CareSupportBand = ({ onBook, heading, subheading }: CareSupportBandProps) => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith('ar');
   const reduceMotion = useReducedMotion();
@@ -57,10 +59,13 @@ export const CareSupportBand = ({ onBook }: CareSupportBandProps) => {
             {isRtl ? 'التواصل مع المركز' : 'Contact the center'}
           </span>
           <h2 className="mt-3 text-3xl font-bold leading-tight text-[#0B2348] dark:text-white sm:text-4xl">
-            {isRtl ? 'هل تحتاج مساعدة قبل الزيارة؟' : 'Need help before your visit?'}
+            {heading || (isRtl ? 'هل تحتاج مساعدة قبل الزيارة؟' : 'Need help before your visit?')}
           </h2>
           <p className="mt-4 max-w-lg text-sm leading-7 text-muted-foreground sm:text-base">
-            {isRtl ? 'تواصل مع المركز لتأكيد الموقع والموعد وتعليمات التحضير الخاصة بطلب طبيبك.' : "Contact the center to confirm the location, appointment time, and preparation instructions for your doctor's request."}
+            {subheading ||
+              (isRtl
+                ? 'تواصل مع المركز لتأكيد الموقع والموعد وتعليمات التحضير الخاصة بطلب طبيبك.'
+                : "Contact the center to confirm the location, appointment time, and preparation instructions for your doctor's request.")}
           </p>
 
           <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs font-semibold text-[#365268] dark:text-slate-300">

@@ -127,11 +127,13 @@
       "At Risk": "At risk",
       "Unknown": "Unknown",
       "Not Applicable": "Not applicable"
-    }
+    },
+    "recordIndicators": "Nursing queue record indicators",
+    "awaitingPrepStage": "Awaiting patient transfer to nursing"
   },
   "modality": {
     "title": "Modality queue",
-    "eyebrow":"Tech department",
+    "eyebrow": "Tech department",
     "description": "Start scans, track active studies, and release completed exams for reporting.",
     "ready": "Ready for exam",
     "inExam": "In exam",
@@ -146,7 +148,17 @@
     "templateError": "Safety requirements could not be loaded.",
     "safetyClearanceRequired": "Clear or mark every safety check as not applicable before starting the exam.",
     "safetyUpdated": "Safety checks updated.",
-    "modalityMissing": "This exam is not linked to a modality. Refresh the queue or correct the appointment before starting."
+    "modalityMissing": "This exam is not linked to a modality. Refresh the queue or correct the appointment before starting.",
+    "completionTitle": "Complete examination",
+    "completionDescription": "Choose how this examination should finish. A report can still be requested later after images-only delivery.",
+    "sendToReporting": "Send to reporting",
+    "sendToReportingDescription": "Complete image acquisition and create a reporting task.",
+    "imagesOnly": "Images only — no report",
+    "imagesOnlyDescription": "Complete the examination and prepare the images for delivery without waiting for a report.",
+    "imagesOnlyCompleted": "Examination completed. Images are ready for delivery without a report.",
+    "reportingRequested": "Examination completed and sent to reporting.",
+    "completionFailed": "Could not complete the examination.",
+    "metricsLabel": "Modality queue record indicators"
   },
   "filters": {
     "todayCases": "Today's Cases",

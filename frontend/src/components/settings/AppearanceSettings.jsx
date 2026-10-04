@@ -3,9 +3,6 @@ import toast from 'react-hot-toast';
 import { useEffect, useState } from 'react';
 import {
     Accessibility,
-    Activity,
-    CheckCircle2,
-    Eye,
     Gauge,
     Laptop,
     LayoutList,
@@ -25,7 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { DEFAULT_PREFERENCES, selectPreferences, updateAllPreferences } from '../../store/preferencesSlice';
 import { useUpdatePreferencesMutation } from '../../store/api';
 import { getErrorMessage } from '../../utils/getErrorMessage';
-import { getContrastColor, mixHexColors, SEMANTIC_PALETTE_DEFAULTS } from '../../utils/themePalette';
+import { SEMANTIC_PALETTE_DEFAULTS } from '../../utils/themePalette';
 import {
     SettingsChoice as ChoiceButton,
     SettingsFact as Fact,
@@ -192,12 +189,12 @@ const AppearanceSettings = () => {
 
     return (
         <div className="space-y-6">
-            {/* Overview Header & Live Interactive Specimen Preview */}
+            {/* Appearance summary */}
             <section className={`${settingsPanelClass} relative overflow-hidden p-5 sm:p-7`}>
                 <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
                 <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
 
-                <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+                <div className="relative">
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-3.5">
                             <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-sky-500/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
@@ -206,13 +203,13 @@ const AppearanceSettings = () => {
                             <div>
                                 <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
                                     <Sparkles size={11} />
-                                    <span>{t('settings.appearance.previewEyebrow', { defaultValue: 'Personalization engine' })}</span>
+                                    <span>{t('settings.appearance.overviewEyebrow')}</span>
                                 </span>
                                 <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
-                                    {t('settings.appearance.previewTitle', { defaultValue: 'Theme & Visual Styling Engine' })}
+                                    {t('settings.appearance.overviewTitle')}
                                 </h1>
                                 <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
-                                    {t('settings.appearance.previewDescription', { defaultValue: 'Customize UI themes, medical color palettes, display densities, typography sizes, and motion preferences.' })}
+                                    {t('settings.appearance.overviewDescription')}
                                 </p>
                             </div>
                         </div>
@@ -241,7 +238,6 @@ const AppearanceSettings = () => {
                             </button>
                         </div>
                     </div>
-                    <AppearancePreview preferences={preferences} color={selectedColor} t={t} />
                 </div>
             </section>
 
@@ -582,175 +578,6 @@ const DensityPreview = ({ mode }) => (
             <div className="h-2 w-16 rounded bg-cyan-500" />
             <div className="h-2 w-6 rounded bg-slate-300 dark:bg-slate-700" />
         </div>
-    </div>
-);
-
-const PREVIEW_RADIUS = { sharp: '0px', small: '6px', medium: '10px', large: '14px', full: '24px' };
-const PREVIEW_DENSITY = {
-    compact: { shell: 7, row: 6, gap: 6 },
-    comfortable: { shell: 10, row: 8, gap: 8 },
-    spacious: { shell: 13, row: 11, gap: 10 }
-};
-const PREVIEW_FONT_SCALE = { small: 0.85, normal: 1, large: 1.15, xlarge: 1.3 };
-const PREVIEW_FONT_FAMILY = {
-    inter: 'Inter, ui-sans-serif, system-ui, sans-serif',
-    system: 'ui-sans-serif, system-ui, sans-serif',
-    mono: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    dyslexic: 'Arial, Verdana, ui-sans-serif, sans-serif'
-};
-
-const AppearancePreview = ({ preferences, color, t }) => {
-    const [systemDark, setSystemDark] = useState(() => (
-        typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-color-scheme: dark)').matches)
-    ));
-
-    useEffect(() => {
-        if (preferences.theme !== 'system' || typeof window === 'undefined' || !window.matchMedia) return undefined;
-        const media = window.matchMedia('(prefers-color-scheme: dark)');
-        const updateResolvedMode = () => setSystemDark(media.matches);
-        updateResolvedMode();
-        media.addEventListener?.('change', updateResolvedMode);
-        return () => media.removeEventListener?.('change', updateResolvedMode);
-    }, [preferences.theme]);
-
-    const mode = preferences.theme === 'system' ? (systemDark ? 'dark' : 'light') : preferences.theme;
-    const palette = {
-        ...SEMANTIC_PALETTE_DEFAULTS[mode],
-        ...(preferences.colorOverrides?.[mode] || {})
-    };
-    const radius = PREVIEW_RADIUS[preferences.borderRadius] || PREVIEW_RADIUS.medium;
-    const density = PREVIEW_DENSITY[preferences.density] || PREVIEW_DENSITY.comfortable;
-    const fontScale = PREVIEW_FONT_SCALE[preferences.fontScale] || 1;
-    const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
-    const defaultFont = isRtl
-        ? "'Cairo', 'Readex Pro', 'Noto Sans Arabic', ui-sans-serif, system-ui, sans-serif"
-        : PREVIEW_FONT_FAMILY.inter;
-    const fontFamily = preferences.fontFamily === 'inter'
-        ? defaultFont
-        : (PREVIEW_FONT_FAMILY[preferences.fontFamily] || defaultFont);
-    const lineColor = preferences.highContrast ? palette.borderStrong : palette.border;
-    const accentSoft = mixHexColors(color.value, palette.surface, mode === 'dark' ? 0.78 : 0.88);
-    const successSoft = mixHexColors(palette.success, palette.surface, mode === 'dark' ? 0.8 : 0.88);
-    const warningSoft = mixHexColors(palette.warning, palette.surface, mode === 'dark' ? 0.8 : 0.86);
-    const accentContrast = getContrastColor(color.value);
-    const cardStyle = { backgroundColor: palette.surface, borderColor: lineColor, borderRadius: radius };
-
-    return (
-        <section
-            aria-label={t('settings.appearance.specimen.ariaLabel', { defaultValue: 'Live appearance preview' })}
-            className="overflow-hidden border shadow-xl transition-colors duration-300"
-            style={{ backgroundColor: palette.canvas, borderColor: lineColor, borderRadius: radius, color: palette.text, fontFamily, fontSize: `${12 * fontScale}px` }}
-        >
-            <div className="flex items-center justify-between border-b px-3 py-2" style={{ backgroundColor: palette.surface, borderColor: lineColor }}>
-                <div className="flex min-w-0 items-center gap-2">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color.value }} />
-                    <span className="truncate font-extrabold" style={{ color: palette.text }}>
-                        {t('settings.appearance.specimen.title', { defaultValue: 'Live specimen' })}
-                    </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <span className="rounded-md border px-1.5 py-0.5 font-mono text-[0.75em] font-bold uppercase" style={{ borderColor: lineColor, color: palette.textSecondary }}>
-                        {t(`settings.appearance.themes.${preferences.theme}`, { defaultValue: preferences.theme })}
-                    </span>
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full" style={{ backgroundColor: successSoft, color: palette.success }}>
-                        <CheckCircle2 size={11} aria-hidden="true" />
-                    </span>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-[38px_minmax(0,1fr)]">
-                <aside className="flex flex-col items-center gap-2 border-e py-3" style={{ backgroundColor: palette.surfaceSecondary, borderColor: lineColor }} aria-hidden="true">
-                    <span className="grid h-7 w-7 place-items-center font-black" style={{ backgroundColor: color.value, borderRadius: radius, color: accentContrast }}>V</span>
-                    {[LayoutList, Activity, Eye].map((Icon, index) => (
-                        <span
-                            key={Icon.displayName || index}
-                            className="grid h-7 w-7 place-items-center border"
-                            style={{ backgroundColor: index === 0 ? accentSoft : palette.surface, borderColor: index === 0 ? color.value : lineColor, borderRadius: radius, color: index === 0 ? color.value : palette.textMuted }}
-                        >
-                            <Icon size={12} />
-                        </span>
-                    ))}
-                </aside>
-
-                <div className="min-w-0" style={{ padding: density.shell }}>
-                    <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                            <p className="font-black leading-tight" style={{ color: palette.text }}>{t('settings.appearance.specimen.workspace', { defaultValue: 'Clinical workspace' })}</p>
-                            <p className="mt-0.5 text-[0.75em]" style={{ color: palette.textMuted }}>{t('settings.appearance.specimen.today', { defaultValue: 'Today · live operations' })}</p>
-                        </div>
-                        <span className="rounded-full px-2 py-1 text-[0.75em] font-black" style={{ backgroundColor: successSoft, color: palette.success }}>
-                            {t('settings.appearance.specimen.online', { defaultValue: 'Online' })}
-                        </span>
-                    </div>
-
-                    <div className="mt-2 flex items-center gap-2 border px-2.5 py-2" style={{ ...cardStyle, backgroundColor: palette.surfaceMuted }}>
-                        <Eye size={12} style={{ color: palette.textMuted }} aria-hidden="true" />
-                        <span className="truncate text-[0.75em]" style={{ color: palette.textMuted }}>{t('settings.appearance.specimen.search', { defaultValue: 'Search patient, MRN, or examination…' })}</span>
-                    </div>
-
-                    <div className="mt-2 grid grid-cols-2" style={{ gap: density.gap }}>
-                        <div className="border p-2" style={cardStyle}>
-                            <p className="text-[0.75em] font-bold" style={{ color: palette.textMuted }}>{t('settings.appearance.specimen.todayExams', { defaultValue: 'Today exams' })}</p>
-                            <p className="mt-1 text-[1.333em] font-black leading-none" style={{ color: palette.text }}>24</p>
-                        </div>
-                        <div className="border p-2" style={{ ...cardStyle, backgroundColor: accentSoft }}>
-                            <p className="text-[0.75em] font-bold" style={{ color: palette.textSecondary }}>{t('settings.appearance.specimen.ready', { defaultValue: 'Ready' })}</p>
-                            <p className="mt-1 text-[1.333em] font-black leading-none" style={{ color: color.value }}>18</p>
-                        </div>
-                    </div>
-
-                    <div className="mt-2 overflow-hidden border" style={cardStyle}>
-                        <div className="flex items-center justify-between border-b px-2.5 py-2" style={{ borderColor: lineColor, backgroundColor: palette.surfaceSecondary }}>
-                            <span className="text-[0.75em] font-black" style={{ color: palette.text }}>{t('settings.appearance.specimen.worklist', { defaultValue: 'Live worklist' })}</span>
-                            <span className="font-mono text-[0.75em] font-bold" style={{ color: palette.textMuted }}>2/6</span>
-                        </div>
-                        <PreviewWorklistRow
-                            name={t('settings.appearance.specimen.patient', { defaultValue: 'Patient 1042' })}
-                            meta="MRI · MRN-8421"
-                            status={t('settings.appearance.specimen.completed', { defaultValue: 'Completed' })}
-                            statusColor={palette.success}
-                            statusBackground={successSoft}
-                            palette={palette}
-                            lineColor={lineColor}
-                            rowPadding={density.row}
-                            withBorder
-                        />
-                        <PreviewWorklistRow
-                            name={t('settings.appearance.specimen.patientTwo', { defaultValue: 'Patient 1058' })}
-                            meta="CT · MRN-8490"
-                            status={t('settings.appearance.specimen.pending', { defaultValue: 'Pending' })}
-                            statusColor={palette.warning}
-                            statusBackground={warningSoft}
-                            palette={palette}
-                            rowPadding={density.row}
-                        />
-                    </div>
-
-                    <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2" style={{ borderColor: lineColor }}>
-                        <span className="text-[0.667em] font-bold" style={{ color: palette.textMuted }}>{t('settings.appearance.specimen.sync', { defaultValue: 'Workspace synchronized' })}</span>
-                        <span className="px-2.5 py-1.5 text-[0.75em] font-black shadow-sm" style={{ backgroundColor: color.value, borderRadius: radius, color: accentContrast }}>
-                            {t('settings.appearance.specimen.action', { defaultValue: 'Open worklist' })}
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t px-3 py-2 text-[0.667em]" style={{ backgroundColor: palette.surface, borderColor: lineColor, color: palette.textMuted }}>
-                <span>{t('settings.appearance.specimen.font', { defaultValue: 'Font' })}: <strong style={{ color: palette.text }}>{t(`settings.appearance.fontScales.${preferences.fontScale}`, { defaultValue: preferences.fontScale })} · {t(`settings.appearance.fontFamilies.${preferences.fontFamily}`, { defaultValue: preferences.fontFamily })}</strong></span>
-                <span>{t('settings.appearance.specimen.radius', { defaultValue: 'Radius' })}: <strong style={{ color: palette.text }}>{t(`settings.appearance.radii.${preferences.borderRadius}`, { defaultValue: preferences.borderRadius })}</strong></span>
-                <span>{t('settings.appearance.specimen.density', { defaultValue: 'Density' })}: <strong style={{ color: palette.text }}>{t(`settings.appearance.densities.${preferences.density}.label`, { defaultValue: preferences.density })}</strong></span>
-            </div>
-        </section>
-    );
-};
-
-const PreviewWorklistRow = ({ name, meta, status, statusColor, statusBackground, palette, lineColor, rowPadding, withBorder = false }) => (
-    <div className={`flex items-center justify-between gap-2 px-2.5 ${withBorder ? 'border-b' : ''}`} style={{ borderColor: lineColor, paddingBlock: rowPadding }}>
-        <div className="min-w-0">
-            <p className="truncate text-[0.833em] font-black" style={{ color: palette.text }}>{name}</p>
-            <p dir="ltr" className="mt-0.5 truncate font-mono text-[0.667em]" style={{ color: palette.textMuted }}>{meta}</p>
-        </div>
-        <span className="shrink-0 rounded-full px-2 py-1 text-[0.667em] font-black" style={{ backgroundColor: statusBackground, color: statusColor }}>{status}</span>
     </div>
 );
 

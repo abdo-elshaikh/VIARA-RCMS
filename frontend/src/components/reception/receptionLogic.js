@@ -15,7 +15,7 @@ export const shiftLocalDateInput = (dateInput, days) => {
     return toLocalDateInput(date);
 };
 
-export const getCurrentUserId = (user) => user?.id || user?.user_id || null;
+export const getCurrentUserId = (user) => user?.id || user?.user_id || user?.userId || null;
 
 export const buildPermissionModel = (user) => {
     const permissions = getEffectivePermissions(user);
@@ -24,6 +24,8 @@ export const buildPermissionModel = (user) => {
     return {
         has,
         canProcessPayments: has('PROCESS_PAYMENTS'),
+        canViewInvoices: has('VIEW_INVOICES'),
+        canViewExams: has('VIEW_EXAMS'),
         canReconcileShifts: has('RECONCILE_SHIFTS'),
         canOpenCashierShift: has('OPEN_CASHIER_SHIFT'),
         canCloseCashierShift: has('CLOSE_CASHIER_SHIFT'),
@@ -41,14 +43,15 @@ export const getInvoiceCoverageCategory = (invoice) => {
             type: 'self_pay',
             isInsurance: false,
             isContract: false,
-            labelAr: 'حساب خاص (نقدي)',
-            labelEn: 'Self-Pay (Cash)',
+            labelAr: 'حساب خاص (سداد مباشر)',
+            labelEn: 'Self-Pay (Direct)',
             providerName: null,
             policyNumber: null,
             memberNumber: null,
             planName: null,
-            insuranceCovered: 0,
-            patientPayable: 0,
+        insuranceCovered: 0,
+        preauthorizationRequired: false,
+        patientPayable: 0,
             totalAmount: 0
         };
     }
@@ -68,13 +71,14 @@ export const getInvoiceCoverageCategory = (invoice) => {
             type: 'self_pay',
             isInsurance: false,
             isContract: false,
-            labelAr: 'حساب خاص (نقدي)',
-            labelEn: 'Self-Pay (Cash)',
+            labelAr: 'حساب خاص (سداد مباشر)',
+            labelEn: 'Self-Pay (Direct)',
             providerName: null,
             policyNumber: null,
             memberNumber: null,
             planName: null,
             insuranceCovered: 0,
+            preauthorizationRequired: false,
             patientPayable,
             totalAmount
         };
@@ -101,6 +105,7 @@ export const getInvoiceCoverageCategory = (invoice) => {
         memberNumber,
         planName,
         insuranceCovered,
+        preauthorizationRequired: Boolean(invoice.preauthorization_required),
         patientPayable,
         totalAmount
     };
@@ -132,7 +137,7 @@ export const getContractRequirementsChecklist = (category, isAr = false) => {
             id: 'preauth',
             labelAr: isContract ? 'خطاب تفويض / أمر تكليف صادر من الجهة (إن وُجد)' : 'كود الموافقة المسبقة من شركة التأمين (Pre-Auth)',
             labelEn: isContract ? 'Official Letter of Authorization / PO (if applicable)' : 'Insurance Pre-Authorization Code & Expiry',
-            required: category.insuranceCovered > 0,
+            required: Boolean(category.preauthorizationRequired),
             hintAr: category.policyNumber ? `رقم الوثيقة / البوليصة: ${category.policyNumber}` : 'التحقق من تغطية الفحص المطلوب',
             hintEn: category.policyNumber ? `Policy #: ${category.policyNumber}` : 'Ensure requested exam code matches approval'
         },
@@ -172,7 +177,7 @@ export const getPaymentValidation = ({
 }) => {
     const amount = toFinancialNumber(paymentAmount);
     const discount = toFinancialNumber(discountAmount);
-    const referenceRequired = paymentMethod !== 'Cash';
+    const referenceRequired = amount > 0 && paymentMethod !== 'Cash';
     const invalid =
         amount < 0 ||
         amount > adjustedBalance + 0.005 ||
@@ -206,8 +211,10 @@ export const VALID_QUEUE_TRANSITIONS = {
     'Payment Pending': ['Prep Pending', 'Ready for Exam', 'Cancelled'],
     'Prep Pending': ['Ready for Exam', 'Cancelled'],
     'Ready for Exam': ['In Exam', 'Cancelled'],
-    'In Exam': ['Reporting', 'Cancelled'],
-    Reporting: ['Finalized', 'Cancelled'],
+    'In Exam': ['Cancelled'],
+    'Images Ready': [],
+    'Images Delivered': [],
+    Reporting: ['Cancelled'],
     Finalized: ['Delivered'],
     Delivered: [],
     Cancelled: []
@@ -256,16 +263,19 @@ export const buildScheduleSummary = (appointments = [], queueItems = []) => {
         booked: appointments.length,
         ready: readyFromQueue + readyFromAppts,
         urgent: urgentAppts + urgentQueue,
-        activeQueue: queueItems.filter((item) => !['Delivered', 'Cancelled'].includes(item.queue_stage || item.queueStage)).length
+        activeQueue: queueItems.filter((item) => !['Images Delivered', 'Delivered', 'Cancelled'].includes(item.queue_stage || item.queueStage)).length
     };
 };
 
-export const buildReceptionTabs = ({ canProcessPayments, t }) => [
-    { id: 'schedule', label: t('tabs.schedule') },
-    { id: 'patients', label: t('tabs.patients') },
-    ...(canProcessPayments ? [{ id: 'cashier', label: t('tabs.cashier') }] : []),
-    { id: 'billing', label: t('tabs.billing') },
-];
+export const buildReceptionTabs = ({ canProcessPayments, has, t, canReviewEndOfDay = false }) => {
+    const tabs = [];
+    if (has('VIEW_APPOINTMENTS')) tabs.push({ id: 'schedule', label: t('tabs.schedule') });
+    if (has('VIEW_PATIENTS')) tabs.push({ id: 'patients', label: t('tabs.patients') });
+    if (canProcessPayments && has('VIEW_INVOICES')) tabs.push({ id: 'cashier', label: t('tabs.cashier') });
+    if (has('VIEW_INVOICES')) tabs.push({ id: 'billing', label: t('tabs.billing') });
+    if (canReviewEndOfDay) tabs.push({ id: 'end-of-day', label: t('tabs.endOfDay', { defaultValue: 'مراجعة نهاية الوردية' }) });
+    return tabs;
+};
 
 export const getShiftStatusColor = (status) => {
     const colors = {

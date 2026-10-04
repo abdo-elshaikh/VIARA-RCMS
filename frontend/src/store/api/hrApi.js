@@ -73,20 +73,28 @@ export const hrApi = api.injectEndpoints({
             query: (data) => ({ url: '/hr/attendance/clock-out', method: 'POST', body: data }),
             invalidatesTags: ['Attendance'],
         }),
+        breakStart: builder.mutation({
+            query: (data) => ({ url: '/hr/attendance/break-start', method: 'POST', body: data }),
+            invalidatesTags: ['Attendance'],
+        }),
+        breakEnd: builder.mutation({
+            query: (data) => ({ url: '/hr/attendance/break-end', method: 'POST', body: data }),
+            invalidatesTags: ['Attendance'],
+        }),
         updateAttendance: builder.mutation({
             query: ({ id, ...body }) => ({ url: `/hr/attendance/${id}`, method: 'PUT', body }),
             invalidatesTags: ['Attendance'],
         }),
         getAttendancePermissions: builder.query({
-            query: (params) => ({ url: '/hr/attendance-permissions', params }),
+            query: (params) => ({ url: '/hr/attendance/permissions', params }),
             providesTags: ['Attendance'],
         }),
         createAttendancePermission: builder.mutation({
-            query: (data) => ({ url: '/hr/attendance-permissions', method: 'POST', body: data }),
+            query: (data) => ({ url: '/hr/attendance/permissions', method: 'POST', body: data }),
             invalidatesTags: ['Attendance'],
         }),
         updateAttendancePermissionStatus: builder.mutation({
-            query: ({ id, ...body }) => ({ url: `/hr/attendance-permissions/${id}/status`, method: 'PUT', body }),
+            query: ({ id, ...body }) => ({ url: `/hr/attendance/permissions/${id}/status`, method: 'PUT', body }),
             invalidatesTags: ['Attendance'],
         }),
         getLeaveRequests: builder.query({
@@ -188,8 +196,20 @@ export const hrApi = api.injectEndpoints({
             query: (params) => ({ url: '/payroll/penalties', params }),
             providesTags: ['PayrollPenalties'],
         }),
+        getMyPayrollPenalties: builder.query({
+            query: () => '/payroll/my/penalties',
+            providesTags: ['PayrollPenalties'],
+        }),
         createPayrollPenalty: builder.mutation({
             query: (data) => ({ url: '/payroll/penalties', method: 'POST', body: data }),
+            invalidatesTags: ['PayrollPenalties', 'Payroll'],
+        }),
+        acknowledgePayrollPenalty: builder.mutation({
+            query: ({ id, ...body }) => ({ url: `/payroll/penalties/${id}/acknowledgement`, method: 'PUT', body }),
+            invalidatesTags: ['PayrollPenalties'],
+        }),
+        resolvePayrollPenaltyDispute: builder.mutation({
+            query: ({ id, ...body }) => ({ url: `/payroll/penalties/${id}/dispute-resolution`, method: 'PUT', body }),
             invalidatesTags: ['PayrollPenalties', 'Payroll'],
         }),
         updatePayrollPenaltyStatus: builder.mutation({
@@ -272,12 +292,98 @@ export const hrApi = api.injectEndpoints({
             query: () => '/reception/shifts/current',
             providesTags: ['Shifts'],
         }),
+        getReceptionSupervisorAssignments: builder.query({
+            query: () => '/reception/supervisors/assignments',
+            providesTags: ['SupervisorAssignments'],
+        }),
+        getStaffSupervisorAssignments: builder.query({
+            query: () => '/hr/supervision/assignments',
+            providesTags: ['StaffSupervision'],
+        }),
+        createStaffSupervisorAssignment: builder.mutation({
+            query: (data) => ({ url: '/hr/supervision/assignments', method: 'POST', body: data }),
+            invalidatesTags: ['StaffSupervision', 'SupervisorInbox'],
+        }),
+        updateStaffSupervisorAssignment: builder.mutation({
+            query: ({ id, ...data }) => ({ url: `/hr/supervision/assignments/${id}`, method: 'PUT', body: data }),
+            invalidatesTags: ['StaffSupervision', 'SupervisorInbox'],
+        }),
+        revokeStaffSupervisorAssignment: builder.mutation({
+            query: (id) => ({ url: `/hr/supervision/assignments/${id}`, method: 'DELETE' }),
+            invalidatesTags: ['StaffSupervision', 'SupervisorInbox'],
+        }),
+        getSupervisorInbox: builder.query({
+            query: () => '/hr/supervision/inbox',
+            providesTags: ['SupervisorInbox'],
+        }),
+        reviewSupervisorRequest: builder.mutation({
+            query: ({ kind, id, status, notes }) => {
+                const path = {
+                    leave: `/hr/leave/${id}/status`,
+                    attendance: `/hr/attendance/permissions/${id}/status`,
+                    shifts: `/hr/shifts/requests/${id}/status`,
+                }[kind];
+                return { url: path, method: 'PUT', body: kind === 'leave' ? { status, notes } : { status, reviewNotes: notes } };
+            },
+            invalidatesTags: ['SupervisorInbox', 'LeaveRequests', 'Attendance', 'Shifts'],
+        }),
+        getSupervisorRecommendations: builder.query({
+            query: () => '/hr/supervision/recommendations',
+            providesTags: ['SupervisorRecommendations'],
+        }),
+        createSupervisorRecommendation: builder.mutation({
+            query: (data) => ({ url: '/hr/supervision/recommendations', method: 'POST', body: data }),
+            invalidatesTags: ['SupervisorRecommendations'],
+        }),
+        reviewSupervisorRecommendation: builder.mutation({
+            query: ({ id, status, notes }) => ({ url: `/hr/supervision/recommendations/${id}/status`, method: 'PUT', body: { status, notes } }),
+            invalidatesTags: ['SupervisorRecommendations'],
+        }),
+        getReceptionTeamShiftHistory: builder.query({
+            query: (userId) => ({ url: '/reception/shifts', params: { userId, limit: 10 } }),
+            providesTags: ['Shifts'],
+        }),
+        getReceptionSupervisedTasks: builder.query({
+            query: () => '/reception/supervisors/tasks',
+            providesTags: ['SupervisorTasks'],
+        }),
+        transferReceptionSupervisedTask: builder.mutation({
+            query: ({ appointmentId, targetUserId, reason }) => ({
+                url: `/reception/tasks/${appointmentId}/transfer`, method: 'POST',
+                body: { targetUserId, reason },
+            }),
+            invalidatesTags: ['SupervisorTasks', 'Queue', 'Appointments'],
+        }),
+        createReceptionSupervisorAssignment: builder.mutation({
+            query: (data) => ({ url: '/reception/supervisors/assignments', method: 'POST', body: data }),
+            invalidatesTags: ['SupervisorAssignments', 'SupervisorTasks'],
+        }),
+        updateReceptionSupervisorAssignment: builder.mutation({
+            query: ({ assignmentId, ...data }) => ({ url: `/reception/supervisors/assignments/${assignmentId}`, method: 'PUT', body: data }),
+            invalidatesTags: ['SupervisorAssignments', 'SupervisorTasks'],
+        }),
+        revokeReceptionSupervisorAssignment: builder.mutation({
+            query: (assignmentId) => ({ url: `/reception/supervisors/assignments/${assignmentId}`, method: 'DELETE' }),
+            invalidatesTags: ['SupervisorAssignments', 'SupervisorTasks'],
+        }),
         openReceptionShift: builder.mutation({
             query: (data) => ({ url: '/reception/shifts/open', method: 'POST', body: data }),
             invalidatesTags: ['Shifts'],
         }),
         closeReceptionShift: builder.mutation({
             query: ({ sessionId, ...data }) => ({ url: `/reception/shifts/${sessionId}/close`, method: 'POST', body: data }),
+            invalidatesTags: ['Shifts'],
+        }),
+        createShiftHandover: builder.mutation({
+            query: ({ sessionId, ...data }) => ({ url: `/reception/shifts/${sessionId}/handover`, method: 'POST', body: data }),
+            invalidatesTags: ['Shifts'],
+        }),
+        getShiftHandover: builder.query({
+            query: (sessionId) => `/reception/shifts/${sessionId}/handover`,
+            providesTags: ['Shifts'],
+        }),
+        acknowledgeShiftHandover: builder.mutation({
+            query: ({ handoverId, ...data }) => ({ url: `/reception/handovers/${handoverId}/acknowledge`, method: 'POST', body: data }),
             invalidatesTags: ['Shifts'],
         }),
         claimReceptionTask: builder.mutation({

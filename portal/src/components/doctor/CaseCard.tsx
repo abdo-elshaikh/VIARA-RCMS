@@ -1,6 +1,7 @@
 import React from "react";
 import { CalendarDays, FileText, ArrowRight, AlertCircle } from "lucide-react";
 import StatusBadge from "../ui/StatusBadge";
+import { isFinalizedRecord } from "../../utils/recordStatus";
 
 interface CaseCardProps {
   item: any;
@@ -88,7 +89,7 @@ const CaseCard: React.FC<CaseCardProps> = ({
           status={item.report_status || t("common.pending", { defaultValue: "Pending" })}
           t={t}
         />
-        {item.report_status === "Finalized" && item.exam_id ? (
+        {isFinalizedRecord(item) && item.exam_id ? (
           <button
             type="button"
             onClick={() => onReport(item.exam_id)}

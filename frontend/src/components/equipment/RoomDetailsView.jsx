@@ -33,7 +33,8 @@ export const RoomDetailsView = ({
     onBack,
     onEditRoom,
     onAddMachine,
-    onEditMachine
+    onEditMachine,
+    canManage = false
 }) => {
     const { t, i18n } = useTranslation('workspace');
     const isArabic = i18n.language?.startsWith('ar');
@@ -86,6 +87,7 @@ export const RoomDetailsView = ({
     };
 
     const handleToggleStatus = async () => {
+        if (!canManage) return;
         const newStatus = room.status === 'Active' ? 'Under Maintenance' : 'Active';
         try {
             await updateRoom({
@@ -141,7 +143,7 @@ export const RoomDetailsView = ({
                     <button
                         type="button"
                         onClick={handleToggleStatus}
-                        disabled={updatingStatus}
+                        disabled={updatingStatus || !canManage}
                         className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-black shadow-sm transition-all ${
                             room.status === 'Active'
                                 ? 'border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200'
@@ -156,6 +158,7 @@ export const RoomDetailsView = ({
                     <button
                         type="button"
                         onClick={() => onEditRoom?.(room)}
+                        disabled={!canManage}
                         className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2 text-xs font-black text-white shadow-md shadow-teal-600/20 hover:bg-teal-700"
                     >
                         <Edit3 size={14} />
@@ -207,6 +210,7 @@ export const RoomDetailsView = ({
                         <button
                             type="button"
                             onClick={() => onAddMachine?.(room)}
+                            disabled={!canManage}
                             className="inline-flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2 text-xs font-bold text-teal-700 hover:bg-teal-100 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-300"
                         >
                             <Plus size={14} />
@@ -269,7 +273,7 @@ export const RoomDetailsView = ({
             </div>
 
             {/* Navigation Tabs for Details */}
-            <div className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-2 dark:border-slate-800">
+            <div className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-2 dark:border-slate-800" role="tablist" aria-label={t('roomDetailSections')}>
                 {[
                     { id: 'overview', labelAr: 'الأجهزة المثبتة بالجناح', labelEn: 'Installed Modalities', count: machines.length, icon: Server },
                     { id: 'procedures', labelAr: 'الفحوصات الطبية المدعومة', labelEn: 'Supported Procedures', count: procedures.length, icon: FileSpreadsheet },
@@ -282,6 +286,9 @@ export const RoomDetailsView = ({
                         <button
                             key={tab.id}
                             type="button"
+                            role="tab"
+                            aria-selected={active}
+                            tabIndex={active ? 0 : -1}
                             onClick={() => setActiveSection(tab.id)}
                             className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all ${
                                 active
@@ -315,6 +322,7 @@ export const RoomDetailsView = ({
                         <button
                             type="button"
                             onClick={() => onAddMachine?.(room)}
+                            disabled={!canManage}
                             className="inline-flex items-center gap-1 text-xs font-bold text-teal-600 hover:underline"
                         >
                             <Plus size={14} />

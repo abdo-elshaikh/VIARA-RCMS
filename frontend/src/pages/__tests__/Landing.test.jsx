@@ -99,31 +99,26 @@ describe('VIARA landing preferences', () => {
         document.documentElement.setAttribute('dir', 'ltr');
     });
 
-    it('renders live center metrics and the four command scenes', () => {
+    it('renders the hero and the primary marketing sections', () => {
         renderLanding();
-        const sceneNavigation = screen.getByRole('navigation', { name: /Command center scenes/i });
 
-        expect(screen.getByRole('heading', { level: 1, name: /Run Every Radiology Workflow From One Connected Workspace/i })).toBeInTheDocument();
-        expect(screen.getAllByText('148').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('27').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('8').length).toBeGreaterThan(0);
-        expect(within(sceneNavigation).getByRole('button', { name: /Operations/i })).toBeInTheDocument();
-        expect(within(sceneNavigation).getByRole('button', { name: /AI Copilot/i })).toBeInTheDocument();
-        expect(within(sceneNavigation).getByRole('button', { name: /Clinical Flow/i })).toBeInTheDocument();
-        expect(within(sceneNavigation).getByRole('button', { name: /Staff Gateway/i })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { level: 1, name: /Clearer Vision\. Smoother Management\./i })).toBeInTheDocument();
+
+        for (const label of ['Overview', 'Supported modalities', 'Features', 'Workflow', 'Get started']) {
+            expect(screen.getByRole('region', { name: label })).toBeInTheDocument();
+        }
     });
 
-    it('switches scenes while keeping the numeric counter strip visible', () => {
+    it('anchors the header navigation to the feature and workflow sections', () => {
         renderLanding();
-        const sceneNavigation = screen.getByRole('navigation', { name: /Command center scenes/i });
 
-        const intelligenceButton = within(sceneNavigation).getByRole('button', { name: /AI Copilot/i });
-        fireEvent.click(intelligenceButton);
+        const nav = screen.getByRole('navigation', { name: 'Navigation' });
+        expect(within(nav).getByRole('link', { name: 'Features' })).toHaveAttribute('href', '#vlp-features');
+        expect(within(nav).getByRole('link', { name: 'Workflow' })).toHaveAttribute('href', '#vlp-workflow');
 
-        expect(intelligenceButton).toHaveAttribute('aria-current', 'true');
-        expect(screen.getAllByText('148').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('27').length).toBeGreaterThan(0);
-        expect(screen.queryByRole('button', { name: /Throughput Predictor/i })).not.toBeInTheDocument();
+        // The anchors the header links to must actually exist on the page.
+        expect(document.getElementById('vlp-features')).not.toBeNull();
+        expect(document.getElementById('vlp-workflow')).not.toBeNull();
     });
 
     it('persists theme changes through the global preferences store', () => {

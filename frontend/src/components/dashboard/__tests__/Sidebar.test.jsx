@@ -109,4 +109,32 @@ describe('Sidebar permission-aware navigation', () => {
         renderSidebar({}, '/reception?tab=schedule');
         expect(screen.getByRole('button', { name: 'Expand or collapse Reception sections' })).toHaveAttribute('aria-expanded', 'true');
     });
+
+    it('supports quick search filtering to reduce visible choices', () => {
+        renderSidebar();
+        expect(screen.getByRole('link', { name: 'Appointments' })).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'Patients' })).toBeInTheDocument();
+
+        const searchInput = screen.getByPlaceholderText('Search navigation...');
+        fireEvent.change(searchInput, { target: { value: 'appoint' } });
+
+        expect(screen.getByRole('link', { name: 'Appointments' })).toBeInTheDocument();
+        expect(screen.queryByRole('link', { name: 'Patients' })).not.toBeInTheDocument();
+
+        // When no matches found
+        fireEvent.change(searchInput, { target: { value: 'xyznonexistent' } });
+        expect(screen.getByText('No matching destinations')).toBeInTheDocument();
+    });
+
+    it('allows collapsing and expanding group sections', () => {
+        renderSidebar();
+        const groupToggle = screen.getByRole('button', { name: /Reception & Patients/i });
+        expect(groupToggle).toHaveAttribute('aria-expanded', 'true');
+
+        fireEvent.click(groupToggle);
+        expect(groupToggle).toHaveAttribute('aria-expanded', 'false');
+
+        fireEvent.click(groupToggle);
+        expect(groupToggle).toHaveAttribute('aria-expanded', 'true');
+    });
 });

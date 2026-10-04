@@ -18,10 +18,12 @@ import {
     FileBarChart,
     HelpCircle,
     LayoutDashboard,
+    Lock,
     LogOut,
     Megaphone,
     Monitor,
     Package,
+    Search,
     Settings,
     ShieldCheck,
     TrendingUp,
@@ -32,47 +34,39 @@ import {
 } from 'lucide-react';
 import { logOut, selectCurrentUser } from '../../store/authSlice';
 import { api, useGetCenterSettingsQuery } from '../../store/api';
-import { normalizeCenterSettings } from '../../utils/centerSettings';
+import { normalizeCenterSettings, resolveDocumentIdentity } from '../../utils/centerSettings';
 import { getAccessibleNavigationTree } from '../../config/routes';
 import { VIARA_BRAND } from '../../config/brand';
 import { confirmNavigation } from '../../utils/navigationGuard';
+import { useLicense, featureAllowed } from '../../hooks/useLicense';
 
-const CATEGORY_STYLES = {
-    clinical: {
-        activeBg: 'border-white/15 bg-white/10 text-white shadow-sm dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-ink)]',
-        activeIcon: 'bg-[var(--viara-primary)] text-[var(--VIARA-accent-contrast)] shadow-sm dark:bg-[var(--VIARA-accent-soft)] dark:text-[var(--VIARA-accent-text)] dark:ring-1 dark:ring-[rgba(var(--VIARA-accent-rgb),.24)]',
-        activeBar: 'bg-[var(--viara-primary)]',
-        badge: 'bg-[var(--viara-primary-light)] text-[var(--viara-primary-dark)] ring-1 ring-white/10 dark:bg-[var(--VIARA-accent-soft)] dark:text-[var(--VIARA-accent-text)] dark:ring-[rgba(var(--VIARA-accent-rgb),.22)]',
-        groupTag: 'text-emerald-100/70 dark:text-[var(--VIARA-muted)]'
-    },
-    management: {
-        activeBg: 'border-white/15 bg-white/10 text-white shadow-sm dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-ink)]',
-        activeIcon: 'bg-[var(--viara-primary)] text-[var(--VIARA-accent-contrast)] shadow-sm dark:bg-[var(--VIARA-accent-soft)] dark:text-[var(--VIARA-accent-text)] dark:ring-1 dark:ring-[rgba(var(--VIARA-accent-rgb),.24)]',
-        activeBar: 'bg-[var(--viara-primary)]',
-        badge: 'bg-[var(--viara-primary-light)] text-[var(--viara-primary-dark)] ring-1 ring-white/10 dark:bg-[var(--VIARA-accent-soft)] dark:text-[var(--VIARA-accent-text)] dark:ring-[rgba(var(--VIARA-accent-rgb),.22)]',
-        groupTag: 'text-emerald-100/70 dark:text-[var(--VIARA-muted)]'
-    },
-    reports: {
-        activeBg: 'border-amber-300/25 bg-amber-300/[.12] text-white shadow-sm dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-ink)]',
-        activeIcon: 'bg-[var(--viara-amber)] text-[var(--text-primary)] shadow-sm dark:bg-[var(--warning-bg)] dark:text-[var(--warning)] dark:ring-1 dark:ring-amber-400/20',
-        activeBar: 'bg-[var(--viara-amber)]',
-        badge: 'bg-[var(--viara-amber-light)] text-amber-800 ring-1 ring-amber-200/30 dark:bg-[var(--warning-bg)] dark:text-[var(--warning)] dark:ring-amber-400/20',
-        groupTag: 'text-amber-100/80 dark:text-[var(--VIARA-muted)]'
-    },
-    system: {
-        activeBg: 'border-white/15 bg-white/10 text-white shadow-sm dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-ink)]',
-        activeIcon: 'bg-[var(--info)] text-white shadow-sm dark:bg-[var(--info-bg)] dark:text-[var(--info)] dark:ring-1 dark:ring-cyan-400/20',
-        activeBar: 'bg-[var(--info)]',
-        badge: 'bg-[var(--info-bg)] text-[var(--info)] ring-1 ring-white/10 dark:ring-cyan-400/20',
-        groupTag: 'text-emerald-100/70 dark:text-[var(--VIARA-muted)]'
-    }
+// Paths that are feature-gated in trial edition
+const TRIAL_LOCKED_PATHS = {
+    '/financials': 'finance',
+    '/payroll': 'hr',
+    '/insurance': 'insurance',
+    '/hr': 'hr',
+    '/analytics': 'analytics',
+    '/admin': 'analytics',
+    '/inventory': 'inventory',
+    '/equipment': 'equipment',
+    '/marketing': 'crm',
+    '/referring-doctors': 'crm',
+    '/approvals': 'finance',
+    '/user-activity': 'audit',
+    '/pacs/reconciliation': 'pacs',
 };
 
-const ICONS = { Activity, Banknote, Bell, Briefcase, Calendar, CalendarOff, ClipboardCheck, ClipboardList, FileBarChart, HelpCircle, LayoutDashboard, Megaphone, MessageSquare, Monitor, Package, Settings, ShieldCheck, TrendingUp, UserCircle, Users };
+const cx = (...classes) => classes.filter(Boolean).join(' ');
+
+const ICONS = { Activity, Banknote, Bell, Briefcase, Calendar, CalendarOff, ClipboardCheck, ClipboardList, FileBarChart, HelpCircle, LayoutDashboard, Megaphone, MessageSquare, Monitor, Package, Search, Settings, ShieldCheck, TrendingUp, UserCircle, Users };
 const NAVIGATION_ORDER = {
-    clinical: ['/dashboard', '/reception', '/communications', '/notifications', '/appointments', '/referring-doctors', '/worklist', '/modality', '/nurse', '/pacs/reconciliation', '/case-reports'],
-    management: ['/approvals', '/patients', '/admin', '/financials', '/payroll', '/insurance', '/inventory', '/equipment', '/hr', '/marketing', '/users', '/user-activity'],
-    reports: ['/analytics'],
+    core: ['/dashboard', '/notifications', '/communications'],
+    reception: ['/reception', '/appointments', '/patients', '/referring-doctors'],
+    clinical: ['/worklist', '/modality', '/nurse', '/pacs/reconciliation', '/case-reports', '/end-of-day'],
+    management: ['/approvals', '/financials', '/payroll', '/insurance', '/inventory', '/equipment', '/marketing'],
+    governance: ['/hr', '/users', '/user-activity'],
+    reports: ['/analytics', '/admin'],
     system: ['/settings', '/display/control', '/help'],
 };
 
@@ -84,20 +78,57 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButton
     const { t, i18n } = useTranslation(['navigation', 'common']);
     const isRtl = i18n.dir() === 'rtl';
     const [isSignOutOpen, setIsSignOutOpen] = useState(false);
+    const { isTrial, allowedModules } = useLicense();
     const [expandedGroups, setExpandedGroups] = useState(() => {
         try {
             const saved = JSON.parse(localStorage.getItem('sidebar-expanded-groups') || '{}');
             return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
         } catch { return {}; }
     });
+    const [filterQuery, setFilterQuery] = useState('');
+    const [brandLogoFailed, setBrandLogoFailed] = useState(false);
+    const [collapsedSections, setCollapsedSections] = useState(() => {
+        try {
+            const saved = JSON.parse(localStorage.getItem('sidebar-collapsed-sections') || '{}');
+            return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+        } catch { return {}; }
+    });
+
+    const toggleSectionCollapse = (sectionKey) => {
+        setCollapsedSections((current) => {
+            const next = { ...current, [sectionKey]: !current[sectionKey] };
+            try { localStorage.setItem('sidebar-collapsed-sections', JSON.stringify(next)); } catch { /* Storage is optional. */ }
+            return next;
+        });
+    };
+
+    useEffect(() => {
+        for (const [groupKey, paths] of Object.entries(NAVIGATION_ORDER)) {
+            if (paths.includes(location.pathname)) {
+                setCollapsedSections((prev) => (prev[groupKey] ? { ...prev, [groupKey]: false } : prev));
+                break;
+            }
+        }
+    }, [location.pathname]);
     const { data: rawCenterSettings } = useGetCenterSettingsQuery();
     useEffect(() => {
         setExpandedGroups((current) => ({ ...current, [location.pathname]: true }));
     }, [location.pathname]);
     const centerSettings = useMemo(() => normalizeCenterSettings(rawCenterSettings), [rawCenterSettings]);
+    const centerIdentity = useMemo(
+        () => resolveDocumentIdentity(centerSettings, {}, { language: i18n.language }),
+        [centerSettings, i18n.language]
+    );
+    const centerName = centerIdentity.centerName || t('app.name', { ns: 'common', defaultValue: VIARA_BRAND.name });
+    const branchName = centerIdentity.branchName || t('app.tagline', { ns: 'common', defaultValue: VIARA_BRAND.tagline });
+    const brandLogoUrl = centerIdentity.logoLightUrl || centerIdentity.logoUrl || VIARA_BRAND.lightLogoUrl;
     const effectiveRole = user?.role || role;
-    const brandInitials = String(centerSettings.center_name || VIARA_BRAND.name).trim().slice(0, 4).toUpperCase();
+    const brandInitials = String(centerName).trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join('').toLocaleUpperCase();
     const userInitial = String(user?.name || effectiveRole || 'U').trim().charAt(0).toUpperCase();
+
+    useEffect(() => {
+        setBrandLogoFailed(false);
+    }, [brandLogoUrl]);
 
     const navItems = useMemo(() => {
         const accessibleRoutes = getAccessibleNavigationTree({ ...(user || {}), role: effectiveRole });
@@ -109,10 +140,41 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButton
                 ...route,
                 icon: ICONS[route.iconId] || LayoutDashboard,
                 label: t(`items.${route.key}`, { defaultValue: route.key === 'communications' ? 'Inbox & Chat' : route.key === 'approvals' ? 'Approval Inbox' : undefined }),
-                children: route.children.map((child) => ({ ...child, label: t(`items.${child.key}`, { defaultValue: child.key }) }))
+                children: (route.to === '/equipment' ? [] : route.children).map((child) => ({ ...child, label: t(`items.${child.key}`, { defaultValue: child.key }) }))
             })),
         })).filter((group) => group.items.length > 0);
     }, [effectiveRole, t, user]);
+
+    const filteredNavGroups = useMemo(() => {
+        const query = filterQuery.trim().toLowerCase();
+        return navItems.map((group) => {
+            const roleFilteredItems = group.items.filter((item) => {
+                if (item.roles.includes('All')) return true;
+                if (!effectiveRole) return false;
+                if (item.roles.includes(effectiveRole)) return true;
+                return effectiveRole === 'Developer' && item.roles.includes('Admin');
+            });
+
+            // Attach locked flag for trial-gated nav items
+            const itemsWithLockState = roleFilteredItems.map((item) => {
+                const requiredFeature = TRIAL_LOCKED_PATHS[item.to];
+                const isLocked = isTrial && requiredFeature && !featureAllowed(allowedModules, requiredFeature);
+                return isLocked ? { ...item, locked: true } : item;
+            });
+
+            if (!query) {
+                return { ...group, items: itemsWithLockState };
+            }
+
+            const matchingItems = itemsWithLockState.filter((item) => {
+                if (item.label?.toLowerCase().includes(query)) return true;
+                if (item.children?.some((child) => child.label?.toLowerCase().includes(query))) return true;
+                return false;
+            });
+
+            return { ...group, items: matchingItems };
+        }).filter((group) => group.items.length > 0);
+    }, [navItems, effectiveRole, filterQuery, isTrial, allowedModules]);
 
     const isChildActive = (to) => {
         const [path, query] = to.split('?');
@@ -159,246 +221,285 @@ const Sidebar = ({ role, isCollapsed, toggleCollapse, onCloseMobile, closeButton
         ? (isRtl ? ChevronLeft : ChevronRight)
         : (isRtl ? ChevronRight : ChevronLeft);
 
-    const collapsedTooltipClass = 'start-[calc(100%+0.75rem)] shadow-lg shadow-black/10 origin-left rtl:origin-right';
-
-    const activeBarRadius = isRtl ? 'rounded-l-full' : 'rounded-r-full';
+    const lockedLabel = t('nav.upgradeRequired', { defaultValue: isRtl ? 'يتطلب ترقية' : 'Upgrade required' });
+    const trialHint = t('nav.notInTrial', { defaultValue: isRtl ? 'غير متاح في النسخة التجريبية' : 'Not available in the trial edition' });
+    const collapsedTooltipClass = 'start-[calc(100%+0.75rem)]';
 
     return (
-        <aside className="app-sidebar-panel relative flex h-full flex-col overflow-visible border-e text-emerald-50 transition-all duration-300 select-none dark:text-[var(--VIARA-ink)]">
-            <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-44 bg-[radial-gradient(circle_at_top,rgba(var(--VIARA-accent-rgb),.09),transparent_72%)] opacity-0 dark:opacity-100" />
-            {/* Header / Brand Section */}
-            <div className={`app-sidebar-header relative flex h-[76px] shrink-0 items-center border-b transition-all duration-300 ${isCollapsed ? 'justify-center px-0' : 'justify-between px-4'}`}>
+        <div className="app-sidebar-panel viara-sidebar-panel vx-sb relative flex h-full flex-col overflow-visible border-e border-white/10 text-slate-50 select-none dark:text-[var(--VIARA-ink)]">
+
+            {/* Brand */}
+            <div className={cx('app-sidebar-header viara-sidebar-header vx-sb-header relative', isCollapsed ? 'justify-center px-0' : 'justify-between ps-4 pe-3')}>
                 <div className="flex min-w-0 items-center gap-3 overflow-hidden">
-                    <div className="sidebar-brand-mark relative flex h-10 w-10 min-w-[2.5rem] items-center justify-center rounded-xl p-1 transition-transform duration-300 hover:scale-105">
-                        {centerSettings.logo_url ? (
-                            <img src={centerSettings.logo_url} alt="" className="h-8 w-8 object-contain" />
+                    <div
+                        className="sidebar-brand-mark relative flex h-10 w-10 min-w-10 items-center justify-center rounded-xl p-1.5 border border-white/15 bg-white/10 shadow-md shadow-black/20"
+                        title={isCollapsed ? centerName : undefined}
+                        role={isCollapsed ? 'img' : undefined}
+                        aria-label={isCollapsed ? centerName : undefined}
+                        aria-hidden={!isCollapsed}
+                    >
+                        {brandLogoUrl && !brandLogoFailed ? (
+                            <img src={brandLogoUrl} alt="" onError={() => setBrandLogoFailed(true)} className="h-full w-full object-contain" />
                         ) : (
-                            <span className="text-xs font-black tracking-wider text-teal-800">{brandInitials}</span>
+                            <span className="text-base font-black tracking-tight text-white drop-shadow">{brandInitials}</span>
                         )}
-                        <span className="absolute -bottom-0.5 -end-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-white dark:ring-[var(--VIARA-surface)]">
-                            <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
-                        </span>
                     </div>
 
                     {!isCollapsed && (
-                        <div className="min-w-0 animate-in fade-in slide-in-from-start-3 duration-300">
-                            <h1 className="sidebar-primary-copy truncate text-sm font-bold tracking-tight">
-                                {centerSettings.center_name || t('app.name', { ns: 'common', defaultValue: VIARA_BRAND.name })}
+                        <div className="min-w-0 flex-1">
+                            <h1 dir="auto" title={centerName} className="sidebar-primary-copy truncate text-start text-[13px] font-extrabold leading-snug text-white tracking-normal">
+                                {centerName}
                             </h1>
-                             <p className={`sidebar-muted-copy truncate text-[10px] font-bold ${isRtl ? 'tracking-normal' : 'uppercase tracking-[.12em]'}`}>
-                                {centerSettings.branch_name || t('app.tagline', { ns: 'common', defaultValue: VIARA_BRAND.tagline })}
+                            <p dir="auto" title={branchName} className="sidebar-muted-copy truncate text-start text-[11px] font-semibold leading-normal text-white/70">
+                                {branchName}
                             </p>
                         </div>
                     )}
                 </div>
 
+                {!isCollapsed && (
+                    <button
+                        type="button"
+                        onClick={toggleCollapse}
+                        className="hidden lg:flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+                        title={t('actions.collapseSidebar', { defaultValue: isRtl ? 'تصغير القائمة' : 'Collapse sidebar' })}
+                        aria-label={t('actions.collapseSidebar', { defaultValue: isRtl ? 'تصغير القائمة' : 'Collapse sidebar' })}
+                    >
+                        <CollapseIcon size={14} />
+                    </button>
+                )}
+
                 <button
                     type="button"
                     ref={closeButtonRef}
                     onClick={onCloseMobile}
-                    className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-800 dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-[var(--VIARA-ink)] lg:hidden"
+                    className="vx-sub-toggle !static lg:hidden"
                     aria-label={t('actions.close', { ns: 'common' })}
                 >
                     <X size={20} />
                 </button>
             </div>
 
-            {/* Navigation Body */}
-            <nav className={`app-sidebar-scroll relative flex-1 overflow-y-auto px-2.5 py-3 ${isCollapsed ? 'space-y-2' : 'space-y-4'}`} aria-label={t('aria.mainNavigation')}>
+            {/* Navigation */}
+            <nav className={cx('app-sidebar-scroll vx-sb-scroll relative flex-1 overflow-y-auto px-2.5 py-3', isCollapsed ? 'space-y-1' : 'space-y-2')} aria-label={t('aria.mainNavigation')}>
                 {!isCollapsed && (
-                    <div className="px-3 pb-1 pt-1">
-                        <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-emerald-100/60 dark:text-[var(--VIARA-muted)]">
-                            {t('workspace.title', { ns: 'navigation', defaultValue: 'Your workspace' })}
+                    <div className="px-2 pt-1 pb-1">
+                        <p className="text-[11px] font-extrabold tracking-wider text-white/50">
+                            {t('summary.title', { defaultValue: isRtl ? 'مساحة عملك' : 'Your workspace' })}
                         </p>
                     </div>
                 )}
-                {navItems.map((group) => {
-                    const categoryStyle = CATEGORY_STYLES[group.key] || CATEGORY_STYLES.clinical;
-                    const filteredItems = group.items.filter((item) => {
-                        if (item.roles.includes('All')) return true;
-                        if (!effectiveRole) return false;
-                        if (item.roles.includes(effectiveRole)) return true;
-                        return effectiveRole === 'Developer' && item.roles.includes('Admin');
-                    });
-                    if (filteredItems.length === 0) return null;
+                {!isCollapsed && (
+                    <div className="relative px-0.5 pb-2">
+                        <Search size={14} aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-white/40" />
+                        <input
+                            type="text"
+                            value={filterQuery}
+                            onChange={(e) => setFilterQuery(e.target.value)}
+                            placeholder={t('actions.filterPlaceholder', { defaultValue: isRtl ? 'تصفية القائمة السريعة...' : 'Search menu...' })}
+                            aria-label={t('actions.filterPlaceholder', { defaultValue: isRtl ? 'تصفية القائمة السريعة...' : 'Search menu...' })}
+                            className="vx-sb-search"
+                        />
+                        {filterQuery ? (
+                            <button
+                                type="button"
+                                onClick={() => setFilterQuery('')}
+                                aria-label={t('actions.clear', { ns: 'common', defaultValue: isRtl ? 'مسح' : 'Clear' })}
+                                className="absolute end-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-white/60 transition hover:bg-white/10 hover:text-white"
+                            >
+                                <X size={13} />
+                            </button>
+                        ) : (
+                            <kbd className="pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 rounded border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-white/40">
+                                /
+                            </kbd>
+                        )}
+                    </div>
+                )}
+
+                {filteredNavGroups.map((group, groupIndex) => {
+                    const isSectionCollapsed = !filterQuery && Boolean(collapsedSections[group.key]);
 
                     return (
-                        <div key={group.key} className="space-y-1">
+                        <div key={group.key} className="space-y-0.5">
+                            {isCollapsed && groupIndex > 0 && <div className="vx-sb-sep" aria-hidden="true" />}
                             {!isCollapsed && (
-                                <div className="app-sidebar-group-label flex items-center gap-2 px-3 pb-1 pt-2">
-                                    <span className={`shrink-0 text-[10px] font-extrabold ${isRtl ? 'tracking-normal' : 'uppercase tracking-[0.14em]'} ${categoryStyle.groupTag}`}>
+                                <button
+                                    type="button"
+                                    onClick={() => toggleSectionCollapse(group.key)}
+                                    className="vx-nav-group group"
+                                    aria-expanded={!isSectionCollapsed}
+                                    aria-controls={`group-content-${group.key}`}
+                                    title={isSectionCollapsed ? t('actions.expandGroup') : t('actions.collapseGroup')}
+                                >
+                                    <span className="truncate text-[11.5px] font-extrabold tracking-wide text-white/55 transition-colors group-hover:text-white">
                                         {group.group}
                                     </span>
-                                    <span aria-hidden="true" className="h-px flex-1 bg-white/10 dark:bg-[var(--VIARA-line)]" />
-                                </div>
+                                    <ChevronDown
+                                        size={13}
+                                        aria-hidden="true"
+                                        className={cx('shrink-0 text-white/40 transition-transform duration-200 group-hover:text-white', isSectionCollapsed && (isRtl ? 'rotate-90' : '-rotate-90'))}
+                                    />
+                                </button>
                             )}
-                            <ul className="space-y-1" aria-label={group.group}>
-                                {filteredItems.map((item) => (
+                            <ul
+                                id={`group-content-${group.key}`}
+                                hidden={!isCollapsed && isSectionCollapsed}
+                                className="space-y-0.5"
+                                aria-label={group.group}
+                            >
+                                {group.items.map((item) => (
                                     <li key={item.to}>
                                         <div className="relative">
-                                        <NavLink
-                                            to={item.children[0]?.to || item.to}
-                                            onClick={(event) => handleNavigation(event, item)}
-                                            aria-current={item.children.length ? 'false' : undefined}
-                                            end={item.to === '/dashboard'}
-                                            className={({ isActive }) => `
-                                                group relative flex min-h-11 items-center gap-3 overflow-visible rounded-xl border px-3 py-2 text-[13px] font-semibold transition-[background-color,border-color,color,transform] duration-150
-                                                ${isActive
-                                                    ? categoryStyle.activeBg
-                                                    : 'border-transparent text-emerald-50/70 hover:border-white/10 hover:bg-white/[.08] hover:text-white dark:text-[var(--VIARA-muted)] dark:hover:border-[var(--VIARA-line)] dark:hover:bg-[var(--VIARA-surface)] dark:hover:text-[var(--VIARA-ink)]'}
-                                                ${isCollapsed ? 'justify-center' : `justify-start ${item.children.length ? 'pe-12' : ''}`}
-                                            `}
-                                            title={isCollapsed ? item.label : undefined}
-                                            aria-label={item.label}
-                                        >
-                                            {({ isActive }) => (
-                                                <>
-                                                    {/* Active side indicator pill */}
-                                                    <div
-                                                        className={`absolute start-0 top-1/2 h-5 w-1 -translate-y-1/2 ${activeBarRadius} transition-all duration-200 ${categoryStyle.activeBar} ${isActive ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`}
-                                                    />
+                                            <NavLink
+                                                to={item.children[0]?.to || item.to}
+                                                onClick={(event) => handleNavigation(event, item)}
+                                                aria-current={item.children.length ? 'false' : undefined}
+                                                end={item.to === '/dashboard'}
+                                                data-collapsed={isCollapsed}
+                                                title={isCollapsed ? item.label : undefined}
+                                                className={({ isActive }) => cx(
+                                                    'group vx-nav-item',
+                                                    isActive && 'is-active',
+                                                    !isCollapsed && item.children.length > 0 && 'pe-11',
+                                                    item.locked && 'opacity-60'
+                                                )}
+                                                aria-label={item.locked ? `${item.label} — ${lockedLabel}` : item.label}
+                                            >
+                                                <item.icon size={18} strokeWidth={1.9} className="vx-nav-icon" aria-hidden="true" />
 
-                                                    {/* Icon container */}
-                                                    <div
-                                                        className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-200 ${
-                                                            isActive
-                                                                ? categoryStyle.activeIcon
-                                                                : 'bg-white/[.08] text-emerald-50/75 group-hover:bg-white/[.12] group-hover:text-white dark:bg-transparent dark:text-[var(--VIARA-muted)] dark:group-hover:bg-[var(--VIARA-surface-muted)] dark:group-hover:text-[var(--VIARA-ink)]'
-                                                        }`}
-                                                    >
-                                                        <item.icon size={17} strokeWidth={isActive ? 2.4 : 1.9} />
-                                                        {item.badge && isCollapsed && (
-                                                            <span className="absolute -end-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-500 dark:border-[var(--VIARA-canvas)]" />
-                                                        )}
-                                                    </div>
+                                                {!isCollapsed && (
+                                                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                                                        <span className="truncate">{item.label}</span>
+                                                        {item.locked && <Lock size={12} className="shrink-0 opacity-80" aria-hidden="true" title={trialHint} />}
+                                                    </span>
+                                                )}
 
-                                                    {!isCollapsed && (
-                                                        <span className="min-w-0 flex-1 truncate leading-5">
-                                                            {item.label}
-                                                        </span>
-                                                    )}
+                                                {isCollapsed && (
+                                                    <span className={cx('vx-tip hidden lg:group-hover:block lg:group-focus-visible:block', collapsedTooltipClass)} role="tooltip">
+                                                        {item.label}
+                                                    </span>
+                                                )}
+                                            </NavLink>
 
-                                                    {!isCollapsed && item.badge && (
-                                                        <span className={`ms-auto rounded-full px-2 py-0.5 text-[9px] font-black ${isRtl ? 'tracking-normal' : 'uppercase tracking-wider'} ${categoryStyle.badge}`}>
-                                                            {t('badge.new')}
-                                                        </span>
-                                                    )}
-
-                                                    {/* Collapsed mode popup tooltip (Corrected LTR / RTL direction) */}
-                                                    {isCollapsed && (
-                                                        <span
-                                                            className={`pointer-events-none absolute top-1/2 z-50 hidden -translate-y-1/2 whitespace-nowrap rounded-xl border border-slate-200/80 bg-slate-900/95 px-3 py-1.5 text-xs font-bold text-white shadow-lg backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-ink)] lg:group-hover:block ${collapsedTooltipClass}`}
-                                                            role="tooltip"
-                                                        >
-                                                            {item.label}
-                                                        </span>
-                                                    )}
-                                                </>
+                                            {!isCollapsed && item.children.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleGroup(item)}
+                                                    aria-expanded={Boolean(isGroupExpanded(item))}
+                                                    aria-controls={`submenu-${item.to.replaceAll('/', '-')}`}
+                                                    aria-label={t('actions.toggleSubmenu', { section: item.label, defaultValue: `Expand or collapse ${item.label} sections` })}
+                                                    className="vx-sub-toggle"
+                                                >
+                                                    <ChevronDown size={16} className={cx('transition-transform duration-200', isGroupExpanded(item) && 'rotate-180')} />
+                                                </button>
                                             )}
-                                         </NavLink>
-                                         {!isCollapsed && item.children.length > 0 && (
-                                             <button type="button" onClick={() => toggleGroup(item)} aria-expanded={Boolean(isGroupExpanded(item))} aria-controls={`submenu-${item.to.replaceAll('/', '-')}`} aria-label={t('actions.toggleSubmenu', { section: item.label })} className="absolute end-1 top-1 z-10 flex h-9 w-9 items-center justify-center rounded-lg text-emerald-100/80 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-[var(--VIARA-ink)]">
-                                                 <ChevronDown size={16} className={`transition-transform ${isGroupExpanded(item) ? 'rotate-180' : ''}`} />
-                                             </button>
-                                         )}
-                                         {item.children.length > 0 && !isCollapsed && (
-                                             <ul id={`submenu-${item.to.replaceAll('/', '-')}`} hidden={!isGroupExpanded(item)} className="ms-5 mt-1 space-y-0.5 border-s-2 border-white/10 ps-2 dark:border-[var(--VIARA-line)]" aria-label={item.label}>
-                                                 {item.children.map((child) => {
-                                                     const childActive = isChildActive(child.to);
-                                                     return <li key={child.to}><Link to={child.to} onClick={handleNavigation} aria-current={childActive ? 'page' : undefined} className={`group flex min-h-10 items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${childActive ? 'bg-white/[.12] text-white dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-accent-text)]' : 'text-emerald-100/80 hover:bg-white/[.07] hover:text-white dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface)] dark:hover:text-[var(--VIARA-ink)]'}`}><span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${childActive ? 'bg-[var(--VIARA-accent)]' : 'bg-white/25'}`} /><span className="min-w-0 break-words">{child.label}</span></Link></li>;
-                                                 })}
-                                             </ul>
-                                         )}
-                                         </div>
-                                     </li>
+
+                                            {item.children.length > 0 && !isCollapsed && (
+                                                <ul id={`submenu-${item.to.replaceAll('/', '-')}`} hidden={!isGroupExpanded(item)} className="vx-sub-list space-y-0.5" aria-label={item.label}>
+                                                    {item.children.map((child) => {
+                                                        const childActive = isChildActive(child.to);
+                                                        return (
+                                                            <li key={child.to}>
+                                                                <Link
+                                                                    to={child.to}
+                                                                    onClick={handleNavigation}
+                                                                    aria-current={childActive ? 'page' : undefined}
+                                                                    className={cx('vx-sub-link', childActive && 'is-active')}
+                                                                >
+                                                                    <span className="min-w-0 break-words">{child.label}</span>
+                                                                </Link>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    </li>
                                 ))}
                             </ul>
                         </div>
                     );
                 })}
+
+                {filteredNavGroups.length === 0 && !isCollapsed && (
+                    <p className="px-3 py-8 text-center text-sm font-medium text-white/55">
+                        {t('summary.noFilterResults', { defaultValue: isRtl ? 'لا توجد نتائج مطابقة' : 'No matching pages' })}
+                    </p>
+                )}
             </nav>
 
-            {/* Footer Profile / Session Area */}
-             <div className="app-sidebar-footer relative shrink-0 border-t p-3">
-                <div
-                    className={`flex items-center rounded-xl border border-white/10 bg-white/[.08] p-2 shadow-sm backdrop-blur-md transition-all duration-200 hover:border-white/20 hover:bg-white/10 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:hover:border-[var(--VIARA-line-strong)] dark:hover:bg-[var(--VIARA-surface-raised)] ${
-                        isCollapsed ? 'justify-center' : 'justify-between'
-                    }`}
-                >
-                    <div className="flex min-w-0 items-center gap-2.5 overflow-hidden">
-                        <div className="relative flex h-8 w-8 min-w-[2rem] items-center justify-center rounded-lg bg-white font-bold text-[var(--viara-primary-dark)] shadow-sm ring-1 ring-white/20 dark:bg-[var(--VIARA-surface-muted)] dark:text-[var(--VIARA-accent-text)] dark:shadow-none dark:ring-[var(--VIARA-line)]">
-                            <span className="text-xs">{userInitial}</span>
-                            <span className="absolute -bottom-0.5 -end-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-white dark:ring-[var(--VIARA-surface)]" />
+            {/* Signed-in user */}
+            <div className="app-sidebar-footer vx-sb-footer">
+                <div className={cx('vx-sb-user', isCollapsed ? 'flex-col justify-center gap-1.5' : '')}>
+                    <span className="vx-sb-avatar shadow-inner" title={isCollapsed ? user?.name : undefined}>{userInitial}</span>
+                    {!isCollapsed && (
+                        <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-extrabold leading-tight text-white tracking-normal">
+                                {user?.name || t('common.user', { ns: 'common' })}
+                            </p>
+                            <span className="vx-sb-role">
+                                {effectiveRole ? t(`roles.${String(effectiveRole).toLowerCase()}`, { ns: 'common', defaultValue: effectiveRole }) : t('common.staff', { ns: 'common' })}
+                            </span>
                         </div>
-                        {!isCollapsed && (
-                            <div className="min-w-0">
-                                <p className="truncate text-xs font-bold text-white dark:text-[var(--VIARA-ink)]">
-                                    {user?.name || t('common.user', { ns: 'common' })}
-                                </p>
-                                <p className={`mt-0.5 truncate text-[9px] font-extrabold text-emerald-100/75 dark:text-[var(--VIARA-muted)] ${isRtl ? 'tracking-normal' : 'uppercase tracking-wider'}`}>
-                                    {effectiveRole ? t(`roles.${String(effectiveRole).toLowerCase()}`, { ns: 'common', defaultValue: effectiveRole }) : t('common.staff', { ns: 'common' })}
-                                </p>
-                            </div>
-                        )}
-                    </div>
-
+                    )}
                     <button
                         type="button"
                         onClick={handleLogout}
-                        className="rounded-lg p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--danger-bg)] dark:hover:text-[var(--danger)]"
+                        className={cx('vx-sb-logout', isCollapsed && '!h-7 !w-7')}
                         title={t('actions.signOut', { ns: 'common', defaultValue: 'Sign out' })}
                         aria-label={t('actions.signOut', { ns: 'common', defaultValue: 'Sign out' })}
                     >
-                        <LogOut size={16} />
+                        <LogOut size={16} className={cx(isRtl && 'rotate-180')} />
                     </button>
                 </div>
             </div>
 
-            {/* Sidebar Toggle Expand/Collapse Button */}
-            <button
-                type="button"
-                onClick={toggleCollapse}
-                className="absolute -end-[18px] top-5 z-50 hidden h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md ring-2 ring-white/80 transition-all duration-200 hover:scale-105 hover:border-teal-500 hover:bg-teal-50 hover:text-teal-700 dark:border-[var(--VIARA-line-strong)] dark:bg-[var(--VIARA-surface-raised)] dark:text-[var(--VIARA-muted)] dark:ring-[var(--VIARA-canvas)] dark:hover:border-[var(--VIARA-accent-text)] dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-[var(--VIARA-accent-text)] lg:flex"
-                aria-label={isCollapsed ? t('actions.expandSidebar') : t('actions.collapseSidebar')}
-                title={isCollapsed ? t('actions.expandSidebar') : t('actions.collapseSidebar')}
-            >
-                <CollapseIcon size={13} strokeWidth={2.6} />
-            </button>
+            {/* Collapse / expand */}
+            {isCollapsed && (
+                <button
+                    type="button"
+                    onClick={toggleCollapse}
+                    className="vx-collapse-btn hidden lg:flex"
+                    aria-label={isCollapsed ? t('actions.expandSidebar') : t('actions.collapseSidebar')}
+                    title={isCollapsed ? t('actions.expandSidebar') : t('actions.collapseSidebar')}
+                >
+                    <CollapseIcon size={14} strokeWidth={2.4} />
+                </button>
+            )}
 
-            {/* Sign Out Confirmation Modal */}
+            {/* Sign-out confirmation */}
             {isSignOutOpen && createPortal(
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+                <div className="vx-modal-scrim animate-in fade-in duration-150" onClick={() => setIsSignOutOpen(false)}>
                     <div
-                        className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl animate-in zoom-in-95 duration-150 dark:border-slate-800 dark:bg-slate-900"
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="signout-title"
+                        aria-describedby="signout-desc"
+                        className="vx-modal-card max-w-sm animate-in zoom-in-95 duration-150"
                         dir={isRtl ? 'rtl' : 'ltr'}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => { if (event.key === 'Escape') setIsSignOutOpen(false); }}
                     >
-                        <h3 className="mb-1 text-sm font-bold text-slate-900 dark:text-white">
+                        <h3 id="signout-title" className="vx-modal-title">
                             {t('session.signOutTitle', { ns: 'common', defaultValue: `Sign out of ${VIARA_BRAND.name}?` })}
                         </h3>
-                        <p className="mb-4 text-xs font-medium leading-relaxed text-slate-500 dark:text-slate-400">
+                        <p id="signout-desc" className="vx-modal-text">
                             {t('session.signOutMessage', { ns: 'common', defaultValue: 'You will need to sign in again to access the workspace.' })}
                         </p>
-                        <div className="flex gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setIsSignOutOpen(false)}
-                                className="flex-1 rounded-xl border border-slate-200 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                            >
+                        <div className="mt-5 grid grid-cols-2 gap-2">
+                            <button type="button" autoFocus onClick={() => setIsSignOutOpen(false)} className="vx-btn vx-btn-ghost">
                                 {t('actions.cancel', { ns: 'common', defaultValue: 'Cancel' })}
                             </button>
-                            <button
-                                type="button"
-                                onClick={confirmLogout}
-                                className="flex-1 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 py-2 text-xs font-bold text-white shadow-md shadow-rose-600/20 transition hover:from-rose-700 hover:to-red-700"
-                            >
-                                {t('actions.signOut', { ns: 'common', defaultValue: 'Sign Out' })}
+                            <button type="button" onClick={confirmLogout} className="vx-btn vx-btn-danger">
+                                {t('actions.signOut', { ns: 'common', defaultValue: 'Sign out' })}
                             </button>
                         </div>
                     </div>
                 </div>,
                 document.body
             )}
-        </aside>
+        </div>
     );
 };
 

@@ -143,15 +143,23 @@ const approvalSchema = z.object({
     examTypeId: z.string().uuid().optional(),
     status: z.enum(['Not Required', 'Pending']).optional(),
     approvalNumber: z.string().trim().max(100).optional(),
-    requestedAmount: z.coerce.number().min(0).optional(),
+    requestedAmount: z.coerce.number().positive().optional(),
     documentUrl: optionalUrl,
     expiresAt: optionalDate
-}).strict();
+}).strict().superRefine((data, context) => {
+    if (data.status !== 'Not Required' && !(Number(data.requestedAmount) > 0)) {
+        context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['requestedAmount'],
+            message: 'A positive requested amount is required for an insurance authorization'
+        });
+    }
+});
 
 const updateApprovalStatusSchema = z.object({
     status: z.enum(['Approved', 'Rejected']),
     approvalNumber: z.string().trim().min(2).max(100).optional(),
-    approvedAmount: z.coerce.number().min(0).optional(),
+    approvedAmount: z.coerce.number().positive().optional(),
     rejectionReason: z.string().trim().min(3).max(1000).optional()
 }).superRefine((data, context) => {
     if (data.status === 'Approved' && !data.approvalNumber) {

@@ -221,7 +221,7 @@ const AiProviderSettings = ({ embedded = false }) => {
                         <div className="min-w-0">
                             <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
                                 <Sparkles size={11} />
-                                <span>Clinical Intelligence & Vision Routing</span>
+                                <span>{t('settings.aiProfiles.eyebrow')}</span>
                             </span>
                             <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('settings.aiProfiles.title', { defaultValue: 'AI Engine & Vision Providers' })}
@@ -263,7 +263,7 @@ const AiProviderSettings = ({ embedded = false }) => {
                             <Sparkles size={16} className="text-teal-600 dark:text-teal-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Report LLMs</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('settings.aiProfiles.reportModels')}</p>
                             <p className="font-mono text-base font-black text-slate-900 dark:text-white">{counts.report}</p>
                         </div>
                     </div>
@@ -273,7 +273,7 @@ const AiProviderSettings = ({ embedded = false }) => {
                             <ServerCog size={16} className="text-emerald-600 dark:text-emerald-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">PACS Vision</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">{t('settings.aiProfiles.pacsVision')}</p>
                             <p className="font-mono text-base font-black text-emerald-900 dark:text-white">{counts.pacs}</p>
                         </div>
                     </div>
@@ -283,8 +283,8 @@ const AiProviderSettings = ({ embedded = false }) => {
                             <CheckCircle2 size={16} className="text-sky-600 dark:text-sky-400" />
                         </div>
                         <div className="min-w-0">
-                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">Active Model</p>
-                            <p className="font-mono text-sm font-black text-sky-900 dark:text-white truncate">{selected?.name || 'Active'}</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">{t('settings.aiProfiles.activeModel')}</p>
+                            <p className="font-mono text-sm font-black text-sky-900 dark:text-white truncate">{selected?.name || t('settings.aiProfiles.active')}</p>
                         </div>
                     </div>
 
@@ -293,8 +293,8 @@ const AiProviderSettings = ({ embedded = false }) => {
                             <KeyRound size={16} className="text-amber-600 dark:text-amber-400" />
                         </div>
                         <div className="min-w-0">
-                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">Key Vault</p>
-                            <p className="font-mono text-xs font-black text-amber-900 dark:text-white truncate">AES-256 Encrypted</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">{t('settings.aiProfiles.keyVault')}</p>
+                            <p className="font-mono text-xs font-black text-amber-900 dark:text-white truncate">{t('settings.aiProfiles.encryptionStandard')}</p>
                         </div>
                     </div>
                 </div>
@@ -311,7 +311,7 @@ const AiProviderSettings = ({ embedded = false }) => {
                             <button key={profile.id} type="button" onClick={() => setSelectedId(profile.id)} className={`min-w-48 rounded-2xl border px-3.5 py-3 text-start transition-all lg:w-full ${selectedId === profile.id ? 'border-teal-500/40 bg-teal-500/10 dark:border-teal-500/30 dark:bg-teal-500/10' : 'border-transparent hover:bg-white dark:hover:bg-slate-800/60'}`}>
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="truncate text-xs font-black text-slate-800 dark:text-slate-100">{profile.name}</span>
-                                    {profile.active && <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.2 text-[9px] font-black text-emerald-700 dark:text-emerald-300 flex items-center gap-1"><Check size={11} /> Live</span>}
+                                    {profile.active && <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.2 text-[9px] font-black text-emerald-700 dark:text-emerald-300 flex items-center gap-1"><Check size={11} /> {t('settings.aiProfiles.live')}</span>}
                                 </div>
                                 <p className="mt-1 truncate text-[10px] font-semibold text-slate-500 dark:text-slate-400">{profile.provider} · {profile.model || t('settings.aiProfiles.modelRequired')}</p>
                             </button>

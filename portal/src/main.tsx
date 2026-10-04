@@ -5,6 +5,7 @@ import App from './App';
 import { store } from './store/store';
 import './i18n';
 import './index.css';
+import './portal-templates/templates.css';
 import './portal-landing.css';
 import { applyPortalTheme, getStoredTheme } from './utils/theme';
 

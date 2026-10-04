@@ -1313,8 +1313,8 @@ const AnalyticsDashboard = () => {
                             </span>
                         </div>
 
-                        <div className="h-80 w-full">
-                            <ResponsiveContainer width="100%" height="100%">
+                        <div className="h-80 w-full min-w-0">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                 <ComposedChart data={peakHourlyData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="4 4" stroke="currentColor" className="text-slate-100 dark:text-slate-800" vertical={false} />
                                     <XAxis dataKey="hour" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} />
@@ -1825,8 +1825,8 @@ const MixPanel = ({ icon: Icon, title, description, rows, loading, valueFormatte
                     <PanelSkeleton />
                 ) : rows.length ? (
                     <div className="space-y-4">
-                        <div className="h-56">
-                            <ResponsiveContainer width="100%" height="100%">
+                        <div className="h-56 w-full min-w-0">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                 <PieChart>
                                     <Pie data={rows} dataKey="value" nameKey="label" innerRadius={54} outerRadius={80} paddingAngle={4}>
                                         {rows.map((_, index) => (

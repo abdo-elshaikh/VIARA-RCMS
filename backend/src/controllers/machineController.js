@@ -200,7 +200,7 @@ const updateMachine = (db) => async (req, res, next) => {
         if (['Under Maintenance', 'Out of Service'].includes(updated.status) && curr.status !== updated.status) {
             const apptQuery = await client.query(`
                 SELECT a.appointment_id, a.start_time, a.end_time, a.status, a.order_number,
-                       p.mrn, p.first_name_enc, p.last_name_enc, p.phone,
+                       p.mrn, p.first_name_enc, p.last_name_enc,
                        et.name AS exam_type_name
                 FROM appointments a
                 JOIN patients p ON a.patient_id = p.patient_id

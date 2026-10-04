@@ -10,10 +10,62 @@ const receptionistA = { user_id: '00000000-0000-4000-8000-000000000403', full_na
 const receptionistB = { user_id: '00000000-0000-4000-8000-000000000404', full_name: 'Sara Reception', role: 'Receptionist' };
 
 describe('reception task service concurrency & claim control', () => {
+    test('loads the exam_id from examinations for appointment claims instead of assuming it exists on appointments', async () => {
+        const client = {
+            query: jest.fn(async (sql, values) => {
+                const text = String(sql);
+                // Serialize new claims: match the simple FOR SHARE session check only
+                if (text.includes('reception_shift_sessions') && text.includes('FOR SHARE')) {
+                    return { rows: [{ session_id: 'sess-1', desk_identifier: 'شباك 1' }] };
+                }
+                if (text.includes('FOR UPDATE OF a')) {
+                    return {
+                        rows: [{
+                            appointment_id: appointmentId,
+                            exam_id: examId,
+                            status: 'Scheduled',
+                            modality_id: 'mod-1',
+                            room_number: 'Room 1',
+                            receptionist_id: null,
+                            receptionist_desk: null,
+                            receptionist_assigned_at: null,
+                            receptionist_assignment_version: 0,
+                            claimant_name: null,
+                            active_lease: false
+                        }]
+                    };
+                }
+                if (text.includes('UPDATE appointments')) {
+                    return { rows: [{ appointment_id: appointmentId, receptionist_id: receptionistA.user_id, receptionist_assigned_at: '2026-09-03T10:00:00Z', receptionist_desk: 'شباك 1', receptionist_assignment_version: 1 }] };
+                }
+                if (text.includes('UPDATE reception_work_items')) {
+                    return { rows: [] };
+                }
+                if (text.includes('INSERT INTO reception_work_items')) {
+                    return { rows: [{ work_item_id: 'wi-1', appointment_id: appointmentId, status: 'Claimed', claimed_by: receptionistA.user_id, desk_identifier: 'شباك 1', version: 1, lease_expires_at: '2026-09-03T10:07:00Z' }] };
+                }
+                throw new Error(`Unexpected SQL: ${text}`);
+            })
+        };
+
+        await expect(claimReceptionTask(client, {
+            appointmentId,
+            user: receptionistA,
+            desk: 'شباك 1',
+            expectedVersion: 0
+        })).resolves.toMatchObject({ appointment_id: appointmentId, receptionist_desk: 'شباك 1' });
+
+        expect(client.query.mock.calls.some(([sql]) => String(sql).includes('LEFT JOIN examinations e'))).toBe(true);
+    });
+
     test('claims an unclaimed appointment atomically with a 15-minute lease and desk identifier', async () => {
         const client = {
             query: jest.fn(async (sql, values) => {
                 const text = String(sql);
+                // Serialize new claims: match the simple FOR SHARE session check only
+                if (text.includes('reception_shift_sessions') && text.includes('FOR SHARE')) {
+                    return { rows: [{ session_id: 'sess-1', desk_identifier: 'شباك 1' }] };
+                }
                 if (text.includes('FOR UPDATE OF a')) {
                     return {
                         rows: [{
@@ -79,6 +131,10 @@ describe('reception task service concurrency & claim control', () => {
         const client = {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
+                // Serialize new claims: match the simple FOR SHARE session check only
+                if (text.includes('reception_shift_sessions') && text.includes('FOR SHARE')) {
+                    return { rows: [{ session_id: 'sess-1', desk_identifier: 'شباك 2' }] };
+                }
                 if (text.includes('FOR UPDATE OF a')) {
                     return {
                         rows: [{
@@ -115,13 +171,18 @@ describe('reception task service concurrency & claim control', () => {
             })
         });
 
-        expect(client.query).toHaveBeenCalledTimes(1);
+        // FOR SHARE session check + FOR UPDATE OF a appointment check = 2 queries
+        expect(client.query).toHaveBeenCalledTimes(2);
     });
 
     test('allows the same receptionist to refresh or extend an existing lease on their desk', async () => {
         const client = {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
+                // Serialize new claims: match the simple FOR SHARE session check only
+                if (text.includes('reception_shift_sessions') && text.includes('FOR SHARE')) {
+                    return { rows: [{ session_id: 'sess-1', desk_identifier: 'شباك 1' }] };
+                }
                 if (text.includes('FOR UPDATE OF a')) {
                     return {
                         rows: [{
@@ -179,6 +240,36 @@ describe('reception task service concurrency & claim control', () => {
 
         expect(result.appointment_id).toBe(appointmentId);
         expect(result.receptionist_assignment_version).toBe(2);
+    });
+
+    test('keeps the receptionist assignment visible when a case moves from reception to cashier', async () => {
+        const client = {
+            query: jest.fn(async (sql) => {
+                const text = String(sql);
+                if (text.includes('UPDATE reception_work_items')) {
+                    return { rows: [] };
+                }
+                if (text.includes('UPDATE appointments')) {
+                    return {
+                        rows: [{
+                            appointment_id: appointmentId,
+                            receptionist_id: receptionistA.user_id,
+                            receptionist_desk: 'شباك 1',
+                            receptionist_assignment_version: 2
+                        }]
+                    };
+                }
+                throw new Error(`Unexpected SQL: ${text}`);
+            })
+        };
+
+        const result = await require('../src/services/receptionTaskService').completeReceptionTask(client, {
+            appointmentId,
+            userId: receptionistA.user_id
+        });
+
+        expect(result.receptionist_id).toBe(receptionistA.user_id);
+        expect(result.claimed_by).toBe(receptionistA.user_id);
     });
 
     test('releases an assigned task and clears the lease cleanly', async () => {

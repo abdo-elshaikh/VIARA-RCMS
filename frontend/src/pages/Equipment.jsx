@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback, useDeferredValue, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
@@ -8,30 +8,29 @@ import {
     DoorClosed,
     FileSpreadsheet,
     Wrench,
-    CheckCircle2,
     Clock3,
-    RefreshCw,
     Network,
+    Monitor,
     Plus,
     Search,
     ChevronDown,
     ChevronUp,
     Edit3,
     Trash2,
-    Download,
-    Upload,
     Activity
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import EquipmentRegistry from '../components/equipment/EquipmentRegistry';
 import MaintenanceManager from '../components/equipment/MaintenanceManager';
 import DowntimeManager from '../components/equipment/DowntimeManager';
+import EquipmentWorkstationMapping from '../components/equipment/EquipmentWorkstationMapping';
+import { EquipmentHeaderActions, EquipmentTabs } from '../components/equipment/EquipmentHeader';
 import RoomManagement from '../components/settings/clinical/RoomManagement';
 import RoomDetailsView from '../components/equipment/RoomDetailsView';
 import ClinicalExportModal from '../components/equipment/ClinicalExportModal';
 import ClinicalImportDialog from '../components/equipment/ClinicalImportDialog';
-import { MachineDialog, emptyMachine } from '../components/settings/clinical/MachineManagement';
-import { ExamDialog, emptyExam } from '../components/settings/clinical/ExamManagement';
+import { MachineDialog } from '../components/settings/clinical/MachineManagement';
+import { ExamDialog } from '../components/settings/clinical/ExamManagement';
 import { selectCurrentUser } from '../store/authSlice';
 import { hasDeveloperOrAdminRole } from '../utils/roles';
 import PageHeader from '../components/ui/PageHeader';
@@ -54,33 +53,47 @@ import {
     useUpdateExamTypeMutation,
     useDeleteExamTypeMutation
 } from '../store/api';
-
-const emptyRoomForm = {
-    name: '',
-    roomNumber: '',
-    type: 'Imaging',
-    floor: '',
-    status: 'Active',
-    notes: ''
-};
+import {
+    EQUIPMENT_STATUS,
+    ROOM_TYPES,
+    ROOM_STATUS,
+    MACHINE_TYPES,
+    MAINTENANCE_STATUS,
+    DOWNTIME_STATUS,
+    emptyRoomForm,
+    emptyMachine,
+    emptyExam,
+    VALID_TABS
+} from '../types/equipment';
 
 const Equipment = () => {
     const { t, i18n } = useTranslation('workspace');
     const isArabic = i18n.language?.startsWith('ar');
     const user = useSelector(selectCurrentUser);
-    const canViewMaintenance = hasDeveloperOrAdminRole(user?.role) || user?.role === 'Technician';
+    const permissions = useMemo(() => new Set(user?.permissions || []), [user?.permissions]);
+    const canManageRooms = user?.role === 'Admin';
+    const canManageEquipment = hasDeveloperOrAdminRole(user?.role) || permissions.has('MANAGE_EQUIPMENT');
+    const canManageProcedures = hasDeveloperOrAdminRole(user?.role) || permissions.has('MANAGE_EXAM_CATALOG');
+    const canViewMaintenance = user?.role === 'Admin' || user?.role === 'Technician';
+    const canViewModality = ['Developer', 'Admin', 'Technician', 'Radiologist', 'Nurse'].includes(user?.role) || permissions.has('VIEW_QUEUE');
 
     const [searchParams, setSearchParams] = useSearchParams();
     const tabParam = searchParams.get('tab');
     const selectedRoomId = searchParams.get('roomId');
+    const [activeTabOverride, setActiveTabOverride] = useState(null);
 
-    const validTabs = ['matrix', 'rooms', 'registry', 'procedures', 'maintenance', 'downtime'];
-    const activeTab = validTabs.includes(tabParam) ? tabParam : 'matrix';
+    const activeTab = activeTabOverride || (VALID_TABS.includes(tabParam) ? tabParam : 'matrix');
+
+    useEffect(() => {
+        setActiveTabOverride(null);
+    }, [tabParam]);
 
     const setActiveTab = (tab) => {
+        setActiveTabOverride(tab);
         setSearchParams(prev => {
             const next = new URLSearchParams(prev);
             next.set('tab', tab);
+            next.delete('roomId');
             return next;
         }, { replace: true });
     };
@@ -100,11 +113,14 @@ const Equipment = () => {
 
     // State for Hierarchy Matrix
     const [matrixSearch, setMatrixSearch] = useState('');
+    const deferredMatrixSearch = useDeferredValue(matrixSearch);
     const [expandedRoomIds, setExpandedRoomIds] = useState(new Set());
     const [expandedMachineIds, setExpandedMachineIds] = useState(new Set());
+    const hasAutoExpandedRoom = useRef(false);
 
     // Procedures Filter
     const [procedureSearch, setProcedureSearch] = useState('');
+    const deferredProcedureSearch = useDeferredValue(procedureSearch);
     const [procedureModalityFilter, setProcedureModalityFilter] = useState('all');
     const [procedureContrastFilter, setProcedureContrastFilter] = useState('all');
 
@@ -145,6 +161,13 @@ const Equipment = () => {
     const downtime = Array.isArray(downtimeQuery.data) ? downtimeQuery.data : [];
     const matrixData = matrixQuery.data;
 
+    useEffect(() => {
+        const firstRoomId = matrixData?.rooms?.[0]?.room_id;
+        if (hasAutoExpandedRoom.current || !firstRoomId) return;
+        hasAutoExpandedRoom.current = true;
+        setExpandedRoomIds(previous => previous.size ? previous : new Set([firstRoomId]));
+    }, [matrixData?.rooms]);
+
     // Mutations
     const [createRoom, { isLoading: creatingRoom }] = useCreateRoomMutation();
     const [updateRoom, { isLoading: updatingRoom }] = useUpdateRoomMutation();
@@ -158,7 +181,6 @@ const Equipment = () => {
     const isBusy = creatingRoom || updatingRoom || creatingMachine || updatingMachine || deletingMachine || creatingExam || updatingExam || deletingExam;
 
     // Header metrics
-    const activeMachines = machines.filter(m => (m.status || 'Active') === 'Active').length;
     const scheduledMaintenance = maintenance.filter(record => !['Completed', 'Cancelled'].includes(record.status)).length;
     const activeDowntime = downtime.filter(record => record.status !== 'Resolved').length;
     const activeRooms = rooms.filter(r => r.status === 'Active').length;
@@ -174,6 +196,19 @@ const Equipment = () => {
         if (canViewMaintenance) maintenanceQuery.refetch();
         downtimeQuery.refetch();
     };
+
+    // Stable form handlers to prevent inline object creation
+    const updateRoomForm = useCallback((field, value) => {
+        setRoomForm(prev => ({ ...prev, [field]: value }));
+    }, []);
+
+    const updateMachineForm = useCallback((field, value) => {
+        setMachineForm(prev => ({ ...prev, [field]: value }));
+    }, []);
+
+    const updateExamForm = useCallback((field, value) => {
+        setExamForm(prev => ({ ...prev, [field]: value }));
+    }, []);
 
     // Matrix toggles
     const toggleRoomExpand = (roomId) => {
@@ -196,7 +231,7 @@ const Equipment = () => {
 
     // Filtered matrix rooms
     const matrixRooms = useMemo(() => {
-        const query = matrixSearch.trim().toLowerCase();
+        const query = deferredMatrixSearch.trim().toLowerCase();
         if (!query || !matrixData?.rooms) return matrixData?.rooms || [];
 
         return matrixData.rooms.filter(room => {
@@ -211,17 +246,17 @@ const Equipment = () => {
 
             return roomMatches || machineMatches;
         });
-    }, [matrixData, matrixSearch]);
+    }, [matrixData, deferredMatrixSearch]);
 
     // Filtered procedures catalog
     const filteredProcedures = useMemo(() => {
         return exams.filter(exam => {
-            const matchesSearch = !procedureSearch.trim() ||
-                exam.name?.toLowerCase().includes(procedureSearch.toLowerCase()) ||
-                exam.code?.toLowerCase().includes(procedureSearch.toLowerCase()) ||
-                exam.body_part?.toLowerCase().includes(procedureSearch.toLowerCase()) ||
-                exam.room_number?.toLowerCase().includes(procedureSearch.toLowerCase()) ||
-                exam.modality_name?.toLowerCase().includes(procedureSearch.toLowerCase());
+            const matchesSearch = !deferredProcedureSearch.trim() ||
+                exam.name?.toLowerCase().includes(deferredProcedureSearch.toLowerCase()) ||
+                exam.code?.toLowerCase().includes(deferredProcedureSearch.toLowerCase()) ||
+                exam.body_part?.toLowerCase().includes(deferredProcedureSearch.toLowerCase()) ||
+                exam.room_number?.toLowerCase().includes(deferredProcedureSearch.toLowerCase()) ||
+                exam.modality_name?.toLowerCase().includes(deferredProcedureSearch.toLowerCase());
 
             const matchesModality = procedureModalityFilter === 'all' ||
                 exam.modality_id === procedureModalityFilter ||
@@ -233,7 +268,7 @@ const Equipment = () => {
 
             return matchesSearch && matchesModality && matchesContrast;
         });
-    }, [exams, procedureSearch, procedureModalityFilter, procedureContrastFilter]);
+    }, [exams, deferredProcedureSearch, procedureModalityFilter, procedureContrastFilter]);
 
     // Modals handlers
     const handleOpenCreateRoom = () => {
@@ -261,6 +296,25 @@ const Equipment = () => {
             toast.error(t('roomNameAndNumberRequired'));
             return;
         }
+
+        // Anti-duplication check: Room Number & Room Name
+        const duplicateRoomNumber = rooms.find(r =>
+            r.room_number?.trim().toLowerCase() === roomForm.roomNumber.trim().toLowerCase() &&
+            r.room_id !== editingRoom?.room_id
+        );
+        if (duplicateRoomNumber) {
+            toast.error(isArabic ? 'رقم الجناح/الغرفة مستخدم بالفعل' : 'Room/Suite identifier is already in use');
+            return;
+        }
+        const duplicateRoomName = rooms.find(r =>
+            r.name?.trim().toLowerCase() === roomForm.name.trim().toLowerCase() &&
+            r.room_id !== editingRoom?.room_id
+        );
+        if (duplicateRoomName) {
+            toast.error(isArabic ? 'اسم الجناح/الغرفة مستخدم بالفعل' : 'Room/Suite name is already in use');
+            return;
+        }
+
         try {
             if (editingRoom) {
                 await updateRoom({
@@ -310,6 +364,31 @@ const Equipment = () => {
 
     const handleSaveMachine = async (e) => {
         e.preventDefault();
+        if (!machineForm.name?.trim() || !machineForm.type?.trim()) {
+            toast.error(t('machineNameAndTypeRequired'));
+            return;
+        }
+
+        // Anti-duplication check: Machine Name & Serial Number
+        const duplicateMachineName = machines.find(m =>
+            m.name?.trim().toLowerCase() === machineForm.name?.trim().toLowerCase() &&
+            m.modality_id !== editingMachine?.modality_id
+        );
+        if (duplicateMachineName) {
+            toast.error(isArabic ? 'يوجد جهاز مسجل بالفعل بنفس الاسم' : 'A machine with this name already exists');
+            return;
+        }
+        if (machineForm.serialNumber?.trim()) {
+            const duplicateSerialNumber = machines.find(m =>
+                m.serial_number?.trim().toLowerCase() === machineForm.serialNumber?.trim().toLowerCase() &&
+                m.modality_id !== editingMachine?.modality_id
+            );
+            if (duplicateSerialNumber) {
+                toast.error(isArabic ? 'الرقم التسلسلي مستخدم بالفعل لجهاز آخر' : 'This serial number is already in use by another machine');
+                return;
+            }
+        }
+
         try {
             if (editingMachine) {
                 await updateMachine({
@@ -376,13 +455,49 @@ const Equipment = () => {
 
     const handleSaveExam = async (e) => {
         e.preventDefault();
+        const price = Number(examForm.price);
+        const durationMinutes = Number(examForm.durationMinutes);
+        if (Number.isNaN(price) || price < 0) {
+            toast.error(t('invalidPrice'));
+            return;
+        }
+        if (Number.isNaN(durationMinutes) || durationMinutes <= 0) {
+            toast.error(t('invalidDuration'));
+            return;
+        }
+        if (!examForm.name?.trim()) {
+            toast.error(t('procedureNameRequired'));
+            return;
+        }
+
+        // Anti-duplication check: Procedure Code & Name per Modality
+        if (examForm.code?.trim()) {
+            const duplicateCode = exams.find(ex =>
+                ex.code?.trim().toLowerCase() === examForm.code.trim().toLowerCase() &&
+                ex.type_id !== editingExam?.type_id
+            );
+            if (duplicateCode) {
+                toast.error(isArabic ? 'كود الفحص مستخدم بالفعل لفحص آخر' : 'Procedure code is already in use by another procedure');
+                return;
+            }
+        }
+        const duplicateName = exams.find(ex =>
+            ex.name?.trim().toLowerCase() === examForm.name.trim().toLowerCase() &&
+            ex.modality_id === examForm.modalityId &&
+            ex.type_id !== editingExam?.type_id
+        );
+        if (duplicateName) {
+            toast.error(isArabic ? 'يوجد فحص بنفس الاسم مسجل بالفعل على هذا الجهاز' : 'A procedure with this name is already registered for this modality');
+            return;
+        }
+
         try {
             const payload = {
                 modalityId: examForm.modalityId,
                 code: examForm.code?.trim() || undefined,
                 name: examForm.name?.trim(),
-                price: Number(examForm.price),
-                durationMinutes: Number(examForm.durationMinutes),
+                price,
+                durationMinutes,
                 bodyPart: examForm.bodyPart?.trim() || undefined,
                 preparationInstructions: examForm.preparationInstructions?.trim() || undefined,
                 contrastRequired: Boolean(examForm.contrastRequired),
@@ -422,135 +537,66 @@ const Equipment = () => {
     const tabs = useMemo(() => [
         { id: 'matrix', icon: Network, label: t('hierarchyMatrix'), count: matrixData?.rooms?.length },
         { id: 'rooms', icon: DoorClosed, label: t('roomsSuites'), count: rooms.length },
+        { id: 'workstations', icon: Monitor, label: t('receptionWorkstations') },
         { id: 'registry', icon: Server, label: t('equipmentFleet'), count: machines.length },
         { id: 'procedures', icon: FileSpreadsheet, label: t('proceduresCatalog'), count: exams.length },
         { id: 'maintenance', icon: Wrench, label: t('maintenance'), visible: canViewMaintenance, count: scheduledMaintenance || null },
         { id: 'downtime', icon: AlertTriangle, label: t('downtimeLogs'), visible: true, count: activeDowntime || null },
-    ].filter(tab => tab.visible !== false), [t, isArabic, matrixData, rooms.length, machines.length, exams.length, canViewMaintenance, scheduledMaintenance, activeDowntime]);
+    ].filter(tab => tab.visible !== false), [t, matrixData, rooms.length, machines.length, exams.length, canViewMaintenance, scheduledMaintenance, activeDowntime]);
 
     const safeTab = activeTab === 'maintenance' && !canViewMaintenance ? 'matrix' : activeTab;
 
     return (
-        <main className="mx-auto max-w-[1700px] space-y-6 pb-12">
+        <main className="mx-auto max-w-[1700px] space-y-5 pb-12">
             {/* Standard UI Consistency Compliant PageHeader */}
             <PageHeader
                 icon={Server}
                 eyebrowIcon={Cpu}
                 eyebrow={t('comprehensiveClinicalOperationsHub')}
-                title={t('equipmentRoomsProceduresCommandCenter')}
-                description={t('aUnifiedClinicalManagementCenterBridging')}
+                title={t('equipmentFleet')}
+                compact
                 actions={(
-                    <div className="flex flex-wrap items-center gap-2">
-                        {/* Import & Export buttons */}
-                        <button
-                            type="button"
-                            onClick={() => { setImportDefaultType(safeTab === 'procedures' ? 'procedures' : safeTab === 'registry' ? 'machines' : 'rooms'); setIsImportModalOpen(true); }}
-                            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-                            title={t('importFromCsv')}
-                        >
-                            <Upload size={14} className="text-teal-600" />
-                            {t('import')}
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => setIsExportModalOpen(true)}
-                            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-                            title={t('exportData')}
-                        >
-                            <Download size={14} className="text-cyan-600" />
-                            {t('export')}
-                        </button>
-
-                        {/* Creation buttons */}
-                        <button
-                            type="button"
-                            onClick={handleOpenCreateRoom}
-                            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-teal-500/40 bg-teal-50 px-3 text-xs font-black text-teal-800 shadow-sm transition-all hover:bg-teal-100 dark:border-teal-900/60 dark:bg-teal-950/40 dark:text-teal-200"
-                        >
-                            <Plus size={14} />
-                            {t('newSuite')}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => handleOpenCreateMachine()}
-                            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-50 px-3 text-xs font-black text-cyan-800 shadow-sm transition-all hover:bg-cyan-100 dark:border-cyan-900/60 dark:bg-cyan-950/40 dark:text-cyan-200"
-                        >
-                            <Plus size={14} />
-                            {t('newMachine')}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => handleOpenCreateExam()}
-                            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 text-xs font-black text-white shadow-md shadow-teal-600/20 transition-all hover:bg-teal-700"
-                        >
-                            <Plus size={14} />
-                            {t('newProcedure')}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={refreshHeader}
-                            disabled={headerFetching}
-                            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-                            title={t('refreshAllAssets')}
-                        >
-                            <RefreshCw size={14} className={headerFetching ? 'animate-spin' : ''} />
-                            {t('refresh')}
-                        </button>
-                    </div>
+                    <EquipmentHeaderActions
+                        t={t}
+                        safeTab={safeTab}
+                        canManageRooms={canManageRooms}
+                        canManageEquipment={canManageEquipment}
+                        canManageProcedures={canManageProcedures}
+                        canViewModality={canViewModality}
+                        isArabic={isArabic}
+                        headerFetching={headerFetching}
+                        onImport={(tab) => {
+                            setImportDefaultType(tab === 'procedures' ? 'procedures' : tab === 'registry' ? 'machines' : 'rooms');
+                            setIsImportModalOpen(true);
+                        }}
+                        onExport={() => setIsExportModalOpen(true)}
+                        onCreateRoom={handleOpenCreateRoom}
+                        onCreateMachine={() => handleOpenCreateMachine()}
+                        onCreateExam={() => handleOpenCreateExam()}
+                        onRefresh={refreshHeader}
+                    />
                 )}
                 metrics={[
                     { key: 'rooms', icon: DoorClosed, label: t('suitesRooms'), value: `${activeRooms}/${rooms.length}`, tone: 'teal', loading: headerLoading, error: roomsQuery.isError },
                     { key: 'total', icon: Cpu, label: t('totalModalities'), value: machines.length, tone: 'cyan', loading: headerLoading, error: machinesQuery.isError },
-                    { key: 'active', icon: CheckCircle2, label: t('activeModalities'), value: activeMachines, tone: 'emerald', loading: headerLoading, error: machinesQuery.isError },
-                    { key: 'exams', icon: FileSpreadsheet, label: t('clinicalProcedures'), value: exams.length, tone: 'blue', loading: examsQuery.isLoading, error: examsQuery.isError },
                     { key: 'maintenance', icon: Clock3, label: t('maintenanceX'), value: scheduledMaintenance, tone: scheduledMaintenance ? 'amber' : 'emerald', loading: headerLoading, error: maintenanceQuery.isError },
                     { key: 'downtime', icon: AlertTriangle, label: t('activeOutages'), value: activeDowntime, tone: activeDowntime ? 'rose' : 'emerald', loading: headerLoading, error: downtimeQuery.isError },
                 ]}
                 metricsLabel={t('clinicalOperationsAndAssetsIndicators')}
             />
 
-            {/* Segmented Tab Navigation Bar */}
-<div data-workspace-tabs className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                <nav className="flex gap-2 overflow-x-auto p-1 scrollbar-none" aria-label="Equipment & Clinical Hub Sections">
-                    {tabs.map((tab) => {
-                        const Icon = tab.icon;
-                        const active = safeTab === tab.id;
+            <div className="grid items-start gap-4 xl:grid-cols-[232px_minmax(0,1fr)]">
+                <aside className="xl:sticky xl:top-4">
+                    <EquipmentTabs
+                        t={t}
+                        tabs={tabs}
+                        activeTab={safeTab}
+                        onTabChange={setActiveTab}
+                    />
+                </aside>
 
-                        return (
-                            <button
-                                key={tab.id}
-                                type="button"
-                                onClick={() => {
-                                    if (tab.id !== 'rooms' && selectedRoomId) {
-                                        handleSelectRoom(null);
-                                    }
-                                    setActiveTab(tab.id);
-                                }}
-                                aria-current={active ? 'page' : undefined}
-                                className={`flex shrink-0 items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-xs font-black transition-all ${
-                                    active
-                                        ? 'border-teal-500/40 bg-teal-600 text-white shadow-sm shadow-teal-600/20'
-                                        : 'border-transparent bg-slate-50 text-slate-600 hover:bg-slate-100 dark:bg-slate-950/40 dark:text-slate-400 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                                <Icon size={16} />
-                                <span>{tab.label}</span>
-                                {tab.count !== undefined && tab.count !== null && (
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
-                                        active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                                    }`}>
-                                        {tab.count}
-                                    </span>
-                                )}
-                            </button>
-                        );
-                    })}
-                </nav>
-            </div>
-
-            {/* Tab Views */}
-            <div className="transition-all duration-300">
+                {/* Each section keeps its focused workflow while sharing this navigation frame. */}
+                <div id="equipment-tabpanel" role="tabpanel" aria-labelledby={`equipment-tab-${safeTab}`} tabIndex={0} className="min-w-0 transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40">
                 {/* 1. HIERARCHY MATRIX */}
                 {safeTab === 'matrix' && (
                     <div className="space-y-4">
@@ -560,6 +606,7 @@ const Equipment = () => {
                                 <input
                                     type="text"
                                     value={matrixSearch}
+                                    aria-label={t('searchAcrossRoomsModalitiesAndProcedures')}
                                     onChange={(e) => setMatrixSearch(e.target.value)}
                                     placeholder={t('searchAcrossRoomsModalitiesAndProcedures')}
                                     className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2 ps-9 pe-3 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
@@ -594,6 +641,12 @@ const Equipment = () => {
                             <div className="p-16 text-center text-xs font-bold text-slate-400 animate-pulse">
                                 {t('loadingOperationalHierarchyMatrix')}
                             </div>
+                        ) : matrixQuery.isError ? (
+                            <div role="alert" className="rounded-3xl border border-rose-200 bg-rose-50/60 p-12 text-center dark:border-rose-900/60 dark:bg-rose-950/20">
+                                <AlertTriangle className="mx-auto text-rose-500" size={36} />
+                                <p className="mt-3 text-sm font-bold text-rose-700 dark:text-rose-300">{t('matrixLoadError')}</p>
+                                <button type="button" onClick={matrixQuery.refetch} className="mt-4 rounded-xl border border-rose-200 px-4 py-2 text-xs font-bold text-rose-700 hover:bg-white dark:border-rose-900 dark:text-rose-300 dark:hover:bg-slate-900">{t('retry')}</button>
+                            </div>
                         ) : matrixRooms.length === 0 ? (
                             <div className="rounded-3xl border border-dashed border-slate-300 p-12 text-center dark:border-slate-800">
                                 <Network className="mx-auto text-slate-300 dark:text-slate-700" size={36} />
@@ -604,17 +657,26 @@ const Equipment = () => {
                         ) : (
                             <div className="space-y-4">
                                 {matrixRooms.map(room => {
-                                    const isRoomExpanded = expandedRoomIds.has(room.room_id) || Boolean(matrixSearch.trim());
+                                    const isRoomExpanded = expandedRoomIds.has(room.room_id) || Boolean(deferredMatrixSearch.trim());
                                     const roomMachines = room.machines || [];
 
                                     return (
                                         <div
                                             key={room.room_id}
-                                            className="rounded-3xl border border-slate-200/80 bg-white shadow-sm overflow-hidden dark:border-slate-800 dark:bg-slate-900 transition-all hover:border-slate-300 dark:hover:border-slate-700"
+                                            className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm transition-all hover:border-teal-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-teal-800"
                                         >
                                             <div
+                                                role="button"
+                                                tabIndex={0}
                                                 onClick={() => toggleRoomExpand(room.room_id)}
-                                                className="flex flex-wrap items-center justify-between gap-3 p-5 cursor-pointer select-none bg-gradient-to-r from-slate-50/70 to-transparent dark:from-slate-800/40"
+                                                onKeyDown={event => {
+                                                    if (event.key === 'Enter' || event.key === ' ') {
+                                                        event.preventDefault();
+                                                        toggleRoomExpand(room.room_id);
+                                                    }
+                                                }}
+                                                aria-expanded={isRoomExpanded}
+                                                className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-teal-50/70 via-white to-transparent p-4 outline-none transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 dark:from-teal-950/30 dark:via-slate-900 dark:to-transparent sm:p-5"
                                             >
                                                 <div className="flex items-center gap-3.5 min-w-0">
                                                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-300">
@@ -628,11 +690,10 @@ const Equipment = () => {
                                                             <h3 className="text-base font-black text-slate-900 dark:text-white truncate">
                                                                 {room.name}
                                                             </h3>
-                                                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black ${
-                                                                room.status === 'Active'
+                                                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black ${room.status === 'Active'
                                                                     ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
                                                                     : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
-                                                            }`}>
+                                                                }`}>
                                                                 {room.status === 'Active' ? (t('active')) : (t('maintenanceXX'))}
                                                             </span>
                                                         </div>
@@ -645,7 +706,7 @@ const Equipment = () => {
                                                     </div>
                                                 </div>
 
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
                                                     <button
                                                         type="button"
                                                         onClick={(e) => { e.stopPropagation(); handleSelectRoom(room.room_id); }}
@@ -669,7 +730,7 @@ const Equipment = () => {
                                             </div>
 
                                             {isRoomExpanded && (
-                                                <div className="border-t border-slate-100 bg-slate-50/40 p-5 dark:border-slate-800/80 dark:bg-slate-950/30 space-y-3">
+                                                <div className="border-t border-slate-100 bg-slate-50/40 p-3 dark:border-slate-800/80 dark:bg-slate-950/30 space-y-2">
                                                     {roomMachines.length === 0 ? (
                                                         <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-xs font-bold text-slate-400 dark:border-slate-800">
                                                             {t('noEquipmentAssignedToThisSuite')}
@@ -683,13 +744,13 @@ const Equipment = () => {
                                                         </div>
                                                     ) : (
                                                         roomMachines.map(machine => {
-                                                            const isMachineExpanded = expandedMachineIds.has(machine.modality_id) || Boolean(matrixSearch.trim());
+                                                            const isMachineExpanded = expandedMachineIds.has(machine.modality_id) || Boolean(deferredMatrixSearch.trim());
                                                             const procedures = machine.procedures || [];
 
                                                             return (
                                                                 <div
                                                                     key={machine.modality_id}
-                                                                    className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                                                                    className="rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
                                                                 >
                                                                     <div
                                                                         onClick={() => toggleMachineExpand(machine.modality_id)}
@@ -707,11 +768,10 @@ const Equipment = () => {
                                                                                     <h4 className="text-sm font-black text-slate-900 dark:text-white">
                                                                                         {machine.name}
                                                                                     </h4>
-                                                                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
-                                                                                        machine.status === 'Active'
+                                                                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${machine.status === 'Active'
                                                                                             ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
                                                                                             : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
-                                                                                    }`}>
+                                                                                        }`}>
                                                                                         {machine.status}
                                                                                     </span>
                                                                                 </div>
@@ -829,14 +889,18 @@ const Equipment = () => {
                             onEditRoom={handleOpenEditRoom}
                             onAddMachine={handleOpenCreateMachine}
                             onEditMachine={handleOpenEditMachine}
+                            canManage={canManageRooms}
                         />
                     ) : (
                         <RoomManagement
                             onSelectRoomForMachine={handleOpenCreateMachine}
                             onViewRoomDetails={(room) => handleSelectRoom(room.room_id)}
+                            canManage={canManageRooms}
                         />
                     )
                 )}
+
+                {safeTab === 'workstations' && <EquipmentWorkstationMapping />}
 
                 {/* 3. EQUIPMENT REGISTRY */}
                 {safeTab === 'registry' && (
@@ -846,12 +910,37 @@ const Equipment = () => {
                 {/* 4. PROCEDURES CATALOG */}
                 {safeTab === 'procedures' && (
                     <div className="space-y-4">
+                        {/* Summary Ribbon */}
+                        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 text-xs dark:border-slate-800 dark:bg-slate-900/70">
+                            <div className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                                <FileSpreadsheet size={14} className="text-teal-600 dark:text-teal-400" />
+                                <span>{isArabic ? 'إجمالي الفحوصات:' : 'Total Procedures:'}</span>
+                                <strong className="text-slate-900 dark:text-white">{exams.length}</strong>
+                            </div>
+                            <div className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                                <Activity size={14} className="text-emerald-600 dark:text-emerald-400" />
+                                <span>{isArabic ? 'المتاحة سريرياً:' : 'Active:'}</span>
+                                <strong className="text-slate-900 dark:text-white">{exams.filter(e => e.is_active !== false).length}</strong>
+                            </div>
+                            <div className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                                <span className="h-2 w-2 rounded-full bg-rose-500" />
+                                <span>{isArabic ? 'تتطلب صبغة:' : 'Contrast Req:'}</span>
+                                <strong className="text-slate-900 dark:text-white">{exams.filter(e => e.contrast_required).length}</strong>
+                            </div>
+                            <div className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                                <span className="h-2 w-2 rounded-full bg-sky-500" />
+                                <span>{isArabic ? 'بدون صبغة:' : 'Non-Contrast:'}</span>
+                                <strong className="text-slate-900 dark:text-white">{exams.filter(e => !e.contrast_required).length}</strong>
+                            </div>
+                        </div>
+
                         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                             <div className="relative flex-1 min-w-[220px]">
                                 <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
                                 <input
                                     type="text"
                                     value={procedureSearch}
+                                    aria-label={t('searchProcedureByNameCodeAnatomy')}
                                     onChange={(e) => setProcedureSearch(e.target.value)}
                                     placeholder={t('searchProcedureByNameCodeAnatomy')}
                                     className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2 ps-9 pe-3 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
@@ -893,69 +982,82 @@ const Equipment = () => {
                             </div>
                         </div>
 
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                            {filteredProcedures.map(exam => (
-                                <div
-                                    key={exam.type_id}
-                                    className={`flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 ${
-                                        exam.is_active === false ? 'opacity-70 bg-slate-50' : ''
-                                    }`}
-                                >
-                                    <div>
-                                        <div className="flex items-start justify-between gap-2 mb-2.5">
-                                            <span className="font-mono text-xs font-bold rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                                                {exam.code || 'NO-CODE'}
-                                            </span>
-                                            <span className="font-mono text-sm font-black text-emerald-600 dark:text-emerald-400">
-                                                ${Number(exam.price || 0).toFixed(2)}
-                                            </span>
-                                        </div>
+                        {filteredProcedures.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center dark:border-slate-700 dark:bg-slate-900">
+                                <FileSpreadsheet className="mx-auto text-slate-300 dark:text-slate-600" size={34} aria-hidden="true" />
+                                <p className="mt-3 text-sm font-bold text-slate-600 dark:text-slate-300">{t('noMatchingElementsFound')}</p>
+                            </div>
+                        ) : (
+                        <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+                            {filteredProcedures.map(exam => {
+                                const isMri = exam.modality_type?.includes('MRI') || exam.modality_name?.includes('MRI');
+                                const isCt = exam.modality_type?.includes('CT') || exam.modality_name?.includes('CT');
+                                const isXray = exam.modality_type?.includes('X-Ray') || exam.modality_type?.includes('XR') || exam.modality_name?.includes('X-Ray');
+                                const isUs = exam.modality_type?.includes('US') || exam.modality_type?.includes('Ultrasound') || exam.modality_name?.includes('Ultrasound');
+                                
+                                const modalityBadgeClass = isMri
+                                    ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200/60 dark:border-purple-900/40'
+                                    : isCt
+                                        ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300 border border-cyan-200/60 dark:border-cyan-900/40'
+                                        : isXray
+                                            ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/40'
+                                            : isUs
+                                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-900/40'
+                                                : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/40';
 
-                                        <h4 className="text-sm font-black text-slate-900 dark:text-white">{exam.name}</h4>
-                                        <p className="mt-1 text-xs text-slate-400 font-semibold">
-                                            {exam.modality_name} {exam.room_number ? `(غرفة ${exam.room_number})` : ''} • <span className="text-slate-600 dark:text-slate-300">{exam.body_part || 'General'}</span>
-                                        </p>
-
-                                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-bold">
-                                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                                <Clock3 size={12} className="text-slate-400" />
-                                                {exam.duration_minutes} {t('minDuration')}
-                                            </span>
-                                            {exam.contrast_required && (
-                                                <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-                                                    {t('contrast')}
+                                return (
+                                    <article key={exam.type_id} className={`flex flex-col gap-3 p-4 transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/40 sm:flex-row sm:items-center sm:justify-between ${exam.is_active === false ? 'opacity-70 bg-slate-50/80 dark:bg-slate-950/50' : ''}`}>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <h4 className="text-sm font-black text-slate-900 dark:text-white">{exam.name}</h4>
+                                                <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{exam.code || 'NO-CODE'}</span>
+                                                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${modalityBadgeClass}`}>
+                                                    {exam.modality_name || exam.modality_type || 'Modality'}
                                                 </span>
+                                                {exam.contrast_required ? (
+                                                    <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200/50 dark:border-rose-900/40">
+                                                        {t('contrast')}
+                                                    </span>
+                                                ) : (
+                                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                                        {isArabic ? 'بدون صبغة' : 'Non-Contrast'}
+                                                    </span>
+                                                )}
+                                                {exam.is_active === false && (
+                                                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                                                        {isArabic ? 'معطل مؤقتاً' : 'Inactive'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                                {exam.room_number ? `${isArabic ? 'غرفة' : 'Room'}: ${exam.room_number} · ` : ''}<span className="text-slate-700 dark:text-slate-300">{exam.body_part || 'General'}</span>
+                                            </p>
+                                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                                <span className="inline-flex items-center gap-1"><Clock3 size={12} className="text-slate-400" />{exam.duration_minutes} {t('minDuration')}</span>
+                                                <span className="font-mono font-black text-emerald-700 dark:text-emerald-400">${Number(exam.price || 0).toFixed(2)}</span>
+                                            </div>
+                                            {exam.preparation_instructions && (
+                                                <details className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                                    <summary className="w-fit cursor-pointer font-bold text-teal-700 dark:text-teal-400">{t('prep')}</summary>
+                                                    <p className="mt-1 rounded-xl bg-slate-50 p-2.5 leading-5 dark:bg-slate-950/50 dark:text-slate-300">{exam.preparation_instructions}</p>
+                                                </details>
                                             )}
                                         </div>
-
-                                        {exam.preparation_instructions && (
-                                            <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
-                                                <span className="font-bold text-slate-700 dark:text-slate-300">{t('prep')}</span> {exam.preparation_instructions}
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    <div className="mt-5 flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
-                                        <button
-                                            type="button"
-                                            onClick={() => handleOpenEditExam(exam)}
-                                            className="text-xs font-bold text-teal-600 hover:underline inline-flex items-center gap-1"
-                                        >
-                                            <Edit3 size={13} />
-                                            {t('editProcedure')}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setExamDeleteTarget(exam)}
-                                            className="text-xs font-bold text-rose-600 hover:underline inline-flex items-center gap-1"
-                                        >
-                                            <Trash2 size={13} />
-                                            {t('delete')}
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
+                                        <div className="flex shrink-0 items-center gap-1 sm:ps-3">
+                                            <button type="button" onClick={() => handleOpenEditExam(exam)} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold text-teal-700 hover:bg-teal-50 dark:text-teal-400 dark:hover:bg-teal-950/40 transition">
+                                                <Edit3 size={13} />
+                                                {t('editProcedure')}
+                                            </button>
+                                            <button type="button" onClick={() => setExamDeleteTarget(exam)} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/30 transition">
+                                                <Trash2 size={13} />
+                                                {t('delete')}
+                                            </button>
+                                        </div>
+                                    </article>
+                                );
+                            })}
                         </div>
+                        )}
                     </div>
                 )}
 
@@ -968,6 +1070,7 @@ const Equipment = () => {
                 {safeTab === 'downtime' && (
                     <DowntimeManager />
                 )}
+                </div>
             </div>
 
             {/* Quick Room Create / Edit Modal */}
@@ -988,7 +1091,7 @@ const Equipment = () => {
                             type="text"
                             required
                             value={roomForm.name}
-                            onChange={(e) => setRoomForm({ ...roomForm, name: e.target.value })}
+                            onChange={e => updateRoomForm('name', e.target.value)}
                             placeholder={t('eGMriSuite2')}
                             className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                         />
@@ -1003,7 +1106,7 @@ const Equipment = () => {
                                 type="text"
                                 required
                                 value={roomForm.roomNumber}
-                                onChange={(e) => setRoomForm({ ...roomForm, roomNumber: e.target.value.toUpperCase() })}
+                                onChange={e => updateRoomForm('roomNumber', e.target.value.toUpperCase())}
                                 placeholder="e.g. MRI-02"
                                 className="w-full font-mono rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                             />
@@ -1016,7 +1119,7 @@ const Equipment = () => {
                             <input
                                 type="text"
                                 value={roomForm.floor}
-                                onChange={(e) => setRoomForm({ ...roomForm, floor: e.target.value })}
+                                onChange={e => updateRoomForm('floor', e.target.value)}
                                 placeholder={t('eG1stFloor')}
                                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                             />
@@ -1030,7 +1133,7 @@ const Equipment = () => {
                             </label>
                             <select
                                 value={roomForm.type}
-                                onChange={(e) => setRoomForm({ ...roomForm, type: e.target.value })}
+                                onChange={e => updateRoomForm('type', e.target.value)}
                                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                             >
                                 <option value="Imaging">{t('imagingSuite')}</option>
@@ -1047,7 +1150,7 @@ const Equipment = () => {
                             </label>
                             <select
                                 value={roomForm.status}
-                                onChange={(e) => setRoomForm({ ...roomForm, status: e.target.value })}
+                                onChange={e => updateRoomForm('status', e.target.value)}
                                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                             >
                                 <option value="Active">{t('activeAvailable')}</option>
@@ -1064,7 +1167,7 @@ const Equipment = () => {
                         <textarea
                             rows={3}
                             value={roomForm.notes}
-                            onChange={(e) => setRoomForm({ ...roomForm, notes: e.target.value })}
+                            onChange={e => updateRoomForm('notes', e.target.value)}
                             placeholder={t('eGRfShieldingAutomatedInjector')}
                             className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                         />
@@ -1147,6 +1250,8 @@ const Equipment = () => {
                 rooms={rooms}
                 machines={machines}
                 exams={exams}
+                maintenance={maintenance}
+                downtime={downtime}
                 matrixData={matrixData}
             />
 

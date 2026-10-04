@@ -16,6 +16,7 @@ const {
 
 const CONFIG_DEFAULTS = {
     patientDisplayMode: 'order_only',
+    callAnnouncementMode: 'token_only',
     showTicker: true,
     boardTitle: null
 };
@@ -35,8 +36,9 @@ const rollbackQuietly = async (client) => {
 
 const getDisplayConfig = (db) => async (req, res, next) => {
     try {
-        const [modeResult, tickerResult, titleResult, announcementsResult] = await Promise.all([
+        const [modeResult, callModeResult, tickerResult, titleResult, announcementsResult] = await Promise.all([
             db.query(`SELECT setting_value FROM system_settings WHERE setting_key = 'display.patient_display_mode'`),
+            db.query(`SELECT setting_value FROM system_settings WHERE setting_key = 'display.call_announcement_mode'`),
             db.query(`SELECT setting_value FROM system_settings WHERE setting_key = 'display.show_ticker'`),
             db.query(`SELECT setting_value FROM system_settings WHERE setting_key = 'display.board_title'`),
             db.query(`
@@ -44,16 +46,20 @@ const getDisplayConfig = (db) => async (req, res, next) => {
                 FROM display_announcements
                 ORDER BY is_active DESC, display_order ASC, created_at DESC
                 LIMIT 100
-            `).catch(() => ({ rows: [] }))
+            `)
         ]);
 
         const mode = modeResult.rows[0]?.setting_value;
+        const callMode = callModeResult.rows[0]?.setting_value;
         const ticker = tickerResult.rows[0]?.setting_value;
         const title = (titleResult.rows[0]?.setting_value || '').trim();
 
         res.json({
             config: {
                 patientDisplayMode: ['name_and_order', 'name', 'order_only'].includes(mode) ? mode : CONFIG_DEFAULTS.patientDisplayMode,
+                callAnnouncementMode: ['token_only', 'name_only', 'token_and_name'].includes(callMode)
+                    ? callMode
+                    : CONFIG_DEFAULTS.callAnnouncementMode,
                 showTicker: ticker !== 'false',
                 boardTitle: title || null
             },
@@ -77,15 +83,12 @@ const updateDisplayConfig = (db) => async (req, res, next) => {
     try {
         const data = displayConfigSchema.parse(req.body);
 
-        if (data.patientDisplayMode !== undefined) {
-            await settingsService.set('display.patient_display_mode', data.patientDisplayMode);
-        }
-        if (data.showTicker !== undefined) {
-            await settingsService.set('display.show_ticker', data.showTicker ? 'true' : 'false');
-        }
-        if (data.boardTitle !== undefined) {
-            await settingsService.set('display.board_title', data.boardTitle || '');
-        }
+        const settingsToUpdate = {};
+        if (data.patientDisplayMode !== undefined) settingsToUpdate['display.patient_display_mode'] = data.patientDisplayMode;
+        if (data.callAnnouncementMode !== undefined) settingsToUpdate['display.call_announcement_mode'] = data.callAnnouncementMode;
+        if (data.showTicker !== undefined) settingsToUpdate['display.show_ticker'] = data.showTicker ? 'true' : 'false';
+        if (data.boardTitle !== undefined) settingsToUpdate['display.board_title'] = data.boardTitle || '';
+        await settingsService.updateAll(settingsToUpdate);
 
         await logAction(db, {
             userId: req.user.user_id,
@@ -95,6 +98,7 @@ const updateDisplayConfig = (db) => async (req, res, next) => {
             ipAddress: req.ip,
             details: {
                 patientDisplayMode: data.patientDisplayMode ?? undefined,
+                callAnnouncementMode: data.callAnnouncementMode ?? undefined,
                 showTicker: data.showTicker ?? undefined,
                 boardTitle: data.boardTitle ?? undefined
             }
@@ -104,6 +108,7 @@ const updateDisplayConfig = (db) => async (req, res, next) => {
             message: 'Display board configuration updated',
             config: {
                 patientDisplayMode: data.patientDisplayMode,
+                callAnnouncementMode: data.callAnnouncementMode,
                 showTicker: data.showTicker,
                 boardTitle: data.boardTitle
             }
@@ -122,6 +127,7 @@ const createDisplayAnnouncement = (db) => async (req, res, next) => {
         const data = createAnnouncementSchema.parse(req.body);
 
         client = await db.connect();
+        await client.query('BEGIN');
         const result = await client.query(`
             INSERT INTO display_announcements (title, message, tone, is_active, display_order, created_by)
             VALUES ($1, $2, $3, $4, $5, $6)
@@ -138,6 +144,7 @@ const createDisplayAnnouncement = (db) => async (req, res, next) => {
             required: true
         });
 
+        await client.query('COMMIT');
         res.status(201).json(result.rows[0]);
     } catch (error) {
         await rollbackQuietly(client);
@@ -161,10 +168,12 @@ const updateDisplayAnnouncement = (db) => async (req, res, next) => {
         const data = updateAnnouncementSchema.parse(req.body);
 
         client = await db.connect();
+        await client.query('BEGIN');
         const existing = await client.query(`
             SELECT announcement_id FROM display_announcements WHERE announcement_id = $1 FOR UPDATE
         `, [id]);
         if (!existing.rows.length) {
+            await client.query('ROLLBACK');
             return next(new AppError('Announcement not found', 404));
         }
 
@@ -194,6 +203,7 @@ const updateDisplayAnnouncement = (db) => async (req, res, next) => {
             required: true
         });
 
+        await client.query('COMMIT');
         res.json(result.rows[0]);
     } catch (error) {
         await rollbackQuietly(client);
@@ -215,10 +225,12 @@ const deleteDisplayAnnouncement = (db) => async (req, res, next) => {
         }
 
         client = await db.connect();
+        await client.query('BEGIN');
         const existing = await client.query(`
             SELECT announcement_id, title FROM display_announcements WHERE announcement_id = $1 FOR UPDATE
         `, [id]);
         if (!existing.rows.length) {
+            await client.query('ROLLBACK');
             return next(new AppError('Announcement not found', 404));
         }
 
@@ -234,6 +246,7 @@ const deleteDisplayAnnouncement = (db) => async (req, res, next) => {
             required: true
         });
 
+        await client.query('COMMIT');
         res.status(204).end();
     } catch (error) {
         await rollbackQuietly(client);

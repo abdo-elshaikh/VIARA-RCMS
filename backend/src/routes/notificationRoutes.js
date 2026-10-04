@@ -33,6 +33,8 @@ const {
     getJobs,
     retryJob,
     triggerProcessJobs,
+    getRepairableJobs,
+    retryRepairableJobs,
     sendManual,
     sendReminder,
     unsubscribe,
@@ -149,17 +151,30 @@ module.exports = function notificationRoutes(pool) {
         notificationLimiter,
         triggerProcessJobs(pool)
     );
+    router.get('/notification-jobs/repairable',
+        authenticateToken,
+        authorizeRole(['Developer', 'Admin']),
+        hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
+        getRepairableJobs(pool)
+    );
+    router.post('/notification-jobs/repairable/retry',
+        authenticateToken,
+        authorizeRole(['Developer', 'Admin']),
+        hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
+        notificationLimiter,
+        retryRepairableJobs(pool)
+    );
 
     // ─── Notification Preferences ───────────────────────────────────────────
     router.get('/notification-preferences',
         authenticateToken,
-        authorizeRole(['Developer', 'Admin', 'Receptionist', 'Marketing']),
+        authorizeRole(['Developer', 'Admin', 'Receptionist']),
         validateQuery(notificationPreferencesQuerySchema),
         getNotificationPreferences(pool)
     );
     router.put('/notification-preferences',
         authenticateToken,
-        authorizeRole(['Developer', 'Admin', 'Receptionist', 'Marketing']),
+        authorizeRole(['Developer', 'Admin', 'Receptionist']),
         hasPermission(pool, 'MANAGE_NOTIFICATIONS'),
         validateQuery(notificationPreferencesQuerySchema),
         validateRequest(updatePreferencesSchema),

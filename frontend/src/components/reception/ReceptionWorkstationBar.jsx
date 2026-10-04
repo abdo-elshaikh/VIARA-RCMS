@@ -1,103 +1,183 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { memo, useEffect, useMemo, useState } from 'react';
 import {
-    Monitor,
-    DoorOpen,
-    Tv,
-    ShieldCheck,
-    ChevronDown,
-    Lock,
+    AlertTriangle,
     Check,
-    UserCheck,
-    X,
-    Clock,
-    User,
-    Search,
+    ChevronDown,
+    Clock3,
     Cpu,
+    DoorOpen,
+    ExternalLink,
     Filter,
-    Layers,
+    Lock,
+    Monitor,
     RotateCcw,
-    Activity,
-    SlidersHorizontal,
-    Stethoscope,
-    Sparkles,
-    ExternalLink
+    Search,
+    Tv,
+    UserCheck,
+    UsersRound,
+    X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { motion, AnimatePresence } from 'framer-motion';
 import { DEFAULT_WORKSTATION_PRESETS } from './workstationPresets';
 
-const MODALITY_TYPE_CONFIG = {
-    MRI: {
-        labelAr: 'رنين مغناطيسي',
-        icon: '🧲',
-        badgeCls: 'bg-purple-50 text-purple-700 border-purple-200/80 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800/40',
-        ringCls: 'focus:ring-purple-500 text-purple-600',
-    },
-    CT: {
-        labelAr: 'أشعة مقطعية',
-        icon: '🌀',
-        badgeCls: 'bg-sky-50 text-sky-700 border-sky-200/80 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800/40',
-        ringCls: 'focus:ring-sky-500 text-sky-600',
-    },
-    Ultrasound: {
-        labelAr: 'سونار وموجات',
-        icon: '📡',
-        badgeCls: 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40',
-        ringCls: 'focus:ring-emerald-500 text-emerald-600',
-    },
-    'X-Ray': {
-        labelAr: 'أشعة عادية',
-        icon: '⚡',
-        badgeCls: 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/40',
-        ringCls: 'focus:ring-amber-500 text-amber-600',
-    },
-    Mammography: {
-        labelAr: 'ماموجرام',
-        icon: '🎀',
-        badgeCls: 'bg-pink-50 text-pink-700 border-pink-200/80 dark:bg-pink-950/40 dark:text-pink-300 dark:border-pink-800/40',
-        ringCls: 'focus:ring-pink-500 text-pink-600',
-    },
-    PET: {
-        labelAr: 'مسح نووي PET',
-        icon: '☢️',
-        badgeCls: 'bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/40',
-        ringCls: 'focus:ring-rose-500 text-rose-600',
-    },
-    Fluoroscopy: {
-        labelAr: 'أشعة تداخلية',
-        icon: '🔬',
-        badgeCls: 'bg-indigo-50 text-indigo-700 border-indigo-200/80 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800/40',
-        ringCls: 'focus:ring-indigo-500 text-indigo-600',
-    },
-    DEXA: {
-        labelAr: 'هشاشة عظام DEXA',
-        icon: '🦴',
-        badgeCls: 'bg-teal-50 text-teal-700 border-teal-200/80 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800/40',
-        ringCls: 'focus:ring-teal-500 text-teal-600',
-    },
+const normalizeRooms = (items = []) => items.map((item) => {
+    if (typeof item === 'string') {
+        return { key: item, value: item, label: item, meta: '' };
+    }
+    const value = item.room || item.roomNumber || item.id || item.label;
+    const label = item.label || item.rawName || item.roomNumber || item.room || value;
+    const meta = [item.floor, ...(item.machines || [])].filter(Boolean).join(' · ');
+    return { key: String(value), value: String(value), label, meta };
+}).filter((item) => item.value);
+
+const normalizeModalities = (items = []) => items.map((item) => {
+    if (typeof item === 'string') {
+        return { key: item, value: item, label: item, meta: '' };
+    }
+    const value = item.name || item.id || item.modality_id || item.type;
+    const label = item.name || item.type || value;
+    const meta = [item.type, item.roomName || item.roomNumber].filter(Boolean).join(' · ');
+    return { key: String(value), value: String(value), label, meta };
+}).filter((item) => item.value);
+
+const MenuBackdrop = ({ onClick }) => (
+    <button
+        type="button"
+        aria-label="Close menu"
+        onClick={onClick}
+        className="fixed inset-0 z-40 cursor-default bg-transparent"
+    />
+);
+
+const FilterMenu = ({
+    title,
+    icon: Icon,
+    items,
+    selected,
+    onToggle,
+    onClear,
+    search,
+    setSearch,
+    placeholder,
+    disabled,
+    accent = 'teal',
+    emptyLabel,
+    onClose,
+}) => {
+    const filtered = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        if (!q) return items;
+        return items.filter((item) => `${item.label} ${item.meta}`.toLowerCase().includes(q));
+    }, [items, search]);
+
+    const tone = accent === 'violet'
+        ? {
+            icon: 'text-violet-600 dark:text-violet-300',
+            selected: 'border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-800/80 dark:bg-[#1a1033] dark:text-violet-200',
+            check: 'bg-violet-600 text-white',
+        }
+        : {
+            icon: 'text-teal-600 dark:text-teal-300',
+            selected: 'border-teal-200 bg-teal-50 text-teal-900 dark:border-teal-800/80 dark:bg-[#072424] dark:text-teal-200',
+            check: 'bg-teal-600 text-white',
+        };
+
+    return (
+        <>
+            <MenuBackdrop onClick={onClose} />
+            <div className="absolute left-1/2 top-full z-[70] mt-2 w-[min(92vw,340px)] max-w-[calc(100vw-1.25rem)] -translate-x-1/2 origin-top overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl sm:left-0 sm:translate-x-0 sm:origin-top-left dark:border-slate-700 dark:bg-[#0b1426]">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3.5 py-3 dark:border-slate-800 dark:bg-[#070e1a]">
+                    <div className="flex min-w-0 items-center gap-2">
+                        <span className={`grid h-7 w-7 place-items-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700`}>
+                            <Icon size={14} className={tone.icon} />
+                        </span>
+                        <span className="truncate text-xs font-black text-slate-800 dark:text-slate-200">{title}</span>
+                        <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[9px] font-black text-white dark:bg-slate-100 dark:text-slate-900">{selected.length}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        {selected.length > 0 && (
+                            <button
+                                type="button"
+                                disabled={disabled}
+                                onClick={onClear}
+                                className="rounded-lg px-2 py-1 text-[10px] font-black text-rose-600 transition hover:bg-rose-50 disabled:opacity-40 dark:hover:bg-rose-950/30"
+                            >
+                                <RotateCcw size={11} className="inline me-1" />
+                                مسح
+                            </button>
+                        )}
+                        <button type="button" onClick={onClose} className="grid h-7 w-7 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-200 hover:text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">
+                            <X size={14} />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="border-b border-slate-200 bg-white p-2.5 dark:border-slate-800 dark:bg-[#0b1426]">
+                    <label className="relative block">
+                        <Search size={13} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                            value={search}
+                            onChange={(event) => setSearch(event.target.value)}
+                            placeholder={placeholder}
+                            className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 ps-9 pe-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-[#070e1a] dark:text-slate-100"
+                        />
+                    </label>
+                </div>
+
+                <div className="max-h-[290px] overflow-y-auto p-2">
+                    {filtered.length === 0 ? (
+                        <p className="px-3 py-8 text-center text-xs font-semibold text-slate-400 dark:text-slate-500">{emptyLabel}</p>
+                    ) : filtered.map((item) => {
+                        const checked = selected.some((value) => String(value) === String(item.value));
+                        return (
+                            <button
+                                key={item.key}
+                                type="button"
+                                disabled={disabled}
+                                onClick={() => onToggle(item.value)}
+                                className={`mb-1 flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-start transition disabled:cursor-not-allowed disabled:opacity-60 ${checked ? tone.selected : 'border-transparent text-slate-700 hover:border-slate-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-[#070e1a]'}`}
+                            >
+                                <span className="min-w-0 flex-1 overflow-hidden">
+                                    <span className="block truncate text-xs font-black">{item.label}</span>
+                                    {item.meta && <span className="mt-0.5 block truncate text-[10px] font-medium text-slate-400 dark:text-slate-500">{item.meta}</span>}
+                                </span>
+                                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${checked ? `${tone.check} border-transparent` : 'border-slate-200 bg-white text-transparent dark:border-slate-700 dark:bg-slate-800'}`}>
+                                    <Check size={12} strokeWidth={3} />
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        </>
+    );
 };
 
-const getModalityConfig = (type = '', name = '') => {
-    const raw = `${type} ${name}`.toUpperCase();
-    if (raw.includes('MRI') || raw.includes('رنين')) return { typeKey: 'MRI', ...MODALITY_TYPE_CONFIG.MRI };
-    if (raw.includes('PET')) return { typeKey: 'PET', ...MODALITY_TYPE_CONFIG.PET };
-    if (raw.includes('CT') || raw.includes('مقطعية')) return { typeKey: 'CT', ...MODALITY_TYPE_CONFIG.CT };
-    if (raw.includes('US') || raw.includes('VOLUSON') || raw.includes('EPIQ') || raw.includes('APLIO') || raw.includes('سونار') || raw.includes('ULTRASOUND')) return { typeKey: 'Ultrasound', ...MODALITY_TYPE_CONFIG.Ultrasound };
-    if (raw.includes('MAMMO') || raw.includes('ثدي') || raw.includes('HOLOGIC 3D')) return { typeKey: 'Mammography', ...MODALITY_TYPE_CONFIG.Mammography };
-    if (raw.includes('DEXA') || raw.includes('BONE')) return { typeKey: 'DEXA', ...MODALITY_TYPE_CONFIG.DEXA };
-    if (raw.includes('FLUORO')) return { typeKey: 'Fluoroscopy', ...MODALITY_TYPE_CONFIG.Fluoroscopy };
-    if (raw.includes('X-RAY') || raw.includes('أشعة') || raw.includes('YSIO') || raw.includes('MOBILEDART') || raw.includes('CARESTREAM')) return { typeKey: 'X-Ray', ...MODALITY_TYPE_CONFIG['X-Ray'] };
-    return {
-        typeKey: type || 'Imaging',
-        labelAr: type || 'فحص تصويري',
-        icon: '🩻',
-        badgeCls: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
-        ringCls: 'focus:ring-teal-500 text-teal-600',
-    };
+const ScopeButton = ({ active, icon: Icon, label, count, tone = 'teal', onClick, ariaLabel }) => {
+    const activeClass = tone === 'rose'
+        ? 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800/80 dark:bg-[#2a0e14] dark:text-rose-300'
+        : tone === 'amber'
+            ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800/80 dark:bg-[#291b07] dark:text-amber-300'
+            : 'border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-800/80 dark:bg-[#072424] dark:text-teal-300';
+    return (
+        <button
+            type="button"
+            aria-label={ariaLabel || label}
+            onClick={onClick}
+            className={`inline-flex min-h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-[10px] sm:text-[11px] font-black transition-all duration-200 hover:shadow-sm ${active ? activeClass : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-[#070e1a] dark:hover:text-white'}`}
+        >
+            {Icon && <Icon size={12} className="shrink-0" />}
+            <span className="truncate">{label}</span>
+            {Number.isFinite(count) && (
+                <span className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-black ${active ? 'bg-white text-current shadow-2xs dark:bg-black/40' : 'bg-slate-200/90 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>{count}</span>
+            )}
+        </button>
+    );
 };
 
-export const ReceptionWorkstationBar = ({
+const ReceptionWorkstationBar = memo(({
     activeDesk = 'شباك 1 - الاستقبال العام',
+    activeDeskId = null,
     onDeskChange,
     selectedScope = 'all',
     onScopeChange,
@@ -107,7 +187,7 @@ export const ReceptionWorkstationBar = ({
     onToggleModality,
     availableRooms = [],
     availableModalities = [],
-    counts = { total: 0, mine: 0, unclaimed: 0, inExam: 0 },
+    counts = { total: 0, mine: 0, unclaimed: 0, inExam: 0, emergency: 0, overdue: 0, attention: 0 },
     onOpenDisplayBoard,
     currentUser,
     onClearRooms,
@@ -121,842 +201,362 @@ export const ReceptionWorkstationBar = ({
     onCloseShift,
     deskPresets = DEFAULT_WORKSTATION_PRESETS,
 }) => {
-    const { t, i18n } = useTranslation('reception');
+    const { i18n, t } = useTranslation('reception');
     const isArabic = i18n.language?.startsWith('ar');
-
-    const [isDeskMenuOpen, setIsDeskMenuOpen] = useState(false);
-    const [isRoomFilterOpen, setIsRoomFilterOpen] = useState(false);
-    const [isModalityFilterOpen, setIsModalityFilterOpen] = useState(false);
-
-    // Search filters within dropdowns
+    const [openMenu, setOpenMenu] = useState(null);
+    const [filtersExpanded, setFiltersExpanded] = useState(false);
     const [roomSearch, setRoomSearch] = useState('');
     const [modalitySearch, setModalitySearch] = useState('');
-    const [modalityCategoryFilter, setModalityCategoryFilter] = useState('ALL');
-    const [showAllActiveFilters, setShowAllActiveFilters] = useState(false);
+    const [sessionSeconds, setSessionSeconds] = useState(0);
 
-    // Minute-level session clock avoids re-rendering this large control every second.
-    const [sessionMinutes, setSessionMinutes] = useState(0);
+    const rooms = useMemo(() => normalizeRooms(availableRooms), [availableRooms]);
+    const modalities = useMemo(() => normalizeModalities(availableModalities), [availableModalities]);
+    const roomByValue = useMemo(() => new Map(rooms.map((item) => [String(item.value), item])), [rooms]);
+    const modalityByValue = useMemo(() => new Map(modalities.map((item) => [String(item.value), item])), [modalities]);
+    const selectedRoomLabels = useMemo(
+        () => selectedRooms.map((value) => roomByValue.get(String(value))?.label || roomByValue.get(String(value))?.value || String(value)).filter(Boolean),
+        [roomByValue, selectedRooms]
+    );
+    const selectedModalityLabels = useMemo(
+        () => selectedModalities.map((value) => modalityByValue.get(String(value))?.label || modalityByValue.get(String(value))?.value || String(value)).filter(Boolean),
+        [modalityByValue, selectedModalities]
+    );
+    const unresolvedScopeCount = Math.max(0,
+        (selectedRooms.length - selectedRoomLabels.length) +
+        (selectedModalities.length - selectedModalityLabels.length)
+    );
+    const currentPreset = useMemo(() => deskPresets.find((item) => (activeDeskId && item.id === activeDeskId) || item.label === activeDesk), [deskPresets, activeDesk, activeDeskId]);
+
     useEffect(() => {
-        const updateSessionMinutes = () => {
-            const startedAt = receptionShift?.started_at ? new Date(receptionShift.started_at).getTime() : null;
-            setSessionMinutes(startedAt && Number.isFinite(startedAt)
-                ? Math.max(0, Math.floor((Date.now() - startedAt) / 60_000))
-                : 0);
+        const update = () => {
+            const startedAt = receptionShift?.started_at ? new Date(receptionShift.started_at).getTime() : 0;
+            setSessionSeconds(startedAt ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0);
         };
-        updateSessionMinutes();
-        const interval = setInterval(updateSessionMinutes, 60_000);
-        return () => clearInterval(interval);
+        update();
+        if (!receptionShift?.started_at) return undefined;
+        const timer = window.setInterval(update, 1000);
+        return () => window.clearInterval(timer);
     }, [receptionShift?.started_at]);
-    const sessionLabel = `${String(Math.floor(sessionMinutes / 60)).padStart(2, '0')}:${String(sessionMinutes % 60).padStart(2, '0')}`;
 
     useEffect(() => {
-        const closeMenus = (event) => {
-            if (event.key !== 'Escape') return;
-            setIsDeskMenuOpen(false);
-            setIsRoomFilterOpen(false);
-            setIsModalityFilterOpen(false);
+        const onKey = (event) => {
+            if (event.key === 'Escape') setOpenMenu(null);
         };
-        window.addEventListener('keydown', closeMenus);
-        return () => window.removeEventListener('keydown', closeMenus);
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
     }, []);
 
     useEffect(() => {
-        if (!workstationLocked) return;
-        setIsDeskMenuOpen(false);
-        setIsRoomFilterOpen(false);
-        setIsModalityFilterOpen(false);
+        if (workstationLocked) setOpenMenu(null);
     }, [workstationLocked]);
 
-    const hasRoomFilter = selectedRooms.length > 0;
-    const hasModalityFilter = selectedModalities.length > 0;
-    const hasAnyFilter = hasRoomFilter || hasModalityFilter;
+    const sessionLabel = [
+        Math.floor(sessionSeconds / 3600),
+        Math.floor((sessionSeconds % 3600) / 60),
+        sessionSeconds % 60,
+    ].map((value) => String(value).padStart(2, '0')).join(':');
     const activeFilterCount = selectedRooms.length + selectedModalities.length;
-    const activeFilterTokens = [
-        ...selectedRooms.map((room) => ({ kind: 'room', value: room })),
-        ...selectedModalities.map((modality) => ({ kind: 'modality', value: modality })),
-    ];
-    const visibleFilterTokens = showAllActiveFilters ? activeFilterTokens : activeFilterTokens.slice(0, 6);
-    const hiddenFilterCount = Math.max(0, activeFilterTokens.length - visibleFilterTokens.length);
+    const scopeLabel = selectedScope === 'attention'
+        ? (t('workstation.attention'))
+        : selectedScope === 'mine'
+        ? (t('workstation.mine'))
+        : selectedScope === 'unclaimed'
+            ? (t('workstation.unclaimed'))
+            : selectedScope === 'emergency'
+                ? t('workstation.urgent')
+                : selectedScope === 'rooms'
+                    ? t('workstation.selectedRooms')
+                    : selectedScope === 'modalities'
+                        ? t('workstation.selectedDevices')
+                        : (t('workstation.all'));
+
+    const activeUserName = currentUser?.full_name || currentUser?.name || currentUser?.username || (t('workstation.staff'));
+
+    const warning = selectedScope === 'rooms' && selectedRooms.length === 0
+        ? t('workstation.warningRooms')
+        : selectedScope === 'modalities' && selectedModalities.length === 0
+            ? t('workstation.warningDevices')
+            : null;
+
+    const setScope = (scope) => {
+        if (workstationLocked && ['rooms', 'modalities'].includes(scope)) return;
+        onScopeChange?.(scope);
+    };
 
     useEffect(() => {
-        if (!hasAnyFilter) setShowAllActiveFilters(false);
-    }, [hasAnyFilter]);
-
-    const activeDeskObj = deskPresets.find((d) => d.label === activeDesk);
-
-    // Normalize Room items (can be string or rich object)
-    const normalizedRooms = useMemo(() => {
-        return (availableRooms || []).map((item) => {
-            if (typeof item === 'string') {
-                return {
-                    key: item,
-                    roomNumber: item,
-                    label: item,
-                    rawName: item,
-                    type: 'Imaging',
-                    status: 'Active',
-                    machines: [],
-                };
-            }
-            return {
-                key: item.room || item.roomNumber || item.id || item.label,
-                roomNumber: String(item.roomNumber || item.room || ''),
-                label: String(item.label || item.name || item.room || ''),
-                rawName: String(item.rawName || item.name || ''),
-                type: item.type || 'Imaging',
-                status: item.status || 'Active',
-                machines: Array.isArray(item.machines) ? item.machines.map(String) : [],
-                floor: item.floor,
-            };
-        });
-    }, [availableRooms]);
-
-    // Normalize Modality items (can be string or rich object)
-    const normalizedModalities = useMemo(() => {
-        return (availableModalities || []).map((item) => {
-            if (typeof item === 'string') {
-                const conf = getModalityConfig('', item);
-                return {
-                    key: item,
-                    id: item,
-                    name: item,
-                    type: conf.typeKey,
-                    roomNumber: '',
-                    status: 'Active',
-                };
-            }
-            const conf = getModalityConfig(item.type, item.name);
-            return {
-                key: item.name || item.id || item.type,
-                id: item.id || item.name,
-                name: String(item.name || item.type || ''),
-                type: String(conf.typeKey || item.type || 'Imaging'),
-                roomNumber: String(item.roomNumber || ''),
-                roomName: String(item.roomName || ''),
-                status: item.status || 'Active',
-                manufacturer: String(item.manufacturer || ''),
-                model: String(item.model || ''),
-            };
-        });
-    }, [availableModalities]);
-
-    // Filtered rooms in dropdown
-    const filteredRooms = useMemo(() => {
-        const q = roomSearch.trim().toLowerCase();
-        if (!q) return normalizedRooms;
-        return normalizedRooms.filter((r) =>
-            r.label.toLowerCase().includes(q) ||
-            r.roomNumber.toLowerCase().includes(q) ||
-            r.rawName.toLowerCase().includes(q) ||
-            (r.machines || []).some((m) => m.toLowerCase().includes(q))
-        );
-    }, [normalizedRooms, roomSearch]);
-
-    // Filtered modalities in dropdown
-    const filteredModalities = useMemo(() => {
-        const q = modalitySearch.trim().toLowerCase();
-        return normalizedModalities.filter((m) => {
-            if (modalityCategoryFilter !== 'ALL' && m.type !== modalityCategoryFilter) {
-                return false;
-            }
-            if (!q) return true;
-            return (
-                m.name.toLowerCase().includes(q) ||
-                m.type.toLowerCase().includes(q) ||
-                m.roomNumber.toLowerCase().includes(q) ||
-                (m.manufacturer && m.manufacturer.toLowerCase().includes(q)) ||
-                (m.model && m.model.toLowerCase().includes(q))
-            );
-        });
-    }, [normalizedModalities, modalitySearch, modalityCategoryFilter]);
-
-    // Distinct modality categories for quick pills
-    const modalityCategories = useMemo(() => {
-        const set = new Set();
-        normalizedModalities.forEach((m) => {
-            if (m.type) set.add(m.type);
-        });
-        return ['ALL', ...Array.from(set)];
-    }, [normalizedModalities]);
-
-    const SCOPE_OPTIONS = [
-        {
-            id: 'all',
-            labelAr: 'كل الحالات',
-            labelEn: 'All Cases',
-            count: counts.total,
-            activeCls: 'bg-white shadow-xs text-teal-700 dark:bg-slate-800 dark:text-teal-300',
-            badgeCls: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
-        },
-        {
-            id: 'mine',
-            labelAr: 'مهامي',
-            labelEn: 'My Tasks',
-            count: counts.mine,
-            icon: UserCheck,
-            activeCls: 'bg-white shadow-xs text-teal-700 dark:bg-slate-800 dark:text-teal-300',
-            badgeCls: 'bg-teal-100 text-teal-800 dark:bg-teal-900/60 dark:text-teal-300',
-        },
-        {
-            id: 'unclaimed',
-            labelAr: 'غير مستلمة',
-            labelEn: 'Unclaimed',
-            count: counts.unclaimed,
-            icon: Lock,
-            activeCls: 'bg-white shadow-xs text-teal-700 dark:bg-slate-800 dark:text-teal-300',
-            badgeCls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300',
-            alertWhen: (c) => c > 0,
-        },
-        {
-            id: 'inExam',
-            labelAr: 'داخل الفحص',
-            labelEn: 'In Exam',
-            count: counts.inExam,
-            icon: Activity,
-            activeCls: 'bg-white shadow-xs text-teal-700 dark:bg-slate-800 dark:text-teal-300',
-            badgeCls: 'bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-300',
-        },
-        {
-            id: 'emergency',
-            labelAr: 'العاجلة',
-            labelEn: 'Urgent',
-            count: counts.emergency || 0,
-            icon: Activity,
-            activeCls: 'bg-rose-50 shadow-xs text-rose-700 dark:bg-rose-950/50 dark:text-rose-300',
-            badgeCls: 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200',
-            alertWhen: (c) => c > 0,
-        },
-        ...(hasRoomFilter ? [{
-            id: 'rooms',
-            labelAr: 'الغرف المحددة',
-            labelEn: 'Selected Rooms',
-            count: selectedRooms.length,
-            icon: DoorOpen,
-            activeCls: 'bg-white shadow-xs text-teal-700 dark:bg-slate-800 dark:text-teal-300',
-            badgeCls: 'bg-teal-100 text-teal-800 dark:bg-teal-900/60 dark:text-teal-300',
-        }] : []),
-        ...(hasModalityFilter ? [{
-            id: 'modalities',
-            labelAr: 'الأجهزة المحددة',
-            labelEn: 'Selected Devices',
-            count: selectedModalities.length,
-            icon: Cpu,
-            activeCls: 'bg-white shadow-xs text-purple-700 dark:bg-slate-800 dark:text-purple-300',
-            badgeCls: 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300',
-        }] : []),
-    ];
-
-    const clearRoomsHandler = () => {
-        if (onClearRooms) {
-            onClearRooms();
-        } else {
-            selectedRooms.forEach((r) => onToggleRoom?.(r));
-        }
-    };
-
-    const clearModalitiesHandler = () => {
-        if (onClearModalities) {
-            onClearModalities();
-        } else {
-            selectedModalities.forEach((m) => onToggleModality?.(m));
-        }
-    };
-
-    const clearAllHandler = () => {
-        if (onClearAll) {
-            onClearAll();
-        } else {
-            clearRoomsHandler();
-            clearModalitiesHandler();
-            onScopeChange?.('all');
-        }
-    };
+        if (activeFilterCount > 0) setFiltersExpanded(true);
+    }, [activeFilterCount]);
 
     return (
-        <div className="relative z-30 rounded-xl border border-slate-200/80 bg-white/95 shadow-xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 transition-all">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:gap-0">
-
-                {/* ── A: WORKSTATION IDENTITY ────────────────────────── */}
-                <div className="flex items-center gap-2.5 bg-gradient-to-b from-teal-50/70 to-transparent px-3 py-2 dark:from-teal-950/20 lg:min-w-[200px] shrink-0 rounded-t-xl lg:rounded-tr-xl lg:rounded-br-xl lg:rounded-tl-none">
-
-                    {/* Desk icon badge */}
-                    <div className="relative shrink-0">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-teal-200/70 bg-white text-lg shadow-xs dark:border-teal-800/50 dark:bg-slate-900">
-                            {activeDeskObj?.icon ?? '🖥️'}
-                        </div>
-                        {/* Live green dot */}
-                        {isRealtimeConnected && (
-                            <span className="absolute -top-0.5 -end-0.5 flex h-2.5 w-2.5">
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
-                            </span>
-                        )}
-                    </div>
-
-                    {/* Desk info & Selector */}
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-teal-600/80 dark:text-teal-400/80">
-                                {isArabic ? 'محطة' : 'Desk'}
-                            </p>
-                            {receptionShift && (
-                                <span className="flex items-center gap-1 rounded-md border border-emerald-200/70 bg-emerald-50 px-1.5 py-px dark:border-emerald-800/40 dark:bg-emerald-950/30">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                    <span className="whitespace-nowrap text-[8.5px] font-black text-emerald-700 dark:text-emerald-300">
+        <section className="relative z-[45] overflow-visible" aria-label={t('workstation.controlsLabel')}>
+            <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm sm:p-2 dark:border-slate-800 dark:bg-[#0b1426]">
+                <div className="grid min-w-0 grid-cols-1 gap-1.5 lg:grid-cols-[minmax(205px,250px)_minmax(0,1fr)] lg:items-center 2xl:grid-cols-[minmax(215px,245px)_minmax(0,1fr)_auto]">
+                    <div className="flex min-h-10 min-w-0 w-full items-center gap-2 rounded-xl border border-teal-200/90 bg-slate-50 px-2 py-1 shadow-2xs dark:border-teal-900/60 dark:bg-[#070e1a]">
+                        <span className="relative grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-teal-200 bg-white text-teal-700 shadow-2xs dark:border-teal-800 dark:bg-[#091222] dark:text-teal-300">
+                            <Monitor size={15} />
+                            <span className={`absolute -end-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-slate-900 ${isRealtimeConnected ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-500 dark:text-slate-300">
+                                <span>{t('workstation.label')}</span>
+                                {receptionShift ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] text-emerald-700 dark:text-emerald-300">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                                         {sessionLabel}
                                     </span>
-                                </span>
-                            )}
-                        </div>
-
-                        {/* Desk selector button */}
-                        <div className="relative">
-                            <button
-                                type="button"
-                                disabled={workstationLocked}
-                                aria-haspopup="menu"
-                                aria-expanded={isDeskMenuOpen}
-                                onClick={() => {
-                                    setIsDeskMenuOpen(!isDeskMenuOpen);
-                                    setIsRoomFilterOpen(false);
-                                    setIsModalityFilterOpen(false);
-                                }}
-                                className="group flex items-center gap-1 text-start focus-visible:outline-hidden hover:opacity-90 transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-70"
-                                title={workstationLocked ? (isArabic ? 'محطة العمل مثبتة حتى تقفيل الوردية' : 'Workstation is locked until shift closure') : undefined}
-                            >
-                                <span className="truncate text-xs font-black text-slate-900 dark:text-white leading-tight">
-                                    {activeDesk}
-                                </span>
-                                <ChevronDown
-                                    size={12}
-                                    className={`shrink-0 text-slate-400 transition-transform duration-200 group-hover:text-slate-600 dark:group-hover:text-slate-300 ${isDeskMenuOpen ? 'rotate-180' : ''}`}
-                                />
-                            </button>
-
-                            <AnimatePresence>
-                                {isDeskMenuOpen && (
-                                    <>
-                                        <div className="fixed inset-0 z-40" onClick={() => setIsDeskMenuOpen(false)} />
-                                        <motion.div
-                                            initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                                            exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                                            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-                                            className="absolute start-0 top-full z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl ring-1 ring-black/5 dark:border-slate-800 dark:bg-slate-900 dark:ring-white/10"
-                                        >
-                                            <div className="border-b border-slate-100 dark:border-slate-800 px-4 py-3 bg-slate-50/80 dark:bg-slate-950/60">
-                                                <p className="text-xs font-black text-slate-800 dark:text-slate-200">
-                                                    {isArabic ? 'تغيير محطة العمل السريرية' : 'Switch Workstation Desk'}
-                                                </p>
-                                                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                                    {isArabic ? 'اختيار التخصص يربط شباكك تلقائياً بالأجهزة المعنية' : 'Select desk to link relevant modalities'}
-                                                </p>
-                                            </div>
-                                            <div className="p-2 space-y-1 max-h-[65vh] overflow-y-auto">
-                                                 {deskPresets.map((desk) => {
-                                                    const isSelected = activeDesk === desk.label;
-                                                    return (
-                                                        <button
-                                                            key={desk.id}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                onDeskChange?.(desk.label);
-                                                                setIsDeskMenuOpen(false);
-                                                            }}
-                                                            className={`flex w-full items-start gap-3 rounded-xl p-2.5 text-xs font-bold transition text-start cursor-pointer ${
-                                                                isSelected
-                                                                    ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/30'
-                                                                    : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/80'
-                                                            }`}
-                                                        >
-                                                            <span className="text-xl shrink-0 mt-0.5">{desk.icon}</span>
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center justify-between">
-                                                                    <span className="font-black truncate">{desk.label}</span>
-                                                                    {isSelected && <Check size={14} className="shrink-0 text-white ms-1" />}
-                                                                </div>
-                                                                <p className={`text-[10px] mt-0.5 line-clamp-1 ${isSelected ? 'text-teal-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                                                                    {isArabic ? desk.descAr : desk.descEn}
-                                                                </p>
-                                                            </div>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        </motion.div>
-                                    </>
+                                ) : (
+                                    <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
+                                        {t('workstation.shiftOff')}
+                                    </span>
                                 )}
-                            </AnimatePresence>
-                        </div>
-                    </div>
-                </div>
-
-                {/* ── B: SCOPE SWITCHER + CLINICAL ROOMS + MODALITIES FILTERS ── */}
-                <div className="flex flex-1 flex-wrap items-center gap-1.5 px-2.5 py-1.5 min-w-0">
-                    {/* Scope tabs */}
-                    <div className="flex items-center rounded-lg border border-slate-200/80 bg-slate-100/80 p-0.5 gap-0.5 dark:border-slate-800 dark:bg-slate-950/60 shrink-0">
-                        {SCOPE_OPTIONS.map((scope) => {
-                            const ScopeIcon = scope.icon;
-                            const isActive = selectedScope === scope.id;
-                            const isAlert = scope.alertWhen?.(scope.count);
-                            return (
+                            </div>
+                            <div className="relative mt-0.5">
                                 <button
-                                    key={scope.id}
                                     type="button"
-                                    onClick={() => onScopeChange?.(scope.id)}
-                                    className={`relative inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-bold transition-all duration-150 cursor-pointer ${
-                                        isActive
-                                            ? `${scope.activeCls}`
-                                            : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-                                    }`}
+                                    disabled={workstationLocked}
+                                    onClick={() => setOpenMenu(openMenu === 'desk' ? null : 'desk')}
+                                    title={workstationLocked ? t('workstation.lockedShiftHint', { defaultValue: 'Locked while a reception shift is open' }) : undefined}
+                                    className="flex max-w-full items-center gap-1 rounded-lg px-1 py-0.5 text-start text-xs font-black text-slate-800 transition hover:bg-slate-200/60 hover:text-teal-700 disabled:cursor-default disabled:hover:text-slate-800 dark:text-slate-100 dark:hover:bg-slate-800 dark:hover:text-teal-300"
                                 >
-                                    {ScopeIcon && (
-                                        <ScopeIcon size={10} className={isActive ? 'text-teal-600 dark:text-teal-400' : 'text-slate-400'} />
-                                    )}
-                                    <span className="whitespace-nowrap">{isArabic ? scope.labelAr : scope.labelEn}</span>
-                                    <span className={`rounded-full px-1 py-0 text-[8px] font-black leading-none ${
-                                        isActive ? scope.badgeCls : 'bg-slate-200/70 text-slate-500 dark:bg-slate-700/60 dark:text-slate-400'
-                                    }`}>
-                                        {scope.count}
-                                    </span>
-                                    {/* Alert ping for unclaimed */}
-                                    {isAlert && !isActive && (
-                                        <span className="absolute -top-1 -end-1 h-1.5 w-1.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
-                                    )}
+                                    <span className="truncate">{activeDesk}</span>
+                                    {workstationLocked
+                                        ? <Lock size={11} className="shrink-0 text-slate-500" aria-label={t('workstation.lockedShiftHint', { defaultValue: 'Locked while a reception shift is open' })} />
+                                        : <ChevronDown size={12} className="shrink-0 text-slate-500" />}
                                 </button>
-                            );
-                        })}
+                                {openMenu === 'desk' && (
+                                    <>
+                                        <MenuBackdrop onClick={() => setOpenMenu(null)} />
+                                        <div className="absolute start-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-[#091222]">
+                                            <p className="px-2 pb-1.5 pt-1 text-[9px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{t('workstation.chooseDesk')}</p>
+                                            {(deskPresets || []).map((desk) => {
+                                                const active = (desk.id && activeDeskId === desk.id) || desk.label === activeDesk;
+                                                const deskDescription = isArabic ? desk.descAr : desk.descEn;
+                                                return (
+                                                    <button
+                                                        key={desk.id || desk.label}
+                                                        type="button"
+                                                        onClick={() => {
+                                                             onDeskChange?.(desk.label);
+                                                            setOpenMenu(null);
+                                                        }}
+                                                        className={`mb-1 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-start transition ${active ? 'bg-teal-50 text-teal-900 dark:bg-[#072424] dark:text-teal-200' : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-[#070e1a]'}`}
+                                                    >
+                                                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-slate-100 text-sm dark:bg-slate-800">{desk.icon || '🖥️'}</span>
+                                                        <span className="min-w-0 flex-1">
+                                                            <span className="block truncate text-xs font-black">{desk.label}</span>
+                                                            {deskDescription && <span className="block truncate text-[9.5px] text-slate-500 dark:text-slate-400">{deskDescription}</span>}
+                                                        </span>
+                                                        {active && <Check size={13} className="text-teal-600" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
-                    {/* ── 1. MODALITY / DEVICE FILTER DROPDOWN ───────────────── */}
-                    {normalizedModalities.length > 0 && (
-                        <div className="relative shrink-0">
+                    <div className="min-w-0 flex-1 overflow-visible">
+                        <div className="relative z-10 flex min-w-0 flex-wrap items-center gap-0.5 rounded-xl border border-slate-200 bg-slate-100 p-0.5 lg:rounded-xl dark:border-slate-800 dark:bg-[#070e1a]">
+                            <ScopeButton active={selectedScope === 'all'} label={t('workstation.all', { defaultValue: 'كل الحالات' })} count={counts.total} ariaLabel={t('workstation.all', { defaultValue: 'كل الحالات' })} onClick={() => setScope('all')} />
+                            <ScopeButton
+                                active={selectedScope === 'attention'}
+                                icon={AlertTriangle}
+                                label={t('workstation.attentionShort', { defaultValue: 'انتباه' })}
+                                count={counts.attention || 0}
+                                tone="rose"
+                                ariaLabel={t('workstation.attention', { defaultValue: 'حالات تتطلب الانتباه' })}
+                                onClick={() => setScope('attention')}
+                            />
+                            <ScopeButton active={selectedScope === 'mine'} icon={UserCheck} label={t('workstation.mine', { defaultValue: 'مهامي' })} count={counts.mine} ariaLabel={t('workstation.mine', { defaultValue: 'مهامي' })} onClick={() => setScope('mine')} />
+                            <ScopeButton active={selectedScope === 'unclaimed'} icon={UsersRound} label={t('workstation.unclaimed', { defaultValue: 'غير مستلمة' })} count={counts.unclaimed} tone="amber" onClick={() => setScope('unclaimed')} />
+                            <ScopeButton active={selectedScope === 'inExam'} icon={Check} label={t('workstation.exam', { defaultValue: 'فحص' })} count={counts.inExam} tone="amber" ariaLabel={t('workstation.exam', { defaultValue: 'فحص' })} onClick={() => setScope('inExam')} />
+                            <span className="mx-1 hidden h-5 w-px bg-slate-200 sm:block dark:bg-slate-700" />
+
                             <button
                                 type="button"
-                                disabled={workstationLocked}
-                                aria-haspopup="dialog"
-                                aria-expanded={isModalityFilterOpen}
+                                aria-expanded={filtersExpanded}
+                                aria-controls="reception-clinical-filters"
                                 onClick={() => {
-                                    setIsModalityFilterOpen(!isModalityFilterOpen);
-                                    setIsRoomFilterOpen(false);
-                                    setIsDeskMenuOpen(false);
+                                    setFiltersExpanded((value) => !value);
+                                    setOpenMenu(null);
                                 }}
-                                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold transition shadow-xs cursor-pointer whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-70 ${
-                                    hasModalityFilter
-                                        ? 'border-purple-500/60 bg-purple-600 text-white shadow-purple-600/20'
-                                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
-                                }`}
+                                className={`inline-flex min-h-8 items-center gap-1 rounded-lg border px-2 text-[10px] sm:text-[11px] font-black transition ${filtersExpanded || activeFilterCount > 0
+                                    ? 'border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-800/80 dark:bg-[#072424] dark:text-teal-200'
+                                    : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-[#091222] dark:hover:text-white'}`}
                             >
-                                <Cpu size={12} className={hasModalityFilter ? 'text-white' : 'text-purple-600 dark:text-purple-400'} />
-                                <span className="whitespace-nowrap">{isArabic ? 'حسب الأجهزة' : 'By Device'}</span>
-                                {hasModalityFilter && (
-                                    <span className="rounded-full bg-white/25 px-1 py-0 text-[8px] font-black">
-                                        {selectedModalities.length}
-                                    </span>
+                                <Filter size={13} />
+                                <span>{t('workstation.filters', { defaultValue: 'الفلاتر' })}</span>
+                                {activeFilterCount > 0 && (
+                                    <span className="min-w-5 rounded-full bg-teal-600 px-1.5 py-0.5 text-center text-[10px] text-white">{activeFilterCount}</span>
                                 )}
-                                <ChevronDown size={10} className={`opacity-60 transition-transform ${isModalityFilterOpen ? 'rotate-180' : ''}`} />
+                                <ChevronDown size={11} className={`transition-transform ${filtersExpanded ? 'rotate-180' : ''}`} />
                             </button>
 
-                            <AnimatePresence>
-                                {isModalityFilterOpen && (
-                                    <>
-                                        <div className="fixed inset-0 z-40" onClick={() => setIsModalityFilterOpen(false)} />
-                                        <motion.div
-                                            initial={{ opacity: 0, y: -6, scale: 0.98 }}
-                                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                                            exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                                            transition={{ duration: 0.15 }}
-                                            className="absolute start-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200/90 bg-white shadow-2xl ring-1 ring-black/5 dark:border-slate-800 dark:bg-slate-900 dark:ring-white/10 overflow-hidden"
-                                        >
-                                            {/* Header */}
-                                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-3 py-2 bg-slate-50/50 dark:bg-slate-950/40">
-                                                <div className="flex items-center gap-2">
-                                                    <Cpu size={13} className="text-purple-600 dark:text-purple-400" />
-                                                    <span className="text-xs font-black text-slate-800 dark:text-slate-200">
-                                                        {isArabic ? 'ترشيح الأجهزة والموداليتي' : 'Medical Devices & Modalities'}
-                                                    </span>
-                                                {hasModalityFilter && (
-                                                    <button
-                                                        type="button"
-                                                        disabled={workstationLocked}
-                                                        onClick={clearModalitiesHandler}
-                                                        className="flex items-center gap-1 text-[10.5px] font-bold text-rose-500 hover:underline disabled:cursor-not-allowed disabled:opacity-40"
-                                                    >
-                                                        <X size={10} />
-                                                        {isArabic ? 'مسح الكل' : 'Clear All'}
-                                                    </button>
-                                                )}
-                                            </div>
-
-                                            {/* Search input */}
-                                            <div className="p-2 border-b border-slate-100 dark:border-slate-800">
-                                                <div className="relative">
-                                                    <Search size={12} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                                                    <input
-                                                        type="text"
-                                                        value={modalitySearch}
-                                                        onChange={(e) => setModalitySearch(e.target.value)}
-                                                        placeholder={isArabic ? 'بحث باسم الجهاز أو الماركة...' : 'Search device or brand...'}
-                                                        className="w-full rounded-xl border border-slate-200 bg-slate-50 py-1.5 ps-8 pe-7 text-xs text-slate-900 placeholder-slate-400 focus:border-purple-500 focus:bg-white focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                                    />
-                                                    {modalitySearch && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setModalitySearch('')}
-                                                            aria-label={isArabic ? 'مسح بحث الأجهزة' : 'Clear device search'}
-                                                            className="absolute end-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                                        >
-                                                            <X size={12} />
-                                                        </button>
-                                                    )}
-                                                </div>
-
-                                                {/* Quick category filter pills */}
-                                                {modalityCategories.length > 2 && (
-                                                    <div className="mt-2 flex flex-wrap gap-1">
-                                                        {modalityCategories.map((cat) => {
-                                                            const isCatActive = modalityCategoryFilter === cat;
-                                                            return (
-                                                                <button
-                                                                    key={cat}
-                                                                    type="button"
-                                                                    onClick={() => setModalityCategoryFilter(cat)}
-                                                                    className={`rounded-lg px-2 py-0.5 text-[9.5px] font-bold transition ${
-                                                                        isCatActive
-                                                                            ? 'bg-purple-600 text-white'
-                                                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                                                                    }`}
-                                                                >
-                                                                    {cat === 'ALL' ? (isArabic ? 'الكل' : 'All') : cat}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                            {/* Modalities list */}
-                                            <div className="max-h-60 overflow-y-auto p-2 space-y-1">
-                                                {filteredModalities.length === 0 ? (
-                                                    <div className="py-6 text-center text-xs text-slate-400">
-                                                        {isArabic ? 'لا توجد أجهزة مطابقة للبحث' : 'No devices found'}
-                                                    </div>
-                                                ) : (
-                                                    filteredModalities.map((mod) => {
-                                                        const checked = selectedModalities.includes(mod.key) || selectedModalities.includes(mod.name);
-                                                        const conf = getModalityConfig(mod.type, mod.name);
-                                                        return (
-                                                            <label
-                                                                key={mod.key}
-                                                                className={`flex items-start justify-between gap-2.5 rounded-xl p-2 text-xs font-semibold cursor-pointer transition ${
-                                                                    checked
-                                                                        ? 'bg-purple-50/80 text-purple-900 border border-purple-200/60 dark:bg-purple-950/40 dark:text-purple-200 dark:border-purple-800/40'
-                                                                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-300'
-                                                                }`}
-                                                            >
-                                                                <div className="flex items-start gap-2 min-w-0">
-                                                                    <span className="text-base shrink-0 mt-0.5">{conf.icon}</span>
-                                                                    <div className="min-w-0">
-                                                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                                                            <span className="font-bold truncate text-slate-900 dark:text-white leading-tight">
-                                                                                {mod.name}
-                                                                            </span>
-                                                                            <span className={`rounded-md border px-1.5 py-px text-[8.5px] font-black ${conf.badgeCls}`}>
-                                                                                {mod.type}
-                                                                            </span>
-                                                                        </div>
-                                                                        {(mod.roomNumber || mod.roomName) && (
-                                                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                                                                📍 {mod.roomName || mod.roomNumber}
-                                                                            </p>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    disabled={workstationLocked}
-                                                                    checked={checked}
-                                                                    onChange={() => {
-                                                                        onToggleModality?.(mod.name);
-                                                                        onScopeChange?.('modalities');
-                                                                    }}
-                                                                    className="mt-1 rounded-sm text-purple-600 focus:ring-purple-500 focus:ring-offset-0"
-                                                                />
-                                                            </label>
-                                                        );
-                                                    })
-                                                )}
-                                            </div>
-                                        </motion.div>
-                                    </>
+                            {filtersExpanded && <div id="reception-clinical-filters" className="contents">
+                            <div className="relative z-20">
+                                <button
+                                    type="button"
+                                    aria-label={t('workstation.rooms', { defaultValue: 'الغرف' })}
+                                    disabled={workstationLocked || rooms.length === 0}
+                                    title={workstationLocked ? t('workstation.lockedShiftHint', { defaultValue: 'Locked while a reception shift is open' }) : undefined}
+                                    onClick={() => setOpenMenu(openMenu === 'rooms' ? null : 'rooms')}
+                                    className={`inline-flex min-h-8 items-center gap-1 rounded-lg border px-2 text-[10px] sm:text-[11px] font-black transition-all duration-200 disabled:opacity-45 ${selectedRooms.length ? 'border-teal-300 bg-teal-50 text-teal-800 shadow-2xs dark:border-teal-800/80 dark:bg-[#072424] dark:text-teal-200' : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-[#091222] dark:hover:text-white'}`}
+                                >
+                                    <DoorOpen size={12} />
+                                    <span>{t('workstation.rooms', { defaultValue: 'الغرف' })}</span>
+                                    {selectedRooms.length > 0 && <span className="rounded-full bg-teal-600 px-1.5 py-0.5 text-[9px] text-white">{selectedRooms.length}</span>}
+                                    <ChevronDown size={10} />
+                                </button>
+                                {openMenu === 'rooms' && (
+                                    <FilterMenu
+                                        title={t('workstation.filterRooms', { defaultValue: 'تصفية حسب الغرف' })}
+                                        icon={DoorOpen}
+                                        items={rooms}
+                                        selected={selectedRooms.map(String)}
+                                        onToggle={(value) => {
+                                            onToggleRoom?.(value);
+                                            onScopeChange?.('rooms');
+                                        }}
+                                        onClear={onClearRooms}
+                                        search={roomSearch}
+                                        setSearch={setRoomSearch}
+                                        placeholder={t('workstation.searchRooms', { defaultValue: 'بحث في الغرف...' })}
+                                        disabled={workstationLocked}
+                                        emptyLabel={t('workstation.noRooms', { defaultValue: 'لا توجد غرف مطابقة' })}
+                                        onClose={() => setOpenMenu(null)}
+                                    />
                                 )}
-                            </AnimatePresence>
-                        </div>
-                    )}
-
-                    {/* ── 2. CLINICAL ROOMS FILTER DROPDOWN ──────────────────── */}
-                    {normalizedRooms.length > 0 && (
-                        <div className="relative shrink-0">
-                            <button
-                                type="button"
-                                disabled={workstationLocked}
-                                aria-haspopup="dialog"
-                                aria-expanded={isRoomFilterOpen}
-                                aria-label={isArabic ? 'حسب الغرف / Rooms' : 'By Room / Rooms'}
-                                onClick={() => {
-                                    setIsRoomFilterOpen(!isRoomFilterOpen);
-                                    setIsModalityFilterOpen(false);
-                                    setIsDeskMenuOpen(false);
-                                }}
-                                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold transition shadow-xs cursor-pointer whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-70 ${
-                                    hasRoomFilter
-                                        ? 'border-teal-500/60 bg-teal-600 text-white shadow-teal-600/20'
-                                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
-                                }`}
-                            >
-                                <DoorOpen size={12} className={hasRoomFilter ? 'text-white' : 'text-teal-600 dark:text-teal-400'} />
-                                <span className="whitespace-nowrap">{isArabic ? 'حسب الغرف' : 'By Room'}</span>
-                                {hasRoomFilter && (
-                                    <span className="rounded-full bg-white/25 px-1 py-0 text-[8px] font-black">
-                                        {selectedRooms.length}
-                                    </span>
-                                )}
-                                <ChevronDown size={10} className={`opacity-60 transition-transform ${isRoomFilterOpen ? 'rotate-180' : ''}`} />
-                            </button>
-
-                            <AnimatePresence>
-                                {isRoomFilterOpen && (
-                                    <>
-                                        <div className="fixed inset-0 z-40" onClick={() => setIsRoomFilterOpen(false)} />
-                                        <motion.div
-                                            initial={{ opacity: 0, y: -6, scale: 0.98 }}
-                                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                                            exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                                            transition={{ duration: 0.15 }}
-                                            className="absolute start-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200/90 bg-white shadow-2xl ring-1 ring-black/5 dark:border-slate-800 dark:bg-slate-900 dark:ring-white/10 overflow-hidden"
-                                        >
-                                            {/* Header */}
-                                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-3 py-2 bg-slate-50/50 dark:bg-slate-950/40">
-                                                <div className="flex items-center gap-2">
-                                                    <DoorOpen size={13} className="text-teal-600 dark:text-teal-400" />
-                                                    <span className="text-xs font-black text-slate-800 dark:text-slate-200">
-                                                        {isArabic ? 'قاعات الفحص والغرف' : 'Clinical Suites & Rooms'}
-                                                    </span>
-                                                    <span className="rounded-md bg-teal-100 px-1.5 py-0.5 text-[9px] font-black text-teal-800 dark:bg-teal-950/60 dark:text-teal-300">
-                                                        {normalizedRooms.length}
-                                                    </span>
-                                                </div>
-                                                {hasRoomFilter && (
-                                                    <button
-                                                        type="button"
-                                                        disabled={workstationLocked}
-                                                        onClick={clearRoomsHandler}
-                                                        className="flex items-center gap-1 text-[10.5px] font-bold text-rose-500 hover:underline disabled:cursor-not-allowed disabled:opacity-40"
-                                                    >
-                                                        <X size={10} />
-                                                        {isArabic ? 'مسح الكل' : 'Clear All'}
-                                                    </button>
-                                                )}
-                                            </div>
-
-                                            {/* Search input */}
-                                            <div className="p-2 border-b border-slate-100 dark:border-slate-800">
-                                                <div className="relative">
-                                                    <Search size={12} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                                                    <input
-                                                        type="text"
-                                                        value={roomSearch}
-                                                        onChange={(e) => setRoomSearch(e.target.value)}
-                                                        placeholder={isArabic ? 'بحث برقم الغرفة أو الجناح...' : 'Search room or suite...'}
-                                                        className="w-full rounded-xl border border-slate-200 bg-slate-50 py-1.5 ps-8 pe-7 text-xs text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:bg-white focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                                    />
-                                                    {roomSearch && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setRoomSearch('')}
-                                                            aria-label={isArabic ? 'مسح بحث الغرف' : 'Clear room search'}
-                                                            className="absolute end-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                                        >
-                                                            <X size={12} />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* Rooms list */}
-                                            <div className="max-h-60 overflow-y-auto p-2 space-y-1">
-                                                {filteredRooms.length === 0 ? (
-                                                    <div className="py-6 text-center text-xs text-slate-400">
-                                                        {isArabic ? 'لا توجد قاعات مطابقة للبحث' : 'No rooms found'}
-                                                    </div>
-                                                ) : (
-                                                    filteredRooms.map((r) => {
-                                                        const checked = selectedRooms.includes(r.roomNumber) || selectedRooms.includes(r.key);
-                                                        return (
-                                                            <label
-                                                                key={r.key}
-                                                                className={`flex items-start justify-between gap-2.5 rounded-xl p-2 text-xs font-semibold cursor-pointer transition ${
-                                                                    checked
-                                                                        ? 'bg-teal-50/80 text-teal-900 border border-teal-200/60 dark:bg-teal-950/40 dark:text-teal-200 dark:border-teal-800/40'
-                                                                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-300'
-                                                                }`}
-                                                            >
-                                                                <div className="min-w-0">
-                                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                                        <span className="font-bold truncate text-slate-900 dark:text-white leading-tight">
-                                                                            {r.label}
-                                                                        </span>
-                                                                        {r.type && (
-                                                                            <span className="rounded-md border border-slate-200 bg-white px-1.5 py-px text-[8.5px] font-black text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                                                                {r.type === 'Imaging' ? (isArabic ? 'أشعة' : 'Imaging') : r.type}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    {r.machines && r.machines.length > 0 && (
-                                                                        <div className="mt-1 flex flex-wrap gap-1">
-                                                                            {r.machines.map((mach, idx) => (
-                                                                                <span key={idx} className="rounded-md bg-teal-100/70 px-1.5 py-px text-[9px] font-bold text-teal-800 dark:bg-teal-950/60 dark:text-teal-300">
-                                                                                    {mach}
-                                                                                </span>
-                                                                            ))}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    disabled={workstationLocked}
-                                                                    checked={checked}
-                                                                    onChange={() => {
-                                                                        onToggleRoom?.(r.roomNumber || r.key);
-                                                                        onScopeChange?.('rooms');
-                                                                    }}
-                                                                    className="mt-1 rounded-sm text-teal-600 focus:ring-teal-500 focus:ring-offset-0"
-                                                                />
-                                                            </label>
-                                                        );
-                                                    })
-                                                )}
-                                            </div>
-                                        </motion.div>
-                                    </>
-                                )}
-                            </AnimatePresence>
-                        </div>
-                    )}
-                </div>
-
-                {/* ── C: TV BOARD BUTTON ──────────────────────────────── */}
-                <div className="flex items-center gap-2 px-4 py-2.5 border-t border-slate-100 dark:border-slate-800 lg:border-t-0 shrink-0">
-                    <button
-                        type="button"
-                        disabled={isShiftLoading}
-                        onClick={receptionShift ? onCloseShift : onOpenShift}
-                        className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[10.5px] font-black transition disabled:cursor-wait disabled:opacity-60 ${receptionShift ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-800/40 dark:bg-rose-950/40 dark:text-rose-300' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800/40 dark:bg-emerald-950/40 dark:text-emerald-300'}`}
-                        title={receptionShift
-                            ? (isArabic ? 'تقفيل الوردية وحفظ الإحصاءات' : 'Close shift and save statistics')
-                            : (isArabic ? 'بدء وردية استقبال تشغيلية' : 'Start operational reception shift')}
-                    >
-                        <Clock size={12} />
-                        <span>{receptionShift ? (isArabic ? 'تقفيل الوردية' : 'Close shift') : (isArabic ? 'بدء الوردية' : 'Start shift')}</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={onOpenDisplayBoard}
-                        title={isArabic ? 'فتح شاشة الانتظار الخارجية في نافذة مستقلة' : 'Open external waiting-room display board in a new tab'}
-                        className="group relative inline-flex items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 px-4 py-2 text-xs font-black text-white shadow-md shadow-teal-600/20 transition hover:brightness-110 active:scale-95 whitespace-nowrap cursor-pointer"
-                    >
-                        {/* Live pulse */}
-                        <span className="relative flex h-2 w-2 shrink-0">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-200 opacity-75" />
-                            <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
-                        </span>
-                        <Tv size={14} />
-                        <span>{isArabic ? 'شاشة الانتظار الخارجية (TV)' : 'External TV Display Board'}</span>
-                        <ExternalLink size={12} className="opacity-80" />
-                        {/* Shimmer */}
-                        <span className="pointer-events-none absolute inset-0 -start-full skew-x-12 bg-white/10 group-hover:start-full transition-[left] duration-500" />
-                    </button>
-                </div>
-            </div>
-
-            {/* ── D: ACTIVE CLINICAL FILTERS RIBBON ─────────────────── */}
-            <AnimatePresence>
-                {hasAnyFilter && (
-                    <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.15 }}
-                        className="border-t border-slate-100 bg-slate-50/80 px-3 py-2.5 rounded-b-2xl dark:border-slate-800 dark:bg-slate-950/40"
-                        aria-live="polite"
-                    >
-                        <div className="flex flex-wrap items-center gap-2">
-                            <div className="flex shrink-0 items-center gap-2 rounded-xl border border-teal-200/80 bg-white px-2.5 py-1.5 shadow-sm dark:border-teal-800/40 dark:bg-slate-900">
-                                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-300">
-                                    <Filter size={12} aria-hidden="true" />
-                                </span>
-                                <span className="text-[10px] font-black text-slate-600 dark:text-slate-300">
-                                    {isArabic ? 'الفلاتر النشطة' : 'Active Filters'}
-                                </span>
-                                <span className="min-w-5 rounded-full bg-teal-600 px-1.5 py-0.5 text-center text-[10px] font-black text-white" aria-label={`${activeFilterCount} ${isArabic ? 'فلاتر' : 'filters'}`}>
-                                    {activeFilterCount}
-                                </span>
                             </div>
 
-                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                                {visibleFilterTokens.map(({ kind, value }) => {
-                                    const isRoom = kind === 'room';
-                                    const conf = isRoom ? null : getModalityConfig('', value);
-                                    return (
-                                        <span
-                                            key={`${kind}-${value}`}
-                                            className={`group inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] font-bold ${isRoom
-                                                ? 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-800/40 dark:bg-teal-950/50 dark:text-teal-300'
-                                                : 'border-purple-200 bg-purple-50 text-purple-800 dark:border-purple-800/40 dark:bg-purple-950/50 dark:text-purple-300'}`}
-                                        >
-                                            {isRoom ? <DoorOpen size={11} aria-hidden="true" /> : <span aria-hidden="true">{conf.icon}</span>}
-                                            <span className="truncate" title={value}>{value}</span>
-                                            <button
-                                                type="button"
-                                                disabled={workstationLocked}
-                                                onClick={() => (isRoom ? onToggleRoom?.(value) : onToggleModality?.(value))}
-                                                aria-label={`${isArabic ? 'إزالة' : 'Remove'} ${isRoom ? (isArabic ? 'الغرفة' : 'room') : (isArabic ? 'الجهاز' : 'device')}: ${value}`}
-                                                className="ms-auto rounded-md p-0.5 opacity-60 transition hover:bg-rose-100 hover:text-rose-600 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-30"
-                                                title={isArabic ? 'إزالة هذا الفلتر' : 'Remove this filter'}
-                                            >
-                                                <X size={11} aria-hidden="true" />
-                                            </button>
-                                        </span>
-                                    );
-                                })}
-                                {hiddenFilterCount > 0 && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowAllActiveFilters((value) => !value)}
-                                        className="inline-flex min-h-7 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] font-black text-slate-600 transition hover:border-teal-400 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                            <div className="relative z-20">
+                                <button
+                                    type="button"
+                                    aria-label={t('workstation.filterDevices', { defaultValue: 'تصفية حسب الأجهزة' })}
+                                    disabled={workstationLocked || modalities.length === 0}
+                                    title={workstationLocked ? t('workstation.lockedShiftHint', { defaultValue: 'Locked while a reception shift is open' }) : undefined}
+                                    onClick={() => setOpenMenu(openMenu === 'modalities' ? null : 'modalities')}
+                                    className={`inline-flex min-h-8 items-center gap-1 rounded-lg border px-2 text-[10px] sm:text-[11px] font-black transition-all duration-200 disabled:opacity-45 ${selectedModalities.length ? 'border-violet-300 bg-violet-50 text-violet-800 shadow-2xs dark:border-violet-800/80 dark:bg-[#1a1033] dark:text-violet-200' : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-[#091222] dark:hover:text-white'}`}
+                                >
+                                    <Cpu size={12} />
+                                    <span>{t('workstation.devices', { defaultValue: 'الأجهزة' })}</span>
+                                    {selectedModalities.length > 0 && <span className="rounded-full bg-violet-600 px-1.5 py-0.5 text-[9px] text-white">{selectedModalities.length}</span>}
+                                    <ChevronDown size={10} />
+                                </button>
+                                {openMenu === 'modalities' && (
+                                    <FilterMenu
+                                        title={t('workstation.filterDevices', { defaultValue: 'تصفية حسب الأجهزة' })}
+                                        icon={Cpu}
+                                        items={modalities}
+                                        selected={selectedModalities.map(String)}
+                                        onToggle={(value) => {
+                                            onToggleModality?.(value);
+                                            onScopeChange?.('modalities');
+                                        }}
+                                        onClear={onClearModalities}
+                                        search={modalitySearch}
+                                        setSearch={setModalitySearch}
+                                        placeholder={t('workstation.searchDevices', { defaultValue: 'بحث في الأجهزة...' })}
+                                        disabled={workstationLocked}
+                                        accent="violet"
+                                        emptyLabel={t('workstation.noDevices', { defaultValue: 'لا توجد أجهزة مطابقة' })}
+                                        onClose={() => setOpenMenu(null)}
+                                    />
+                                )}
+                            </div>
+                            </div>}
+                        </div>
+                    </div>
+
+                    <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 border-t border-slate-200 pt-1.5 dark:border-slate-800 lg:col-span-2 2xl:col-span-1 2xl:flex-nowrap 2xl:border-t-0 2xl:pt-0">
+                        {activeFilterCount > 0 && !workstationLocked && (
+                            <button
+                                type="button"
+                                aria-label={t('workstation.clearClinicalFilters', { defaultValue: 'مسح كافة الفلاتر السريرية' })}
+                                onClick={onClearAll}
+                                title={t('workstation.clearClinicalFilters', { defaultValue: 'مسح كافة الفلاتر السريرية' })}
+                                className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:border-slate-700 dark:bg-[#070e1a] dark:text-slate-300 dark:hover:border-rose-800 dark:hover:bg-rose-950/30"
+                            >
+                                <Filter size={14} />
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={onOpenDisplayBoard}
+                            aria-label={t('workstation.waitingDisplay', { defaultValue: 'شاشة الانتظار' })}
+                            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black text-slate-700 transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-[#070e1a] dark:text-slate-200 dark:hover:border-teal-800 dark:hover:bg-[#072424] dark:hover:text-teal-300"
+                            title={t('workstation.openWaitingDisplay', { defaultValue: 'فتح شاشة الانتظار للمرضى' })}
+                        >
+                            <Tv size={13} />
+                            <span className="hidden sm:inline">{t('workstation.waitingDisplay', { defaultValue: 'شاشة الانتظار' })}</span>
+                            <ExternalLink size={10} className="opacity-70" />
+                        </button>
+                        <button
+                            type="button"
+                            disabled={isShiftLoading}
+                            onClick={receptionShift ? onCloseShift : onOpenShift}
+                            className={`inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-black text-white shadow-sm transition active:scale-[.98] disabled:cursor-wait disabled:opacity-55 ${receptionShift ? 'bg-slate-800 hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white' : 'bg-emerald-600 hover:bg-emerald-500'}`}
+                        >
+                            <Clock3 size={13} />
+                            <span>{receptionShift ? t('workstation.closeShift', { defaultValue: 'تقفيل الوردية' }) : t('workstation.startShift', { defaultValue: 'بدء الوردية' })}</span>
+                        </button>
+                    </div>
+                </div>
+
+                {(warning || activeFilterCount > 0) && (
+                    <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-[#070e1a]">
+                        {warning ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-800 dark:border-amber-800/80 dark:bg-amber-950/35 dark:text-amber-300">
+                                <AlertTriangle size={12} />{warning}
+                            </span>
+                        ) : (
+                            <>
+                                <span className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{t('workstation.activeFilters', { defaultValue: 'الفلاتر النشطة' })}</span>
+                                {selectedRoomLabels.slice(0, 2).map((label, index) => (
+                                    <span key={`room-label-${index}-${label}`} title={label} className="inline-flex max-w-[7rem] items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2 py-1 text-[9px] font-black text-teal-800 sm:max-w-44 sm:text-[10px] dark:border-teal-800/80 dark:bg-teal-950/40 dark:text-teal-300">
+                                        <DoorOpen size={10} className="shrink-0" /><span className="truncate">{label}</span>
+                                    </span>
+                                ))}
+                                {selectedModalityLabels.slice(0, 2).map((label, index) => (
+                                    <span key={`mod-label-${index}-${label}`} title={label} className="inline-flex max-w-[7rem] items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[9px] font-black text-violet-800 sm:max-w-44 sm:text-[10px] dark:border-violet-800/80 dark:bg-violet-950/40 dark:text-violet-300">
+                                        <Cpu size={10} className="shrink-0" /><span className="truncate">{label}</span>
+                                    </span>
+                                ))}
+                                {(selectedRooms.length > 2 || selectedModalities.length > 2 || unresolvedScopeCount > 0) && (
+                                    <span
+                                        className="rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                        title={t('workstation.hiddenIdentifiers')}
                                     >
-                                        {showAllActiveFilters ? (isArabic ? 'عرض أقل' : 'Show less') : `+${hiddenFilterCount} ${isArabic ? 'أخرى' : 'more'}`}
-                                    </button>
+                                        +{Math.max(0, activeFilterCount - Math.min(2, selectedRoomLabels.length) - Math.min(2, selectedModalityLabels.length))}
+                                    </span>
                                 )}
-                            </div>
-
-                            <button
-                                type="button"
-                                disabled={workstationLocked}
-                                onClick={clearAllHandler}
-                                aria-label={isArabic ? 'مسح كافة الفلاتر السريرية' : 'Reset All Filters'}
-                                className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-2.5 text-[10px] font-black text-rose-600 transition hover:bg-rose-50 hover:text-rose-700 dark:border-rose-800/50 dark:bg-slate-900 dark:text-rose-400 dark:hover:bg-rose-950/40 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                                <RotateCcw size={11} aria-hidden="true" />
-                                <span>{isArabic ? 'مسح الكل' : 'Clear all'}</span>
-                            </button>
-                        </div>
-                    </motion.div>
+                                <span className="ms-auto inline-flex min-w-0 max-w-full items-center gap-1 text-[10px] font-semibold text-slate-500 sm:text-xs dark:text-slate-400">
+                                    <span className="truncate max-w-[6rem] sm:max-w-40" title={activeUserName}>{activeUserName}</span>
+                                    <span className="mx-1">·</span>
+                                    <span>{scopeLabel}</span>
+                                    {(counts.overdue > 0 || counts.emergency > 0) && (
+                                        <>
+                                            <span className="mx-1">·</span>
+                                            <span className={counts.overdue > 0 ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-amber-600 dark:text-amber-400 font-bold'}>
+                                                {counts.overdue > 0
+                                                    ? `${counts.overdue} ${t('workstation.overdue')}`
+                                                    : `${counts.emergency} ${t('workstation.urgent')}`}
+                                            </span>
+                                        </>
+                                    )}
+                                    {currentPreset?.label && <span className="sr-only">{currentPreset.label}</span>}
+                                </span>
+                            </>
+                        )}
+                    </div>
                 )}
-            </AnimatePresence>
-        </div>
+            </div>
+        </section>
     );
-};
+});
 
+ReceptionWorkstationBar.displayName = 'ReceptionWorkstationBar';
+
+export { ReceptionWorkstationBar };
 export default ReceptionWorkstationBar;

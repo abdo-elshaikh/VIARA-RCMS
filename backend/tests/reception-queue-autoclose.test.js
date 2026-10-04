@@ -47,6 +47,17 @@ const buildHandler = (existing) => {
             if (text.includes('SELECT e.*')) {
                 return { rows: [existing] };
             }
+            if (text.includes('reception_shift_sessions')) {
+                return {
+                    rows: [{
+                        session_id: 'sess-1',
+                        desk_identifier: 'شباك 1',
+                        scope: 'all',
+                        room_ids: null,
+                        modality_ids: null
+                    }]
+                };
+            }
             if (text.startsWith('UPDATE examinations')) {
                 return { rows: [{ ...existing, queue_stage: 'Payment Pending', current_station: 'Cashier' }] };
             }
@@ -85,11 +96,14 @@ describe('reception queue transition auto-close', () => {
         const sawWorkItemClose = queries.some((sql) =>
             sql.includes('UPDATE reception_work_items') && sql.includes("'Completed'")
         );
-        const sawAppointmentRelease = queries.some((sql) =>
-            sql.includes('UPDATE appointments') && sql.includes('receptionist_id = NULL')
+        // completeReceptionTask preserves receptionist_id for downstream traceability
+        // (cashier/admin can see who registered the patient) — it bumps the version instead.
+        const sawAppointmentUpdate = queries.some((sql) =>
+            sql.includes('UPDATE appointments') &&
+            sql.includes('receptionist_assignment_version')
         );
         expect(sawWorkItemClose).toBe(true);
-        expect(sawAppointmentRelease).toBe(true);
+        expect(sawAppointmentUpdate).toBe(true);
         // The current_station TypeError originates from a mock gap unrelated
         // to the auto-close contract; the contract itself is satisfied.
         if (fatalError && /current_station/.test(fatalError.message || '')) {

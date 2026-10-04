@@ -3,6 +3,7 @@ const { authenticateToken, authorizeRole } = require('../middleware/authMiddlewa
 const auditRead = require('../middleware/auditRead');
 const { hasPermission } = require('../middleware/rbacMiddleware');
 const { validateRequest, validateQuery } = require('../middleware/validateRequest');
+const { quotaMiddleware } = require('../services/quotaService');
 const {
     createAppointmentSchema,
     updateAppointmentSchema,
@@ -42,7 +43,9 @@ const {
     createReferringDoctor,
     updateReferringDoctor,
     deleteReferringDoctor,
-    getReferringDoctorStats
+    getReferringDoctorStats,
+    getDoctorInteractions,
+    createDoctorInteraction
 } = require('../controllers/referringDoctorController');
 
 module.exports = function appointmentRoutes(pool, auditService) {
@@ -53,6 +56,7 @@ module.exports = function appointmentRoutes(pool, auditService) {
         authenticateToken,
         auditRead(auditService, { resourceTable: 'appointments' }),
         authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Technician', 'Nurse', 'Accountant']),
+        hasPermission(pool, 'VIEW_APPOINTMENTS'),
         validateQuery(getAppointmentsQuerySchema),
         getAppointments(pool)
     );
@@ -61,6 +65,7 @@ module.exports = function appointmentRoutes(pool, auditService) {
         authenticateToken,
         auditRead(auditService, { resourceTable: 'appointments' }),
         authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Technician', 'Nurse', 'Accountant']),
+        hasPermission(pool, 'VIEW_APPOINTMENTS'),
         getAppointmentById(pool)
     );
 
@@ -68,6 +73,7 @@ module.exports = function appointmentRoutes(pool, auditService) {
         authenticateToken,
         authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Technician', 'Nurse']),
         hasPermission(pool, 'CREATE_APPOINTMENTS'),
+        quotaMiddleware(pool, 'appointments'),
         validateRequest(createAppointmentSchema),
         createAppointment(pool)
     );
@@ -117,6 +123,7 @@ module.exports = function appointmentRoutes(pool, auditService) {
         authenticateToken,
         auditRead(auditService, { resourceTable: 'appointments' }),
         authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Technician', 'Nurse', 'Accountant']),
+        hasPermission(pool, 'VIEW_APPOINTMENTS'),
         getOrderTimeline(pool)
     );
 
@@ -124,6 +131,7 @@ module.exports = function appointmentRoutes(pool, auditService) {
     router.get('/waiting-list',
         authenticateToken,
         authorizeRole(['Receptionist', 'Admin']),
+        hasPermission(pool, 'MANAGE_WAITLIST'),
         validateQuery(getWaitingListQuerySchema),
         getWaitingList(pool)
     );
@@ -164,6 +172,18 @@ module.exports = function appointmentRoutes(pool, auditService) {
         authenticateToken,
         authorizeRole(['Admin', 'Accountant', 'Receptionist']),
         getReferringDoctorStats(pool)
+    );
+
+    router.get('/referring-doctors/:id/interactions',
+        authenticateToken,
+        authorizeRole(['Admin', 'Accountant', 'Receptionist', 'Marketing']),
+        getDoctorInteractions(pool)
+    );
+
+    router.post('/referring-doctors/:id/interactions',
+        authenticateToken,
+        authorizeRole(['Admin', 'Receptionist', 'Marketing']),
+        createDoctorInteraction(pool)
     );
 
     router.put('/referring-doctors/:id',

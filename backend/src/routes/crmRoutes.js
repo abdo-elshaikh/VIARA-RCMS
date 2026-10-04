@@ -5,6 +5,7 @@ const { validateRequest } = require('../middleware/validateRequest');
 const {
     createCrmActivitySchema,
     updateCrmActivitySchema,
+    createRecallTaskSchema,
     createSegmentSchema,
     addSegmentMemberSchema,
     createCampaignSchema,
@@ -24,7 +25,10 @@ const {
     updateCampaignStatus,
     submitFeedback,
     getFeedback,
-    updateLoyaltyPoints
+    updateLoyaltyPoints,
+    getLoyaltyHistory,
+    getDueRecalls,
+    createRecallTask
 } = require('../controllers/crmController');
 
 module.exports = function crmRoutes(pool) {
@@ -53,8 +57,13 @@ module.exports = function crmRoutes(pool) {
     ), validateRequest(submitFeedbackSchema), submitFeedback(pool));
     router.get('/feedback', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing']), getFeedback(pool));
 
-    // Patient Loyalty Points
+    // Patient Loyalty Points & History
     router.put('/loyalty/:patientId', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing']), hasPermission(pool, 'MANAGE_CRM'), validateRequest(updateLoyaltySchema), updateLoyaltyPoints(pool));
+    router.get('/loyalty/:patientId/history', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing', 'Patient']), getLoyaltyHistory(pool));
+
+    // Clinical Recalls & Preventive Care
+    router.get('/recalls/due', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing']), getDueRecalls(pool));
+    router.post('/recalls/create-task', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Marketing']), hasPermission(pool, 'MANAGE_CRM'), validateRequest(createRecallTaskSchema), createRecallTask(pool));
 
     return router;
 };

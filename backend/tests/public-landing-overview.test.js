@@ -117,7 +117,7 @@ describe('secure public case lookup', () => {
         const row = {
             patient_id: '11111111-1111-4111-8111-111111111111',
             exam_id: '22222222-2222-4222-8222-222222222222',
-            status: 'Finalized', report_status: 'Finalized', report_finalized_at: new Date(),
+            status: 'Finalized', report_status: 'Finalized', report_locked: true, report_finalized_at: new Date(),
             exam_completed_at: new Date(), modality_name: 'MRI', exam_type_name: 'Brain MRI',
         };
         let challenge;

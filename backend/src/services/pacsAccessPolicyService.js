@@ -51,6 +51,10 @@ const hasEmergencyClinicalPacsAccess = (user) => Boolean(
     && user.elevatedPermissions.includes('VIEW_PACS_IMAGES')
 );
 
+const hasClinicalPacsAccess = (user) => (
+    hasGlobalPacsAccess(user) || hasEmergencyClinicalPacsAccess(user)
+);
+
 const isValidStudyUid = (uid) => /^[0-9][0-9.]{2,127}$/.test(uid) && !uid.includes('..') && !uid.endsWith('.');
 
 const decodeDicomUid = (value) => {
@@ -169,10 +173,18 @@ const assertStudyAccess = async (db, user, studyUids) => {
          WHERE e.study_instance_uid = ANY($1::text[])
            AND (
                  $4::boolean
-                 OR ($2::text = 'Radiologist' AND e.performing_radiologist_id = $3::uuid)
-                 OR ($2::text = 'Technician' AND a.technician_id = $3::uuid)
+                 OR ($2::text = 'Radiologist' AND (
+                     e.performing_radiologist_id = $3::uuid
+                     OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL)
+                     OR e.status IN ('Reporting', 'Finalized')
+                     OR e.queue_stage IN ('Ready for Exam', 'Images Ready')
+                 ))
+                 OR ($2::text = 'Technician' AND (
+                     a.technician_id = $3::uuid
+                     OR (e.current_station = 'Modality' AND a.technician_id IS NULL)
+                 ))
             )`,
-        [uids, user.role, user.user_id, hasEmergencyClinicalPacsAccess(user)]
+        [uids, user.role, user.user_id, hasClinicalPacsAccess(user)]
     );
 
     const allowed = new Set(rows.map((row) => row.study_instance_uid));
@@ -205,11 +217,19 @@ const assertExamViewerAccess = async (db, user, { examId = null, accessionNumber
              OR ($4::text <> '' AND e.order_number = $4::text))
            AND (
                  $5::boolean
-                 OR ($1::text = 'Radiologist' AND e.performing_radiologist_id = $2::uuid)
-                 OR ($1::text = 'Technician' AND a.technician_id = $2::uuid)
+                 OR ($1::text = 'Radiologist' AND (
+                     e.performing_radiologist_id = $2::uuid
+                     OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL)
+                     OR e.status IN ('Reporting', 'Finalized')
+                     OR e.queue_stage IN ('Ready for Exam', 'Images Ready')
+                 ))
+                 OR ($1::text = 'Technician' AND (
+                     a.technician_id = $2::uuid
+                     OR (e.current_station = 'Modality' AND a.technician_id IS NULL)
+                 ))
            )
          LIMIT 1`,
-        [user.role, user.user_id, normalizedExamId, normalizedAccession, hasEmergencyClinicalPacsAccess(user)]
+        [user.role, user.user_id, normalizedExamId, normalizedAccession, hasClinicalPacsAccess(user)]
     );
 
     if (!rows.length) {
@@ -242,11 +262,19 @@ const assertExamImagingAccess = async (db, user, examId) => {
          WHERE e.exam_id = $1
            AND (
                  $4::boolean
-                 OR ($2::text = 'Radiologist' AND e.performing_radiologist_id = $3::uuid)
-                 OR ($2::text = 'Technician' AND a.technician_id = $3::uuid)
+                 OR ($2::text = 'Radiologist' AND (
+                     e.performing_radiologist_id = $3::uuid
+                     OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL)
+                     OR e.status IN ('Reporting', 'Finalized')
+                     OR e.queue_stage IN ('Ready for Exam', 'Images Ready')
+                 ))
+                 OR ($2::text = 'Technician' AND (
+                     a.technician_id = $3::uuid
+                     OR (e.current_station = 'Modality' AND a.technician_id IS NULL)
+                 ))
            )
          LIMIT 1`,
-        [examId, user.role, user.user_id, hasEmergencyClinicalPacsAccess(user)]
+        [examId, user.role, user.user_id, hasClinicalPacsAccess(user)]
     );
 
     if (!rows.length) {
@@ -345,6 +373,7 @@ module.exports = {
     hasEffectivePermission,
     hasGlobalPacsAccess,
     hasEmergencyClinicalPacsAccess,
+    hasClinicalPacsAccess,
     isValidStudyUid,
     decodeDicomUid,
     getRequestedStudyUids,

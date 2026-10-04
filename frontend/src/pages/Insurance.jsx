@@ -36,6 +36,7 @@ import TextPromptDialog from '../components/ui/TextPromptDialog';
 import PageHeader from '../components/ui/PageHeader';
 import { inputClass, primaryBtn, secondaryBtn } from '../utils/designTokens';
 import { downloadAuthenticatedFile } from '../utils/authenticatedFetch';
+import InsuranceReportsWorkbench from '../components/insurance/InsuranceReportsWorkbench';
 
 const statusTones = {
     Pending: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300',
@@ -560,6 +561,7 @@ const Insurance = () => {
     // Tab items specification
     const tabs = [
         { id: 'claims', label: t('tabs.claims', 'Claims Workbench'), icon: WalletCards, count: visibleClaims.length },
+        { id: 'reports', label: t('tabs.reports', 'Reports & Statements (التقارير وكشوف الحسابات)'), icon: FileSpreadsheet },
         { id: 'providers', label: t('tabs.providers', 'Payers & Contracts'), icon: Building2, count: providers.length },
         { id: 'policies', label: t('tabs.policies', 'Patient Policies'), icon: FileText, count: policies.length },
         { id: 'rules', label: t('tabs.rules', 'Coverage & Simulator'), icon: BadgeCheck, count: rules.length },
@@ -645,7 +647,7 @@ const Insurance = () => {
             {hasQueryError && <QueryError onRetry={refreshAll} t={t} />}
 
             {/* Navigation Tabs Bar */}
-<div data-workspace-tabs className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:hidden">
+            <div data-workspace-tabs className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 overflow-x-auto no-scrollbar">
                 <nav className="flex gap-2 overflow-x-auto p-1 scrollbar-none" aria-label="Insurance Subsystems">
                     {tabs.map(tab => {
                         const Icon = tab.icon;
@@ -928,7 +930,12 @@ const Insurance = () => {
                 </div>
             )}
 
-            {/* TAB 2: PAYERS & COMMERCIAL CONTRACTS */}
+            {/* TAB 2: INSURANCE & CONTRACTS REPORTS & STATEMENTS */}
+            {activeTab === 'reports' && (
+                <InsuranceReportsWorkbench />
+            )}
+
+            {/* TAB 3: PAYERS & COMMERCIAL CONTRACTS */}
             {activeTab === 'providers' && (
                 <div className="grid gap-6 xl:grid-cols-2">
                     <Panel
@@ -1493,12 +1500,12 @@ const Insurance = () => {
                                 </select>
                             </Field>
                             <Field label={t('fields.requested')}>
-                                <input type="number" min="0" value={approvalForm.requestedAmount} onChange={event => setApprovalForm(prev => ({ ...prev, requestedAmount: event.target.value }))} placeholder={t('fields.requested')} className={inputClass} />
+                                <input type="number" min="0.01" step="0.01" required={approvalForm.status !== 'Not Required'} value={approvalForm.requestedAmount} onChange={event => setApprovalForm(prev => ({ ...prev, requestedAmount: event.target.value }))} placeholder={t('fields.requested')} className={inputClass} />
                             </Field>
                             <Field label={t('fields.documentUrl')} className="sm:col-span-2">
                                 <input type="url" value={approvalForm.documentUrl} onChange={event => setApprovalForm(prev => ({ ...prev, documentUrl: event.target.value }))} placeholder={t('fields.documentUrl')} className={inputClass} />
                             </Field>
-                            <button type="button" onClick={saveApproval} disabled={isCreatingApproval || !approvalForm.patientId} className={`${primaryBtn} sm:col-span-2`}>
+                            <button type="button" onClick={saveApproval} disabled={isCreatingApproval || !approvalForm.patientId || (approvalForm.status !== 'Not Required' && Number(approvalForm.requestedAmount) <= 0)} className={`${primaryBtn} sm:col-span-2`}>
                                 <ClipboardCheck size={17} />
                                 {isCreatingApproval ? t('actions.saving') : t('actions.recordApproval')}
                             </button>

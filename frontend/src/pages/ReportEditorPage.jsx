@@ -13,7 +13,6 @@ import {
     AlertCircle,
     AlertTriangle,
     ArrowLeft,
-    CalendarDays,
     CheckCircle2,
     ClipboardCheck,
     Download,
@@ -21,25 +20,18 @@ import {
     EyeOff,
     FileCheck2,
     FileText,
-    Hash,
     Layers3,
     Loader2,
     LockKeyhole,
     Monitor,
     PenLine,
-    Phone,
-    Printer,
     RefreshCw,
     Save,
     Send,
-    ShieldAlert,
     ShieldCheck,
     Sparkles,
-    Stethoscope,
-    UploadCloud,
     User,
-    X,
-    Zap
+    X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -73,20 +65,11 @@ import { getErrorMessage } from '../utils/getErrorMessage';
 import { hasDeveloperOrAdminRole } from '../utils/roles';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
-import PageHeader from '../components/ui/PageHeader';
-import { inputClass } from '../utils/designTokens';
 
 import {
-    FLOATING_FOOTER,
-    PANEL,
-    PRIMARY_BUTTON,
     SECTION_CONFIG,
-    SOFT_BUTTON
-} from '../components/reportEditor';
-import {
     buildReportText,
     countWords,
-    formatDateTime,
     getBuiltInTemplatesForExam,
     getNextReportStatus,
     getReportStatusForSave,
@@ -95,23 +78,18 @@ import {
     normalizeSections,
     sectionsAreEqual,
     templateToSections,
-    uploadExamImagesWithProgress
-} from '../components/reportEditor';
-import { useClickOutside, useUnsavedChangesGuard } from '../components/reportEditor';
-import {
+    uploadExamImagesWithProgress,
+    useUnsavedChangesGuard,
     DeliveryPanel,
     ImageUploadOverlay,
-    MobileWorkspaceTabs,
     Notice,
     PageState,
     PatientDocumentsPanel,
-    ProgressBar,
     QualityPanel,
     ReportExportDialog,
     ReportPreviewPanel,
     ReportSectionCard,
     SectionQuickNav,
-    StatusPill,
     StudyToolsPanel,
     TemplateBar,
     WorkflowStepper
@@ -142,7 +120,6 @@ const ReportEditorPage = () => {
     const [baseline, setBaseline] = useState(() => normalizeSections(initialExam));
     const [selectedTemplateId, setSelectedTemplateId] = useState(initialExam?.template_id || '');
     const [activeSection, setActiveSection] = useState('clinicalHistory');
-    const [mobileView, setMobileView] = useState('editor');
     const [inspectorTab, setInspectorTab] = useState('preview');
     const [studyToolsDrawerOpen, setStudyToolsDrawerOpen] = useState(false);
     const [drawerTool, setDrawerTool] = useState(null);
@@ -151,9 +128,7 @@ const ReportEditorPage = () => {
     const [amendmentReason, setAmendmentReason] = useState('');
     const [showFinalize, setShowFinalize] = useState(false);
     const [criticalResult, setCriticalResult] = useState(false);
-    const [pendingReportStatus, setPendingReportStatus] = useState(null);
     const [showTemplatePrompt, setShowTemplatePrompt] = useState(false);
-    const [showExitConfirm, setShowExitConfirm] = useState(false);
     const [showExportDialog, setShowExportDialog] = useState(false);
     const [isExportingWord, setIsExportingWord] = useState(false);
     const [isOpeningPdf, setIsOpeningPdf] = useState(false);
@@ -228,13 +203,19 @@ const ReportEditorPage = () => {
     const reportAiConfigured = aiSettingsStatus?.report?.configured;
     const { data: aiDraftHistoryData } = useGetAiReportDraftsQuery(examId, { skip: !examId || !canUseReportAi });
     const aiDraftHistory = aiDraftHistoryData?.drafts || [];
-    const { data: aiAnalysisData } = useGetPacsAiAnalysisJobsQuery(examId, {
+    const [aiAnalysisPollingInterval, setAiAnalysisPollingInterval] = useState(0);
+    const { data: aiAnalysisData, error: aiAnalysisError } = useGetPacsAiAnalysisJobsQuery(examId, {
         skip: !examId || !canUseImageAi,
-        pollingInterval: 5000,
+        pollingInterval: aiAnalysisPollingInterval,
         skipPollingIfUnfocused: true,
         refetchOnFocus: true,
         refetchOnReconnect: true
     });
+    useEffect(() => {
+        setAiAnalysisPollingInterval(!aiAnalysisError && aiAnalysisData?.jobs?.some(
+            (job) => ['Queued', 'Running'].includes(job.status)
+        ) ? 4000 : 0);
+    }, [aiAnalysisData, aiAnalysisError]);
     const aiAnalysisJobs = aiAnalysisData?.jobs || [];
     const structuredPacsDraftAvailable = aiAnalysisJobs.some((job) => (
         job.status === 'Completed' && job.result_payload?.worker?.quality?.supported === true
@@ -258,10 +239,6 @@ const ReportEditorPage = () => {
         !sections.impression.trim() ? t('editor.impressionRequired') : ''
     ].filter(Boolean), [sections.findings, sections.impression, t]);
 
-    const firstIncompleteRequiredSection = !sections.findings.trim()
-        ? 'findings'
-        : (!sections.impression.trim() ? 'impression' : null);
-
     const completion = useMemo(() => Math.round(
         (SECTION_CONFIG.filter(({ key }) => sections[key].trim()).length / SECTION_CONFIG.length) * 100
     ), [sections]);
@@ -281,8 +258,6 @@ const ReportEditorPage = () => {
     }, [qualityChecks]);
 
     dirtyRef.current = dirty;
-    // Object signature required by the hook: destructures { dirty, canSave, onSave }.
-    // Passing positional args silently disabled the beforeunload data-loss guard.
     useUnsavedChangesGuard({ dirty });
 
     useEffect(() => {
@@ -307,15 +282,40 @@ const ReportEditorPage = () => {
         appliedDocumentDefaults.current = true;
     }, [normalizedCenterSettings]);
 
+    // Stable state ref prevents keydown event listener thrashing across keystrokes
+    const saveDraftRef = useRef(null);
+    const stateRef = useRef({
+        editable,
+        canFinalize,
+        locked,
+        studyToolsDrawerOpen,
+        showFinalize,
+        showTemplatePrompt,
+        showExportDialog
+    });
+
+    useEffect(() => {
+        stateRef.current = {
+            editable,
+            canFinalize,
+            locked,
+            studyToolsDrawerOpen,
+            showFinalize,
+            showTemplatePrompt,
+            showExportDialog
+        };
+    });
+
     useEffect(() => {
         const handleKeyDown = (e) => {
             const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+            const current = stateRef.current;
 
             // Ctrl/Cmd + S: Quick Save Report Draft
             if (isCtrlOrMeta && e.key.toLowerCase() === 's') {
                 e.preventDefault();
-                if (editable) {
-                    saveTypedReport();
+                if (current.editable) {
+                    saveDraftRef.current?.();
                 }
                 return;
             }
@@ -323,7 +323,7 @@ const ReportEditorPage = () => {
             // Ctrl/Cmd + Enter: Open Finalize & Sign Modal
             if (isCtrlOrMeta && e.key === 'Enter') {
                 e.preventDefault();
-                if (canFinalize && !locked) {
+                if (current.canFinalize && !current.locked) {
                     setShowFinalize(true);
                 }
                 return;
@@ -332,7 +332,7 @@ const ReportEditorPage = () => {
             // Ctrl/Cmd + Space: Open Templates & Macros Selector
             if (isCtrlOrMeta && (e.code === 'Space' || e.key === ' ')) {
                 e.preventDefault();
-                if (editable) {
+                if (current.editable) {
                     setShowTemplatePrompt(true);
                 }
                 return;
@@ -340,20 +340,16 @@ const ReportEditorPage = () => {
 
             // Escape: Dismiss active drawers / modals
             if (e.key === 'Escape') {
-                if (studyToolsDrawerOpen) setStudyToolsDrawerOpen(false);
-                if (showFinalize) setShowFinalize(false);
-                if (showTemplatePrompt) setShowTemplatePrompt(false);
-                if (showExitConfirm) setShowExitConfirm(false);
-                if (showExportDialog) setShowExportDialog(false);
+                if (current.studyToolsDrawerOpen) setStudyToolsDrawerOpen(false);
+                if (current.showFinalize) setShowFinalize(false);
+                if (current.showTemplatePrompt) setShowTemplatePrompt(false);
+                if (current.showExportDialog) setShowExportDialog(false);
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    // saveTypedReport is intentionally resolved at keypress time; including the render-scoped
-    // handler would re-register the global shortcut after every editor keystroke.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [studyToolsDrawerOpen, editable, canFinalize, locked, showFinalize, showTemplatePrompt, showExitConfirm, showExportDialog, sections, selectedTemplateId, saveStatus]);
+    }, []);
 
     const updateSection = useCallback((key, value, options = {}) => {
         if (!options.preserveImprovementUndo) setImprovementUndo(null);
@@ -366,6 +362,42 @@ const ReportEditorPage = () => {
             ...(typeof patch === 'function' ? patch(current) : patch)
         }));
     }, []);
+
+    const handleImageFilesSelected = async (event) => {
+        const fileList = event.target.files;
+        if (!fileList || fileList.length === 0) return;
+        const files = Array.from(fileList);
+        event.target.value = '';
+
+        try {
+            const result = await uploadExamImagesWithProgress({
+                examId,
+                files,
+                orderNumber: exam?.order_number,
+                onProgress: (progress) => {
+                    setImageUploadProgress(progress);
+                }
+            });
+            const linked = Number(result?.reconciled || 0);
+            const hasIssues = linked !== files.length;
+            if (hasIssues) {
+                toast.error(t('messages.imagesUploadPartial', {
+                    defaultValue: '{{linked}} of {{total}} images linked. Failed: {{failed}}; rejected: {{rejected}}; awaiting reconciliation: {{unreconciled}}.',
+                    linked, total: files.length, failed: result.failed, rejected: result.rejected, unreconciled: result.unreconciled
+                }), { duration: 12000 });
+                const firstError = result.results?.find(file => file.status !== 'stored')?.reason;
+                if (firstError) toast.error(firstError, { duration: 12000 });
+            } else {
+                toast.success(t('messages.imagesUploaded', { count: linked }));
+            }
+            refetch();
+            refetchImaging();
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('messages.uploadError', { defaultValue: 'Failed to upload images' })));
+        } finally {
+            window.setTimeout(() => setImageUploadProgress(null), 1500);
+        }
+    };
 
     const undoImprovement = useCallback((snapshot, toastId) => {
         if (!snapshot?.key) return;
@@ -397,7 +429,7 @@ const ReportEditorPage = () => {
                 modality: exam?.modality_type || undefined,
                 examType: exam?.exam_type_name || undefined,
                 sectionType: key,
-                language: 'en'
+                language: isArabic ? 'ar' : 'en'
             }).unwrap();
             if (result?.improved) {
                 const snapshot = { id: `${key}-${Date.now()}`, key, previous: previousText, improved: result.improved };
@@ -410,7 +442,7 @@ const ReportEditorPage = () => {
         } finally {
             setImprovingKey(null);
         }
-    }, [canUseReportAi, sections, improveReportFormat, examId, exam, t, updateSection]);
+    }, [canUseReportAi, sections, improveReportFormat, examId, exam, isArabic, t, updateSection]);
 
     const toggleSectionCollapse = useCallback((key) => {
         setCollapsedSections((current) => ({ ...current, [key]: !current[key] }));
@@ -434,7 +466,7 @@ const ReportEditorPage = () => {
 
             const result = await generatePreliminaryDraft({
                 examId,
-                language: 'en',
+                language: isArabic ? 'ar' : 'en',
                 templateId: isUuid(selectedTemplateId) ? selectedTemplateId : undefined,
                 template: templatePayload
             }).unwrap();
@@ -443,7 +475,7 @@ const ReportEditorPage = () => {
         } catch (error) {
             toast.error(getErrorMessage(error, t('editor.aiDraft.error', { defaultValue: 'Could not generate AI preliminary draft' })));
         }
-    }, [canUseReportAi, effectiveReportTemplates, examId, generatePreliminaryDraft, selectedTemplateId, t]);
+    }, [canUseReportAi, effectiveReportTemplates, examId, generatePreliminaryDraft, isArabic, selectedTemplateId, t]);
 
     const requestAiImageAnalysis = useCallback(async () => {
         try {
@@ -537,7 +569,6 @@ const ReportEditorPage = () => {
 
     const selectSection = useCallback((key) => {
         setActiveSection(key);
-        setMobileView('editor');
         setCollapsedSections((current) => (current[key] ? { ...current, [key]: false } : current));
         window.requestAnimationFrame(() => {
             document.getElementById(`report-section-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -579,6 +610,8 @@ const ReportEditorPage = () => {
             return false;
         }
     };
+
+    useEffect(() => { saveDraftRef.current = saveTypedReport; });
 
     const advanceReportStatus = async () => {
         if (!nextReportStatus) return false;
@@ -826,18 +859,15 @@ const ReportEditorPage = () => {
     return (
         <div className="space-y-4 pb-12" dir={isArabic ? 'rtl' : 'ltr'}>
             <ImageUploadOverlay progress={imageUploadProgress} t={t} />
-            <PageHeader
-                icon={PenLine}
-                eyebrow={isArabic ? 'مساحة إعداد التقرير' : 'Reporting workspace'}
-                title={studyTitle}
-                description={`${exam?.patient_name || '-'} · MRN ${exam?.mrn || '-'} · #${exam?.order_number || examId}`}
-                metrics={[
-                    { key: 'completion', icon: ClipboardCheck, label: isArabic ? 'اكتمال التقرير' : 'Report completion', value: `${completion}%`, tone: completion === 100 ? 'emerald' : 'teal' },
-                    { key: 'quality', icon: ShieldCheck, label: isArabic ? 'جودة التقرير' : 'Quality score', value: `${qualityScore}%`, tone: qualityScore >= 80 ? 'emerald' : 'amber' },
-                    { key: 'words', icon: FileText, label: isArabic ? 'عدد الكلمات' : 'Word count', value: reportWords, tone: 'blue' },
-                    { key: 'status', icon: locked ? LockKeyhole : Save, label: isArabic ? 'حالة السجل' : 'Record status', value: locked ? (isArabic ? 'نهائي ومغلق' : 'Finalized') : dirty ? (isArabic ? 'تغييرات غير محفوظة' : 'Unsaved') : (isArabic ? 'محفوظ' : 'Saved'), tone: locked || !dirty ? 'emerald' : 'rose' }
-                ]}
-                metricsLabel={isArabic ? 'مؤشرات سجل التقرير' : 'Report record indicators'}
+            <input
+                type="file"
+                ref={imageUploadRef}
+                onChange={handleImageFilesSelected}
+                multiple
+                accept=".dcm,.dicom,image/*,application/dicom"
+                className="hidden"
+                tabIndex={-1}
+                aria-hidden="true"
             />
 
             {/* Master Patient & Study Hero Deck */}
@@ -881,10 +911,10 @@ const ReportEditorPage = () => {
                                 type="button"
                                 onClick={openPacsViewer}
                                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-4 text-xs font-black text-white hover:bg-teal-500 shadow-sm shadow-teal-600/20 transition active:scale-95"
-                                title={isArabic ? 'فتح عارض صور الفحص DICOM' : 'Launch DICOM PACS Image Viewer'}
+                                title={t('launchDicomPacsImageViewer')}
                             >
                                 <Eye size={16} />
-                                <span>{isArabic ? 'معاينة الصور (DICOM)' : 'Preview Images'}</span>
+                                <span>{t('previewImages')}</span>
                                 {imaging?.image_count > 0 && (
                                     <span className="rounded-full bg-teal-700/80 px-2 py-0.5 text-[10px] font-black text-teal-100">
                                         {imaging.image_count}
@@ -900,7 +930,7 @@ const ReportEditorPage = () => {
                             className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3.5 text-xs font-black text-teal-700 dark:text-teal-300 hover:bg-teal-500 hover:text-white transition shadow-xs"
                         >
                             <Layers3 size={15} />
-                            <span>{isArabic ? 'أدوات الدراسة' : 'Study & AI Tools'}</span>
+                            <span>{t('studyAiTools')}</span>
                         </button>
 
                         <button
@@ -909,7 +939,7 @@ const ReportEditorPage = () => {
                             className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                         >
                             <Download size={15} />
-                            <span>{isArabic ? 'تصدير' : 'Export'}</span>
+                            <span>{t('export')}</span>
                         </button>
                         <button
                             type="button"
@@ -917,14 +947,14 @@ const ReportEditorPage = () => {
                             className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                         >
                             <ArrowLeft size={15} className="rtl:rotate-180" />
-                            <span>{isArabic ? 'قائمة العمل' : 'Worklist'}</span>
+                            <span>{t('worklist')}</span>
                         </button>
                     </div>
                 </div>
 
                 {/* Workflow Stepper */}
                 <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                    <WorkflowStepper currentStatus={currentReportStatus} t={t} />
+                    <WorkflowStepper status={currentReportStatus} currentStatus={currentReportStatus} t={t} />
                 </div>
             </section>
 
@@ -976,7 +1006,7 @@ const ReportEditorPage = () => {
                             className="hidden lg:inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                         >
                             {focusMode ? <EyeOff size={14} /> : <Eye size={14} />}
-                            <span>{focusMode ? (isArabic ? 'عرض اللوحة الجانبية' : 'Show Inspector') : (isArabic ? 'وضع التركيز' : 'Focus Mode')}</span>
+                            <span>{focusMode ? (t('showInspector')) : (t('focusMode'))}</span>
                         </button>
                     </div>
 
@@ -1029,12 +1059,12 @@ const ReportEditorPage = () => {
                                     : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
                             }`}>
                                 {dirty ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />}
-                                <span>{dirty ? (isArabic ? 'تعديلات غير محفوظة' : 'Unsaved changes') : (isArabic ? 'تم حفظ التقرير' : 'All saved')}</span>
+                                <span>{dirty ? (t('unsavedChanges')) : (t('allSaved'))}</span>
                             </span>
                             {finalizationErrors.length > 0 && (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600">
                                     <AlertTriangle size={13} />
-                                    <span>{finalizationErrors.length} {isArabic ? 'حقول إلزامية متبقية' : 'required sections empty'}</span>
+                                    <span>{finalizationErrors.length} {t('requiredSectionsEmpty')}</span>
                                 </span>
                             )}
                         </div>
@@ -1046,10 +1076,10 @@ const ReportEditorPage = () => {
                                     type="button"
                                     onClick={openPacsViewer}
                                     className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                                    title={isArabic ? 'معاينة صور الفحص DICOM' : 'Preview DICOM Images'}
+                                    title={t('previewDicomImages')}
                                 >
                                     <Eye size={14} />
-                                    <span>{isArabic ? 'معاينة الصور' : 'Preview Images'}</span>
+                                    <span>{t('previewImagesX')}</span>
                                 </button>
                             )}
 
@@ -1060,7 +1090,7 @@ const ReportEditorPage = () => {
                                         onClick={() => setAmendmentMode(false)}
                                         className="inline-flex h-9 items-center rounded-xl border border-slate-200 px-3.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300"
                                     >
-                                        {isArabic ? 'إلغاء' : 'Cancel'}
+                                        {t('cancel')}
                                     </button>
                                     <button
                                         type="button"
@@ -1069,7 +1099,7 @@ const ReportEditorPage = () => {
                                         className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-amber-600 px-4 text-xs font-black text-white hover:bg-amber-500 disabled:opacity-50"
                                     >
                                         {isAmending ? <Loader2 size={14} className="animate-spin" /> : <FileCheck2 size={14} />}
-                                        <span>{isArabic ? 'حفظ الاستدراك' : 'Save Amendment'}</span>
+                                        <span>{t('saveAmendment')}</span>
                                     </button>
                                 </>
                             ) : !locked && canAuthor ? (
@@ -1081,7 +1111,7 @@ const ReportEditorPage = () => {
                                         className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 disabled:opacity-40"
                                     >
                                         {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                                        <span>{currentReportStatus === 'Draft' ? (isArabic ? 'حفظ كمسودة' : 'Save Draft') : (isArabic ? 'حفظ التعديلات' : 'Save Changes')}</span>
+                                        <span>{currentReportStatus === 'Draft' ? (t('saveDraft')) : (t('saveChanges'))}</span>
                                     </button>
 
                                     {nextReportStatus && nextReportStatus !== 'Typed' && (
@@ -1092,7 +1122,7 @@ const ReportEditorPage = () => {
                                             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3.5 text-xs font-black text-teal-700 dark:text-teal-300 hover:bg-teal-500 hover:text-white transition"
                                         >
                                             <ClipboardCheck size={14} />
-                                            <span>{nextReportStatus === 'Approved' ? (isArabic ? 'اعتماد' : 'Approve') : (isArabic ? 'مراجعة' : 'Review')}</span>
+                                            <span>{nextReportStatus === 'Approved' ? (t('approve')) : (t('review'))}</span>
                                         </button>
                                     )}
 
@@ -1103,7 +1133,7 @@ const ReportEditorPage = () => {
                                         className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-5 text-xs font-black text-white hover:bg-emerald-500 transition disabled:opacity-40 shadow-sm"
                                     >
                                         <LockKeyhole size={14} />
-                                        <span>{isArabic ? 'اعتماد وتوقيع التقرير نهائياً' : 'Finalize & Sign Report'}</span>
+                                        <span>{t('finalizeSignReport')}</span>
                                     </button>}
                                 </>
                             ) : (
@@ -1113,7 +1143,7 @@ const ReportEditorPage = () => {
                                     className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-600 px-4 text-xs font-black text-white hover:bg-teal-500"
                                 >
                                     <Download size={14} />
-                                    <span>{isArabic ? 'تصدير التقرير' : 'Export Report'}</span>
+                                    <span>{t('exportReport')}</span>
                                 </button>
                             )}
                         </div>
@@ -1135,24 +1165,25 @@ const ReportEditorPage = () => {
                                 </span>
                                 <div>
                                     <span className="block text-xs font-black text-teal-900 dark:text-teal-200">
-                                        {isArabic ? 'درج أدوات الدراسة والـ PACS' : 'Study & AI Tools Drawer'}
+                                        {t('studyAiToolsDrawer')}
                                     </span>
                                     <span className="block text-[10px] text-teal-700/80 dark:text-teal-400">
-                                        {isArabic ? 'الصور، الذكاء الاصطناعي، وإعدادات الوثيقة' : 'Images, AI assistant, and document'}
+                                        {t('imagesAiAssistantAndDocument')}
                                     </span>
                                 </div>
                             </div>
                             <span className="rounded-lg bg-white/80 px-2 py-1 text-[10px] font-black text-teal-700 dark:bg-slate-900 dark:text-teal-300">
-                                {isArabic ? 'فتح الدرج' : 'Open'}
+                                {t('open')}
                             </span>
                         </button>
 
                         {/* Inspector Tabs */}
                         <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 flex flex-wrap gap-1">
                             {[
-                                { id: 'preview', icon: Eye, label: isArabic ? 'معاينة حية' : 'Preview' },
-                                { id: 'quality', icon: ShieldCheck, label: isArabic ? 'الجودة' : 'Quality' },
-                                ...(locked ? [{ id: 'delivery', icon: Send, label: isArabic ? 'التسليم' : 'Delivery' }] : [])
+                                { id: 'preview', icon: Eye, label: t('preview', { defaultValue: 'Preview' }) },
+                                { id: 'quality', icon: ShieldCheck, label: t('quality', { defaultValue: 'Quality' }) },
+                                { id: 'documents', icon: FileText, label: t('patientDocs', { defaultValue: 'Documents' }) },
+                                ...(locked ? [{ id: 'delivery', icon: Send, label: t('delivery', { defaultValue: 'Delivery' }) }] : [])
                             ].map((tab) => {
                                 const Icon = tab.icon;
                                 const isActive = inspectorTab === tab.id;
@@ -1185,6 +1216,13 @@ const ReportEditorPage = () => {
                                     reportWords={reportWords}
                                     qualityScore={qualityScore}
                                     checks={qualityChecks}
+                                    t={t}
+                                />
+                            )}
+                            {inspectorTab === 'documents' && (
+                                <PatientDocumentsPanel
+                                    patientId={exam?.patient_id || fetchedExam?.patient_id}
+                                    locale={locale}
                                     t={t}
                                 />
                             )}
@@ -1222,7 +1260,7 @@ const ReportEditorPage = () => {
                                         </span>
                                         <div>
                                             <h3 className="text-sm font-black text-slate-900 dark:text-white">
-                                                {isArabic ? 'أدوات دراسة الفحص والذكاء الاصطناعي' : 'Study Imaging & AI Tools'}
+                                                {t('studyImagingAiTools')}
                                             </h3>
                                             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                                                 {studyTitle} · Order #{exam?.order_number || examId}
@@ -1238,7 +1276,7 @@ const ReportEditorPage = () => {
                                                 className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-600 px-3 text-xs font-black text-white hover:bg-teal-500 shadow-xs transition"
                                             >
                                                 <Monitor size={14} />
-                                                <span>{isArabic ? 'فتح عارض PACS' : 'Launch PACS'}</span>
+                                                <span>{t('launchPacs')}</span>
                                             </button>
                                         )}
                                         <button
@@ -1254,11 +1292,11 @@ const ReportEditorPage = () => {
                                 {/* Drawer Tool Filter Tabs */}
                                 <div className="flex gap-1 overflow-x-auto pb-0.5 scrollbar-none">
                                     {[
-                                        { key: null, label: isArabic ? 'الكل' : 'All Tools', icon: Layers3 },
-                                        { key: 'imaging', label: isArabic ? 'صور الفحص' : 'Images & PACS', icon: Monitor },
-                                        { key: 'aiImage', label: isArabic ? 'تحليل الصور AI' : 'AI Analysis', icon: Activity },
-                                        { key: 'aiDraft', label: isArabic ? 'المساعد الذكي' : 'AI Draft', icon: Sparkles },
-                                        { key: 'document', label: isArabic ? 'الترويسة' : 'Document', icon: FileCheck2 }
+                                        { key: null, label: t('allTools'), icon: Layers3 },
+                                        { key: 'imaging', label: t('imagesPacs'), icon: Monitor },
+                                        { key: 'aiImage', label: t('aiAnalysis'), icon: Activity },
+                                        { key: 'aiDraft', label: t('aiDraft'), icon: Sparkles },
+                                        { key: 'document', label: t('document'), icon: FileCheck2 }
                                     ].map((tab) => {
                                         const Icon = tab.icon;
                                         const isActive = drawerTool === tab.key;
@@ -1296,10 +1334,10 @@ const ReportEditorPage = () => {
             {/* Finalization Confirmation Dialog */}
             <ConfirmDialog
                 isOpen={showFinalize}
-                title={isArabic ? 'تأكيد اعتماد وتوقيع التقرير الطبي' : 'Confirm Finalize & Sign Report'}
-                message={isArabic ? 'هل أنت متأكد من اعتماد التقرير الطبي؟ سيتم قفل التقرير وتوليد التوقيع الرقمي ولن يمكن تعديله إلا عبر إجراء استدراك رسمي.' : 'Are you sure you want to finalize this report? Once finalized, the report will be locked and digitally signed.'}
-                confirmLabel={isArabic ? 'تأكيد وقفل التقرير' : 'Finalize & Lock'}
-                cancelLabel={isArabic ? 'إلغاء' : 'Cancel'}
+                title={t('confirmFinalizeSignReport')}
+                message={t('areYouSureYouWantTo')}
+                confirmLabel={t('finalizeLock')}
+                cancelLabel={t('cancel')}
                 onConfirm={finalizeReport}
                 onCancel={() => {
                     setShowFinalize(false);
@@ -1320,12 +1358,10 @@ const ReportEditorPage = () => {
                         />
                         <span>
                             <strong className="block text-sm">
-                                {isArabic ? 'نتيجة حرجة تتطلب تأكيد الاستلام' : 'Critical result requiring acknowledgement'}
+                                {t('criticalResultRequiringAcknowledgement')}
                             </strong>
                             <span className="mt-1 block text-xs leading-5 opacity-80">
-                                {isArabic
-                                    ? 'فعّل هذا الخيار فقط عند وجود نتيجة حرجة مؤكدة. سيُنشئ النظام تنبيهات عاجلة وسجلات تأكيد استلام للمستلمين المسؤولين.'
-                                    : 'Select only for an explicitly confirmed critical finding. This creates urgent alerts and acknowledgement tasks for responsible recipients.'}
+                                {t('selectOnlyForAnExplicitlyConfirmed')}
                             </span>
                         </span>
                     </span>
@@ -1335,9 +1371,9 @@ const ReportEditorPage = () => {
             {/* Template Prompt Dialog */}
             <TextPromptDialog
                 isOpen={showTemplatePrompt}
-                title={isArabic ? 'حفظ كقالب تقرير جديد' : 'Save As Report Template'}
-                label={isArabic ? 'اسم القالب' : 'Template Name'}
-                placeholder={isArabic ? 'مثال: فحص ركبة طبيعي بدون تباين' : 'e.g. Normal Knee MRI'}
+                title={t('saveAsReportTemplate')}
+                label={t('templateName')}
+                placeholder={t('eGNormalKneeMri')}
                 onConfirm={async (name) => {
                     try {
                         await createTemplate({

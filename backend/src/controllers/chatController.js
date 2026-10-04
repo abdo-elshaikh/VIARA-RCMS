@@ -6,9 +6,11 @@ const { triggerEvent, triggerEventForRole } = require('../services/notificationJ
 
 const allowedMessageKinds = new Set(['text', 'sticker', 'attachment']);
 const systemAdministratorRoles = new Set(['Admin', 'SuperAdmin', 'Developer']);
-const externalInboxRoles = new Set(['Admin', 'Receptionist', 'Marketing', 'Developer']);
+const externalInboxRoles = new Set(['Admin', 'Receptionist', 'Developer']);
 const validPostPermissions = new Set(['all_members', 'admins_only']);
 const MAX_MESSAGE_LENGTH = 2000;
+const MESSAGE_HISTORY_PAGE_SIZE = 150;
+const MESSAGE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const attachmentPreviewSql = (alias) => `
     COALESCE(
@@ -159,6 +161,11 @@ const getChatMessages = (db) => async (req, res, next) => {
         const currentUserId = req.user.user_id || req.user.userId;
         const recipientId = req.query.recipientId || req.query.recipient_id;
         const channelName = req.query.channelName || req.query.channel_name;
+        const before = req.query.before || null;
+
+        if (before && !MESSAGE_ID_PATTERN.test(String(before))) {
+            return next(new AppError('before must be a message UUID', 400));
+        }
 
         if ((!recipientId && !channelName) || (recipientId && channelName)) {
             return next(new AppError('recipientId or channelName is required', 400));
@@ -177,24 +184,17 @@ const getChatMessages = (db) => async (req, res, next) => {
                 JOIN users u2 ON sm.recipient_id = u2.user_id
                 WHERE (sm.sender_id = $1 AND sm.recipient_id = $2)
                    OR (sm.sender_id = $2 AND sm.recipient_id = $1)
-                ORDER BY sm.created_at ASC
-                LIMIT 150
+                  AND ($3::uuid IS NULL OR (sm.created_at, sm.message_id) < (
+                      SELECT older.created_at, older.message_id
+                      FROM staff_messages older
+                      WHERE older.message_id = $3::uuid
+                        AND ((older.sender_id = $1 AND older.recipient_id = $2)
+                          OR (older.sender_id = $2 AND older.recipient_id = $1))
+                  ))
+                ORDER BY sm.created_at DESC, sm.message_id DESC
+                LIMIT ${MESSAGE_HISTORY_PAGE_SIZE}
             `;
-            params = [currentUserId, recipientId];
-            
-            // Mark messages from the other user as read
-            const readResult = await db.query(`
-                UPDATE staff_messages
-                SET is_read = TRUE, read_at = NOW()
-                WHERE sender_id = $2 AND recipient_id = $1 AND is_read = FALSE
-                RETURNING message_id
-            `, [currentUserId, recipientId]);
-            if (readResult.rows.length > 0) {
-                realtimeService.sendToUser(recipientId, 'STAFF_MESSAGES_READ', {
-                    reader_id: currentUserId,
-                    message_ids: readResult.rows.map(row => row.message_id)
-                });
-            }
+            params = [currentUserId, recipientId, before];
         } else {
             await requireChannelAccess(db, channelName, req.user);
             query = `
@@ -203,14 +203,41 @@ const getChatMessages = (db) => async (req, res, next) => {
                 FROM staff_messages sm
                 JOIN users u ON sm.sender_id = u.user_id
                 WHERE sm.channel_name = $1
-                ORDER BY sm.created_at ASC
-                LIMIT 150
+                  AND ($2::uuid IS NULL OR (sm.created_at, sm.message_id) < (
+                      SELECT older.created_at, older.message_id
+                      FROM staff_messages older
+                      WHERE older.message_id = $2::uuid AND older.channel_name = $1
+                  ))
+                ORDER BY sm.created_at DESC, sm.message_id DESC
+                LIMIT ${MESSAGE_HISTORY_PAGE_SIZE}
             `;
-            params = [channelName];
+            params = [channelName, before];
         }
 
         const result = await db.query(query, params);
-        res.json(result.rows);
+        const messages = result.rows.reverse();
+        if (recipientId) {
+            const unreadIds = messages
+                .filter(message => String(message.sender_id) === String(recipientId)
+                    && String(message.recipient_id) === String(currentUserId)
+                    && !message.is_read)
+                .map(message => message.message_id);
+            if (unreadIds.length > 0) {
+                const readResult = await db.query(`
+                    UPDATE staff_messages
+                    SET is_read = TRUE, read_at = NOW()
+                    WHERE message_id = ANY($1::uuid[]) AND is_read = FALSE
+                    RETURNING message_id
+                `, [unreadIds]);
+                if (readResult.rows.length > 0) {
+                    realtimeService.sendToUser(recipientId, 'STAFF_MESSAGES_READ', {
+                        reader_id: currentUserId,
+                        message_ids: readResult.rows.map(row => row.message_id)
+                    });
+                }
+            }
+        }
+        res.json(messages);
     } catch (error) {
         next(error);
     }
@@ -367,24 +394,38 @@ const getPatientConversations = (db) => async (req, res, next) => {
 const getPatientMessageHistory = (db) => async (req, res, next) => {
     try {
         const { patientId } = req.params;
+        const before = req.query.before || null;
+        if (before && !MESSAGE_ID_PATTERN.test(String(before))) {
+            return next(new AppError('before must be a message UUID', 400));
+        }
 
         const result = await db.query(`
             SELECT ppm.*, u.full_name AS staff_name
             FROM patient_portal_messages ppm
             LEFT JOIN users u ON ppm.staff_user_id = u.user_id
             WHERE ppm.patient_id = $1
-            ORDER BY ppm.created_at ASC
-            LIMIT 150
-        `, [patientId]);
+              AND ($2::uuid IS NULL OR (ppm.created_at, ppm.message_id) < (
+                  SELECT older.created_at, older.message_id
+                  FROM patient_portal_messages older
+                  WHERE older.message_id = $2::uuid AND older.patient_id = $1
+              ))
+            ORDER BY ppm.created_at DESC, ppm.message_id DESC
+            LIMIT ${MESSAGE_HISTORY_PAGE_SIZE}
+        `, [patientId, before]);
+        const messages = result.rows.reverse();
 
-        // Mark incoming messages as read
-        await db.query(`
-            UPDATE patient_portal_messages
-            SET is_read = TRUE, read_at = NOW()
-            WHERE patient_id = $1 AND sender_role = 'Patient' AND is_read = FALSE
-        `, [patientId]);
+        const unreadIds = messages
+            .filter(message => message.sender_role === 'Patient' && !message.is_read)
+            .map(message => message.message_id);
+        if (unreadIds.length > 0) {
+            await db.query(`
+                UPDATE patient_portal_messages
+                SET is_read = TRUE, read_at = NOW()
+                WHERE message_id = ANY($1::uuid[]) AND is_read = FALSE
+            `, [unreadIds]);
+        }
 
-        res.json(result.rows);
+        res.json(messages);
     } catch (error) {
         next(error);
     }
@@ -472,24 +513,38 @@ const getDoctorConversations = (db) => async (req, res, next) => {
 const getDoctorMessageHistory = (db) => async (req, res, next) => {
     try {
         const { doctorId } = req.params;
+        const before = req.query.before || null;
+        if (before && !MESSAGE_ID_PATTERN.test(String(before))) {
+            return next(new AppError('before must be a message UUID', 400));
+        }
 
         const result = await db.query(`
             SELECT dpm.*, u.full_name AS staff_name
             FROM doctor_portal_messages dpm
             LEFT JOIN users u ON dpm.staff_user_id = u.user_id
             WHERE dpm.doctor_id = $1
-            ORDER BY dpm.created_at ASC
-            LIMIT 150
-        `, [doctorId]);
+              AND ($2::uuid IS NULL OR (dpm.created_at, dpm.message_id) < (
+                  SELECT older.created_at, older.message_id
+                  FROM doctor_portal_messages older
+                  WHERE older.message_id = $2::uuid AND older.doctor_id = $1
+              ))
+            ORDER BY dpm.created_at DESC, dpm.message_id DESC
+            LIMIT ${MESSAGE_HISTORY_PAGE_SIZE}
+        `, [doctorId, before]);
+        const messages = result.rows.reverse();
 
-        // Mark incoming messages as read
-        await db.query(`
-            UPDATE doctor_portal_messages
-            SET is_read = TRUE, read_at = NOW()
-            WHERE doctor_id = $1 AND sender_role = 'Doctor' AND is_read = FALSE
-        `, [doctorId]);
+        const unreadIds = messages
+            .filter(message => message.sender_role === 'Doctor' && !message.is_read)
+            .map(message => message.message_id);
+        if (unreadIds.length > 0) {
+            await db.query(`
+                UPDATE doctor_portal_messages
+                SET is_read = TRUE, read_at = NOW()
+                WHERE message_id = ANY($1::uuid[]) AND is_read = FALSE
+            `, [unreadIds]);
+        }
 
-        res.json(result.rows);
+        res.json(messages);
     } catch (error) {
         next(error);
     }

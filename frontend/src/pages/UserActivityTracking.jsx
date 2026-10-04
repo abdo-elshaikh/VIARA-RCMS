@@ -34,22 +34,14 @@ import {
     X,
     FileText,
     ExternalLink,
-    Laptop,
-    Smartphone,
-    Globe,
-    CreditCard,
-    Stethoscope,
-    Sliders,
     BarChart3,
     TrendingUp,
     Info,
-    CalendarRange,
     Table as TableIcon,
     List,
     Trophy,
     Award,
     Moon,
-    Flame,
     PlusCircle,
     Edit3,
     Trash2,
@@ -57,14 +49,14 @@ import {
     SearchCheck
 } from 'lucide-react';
 import {
-    useGetAuditLogsQuery,
+    useGetStaffActivityLogsQuery,
     useGetStaffQuery
 } from '../store/api';
-import { selectCurrentUser } from '../store/authSlice';
 import PageHeader from '../components/ui/PageHeader';
 import Pagination from '../components/ui/Pagination';
 import Modal from '../components/ui/Modal';
 import { formatRelativeTime } from '../utils/dateFormat';
+import { selectCurrentUser } from '../store/authSlice';
 
 const PAGE_SIZE = 20;
 
@@ -81,28 +73,16 @@ const ROLE_THEMES = {
     Marketing: { bg: 'from-emerald-500/20 to-green-600/20', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-300 dark:border-emerald-800' },
 };
 
-const CATEGORIES = ['AUTH', 'PHI_ACCESS', 'DATA_WRITE', 'BILLING', 'RBAC', 'CONFIG', 'SECURITY', 'PRIVACY'];
-
 const CATEGORY_NAMES_AR = {
-    AUTH: 'المصادقة والدخول',
-    PHI_ACCESS: 'استعلامات المرضى (PHI)',
     DATA_WRITE: 'تعديل البيانات',
     BILLING: 'الفوترة والمالية',
-    RBAC: 'الأدوار والصلاحيات',
     CONFIG: 'إعدادات النظام',
-    SECURITY: 'أحداث الأمان',
-    PRIVACY: 'الخصوصية'
 };
 
 const CATEGORY_NAMES_EN = {
-    AUTH: 'Auth & Login',
-    PHI_ACCESS: 'Patient Views (PHI)',
     DATA_WRITE: 'Data Modifications',
     BILLING: 'Billing & Cashier',
-    RBAC: 'Roles & Scopes',
-    CONFIG: 'System Settings',
-    SECURITY: 'Security Events',
-    PRIVACY: 'Privacy Events'
+    CONFIG: 'System Settings'
 };
 
 const RESOURCE_TABLES = [
@@ -140,7 +120,7 @@ const getOperationType = (log) => {
         };
     }
 
-    const isUpdate = method === 'PUT' || method === 'PATCH' || action.includes('UPDATE') || action.includes('EDIT') || action.includes('MODIFY') || action.includes('AMEND') || log.previous_value;
+    const isUpdate = method === 'PUT' || method === 'PATCH' || action.includes('UPDATE') || action.includes('EDIT') || action.includes('MODIFY') || action.includes('AMEND');
     if (isUpdate) {
         return {
             type: 'update',
@@ -160,30 +140,18 @@ const getOperationType = (log) => {
     };
 };
 
-const parseDevice = (userAgent) => {
-    if (!userAgent) return { label: 'Unknown Device', icon: Globe };
-    const ua = userAgent.toLowerCase();
-    if (ua.includes('mobile') || ua.includes('android') || ua.includes('iphone')) {
-        return { label: 'Mobile Device', icon: Smartphone };
-    }
-    if (ua.includes('windows')) {
-        return { label: 'Windows PC', icon: Laptop };
-    }
-    if (ua.includes('macintosh') || ua.includes('mac os')) {
-        return { label: 'macOS Device', icon: Laptop };
-    }
-    if (ua.includes('linux')) {
-        return { label: 'Linux Workstation', icon: Laptop };
-    }
-    return { label: 'Desktop Workstation', icon: Laptop };
-};
-
 export default function UserActivityTracking() {
-    const { t, i18n } = useTranslation(['admin', 'common']);
+    const { t, i18n } = useTranslation(['admin', 'common'], { nsMode: 'fallback' });
     const isAr = i18n.language?.startsWith('ar');
     const locale = isAr ? 'ar-EG' : 'en-EG';
     const navigate = useNavigate();
     const currentUser = useSelector(selectCurrentUser);
+    const canExportActivity = ['Developer', 'Admin'].includes(currentUser?.role)
+        || currentUser?.permissions?.includes('EXPORT_STAFF_ACTIVITY')
+        || currentUser?.elevatedPermissions?.includes('EXPORT_STAFF_ACTIVITY');
+    const canViewAuditTrail = ['Developer', 'Admin', 'CISO', 'ComplianceOfficer'].includes(currentUser?.role)
+        || currentUser?.permissions?.includes('VIEW_AUDIT_TRAILS')
+        || currentUser?.elevatedPermissions?.includes('VIEW_AUDIT_TRAILS');
 
     // View Mode ('stream' | 'table' | 'leaderboard')
     const [viewMode, setViewMode] = useState('stream');
@@ -207,7 +175,6 @@ export default function UserActivityTracking() {
         operationType: '', // 'create' | 'update' | 'delete' | 'query'
         startDate: '',
         endDate: '',
-        minRisk: '',
     });
 
     // Active scenario preset
@@ -230,7 +197,6 @@ export default function UserActivityTracking() {
         if (filters.operationType) params.operationType = filters.operationType;
         if (filters.startDate) params.startDate = filters.startDate;
         if (filters.endDate) params.endDate = filters.endDate;
-        if (filters.minRisk) params.minRisk = filters.minRisk;
         return params;
     }, [page, selectedUser, filters]);
 
@@ -241,7 +207,7 @@ export default function UserActivityTracking() {
         isFetching: isAuditFetching,
         isError: isAuditError,
         refetch: refetchAudit
-    } = useGetAuditLogsQuery(queryParams, {
+    } = useGetStaffActivityLogsQuery(queryParams, {
         pollingInterval: autoRefresh ? 12000 : 0
     });
 
@@ -268,7 +234,6 @@ export default function UserActivityTracking() {
             operationType: '',
             startDate: '',
             endDate: '',
-            minRisk: '',
         });
         setPage(1);
     };
@@ -292,29 +257,20 @@ export default function UserActivityTracking() {
         setPage(1);
         switch (scenarioId) {
             case 'create':
-                setFilters(prev => ({ ...prev, operationType: 'create', category: '', outcome: '', minRisk: '' }));
+                setFilters(prev => ({ ...prev, operationType: 'create', category: '', outcome: '' }));
                 break;
             case 'update':
-                setFilters(prev => ({ ...prev, operationType: 'update', category: '', outcome: '', minRisk: '' }));
+                setFilters(prev => ({ ...prev, operationType: 'update', category: '', outcome: '' }));
                 break;
             case 'delete':
-                setFilters(prev => ({ ...prev, operationType: 'delete', category: '', outcome: '', minRisk: '' }));
+                setFilters(prev => ({ ...prev, operationType: 'delete', category: '', outcome: '' }));
                 break;
             case 'query':
-                setFilters(prev => ({ ...prev, operationType: 'query', category: '', outcome: '', minRisk: '' }));
-                break;
-            case 'high_risk':
-                setFilters(prev => ({ ...prev, minRisk: 40, category: '', outcome: '', operationType: '' }));
-                break;
-            case 'auth':
-                setFilters(prev => ({ ...prev, category: 'AUTH', minRisk: '', outcome: '', operationType: '' }));
-                break;
-            case 'phi':
-                setFilters(prev => ({ ...prev, category: 'PHI_ACCESS', minRisk: '', outcome: '', operationType: '' }));
+                setFilters(prev => ({ ...prev, operationType: 'query', category: '', outcome: '' }));
                 break;
             case 'all':
             default:
-                setFilters(prev => ({ ...prev, category: '', outcome: '', minRisk: '', operationType: '' }));
+                setFilters(prev => ({ ...prev, category: '', outcome: '', operationType: '' }));
                 break;
         }
     };
@@ -329,7 +285,7 @@ export default function UserActivityTracking() {
                 offset: 0
             });
             const API_BASE = import.meta.env.VITE_API_URL || '/api';
-            const response = await fetch(`${API_BASE}/v1/audit/export?${searchParams.toString()}`, {
+            const response = await fetch(`${API_BASE}/v1/audit/activity/export?${searchParams.toString()}`, {
                 headers: {
                     ...(currentUser?.token ? { Authorization: `Bearer ${currentUser.token}` } : {})
                 },
@@ -430,6 +386,15 @@ export default function UserActivityTracking() {
                 description={t('trackAndAuditCreationModificationDeletion')}
                 actions={
                     <div className="flex flex-wrap items-center gap-2">
+                        {canViewAuditTrail && (
+                            <Link
+                                to="/audit-logs"
+                                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
+                            >
+                                <ShieldCheck size={14} />
+                                <span>{isAr ? 'سجل تدقيق الأمان' : 'Security Audit'}</span>
+                            </Link>
+                        )}
                         <button
                             type="button"
                             onClick={() => {
@@ -475,7 +440,7 @@ export default function UserActivityTracking() {
                             <span>{t('refresh')}</span>
                         </button>
 
-                        <button
+                        {canExportActivity && <button
                             type="button"
                             onClick={handleExportCsv}
                             disabled={exporting || !total}
@@ -483,7 +448,7 @@ export default function UserActivityTracking() {
                         >
                             {exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
                             <span>{t('exportCsv')}</span>
-                        </button>
+                        </button>}
                     </div>
                 }
                 metrics={[
@@ -752,17 +717,6 @@ export default function UserActivityTracking() {
 
                 <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
 
-                <button
-                    type="button"
-                    onClick={() => handleApplyScenario('high_risk')}
-                    className={`inline-flex items-center gap-1 rounded-xl border px-3 py-1 text-xs font-bold transition ${activeScenario === 'high_risk'
-                            ? 'border-rose-700 bg-rose-700 text-white'
-                            : 'border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300'
-                        }`}
-                >
-                    <ShieldAlert size={13} />
-                    <span>{t('highRisk')}</span>
-                </button>
             </section>
 
             {/* Filter Control Engine */}
@@ -803,7 +757,7 @@ export default function UserActivityTracking() {
                     {/* Search Field */}
                     <div className="relative lg:col-span-2">
                         <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            {t('searchActionIp')}
+                            {isAr ? 'بحث في النشاط' : 'Search activity'}
                         </span>
                         <div className="relative">
                             <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -811,7 +765,7 @@ export default function UserActivityTracking() {
                                 type="text"
                                 value={filters.q}
                                 onChange={(e) => updateFilter('q', e.target.value)}
-                                placeholder={t('searchActionPathDetails')}
+                                placeholder={isAr ? 'ابحث بالعملية أو اسم الموظف' : 'Search by action or staff member'}
                                 className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 ps-9 pe-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
                             />
                         </div>
@@ -1008,7 +962,6 @@ export default function UserActivityTracking() {
                                 <th className="p-3.5 text-start">{t('category')}</th>
                                 <th className="p-3.5 text-start">{t('target')}</th>
                                 <th className="p-3.5 text-start">{t('outcome')}</th>
-                                <th className="p-3.5 text-start">IP</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1038,7 +991,7 @@ export default function UserActivityTracking() {
                                             {log.category}
                                         </td>
                                         <td className="p-3.5 text-slate-600 dark:text-slate-300">
-                                            {log.patient_id ? `Patient #${String(log.patient_id).slice(0, 8)}` : log.exam_id ? `Exam #${String(log.exam_id).slice(0, 8)}` : log.invoice_id ? `Invoice #${String(log.invoice_id).slice(0, 8)}` : log.resource_table || '—'}
+                                            {log.target_type || log.resource_table || '—'}
                                         </td>
                                         <td className="p-3.5">
                                             <span className={`inline-flex rounded px-1.5 py-0.5 font-mono text-[9px] font-black uppercase ${isFailure ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
@@ -1046,8 +999,7 @@ export default function UserActivityTracking() {
                                                 {log.outcome || 'success'}
                                             </span>
                                         </td>
-                                        <td className="p-3.5 font-mono text-[10px] text-slate-400">
-                                            {log.ip_address || '—'}
+                                        <td className="p-3.5 text-[10px] text-slate-500">
                                         </td>
                                     </tr>
                                 );
@@ -1124,9 +1076,6 @@ export default function UserActivityTracking() {
                                 const OpIcon = op.icon;
                                 const isDenied = log.outcome === 'denied';
                                 const isFailure = log.outcome === 'failure';
-                                const hasStateDiff = log.previous_value || log.new_value;
-                                const device = parseDevice(log.user_agent);
-                                const DeviceIcon = device.icon;
 
                                 return (
                                     <article
@@ -1179,11 +1128,6 @@ export default function UserActivityTracking() {
                                                             </span>
                                                         )}
 
-                                                        {Number(log.risk_score) > 0 && (
-                                                            <span className="rounded-md bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-700 dark:text-amber-300">
-                                                                R{log.risk_score}
-                                                            </span>
-                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1224,49 +1168,11 @@ export default function UserActivityTracking() {
 
                                         {/* 1-Click Resource Navigation Badges & Device Tags */}
                                         <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 text-xs">
-                                            <span className="font-mono text-[10px] text-slate-400">
-                                                IP: {log.ip_address || '—'}
-                                            </span>
-
-                                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-500 dark:bg-slate-800">
-                                                <DeviceIcon size={11} />
-                                                <span>{device.label}</span>
-                                            </span>
-
-                                            {log.request_path && (
-                                                <span className="font-mono text-[10px] text-slate-400 truncate max-w-[200px]">
-                                                    {log.http_method} {log.request_path}
+                                            {(log.target_type || log.resource_table) && (
+                                                <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10.5px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                                    <Layers size={10} />
+                                                    {log.target_type || log.resource_table}
                                                 </span>
-                                            )}
-
-                                            {log.patient_id && (
-                                                <Link
-                                                    to={`/patients?patientId=${log.patient_id}`}
-                                                    className="inline-flex items-center gap-1 rounded-lg bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 text-[10.5px] font-bold text-teal-700 hover:bg-teal-500/20 dark:text-teal-300 transition"
-                                                >
-                                                    <ExternalLink size={10} />
-                                                    <span>{t('patient')} #{String(log.patient_id).slice(0, 8)}</span>
-                                                </Link>
-                                            )}
-
-                                            {log.exam_id && (
-                                                <Link
-                                                    to={`/worklist?examId=${log.exam_id}`}
-                                                    className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 text-[10.5px] font-bold text-cyan-700 hover:bg-cyan-500/20 dark:text-cyan-300 transition"
-                                                >
-                                                    <ExternalLink size={10} />
-                                                    <span>{t('examStudy')}</span>
-                                                </Link>
-                                            )}
-
-                                            {log.invoice_id && (
-                                                <Link
-                                                    to={`/reception?tab=cashier&invoiceId=${log.invoice_id}`}
-                                                    className="inline-flex items-center gap-1 rounded-lg bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10.5px] font-bold text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 transition"
-                                                >
-                                                    <ExternalLink size={10} />
-                                                    <span>{t('invoice')}</span>
-                                                </Link>
                                             )}
                                         </div>
 
@@ -1280,35 +1186,12 @@ export default function UserActivityTracking() {
                                                     <span className="font-mono text-[10px] text-slate-500">Log ID #{log.log_id}</span>
                                                 </div>
 
-                                                {hasStateDiff && (
-                                                    <div className="grid gap-2 sm:grid-cols-2">
-                                                        <div className="rounded-xl border border-rose-900/30 bg-rose-950/20 p-3">
-                                                            <span className="text-[10px] font-bold text-rose-400">
-                                                                {t('previousState')}
-                                                            </span>
-                                                            <pre className="mt-1 max-h-32 overflow-auto font-mono text-[11px] text-rose-200">
-                                                                {JSON.stringify(log.previous_value, null, 2)}
-                                                            </pre>
-                                                        </div>
-                                                        <div className="rounded-xl border border-emerald-900/30 bg-emerald-950/20 p-3">
-                                                            <span className="text-[10px] font-bold text-emerald-400">
-                                                                {t('newState')}
-                                                            </span>
-                                                            <pre className="mt-1 max-h-32 overflow-auto font-mono text-[11px] text-emerald-200">
-                                                                {JSON.stringify(log.new_value, null, 2)}
-                                                            </pre>
-                                                        </div>
-                                                    </div>
-                                                )}
-
                                                 <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-slate-800 bg-slate-900/80 p-3 font-mono text-[11px] text-slate-300">
                                                     {JSON.stringify({
-                                                        details: log.details || {},
-                                                        changedFields: log.changed_fields || undefined,
-                                                        riskReason: log.risk_reason || undefined,
-                                                        requestId: log.request_id || undefined,
-                                                        userAgent: log.user_agent || undefined,
-                                                        sourceSystem: log.source_system || undefined
+                                                        event: log.event_code || log.action,
+                                                        category: log.category,
+                                                        outcome: log.outcome,
+                                                        target: log.target_type || log.resource_table || undefined,
                                                     }, null, 2)}
                                                 </pre>
                                             </div>

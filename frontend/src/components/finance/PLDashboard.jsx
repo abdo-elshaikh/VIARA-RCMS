@@ -21,26 +21,39 @@ const yearStart = () => toFinancialDateInput(new Date(new Date().getFullYear(), 
 const lastMonthStart = () => toFinancialDateInput(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1));
 const lastMonthEnd = () => toFinancialDateInput(new Date(new Date().getFullYear(), new Date().getMonth(), 0));
 
-const PLDashboard = () => {
+const PLDashboard = ({ dateRange: externalDateRange, onDateRangeChange, selectedDatePreset }) => {
     const { t, i18n } = useTranslation('workspace');
-    const isAr = i18n.language?.startsWith('ar');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
     
     const [preset, setPreset] = useState('thisMonth');
-    const [dateRange, setDateRange] = useState({ 
+    const [localDateRange, setLocalDateRange] = useState({
         startDate: monthStart(), 
         endDate: today() 
     });
 
+    const activeDateRange = externalDateRange || localDateRange;
+    const activePreset = selectedDatePreset || preset;
+
     const handlePreset = (key) => {
         setPreset(key);
-        if (key === 'thisMonth') setDateRange({ startDate: monthStart(), endDate: today() });
-        else if (key === 'lastMonth') setDateRange({ startDate: lastMonthStart(), endDate: lastMonthEnd() });
-        else if (key === 'thisYear') setDateRange({ startDate: yearStart(), endDate: today() });
+        const nextRange = key === 'thisMonth'
+            ? { startDate: monthStart(), endDate: today() }
+            : key === 'lastMonth'
+                ? { startDate: lastMonthStart(), endDate: lastMonthEnd() }
+                : { startDate: yearStart(), endDate: today() };
+        setLocalDateRange(nextRange);
+        onDateRangeChange?.(nextRange, key);
     };
 
-    const plQuery = useGetProfitAndLossQuery(dateRange);
-    const taxQuery = useGetTaxSummaryQuery(dateRange);
+    const handleDateChange = (field, value) => {
+        const nextRange = { ...activeDateRange, [field]: value };
+        setPreset('custom');
+        setLocalDateRange(nextRange);
+        onDateRangeChange?.(nextRange, 'custom');
+    };
+
+    const plQuery = useGetProfitAndLossQuery(activeDateRange);
+    const taxQuery = useGetTaxSummaryQuery(activeDateRange);
 
     const isLoading = plQuery.isLoading || taxQuery.isLoading;
     const isError = plQuery.isError || taxQuery.isError;
@@ -63,7 +76,7 @@ const PLDashboard = () => {
             <div role="alert" className="flex flex-col items-center justify-center rounded-3xl border border-rose-200/60 bg-rose-50/50 p-12 text-center shadow-sm backdrop-blur-sm dark:border-rose-900/50 dark:bg-rose-900/10">
                 <AlertCircle size={32} className="mb-3 text-rose-500" />
                 <h3 className="text-lg font-black text-rose-700 dark:text-rose-400">{t('finance.pl.error', { defaultValue: 'Failed to load financial data' })}</h3>
-                <p className="mt-1 text-sm text-rose-600/70 dark:text-rose-400/70">Please check your connection and try again.</p>
+                <p className="mt-1 text-sm text-rose-600/70 dark:text-rose-400/70">{t('finance.pl.retryHint', { defaultValue: 'Please check your connection and try again.' })}</p>
             </div>
         );
     }
@@ -93,52 +106,46 @@ const PLDashboard = () => {
                             type="button"
                             onClick={() => handlePreset('thisMonth')}
                             className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
-                                preset === 'thisMonth' ? 'bg-teal-700 text-white shadow font-black' : 'text-slate-600 dark:text-slate-300'
+                                activePreset === 'thisMonth' ? 'bg-teal-700 text-white shadow font-black' : 'text-slate-600 dark:text-slate-300'
                             }`}
                         >
-                            {isAr ? 'هذا الشهر' : 'MTD'}
+                            {t('finance.common.presets.mtd')}
                         </button>
                         <button
                             type="button"
                             onClick={() => handlePreset('lastMonth')}
                             className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
-                                preset === 'lastMonth' ? 'bg-teal-700 text-white shadow font-black' : 'text-slate-600 dark:text-slate-300'
+                                activePreset === 'lastMonth' ? 'bg-teal-700 text-white shadow font-black' : 'text-slate-600 dark:text-slate-300'
                             }`}
                         >
-                            {isAr ? 'الشهر السابق' : 'Last Month'}
+                            {t('finance.common.presets.lastMonth')}
                         </button>
                         <button
                             type="button"
                             onClick={() => handlePreset('thisYear')}
                             className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
-                                preset === 'thisYear' ? 'bg-teal-700 text-white shadow font-black' : 'text-slate-600 dark:text-slate-300'
+                                activePreset === 'thisYear' ? 'bg-teal-700 text-white shadow font-black' : 'text-slate-600 dark:text-slate-300'
                             }`}
                         >
-                            {isAr ? 'هذا العام' : 'YTD'}
+                            {t('finance.common.presets.ytd')}
                         </button>
                     </div>
 
                     <div className="grid gap-2 rounded-xl border border-slate-200/60 bg-white/80 p-1.5 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-slate-900/50 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                         <DateInput 
                             label={t('finance.pl.startDate')} 
-                            value={dateRange.startDate} 
-                            max={dateRange.endDate} 
-                            onChange={(value) => {
-                                setPreset('custom');
-                                setDateRange((current) => ({ ...current, startDate: value }));
-                            }} 
+                            value={activeDateRange.startDate}
+                            max={activeDateRange.endDate}
+                            onChange={(value) => handleDateChange('startDate', value)}
                         />
                         <span className="hidden text-xs font-bold uppercase tracking-wider text-slate-400 sm:block">
                             →
                         </span>
                         <DateInput 
                             label={t('finance.pl.endDate')} 
-                            value={dateRange.endDate} 
-                            min={dateRange.startDate} 
-                            onChange={(value) => {
-                                setPreset('custom');
-                                setDateRange((current) => ({ ...current, endDate: value }));
-                            }} 
+                            value={activeDateRange.endDate}
+                            min={activeDateRange.startDate}
+                            onChange={(value) => handleDateChange('endDate', value)}
                         />
                     </div>
                 </div>
@@ -187,11 +194,11 @@ const PLDashboard = () => {
                                 <div className="flex items-center gap-2">
                                     <Scale size={16} className="text-teal-600 dark:text-teal-400" />
                                     <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                                        {isAr ? 'كفاءة التشغيل وهامش الربحية' : 'Operating Efficiency & Margins'}
+                                        {t('finance.pl.efficiencyTitle')}
                                     </h3>
                                 </div>
                                 <span className="font-mono text-xs font-black text-slate-700 dark:text-slate-300">
-                                    {isAr ? 'هامش صافي الربح:' : 'Net Margin:'} <span className={netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>{margin.toFixed(1)}%</span>
+                                    {t('finance.pl.netMarginLabel')} <span className={netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>{margin.toFixed(1)}%</span>
                                 </span>
                             </div>
 
@@ -203,13 +210,13 @@ const PLDashboard = () => {
 
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-4 text-xs font-bold">
                                 <span className="text-slate-600 dark:text-slate-400">
-                                    {isAr ? 'نسبة المصروفات للإيراد:' : 'Expense Ratio:'} <strong className="font-mono text-rose-600 dark:text-rose-400">{expenseRatio.toFixed(1)}%</strong>
+                                    {t('finance.pl.expenseRatioLabel')} <strong className="font-mono text-rose-600 dark:text-rose-400">{expenseRatio.toFixed(1)}%</strong>
                                 </span>
                                 <span className="text-slate-600 dark:text-slate-400">
-                                    {isAr ? 'نسبة عمولات الأطباء:' : 'Commission Ratio:'} <strong className="font-mono text-amber-600 dark:text-amber-400">{commissionRatio.toFixed(1)}%</strong>
+                                    {t('finance.pl.commissionRatioLabel')} <strong className="font-mono text-amber-600 dark:text-amber-400">{commissionRatio.toFixed(1)}%</strong>
                                 </span>
                                 <span className="text-slate-600 dark:text-slate-400">
-                                    {isAr ? 'صافي العائد التشغيلي:' : 'Operating Return:'} <strong className="font-mono text-emerald-600 dark:text-emerald-400">{margin.toFixed(1)}%</strong>
+                                    {t('finance.pl.operatingReturnLabel')} <strong className="font-mono text-emerald-600 dark:text-emerald-400">{margin.toFixed(1)}%</strong>
                                 </span>
                             </div>
                         </div>

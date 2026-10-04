@@ -1,5 +1,6 @@
 const { AppError } = require('../middleware/errorHandler');
 const crypto = require('crypto');
+const { assertQuota } = require('../services/quotaService');
 const { buildReportHtml } = require('../services/pdfService').default;
 const { buildReportPdf, cleanFilenamePart } = require('../services/reportPdfRenderer');
 const settingsService = require('../services/settingsService');
@@ -37,6 +38,7 @@ const extractReceiptLookupCode = (rawValue) => {
             const candidate = parsed.searchParams.get(key);
             if (candidate) return candidate.trim();
         }
+        if (parsed.searchParams.has('mrn')) return '';
         const lastSegment = parsed.pathname.split('/').filter(Boolean).pop();
         if (lastSegment) return decodeURIComponent(lastSegment).trim();
     } catch {
@@ -137,6 +139,8 @@ const getWorklist = (db) => async (req, res, next) => {
         let query = `
           SELECT e.exam_id, e.appointment_id, e.status, e.created_at, e.report_content,
                  e.report_status, e.report_sections, e.template_id, e.typist_id, e.typed_at,
+                 e.report_request_status, e.report_requested_at, e.report_requested_by,
+                 e.report_request_source, e.images_ready_at, e.images_delivered_at,
                  e.reviewed_by, e.reviewed_at, e.approved_by, e.approved_at,
                  e.digital_signature_name, e.digital_signature_role, e.digital_signature_hash,
                  e.report_locked, e.report_locked_at, e.amendment_reason, e.amended_at,
@@ -269,24 +273,30 @@ const buildCaseReportFilters = (req) => {
 };
 
 const appendCaseReportAccessPredicate = (role, userId, values, where) => {
+    if (['Developer', 'Admin', 'Administrator'].includes(role)) {
+        // Administrative oversight: full access to all case reports
+        return;
+    }
     if (role === 'Radiologist') {
         values.push(userId);
         const param = values.length;
-        where.push(`(e.performing_radiologist_id = $${param} OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL))`);
+        where.push(`(e.performing_radiologist_id = $${param} OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL) OR e.report_status IN ('Finalized', 'Amended'))`);
     } else if (role === 'Technician') {
         values.push(userId);
         const param = values.length;
-        where.push(`(a.technician_id = $${param} OR (e.current_station = 'Modality' AND a.technician_id IS NULL))`);
+        where.push(`(a.technician_id = $${param} OR (e.current_station = 'Modality' AND a.technician_id IS NULL) OR e.report_status IN ('Finalized', 'Amended'))`);
     } else if (role === 'Nurse') {
         values.push(userId);
         const param = values.length;
-        where.push(`(a.nurse_id = $${param} OR (e.current_station = 'Nurse' AND a.nurse_id IS NULL))`);
-    } else if (['Developer', 'Admin', 'Receptionist'].includes(role)) {
+        where.push(`(a.nurse_id = $${param} OR (e.current_station = 'Nurse' AND a.nurse_id IS NULL) OR e.report_status IN ('Finalized', 'Amended'))`);
+    } else if (['Receptionist', 'Accountant'].includes(role)) {
         where.push(`(
             e.current_station NOT IN ('Nurse', 'Modality', 'Radiologist')
             OR (e.current_station = 'Nurse' AND a.nurse_id IS NULL)
             OR (e.current_station = 'Modality' AND a.technician_id IS NULL)
             OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL)
+            OR e.report_status IN ('Finalized', 'Amended')
+            OR e.delivered_at IS NOT NULL
         )`);
     } else {
         where.push('FALSE');
@@ -334,11 +344,15 @@ const getCaseReports = (db) => async (req, res, next) => {
             where.push(`(pay.receipt_number = ${param} OR i.invoice_number = ${param} OR e.order_number = ${param} OR e.exam_id::text = ${param})`);
         }
         if (filters.queue === 'pending') {
-            where.push(`(e.report_status IS NULL OR e.report_status NOT IN ('Finalized', 'Amended'))`);
+            where.push(`e.report_request_status = 'Requested' AND NOT (
+                e.report_status IN ('Finalized', 'Amended')
+                AND COALESCE(e.report_locked, FALSE) = TRUE
+                AND e.report_finalized_at IS NOT NULL
+            )`);
         } else if (filters.queue === 'finalized') {
-            where.push(`e.report_status IN ('Finalized', 'Amended')`);
+            where.push(`e.report_status IN ('Finalized', 'Amended') AND COALESCE(e.report_locked, FALSE) = TRUE AND e.report_finalized_at IS NOT NULL`);
         } else if (filters.queue === 'notDelivered') {
-            where.push(`e.report_status IN ('Finalized', 'Amended') AND e.delivered_at IS NULL AND last_delivery.delivery_status IS NULL`);
+            where.push(`e.report_status IN ('Finalized', 'Amended') AND COALESCE(e.report_locked, FALSE) = TRUE AND e.report_finalized_at IS NOT NULL AND e.delivered_at IS NULL AND last_delivery.delivery_status IS NULL`);
         } else if (filters.queue === 'urgent') {
             where.push(`e.priority IN ('Emergency', 'Urgent')`);
         } else if (filters.queue === 'today') {
@@ -352,6 +366,10 @@ const getCaseReports = (db) => async (req, res, next) => {
             WITH report_rows AS (
                 SELECT e.exam_id, e.appointment_id, e.patient_id, e.status, e.created_at,
                        e.report_content, e.report_status, e.report_sections, e.template_id,
+                       e.report_request_status, e.report_requested_at, e.report_requested_by,
+                       e.report_request_source, e.images_ready_at, e.images_delivered_at,
+                       e.arrived_at, e.prep_started_at, e.prep_completed_at,
+                       e.exam_started_at, e.exam_completed_at, e.reporting_started_at,
                        e.report_locked, e.report_locked_at, e.report_finalized_at,
                        e.amended_at, e.delivered_at, e.order_number, e.priority,
                        e.queue_stage, e.current_station, e.clinical_indication,
@@ -371,8 +389,12 @@ const getCaseReports = (db) => async (req, res, next) => {
                        last_delivery.delivery_method AS last_delivery_method,
                        last_delivery.delivery_status AS last_delivery_status,
                        last_delivery.delivered_at AS last_delivery_at,
-                       COUNT(*) FILTER (WHERE e.report_status IN ('Finalized', 'Amended')) OVER() AS finalized_count,
-                       COUNT(*) FILTER (WHERE e.report_status NOT IN ('Finalized', 'Amended') OR e.report_status IS NULL) OVER() AS pending_count,
+                       COUNT(*) FILTER (WHERE e.report_status IN ('Finalized', 'Amended') AND COALESCE(e.report_locked, FALSE) = TRUE AND e.report_finalized_at IS NOT NULL) OVER() AS finalized_count,
+                       COUNT(*) FILTER (WHERE e.report_request_status = 'Requested' AND NOT (
+                           e.report_status IN ('Finalized', 'Amended')
+                           AND COALESCE(e.report_locked, FALSE) = TRUE
+                           AND e.report_finalized_at IS NOT NULL
+                       )) OVER() AS pending_count,
                        COUNT(*) FILTER (WHERE e.delivered_at IS NOT NULL OR last_delivery.delivery_status IS NOT NULL) OVER() AS delivered_count,
                        COUNT(*) OVER() AS total_count
                 FROM examinations e
@@ -444,7 +466,11 @@ const lookupCaseReport = (db) => async (req, res, next) => {
     try {
         const code = String(req.query.code || '').trim();
         if (!code) return next(new AppError('Receipt, invoice, order number, or exam ID is required', 400));
-        req.query = { ...req.query, search: '', receipt: extractReceiptLookupCode(code), limit: 1, offset: 0 };
+        const receiptCode = extractReceiptLookupCode(code);
+        if (!receiptCode) {
+            return next(new AppError('This QR code does not contain a report reference. Use a current receipt QR or enter the order number.', 400));
+        }
+        req.query = { ...req.query, search: '', receipt: receiptCode, limit: 1, offset: 0 };
         return getCaseReports(db)(req, res, next);
     } catch (error) {
         next(error);
@@ -493,7 +519,19 @@ const getExamById = (db) => async (req, res, next) => {
             LEFT JOIN modalities prior_m ON prior_m.modality_id = prior_e.modality_id
              WHERE e.exam_id = $1
                AND (
-                   ($2::text = 'Radiologist' AND e.performing_radiologist_id = $3)
+                   $2::text IN ('Admin', 'Receptionist', 'Accountant', 'Developer')
+                   OR ($2::text = 'Radiologist' AND (
+                       e.performing_radiologist_id = $3
+                       OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL)
+                   ))
+                   OR ($2::text = 'Technician' AND (
+                       a.technician_id = $3
+                       OR (e.current_station = 'Modality' AND a.technician_id IS NULL)
+                   ))
+                   OR ($2::text = 'Nurse' AND (
+                       a.nurse_id = $3
+                       OR (e.current_station = 'Nurse' AND a.nurse_id IS NULL)
+                   ))
                    OR $4::boolean
                )
         `, [
@@ -574,6 +612,7 @@ const updateReport = (db) => async (req, res, next) => {
         const checkQuery = `
             SELECT e.status, e.appointment_id, e.report_locked, e.report_sections,
                     e.report_content, e.report_status, e.critical_result,
+                    e.report_request_status,
                     e.order_number,
                     COALESCE(e.external_referring_doctor_id, a.referring_doctor_id) AS referring_doctor_id
             FROM examinations e
@@ -591,6 +630,11 @@ const updateReport = (db) => async (req, res, next) => {
         if (checkResult.rows[0].report_locked) {
             await client.query('ROLLBACK');
             return next(new AppError('Report is already finalized', 400));
+        }
+
+        if (isRadiologist && checkResult.rows[0].report_request_status === 'NotRequested') {
+            await client.query('ROLLBACK');
+            return next(new AppError('A diagnostic report has not been requested for this examination', 409));
         }
 
         const nextSections = {
@@ -634,6 +678,9 @@ const updateReport = (db) => async (req, res, next) => {
                 await client.query('ROLLBACK');
                 return next(new AppError(transitionError, 409));
             }
+        }
+        if (newStatus === 'Finalized') {
+            await assertQuota(client, 'reports', { transaction: true });
         }
         const signatureHash = newStatus === 'Finalized'
             ? crypto.createHash('sha256').update(`${examId}:${userId}:${mergedReportContent}:${Date.now()}`).digest('hex')
@@ -976,7 +1023,7 @@ const acknowledgeCriticalResult = (db) => async (req, res, next) => {
                 locked_at = NULL, locked_by = NULL,
                 error_message = 'Critical result was acknowledged'
             WHERE entity_type = 'Exam' AND entity_id = $1
-              AND event_type = 'CriticalResultEscalated'
+                            AND event_type IN ('CriticalResultFinalized', 'CriticalResultEscalated')
               AND status IN ('Pending', 'Processing')
         `, [req.params.id]);
 
@@ -1044,7 +1091,9 @@ const getReportPdf = (db) => async (req, res, next) => {
         }
 
         const rawExam = result.rows[0];
-        const isFinalized = ['Finalized', 'Amended'].includes(rawExam.report_status) || rawExam.report_locked || rawExam.status === 'Finalized';
+        const isFinalized = ['Finalized', 'Amended'].includes(rawExam.report_status)
+            && rawExam.report_locked
+            && Boolean(rawExam.report_finalized_at);
 
         // Access permissions check
         const hasEmergencyReportAccess = Boolean(req.user.emergencyAccessId
@@ -1195,10 +1244,13 @@ const getReportPdf = (db) => async (req, res, next) => {
         const customizeParam = queryText(req.query.customize);
         const downloadParam = queryText(req.query.download || req.query.mode);
         const hideCustomizePanel = customizeParam === 'false' || downloadParam === 'true' || downloadParam === 'download' || ['Patient', 'Doctor', 'Referring Doctor', 'Referring_Doctor', 'PublicReport'].includes(userRole);
+        const requestedLanguage = queryText(req.query.lang || req.query.language)
+            || ((typeof req.get === 'function' ? req.get('accept-language') : req.headers?.['accept-language'])?.startsWith('ar') ? 'ar' : undefined);
 
         const documentSettings = {
             ...allSettings,
             showCustomizePanel: !hideCustomizePanel,
+            ...(requestedLanguage ? { language: requestedLanguage } : {}),
             ...(templateStyle ? { templateStyle } : {}),
             ...(enabledFields ? { enabledFields } : {}),
             ...(customFields ? { customFields } : {}),
@@ -1360,7 +1412,15 @@ const verifyReportExamAccess = async (db, examId, user) => {
         `SELECT exam_id, performing_radiologist_id, report_locked
          FROM examinations
          WHERE exam_id = $1
-           AND ($2::text = 'Radiologist' AND performing_radiologist_id = $3::uuid)
+           AND (
+               $2::text IN ('Admin', 'Developer')
+               OR ($2::text = 'Radiologist' AND (
+                   performing_radiologist_id = $3::uuid
+                   OR (current_station = 'Radiologist' AND performing_radiologist_id IS NULL)
+                   OR status = 'Reporting'
+                   OR queue_stage = 'Images Ready'
+               ))
+           )
          LIMIT 1`,
         [examId, user.role, user.user_id]
     );

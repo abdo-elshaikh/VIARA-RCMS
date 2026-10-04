@@ -379,11 +379,72 @@
       "intelligence": "Intelligence",
       "workflow": "Workflows",
       "workflows": "Workflows",
-      "governance": "Governance"
+      "governance": "Governance",
+      "skipContent": "Skip to content",
+      "changeLanguage": "Switch to Arabic",
+      "changeToEnglish": "Switch to English",
+      "lightMode": "Light mode",
+      "darkMode": "Dark mode"
     },
     "eyebrow": "Live radiology command center",
-    "heroTitleLead": "Run every imaging workflow",
-    "heroTitleAccent": "from one clear system.",
+    "heroTitleLead": "Run every radiology workflow",
+    "heroTitleAccent": "from one connected workspace.",
+    "scenes": {
+      "navLabel": "Command center scenes",
+      "operations": {
+        "label": "Operations",
+        "title": "Today at a glance",
+        "text": "Live volumes across the center, from check-in to final delivery.",
+        "pipelineLabel": "Study pipeline",
+        "stages": {
+          "waiting": "Waiting",
+          "imaging": "Imaging",
+          "reporting": "Reporting",
+          "delivered": "Delivered"
+        },
+        "throughput": {
+          "title": "Peak-hour projection",
+          "text": "Derived from completed cases over the trailing window."
+        }
+      },
+      "aiCopilot": {
+        "label": "AI Copilot",
+        "title": "Intelligence on top of operations",
+        "text": "Signals are surfaced where work already happens - no separate console.",
+        "items": {
+          "0": {
+            "title": "Prioritization",
+            "text": "Urgent studies rise to the top of every worklist."
+          },
+          "1": {
+            "title": "Draft assistance",
+            "text": "Structured findings speed radiologist reporting."
+          },
+          "2": {
+            "title": "Workload balance",
+            "text": "Suggests reassignment before queues back up."
+          }
+        },
+        "connected": "Connected to system data"
+      },
+      "clinicalFlow": {
+        "label": "Clinical Flow",
+        "title": "One traceable clinical path",
+        "text": "Every handoff carries context from referral to delivery.",
+        "unit": "min",
+        "steps": {
+          "reception": "Registration",
+          "imaging": "Imaging",
+          "reporting": "Reporting",
+          "delivery": "Delivery"
+        }
+      },
+      "staffGateway": {
+        "label": "Staff Gateway",
+        "title": "Signed-in staff land here",
+        "text": "Permission-aware entry points into daily operations."
+      }
+    },
     "heroDescription": "Coordinate reception, scheduling, PACS queues, reporting, billing, printing, analytics, and governance in one focused workspace built for daily radiology operations.",
     "intelligenceTitle": "Where clinical data turns signals into decisions",
     "openWorkspace": "Open staff workspace",

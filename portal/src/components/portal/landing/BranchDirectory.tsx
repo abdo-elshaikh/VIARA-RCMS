@@ -14,9 +14,11 @@ import { LandingSectionSkeleton } from './LandingStates';
  */
 interface BranchDirectoryProps {
   onBookBranch?: (branchId: string) => void;
+  heading?: string;
+  subheading?: string;
 }
 
-export const BranchDirectory = ({ onBookBranch }: BranchDirectoryProps) => {
+export const BranchDirectory = ({ onBookBranch, heading, subheading }: BranchDirectoryProps) => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith('ar');
   const reduceMotion = useReducedMotion();
@@ -61,14 +63,20 @@ export const BranchDirectory = ({ onBookBranch }: BranchDirectoryProps) => {
           <span>{isRtl ? 'مواقعنا' : 'Our Locations'}</span>
         </span>
         <h2 className="text-3xl sm:text-4xl font-extrabold text-foreground tracking-tight">
-          {branches.length > 1
-            ? isRtl ? 'ابحث عن أقرب مركز إليك' : 'Find Your Nearest Center'
-            : isRtl ? 'موقعنا' : 'Our Location'}
+          {heading ||
+            (branches.length > 1
+              ? isRtl
+                ? 'ابحث عن أقرب مركز إليك'
+                : 'Find Your Nearest Center'
+              : isRtl
+                ? 'موقعنا'
+                : 'Our Location')}
         </h2>
         <p className="mt-3 text-base text-muted-foreground">
-          {isRtl
-            ? 'بيانات المواقع وأوقات العمل وأرقام التواصل مباشرة من سجلات المركز.'
-            : 'Location details, working hours, and contact numbers come straight from the center records.'}
+          {subheading ||
+            (isRtl
+              ? 'بيانات المواقع وأوقات العمل وأرقام التواصل مباشرة من سجلات المركز.'
+              : 'Location details, working hours, and contact numbers come straight from the center records.')}
         </p>
       </div>
 

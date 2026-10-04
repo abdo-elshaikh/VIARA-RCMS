@@ -330,15 +330,21 @@ const PatientRecordCard = ({ row, selected, onSelect, onOpen, onEdit, onDelete, 
     );
 };
 
-const PatientField = ({ label, value, onChange, type = 'text', placeholder = '', error = '' }) => (
+const PatientField = ({ label, value, onChange, type = 'text', placeholder = '', error = '', required = false }) => (
     <div>
-        <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">{label}</label>
+        <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">
+            {label} {required && <span className="text-rose-500 font-black">*</span>}
+        </label>
         <input
             type={type}
             value={value}
             onChange={e => onChange(e.target.value)}
             placeholder={placeholder}
-            className="h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-800 outline-hidden transition focus:border-teal-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+            className={`h-10 w-full rounded-xl border bg-white px-3 text-xs font-bold text-slate-800 outline-hidden transition focus:border-teal-500 dark:bg-slate-900 dark:text-slate-200 ${
+                error
+                    ? 'border-rose-500 focus:border-rose-500 dark:border-rose-500 bg-rose-50/10'
+                    : 'border-slate-200/80 dark:border-slate-800'
+            }`}
         />
         {error && <p className="mt-1 text-[11px] font-bold text-rose-500">{error}</p>}
     </div>
@@ -356,10 +362,19 @@ const ConsentCheckbox = ({ label, checked, onChange }) => (
     </label>
 );
 
-const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSaving, duplicatePatients = [] }) => {
+const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSaving, duplicatePatients = [], errors = {}, setErrors }) => {
     const { t } = useTranslation('patients');
     const [activeTab, setActiveTab] = useState('demographics');
-    const patch = updates => setForm(prev => ({ ...prev, ...updates }));
+    const patch = updates => {
+        setForm(prev => ({ ...prev, ...updates }));
+        if (setErrors) {
+            setErrors(prev => {
+                const next = { ...prev };
+                Object.keys(updates).forEach(k => delete next[k]);
+                return next;
+            });
+        }
+    };
 
     if (!visible) return null;
     return createPortal(
@@ -432,10 +447,31 @@ const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSavin
                     {/* TAB 1: DEMOGRAPHICS */}
                     {activeTab === 'demographics' && (
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <PatientField label={t('modal.fields.firstName')} value={form.firstName} onChange={v => patch({ firstName: v })} placeholder={t('modal.placeholders.firstName')} />
-                            <PatientField label={t('modal.fields.lastName')} value={form.lastName} onChange={v => patch({ lastName: v })} placeholder={t('modal.placeholders.lastName')} />
+                            <PatientField
+                                label={t('modal.fields.firstName')}
+                                value={form.firstName}
+                                onChange={v => patch({ firstName: v })}
+                                placeholder={t('modal.placeholders.firstName')}
+                                required
+                                error={errors.firstName}
+                            />
+                            <PatientField
+                                label={t('modal.fields.lastName')}
+                                value={form.lastName}
+                                onChange={v => patch({ lastName: v })}
+                                placeholder={t('modal.placeholders.lastName')}
+                                required
+                                error={errors.lastName}
+                            />
                             <div className="grid grid-cols-2 gap-2">
-                                <PatientField label={t('modal.fields.dateOfBirth')} value={form.dateOfBirth} onChange={v => patch({ dateOfBirth: v })} type="date" />
+                                <PatientField
+                                    label={t('modal.fields.dateOfBirth')}
+                                    value={form.dateOfBirth}
+                                    onChange={v => patch({ dateOfBirth: v })}
+                                    type="date"
+                                    required
+                                    error={errors.dateOfBirth}
+                                />
                                 <div>
                                     <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">{t('modal.fields.age', { defaultValue: 'Age' })}</label>
                                     <input
@@ -475,7 +511,14 @@ const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSavin
                             </div>
                             <PatientField label={t('modal.fields.nationalId')} value={form.nationalId} onChange={v => patch({ nationalId: v })} placeholder={t('modal.placeholders.nationalId')} />
                             <PatientField label={t('modal.fields.passportNumber')} value={form.passportNumber} onChange={v => patch({ passportNumber: v })} placeholder={t('modal.placeholders.passportNumber')} />
-                            <PatientField label={t('modal.fields.phone')} value={form.phone} onChange={v => patch({ phone: v })} placeholder={t('modal.placeholders.phone')} />
+                            <PatientField
+                                label={t('modal.fields.phone')}
+                                value={form.phone}
+                                onChange={v => patch({ phone: v })}
+                                placeholder={t('modal.placeholders.phone')}
+                                required
+                                error={errors.phone}
+                            />
                             <PatientField label={t('modal.fields.email')} value={form.email} onChange={v => patch({ email: v })} type="email" placeholder={t('modal.placeholders.email')} />
                             <div className="sm:col-span-2">
                                 <PatientField label={t('modal.fields.address')} value={form.address} onChange={v => patch({ address: v })} placeholder={t('modal.placeholders.address')} />
@@ -612,6 +655,8 @@ const Patients = () => {
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [createForm, setCreateForm] = useState(emptyPatientForm);
     const [deleteDraft, setDeleteDraft] = useState(null);
+    const [createErrors, setCreateErrors] = useState({});
+    const [editErrors, setEditErrors] = useState({});
 
     const patients = useMemo(() => patientsResponse?.data || [], [patientsResponse?.data]);
 
@@ -712,24 +757,78 @@ const Patients = () => {
         setEditingPatient(p);
     };
 
+    const validatePatientData = (formValues) => {
+        const errors = {};
+        if (!formValues.firstName || !formValues.firstName.trim()) {
+            errors.firstName = isArabic ? 'الاسم الأول مطلوب' : 'First name is required';
+        }
+        if (!formValues.lastName || !formValues.lastName.trim()) {
+            errors.lastName = isArabic ? 'اسم العائلة مطلوب' : 'Last name is required';
+        }
+        if (!formValues.dateOfBirth) {
+            errors.dateOfBirth = isArabic ? 'تاريخ الميلاد مطلوب' : 'Date of birth is required';
+        } else {
+            const dob = new Date(formValues.dateOfBirth);
+            if (isNaN(dob.getTime()) || dob >= new Date()) {
+                errors.dateOfBirth = isArabic ? 'تاريخ الميلاد يجب أن يكون في الماضي' : 'Date of birth must be in the past';
+            }
+        }
+        if (!formValues.phone || !formValues.phone.trim()) {
+            errors.phone = isArabic ? 'رقم الهاتف مطلوب' : 'Phone number is required';
+        } else if (!/^\d{10,15}$/.test(formValues.phone.trim())) {
+            errors.phone = isArabic ? 'رقم الهاتف يجب أن يتكون من 10 إلى 15 رقماً' : 'Phone must be 10-15 digits';
+        }
+        return errors;
+    };
+
     const saveEdit = async () => {
         if (!editingPatient) return;
+        const valErrors = validatePatientData(editingPatient);
+        if (Object.keys(valErrors).length > 0) {
+            setEditErrors(valErrors);
+            toast.error(isArabic ? 'يرجى استكمال وتصحيح الحقول الإلزامية المطلوبة' : 'Please complete all required fields');
+            return;
+        }
         try {
             await updatePatient({ id: editingPatient.patient_id, ...cleanPayload(editingPatient) }).unwrap();
             toast.success(t('toast.updated'));
             setEditingPatient(null);
+            setEditErrors({});
         } catch (e) {
+            if (e?.data?.details && Array.isArray(e.data.details)) {
+                const backendErrors = {};
+                e.data.details.forEach(d => {
+                    const fieldName = d.path?.[0] || d.field;
+                    if (fieldName) backendErrors[fieldName] = d.message;
+                });
+                setEditErrors(backendErrors);
+            }
             toast.error(getErrorMessage(e, t('toast.updateFailed')));
         }
     };
 
     const saveNewPatient = async () => {
+        const valErrors = validatePatientData(createForm);
+        if (Object.keys(valErrors).length > 0) {
+            setCreateErrors(valErrors);
+            toast.error(isArabic ? 'يرجى استكمال وتصحيح الحقول الإلزامية المطلوبة' : 'Please complete all required fields');
+            return;
+        }
         try {
             await createPatient(cleanPayload(createForm)).unwrap();
             toast.success(t('toast.created'));
             setShowCreate(false);
             setCreateForm(emptyPatientForm);
+            setCreateErrors({});
         } catch (e) {
+            if (e?.data?.details && Array.isArray(e.data.details)) {
+                const backendErrors = {};
+                e.data.details.forEach(d => {
+                    const fieldName = d.path?.[0] || d.field;
+                    if (fieldName) backendErrors[fieldName] = d.message;
+                });
+                setCreateErrors(backendErrors);
+            }
             toast.error(getErrorMessage(e, t('toast.createFailed')));
         }
     };
@@ -982,9 +1081,11 @@ const Patients = () => {
                 form={createForm}
                 setForm={setCreateForm}
                 isSaving={isCreating}
-                onCancel={() => { setShowCreate(false); setCreateForm(emptyPatientForm); }}
+                onCancel={() => { setShowCreate(false); setCreateForm(emptyPatientForm); setCreateErrors({}); }}
                 onSave={saveNewPatient}
                 duplicatePatients={duplicatePatients}
+                errors={createErrors}
+                setErrors={setCreateErrors}
             />
 
             {/* Patient Edit Modal */}
@@ -994,9 +1095,11 @@ const Patients = () => {
                 form={editingPatient || emptyPatientForm}
                 setForm={setEditingPatient}
                 isSaving={isUpdating}
-                onCancel={() => setEditingPatient(null)}
+                onCancel={() => { setEditingPatient(null); setEditErrors({}); }}
                 onSave={saveEdit}
                 duplicatePatients={[]}
+                errors={editErrors}
+                setErrors={setEditErrors}
             />
 
             {/* CSV Import & Delete Confirmation Modals */}

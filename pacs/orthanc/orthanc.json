@@ -4,14 +4,16 @@
   "DicomAet": "MiPACS2",
   "DicomPort": 4242,
   "HttpPort": 8042,
-  "DicomCheckCalledAet": false,
+  "DicomCheckCalledAet": true,
   "DicomAlwaysAllowEcho": true,
-  "DicomAlwaysAllowStore": true,
-  "//dicomAccess": "Unknown modalities may verify connectivity and send studies, but query, worklist, and retrieve operations require a configured AET.",
-  "DicomAlwaysAllowFind": true,
-  "DicomAlwaysAllowFindWorklist": true,
+  "DicomAlwaysAllowStore": false,
+  "//dicomAccess": "Unknown modalities may verify connectivity only. Store, worklist and retrieval require a configured calling AET and matching host. Devices must address the configured called AET.",
+  "DicomAlwaysAllowFind": false,
+  "DicomAlwaysAllowFindWorklist": false,
   "DicomAlwaysAllowMove": false,
-  "DicomCheckModalityHost": false,
+  "DicomCheckModalityHost": true,
+  "LimitFindResults": 100,
+  "LimitFindInstances": 1000,
   "UnknownSopClassAccepted": true,
   "//storage": "Index lives in PostgreSQL; pixel data on the mounted volume.",
   "StorageDirectory": "/var/lib/orthanc/db",
@@ -49,29 +51,54 @@
   },
   "//modalities": "AET -> host/port map for C-MOVE/C-STORE back to consoles. Extend per site.",
   "DicomModalities": {
-    "ct_room_1": [
-      "CT_ROOM_1",
-      "127.0.0.1",
-      104
-    ],
-    "mri_room_1": [
-      "MRI_ROOM_1",
-      "127.0.0.1",
-      104
-    ],
-    "xray_room_1": [
-      "XRAY_ROOM_1",
-      "127.0.0.1",
-      104
-    ],
-    "ultrasound_room_1": [
-      "ULTRASOUND_ROOM_1",
-      "127.0.0.1",
-      104
-    ]
+    "ct_room_1": {
+      "AET": "CT_ROOM_1",
+      "Host": "127.0.0.1",
+      "Port": 104,
+      "AllowEcho": true,
+      "AllowStore": true,
+      "AllowFind": false,
+      "AllowFindWorklist": true,
+      "AllowMove": false,
+      "AllowGet": false
+    },
+    "mri_room_1": {
+      "AET": "MRI_ROOM_1",
+      "Host": "127.0.0.1",
+      "Port": 104,
+      "AllowEcho": true,
+      "AllowStore": true,
+      "AllowFind": false,
+      "AllowFindWorklist": true,
+      "AllowMove": false,
+      "AllowGet": false
+    },
+    "xray_room_1": {
+      "AET": "XRAY_ROOM_1",
+      "Host": "127.0.0.1",
+      "Port": 104,
+      "AllowEcho": true,
+      "AllowStore": true,
+      "AllowFind": false,
+      "AllowFindWorklist": true,
+      "AllowMove": false,
+      "AllowGet": false
+    },
+    "ultrasound_room_1": {
+      "AET": "ULTRASOUND_ROOM_1",
+      "Host": "127.0.0.1",
+      "Port": 104,
+      "AllowEcho": true,
+      "AllowStore": true,
+      "AllowFind": false,
+      "AllowFindWorklist": true,
+      "AllowMove": false,
+      "AllowGet": false
+    }
   },
   "//lua": "OnStoredInstance -> shared-secret (X-Pacs-Signature) webhook to the VIARA reconciler.",
   "LuaScripts": [
     "/etc/orthanc/reconcile.lua"
-  ]
+  ],
+  "OverwriteInstances": false
 }

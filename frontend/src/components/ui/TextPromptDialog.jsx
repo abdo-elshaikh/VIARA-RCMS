@@ -60,11 +60,11 @@ const TextPromptDialog = ({
     return (
         <Modal isOpen={isOpen} onClose={busy ? undefined : onClose} title={title} size="sm">
             <form onSubmit={submit} noValidate className="space-y-5">
-                {message && <p className="text-sm leading-6 text-slate-600">{message}</p>}
+                {message && <p className="text-sm leading-6 text-[var(--VIARA-muted)]">{message}</p>}
                 {!hideInput && (
                     <Input autoFocus label={label} type={type} value={value} onChange={(event) => setValue(event.target.value)} placeholder={placeholder} required={required} error={error || undefined} helperText={helperText} {...inputProps} disabled={busy || inputProps.disabled} />
                 )}
-                <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+                <div className="flex flex-col-reverse gap-2 border-t border-[var(--VIARA-line)] pt-4 sm:flex-row sm:justify-end">
                     <Button variant="ghost" onClick={onClose} disabled={busy}>{cancelLabel}</Button>
                     <Button type="submit" loading={busy}>{confirmLabel}</Button>
                 </div>

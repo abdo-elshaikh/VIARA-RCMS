@@ -55,7 +55,12 @@ const FAQS_AR: FaqItem[] = [
   },
 ];
 
-export const FaqAccordion = () => {
+interface FaqAccordionProps {
+  heading?: string;
+  subheading?: string;
+}
+
+export const FaqAccordion = ({ heading, subheading }: FaqAccordionProps = {}) => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith('ar');
   const reduceMotion = useReducedMotion();
@@ -75,10 +80,13 @@ export const FaqAccordion = () => {
               {isRtl ? 'إرشادات المريض' : 'Patient guidance'}
             </span>
             <h2 className="mt-3 max-w-md text-3xl font-bold leading-tight text-[#0B2348] dark:text-white sm:text-4xl">
-              {isRtl ? 'إجابات واضحة قبل زيارتك' : 'Clear answers before your visit'}
+              {heading || (isRtl ? 'إجابات واضحة قبل زيارتك' : 'Clear answers before your visit')}
             </h2>
             <p className="mt-4 max-w-md text-sm leading-7 text-muted-foreground">
-              {isRtl ? 'معلومات أساسية حول التحضير والنتائج والخدمات المنزلية والتأمين.' : 'Essential information about preparation, results, home services, and insurance.'}
+              {subheading ||
+                (isRtl
+                  ? 'معلومات أساسية حول التحضير والنتائج والخدمات المنزلية والتأمين.'
+                  : 'Essential information about preparation, results, home services, and insurance.')}
             </p>
 
             <div className="mt-8 border-t border-[#DCE8E5] pt-6 dark:border-border">

@@ -13,7 +13,7 @@ import toast from 'react-hot-toast';
 import {
     useGetStaffQuery,
     useUpdateStaffMutation,
-    useGetAuditLogsQuery,
+    useGetStaffActivityLogsQuery,
     useGetShiftsQuery,
     useGetAttendanceQuery,
     useGetPayrollDeductionsQuery,
@@ -29,6 +29,8 @@ import { Button, MetricCard, Skeleton, EmptyState, PageHeader } from '../compone
 import Modal from '../components/ui/Modal';
 import StaffShiftSchedule from '../components/hr/attendance/StaffShiftSchedule';
 import { getErrorMessage } from '../utils/getErrorMessage';
+import { useSelector } from 'react-redux';
+import { selectCurrentUser } from '../store/authSlice';
 
 const ROLE_OPTIONS = [
     { id: 'Admin', label: 'Administrator', risk: 'critical', tone: 'violet', icon: ShieldAlert },
@@ -49,6 +51,7 @@ export default function UserDetailPage() {
     const { t, i18n } = useTranslation(['admin', 'common', 'workspace']);
     const isArabic = i18n.language.startsWith('ar');
     const isRtl = isArabic;
+    const currentUser = useSelector(selectCurrentUser);
 
     // Tab state (7 tabs)
     const [activeTab, setActiveTab] = useState('shifts');
@@ -74,10 +77,16 @@ export default function UserDetailPage() {
     const { data: evaluationsData, refetch: refetchEvaluations } = useGetStaffEvaluationsQuery(userId ? { userId } : undefined, { skip: !userId });
     const [createStaffEvaluation, { isLoading: isSubmittingEval }] = useCreateStaffEvaluationMutation();
 
-    const { data: auditData, isLoading: isAuditLoading, refetch: refetchAudit } = useGetAuditLogsQuery({
+    const canViewStaffActivity = currentUser?.role === 'Developer'
+        || currentUser?.role === 'Admin'
+        || (currentUser?.role === 'HR' && (
+            currentUser?.permissions?.includes('VIEW_AUDIT_LOGS')
+            || currentUser?.elevatedPermissions?.includes('VIEW_AUDIT_LOGS')
+        ));
+    const { data: auditData, isLoading: isAuditLoading, refetch: refetchAudit } = useGetStaffActivityLogsQuery({
         userId: String(userId),
         limit: 100
-    }, { skip: !userId });
+    }, { skip: !userId || !canViewStaffActivity });
 
     const logs = auditData?.logs || (Array.isArray(auditData) ? auditData : []);
 
@@ -206,8 +215,7 @@ export default function UserDetailPage() {
         return (
             (log.action && log.action.toLowerCase().includes(term)) ||
             (log.resource_table && log.resource_table.toLowerCase().includes(term)) ||
-            (log.ip_address && log.ip_address.includes(term)) ||
-            (log.details && JSON.stringify(log.details).toLowerCase().includes(term))
+            (log.event_code && log.event_code.toLowerCase().includes(term))
         );
     });
 
@@ -290,6 +298,10 @@ export default function UserDetailPage() {
                         <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
                             <ArrowLeft size={14} className={isRtl ? 'rotate-180 me-1.5' : 'me-1.5'} />
                             {t('back')}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => navigate('/hr?tab=directory')}>
+                            <Briefcase size={14} className="me-1.5 text-cyan-600 dark:text-cyan-400" />
+                            {isArabic ? 'ملف الموارد البشرية' : 'HR Profile'}
                         </Button>
                         <Button variant="outline" size="sm" onClick={refetchAll}>
                             <RefreshCw size={14} className="me-1.5" />
@@ -924,11 +936,11 @@ export default function UserDetailPage() {
                                     <table className="w-full text-start text-xs">
                                         <thead className="border-b border-slate-200/80 bg-slate-50/80 font-extrabold uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400">
                                             <tr>
-                                                <th className="p-3.5 text-start">Timestamp</th>
-                                                <th className="p-3.5 text-start">Action</th>
-                                                <th className="p-3.5 text-start">Resource Table</th>
-                                                <th className="p-3.5 text-start">IP Address</th>
-                                                <th className="p-3.5 text-start">Details</th>
+                                                <th className="p-3.5 text-start">{isArabic ? 'الوقت' : 'Time'}</th>
+                                                <th className="p-3.5 text-start">{isArabic ? 'العملية' : 'Operation'}</th>
+                                                <th className="p-3.5 text-start">{isArabic ? 'الفئة' : 'Category'}</th>
+                                                <th className="p-3.5 text-start">{isArabic ? 'الهدف' : 'Target'}</th>
+                                                <th className="p-3.5 text-start">{isArabic ? 'النتيجة' : 'Outcome'}</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-200/80 font-semibold text-slate-700 dark:divide-slate-800 dark:text-slate-300">
@@ -939,18 +951,18 @@ export default function UserDetailPage() {
                                                     </td>
                                                     <td className="p-3.5 whitespace-nowrap">
                                                         <span className="inline-flex rounded-md bg-teal-100 px-2 py-0.5 text-[10px] font-black uppercase text-teal-800 dark:bg-teal-950/60 dark:text-teal-300">
-                                                            {log.action}
+                                                            {log.event_code || log.action}
                                                         </span>
                                                     </td>
                                                     <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-slate-600 dark:text-slate-400">
-                                                        {log.resource_table || '—'}
+                                                        {log.category || '—'}
                                                     </td>
                                                     <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-slate-500">
-                                                        {log.ip_address || '—'}
+                                                        {log.target_type || log.resource_table || '—'}
                                                     </td>
                                                     <td className="p-3.5 text-slate-600 dark:text-slate-400">
                                                         <pre className="max-w-xs truncate font-mono text-[10px]">
-                                                            {typeof log.details === 'object' ? JSON.stringify(log.details) : String(log.details || '—')}
+                                                            {log.outcome || '—'}
                                                         </pre>
                                                     </td>
                                                 </tr>

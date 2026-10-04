@@ -1,18 +1,18 @@
 import React from 'react';
 
-const QUEUE_STAGE_ORDER = [
+const COMMON_STAGE_ORDER = [
     'Scheduled',
     'Arrived',
     'Payment Pending',
     'Prep Pending',
     'Ready for Exam',
-    'In Exam',
-    'Reporting',
-    'Finalized',
-    'Delivered'
+    'In Exam'
 ];
 
 const QueueStageTracker = ({ stage, t }) => {
+    const QUEUE_STAGE_ORDER = ['Images Ready', 'Images Delivered'].includes(stage)
+        ? [...COMMON_STAGE_ORDER, 'Images Ready', 'Images Delivered']
+        : [...COMMON_STAGE_ORDER, 'Reporting', 'Finalized', 'Delivered'];
     const idx = QUEUE_STAGE_ORDER.indexOf(stage);
     return (
         <div className="flex items-center gap-1" aria-label={t ? t(`queue.stages.${stage}`, { defaultValue: stage }) : stage}>

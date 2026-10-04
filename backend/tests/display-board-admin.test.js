@@ -7,7 +7,12 @@
 } = require('../src/controllers/displayBoardAdminController');
 
 jest.mock('../src/services/settingsService', () => ({
-    set: jest.fn(async (key, value) => { global.__settingsWrites[key] = value; })
+    set: jest.fn(async (key, value) => { global.__settingsWrites[key] = value; }),
+    // The controller writes every changed setting in one batched call so the
+    // whole config update lands in a single transaction.
+    updateAll: jest.fn(async (entries) => {
+        Object.assign(global.__settingsWrites, entries);
+    })
 }));
 const settingsService = require('../src/services/settingsService');
 jest.mock('../src/services/auditService', () => ({
@@ -25,6 +30,10 @@ const buildClient = () => {
     };
     client.query.mockImplementation(async (sql, values) => {
         const text = String(sql);
+        // The admin controller wraps each mutation in an explicit transaction.
+        if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*$/i.test(text)) {
+            return { rows: [] };
+        }
         if (text.includes('INSERT INTO display_announcements')) {
             return {
                 rows: [{
@@ -71,14 +80,15 @@ describe('display board admin controller', () => {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
                 if (text.includes('display.patient_display_mode')) return { rows: [{ setting_value: 'order_only' }] };
+                if (text.includes('display.call_announcement_mode')) return { rows: [{ setting_value: 'token_and_name' }] };
                 if (text.includes('display.show_ticker')) return { rows: [{ setting_value: 'false' }] };
                 if (text.includes('display.board_title')) return { rows: [] };
                 if (text.includes('FROM display_announcements')) {
                     return {
                         rows: [{
                             announcement_id: announcementId,
-                            title: 'Ø£ÙˆÙ‚Ø§Øª Ø§Ù„Ø°Ø±ÙˆØ©',
-                            message: 'Ù‚Ø¯ ÙŠØ²ÙŠØ¯ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø±',
+                            title: 'أجنحة الأشعة',
+                            message: 'تم تأكيد الحجز',
                             tone: 'warning',
                             is_active: true,
                             display_order: 1,
@@ -97,13 +107,14 @@ describe('display board admin controller', () => {
         const payload = res.json.mock.calls[0][0];
         expect(payload.config).toEqual({
             patientDisplayMode: 'order_only',
+            callAnnouncementMode: 'token_and_name',
             showTicker: false,
             boardTitle: null
         });
         expect(payload.announcements).toHaveLength(1);
         expect(payload.announcements[0]).toMatchObject({
             id: announcementId,
-            title: 'Ø£ÙˆÙ‚Ø§Øª Ø§Ù„Ø°Ø±ÙˆØ©',
+            title: 'أجنحة الأشعة',
             tone: 'warning',
             isActive: true,
             displayOrder: 1
@@ -115,21 +126,25 @@ describe('display board admin controller', () => {
         const res = { json: jest.fn() };
 
         await updateDisplayConfig(db)(
-            { user: adminUser, ip: '127.0.0.1', body: { patientDisplayMode: 'name', showTicker: true, boardTitle: 'Ø¬Ù†Ø§Ø­ Ø§Ù„Ø£Ø´Ø¹Ø©' } },
+            { user: adminUser, ip: '127.0.0.1', body: { patientDisplayMode: 'name', callAnnouncementMode: 'name_only', showTicker: true, boardTitle: 'لوحة الأشعة' } },
             res,
             jest.fn()
         );
 
-        expect(settingsService.set).toHaveBeenCalledWith('display.patient_display_mode', 'name');
-        expect(settingsService.set).toHaveBeenCalledWith('display.show_ticker', 'true');
-        expect(settingsService.set).toHaveBeenCalledWith('display.board_title', 'Ø¬Ù†Ø§Ø­ Ø§Ù„Ø£Ø´Ø¹Ø©');
+        expect(settingsService.updateAll).toHaveBeenCalledWith({
+            'display.patient_display_mode': 'name',
+            'display.call_announcement_mode': 'name_only',
+            'display.show_ticker': 'true',
+            'display.board_title': 'لوحة الأشعة'
+        });
         expect(logAction).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
             action: 'DISPLAY_BOARD_CONFIG_UPDATED'
         }));
         expect(res.json.mock.calls[0][0].config).toEqual({
             patientDisplayMode: 'name',
+            callAnnouncementMode: 'name_only',
             showTicker: true,
-            boardTitle: 'Ø¬Ù†Ø§Ø­ Ø§Ù„Ø£Ø´Ø¹Ø©'
+            boardTitle: 'لوحة الأشعة'
         });
     });
 
@@ -139,6 +154,20 @@ describe('display board admin controller', () => {
 
         await updateDisplayConfig({ query: jest.fn() })(
             { user: adminUser, body: { patientDisplayMode: 'everything' } },
+            res,
+            next
+        );
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+        expect(settingsService.set).not.toHaveBeenCalled();
+    });
+
+    test('rejects invalid voice call modes', async () => {
+        const res = { json: jest.fn() };
+        const next = jest.fn();
+
+        await updateDisplayConfig({ query: jest.fn() })(
+            { user: adminUser, body: { callAnnouncementMode: 'everything' } },
             res,
             next
         );
@@ -182,7 +211,9 @@ describe('display board admin controller', () => {
     test('returns 404 when updating a missing announcement', async () => {
         const client = buildClient();
         client.query.mockImplementation(async (sql) => {
-            if (String(sql).includes('FOR UPDATE')) return { rows: [] };
+            const text = String(sql);
+            if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*$/i.test(text)) return { rows: [] };
+            if (text.includes('FOR UPDATE')) return { rows: [] };
             throw new Error(`Unexpected SQL: ${sql}`);
         });
         const db = { connect: jest.fn(async () => client) };

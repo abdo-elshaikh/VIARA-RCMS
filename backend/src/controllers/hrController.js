@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { isGlobalReviewer, assertStaffSupervision } = require('../services/staffSupervisorService');
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
@@ -10,7 +11,8 @@ const {
     updateLeaveBalanceSchema,
     createStaffCredentialSchema, updateStaffCredentialSchema,
     createAttendancePermissionSchema, updateAttendancePermissionStatusSchema, updateAttendanceSettingsSchema,
-    createShiftRequestSchema, updateShiftRequestStatusSchema, createStaffEvaluationSchema
+    createShiftRequestSchema, updateShiftRequestStatusSchema, createStaffEvaluationSchema,
+    breakStartSchema, breakEndSchema
 } = require('../schemas/hrSchema');
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -27,6 +29,7 @@ const {
     getLeaveEntitlement,
     computeLeaveBalances
 } = require('../services/hrLeaveService');
+const { invalidateAttendanceConfigCache } = require('../services/attendanceConfigCache');
 
 const toNullable = (value) => value === undefined ? null : value;
 
@@ -220,7 +223,28 @@ const getShifts = (db) => async (req, res, next) => {
         if (startDate && endDate && new Date(startDate) > new Date(endDate)) throw new AppError('Shift query end date must be on or after start date', 400);
         if (userId && !z.string().uuid().safeParse(userId).success) throw new AppError('Invalid employee id', 400);
         const canReviewAll = ['Developer', 'Admin', 'HR', 'Receptionist', 'Radiologist'].includes(req.user.role);
-        const effectiveUserId = canReviewAll ? userId : getAuthenticatedUserId(req);
+        let effectiveUserId = canReviewAll ? userId : getAuthenticatedUserId(req);
+        let teamUserIds = null;
+        if (!canReviewAll && userId && userId !== getAuthenticatedUserId(req)) {
+            const supervised = await db.query(`
+                SELECT employee_id FROM staff_supervisor_assignments
+                WHERE supervisor_id = $1 AND employee_id = $2 AND revoked_at IS NULL
+                  AND starts_at <= CURRENT_TIMESTAMP
+                  AND (ends_at IS NULL OR ends_at > CURRENT_TIMESTAMP)
+            `, [getAuthenticatedUserId(req), userId]);
+            if (supervised.rows.length) {
+                effectiveUserId = userId;
+            }
+        } else if (req.query.team === 'true') {
+            const supervised = await db.query(`
+                SELECT employee_id FROM staff_supervisor_assignments
+                WHERE supervisor_id = $1 AND revoked_at IS NULL
+                  AND starts_at <= CURRENT_TIMESTAMP
+                  AND (ends_at IS NULL OR ends_at > CURRENT_TIMESTAMP)
+            `, [getAuthenticatedUserId(req)]);
+            teamUserIds = [getAuthenticatedUserId(req), ...supervised.rows.map((r) => r.employee_id)];
+            effectiveUserId = null;
+        }
         const pageLimit = Math.min(500, Math.max(1, Number.parseInt(limit, 10) || 500));
         let query = `
             SELECT s.*, u.full_name as employee_name, u.role,
@@ -244,6 +268,9 @@ const getShifts = (db) => async (req, res, next) => {
         if (effectiveUserId) {
             query += ` AND s.user_id = $${paramCount++}`;
             params.push(effectiveUserId);
+        } else if (teamUserIds) {
+            query += ` AND s.user_id = ANY($${paramCount++}::uuid[])`;
+            params.push(teamUserIds);
         }
         if (req.query.roomId) {
             if (!z.string().uuid().safeParse(req.query.roomId).success) throw new AppError('Invalid room id', 400);
@@ -305,6 +332,10 @@ const createShift = (db) => async (req, res, next) => {
             [data.userId, EMPLOYEE_ROLES]
         );
         if (!employee.rows.length) throw new AppError('Employee not found, inactive, or not eligible for shift scheduling', 400);
+
+        if (!isGlobalReviewer(req.user)) {
+            await assertStaffSupervision(client, req.user, data.userId, 'shifts', { lock: true });
+        }
 
         const conflict = await client.query(`
             SELECT shift_id FROM staff_shifts
@@ -370,6 +401,9 @@ const deleteShift = (db) => async (req, res, next) => {
         if (new Date(existing.rows[0].start_time) <= new Date()) {
             throw new AppError('Shifts that have already started cannot be removed from the roster', 409);
         }
+        if (!isGlobalReviewer(req.user)) {
+            await assertStaffSupervision(client, req.user, existing.rows[0].user_id, 'shifts', { lock: true });
+        }
         const result = await client.query('DELETE FROM staff_shifts WHERE shift_id = $1 RETURNING *', [id]);
         await logAction(client, {
             userId: req.user.user_id, action: 'SHIFT_DELETED', resourceId: id,
@@ -400,6 +434,9 @@ const updateShift = (db) => async (req, res, next) => {
         const existing = existingResult.rows[0];
         if (new Date(existing.start_time) <= new Date()) {
             throw new AppError('Shifts that have already started cannot be edited', 409);
+        }
+        if (!isGlobalReviewer(req.user)) {
+            await assertStaffSupervision(client, req.user, existing.user_id, 'shifts', { lock: true });
         }
         if (data.userId && String(data.userId) !== String(existing.user_id)) {
             throw new AppError('Changing the employee requires deleting and recreating the shift', 400);
@@ -471,38 +508,52 @@ const updateShift = (db) => async (req, res, next) => {
 
 const getAuthenticatedUserId = (req) => req.user?.user_id || req.user?.userId || req.user?.id;
 
-const getAttendanceConfig = async (dbOrClient) => {
-    try {
-        const res = await dbOrClient.query(`
-            SELECT setting_key, setting_value FROM system_settings
-            WHERE setting_key LIKE 'hr.attendance.%'
-        `);
-        const map = {};
-        for (const row of res.rows) {
-            map[row.setting_key] = row.setting_value;
+const { getAttendanceConfig } = require('../services/attendanceConfigCache');
+
+const calculatePunctualityMetrics = ({
+    clockIn,
+    clockOut = null,
+    shiftStartTime = null,
+    shiftEndTime = null,
+    config,
+    permittedLateMinutes = 0,
+    permittedEarlyMinutes = 0
+}) => {
+    let lateMinutes = 0;
+    let earlyLeaveMinutes = 0;
+    let status = 'Present';
+
+    if (shiftStartTime && clockIn) {
+        const cInMs = new Date(clockIn).getTime();
+        const sStartMs = new Date(shiftStartTime).getTime();
+        const rawLateMin = Math.max(0, (cInMs - sStartMs) / 60000);
+        const totalLateGrace = (config?.gracePeriodLateMinutes || 0) + (permittedLateMinutes || 0);
+
+        if (rawLateMin > totalLateGrace) {
+            status = 'Late';
+            lateMinutes = config?.deductFullDelayAfterGrace
+                ? Math.round(Math.max(0, rawLateMin - (permittedLateMinutes || 0)))
+                : Math.round(Math.max(0, rawLateMin - totalLateGrace));
+        } else {
+            status = 'Present';
+            lateMinutes = 0;
         }
-        return {
-            gracePeriodLateMinutes: Number.parseInt(map['hr.attendance.grace_period_late_minutes'] ?? '15', 10) || 0,
-            gracePeriodEarlyMinutes: Number.parseInt(map['hr.attendance.grace_period_early_minutes'] ?? '10', 10) || 0,
-            deductFullDelayAfterGrace: (map['hr.attendance.deduct_full_delay_after_grace'] ?? 'true').toLowerCase() === 'true',
-            requireEarlyLeaveApproval: (map['hr.attendance.require_early_leave_approval'] ?? 'true').toLowerCase() === 'true',
-            enforceShiftLoginRestriction: (map['hr.attendance.enforce_shift_login_restriction'] ?? 'false').toLowerCase() === 'true',
-            loginBufferBeforeMinutes: Number.parseInt(map['hr.attendance.login_buffer_before_minutes'] ?? '30', 10) || 30,
-            loginBufferAfterMinutes: Number.parseInt(map['hr.attendance.login_buffer_after_minutes'] ?? '30', 10) || 30,
-            exemptRolesFromLoginRestriction: map['hr.attendance.exempt_roles_from_login_restriction'] || 'Admin,Developer,HR,Doctor,Radiologist,Physician'
-        };
-    } catch (err) {
-        return {
-            gracePeriodLateMinutes: 15,
-            gracePeriodEarlyMinutes: 10,
-            deductFullDelayAfterGrace: true,
-            requireEarlyLeaveApproval: true,
-            enforceShiftLoginRestriction: false,
-            loginBufferBeforeMinutes: 30,
-            loginBufferAfterMinutes: 30,
-            exemptRolesFromLoginRestriction: 'Admin,Developer,HR,Doctor,Radiologist,Physician'
-        };
     }
+
+    if (shiftEndTime && clockOut) {
+        const cOutMs = new Date(clockOut).getTime();
+        const sEndMs = new Date(shiftEndTime).getTime();
+        const rawEarlyMin = Math.max(0, (sEndMs - cOutMs) / 60000);
+        const graceEarly = config?.gracePeriodEarlyMinutes || 0;
+
+        if (rawEarlyMin > graceEarly) {
+            earlyLeaveMinutes = Math.max(0, Math.round(rawEarlyMin - (permittedEarlyMinutes || 0)));
+        } else {
+            earlyLeaveMinutes = 0;
+        }
+    }
+
+    return { lateMinutes, earlyLeaveMinutes, status };
 };
 
 const recordAttendanceAudit = async (clientOrDb, {
@@ -547,7 +598,28 @@ const getAttendance = (db) => async (req, res, next) => {
     try {
         const { startDate, endDate, activeOnly, status } = req.query;
         const canReviewAll = ['Developer', 'Admin', 'HR', 'Receptionist', 'Radiologist'].includes(req.user.role);
-        const userId = canReviewAll ? req.query.userId : getAuthenticatedUserId(req);
+        let userId = canReviewAll ? req.query.userId : getAuthenticatedUserId(req);
+        let teamUserIds = null;
+        if (!canReviewAll && req.query.userId && req.query.userId !== getAuthenticatedUserId(req)) {
+            const supervised = await db.query(`
+                SELECT employee_id FROM staff_supervisor_assignments
+                WHERE supervisor_id = $1 AND employee_id = $2 AND revoked_at IS NULL
+                  AND starts_at <= CURRENT_TIMESTAMP
+                  AND (ends_at IS NULL OR ends_at > CURRENT_TIMESTAMP)
+            `, [getAuthenticatedUserId(req), req.query.userId]);
+            if (supervised.rows.length) {
+                userId = req.query.userId;
+            }
+        } else if (req.query.team === 'true') {
+            const supervised = await db.query(`
+                SELECT employee_id FROM staff_supervisor_assignments
+                WHERE supervisor_id = $1 AND revoked_at IS NULL
+                  AND starts_at <= CURRENT_TIMESTAMP
+                  AND (ends_at IS NULL OR ends_at > CURRENT_TIMESTAMP)
+            `, [getAuthenticatedUserId(req)]);
+            teamUserIds = [getAuthenticatedUserId(req), ...supervised.rows.map((r) => r.employee_id)];
+            userId = null;
+        }
         const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 100));
         if (startDate || endDate) ensureDateRange(startDate, endDate);
         // Each ledger row is enriched with its linked shift window (expected
@@ -583,6 +655,9 @@ const getAttendance = (db) => async (req, res, next) => {
         if (userId) {
             query += ` AND a.user_id = $${paramCount++}`;
             params.push(userId);
+        } else if (teamUserIds) {
+            query += ` AND a.user_id = ANY($${paramCount++}::uuid[])`;
+            params.push(teamUserIds);
         }
         if (status && ['Present', 'Late', 'Absent', 'Half-Day'].includes(status)) {
             query += ` AND a.status = $${paramCount++}::varchar`;
@@ -614,7 +689,24 @@ const ensureActiveAttendanceClockIn = async (client, userId, defaultNotes = '[sy
         [userId]
     );
     if (existing.rows.length > 0) {
-        return existing.rows[0];
+        const activeSession = existing.rows[0];
+        const stale = new Date(activeSession.clock_in) < new Date(Date.now() - 24 * 60 * 60 * 1000);
+        if (!stale) {
+            return activeSession;
+        }
+        await client.query(`
+            UPDATE attendance_logs a
+            SET clock_out = GREATEST(
+                    a.clock_in,
+                    LEAST(
+                        CURRENT_TIMESTAMP,
+                        COALESCE((SELECT s.end_time FROM staff_shifts s WHERE s.shift_id = a.shift_id), a.clock_in + interval '16 hours')
+                    )
+                ),
+                notes = CONCAT_WS(E'\n', NULLIF(a.notes, ''), '[system] Stale attendance session automatically capped upon opening shift'),
+                corrected_at = CURRENT_TIMESTAMP
+            WHERE a.log_id = $1
+        `, [activeSession.log_id]);
     }
 
     const scheduledShift = await client.query(`
@@ -742,41 +834,35 @@ const clockIn = (db) => async (req, res, next) => {
         `, [userId]);
         const shift = scheduledShift.rows[0] || null;
 
-        // Check if employee has an approved LateArrival permission today
+        // Check if employee has an approved LateArrival permission today or for this shift
         const approvedPermRes = await client.query(`
             SELECT minutes_granted, reason FROM attendance_permissions
             WHERE user_id = $1
-              AND effective_date = CURRENT_DATE
+              AND (
+                  shift_id = $2
+                  OR effective_date = CURRENT_DATE
+                  OR ($3::timestamptz IS NOT NULL AND effective_date = ($3::timestamptz AT TIME ZONE 'Africa/Cairo')::date)
+              )
               AND permission_type = 'LateArrival'
               AND status = 'Approved'
             ORDER BY created_at DESC
             LIMIT 1
-        `, [userId]);
+        `, [userId, shift?.shift_id || null, shift?.start_time || null]);
         const approvedPerm = approvedPermRes.rows[0] || null;
         const permittedLateMinutes = approvedPerm ? (approvedPerm.minutes_granted || 0) : 0;
 
         let shiftLinkType = shift ? 'Auto' : 'Unscheduled';
         let scheduledStart = shift?.start_time || null;
         let scheduledEnd = shift?.end_time || null;
-        let lateMinutes = 0;
-        let status = 'Present';
 
-        if (shift) {
-            const nowTime = Date.now();
-            const shiftStartTime = new Date(shift.start_time).getTime();
-            const rawDiffMinutes = Math.max(0, (nowTime - shiftStartTime) / (60 * 1000));
-            const totalGraceAllowed = config.gracePeriodLateMinutes + permittedLateMinutes;
-
-            if (rawDiffMinutes > totalGraceAllowed) {
-                status = 'Late';
-                lateMinutes = config.deductFullDelayAfterGrace
-                    ? Math.round(Math.max(0, rawDiffMinutes - permittedLateMinutes))
-                    : Math.round(Math.max(0, rawDiffMinutes - totalGraceAllowed));
-            } else {
-                status = 'Present';
-                lateMinutes = 0;
-            }
-        }
+        const punctuality = calculatePunctualityMetrics({
+            clockIn: new Date(),
+            shiftStartTime: shift?.start_time || null,
+            config,
+            permittedLateMinutes
+        });
+        const lateMinutes = punctuality.lateMinutes;
+        const status = punctuality.status;
 
         const appendNotes = approvedPerm
             ? (data.notes ? `${data.notes} (إذن تأخير معتمد: ${permittedLateMinutes} د)` : `إذن تأخير معتمد: ${permittedLateMinutes} د`)
@@ -831,25 +917,30 @@ const clockIn = (db) => async (req, res, next) => {
         });
 
         if (status === 'Late') {
-            triggerEventForRole(client, 'AttendanceLate', 'HR', {
+            await triggerEventForRole(client, 'AttendanceLate', 'HR', {
                 entityType: 'Attendance',
                 entityId: insertedLog.log_id,
                 variables: { employee_name: employeeName, late_minutes: lateMinutes }
-            }).catch(e => console.error('[Notify AttendanceLate HR]', e.message));
+            });
 
-            triggerEventForRole(client, 'AttendanceLate', 'Admin', {
+            await triggerEventForRole(client, 'AttendanceLate', 'Admin', {
                 entityType: 'Attendance',
                 entityId: insertedLog.log_id,
                 variables: { employee_name: employeeName, late_minutes: lateMinutes }
-            }).catch(e => console.error('[Notify AttendanceLate Admin]', e.message));
+            });
         }
 
         if (shiftLinkType === 'Unscheduled') {
-            triggerEventForRole(client, 'AttendanceUnscheduled', 'HR', {
+            await triggerEventForRole(client, 'AttendanceUnscheduled', 'HR', {
                 entityType: 'Attendance',
                 entityId: insertedLog.log_id,
                 variables: { employee_name: employeeName, clock_in: new Date().toISOString() }
-            }).catch(e => console.error('[Notify AttendanceUnscheduled HR]', e.message));
+            });
+            await triggerEventForRole(client, 'AttendanceUnscheduled', 'Admin', {
+                entityType: 'Attendance',
+                entityId: insertedLog.log_id,
+                variables: { employee_name: employeeName, clock_in: new Date().toISOString() }
+            });
         }
 
         await client.query('COMMIT');
@@ -937,6 +1028,9 @@ const clockOut = (db) => async (req, res, next) => {
             shiftEndTime = shiftRes.rows[0]?.end_time || null;
         }
 
+        const isEmergency = Boolean(data.isEmergency);
+        const emergencyReason = data.emergencyReason || data.notes || 'Emergency departure without prior approval';
+
         if (shiftEndTime) {
             const scheduledEndMs = new Date(shiftEndTime).getTime();
             const nowMs = Date.now();
@@ -948,15 +1042,19 @@ const clockOut = (db) => async (req, res, next) => {
                     SELECT permission_id, minutes_granted, reason
                     FROM attendance_permissions
                     WHERE user_id = $1
-                      AND effective_date = CURRENT_DATE
+                      AND (
+                          shift_id = $2
+                          OR effective_date = CURRENT_DATE
+                          OR ($3::timestamptz IS NOT NULL AND effective_date = ($3::timestamptz AT TIME ZONE 'Africa/Cairo')::date)
+                      )
                       AND permission_type = 'EarlyDeparture'
                       AND status = 'Approved'
                     ORDER BY created_at DESC
                     LIMIT 1
-                `, [userId]);
+                `, [userId, activeLog.shift_id || null, activeLog.scheduled_start_snapshot || null]);
                 const approvedPerm = permRes.rows[0] || null;
 
-                if (!approvedPerm && !allowForce && config.requireEarlyLeaveApproval) {
+                if (!approvedPerm && !allowForce && config.requireEarlyLeaveApproval && !isEmergency) {
                     await recordAttendanceAudit(client, {
                         logId: activeLog.log_id,
                         userId,
@@ -970,19 +1068,20 @@ const clockOut = (db) => async (req, res, next) => {
                         violationDetails: {
                             rawEarlyMinutes: Math.round(rawEarlyMinutes),
                             graceMinutes: config.gracePeriodEarlyMinutes,
-                            shiftEndTime
+                            shiftEndTime,
+                            canSubmitEmergency: true
                         }
                     });
 
-                    triggerEventForRole(client, 'AttendanceEarlyDepartureAttempt', 'HR', {
+                    await triggerEventForRole(client, 'AttendanceEarlyDepartureAttempt', 'HR', {
                         entityType: 'Attendance',
                         entityId: activeLog.log_id,
                         variables: { employee_name: employeeName, early_minutes: Math.round(rawEarlyMinutes) }
-                    }).catch(e => console.error('[Notify EarlyDepartureAttempt HR]', e.message));
+                    });
 
                     await client.query('COMMIT');
                     return next(new AppError(
-                        'Early departure requires prior approved management permission. Please submit an early departure request or contact HR.',
+                        'Early departure requires prior approved management permission. Please submit an early departure request or submit an emergency departure with reason.',
                         403,
                         true,
                         'EARLY_DEPARTURE_PROHIBITED'
@@ -996,6 +1095,10 @@ const clockOut = (db) => async (req, res, next) => {
 
         const stale = new Date(activeLog.clock_in) < new Date(Date.now() - 24 * 60 * 60 * 1000);
         const capped = stale || new Date(activeLog.clock_in) < new Date(Date.now() - 16 * 60 * 60 * 1000);
+        const effectiveNotes = isEmergency
+            ? [data.notes, `[طوارئ] انصراف اضطراري غير معتمد: ${emergencyReason}`].filter(Boolean).join('\n')
+            : data.notes;
+
         const result = await client.query(`
             UPDATE attendance_logs a
             SET clock_out = CASE
@@ -1009,6 +1112,10 @@ const clockOut = (db) => async (req, res, next) => {
                     ELSE LEAST(CURRENT_TIMESTAMP, a.clock_in + interval '16 hours')
                 END,
                 early_leave_minutes = $5::int,
+                break_end = CASE WHEN a.break_start IS NOT NULL AND a.break_end IS NULL THEN CURRENT_TIMESTAMP ELSE a.break_end END,
+                total_break_minutes = CASE WHEN a.break_start IS NOT NULL AND a.break_end IS NULL
+                    THEN COALESCE(a.total_break_minutes, 0) + GREATEST(0, ROUND(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - a.break_start)) / 60)::int)
+                    ELSE a.total_break_minutes END,
                 notes = CASE
                     WHEN $3::boolean
                         THEN CONCAT_WS(E'\n', NULLIF(COALESCE($1, a.notes), ''), '[system] Stale attendance session automatically capped')
@@ -1022,32 +1129,192 @@ const clockOut = (db) => async (req, res, next) => {
                     THEN CURRENT_TIMESTAMP ELSE a.corrected_at END
             WHERE a.log_id = $2
             RETURNING a.*
-        `, [data.notes, activeLog.log_id, stale, userId, earlyLeaveMinutes]);
+        `, [effectiveNotes, activeLog.log_id, stale, userId, earlyLeaveMinutes]);
 
         const updatedLog = result.rows[0];
 
         await logAction(client, {
-            userId, action: 'ATTENDANCE_CLOCK_OUT', resourceId: updatedLog.log_id,
+            userId, action: isEmergency ? 'ATTENDANCE_CLOCK_OUT_EMERGENCY' : 'ATTENDANCE_CLOCK_OUT', resourceId: updatedLog.log_id,
             resourceTable: 'attendance_logs', ipAddress: req.ip,
-            details: { notes: data.notes || null, staleSessionCapped: stale, sessionCapped: capped, earlyLeaveMinutes }, required: true
+            details: { notes: effectiveNotes || null, staleSessionCapped: stale, sessionCapped: capped, earlyLeaveMinutes, isEmergency }, required: true
         });
 
         await recordAttendanceAudit(client, {
             logId: updatedLog.log_id,
             userId,
             actorId: userId,
-            actionType: 'CLOCK_OUT',
+            actionType: isEmergency ? 'EMERGENCY_UNAPPROVED_CLOCK_OUT' : 'CLOCK_OUT',
             previousState: activeLog,
             newState: updatedLog,
-            reason: data.notes || 'Normal clock-out',
+            reason: isEmergency ? `[طوارئ] ${emergencyReason}` : (data.notes || 'Normal clock-out'),
             ipAddress: req.ip,
             userAgent: req.get?.('user-agent') || null,
-            isViolation: earlyLeaveMinutes > 0,
-            violationDetails: earlyLeaveMinutes > 0 ? { earlyLeaveMinutes } : null
+            isViolation: earlyLeaveMinutes > 0 || isEmergency,
+            violationDetails: {
+                earlyLeaveMinutes,
+                isEmergency,
+                emergencyReason: isEmergency ? emergencyReason : null
+            }
         });
+
+        if (isEmergency) {
+            await triggerEventForRole(client, 'AttendanceEmergencyDeparture', 'HR', {
+                entityType: 'Attendance',
+                entityId: updatedLog.log_id,
+                variables: { employee_name: employeeName, early_minutes: earlyLeaveMinutes, reason: emergencyReason }
+            });
+
+            await triggerEventForRole(client, 'AttendanceEmergencyDeparture', 'Admin', {
+                entityType: 'Attendance',
+                entityId: updatedLog.log_id,
+                variables: { employee_name: employeeName, early_minutes: earlyLeaveMinutes, reason: emergencyReason }
+            });
+        }
 
         await client.query('COMMIT');
         res.json({ ...updatedLog, stale_session_capped: stale, session_capped: capped });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
+        next(error);
+    } finally {
+        if (client) client.release();
+    }
+};
+
+// Break Tracking
+
+const breakStart = (db) => async (req, res, next) => {
+    let client;
+    try {
+        const data = breakStartSchema.parse(req.body || {});
+        const userId = getAuthenticatedUserId(req);
+        if (!userId) return next(new AppError('Authenticated user id is missing', 401));
+
+        client = await db.connect();
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 11705))', [userId]);
+
+        const active = await client.query(
+            'SELECT * FROM attendance_logs WHERE user_id = $1 AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1 FOR UPDATE',
+            [userId]
+        );
+
+        if (active.rows.length === 0) {
+            await client.query('COMMIT');
+            return next(new AppError('No active clock-in session found', 409));
+        }
+        const activeLog = active.rows[0];
+
+        if (activeLog.break_start && !activeLog.break_end) {
+            await client.query('COMMIT');
+            return res.json({
+                ...activeLog,
+                break_already_started: true,
+                message: 'Break already in progress'
+            });
+        }
+
+        const isPaidBreak = data.isPaid !== false;
+        const result = await client.query(`
+            UPDATE attendance_logs
+            SET break_start = CURRENT_TIMESTAMP,
+                is_paid_break = $2,
+                notes = CONCAT_WS(E'\n', NULLIF(notes, ''), $3::text)
+            WHERE log_id = $1
+            RETURNING *
+        `, [activeLog.log_id, isPaidBreak, data.notes ? `[Break Start] ${data.notes}` : null]);
+
+        await logAction(client, {
+            userId, action: 'ATTENDANCE_BREAK_START', resourceId: activeLog.log_id,
+            resourceTable: 'attendance_logs', ipAddress: req.ip,
+            details: { isPaid: isPaidBreak, notes: data.notes || null }, required: true
+        });
+
+        await recordAttendanceAudit(client, {
+            logId: activeLog.log_id,
+            userId,
+            actorId: userId,
+            actionType: 'BREAK_START',
+            previousState: activeLog,
+            newState: result.rows[0],
+            reason: data.notes || 'Break started',
+            ipAddress: req.ip,
+            userAgent: req.get?.('user-agent') || null
+        });
+
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
+        next(error);
+    } finally {
+        if (client) client.release();
+    }
+};
+
+const breakEnd = (db) => async (req, res, next) => {
+    let client;
+    try {
+        const data = breakEndSchema.parse(req.body || {});
+        const userId = getAuthenticatedUserId(req);
+        if (!userId) return next(new AppError('Authenticated user id is missing', 401));
+
+        client = await db.connect();
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 11705))', [userId]);
+
+        const active = await client.query(
+            'SELECT * FROM attendance_logs WHERE user_id = $1 AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1 FOR UPDATE',
+            [userId]
+        );
+
+        if (active.rows.length === 0) {
+            await client.query('COMMIT');
+            return next(new AppError('No active clock-in session found', 409));
+        }
+        const activeLog = active.rows[0];
+
+        if (!activeLog.break_start || activeLog.break_end) {
+            await client.query('COMMIT');
+            return next(new AppError('No active break to end', 409));
+        }
+
+        const breakStartTime = new Date(activeLog.break_start).getTime();
+        const breakEndTime = Date.now();
+        const breakMinutes = Math.max(0, Math.round((breakEndTime - breakStartTime) / 60000));
+        const totalBreakMinutes = (activeLog.total_break_minutes || 0) + breakMinutes;
+
+        const result = await client.query(`
+            UPDATE attendance_logs
+            SET break_end = CURRENT_TIMESTAMP,
+                total_break_minutes = $2,
+                notes = CONCAT_WS(E'\n', NULLIF(notes, ''), $3::text)
+            WHERE log_id = $1
+            RETURNING *
+        `, [activeLog.log_id, totalBreakMinutes, data.notes ? `[Break End] ${data.notes}` : null]);
+
+        await logAction(client, {
+            userId, action: 'ATTENDANCE_BREAK_END', resourceId: activeLog.log_id,
+            resourceTable: 'attendance_logs', ipAddress: req.ip,
+            details: { breakMinutes, totalBreakMinutes, notes: data.notes || null }, required: true
+        });
+
+        await recordAttendanceAudit(client, {
+            logId: activeLog.log_id,
+            userId,
+            actorId: userId,
+            actionType: 'BREAK_END',
+            previousState: activeLog,
+            newState: result.rows[0],
+            reason: data.notes || 'Break ended',
+            ipAddress: req.ip,
+            userAgent: req.get?.('user-agent') || null
+        });
+
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
@@ -1076,32 +1343,69 @@ const updateAttendance = (db) => async (req, res, next) => {
         );
         if (!existing.rows.length) throw new AppError('Attendance record not found', 404);
 
+        const config = await getAttendanceConfig(client);
+
+        // Fetch shift details if available
+        let shiftStart = null;
+        let shiftEnd = null;
+        if (existing.rows[0].shift_id) {
+            const sRes = await client.query('SELECT start_time, end_time FROM staff_shifts WHERE shift_id = $1', [existing.rows[0].shift_id]);
+            shiftStart = sRes.rows[0]?.start_time || existing.rows[0].scheduled_start_snapshot;
+            shiftEnd = sRes.rows[0]?.end_time || existing.rows[0].scheduled_end_snapshot;
+        } else {
+            shiftStart = existing.rows[0].scheduled_start_snapshot;
+            shiftEnd = existing.rows[0].scheduled_end_snapshot;
+        }
+
+        // Check for any approved permissions
+        const permRes = await client.query(`
+            SELECT permission_type, minutes_granted FROM attendance_permissions
+            WHERE user_id = $1
+              AND (
+                  shift_id = $2
+                  OR effective_date = ($3::timestamptz AT TIME ZONE 'Africa/Cairo')::date
+                  OR effective_date = CURRENT_DATE
+              )
+              AND status = 'Approved'
+        `, [target.rows[0].user_id, existing.rows[0].shift_id || null, data.clockIn]);
+
+        let latePermMin = 0;
+        let earlyPermMin = 0;
+        for (const p of permRes.rows) {
+            if (p.permission_type === 'LateArrival') latePermMin = Math.max(latePermMin, p.minutes_granted || 0);
+            if (p.permission_type === 'EarlyDeparture') earlyPermMin = Math.max(earlyPermMin, p.minutes_granted || 0);
+        }
+
+        const metrics = calculatePunctualityMetrics({
+            clockIn: data.clockIn,
+            clockOut: data.clockOut,
+            shiftStartTime: shiftStart,
+            shiftEndTime: shiftEnd,
+            config,
+            permittedLateMinutes: latePermMin,
+            permittedEarlyMinutes: earlyPermMin
+        });
+
+        const effectiveStatus = (data.status === 'Absent' || data.status === 'Half-Day')
+            ? data.status
+            : (metrics.lateMinutes > 0 ? 'Late' : (data.status || metrics.status));
+
+        const effectiveLate = (effectiveStatus === 'Absent') ? 0 : metrics.lateMinutes;
+        const effectiveEarly = (effectiveStatus === 'Absent') ? 0 : metrics.earlyLeaveMinutes;
+
         const updated = await client.query(`
             UPDATE attendance_logs a
             SET clock_in = $2::timestamptz,
                 clock_out = $3::timestamptz,
-                status = CASE
-                    WHEN $4 IN ('Absent', 'Half-Day') THEN $4
-                    WHEN a.shift_id IS NOT NULL
-                     AND $2::timestamptz > (SELECT s.start_time FROM staff_shifts s WHERE s.shift_id = a.shift_id)
-                        THEN 'Late'
-                    ELSE 'Present'
-                END,
+                status = $4,
                 notes = $5,
-                late_minutes = CASE
-                    WHEN $4 = 'Absent' THEN 0
-                    WHEN a.shift_id IS NULL THEN CASE WHEN $4 = 'Late' THEN a.late_minutes ELSE 0 END
-                    ELSE GREATEST(0, EXTRACT(EPOCH FROM ($2::timestamptz - (SELECT s.start_time FROM staff_shifts s WHERE s.shift_id = a.shift_id))) / 60)
-                END,
-                early_leave_minutes = CASE
-                    WHEN a.shift_id IS NULL OR $3::timestamptz IS NULL THEN 0
-                    ELSE GREATEST(0, EXTRACT(EPOCH FROM ((SELECT s.end_time FROM staff_shifts s WHERE s.shift_id = a.shift_id) - $3::timestamptz)) / 60)
-                END,
-                corrected_by = $6,
+                late_minutes = $6,
+                early_leave_minutes = $7,
+                corrected_by = $8,
                 corrected_at = CURRENT_TIMESTAMP
             WHERE a.log_id = $1
             RETURNING a.*
-        `, [req.params.id, data.clockIn, data.clockOut, data.status, data.notes || null, reviewerId]);
+        `, [req.params.id, data.clockIn, data.clockOut, effectiveStatus, data.notes || null, effectiveLate, effectiveEarly, reviewerId]);
 
         await logAction(client, {
             userId: reviewerId,
@@ -1139,8 +1443,8 @@ const updateAttendance = (db) => async (req, res, next) => {
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
-        if (error?.code === '23P01') return next(new AppError('Attendance correction overlaps another attendance record', 409));
-        if (error?.code === '23505') return next(new AppError('Employee already has another open attendance session', 409));
+        if (error?.code === '23P01') return next(new AppError('Attendance correction overlaps another attendance session for this employee. Please adjust timestamps.', 409));
+        if (error?.code === '23505') return next(new AppError('Employee already has another open attendance session. Please close the active session first.', 409));
         next(error);
     } finally {
         if (client) client.release();
@@ -1173,6 +1477,44 @@ const recordManualAttendance = (db) => async (req, res, next) => {
         `, [data.userId, data.clockIn]);
         const shift = scheduledShift.rows[0] || null;
 
+        const config = await getAttendanceConfig(client);
+
+        // Check for any approved permissions for this user/date
+        const permRes = await client.query(`
+            SELECT permission_type, minutes_granted FROM attendance_permissions
+            WHERE user_id = $1
+              AND (
+                  shift_id = $2
+                  OR effective_date = ($3::timestamptz AT TIME ZONE 'Africa/Cairo')::date
+                  OR effective_date = CURRENT_DATE
+              )
+              AND status = 'Approved'
+        `, [data.userId, shift?.shift_id || null, data.clockIn]);
+
+        let latePermMin = 0;
+        let earlyPermMin = 0;
+        for (const p of permRes.rows) {
+            if (p.permission_type === 'LateArrival') latePermMin = Math.max(latePermMin, p.minutes_granted || 0);
+            if (p.permission_type === 'EarlyDeparture') earlyPermMin = Math.max(earlyPermMin, p.minutes_granted || 0);
+        }
+
+        const metrics = calculatePunctualityMetrics({
+            clockIn: data.clockIn,
+            clockOut: data.clockOut,
+            shiftStartTime: shift?.start_time || null,
+            shiftEndTime: shift?.end_time || null,
+            config,
+            permittedLateMinutes: latePermMin,
+            permittedEarlyMinutes: earlyPermMin
+        });
+
+        const effectiveStatus = (data.status === 'Absent' || data.status === 'Half-Day')
+            ? data.status
+            : (metrics.lateMinutes > 0 ? 'Late' : (data.status || metrics.status));
+
+        const effectiveLate = (effectiveStatus === 'Absent') ? 0 : metrics.lateMinutes;
+        const effectiveEarly = (effectiveStatus === 'Absent') ? 0 : metrics.earlyLeaveMinutes;
+
         const result = await client.query(`
             INSERT INTO attendance_logs (
                 user_id, clock_in, clock_out, shift_id, status, notes,
@@ -1186,18 +1528,8 @@ const recordManualAttendance = (db) => async (req, res, next) => {
                 $4,
                 $5,
                 $6,
-                CASE
-                    WHEN $5 = 'Absent' THEN 0
-                    WHEN $7::timestamptz IS NOT NULL AND $2::timestamptz > $7::timestamptz
-                        THEN GREATEST(0, EXTRACT(EPOCH FROM ($2::timestamptz - $7::timestamptz)) / 60)
-                    ELSE 0
-                END,
-                CASE
-                    WHEN $8::timestamptz IS NULL OR $3::timestamptz IS NULL THEN 0
-                    WHEN $3::timestamptz < $8::timestamptz
-                        THEN GREATEST(0, EXTRACT(EPOCH FROM ($8::timestamptz - $3::timestamptz)) / 60)
-                    ELSE 0
-                END,
+                $7,
+                $8,
                 $9,
                 CURRENT_TIMESTAMP,
                 $10,
@@ -1209,10 +1541,10 @@ const recordManualAttendance = (db) => async (req, res, next) => {
             data.clockIn,
             data.clockOut || null,
             shift?.shift_id || null,
-            data.status,
+            effectiveStatus,
             data.notes,
-            shift?.start_time || null,
-            shift?.end_time || null,
+            effectiveLate,
+            effectiveEarly,
             reviewerId,
             shift ? 'Manual' : 'Unscheduled',
             shift?.start_time || null,
@@ -1254,8 +1586,8 @@ const recordManualAttendance = (db) => async (req, res, next) => {
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
-        if (error?.code === '23P01') return next(new AppError('Attendance record overlaps another attendance session', 409));
-        if (error?.code === '23505') return next(new AppError('Employee already has another open attendance session', 409));
+        if (error?.code === '23P01') return next(new AppError('Manual attendance record overlaps another attendance session for this employee. Please adjust timestamps.', 409));
+        if (error?.code === '23505') return next(new AppError('Employee already has another open attendance session. Please close the active session first.', 409));
         next(error);
     } finally {
         if (client) client.release();
@@ -1279,6 +1611,10 @@ const updateAttendanceSettings = (db) => async (req, res, next) => {
         client = await db.connect();
         await client.query('BEGIN');
 
+        const exemptRolesVal = Array.isArray(data.exemptRolesFromLoginRestriction)
+            ? data.exemptRolesFromLoginRestriction.filter(Boolean).join(',')
+            : (data.exemptRolesFromLoginRestriction !== undefined ? String(data.exemptRolesFromLoginRestriction) : null);
+
         const mapFields = [
             { key: 'hr.attendance.grace_period_late_minutes', val: data.gracePeriodLateMinutes !== undefined ? String(data.gracePeriodLateMinutes) : null },
             { key: 'hr.attendance.grace_period_early_minutes', val: data.gracePeriodEarlyMinutes !== undefined ? String(data.gracePeriodEarlyMinutes) : null },
@@ -1287,7 +1623,7 @@ const updateAttendanceSettings = (db) => async (req, res, next) => {
             { key: 'hr.attendance.enforce_shift_login_restriction', val: data.enforceShiftLoginRestriction !== undefined ? String(data.enforceShiftLoginRestriction) : null },
             { key: 'hr.attendance.login_buffer_before_minutes', val: data.loginBufferBeforeMinutes !== undefined ? String(data.loginBufferBeforeMinutes) : null },
             { key: 'hr.attendance.login_buffer_after_minutes', val: data.loginBufferAfterMinutes !== undefined ? String(data.loginBufferAfterMinutes) : null },
-            { key: 'hr.attendance.exempt_roles_from_login_restriction', val: data.exemptRolesFromLoginRestriction !== undefined ? String(data.exemptRolesFromLoginRestriction) : null }
+            { key: 'hr.attendance.exempt_roles_from_login_restriction', val: exemptRolesVal }
         ];
 
         for (const item of mapFields) {
@@ -1312,6 +1648,7 @@ const updateAttendanceSettings = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+        invalidateAttendanceConfigCache();
         const updatedConfig = await getAttendanceConfig(db);
         res.json(updatedConfig);
     } catch (error) {
@@ -1415,17 +1752,17 @@ const createAttendancePermission = (db) => async (req, res, next) => {
             required: true
         });
 
-        triggerEventForRole(client, 'AttendancePermissionFiled', 'HR', {
+        await triggerEventForRole(client, 'AttendancePermissionFiled', 'HR', {
             entityType: 'AttendancePermission',
             entityId: inserted.permission_id,
             variables: { employee_name: employeeName, permission_type: data.permissionType }
-        }).catch(e => console.error('[Notify AttendancePermissionFiled HR]', e.message));
+        });
 
-        triggerEventForRole(client, 'AttendancePermissionFiled', 'Admin', {
+        await triggerEventForRole(client, 'AttendancePermissionFiled', 'Admin', {
             entityType: 'AttendancePermission',
             entityId: inserted.permission_id,
             variables: { employee_name: employeeName, permission_type: data.permissionType }
-        }).catch(e => console.error('[Notify AttendancePermissionFiled Admin]', e.message));
+        });
 
         await client.query('COMMIT');
         res.status(201).json(inserted);
@@ -1460,6 +1797,12 @@ const updateAttendancePermissionStatus = (db) => async (req, res, next) => {
 
         if (current.user_id === reviewerId) {
             throw new AppError('You cannot review your own attendance permission request', 403);
+        }
+        if (current.status !== 'Pending') {
+            throw new AppError('Attendance permission has already been reviewed', 409);
+        }
+        if (!isGlobalReviewer(req.user)) {
+            await assertStaffSupervision(client, req.user, current.user_id, 'attendance', { lock: true });
         }
 
         const result = await client.query(`
@@ -1496,7 +1839,7 @@ const updateAttendancePermissionStatus = (db) => async (req, res, next) => {
             userAgent: req.get?.('user-agent') || null
         });
 
-        triggerEvent(client, 'AttendancePermissionResolved', {
+        await triggerEvent(client, 'AttendancePermissionResolved', {
             staffId: current.user_id,
             staffRole: current.employee_role,
             entityType: 'AttendancePermission',
@@ -1504,9 +1847,10 @@ const updateAttendancePermissionStatus = (db) => async (req, res, next) => {
             variables: {
                 employee_name: current.employee_name,
                 permission_type: current.permission_type,
-                status: data.status
+                status: data.status,
+                effective_date: current.effective_date
             }
-        }).catch(e => console.error('[Notify AttendancePermissionResolved]', e.message));
+        });
 
         await client.query('COMMIT');
         res.json(updated);
@@ -1585,12 +1929,12 @@ const getLeaveRequests = (db) => async (req, res, next) => {
             WHERE 1=1
         `;
         const params = [];
-        
+
         if (userId) {
             query += ` AND l.user_id = $1`;
             params.push(userId);
         }
-        
+
         params.push(pageLimit);
         query += ` ORDER BY l.created_at DESC LIMIT $${params.length}::int`;
         const result = await db.query(query, params);
@@ -1716,6 +2060,9 @@ const updateLeaveStatus = (db) => async (req, res, next) => {
         if (existing.rows[0].user_id === adminId) {
             await client.query('ROLLBACK');
             return next(new AppError('Leave requests must be reviewed by another authorized user', 403));
+        }
+        if (!isGlobalReviewer(req.user)) {
+            await assertStaffSupervision(client, req.user, existing.rows[0].user_id, 'leave', { lock: true });
         }
 
         const result = await client.query(`
@@ -1893,7 +2240,7 @@ const getStaffCredentials = (db) => async (req, res, next) => {
     try {
         const canManage = ['Developer', 'Admin', 'HR'].includes(req.user.role);
         const { userId, expiringWithinDays, limit } = req.query;
-        const targetUserId = canManage ? userId : getAuthenticatedUserId(req);
+        const targetUserId = canManage ? (req.params.staffId || userId) : getAuthenticatedUserId(req);
         const pageLimit = Math.min(500, Math.max(1, Number.parseInt(limit, 10) || 200));
         const params = [];
         let query = `
@@ -1923,7 +2270,8 @@ const getStaffCredentials = (db) => async (req, res, next) => {
 const createStaffCredential = (db) => async (req, res, next) => {
     let client;
     try {
-        const data = createStaffCredentialSchema.parse(req.body);
+        const payload = { ...req.body, userId: req.body?.userId || req.params.staffId };
+        const data = createStaffCredentialSchema.parse(payload);
         client = await db.connect();
         await client.query('BEGIN');
         const employee = await client.query(
@@ -1985,7 +2333,7 @@ const updateStaffCredential = (db) => async (req, res, next) => {
             WHERE credential_id = $1
             RETURNING *
         `, [req.params.id, merged.credentialType, merged.credentialNumber, merged.issuingAuthority,
-            merged.issuedDate, merged.expiresAt, merged.notes, existing.rows[0].expires_at]);
+        merged.issuedDate, merged.expiresAt, merged.notes, existing.rows[0].expires_at]);
         await logAction(client, {
             userId: getAuthenticatedUserId(req), action: 'STAFF_CREDENTIAL_UPDATED', resourceId: req.params.id,
             resourceTable: 'staff_credentials', ipAddress: req.ip,
@@ -2225,16 +2573,16 @@ const getShiftRequests = (db) => async (req, res, next) => {
         let count = 1;
 
         if (effectiveUserId) {
-            query += ` AND (sr.user_id = ${count} OR sr.target_user_id = ${count})`;
+            query += ` AND (sr.user_id = $${count} OR sr.target_user_id = $${count})`;
             params.push(effectiveUserId);
             count++;
         }
         if (status) {
-            query += ` AND sr.status = ${count++}`;
+            query += ` AND sr.status = $${count++}`;
             params.push(status);
         }
         if (requestType) {
-            query += ` AND sr.request_type = ${count++}`;
+            query += ` AND sr.request_type = $${count++}`;
             params.push(requestType);
         }
 
@@ -2286,6 +2634,21 @@ const createShiftRequest = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+
+        const requestPayload = {
+            entityType: 'ShiftRequest',
+            entityId: inserted.request_id,
+            variables: {
+                employee_name: req.user?.full_name || req.user?.fullName || req.user?.name || 'Employee',
+                request_type: data.requestType,
+                shift_id: data.shiftId || '',
+                target_user_id: data.targetUserId || '',
+                reason: data.reason,
+            }
+        };
+        triggerEventForRole(db, 'SHIFT_REQUEST_SUBMITTED', 'HR', requestPayload);
+        triggerEventForRole(db, 'SHIFT_REQUEST_SUBMITTED', 'Admin', requestPayload);
+
         res.status(201).json(inserted);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -2306,7 +2669,13 @@ const updateShiftRequestStatus = (db) => async (req, res, next) => {
         await client.query('BEGIN');
 
         const reqQuery = await client.query(`
-            SELECT * FROM staff_shift_requests WHERE request_id = $1 FOR UPDATE
+            SELECT sr.*, requester.full_name AS requester_name, requester.role AS requester_role,
+                   target_user.full_name AS target_user_name, target_user.role AS target_user_role
+            FROM staff_shift_requests sr
+            LEFT JOIN users requester ON requester.user_id = sr.user_id
+            LEFT JOIN users target_user ON target_user.user_id = sr.target_user_id
+            WHERE sr.request_id = $1
+            FOR UPDATE OF sr
         `, [req.params.id]);
 
         if (!reqQuery.rows.length) throw new AppError('Shift request not found', 404);
@@ -2314,6 +2683,16 @@ const updateShiftRequestStatus = (db) => async (req, res, next) => {
 
         if (shiftReq.user_id === reviewerId && data.status !== 'Cancelled') {
             throw new AppError('You cannot approve or reject your own shift request', 403);
+        }
+        if (shiftReq.status !== 'Pending') {
+            throw new AppError('Shift request has already been reviewed', 409);
+        }
+        if (!isGlobalReviewer(req.user)) {
+            if (data.status === 'Cancelled') throw new AppError('Supervisors cannot cancel employee shift requests', 403);
+            await assertStaffSupervision(client, req.user, shiftReq.user_id, 'shifts', { lock: true });
+            if (shiftReq.target_user_id) {
+                await assertStaffSupervision(client, req.user, shiftReq.target_user_id, 'shifts', { lock: true });
+            }
         }
 
         // If Approved, apply the change to staff_shifts
@@ -2362,6 +2741,30 @@ const updateShiftRequestStatus = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+
+        const decisionPayload = {
+            entityType: 'ShiftRequest',
+            entityId: updated.request_id,
+            variables: {
+                employee_name: shiftReq.requester_name || 'Employee',
+                status: data.status,
+                request_type: shiftReq.request_type,
+                review_notes: data.reviewNotes || '',
+            }
+        };
+        triggerEvent(db, 'SHIFT_REQUEST_DECIDED', {
+            staffId: shiftReq.user_id,
+            staffRole: shiftReq.requester_role || 'Receptionist',
+            ...decisionPayload,
+        });
+        if (shiftReq.target_user_id && shiftReq.target_user_id !== shiftReq.user_id) {
+            triggerEvent(db, 'SHIFT_REQUEST_DECIDED', {
+                staffId: shiftReq.target_user_id,
+                staffRole: shiftReq.target_user_role || 'Receptionist',
+                ...decisionPayload,
+            });
+        }
+
         res.json(updated);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -2377,7 +2780,7 @@ const getStaffEvaluations = (db) => async (req, res, next) => {
     try {
         const canReviewAll = ['Developer', 'Admin', 'HR'].includes(req.user.role);
         const { userId } = req.query;
-        const effectiveUserId = canReviewAll ? userId : getAuthenticatedUserId(req);
+        const effectiveUserId = canReviewAll ? (req.params.staffId || userId) : getAuthenticatedUserId(req);
 
         let query = `
             SELECT e.*,
@@ -2404,7 +2807,8 @@ const getStaffEvaluations = (db) => async (req, res, next) => {
 
 const createStaffEvaluation = (db) => async (req, res, next) => {
     try {
-        const data = createStaffEvaluationSchema.parse(req.body);
+        const payload = { ...req.body, userId: req.body?.userId || req.params.staffId };
+        const data = createStaffEvaluationSchema.parse(payload);
         const evaluatorId = getAuthenticatedUserId(req);
 
         const result = await db.query(`
@@ -2436,17 +2840,389 @@ const createStaffEvaluation = (db) => async (req, res, next) => {
     }
 };
 
+// ─── Live Attendance Dashboard ────────────────────────────────────────────────
+
+const getLiveAttendanceSummary = (db) => async (req, res, next) => {
+    try {
+        const { department, branchId, date: targetDate } = req.query;
+        const date = targetDate || new Date().toISOString().slice(0, 10);
+
+        let deptFilter = '';
+        const params = [date];
+        if (department) {
+            params.push(department);
+            deptFilter = `AND u.department = $${params.length}`;
+        }
+
+        // Currently clocked in
+        const clockedIn = await db.query(`
+            SELECT al.*, u.full_name, u.role, u.department, u.branch_id,
+                   s.start_time as shift_start, s.end_time as shift_end,
+                   s.room_id
+            FROM attendance_logs al
+            JOIN users u ON u.user_id = al.user_id
+            LEFT JOIN staff_shifts s ON s.shift_id = al.shift_id
+            WHERE al.clock_out IS NULL
+              AND al.clock_in >= $1::date
+              AND al.clock_in < ($1::date + INTERVAL '1 day')
+              ${deptFilter}
+            ORDER BY al.clock_in ASC
+        `, params);
+
+        // Late arrivals today
+        const lateToday = await db.query(`
+            SELECT al.*, u.full_name, u.role, u.department
+            FROM attendance_logs al
+            JOIN users u ON u.user_id = al.user_id
+            WHERE al.late_minutes > 0
+              AND al.clock_in >= $1::date
+              AND al.clock_in < ($1::date + INTERVAL '1 day')
+              ${deptFilter}
+            ORDER BY al.late_minutes DESC
+        `, params);
+
+        // Absent today (scheduled but no clock-in)
+        const absentToday = await db.query(`
+            SELECT s.*, u.full_name, u.role, u.department
+            FROM staff_shifts s
+            JOIN users u ON u.user_id = s.user_id
+            WHERE s.start_time >= $1::date
+              AND s.start_time < ($1::date + INTERVAL '1 day')
+              ${deptFilter}
+              AND NOT EXISTS (
+                  SELECT 1 FROM attendance_logs al
+                  WHERE al.user_id = u.user_id
+                    AND al.clock_in >= $1::date
+                    AND al.clock_in < ($1::date + INTERVAL '1 day')
+              )
+            ORDER BY s.start_time ASC
+        `, params);
+
+        // Overtime risks (worked > 10 hours)
+        const overtime = await db.query(`
+            SELECT al.*, u.full_name, u.role, u.department,
+                   EXTRACT(EPOCH FROM (COALESCE(al.clock_out, NOW()) - al.clock_in))/3600 AS hours_worked
+            FROM attendance_logs al
+            JOIN users u ON u.user_id = al.user_id
+            WHERE al.clock_in >= $1::date
+              AND al.clock_in < ($1::date + INTERVAL '1 day')
+              ${deptFilter}
+              AND EXTRACT(EPOCH FROM (COALESCE(al.clock_out, NOW()) - al.clock_in))/3600 > 10
+            ORDER BY hours_worked DESC
+        `, params);
+
+        // Shift coverage gaps (shifts with no assigned staff)
+        const coverageGaps = await db.query(`
+            SELECT s.*, r.name as room_name
+            FROM staff_shifts s
+            LEFT JOIN rooms r ON r.room_id = s.room_id
+            WHERE s.start_time >= $1::date
+              AND s.start_time < ($1::date + INTERVAL '1 day')
+              AND s.user_id IS NULL
+              ${deptFilter && `AND s.role = (SELECT role FROM users WHERE department = $2 LIMIT 1)`}
+            ORDER BY s.start_time ASC
+        `, params);
+
+        res.json({
+            date,
+            clockedIn: clockedIn.rows,
+            lateToday: lateToday.rows,
+            absentToday: absentToday.rows,
+            overtimeRisks: overtime.rows,
+            coverageGaps: coverageGaps.rows,
+            summary: {
+                totalClockedIn: clockedIn.rows.length,
+                totalLate: lateToday.rows.length,
+                totalAbsent: absentToday.rows.length,
+                totalOvertimeRisk: overtime.rows.length,
+                totalCoverageGaps: coverageGaps.rows.length
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── Payroll Export ──────────────────────────────────────────────────────────
+
+const getAttendancePayrollExport = (db) => async (req, res, next) => {
+    try {
+        const { startDate, endDate, department, userId, format = 'json' } = req.query;
+
+        if (!startDate || !endDate) {
+            throw new AppError('startDate and endDate are required', 400);
+        }
+
+        let deptFilter = '';
+        const params = [startDate, endDate];
+        if (department) {
+            params.push(department);
+            deptFilter = `AND u.department = $${params.length}`;
+        }
+        if (userId) {
+            params.push(userId);
+            deptFilter += ` AND u.user_id = $${params.length}`;
+        }
+
+        const result = await db.query(`
+            SELECT
+                al.log_id,
+                u.user_id,
+                u.employee_id,
+                u.full_name,
+                u.role,
+                u.department,
+                al.clock_in,
+                al.clock_out,
+                al.shift_id,
+                s.start_time as shift_start,
+                s.end_time as shift_end,
+                al.status,
+                al.late_minutes,
+                al.early_leave_minutes,
+                al.total_break_minutes,
+                al.notes,
+                CASE
+                    WHEN al.clock_out IS NULL THEN EXTRACT(EPOCH FROM (NOW() - al.clock_in))/3600
+                    ELSE EXTRACT(EPOCH FROM (al.clock_out - al.clock_in))/3600
+                END as worked_hours,
+                CASE
+                    WHEN al.clock_out IS NULL AND EXTRACT(EPOCH FROM (NOW() - al.clock_in))/3600 > 8
+                    THEN EXTRACT(EPOCH FROM (NOW() - al.clock_in))/3600 - 8
+                    WHEN al.clock_out IS NOT NULL AND EXTRACT(EPOCH FROM (al.clock_out - al.clock_in))/3600 > 8
+                    THEN EXTRACT(EPOCH FROM (al.clock_out - al.clock_in))/3600 - 8
+                    ELSE 0
+                END as overtime_hours
+            FROM attendance_logs al
+            JOIN users u ON u.user_id = al.user_id
+            LEFT JOIN staff_shifts s ON s.shift_id = al.shift_id
+            WHERE al.clock_in >= $1::date
+              AND al.clock_in <= $2::date + INTERVAL '1 day'
+              ${deptFilter}
+            ORDER BY u.full_name, al.clock_in
+        `, params);
+
+        if (format === 'csv') {
+            const headers = [
+                'Log ID', 'User ID', 'Employee ID', 'Name', 'Role', 'Department',
+                'Clock In', 'Clock Out', 'Shift ID', 'Shift Start', 'Shift End',
+                'Status', 'Late Minutes', 'Early Leave Minutes', 'Break Minutes',
+                'Notes', 'Worked Hours', 'Overtime Hours'
+            ];
+            const rows = result.rows.map(r => [
+                r.log_id, r.user_id, r.employee_id || '', r.full_name, r.role, r.department || '',
+                r.clock_in ? new Date(r.clock_in).toISOString() : '',
+                r.clock_out ? new Date(r.clock_out).toISOString() : '',
+                r.shift_id || '', r.shift_start || '', r.shift_end || '',
+                r.status, r.late_minutes || 0, r.early_leave_minutes || 0,
+                r.total_break_minutes || 0, r.notes || '',
+                r.worked_hours ? Number(r.worked_hours).toFixed(2) : '',
+                r.overtime_hours ? Number(r.overtime_hours).toFixed(2) : ''
+            ]);
+            const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="attendance-payroll-export-${startDate}-to-${endDate}.csv"`);
+            return res.send('\uFEFF' + csv);
+        }
+
+        res.json({ rows: result.rows, total: result.rows.length });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── Shift Templates CRUD ────────────────────────────────────────────────────
+
+const shiftTemplateBaseSchema = z.object({
+    name: z.string().trim().min(1).max(100),
+    role: z.enum(['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'Cashier', 'Accountant', 'Insurance_Staff', 'Marketing']),
+    roomId: z.string().uuid().nullable().optional(),
+    startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    recurrenceRule: z.object({
+        freq: z.enum(['daily', 'weekly', 'monthly']),
+        byday: z.array(z.number().int().min(0).max(6)).optional(),
+        bymonthday: z.array(z.number().int().min(1).max(31)).optional(),
+        until: z.string().datetime().optional()
+    }),
+    isActive: z.boolean().optional().default(true)
+});
+
+const shiftTemplateSchema = shiftTemplateBaseSchema.refine(data => data.endTime > data.startTime, {
+    path: ['endTime'],
+    message: 'End time must be after start time'
+});
+
+const updateShiftTemplateSchema = shiftTemplateBaseSchema.partial().refine(
+    data => !data.startTime || !data.endTime || data.endTime > data.startTime,
+    { path: ['endTime'], message: 'End time must be after start time' }
+);
+
+const getShiftTemplates = (db) => async (req, res, next) => {
+    try {
+        const { role, isActive } = req.query;
+        let query = `
+            SELECT st.*, u.full_name as created_by_name
+            FROM shift_templates st
+            LEFT JOIN users u ON u.user_id = st.created_by
+            WHERE 1=1
+        `;
+        const params = [];
+        if (role) {
+            params.push(role);
+            query += ` AND st.role = $${params.length}`;
+        }
+        if (isActive !== undefined) {
+            params.push(isActive === 'true');
+            query += ` AND st.is_active = $${params.length}`;
+        }
+        query += ` ORDER BY st.created_at DESC`;
+        const result = await db.query(query, params);
+        res.json(result.rows);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const createShiftTemplate = (db) => async (req, res, next) => {
+    try {
+        const data = shiftTemplateSchema.parse(req.body);
+        const createdBy = getAuthenticatedUserId(req);
+
+        const result = await db.query(`
+            INSERT INTO shift_templates (name, role, room_id, start_time, end_time, recurrence_rule, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING *
+        `, [data.name, data.role, data.roomId || null, data.startTime, data.endTime, JSON.stringify(data.recurrenceRule), createdBy]);
+
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
+        next(error);
+    }
+};
+
+const updateShiftTemplate = (db) => async (req, res, next) => {
+    try {
+        const data = updateShiftTemplateSchema.parse(req.body);
+        const { id } = req.params;
+
+        const setClause = [];
+        const params = [id];
+        let paramCount = 1;
+
+        Object.entries(data).forEach(([key, value]) => {
+            if (value !== undefined) {
+                paramCount++;
+                if (key === 'recurrenceRule') {
+                    setClause.push(`${key} = $${paramCount}`);
+                    params.push(JSON.stringify(value));
+                } else {
+                    const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+                    setClause.push(`${snakeKey} = $${paramCount}`);
+                    params.push(value);
+                }
+            }
+        });
+
+        if (setClause.length === 0) throw new AppError('No fields to update', 400);
+
+        setClause.push(`updated_at = CURRENT_TIMESTAMP`);
+        const result = await db.query(`
+            UPDATE shift_templates SET ${setClause.join(', ')} WHERE template_id = $1 RETURNING *
+        `, params);
+
+        if (!result.rows.length) throw new AppError('Shift template not found', 404);
+        res.json(result.rows[0]);
+    } catch (error) {
+        if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
+        next(error);
+    }
+};
+
+const deleteShiftTemplate = (db) => async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const result = await db.query('DELETE FROM shift_templates WHERE template_id = $1 RETURNING template_id', [id]);
+        if (!result.rows.length) throw new AppError('Shift template not found', 404);
+        res.json({ deleted: true, id: result.rows[0].template_id });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── Generate Shifts from Templates ──────────────────────────────────────────
+
+const generateShiftsFromTemplates = (db) => async (req, res, next) => {
+    try {
+        const { startDate, endDate, department } = req.body;
+        if (!startDate || !endDate) throw new AppError('startDate and endDate are required', 400);
+
+        const templates = await db.query(`
+            SELECT * FROM shift_templates WHERE is_active = TRUE
+        `);
+
+        let created = 0;
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        for (const template of templates.rows) {
+            const rule = template.recurrence_rule;
+            let current = new Date(start);
+
+            while (current <= end) {
+                let shouldCreate = false;
+                if (rule.freq === 'daily') shouldCreate = true;
+                else if (rule.freq === 'weekly' && rule.byday?.includes(current.getDay())) shouldCreate = true;
+                else if (rule.freq === 'monthly' && rule.bymonthday?.includes(current.getDate())) shouldCreate = true;
+
+                if (shouldCreate) {
+                    const shiftStart = new Date(current);
+                    const [sh, sm] = template.start_time.split(':').map(Number);
+                    shiftStart.setHours(sh, sm, 0, 0);
+
+                    const shiftEnd = new Date(current);
+                    const [eh, em] = template.end_time.split(':').map(Number);
+                    shiftEnd.setHours(eh, em, 0, 0);
+
+                    // Check if shift already exists for this user/date
+                    const existing = await db.query(`
+                        SELECT 1 FROM staff_shifts
+                        WHERE role = $1 AND start_time = $2 AND room_id IS NOT DISTINCT FROM $3
+                    `, [template.role, shiftStart.toISOString(), template.room_id]);
+
+                    if (!existing.rows.length) {
+                        await db.query(`
+                            INSERT INTO staff_shifts (role, room_id, start_time, end_time, created_by)
+                            VALUES ($1, $2, $3, $4, $5)
+                        `, [template.role, template.room_id, shiftStart.toISOString(), shiftEnd.toISOString(), template.created_by]);
+                        created++;
+                    }
+                }
+                current.setDate(current.getDate() + 1);
+            }
+        }
+
+        res.json({ created, message: `Generated ${created} shifts from templates` });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getEmployeeProfiles, updateEmployeeProfile,
     getShiftRequests, createShiftRequest, updateShiftRequestStatus,
     getStaffEvaluations, createStaffEvaluation,
     getShifts, createShift, updateShift, deleteShift,
-    getAttendance, clockIn, clockOut, updateAttendance, recordManualAttendance,
+    getAttendance, clockIn, clockOut, breakStart, breakEnd, updateAttendance, recordManualAttendance,
     ensureActiveAttendanceClockIn,
     getAttendanceSettings, updateAttendanceSettings,
     getAttendancePermissions, createAttendancePermission, updateAttendancePermissionStatus,
     getAttendanceAuditLedger,
-    getAttendanceConfig, recordAttendanceAudit,
+    getLiveAttendanceSummary,
+    getAttendancePayrollExport,
+    getShiftTemplates, createShiftTemplate, updateShiftTemplate, deleteShiftTemplate,
+    generateShiftsFromTemplates,
     getLeaveRequests, createLeaveRequest, updateLeaveStatus, cancelLeaveRequest,
     getLeaveBalances, upsertLeaveBalance,
     getStaffCredentials, createStaffCredential, updateStaffCredential, deleteStaffCredential,

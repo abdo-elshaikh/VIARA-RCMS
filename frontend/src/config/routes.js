@@ -12,10 +12,12 @@ const SUB_NAVIGATION = {
         { key: 'receptionPatients', to: '/reception?tab=patients', permissions: ['VIEW_PATIENTS'] },
         { key: 'receptionCashier', to: '/reception?tab=cashier', permissions: ['PROCESS_PAYMENTS'] },
         { key: 'receptionBilling', to: '/reception?tab=billing', permissions: ['VIEW_INVOICES'] },
+        { key: 'receptionEndOfDay', to: '/reception?tab=end-of-day', roles: ['Receptionist', 'Admin', 'Developer'], permissions: ['REVIEW_END_OF_DAY'] },
     ],
     '/equipment': [
         { key: 'equipmentMatrix', to: '/equipment?tab=matrix' },
         { key: 'equipmentRooms', to: '/equipment?tab=rooms' },
+        { key: 'equipmentWorkstations', to: '/equipment?tab=workstations' },
         { key: 'equipmentRegistry', to: '/equipment?tab=registry' },
         { key: 'equipmentProcedures', to: '/equipment?tab=procedures' },
         { key: 'equipmentMaintenance', to: '/equipment?tab=maintenance', roles: ['Admin', 'Technician'] },
@@ -34,6 +36,8 @@ const SUB_NAVIGATION = {
     ],
     '/hr': [
         { key: 'hrDirectory', to: '/hr?tab=directory' },
+        { key: 'hrSupervisors', to: '/hr?tab=supervisors' },
+        { key: 'hrDepartmentSupervisors', to: '/hr?tab=department-supervisors' },
         { key: 'hrShifts', to: '/hr?tab=shifts' },
         { key: 'hrAttendance', to: '/hr?tab=attendance' },
         { key: 'hrLeave', to: '/hr?tab=leave' },
@@ -92,7 +96,7 @@ export const ROUTE_METADATA = {
     '/print/invoice/:id': { roles: ['Admin', 'Receptionist', 'Cashier', 'Accountant'] },
     '/dashboard': { roles: ['Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant', 'HR', 'Technician', 'Nurse', 'Insurance_Staff', 'Marketing'], nav: { key: 'dashboard', iconId: 'LayoutDashboard', category: 'clinical' }, search: true },
     '/help': { roles: ['Developer', 'Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant', 'HR', 'Technician', 'Nurse', 'Insurance_Staff', 'Marketing', 'Referring_Doctor'], nav: { key: 'help', iconId: 'HelpCircle', category: 'system' } },
-    '/admin': { roles: ['Admin'], permissions: ['VIEW_FINANCIALS'], nav: { key: 'analytics', iconId: 'FileBarChart', category: 'management' } },
+    '/admin': { roles: ['Admin'], permissions: ['VIEW_FINANCIALS'], nav: { key: 'executiveRevenue', iconId: 'FileBarChart', category: 'reports' } },
     '/users': { roles: ['Admin', 'HR'], permissions: ['VIEW_USERS'], nav: { key: 'users', iconId: 'Users', category: 'management' }, search: true },
     '/users/:userId': { roles: ['Admin', 'HR', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'Cashier', 'Accountant', 'Insurance_Staff', 'Marketing'] },
     '/user-activity': { roles: ['Admin', 'HR'], permissions: ['VIEW_AUDIT_TRAILS', 'VIEW_AUDIT_LOGS'], nav: { key: 'userActivity', iconId: 'Activity', category: 'management' }, search: true },
@@ -101,14 +105,14 @@ export const ROUTE_METADATA = {
     '/pacs/viewer': { roles: ['Radiologist', 'Technician', 'Admin', 'Nurse'], permissions: ['VIEW_PACS_IMAGES', 'MANAGE_PACS'] },
     '/pacs/reconciliation': { roles: ['Radiologist', 'Technician', 'Admin'], permissions: ['RECONCILE_STUDIES'], nav: { key: 'pacsReconciliation', iconId: 'Monitor', category: 'clinical' } },
     '/settings': { roles: ['Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant', 'HR', 'Technician', 'Nurse', 'Insurance_Staff', 'Marketing'], nav: { key: 'settings', iconId: 'Settings', category: 'system' }, search: [{ key: 'settings', to: '/settings' }, { key: 'roles', to: '/settings?tab=roles' }] },
-    '/profile': { roles: ['Developer', 'Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant', 'HR', 'Technician', 'Nurse', 'Insurance_Staff', 'Marketing'], search: [{ key: 'profile', to: '/profile' }, { key: 'accountSecurity', to: '/profile?section=security' }, { key: 'leave', to: '/profile?section=leave' }] },
+    '/profile': { roles: ['Developer', 'Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant', 'HR', 'Technician', 'Nurse', 'Insurance_Staff', 'Marketing'], search: [{ key: 'profile', to: '/profile' }, { key: 'accountSecurity', to: '/profile?section=security' }, { key: 'leave', to: '/profile?section=leave' }, { key: 'mySupervision', to: '/profile?section=supervision' }] },
     '/notifications': { roles: ['Developer', 'Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant', 'HR', 'Technician', 'Nurse', 'Insurance_Staff', 'Marketing'], nav: { key: 'notifications', iconId: 'Bell', category: 'clinical' } },
     '/approvals': { roles: ['Admin', 'HR', 'Accountant', 'Insurance_Staff', 'Receptionist'], permissions: ['MANAGE_LEAVE', 'APPROVE_PAYROLL', 'APPROVE_REFUNDS', 'MANAGE_INSURANCE_APPROVALS', 'PROCESS_REFUNDS'], nav: { key: 'approvals', iconId: 'ClipboardCheck', category: 'management' } },
     '/analytics': { roles: ['Admin', 'Accountant', 'Marketing'], permissions: ['VIEW_ANALYTICS', 'VIEW_REFERRAL_ANALYTICS'], nav: { key: 'analytics', iconId: 'TrendingUp', category: 'reports' }, search: true },
     '/worklist': { roles: ['Radiologist', 'Technician', 'Nurse', 'Admin'], permissions: ['VIEW_EXAMS'], nav: { key: 'worklist', iconId: 'Activity', category: 'clinical', badge: true }, search: true },
     '/leave': { roles: STAFF_LEAVE_ROLES },
     '/case-reports': { roles: ['Radiologist', 'Admin', 'Receptionist', 'Technician', 'Nurse'], permissions: ['VIEW_REPORTS'], nav: { key: 'caseReports', iconId: 'ClipboardList', category: 'clinical' } },
-    '/cases/:examId': { roles: ['Radiologist', 'Admin', 'Receptionist', 'Technician', 'Nurse'] },
+    '/cases/:examId': { roles: ['Radiologist', 'Admin', 'Receptionist', 'Technician', 'Nurse', 'Accountant'] },
     '/reports/editor/:examId': { roles: ['Radiologist', 'Admin'] },
     '/reception': { roles: ['Receptionist', 'Cashier', 'Admin'], permissions: ['VIEW_APPOINTMENTS', 'VIEW_INVOICES', 'PROCESS_PAYMENTS'], nav: { key: 'reception', iconId: 'Calendar', category: 'clinical' }, search: true },
     '/appointments': { roles: ['Receptionist', 'Admin'], permissions: ['VIEW_APPOINTMENTS'], nav: { key: 'appointments', iconId: 'Users', category: 'clinical', badge: true }, search: true },
@@ -118,7 +122,7 @@ export const ROUTE_METADATA = {
     '/financials': { roles: ['Accountant', 'Admin'], permissions: ['VIEW_FINANCIALS'], nav: { key: 'financials', iconId: 'Package', category: 'management' }, search: true },
     '/payroll': { roles: ['HR', 'Accountant', 'Admin'], permissions: ['VIEW_PAYROLL'], nav: { key: 'payroll', iconId: 'Banknote', category: 'management' } },
     '/insurance': { roles: ['Accountant', 'Admin', 'Receptionist', 'Insurance_Staff'], permissions: ['VIEW_INSURANCE'], nav: { key: 'insurance', iconId: 'ShieldCheck', category: 'management' }, search: true },
-    '/equipment': { roles: ['Admin', 'Receptionist', 'Technician'], permissions: ['VIEW_EQUIPMENT'], nav: { key: 'equipment', iconId: 'Briefcase', category: 'management' }, search: true },
+    '/equipment': { roles: ['Admin', 'Receptionist', 'Technician'], permissions: ['VIEW_EQUIPMENT', 'VIEW_ROOMS'], nav: { key: 'equipment', iconId: 'Briefcase', category: 'management' }, search: true },
     '/hr': { roles: ['HR', 'Admin'], permissions: ['VIEW_STAFF'], nav: { key: 'hr', iconId: 'Users', category: 'management' }, search: true },
     '/marketing': { roles: ['Admin', 'Receptionist', 'HR', 'Marketing'], permissions: ['VIEW_MARKETING', 'VIEW_CRM'], nav: { key: 'marketing', iconId: 'Megaphone', category: 'management' } },
     '/modality': { roles: ['Technician', 'Admin'], permissions: ['VIEW_EXAMS', 'PERFORM_EXAMS'], nav: { key: 'modality', iconId: 'Briefcase', category: 'clinical' }, search: true },
@@ -126,6 +130,7 @@ export const ROUTE_METADATA = {
     '/inventory': { roles: ['Admin', 'Technician'], permissions: ['VIEW_INVENTORY'], nav: { key: 'inventory', iconId: 'Package', category: 'management' }, search: true },
     '/communications': { roles: ['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'HR', 'Marketing'], permissions: ['MANAGE_CHAT'], nav: { key: 'communications', iconId: 'MessageSquare', category: 'clinical' } },
     '/display/control': { roles: ['Admin', 'Receptionist'], permissions: ['MANAGE_DISPLAY_BOARD'], nav: { key: 'displayBoard', iconId: 'Monitor', category: 'system' } },
+    '/end-of-day': { roles: ['Admin', 'Receptionist', 'Developer'], permissions: ['REVIEW_END_OF_DAY'], nav: { key: 'endOfDay', iconId: 'ClipboardCheck', category: 'clinical' } },
 };
 
 export const getRouteMetadata = (path) => ROUTE_METADATA[path] || null;
@@ -172,8 +177,10 @@ export const canAccessRouteTarget = (target, roleOrUser, explicitPermissions) =>
     if (!requestedTab) return true;
 
     if (pathname === '/settings') {
-        const section = requestedTab === 'clinicalOperations' ? 'clinical' : requestedTab;
-        return canAccessSettingsSection(section, targetUser);
+        if (requestedTab === 'clinical' || requestedTab === 'clinicalOperations') {
+            return canAccessRouteTarget('/equipment?tab=rooms', targetUser);
+        }
+        return canAccessSettingsSection(requestedTab, targetUser);
     }
 
     const children = pathname === '/reception' && targetUser.role === 'Cashier'
@@ -231,8 +238,11 @@ export const resolveWorkspaceNavigation = (pathname, search, user) => {
     const children = workspace.children.filter((child) => canAccessNavigationChild(child, user));
     const params = new URLSearchParams(search);
     const requested = params.get('tab');
-    const section = requested === 'clinicalOperations' && pathname === '/settings' ? 'clinical' : requested;
-    const active = children.find((child) => new URLSearchParams(child.to.split('?')[1]).get('tab') === section) || children[0];
+    if (pathname === '/settings' && (requested === 'clinical' || requested === 'clinicalOperations')) {
+        const target = canAccessRouteTarget('/equipment?tab=rooms', user) ? '/equipment?tab=rooms' : '/unauthorized';
+        return { workspace, children, active: null, redirect: target };
+    }
+    const active = children.find((child) => new URLSearchParams(child.to.split('?')[1]).get('tab') === requested) || children[0];
     if (!active) return { workspace, children, active: null, redirect: '/unauthorized' };
     const activeId = new URLSearchParams(active.to.split('?')[1]).get('tab');
     params.set('tab', activeId);

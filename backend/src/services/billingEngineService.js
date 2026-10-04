@@ -106,6 +106,16 @@ const mapInputItem = (item) => {
     };
 };
 
+const applyPrioritySurcharge = (items = [], priorityFeeItem = null) => {
+    const regularItems = items.filter((item) => {
+        const itemType = String(item.itemType || item.item_type || '').toLowerCase();
+        const description = String(item.description || '').trim();
+        return itemType !== 'prioritysurcharge'
+            && !/^(urgent|emergency) priority surcharge$/i.test(description);
+    });
+    return priorityFeeItem ? [...regularItems, priorityFeeItem] : regularItems;
+};
+
 const getDefaultInvoiceSource = async (client, { appointmentId, examId, patientId }) => {
     if (!appointmentId && !examId) {
         if (!patientId) throw new AppError('Patient is required', 400);
@@ -118,7 +128,12 @@ const getDefaultInvoiceSource = async (client, { appointmentId, examId, patientI
     }
 
     const result = await client.query(`
-        SELECT a.appointment_id, a.patient_id, a.payment_amount, e.exam_id,
+         SELECT a.appointment_id, a.patient_id, a.payment_amount, a.payment_method,
+             a.priority, a.priority_fee_amount,
+               (a.start_time AT TIME ZONE COALESCE(NULLIF((
+                   SELECT setting_value FROM system_settings WHERE setting_key = 'center.timezone'
+               ), ''), 'Africa/Cairo'))::date AS service_date,
+               e.exam_id,
                et.type_id as exam_type_id, et.name as exam_type_name, et.price
         FROM appointments a
         LEFT JOIN examinations e ON e.appointment_id = a.appointment_id
@@ -134,6 +149,19 @@ const getDefaultInvoiceSource = async (client, { appointmentId, examId, patientI
 
     const row = result.rows[0];
     const price = Number(row.payment_amount ?? row.price ?? 0);
+    const priorityFeeAmount = moneyNumber(row.priority_fee_amount || 0);
+    const priorityFeeItem = priorityFeeAmount > 0 && ['Urgent', 'Emergency'].includes(row.priority)
+        ? {
+            examId: row.exam_id,
+            description: `${row.priority} priority surcharge`,
+            quantity: 1,
+            unitPrice: priorityFeeAmount,
+            discountAmount: 0,
+            taxAmount: 0,
+            totalAmount: priorityFeeAmount,
+            itemType: 'PrioritySurcharge',
+        }
+        : null;
     const supplyResult = row.exam_id ? await client.query(`
         SELECT sm.item_id,
                i.name,
@@ -164,6 +192,11 @@ const getDefaultInvoiceSource = async (client, { appointmentId, examId, patientI
         patient_id: row.patient_id,
         appointment_id: row.appointment_id,
         exam_id: row.exam_id,
+        priority: row.priority || 'Routine',
+        priorityFeeAmount,
+        priorityFeeItem,
+        expected_payment_method: row.payment_method || null,
+        expected_payment_amount: Number(row.payment_amount ?? price),
         items: [
             ...(price > 0 ? [{
                 examId: row.exam_id,
@@ -214,7 +247,6 @@ const getOpenShiftId = async (client, cashierId, branchId) => {
         WHERE cashier_id = $1 AND branch_id = $2 AND status = 'Open'
         ORDER BY opened_at DESC
         LIMIT 1
-        FOR UPDATE
     `, [cashierId, branchId]);
 
     return result.rows[0]?.shift_id || null;
@@ -366,6 +398,7 @@ module.exports = {
     invoiceAdjustmentEntries,
     withInvoiceCommission,
     mapInputItem,
+    applyPrioritySurcharge,
     getDefaultInvoiceSource,
     resolveInvoiceInsurancePolicy,
     getOpenShiftId,

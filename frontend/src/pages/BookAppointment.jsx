@@ -10,10 +10,8 @@ import {
     AlertCircle,
     AlertTriangle,
     ArrowLeft,
-    ArrowRight,
     Calendar,
     CalendarCheck2,
-    Check,
     CheckCircle2,
     Clock3,
     CreditCard,
@@ -27,18 +25,12 @@ import {
     Info,
     Layers,
     Phone,
-    Printer,
     RotateCcw,
     Search,
-    Shield,
     ShieldAlert,
     ShieldCheck,
     Sparkles,
     Stethoscope,
-    Sun,
-    Sunrise,
-    Sunset,
-    Tag,
     User,
     UserCheck,
     UserPlus,
@@ -60,7 +52,8 @@ import {
     useGetStaffQuery,
     useGetRoomsQuery,
     useGetShiftsQuery,
-    useGetAttendanceQuery
+    useGetAttendanceQuery,
+    useGetEquipmentDowntimeQuery
 } from "../store/api";
 import { getErrorMessage } from "../utils/getErrorMessage";
 import { generateUUID } from '../utils/uuid';
@@ -107,8 +100,8 @@ const PRIORITY_TONES = {
     Emergency: 'border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300 shadow-sm ring-1 ring-rose-400/20 animate-pulse',
 };
 
-const inp = inputClass + " min-h-10 rounded-xl px-3 py-2 text-[13px] font-semibold bg-[var(--VIARA-surface)] border-[var(--VIARA-line)] shadow-sm shadow-slate-950/[0.02] transition-all duration-200 hover:border-[var(--VIARA-line-strong)] focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 disabled:cursor-not-allowed disabled:opacity-55";
-const lbl = "mb-1.5 flex items-center gap-1.5 text-[10px] font-extrabold tracking-[0.08em] text-[var(--VIARA-muted)] uppercase";
+const inp = inputClass + " min-h-10 rounded-xl px-3 py-2 text-[13px] font-semibold bg-[var(--VIARA-surface)] border-[var(--VIARA-line)] shadow-[0_1px_2px_rgba(15,23,42,.025)] transition-all duration-200 hover:border-teal-300/70 focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 disabled:cursor-not-allowed disabled:opacity-55";
+const lbl = "mb-1.5 flex items-center gap-1.5 text-[10.5px] font-extrabold text-[var(--VIARA-muted)]";
 
 const ErrMsg = ({ msg }) =>
     msg ? (
@@ -124,195 +117,34 @@ const Opt = ({ label = 'Optional' }) => (
     </span>
 );
 
-/* ── Brand-consistent Step Palettes ── */
-const STEP_COLORS = {
-    0: {
-        theme: 'teal',
-        accent: 'from-teal-500 to-cyan-500',
-        card: 'border-teal-200/70 bg-[var(--VIARA-surface)] dark:border-teal-900/45',
-        iconBg: 'bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-sm shadow-teal-500/20',
-        button: 'bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white shadow-md shadow-teal-600/15',
-    },
-    1: {
-        theme: 'teal',
-        accent: 'from-teal-500 to-cyan-500',
-        card: 'border-teal-200/70 bg-[var(--VIARA-surface)] dark:border-teal-900/45',
-        iconBg: 'bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-sm shadow-teal-500/20',
-        button: 'bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white shadow-md shadow-teal-600/15',
-    },
-    2: {
-        theme: 'teal',
-        accent: 'from-teal-500 to-cyan-500',
-        card: 'border-teal-200/70 bg-[var(--VIARA-surface)] dark:border-teal-900/45',
-        iconBg: 'bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-sm shadow-teal-500/20',
-        button: 'bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white shadow-md shadow-teal-600/15',
-    },
-    3: {
-        theme: 'emerald',
-        accent: 'from-emerald-500 to-teal-500',
-        card: 'border-emerald-200/70 bg-[var(--VIARA-surface)] dark:border-emerald-900/45',
-        iconBg: 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm shadow-emerald-500/20',
-        button: 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-md shadow-emerald-600/15',
-    }
-};
-
 /* ── Compact Card Wrapper ── */
 const StepCard = ({ children, className = '', highlight = false }) => (
-    <div className={`overflow-hidden rounded-[22px] border bg-[var(--VIARA-surface)] shadow-[0_16px_48px_-28px_rgba(15,23,42,.35)] transition-all duration-300 ${highlight ? 'ring-1 ring-teal-500/25 shadow-[0_22px_60px_-30px_rgba(13,148,136,.35)]' : ''} ${className}`}>
+    <div className={`overflow-hidden rounded-[18px] border border-[var(--VIARA-line)]/90 bg-[var(--VIARA-surface)] shadow-[0_10px_34px_-26px_rgba(15,23,42,.45)] transition-all duration-300 ${highlight ? 'ring-1 ring-teal-500/20 shadow-[0_18px_50px_-30px_rgba(13,148,136,.35)]' : ''} ${className}`}>
         {children}
     </div>
 );
 
 const CardHead = ({ icon: Icon, title, subtitle, stepNumber, right, accentClass = 'from-teal-500 to-cyan-600' }) => (
-    <div className="relative flex items-center justify-between gap-2.5 border-b border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-4 py-3 sm:px-5">
+    <div className="relative flex min-h-[58px] items-center justify-between gap-3 border-b border-[var(--VIARA-line)] bg-gradient-to-r from-[var(--VIARA-surface-muted)]/45 via-[var(--VIARA-surface)] to-[var(--VIARA-surface)] px-4 py-2.5 sm:px-5">
         <div className="flex min-w-0 items-center gap-2.5">
-            <span className={`grid h-8.5 w-8.5 shrink-0 place-items-center rounded-xl bg-gradient-to-br ${accentClass} text-white shadow-sm`}>
+            <span className={`grid h-8.5 w-8.5 shrink-0 place-items-center rounded-[11px] bg-gradient-to-br ${accentClass} text-white shadow-sm`}>
                 <Icon size={16} strokeWidth={2.2} />
             </span>
             <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                     {stepNumber && (
-                        <span className="rounded bg-[var(--VIARA-surface)] px-1.5 py-0.5 text-[9px] font-black text-[var(--VIARA-muted)] border border-[var(--VIARA-line)]">
+                        <span className="rounded-md border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-1.5 py-0.5 text-[9px] font-black text-[var(--VIARA-muted)]">
                             {stepNumber}
                         </span>
                     )}
-                    <h3 className="text-xs sm:text-sm font-black text-[var(--VIARA-ink)] truncate">{title}</h3>
+                    <h3 className="truncate text-[13px] font-black text-[var(--VIARA-ink)] sm:text-sm">{title}</h3>
                 </div>
-                {subtitle && <p className="text-[10px] text-[var(--VIARA-muted)] truncate">{subtitle}</p>}
+                {subtitle && <p className="mt-0.5 truncate text-[10px] font-medium text-[var(--VIARA-muted)]">{subtitle}</p>}
             </div>
         </div>
         {right}
     </div>
 );
-
-/* ── Interactive Stepper Navigator ── */
-const BookingNavigator = ({ active, complete, progress, onSelect, bookingMode = 'express', onToggleMode, t, isRtl }) => {
-    const steps = [
-        {
-            icon: UserRound,
-            title: isRtl ? 'المريض' : t('booking.patient', 'Patient'),
-            hint: isRtl ? 'البحث عن المريض وتحديد تاريخ الزيارة' : t('bookingPage.step1Hint', 'Patient & visit')
-        },
-        {
-            icon: Stethoscope,
-            title: isRtl ? 'الفحص' : t('booking.examination', 'Examination'),
-            hint: isRtl ? 'اختيار غرفة الجهاز ونوع الفحص والأولوية' : t('bookingPage.step2Hint', 'Study & room')
-        },
-        {
-            icon: Clock3,
-            title: isRtl ? 'الموعد والسلامة' : t('bookingPage.detailsStep', 'Time & Safety'),
-            hint: isRtl ? 'تحديد وقت الفحص وإجراءات السلامة والصبغة' : t('bookingPage.step3Hint', 'Slot & clearance')
-        },
-        {
-            icon: CalendarCheck2,
-            title: isRtl ? 'فريق الرعاية والدفع' : t('bookingPage.reviewStep', 'Review'),
-            hint: isRtl ? 'تعيين الأطباء وتأكيد طريقة السداد والملاحظات' : t('bookingPage.step4Hint', 'Team & billing')
-        },
-    ];
-
-    return (
-        <section className="sticky top-2 z-30 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)]/95 p-2.5 shadow-lg shadow-slate-950/5 backdrop-blur-xl sm:p-3">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-3 px-1">
-                <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-teal-600 dark:text-teal-400">
-                            {t('bookingPage.workflow', 'Appointment workflow')}
-                        </p>
-                        {bookingMode === 'express' && (
-                            <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[9px] font-black text-teal-700 dark:text-teal-300">
-                                {isRtl ? 'حجز سريع مفعّل' : 'Express Active'}
-                            </span>
-                        )}
-                    </div>
-                    <p className="truncate text-[10px] font-semibold text-[var(--VIARA-muted)]">
-                        {bookingMode === 'express'
-                            ? (isRtl ? 'كافة البيانات الأساسية في شاشة واحدة — تأكيد الحجز فورياً' : 'All essential fields in one view — instant confirmation')
-                            : t('bookingPage.workflowHint', 'Complete the four sections to confirm the visit')}
-                    </p>
-                </div>
-
-                <div className="flex shrink-0 items-center gap-2.5">
-                    {onToggleMode && (
-                        <div className="inline-flex rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/70 p-0.5 shadow-2xs">
-                            <button
-                                type="button"
-                                onClick={() => onToggleMode('express')}
-                                className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-black transition-all ${bookingMode === 'express'
-                                    ? 'bg-teal-600 text-white shadow-xs'
-                                    : 'text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)]'
-                                    }`}
-                            >
-                                <Sparkles size={12} />
-                                <span>{isRtl ? 'حجز سريع' : t('bookingPage.expressMode', 'Express')}</span>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => onToggleMode('guided')}
-                                className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-black transition-all ${bookingMode === 'guided'
-                                    ? 'bg-teal-600 text-white shadow-xs'
-                                    : 'text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)]'
-                                    }`}
-                            >
-                                <Layers size={12} />
-                                <span>{isRtl ? 'معالج تفصيلي' : t('bookingPage.guidedMode', 'Guided')}</span>
-                            </button>
-                        </div>
-                    )}
-
-                    <div className="flex shrink-0 items-center gap-2">
-                        <span className="text-[10px] font-black tabular-nums text-[var(--VIARA-muted)]">{progress}%</span>
-                        <div
-                            role="progressbar"
-                            aria-label={t('bookingPage.bookingCompletion', 'Booking completion')}
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                            aria-valuenow={progress}
-                            className="h-1.5 w-16 overflow-hidden rounded-full bg-[var(--VIARA-surface-muted)] sm:w-24"
-                        >
-                            <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-[width] duration-500" style={{ width: `${progress}%` }} />
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <nav aria-label={t('bookingPage.bookingSections', 'Booking sections')} className="relative grid grid-cols-4 gap-1.5 sm:gap-2">
-                <span className="pointer-events-none absolute start-[7%] end-[7%] top-[18px] hidden h-px bg-[var(--VIARA-line)] sm:block" />
-                {steps.map(({ icon: Icon, title, hint }, index) => {
-                    const isActive = active === index;
-                    const isComplete = Boolean(complete[index]);
-                    return (
-                        <button
-                            key={title}
-                            type="button"
-                            onClick={() => onSelect(index)}
-                            aria-current={isActive ? 'step' : undefined}
-                            className={`group relative z-10 flex min-w-0 flex-col items-center rounded-xl px-1.5 py-1.5 text-center transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 sm:flex-row sm:text-start ${isActive
-                                ? 'bg-teal-500/10 text-[var(--VIARA-ink)] ring-1 ring-teal-500/20 shadow-xs'
-                                : 'text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface-muted)]/60 hover:text-[var(--VIARA-ink)]'
-                                }`}
-                        >
-                            <span className={`relative grid h-9 w-9 shrink-0 place-items-center rounded-xl border transition-all ${isActive
-                                ? 'border-teal-500 bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-md shadow-teal-500/25 ring-2 ring-teal-500/30'
-                                : isComplete
-                                    ? 'border-emerald-500 bg-emerald-500 text-white shadow-xs'
-                                    : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)]'
-                                }`}>
-                                {isComplete && !isActive ? <Check size={14} strokeWidth={3} /> : <Icon size={15} strokeWidth={isActive ? 2.5 : 2} />}
-                                <span className="absolute -end-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-0.5 text-[8px] font-black text-[var(--VIARA-ink)]">
-                                    {index + 1}
-                                </span>
-                            </span>
-                            <span className="mt-1 min-w-0 sm:ms-2 sm:mt-0">
-                                <span className={`block truncate text-[9.5px] font-black sm:text-[11px] ${isActive ? 'text-teal-800 dark:text-teal-200' : ''}`}>{title}</span>
-                                <span className="hidden truncate text-[8.5px] font-medium text-[var(--VIARA-muted)] md:block">{hint}</span>
-                            </span>
-                        </button>
-                    );
-                })}
-            </nav>
-        </section>
-    );
-};
 
 /* ── Live Slot Status Indicator ── */
 const SlotStatus = ({ isPast, overlap, modalityId, time, machine, t }) => {
@@ -369,11 +201,12 @@ const BookAppointment = () => {
     const [ptSearch, setPtSearch] = useState('');
     const [refMode, setRefMode] = useState('directory');
     const [date, setDate] = useState(initDate);
-    const [bookingMode, setBookingMode] = useState('express');
-    const [activeSection, setActiveSection] = useState(0);
-    const [maxVisitedSection, setMaxVisitedSection] = useState(0);
     const [bookedAppointment, setBookedAppointment] = useState(null);
     const [timePeriodFilter, setTimePeriodFilter] = useState('all');
+    const [showUnavailableSlots, setShowUnavailableSlots] = useState(false);
+    const [patientPickerOpen, setPatientPickerOpen] = useState(false);
+    const [advancedOpen, setAdvancedOpen] = useState(false);
+    const [advancedTab, setAdvancedTab] = useState('safety');
     const [showQuickPatientModal, setShowQuickPatientModal] = useState(false);
     const [quickPtForm, setQuickPtForm] = useState({ firstName: '', lastName: '', phone: '', gender: 'Male', dateOfBirth: '' });
 
@@ -412,7 +245,6 @@ const BookAppointment = () => {
             pregnancySafetyStatus: 'Unknown',
             implantSafetyStatus: 'Unknown',
             renalSafetyStatus: 'Unknown',
-            insuranceApprovalStatus: 'Pending',
             isFollowUp: false,
             priorExamId: '',
             followUpReason: '',
@@ -446,6 +278,7 @@ const BookAppointment = () => {
     const { data: shiftsRes = [] } = useGetShiftsQuery({ startDate: shiftStart, endDate: shiftEnd }, { skip: !date });
     const { data: attRes = [] } = useGetAttendanceQuery({ startDate: date }, { skip: !date });
     const { data: mRes = [] } = useGetMachinesQuery();
+    const { data: downtimeRes = [] } = useGetEquipmentDowntimeQuery(undefined, { pollingInterval: 30000 });
     const { data: eRes = [] } = useGetExamTypesQuery({ modalityId }, { skip: !modalityId });
     const { data: docRes = [] } = useGetReferringDoctorsQuery({ limit: 200 });
     const { data: sRes = [] } = useGetStaffQuery();
@@ -463,6 +296,9 @@ const BookAppointment = () => {
     const dayAttendance = useMemo(() => Array.isArray(attRes) ? attRes : attRes.data || [], [attRes]);
     const machines = useMemo(() => Array.isArray(mRes) ? mRes : mRes.data || [], [mRes]);
     const activeMachines = useMemo(() => machines.filter((m) => m.status === 'Active' || !m.status), [machines]);
+    const activeDowntimes = useMemo(() => {
+        return (Array.isArray(downtimeRes) ? downtimeRes : []).filter(r => r.status !== 'Resolved');
+    }, [downtimeRes]);
     const examTypes = useMemo(() => Array.isArray(eRes) ? eRes : eRes.data || [], [eRes]);
     const docs = useMemo(() => Array.isArray(docRes) ? docRes : docRes.data || [], [docRes]);
     const staff = useMemo(() => Array.isArray(sRes) ? sRes : sRes.data || [], [sRes]);
@@ -569,6 +405,10 @@ const BookAppointment = () => {
 
     const selRoom = useMemo(() => rooms.find((r) => String(r.room_id) === String(roomId) || String(r.room_number) === String(roomId)), [rooms, roomId]);
     const selMachine = useMemo(() => machines.find((m) => m.modality_id === modalityId), [machines, modalityId]);
+    const selectedMachineDowntime = useMemo(() => {
+        if (!modalityId) return null;
+        return activeDowntimes.find((d) => String(d.modality_id) === String(modalityId));
+    }, [activeDowntimes, modalityId]);
     const selExam = useMemo(() => examTypes.find((e) => e.type_id === examTypeId), [examTypes, examTypeId]);
     const selRad = useMemo(() => staff.find((s) => s.user_id === radId), [staff, radId]);
     const selTech = useMemo(() => staff.find((s) => s.user_id === techId), [staff, techId]);
@@ -824,54 +664,43 @@ const BookAppointment = () => {
         return Math.round((completedCount / 4) * 100);
     }, [sectionComplete]);
 
+    const bookingReady = sectionComplete.every(Boolean);
+    const bookingChecklist = useMemo(() => [
+        { key: 'patient', done: Boolean(patientId && date), label: isRtl ? 'المريض والتاريخ' : 'Patient & date', target: 0 },
+        { key: 'exam', done: Boolean(modalityId && examTypeId), label: isRtl ? 'الجهاز والفحص' : 'Device & exam', target: 1 },
+        { key: 'slot', done: Boolean(hasValidSlot), label: isRtl ? 'وقت متاح' : 'Available time', target: 2 },
+        { key: 'payment', done: Boolean(payMethod), label: isRtl ? 'طريقة الدفع' : 'Payment', target: 3 },
+    ], [patientId, date, modalityId, examTypeId, hasValidSlot, payMethod, isRtl]);
+    const missingChecklist = useMemo(() => bookingChecklist.filter((item) => !item.done), [bookingChecklist]);
+
+    const visibleTimeOptions = useMemo(() => {
+        if (showUnavailableSlots) return quickTimeOptions;
+        return quickTimeOptions.filter((option) => option.available || option.value === time);
+    }, [quickTimeOptions, showUnavailableSlots, time]);
+    const availableSlotCount = useMemo(() => quickTimeOptions.filter((option) => option.available).length, [quickTimeOptions]);
+
+    const nextAvailableSlot = useMemo(
+        () => quickTimeOptions.find((option) => option.available) || null,
+        [quickTimeOptions]
+    );
+    const useMachineCards = displayedMachines.length > 0 && displayedMachines.length <= 6;
+    const useExamCards = exTypes.length > 0 && exTypes.length <= 8;
+    const paymentMethods = ['Cash', 'Card', 'Credit Card', 'Insurance', 'Wallet', 'Bank Transfer'];
+
     const selectedExamPrice = selExam?.price ?? null;
     const selectedExamBodyPart = selExam?.body_part || null;
+    const paymentMethodLabel = payMethod === 'Insurance'
+        ? t('booking.insurance', 'Insurance')
+        : t(`billing.methods.${payMethod}`, { defaultValue: payMethod || '—' });
+    const displayDate = useMemo(() => {
+        if (!date) return '—';
+        const parsed = new Date(`${date}T12:00:00`);
+        if (Number.isNaN(parsed.getTime())) return date;
+        return parsed.toLocaleDateString(isRtl ? 'ar-EG' : undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    }, [date, isRtl]);
 
     const goToSection = (index) => {
-        setActiveSection(index);
-        setMaxVisitedSection((prev) => Math.max(prev, index));
-        sectionRefs[index]?.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    };
-
-
-    const advanceToSection = async (target) => {
-        if (bookingMode === 'express') {
-            goToSection(target);
-            return;
-        }
-        const current = activeSection;
-        let valid = true;
-
-        if (current === 0) {
-            if (!patientId) {
-                valid = await trigger(['patientId']);
-                if (!valid) {
-                    toast.error(t('validation.patientRequired', 'Please select a patient'));
-                }
-            } else {
-                clearErrors('patientId');
-                valid = true;
-            }
-            if (!date) {
-                toast.error(t('validation.appointmentDateRequired', 'Choose an appointment date'));
-                valid = false;
-            }
-        } else if (current === 1) {
-            valid = await trigger(['modalityId', 'examTypeId']);
-        } else if (current === 2) {
-            valid = await trigger(['time', 'referringDoctor']);
-            if (!hasValidSlot) {
-                toast.error(overlap
-                    ? t('booking.machineBookedShort', 'Selected slot is already booked')
-                    : isPast
-                        ? t('booking.futureTimeShort', 'Choose a future time')
-                        : t('booking.chooseMachineTime', 'Select an available room and time'));
-                valid = false;
-            }
-        }
-
-        if (!valid) return;
-        goToSection(target);
+        sectionRefs[index]?.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
     };
 
     /* Keyboard shortcut: Ctrl + Enter to submit */
@@ -986,12 +815,14 @@ const BookAppointment = () => {
             if (values.paymentMethod === 'Insurance' && values.insuranceProviderId && createdId) {
                 try {
                     await createInsuranceApproval({
+                        patientId: values.patientId,
                         appointmentId: createdId,
+                        examTypeId: values.examTypeId,
                         providerId: values.insuranceProviderId,
                         approvalNumber: values.insuranceApprovalNumber?.trim() || undefined,
-                        status: values.insuranceApprovalStatus || 'Pending',
-                        coveragePercentage: 100,
-                        patientCopay: 0
+                        // Booking can request authorization, but only an insurance
+                        // reviewer may approve it from the authorization workspace.
+                        requestedAmount: Number(selectedExamPrice ?? values.paymentAmount ?? 0)
                     }).unwrap();
                 } catch (insErr) {
                     toast.error(t('toast.appointmentBookedApprovalFailed', 'Appointment booked, but insurance approval filing failed. Complete it from reception.'), { duration: 8000 });
@@ -1010,60 +841,90 @@ const BookAppointment = () => {
     const errorCount = Object.keys(errors).length;
 
     return (
-        <div className="relative mx-auto max-w-[1440px] space-y-3 pb-28 lg:pb-8" dir={isRtl ? 'rtl' : undefined}>
+        <div className="relative mx-auto max-w-[1500px] space-y-3 pb-28 xl:pb-7" dir={isRtl ? 'rtl' : undefined}>
             <div className="pointer-events-none absolute -top-24 start-1/2 -z-10 h-72 w-[80%] -translate-x-1/2 rounded-full bg-teal-500/[0.05] blur-3xl dark:bg-teal-400/[0.03]" />
 
-            {/* ── Workspace heading ── */}
+            {/* ── Clean page heading: one title, live booking progress strip ── */}
             <PageHeader
                 icon={CalendarCheck2}
                 eyebrow={t('bookingPage.eyebrow', 'Scheduling Workspace')}
                 eyebrowIcon={Sparkles}
                 title={t('bookingPage.title', 'Book Appointment')}
-                description={t('bookingPage.subtitle', 'Create a safe, conflict-free radiology appointment in four guided steps')}
+                description={isRtl
+                    ? 'حجز سريع وآمن مع التحقق التلقائي من التعارض وإظهار التفاصيل عند الحاجة فقط'
+                    : 'Fast, safe scheduling with automatic conflict checks and details only when needed'}
+                metrics={[
+                    {
+                        key: 'progress',
+                        icon: CheckCircle2,
+                        label: t('bookingPage.metricProgress', 'Booking progress'),
+                        value: `${bookingProgress}%`,
+                        tone: bookingReady ? 'emerald' : 'amber',
+                        detail: t('bookingPage.metricProgressDetail', 'Sections completed'),
+                    },
+                    {
+                        key: 'patient',
+                        icon: Users,
+                        label: t('bookingPage.metricPatient', 'Patient'),
+                        value: selPt ? String(selPt.first_name + ' ' + (selPt.last_name || '')).trim() : '—',
+                        tone: 'teal',
+                        detail: selPt?.mrn,
+                    },
+                    {
+                        key: 'room',
+                        icon: DoorOpen,
+                        label: t('bookingPage.metricRoom', 'Room & machine'),
+                        value: selRoom?.room_number || selRoom?.name || '—',
+                        tone: 'teal',
+                        detail: selMachine?.name,
+                    },
+                    {
+                        key: 'exam',
+                        icon: Calendar,
+                        label: t('bookingPage.metricExam', 'Exam'),
+                        value: selExam?.name || '—',
+                        tone: 'teal',
+                        detail: selExam?.duration_minutes ? `${selExam.duration_minutes} min` : undefined,
+                    },
+                    {
+                        key: 'price',
+                        icon: DollarSign,
+                        label: t('bookingPage.metricPrice', 'Price'),
+                        value: selExam?.price != null ? Number(selExam.price).toLocaleString() : '—',
+                        tone: 'teal',
+                    },
+                ]}
+                metricsLabel={t('bookingPage.metricsLabel', 'Booking progress indicators')}
                 actions={
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => navigate(-1)}
-                            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-teal-300 hover:text-teal-700 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
-                        >
-                            <ArrowLeft size={16} className="rtl:rotate-180" />
-                            <span>{t('bookingPage.back', 'Back')}</span>
-                        </button>
-                        <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold text-slate-600 shadow-sm md:flex dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
-                            <CalendarCheck2 size={13} className="text-teal-600" />
-                            <span>{t('bookingPage.shortcutHint', 'Confirm with')}</span>
-                            <kbd className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[9px] font-black text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">Ctrl ↵</kbd>
+                    <button
+                        type="button"
+                        onClick={() => navigate(-1)}
+                        className="inline-flex h-9.5 items-center justify-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 text-xs font-bold text-[var(--VIARA-muted)] shadow-sm transition hover:border-teal-300 hover:bg-teal-50/50 hover:text-teal-700 dark:hover:bg-teal-950/20"
+                    >
+                        <ArrowLeft size={15} className="rtl:rotate-180" />
+                        <span>{isRtl ? 'العودة إلى المواعيد' : t('bookingPage.back', 'Back to appointments')}</span>
+                    </button>
+                }
+            />
+
+            {/* Context banners are shown only when they matter */}
+            {reqWId && (
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-teal-500/[0.07] px-3.5 py-2.5 text-xs text-teal-900 dark:border-teal-800 dark:text-teal-200">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-teal-600 text-white">
+                            <Users size={14} />
+                        </span>
+                        <div className="min-w-0">
+                            <p className="truncate font-black">{t('bookingPage.waitlistLinkedTitle', 'Booking from Waiting List')}</p>
+                            <p className="truncate text-[10.5px] opacity-80">{t('bookingPage.waitlistLinkedHint', 'Confirming this appointment will automatically complete the waitlist entry.')}</p>
                         </div>
                     </div>
-                }
-                metrics={[
-                    { key: 'step1', tone: activeSection === 0 ? 'teal' : 'slate', label: t('bookingPage.step1Title', 'Patient & Date'), value: selPt ? (isRtl ? 'تم التحديد' : 'Selected') : (isRtl ? 'مطلوب' : 'Required') },
-                    { key: 'step2', tone: activeSection === 1 ? 'cyan' : 'slate', label: t('bookingPage.step2Title', 'Exam & Modality'), value: selExam ? (isRtl ? 'تم التحديد' : 'Selected') : (isRtl ? 'مطلوب' : 'Required') },
-                    { key: 'step3', tone: activeSection === 2 ? 'amber' : 'slate', label: t('bookingPage.step3Title', 'Timing & Safety'), value: time || (isRtl ? 'مطلوب' : 'Required') },
-                    { key: 'step4', tone: activeSection === 3 ? 'emerald' : 'slate', label: t('bookingPage.step4Title', 'Care & Payment'), value: selRad ? (isRtl ? 'معيّن' : 'Assigned') : (isRtl ? 'اختياري' : 'Optional') },
-                ]}
-                metricsLabel={t('bookingPage.workflow', 'Booking Stages')}
-            />
+                    <span className="shrink-0 rounded-lg border border-teal-300/40 bg-teal-100/70 px-2 py-0.5 font-mono text-[10px] font-bold text-teal-800 dark:bg-teal-900/60 dark:text-teal-200">WL #{reqWId.slice(0, 8)}</span>
+                </div>
+            )}
 
-            {/* ── Top Compact Stepper Navigation ── */}
-            <BookingNavigator
-                active={activeSection}
-                complete={sectionComplete}
-                progress={bookingProgress}
-                onSelect={goToSection}
-                bookingMode={bookingMode}
-                onToggleMode={setBookingMode}
-                t={t}
-                isRtl={isRtl}
-            />
-
-            {/* Error Notification Alert Banner */}
             {isSubmitted && errorCount > 0 && (
-                <div
-                    role="alert"
-                    className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50/90 p-2.5 text-xs text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200 shadow-sm"
-                >
+                <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50/90 p-3 text-xs text-rose-900 shadow-sm dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200">
                     <AlertCircle size={17} className="mt-0.5 shrink-0 text-rose-600 dark:text-rose-400" />
                     <div>
                         <p className="font-black">{t('bookingPage.incompleteBooking', 'Complete the required booking information')}</p>
@@ -1072,1304 +933,877 @@ const BookAppointment = () => {
                 </div>
             )}
 
-            {/* Waitlist Linking Banner */}
-            {reqWId && (
-                <div className="flex items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-500/10 via-cyan-500/10 to-teal-500/5 p-3 text-xs text-teal-900 dark:border-teal-800 dark:text-teal-200">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-teal-600 text-white shadow-xs">
-                            <Users size={14} />
-                        </span>
-                        <div className="min-w-0">
-                            <p className="font-black truncate">
-                                {t('bookingPage.waitlistLinkedTitle', 'Booking from Waiting List')}
-                            </p>
-                            <p className="text-[11px] text-teal-700/90 dark:text-teal-300/80 truncate">
-                                {t('bookingPage.waitlistLinkedHint', 'Confirming this appointment will automatically complete the waitlist entry.')}
-                            </p>
-                        </div>
-                    </div>
-                    <span className="shrink-0 font-mono text-[10px] font-bold rounded-lg bg-teal-100/80 px-2 py-0.5 text-teal-800 dark:bg-teal-900/60 dark:text-teal-200 border border-teal-300/40">
-                        WL #{reqWId.slice(0, 8)}
-                    </span>
-                </div>
-            )}
-
-            {/* ── Main Form Layout: Active Step on Left, Pinned Summary Card on Right ── */}
             <form
                 id="book-appointment-form"
                 onSubmit={handleSubmit(submit)}
-                className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_380px]"
-                dir={isRtl ? 'rtl' : undefined}
+                className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_330px] 2xl:grid-cols-[minmax(0,1fr)_350px]"
                 noValidate
             >
-                {/* ── LEFT COLUMN ── */}
-                <div className="min-w-0">
-
-                    {/* Quick Confirmation Banner for Express Mode when essential fields are satisfied */}
-                    {bookingMode === 'express' && patientId && modalityId && examTypeId && time && !isPast && !overlap && (
-                        <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-300/80 bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-emerald-500/10 p-3.5 text-xs text-emerald-950 dark:border-emerald-800 dark:text-emerald-100 shadow-sm animate-in fade-in duration-200">
-                            <div className="flex items-center gap-2.5">
-                                <span className="grid h-7 w-7 place-items-center rounded-xl bg-emerald-600 text-white shadow-xs shrink-0">
-                                    <CheckCircle2 size={16} />
-                                </span>
-                                <div>
-                                    <p className="font-black">{t('bookingPage.readyToConfirmNotice', 'Essential booking information complete — ready to confirm appointment')}</p>
-                                    <p className="text-[10.5px] opacity-80">{isRtl ? 'تم تحديد المريض، الجهاز، الفحص والموعد بنجاح. يمكنك التأكيد فوراً.' : 'Patient, modality, exam, and slot selected. You can confirm immediately without visiting further steps.'}</p>
-                                </div>
-                            </div>
-                            <button
-                                type="submit"
-                                form="book-appointment-form"
-                                disabled={isSaving}
-                                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 py-2 text-xs font-black text-white shadow-md shadow-emerald-600/20 hover:brightness-105 active:scale-[.98] transition"
-                            >
-                                <CalendarCheck2 size={14} />
-                                <span>{isSaving ? t('booking.booking', 'Booking...') : t('bookingPage.quickConfirm', 'Confirm Appointment Now')}</span>
-                            </button>
-                        </div>
-                    )}
-
-                    {/* ══════════════════════════════════════════════════
-                        STEP 1: Patient Identity & Visit Date
-                    ══════════════════════════════════════════════════ */}
-                    <div
-                        ref={sectionRefs[0]}
-                        className={bookingMode === 'express' || activeSection === 0 ? "mb-4 block animate-in fade-in-50 duration-200" : "hidden"}
-                    >
-                        <StepCard className={STEP_COLORS[0].card} highlight={activeSection === 0}>
+                {/* ═══════════════════════════════════════════════════════
+                    MAIN WORKSPACE — essential booking flow only
+                ═══════════════════════════════════════════════════════ */}
+                <div className="min-w-0 space-y-3">
+                    {/* 1. Patient + examination essentials */}
+                    <div ref={sectionRefs[0]}>
+                        <StepCard className="border-[var(--VIARA-line)]">
                             <CardHead
                                 icon={UserRound}
-                                stepNumber={isRtl ? '١ / ٤' : '1 of 4'}
-                                title={t('bookingPage.step1Title', 'Patient & Visit Date')}
-                                subtitle={t('bookingPage.step1Hint', 'Find patient and choose visit date')}
-                                accentClass={STEP_COLORS[0].accent}
+                                title={isRtl ? 'بيانات الحجز الأساسية' : 'Booking essentials'}
+                                subtitle={isRtl ? 'المريض، التاريخ، الجهاز والفحص في مكان واحد' : 'Patient, date, modality and exam in one place'}
+                                accentClass="from-teal-500 to-cyan-600"
                                 right={
-                                    <div className="flex items-center gap-1.5">
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowQuickPatientModal(true)}
-                                            className="inline-flex items-center gap-1 rounded-lg border border-teal-300 bg-teal-50 px-2 py-0.5 text-[9.5px] font-black text-teal-800 hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-950/50 dark:text-teal-300 transition"
-                                        >
-                                            <UserPlus size={11} />
-                                            <span>{t('bookingPage.newPatient', '+ New Patient')}</span>
-                                        </button>
-                                        {selPt ? (
-                                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-500/15 border border-teal-300/60 dark:border-teal-700/60 px-2 py-0.5 text-[9.5px] font-black text-teal-800 dark:text-teal-200">
-                                                <UserCheck size={11} />
-                                                {t('booking.patientSelected', 'Selected')}
-                                            </span>
-                                        ) : (
-                                            <span className="rounded-full bg-amber-500/15 border border-amber-300/60 dark:border-amber-700/60 px-2 py-0.5 text-[9.5px] font-black text-amber-800 dark:text-amber-300">
-                                                {t('validation.patientRequired', 'Required')}
-                                            </span>
-                                        )}
-                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowQuickPatientModal(true)}
+                                        className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-teal-300/80 bg-teal-50 px-2.5 text-[10.5px] font-black text-teal-800 transition hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300"
+                                    >
+                                        <UserPlus size={12} />
+                                        <span>{isRtl ? 'مريض جديد' : t('bookingPage.newPatient', 'New Patient')}</span>
+                                    </button>
                                 }
                             />
 
-                            <div className="space-y-3.5 p-3.5 sm:p-4">
-                                {/* Search & Select Patient Combined Control */}
-                                <div>
-                                    <label htmlFor="patient-search" className={lbl}>
-                                        <Search size={11} className="text-teal-600 dark:text-teal-400" />
-                                        {t('bookingPage.searchPatient', 'Search patient')}
-                                    </label>
-                                    <div className="overflow-hidden rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-inner transition-all focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-500/20">
-                                        <div className="flex min-h-9 items-center gap-2 border-b border-[var(--VIARA-line)] px-2.5 py-1 bg-[var(--VIARA-surface-muted)]/30">
-                                            <Search size={14} className="shrink-0 text-teal-600 dark:text-teal-400" />
-                                            <input
-                                                id="patient-search"
-                                                value={ptSearch}
-                                                onChange={(e) => setPtSearch(e.target.value)}
-                                                aria-label={t('bookingPage.searchPatient', 'Search patient')}
-                                                aria-controls="patient-select"
-                                                aria-autocomplete="list"
-                                                placeholder={t('bookingPage.searchPlaceholder', 'Name, MRN or phone')}
-                                                className="min-w-0 flex-1 bg-transparent py-0.5 text-xs font-semibold text-[var(--VIARA-ink)] outline-none placeholder:text-[var(--VIARA-muted)]"
-                                                autoComplete="off"
-                                            />
-                                            {ptSearch && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setPtSearch('')}
-                                                    aria-label="Clear search"
-                                                    className="shrink-0 rounded-lg bg-teal-500/10 px-2 py-0.5 text-[10px] font-black text-teal-700 hover:bg-teal-500/20 dark:text-teal-300 transition"
-                                                >
-                                                    {isRtl ? 'مسح' : t('bookingPage.clearSearch', 'Clear')}
-                                                </button>
-                                            )}
-                                            <span
-                                                className="inline-flex shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-600 dark:text-slate-300"
-                                                aria-live="polite"
-                                                title={isRtl ? 'عدد المرضى المتاحين' : 'Available patients'}
-                                            >
-                                                {ptSearch.trim()
-                                                    ? `${ptOpts.length}/${resolvedPatients.length}`
-                                                    : `${resolvedPatients.length}`}
-                                            </span>
-                                        </div>
+                            <div className="space-y-4 p-3.5 sm:p-4">
+                                <input type="hidden" {...register('patientId', { required: t('validation.patientRequired', 'Please select a patient') })} />
 
-                                        <select
-                                            id="patient-select"
-                                            aria-label={t('bookingPage.selectedPatientLabel', 'Selected Patient')}
-                                            value={patientId || ''}
-                                            disabled={ptLoading}
-                                            onChange={(e) => {
-                                                const val = e.target.value;
-                                                setValue('patientId', val, { shouldValidate: true, shouldDirty: true });
-                                                if (val) {
-                                                    clearErrors('patientId');
-                                                }
-                                            }}
-                                            className="min-h-9 w-full bg-transparent px-2.5 py-1.5 text-xs font-bold text-[var(--VIARA-ink)] outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-                                        >
-                                            <option value="">
-                                                {ptLoading
-                                                    ? t('bookingPage.loadingPatients', 'Loading...')
-                                                    : !resolvedPatients.length
-                                                        ? t('bookingPage.noPatientsFound', 'No patients found')
-                                                        : ptSearch.trim() && !ptOpts.length
-                                                            ? `${t('bookingPage.noMatchesFor', 'No matches for')} "${ptSearch.trim()}"`
-                                                            : t('booking.noPatientSelected', 'Select patient...')}
-                                            </option>
-                                            {ptOpts.map((p) => (
-                                                <option
-                                                    key={p.patient_id}
-                                                    value={p.patient_id}
-                                                >
-                                                    {p.first_name} {p.last_name} — {p.mrn}{p.phone ? ` — ${p.phone}` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
+                                {/* Smart patient picker: search first, no duplicated select field */}
+                                <div
+                                    className="relative"
+                                    onBlur={() => window.setTimeout(() => setPatientPickerOpen(false), 120)}
+                                >
+                                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                                        <label htmlFor="patient-search" className={lbl}>
+                                            <Search size={11} className="text-teal-600" />
+                                            {t('bookingPage.searchPatient', 'Search patient')} *
+                                        </label>
+                                        {!selPt && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[9px] font-black text-amber-700 dark:text-amber-300">{isRtl ? 'مطلوب' : 'Required'}</span>}
                                     </div>
-                                    {!patientId && <ErrMsg msg={errors.patientId?.message} />}
-                                </div>
 
-                                {/* Active Patient Visual Card */}
-                                {selPt && (
-                                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-teal-200/90 bg-gradient-to-r from-teal-500/10 via-emerald-500/10 to-teal-500/5 p-2.5 dark:border-teal-800/60 dark:from-teal-950/40 dark:to-emerald-950/30 animate-in fade-in duration-150">
-                                        <div className="flex min-w-0 items-center gap-2">
-                                            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white font-black text-[11px] shadow-sm">
-                                                {selPt.first_name?.[0] || 'P'}
-                                            </div>
-                                            <div className="min-w-0">
-                                                <h4 className="text-xs font-black text-[var(--VIARA-ink)] truncate">
-                                                    {selPt.first_name} {selPt.last_name}
-                                                </h4>
-                                                <div className="flex flex-wrap items-center gap-1.5 text-[10.5px] font-semibold text-teal-800 dark:text-teal-300">
-                                                    <span className="rounded bg-white/70 dark:bg-slate-900/60 px-1 py-0.2 font-mono text-[9.5px] font-bold border border-teal-200/50 dark:border-teal-800/50">
-                                                        {selPt.mrn}
-                                                    </span>
-                                                    {selPt.phone && (
-                                                        <span className="inline-flex items-center gap-0.5 opacity-90">
-                                                            <Phone size={9.5} /> {selPt.phone}
-                                                        </span>
-                                                    )}
+                                    {selPt && !patientPickerOpen ? (
+                                        <div className="flex min-h-[58px] flex-wrap items-center justify-between gap-2 rounded-xl border border-teal-200/80 bg-gradient-to-r from-teal-500/[0.07] via-[var(--VIARA-surface)] to-emerald-500/[0.04] px-3 py-2 dark:border-teal-900/60">
+                                            <div className="flex min-w-0 items-center gap-2.5">
+                                                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-gradient-to-br from-teal-500 to-emerald-600 text-xs font-black text-white shadow-sm">
+                                                    {selPt.first_name?.[0] || 'P'}
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <p className="truncate text-[12px] font-black text-[var(--VIARA-ink)]">{selPt.first_name} {selPt.last_name}</p>
+                                                        <span className="rounded-md border border-teal-200/60 bg-white/70 px-1.5 py-0.5 font-mono text-[9px] font-bold text-teal-700 dark:border-teal-900/60 dark:bg-slate-900/50 dark:text-teal-300">{selPt.mrn || '—'}</span>
+                                                    </div>
+                                                    {selPt.phone && <p className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--VIARA-muted)]"><Phone size={9.5} />{selPt.phone}</p>}
                                                 </div>
                                             </div>
-                                        </div>
 
-                                        <div className="flex items-center gap-2">
-                                            {/* Follow-up toggle */}
-                                            <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded-xl border border-teal-200/80 bg-white/95 px-2.5 py-1 text-xs shadow-2xs hover:border-teal-400 dark:border-teal-800 dark:bg-slate-900 transition">
+                                            <div className="flex items-center gap-1.5">
+                                                <label className="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2 text-[10px] font-bold text-[var(--VIARA-ink)]">
+                                                    <input type="checkbox" {...register('isFollowUp')} className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+                                                    <RotateCcw size={10.5} className="text-teal-600" />
+                                                    <span>{isRtl ? 'متابعة' : t('bookingPage.followUp', 'Follow-up')}</span>
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setPtSearch('');
+                                                        setPatientPickerOpen(true);
+                                                    }}
+                                                    className="min-h-8 rounded-lg border border-teal-200 bg-teal-50 px-2.5 text-[10px] font-black text-teal-700 transition hover:bg-teal-100 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-300"
+                                                >
+                                                    {isRtl ? 'تغيير' : 'Change'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 shadow-sm transition focus-within:border-teal-500 focus-within:ring-4 focus-within:ring-teal-500/10">
+                                                <Search size={15} className="shrink-0 text-teal-600" />
                                                 <input
-                                                    type="checkbox"
-                                                    aria-label={isRtl ? 'موعد متابعة' : t('bookingPage.followUp', 'Follow-up appointment')}
-                                                    {...register('isFollowUp')}
-                                                    className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                                    id="patient-search"
+                                                    value={ptSearch}
+                                                    onFocus={() => setPatientPickerOpen(true)}
+                                                    onChange={(e) => {
+                                                        setPtSearch(e.target.value);
+                                                        setPatientPickerOpen(true);
+                                                    }}
+                                                    placeholder={isRtl ? 'اكتب الاسم أو الرقم الطبي أو رقم الهاتف...' : t('bookingPage.searchPlaceholder', 'Name, MRN or phone')}
+                                                    className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-[var(--VIARA-ink)] outline-none placeholder:text-[var(--VIARA-muted)]"
+                                                    autoComplete="off"
                                                 />
-                                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
-                                                    {isRtl ? 'موعد متابعة' : t('bookingPage.followUp', 'Follow-up appointment')}
-                                                </span>
-                                            </label>
+                                                {ptSearch && (
+                                                    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPtSearch('')} className="grid h-7 w-7 place-items-center rounded-lg text-[var(--VIARA-muted)] transition hover:bg-[var(--VIARA-surface-muted)] hover:text-[var(--VIARA-ink)]">
+                                                        <X size={13} />
+                                                    </button>
+                                                )}
+                                                <span className="shrink-0 rounded-lg bg-[var(--VIARA-surface-muted)] px-2 py-1 text-[9px] font-black tabular-nums text-[var(--VIARA-muted)]">{ptOpts.length}</span>
+                                            </div>
 
-                                            {/* Change patient button */}
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setValue('patientId', '', { shouldValidate: true, shouldDirty: true });
-                                                    setPtSearch('');
-                                                }}
-                                                className="inline-flex min-h-8 items-center justify-center rounded-xl border border-teal-300/80 bg-white px-3 py-1 text-xs font-black text-teal-700 hover:bg-teal-50 dark:border-teal-700 dark:bg-slate-900 dark:text-teal-300 transition shadow-2xs active:scale-95"
-                                            >
-                                                {isRtl ? 'تغيير المريض' : t('bookingPage.changePatient', 'Change')}
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
+                                            {patientPickerOpen && (
+                                                <div className="absolute inset-x-0 top-full z-30 mt-1.5 overflow-hidden rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-[0_18px_45px_-18px_rgba(15,23,42,.45)]">
+                                                    <div className="flex items-center justify-between border-b border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/45 px-3 py-2 text-[9.5px] font-bold text-[var(--VIARA-muted)]">
+                                                        <span>{ptSearch.trim() ? (isRtl ? 'نتائج البحث' : 'Search results') : (isRtl ? 'المرضى المتاحون' : 'Available patients')}</span>
+                                                        <span>{Math.min(ptOpts.length, 8)} / {ptOpts.length}</span>
+                                                    </div>
+                                                    <div className="max-h-72 overflow-y-auto p-1.5">
+                                                        {ptLoading ? (
+                                                            <div className="p-4 text-center text-xs font-semibold text-[var(--VIARA-muted)]">{t('bookingPage.loadingPatients', 'Loading...')}</div>
+                                                        ) : ptOpts.length ? (
+                                                            ptOpts.slice(0, 8).map((p) => (
+                                                                <button
+                                                                    key={p.patient_id}
+                                                                    type="button"
+                                                                    onMouseDown={(e) => e.preventDefault()}
+                                                                    onClick={() => {
+                                                                        setValue('patientId', p.patient_id, { shouldValidate: true, shouldDirty: true });
+                                                                        clearErrors('patientId');
+                                                                        setPtSearch('');
+                                                                        setPatientPickerOpen(false);
+                                                                    }}
+                                                                    className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-start transition hover:bg-teal-500/[0.07] focus:bg-teal-500/[0.07]"
+                                                                >
+                                                                    <div className="min-w-0">
+                                                                        <p className="truncate text-[11.5px] font-black text-[var(--VIARA-ink)]">{p.first_name} {p.last_name}</p>
+                                                                        <p className="mt-0.5 truncate text-[9.5px] font-semibold text-[var(--VIARA-muted)]">
+                                                                            <span className="font-mono text-teal-700 dark:text-teal-300">{p.mrn || '—'}</span>{p.phone ? ` · ${p.phone}` : ''}
+                                                                        </p>
+                                                                    </div>
+                                                                    <UserCheck size={13} className="shrink-0 text-teal-600" />
+                                                                </button>
+                                                            ))
+                                                        ) : (
+                                                            <div className="p-4 text-center">
+                                                                <p className="text-xs font-black text-[var(--VIARA-ink)]">{isRtl ? 'لا توجد نتائج مطابقة' : t('bookingPage.noPatientsFound', 'No patients found')}</p>
+                                                                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setShowQuickPatientModal(true)} className="mt-2 text-[10px] font-black text-teal-700 hover:underline dark:text-teal-300">{isRtl ? 'تسجيل مريض جديد' : 'Register new patient'}</button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                    <ErrMsg msg={errors.patientId?.message} />
+                                </div>
 
-                                {/* Follow-up Prior Study Selector */}
                                 {selPt && isFollowUp && (
-                                    <div className="rounded-xl border border-sky-200/90 bg-sky-50/60 p-2.5 dark:border-sky-800/60 dark:bg-sky-950/30 space-y-2">
-                                        <div className="flex items-center gap-1.5 text-xs font-black text-sky-900 dark:text-sky-200">
-                                            <RotateCcw size={13} className="text-sky-600" />
-                                            <span>{t('bookingPage.priorStudy', 'Prior study')}</span>
-                                        </div>
-                                        <select
-                                            id="priorExamId"
-                                            aria-label="Prior study"
-                                            {...register('priorExamId', {
-                                                required: isFollowUp ? t('bookingPage.priorExamRequired', 'Select the prior examination.') : false
-                                            })}
-                                            disabled={histLoad || !priorExams.length}
-                                            className={inp}
-                                        >
-                                            <option value="">
-                                                {histLoad
-                                                    ? t('bookingPage.loadingHistory', 'Loading...')
-                                                    : priorExams.length
-                                                        ? t('bookingPage.selectPriorStudy', 'Select prior study')
-                                                        : t('bookingPage.noPriorStudies', 'No eligible studies')}
-                                            </option>
-                                            {priorExams.map((e) => (
-                                                <option key={e.exam_id} value={e.exam_id}>
-                                                    {new Date(e.start_time).toLocaleDateString()} — {e.exam_type_name || e.machine_name || 'Exam'} — {e.order_number || e.exam_id}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <ErrMsg msg={errors.priorExamId?.message} />
-
+                                    <div className="grid gap-2 rounded-xl border border-sky-200/80 bg-sky-50/55 p-3 dark:border-sky-900/60 dark:bg-sky-950/20 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.8fr)]">
                                         <div>
-                                            <label htmlFor="followUpReason" className={lbl}>
-                                                {t('bookingPage.followUpReason', 'Reason for Follow-up')}
-                                            </label>
-                                            <input
-                                                id="followUpReason"
-                                                {...register('followUpReason')}
-                                                placeholder={t('bookingPage.followUpReasonHint', 'e.g. Post-therapy evaluation or comparative re-scan')}
+                                            <label htmlFor="prior-exam-id" className={lbl}>{t('bookingPage.priorStudy', 'Prior study')} *</label>
+                                            <select
+                                                id="prior-exam-id"
+                                                {...register('priorExamId', { required: isFollowUp ? t('bookingPage.priorExamRequired', 'Select the prior examination.') : false })}
+                                                disabled={histLoad || !priorExams.length}
                                                 className={inp}
-                                            />
+                                            >
+                                                <option value="">{histLoad ? t('bookingPage.loadingHistory', 'Loading...') : priorExams.length ? t('bookingPage.selectPriorStudy', 'Select prior study') : t('bookingPage.noPriorStudies', 'No eligible studies')}</option>
+                                                {priorExams.map((e) => (
+                                                    <option key={e.exam_id} value={e.exam_id}>
+                                                        {new Date(e.start_time).toLocaleDateString()} — {e.exam_type_name || e.machine_name || 'Exam'}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <ErrMsg msg={errors.priorExamId?.message} />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="follow-up-reason" className={lbl}>{t('bookingPage.followUpReason', 'Reason for Follow-up')}</label>
+                                            <input id="follow-up-reason" {...register('followUpReason')} placeholder={t('bookingPage.followUpReasonHint', 'Reason for follow-up')} className={inp} />
                                         </div>
                                     </div>
                                 )}
 
-                                {/* Date Selector with Quick Preset Pills */}
-                                <div>
-                                    <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
-                                        <label htmlFor="appointment-date" className={lbl}>
-                                            <Calendar size={11} className="text-teal-600 dark:text-teal-400" />
-                                            {t('booking.appointmentDate', 'Date')}
-                                        </label>
-                                        <div className="flex flex-wrap items-center gap-1">
-                                            {[
-                                                { label: t('bookingPage.today', 'Today'), value: dateAfter(0) },
-                                                { label: t('bookingPage.tomorrow', 'Tomorrow'), value: dateAfter(1) },
-                                                { label: t('bookingPage.inTwoDays', '+2 Days'), value: dateAfter(2) },
-                                                { label: t('bookingPage.inOneWeek', '+1 Week'), value: dateAfter(7) },
-                                            ].map((item) => (
-                                                <button
-                                                    key={item.value}
-                                                    type="button"
-                                                    onClick={() => setDate(item.value)}
-                                                    className={`rounded-lg px-2 py-0.5 text-[10.5px] font-black transition ${date === item.value
-                                                        ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-sm'
-                                                        : 'bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)] hover:bg-[var(--VIARA-surface)] border border-[var(--VIARA-line)]'
-                                                        }`}
-                                                >
-                                                    {item.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <input
-                                        id="appointment-date"
-                                        type="date"
-                                        min={toDateInput()}
-                                        value={date}
-                                        onChange={(e) => setDate(e.target.value)}
-                                        className={inp}
-                                    />
-                                </div>
-
-                                {/* Step Navigation Action Footer */}
-                                <div className="flex items-center justify-between border-t border-[var(--VIARA-line)] pt-2.5">
-                                    <span className="text-[10px] font-semibold text-[var(--VIARA-muted)]">
-                                        {t('bookingPage.stepProgress1', 'Step 1 of 4')}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => advanceToSection(1)}
-                                        className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl px-3.5 text-xs font-black transition-all ${STEP_COLORS[0].button} active:scale-[.98]`}
-                                    >
-                                        <span>{t('bookingPage.nextExam', 'Next: Examination')}</span>
-                                        <ArrowRight size={13} className="rtl:rotate-180" />
-                                    </button>
-                                </div>
-                            </div>
-                        </StepCard>
-                    </div>
-
-                    {/* ══════════════════════════════════════════════════
-                        STEP 2: Modality Room, Exam Type & Priority
-                    ══════════════════════════════════════════════════ */}
-                    <div
-                        ref={sectionRefs[1]}
-                        className={bookingMode === 'express' || activeSection === 1 ? "mb-4 block animate-in fade-in-50 duration-200" : "hidden"}
-                    >
-                        <StepCard className={STEP_COLORS[1].card} highlight={activeSection === 1}>
-                            <CardHead
-                                icon={Stethoscope}
-                                stepNumber={isRtl ? '٢ / ٤' : '2 of 4'}
-                                title={t('bookingPage.step2Title', 'Exam & Modality Room')}
-                                subtitle={t('bookingPage.step2Hint', 'Select room, study type and priority')}
-                                accentClass={STEP_COLORS[1].accent}
-                                right={
-                                    selExam ? (
-                                        <span className="rounded-full bg-violet-500/15 border border-violet-300/60 dark:border-violet-700/60 px-2 py-0.5 text-[9.5px] font-black text-violet-800 dark:text-violet-200">
-                                            ⏱ {duration} {t('bookingPage.minutesShort', 'min')}
-                                        </span>
-                                    ) : null
-                                }
-                            />
-
-                            <div className="space-y-3.5 p-3.5 sm:p-4">
-                                {/* Optional Reception Workstation Filter Notice */}
-                                {workstationConfig.hasScopeFilter && (
-                                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-teal-200/80 bg-gradient-to-r from-teal-500/10 via-cyan-500/10 to-transparent p-2.5 text-xs dark:border-teal-800/60 dark:from-teal-950/30">
-                                        <div className="flex items-center gap-2">
-                                            <span className="grid h-6 w-6 place-items-center rounded-lg bg-teal-600 text-white text-xs shadow-sm">
-                                                🖥️
-                                            </span>
-                                            <div>
-                                                <span className="font-black text-teal-900 dark:text-teal-200">
-                                                    {isRtl ? 'حسب تهيئة الاستقبال النشطة:' : 'Active Reception Desk Filter:'} {workstationConfig.desk || (isRtl ? 'شباك مخصص' : 'Custom Workstation')}
-                                                </span>
-                                                <span className="ms-1.5 text-[10px] text-teal-700 dark:text-teal-300 font-semibold">
-                                                    {applyWorkstationScope ? (isRtl ? '(تمت تصفية الغرف والأجهزة تلقائياً)' : '(Filtered by desk scope)') : (isRtl ? '(عرض الكل)' : '(Showing all)')}
-                                                </span>
+                                <div className="border-t border-[var(--VIARA-line)] pt-4" ref={sectionRefs[1]}>
+                                    <div className="grid gap-3 lg:grid-cols-[210px_minmax(0,1fr)] lg:items-start">
+                                        {/* Date stays compact and always visible */}
+                                        <div className="rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/20 p-2.5">
+                                            <label htmlFor="appointment-date" className={lbl}>
+                                                <Calendar size={11} className="text-teal-600" />
+                                                {t('booking.appointmentDate', 'Date')} *
+                                            </label>
+                                            <input id="appointment-date" type="date" min={toDateInput()} value={date} onChange={(e) => setDate(e.target.value)} className={inp} />
+                                            <div className="mt-1.5 grid grid-cols-3 gap-1">
+                                                {[
+                                                    { label: t('bookingPage.today', 'Today'), value: dateAfter(0) },
+                                                    { label: t('bookingPage.tomorrow', 'Tomorrow'), value: dateAfter(1) },
+                                                    { label: t('bookingPage.inTwoDays', '+2 Days'), value: dateAfter(2) },
+                                                ].map((item) => (
+                                                    <button key={item.value} type="button" onClick={() => setDate(item.value)} className={`min-h-7 rounded-lg border px-1.5 text-[9px] font-black transition ${date === item.value ? 'border-teal-600 bg-teal-600 text-white shadow-sm' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] hover:border-teal-300 hover:text-teal-700'}`}>
+                                                        {item.label}
+                                                    </button>
+                                                ))}
                                             </div>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => setApplyWorkstationScope(!applyWorkstationScope)}
-                                            className="rounded-lg border border-teal-300/80 bg-[var(--VIARA-surface)] px-2.5 py-1 text-[10.5px] font-black text-teal-800 hover:bg-teal-50 dark:border-teal-700 dark:text-teal-200 shadow-xs"
-                                        >
-                                            {applyWorkstationScope ? (isRtl ? 'عرض كل الغرف والأجهزة' : 'Show All Rooms & Devices') : (isRtl ? 'إعادة تطبيق تصفية الشباك' : 'Reapply Desk Filter')}
-                                        </button>
-                                    </div>
-                                )}
 
-                                {/* Modality Room + Machine + Exam Type Selectors */}
-                                <div className="grid gap-2.5 sm:grid-cols-3">
-                                    {/* 1. Room Selector */}
-                                    <div>
-                                        <label className={lbl} htmlFor="appointment-room-select">
-                                            <DoorOpen size={11} className="text-violet-600 dark:text-violet-400" />
-                                            {isRtl ? 'الغرفة / الجناح' : 'Clinical Room'}
-                                        </label>
-                                        <select
-                                            id="appointment-room-select"
-                                            aria-label={isRtl ? 'الغرفة / الجناح' : 'Clinical Room'}
-                                            {...register('roomId')}
-                                            value={roomId || ''}
-                                            onChange={(e) => {
-                                                const newRoomId = e.target.value;
-                                                setValue('roomId', newRoomId, { shouldDirty: true });
-                                                if (newRoomId) {
-                                                    const machinesInNewRoom = activeMachines.filter(m => String(m.room_id) === String(newRoomId));
-                                                    if (machinesInNewRoom.length === 1) {
-                                                        setValue('modalityId', machinesInNewRoom[0].modality_id, { shouldDirty: true, shouldValidate: true });
-                                                    } else if (modalityId && !machinesInNewRoom.some(m => String(m.modality_id) === String(modalityId))) {
-                                                        setValue('modalityId', '', { shouldDirty: true });
-                                                        setValue('examTypeId', '', { shouldDirty: true });
-                                                    }
-                                                }
-                                            }}
-                                            className={inp}
-                                        >
-                                            <option value="">{isRtl ? 'جميع الغرف / تلقائي حسب الجهاز' : 'All Rooms / Auto from Device'}</option>
-                                            {displayedRooms.map((r) => (
-                                                <option key={r.room_id || r.id} value={r.room_id || r.id}>
-                                                    {r.room_number ? `${isRtl ? 'غرفة' : 'Room'} ${r.room_number}` : ''} {r.name ? `— ${r.name}` : ''} {r.floor ? `(${r.floor})` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    {/* 2. Modality / Device Selector */}
-                                    <div>
-                                        <label className={lbl} htmlFor="appointment-modality-select">
-                                            <Layers size={11} className="text-violet-600 dark:text-violet-400" />
-                                            {t('booking.machine', 'Modality / Device')} *
-                                        </label>
-                                        <select
-                                            id="appointment-modality-select"
-                                            aria-label={t('booking.machine', 'Modality / Device')}
-                                            {...register('modalityId', { required: t('validation.machineRequired') })}
-                                            value={modalityId || ''}
-                                            onChange={(e) => {
-                                                const newMId = e.target.value;
-                                                setValue('modalityId', newMId, { shouldDirty: true, shouldValidate: true });
-                                                setValue('examTypeId', '', { shouldDirty: true });
-                                                const chosenMachine = activeMachines.find(m => String(m.modality_id) === String(newMId));
-                                                if (chosenMachine?.room_id) {
-                                                    setValue('roomId', chosenMachine.room_id, { shouldDirty: true });
-                                                }
-                                            }}
-                                            className={inp}
-                                        >
-                                            <option value="">{t('booking.selectMachine', 'Select device...')}</option>
-                                            {displayedMachines.map((m) => (
-                                                <option key={m.modality_id} value={m.modality_id}>
-                                                    {m.name} {m.room_number || m.room_name ? `(${isRtl ? 'غرفة' : 'Room'} ${m.room_number || m.room_name})` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <ErrMsg msg={errors.modalityId?.message} />
-                                    </div>
-
-                                    {/* 3. Exam Type Selector */}
-                                    <div>
-                                        <label className={lbl} htmlFor="appointment-exam-select">
-                                            <Stethoscope size={11} className="text-violet-600 dark:text-violet-400" />
-                                            {t('booking.examination', 'Exam Type')} *
-                                        </label>
-                                        <select
-                                            id="appointment-exam-select"
-                                            aria-label={t('booking.examination', 'Exam Type')}
-                                            {...register('examTypeId', { required: t('validation.examRequired') })}
-                                            disabled={!modalityId}
-                                            className={inp}
-                                        >
-                                            <option value="">
-                                                {modalityId
-                                                    ? t('booking.selectExam', 'Select type...')
-                                                    : (isRtl ? 'اختر الجهاز أولاً' : 'Select device first')}
-                                            </option>
-                                            {exTypes.map((e) => (
-                                                <option key={e.type_id} value={e.type_id}>
-                                                    {e.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <ErrMsg msg={errors.examTypeId?.message} />
-                                    </div>
-                                </div>
-
-                                {/* Rich Selected Exam Preview Grid */}
-                                {selExam && (
-                                    <div className="rounded-xl border border-violet-200/90 bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-indigo-500/5 p-2.5 dark:border-violet-800/60 dark:from-violet-950/40 dark:to-indigo-950/30">
-                                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                            {[
-                                                { label: t('bookingPage.selectedStudy', 'Selected study'), val: selExam.name, tone: 'text-violet-700 dark:text-violet-300' },
-                                                { label: t('booking.duration', 'Duration'), val: `${duration} ${t('bookingPage.minutesShort', 'min')}`, tone: 'text-sky-700 dark:text-sky-300' },
-                                                { label: t('bookingPage.bodyPart', 'Body part'), val: selectedExamBodyPart || '—', tone: 'text-emerald-700 dark:text-emerald-300' },
-                                                {
-                                                    label: t('bookingPage.estimatedPrice', 'Estimated price'),
-                                                    val: selectedExamPrice != null ? `${Number(selectedExamPrice).toLocaleString(isRtl ? 'ar-EG' : 'en-US')} ${t('bookingPage.currency', 'EGP')}` : '—',
-                                                    tone: 'text-amber-700 dark:text-amber-300'
-                                                },
-                                            ].map(({ label, val, tone }) => (
-                                                <div key={label} className="rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)]/80 p-1.5 backdrop-blur-sm">
-                                                    <p className="text-[8.5px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{label}</p>
-                                                    <p className={`mt-0.5 text-[10.5px] font-black truncate ${tone}`}>{val}</p>
+                                        <div className="space-y-3">
+                                            {/* Device selection: card chooser for small inventories, select fallback for larger centres */}
+                                            <div>
+                                                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                                                    <label className={lbl}>
+                                                        <Layers size={11} className="text-teal-600" />
+                                                        {t('booking.machine', 'Modality / Device')} *
+                                                    </label>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {workstationConfig.hasScopeFilter && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setApplyWorkstationScope(!applyWorkstationScope)}
+                                                                className={`rounded-lg border px-2 py-1 text-[8.5px] font-black transition ${applyWorkstationScope ? 'border-teal-200 bg-teal-500/10 text-teal-700 dark:border-teal-900/60 dark:text-teal-300' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)]'}`}
+                                                            >
+                                                                {applyWorkstationScope ? (isRtl ? 'نطاق الشباك' : 'Desk scope') : (isRtl ? 'كل الأجهزة' : 'All devices')}
+                                                            </button>
+                                                        )}
+                                                        <select
+                                                            aria-label={isRtl ? 'الغرفة' : 'Room'}
+                                                            {...register('roomId')}
+                                                            value={roomId || ''}
+                                                            onChange={(e) => {
+                                                                const newRoomId = e.target.value;
+                                                                setValue('roomId', newRoomId, { shouldDirty: true });
+                                                                if (newRoomId) {
+                                                                    const machinesInNewRoom = activeMachines.filter(m => String(m.room_id) === String(newRoomId));
+                                                                    if (machinesInNewRoom.length === 1) {
+                                                                        setValue('modalityId', machinesInNewRoom[0].modality_id, { shouldDirty: true, shouldValidate: true });
+                                                                        setValue('examTypeId', '', { shouldDirty: true });
+                                                                    }
+                                                                }
+                                                            }}
+                                                            className="min-h-8 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2 text-[9.5px] font-bold text-[var(--VIARA-muted)] outline-none focus:border-teal-500"
+                                                        >
+                                                            <option value="">{isRtl ? 'الغرفة: تلقائي' : 'Room: auto'}</option>
+                                                            {displayedRooms.map((r) => (
+                                                                <option key={r.room_id || r.id} value={r.room_id || r.id}>
+                                                                    {r.room_number ? `${isRtl ? 'غرفة' : 'Room'} ${r.room_number}` : r.name || '—'}{r.name && r.room_number ? ` — ${r.name}` : ''}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
 
-                                {/* Case Priority + Booking Source */}
-                                <div className="grid gap-2.5 sm:grid-cols-2">
-                                    <div>
-                                        <label className={lbl}>
-                                            <Flame size={11} className="text-amber-600 dark:text-amber-400" />
-                                            {t('booking.priority', 'Priority')} *
-                                        </label>
-                                        <input type="hidden" {...register('priority')} />
-                                        <div
-                                            role="group"
-                                            aria-label={t('booking.priority', 'Priority')}
-                                            className="grid grid-cols-3 gap-1 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/50 p-1"
-                                        >
-                                            {['Routine', 'Urgent', 'Emergency'].map((value) => {
-                                                const isSel = priority === value;
-                                                return (
-                                                    <button
-                                                        key={value}
-                                                        type="button"
-                                                        onClick={() => setValue('priority', value, { shouldDirty: true })}
-                                                        aria-pressed={isSel}
-                                                        className={`min-h-7.5 rounded-lg px-2 text-xs font-black transition-all ${isSel
-                                                            ? PRIORITY_TONES[value]
-                                                            : 'text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)] hover:bg-[var(--VIARA-surface)] border border-transparent'
-                                                            }`}
+                                                <input type="hidden" {...register('modalityId', { required: t('validation.machineRequired') })} />
+                                                {useMachineCards ? (
+                                                    <div className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+                                                        {displayedMachines.map((m) => {
+                                                            const selected = String(modalityId) === String(m.modality_id);
+                                                            return (
+                                                                <button
+                                                                    key={m.modality_id}
+                                                                    type="button"
+                                                                    aria-pressed={selected}
+                                                                    onClick={() => {
+                                                                        setValue('modalityId', m.modality_id, { shouldDirty: true, shouldValidate: true });
+                                                                        setValue('examTypeId', '', { shouldDirty: true });
+                                                                        if (m.room_id) setValue('roomId', m.room_id, { shouldDirty: true });
+                                                                    }}
+                                                                    className={`group flex min-h-[54px] items-center justify-between gap-2 rounded-xl border px-3 py-2 text-start transition-all ${selected ? 'border-teal-500 bg-teal-500/[0.08] ring-2 ring-teal-500/10 shadow-sm' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] hover:border-teal-300 hover:bg-teal-500/[0.03]'}`}
+                                                                >
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <p className={`truncate text-[11px] font-black ${selected ? 'text-teal-800 dark:text-teal-200' : 'text-[var(--VIARA-ink)]'}`}>{m.name}</p>
+                                                                            {activeDowntimes.some(d => String(d.modality_id) === String(m.modality_id)) && (
+                                                                                <span className="rounded-md bg-amber-500/15 px-1 py-0.5 text-[8px] font-black text-amber-700 dark:text-amber-400">
+                                                                                    {isRtl ? 'صيانة' : 'Maint'}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="mt-0.5 truncate text-[8.5px] font-semibold text-[var(--VIARA-muted)]">{m.room_number || m.room_name ? `${isRtl ? 'غرفة' : 'Room'} ${m.room_number || m.room_name}` : (isRtl ? 'تحديد الغرفة تلقائيًا' : 'Room assigned automatically')}</p>
+                                                                    </div>
+                                                                    <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-lg border ${selected ? 'border-teal-500 bg-teal-600 text-white' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)]'}`}>
+                                                                        {selected ? <CheckCircle2 size={12} /> : <Layers size={11} />}
+                                                                    </span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ) : (
+                                                    <select
+                                                        id="appointment-modality-select"
+                                                        value={modalityId || ''}
+                                                        onChange={(e) => {
+                                                            const newMId = e.target.value;
+                                                            setValue('modalityId', newMId, { shouldDirty: true, shouldValidate: true });
+                                                            setValue('examTypeId', '', { shouldDirty: true });
+                                                            const chosenMachine = activeMachines.find(m => String(m.modality_id) === String(newMId));
+                                                            if (chosenMachine?.room_id) setValue('roomId', chosenMachine.room_id, { shouldDirty: true });
+                                                        }}
+                                                        className={inp}
                                                     >
-                                                        {t(`priority.${value}`, value)}
-                                                    </button>
-                                                );
-                                            })}
+                                                        <option value="">{t('booking.selectMachine', 'Select device...')}</option>
+                                                        {displayedMachines.map((m) => <option key={m.modality_id} value={m.modality_id}>{m.name}{activeDowntimes.some(d => String(d.modality_id) === String(m.modality_id)) ? ` ⚠️ (${isRtl ? 'صيانة' : 'Maintenance'})` : ''}{m.room_number || m.room_name ? ` — ${isRtl ? 'غرفة' : 'Room'} ${m.room_number || m.room_name}` : ''}</option>)}
+                                                    </select>
+                                                )}
+                                                <ErrMsg msg={errors.modalityId?.message} />
+                                                {selectedMachineDowntime && (
+                                                    <div className="mt-2 flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50/90 p-2.5 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                                                        <AlertTriangle size={15} className="shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                                                        <div className="min-w-0">
+                                                            <p className="font-black">
+                                                                {isRtl ? 'تنبيه: هذا الجهاز متوقف أو تحت الصيانة حالياً' : 'Notice: Machine currently under maintenance'}
+                                                            </p>
+                                                            <p className="mt-0.5 text-[11px] text-amber-800 dark:text-amber-300">
+                                                                {isRtl
+                                                                    ? `السبب: ${selectedMachineDowntime.reason || 'صيانة دورية أو طارئة'}. يرجى التحقق من توفر الجهاز أو اختيار جهاز بديل لتجنب تعارض المواعيد.`
+                                                                    : `Reason: ${selectedMachineDowntime.reason || 'Scheduled/Emergency maintenance'}. Please verify device readiness or choose another machine.`}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Exam selection uses quick choices when the list is short */}
+                                            <div>
+                                                <label className={lbl}>
+                                                    <Stethoscope size={11} className="text-teal-600" />
+                                                    {t('booking.examination', 'Exam Type')} *
+                                                </label>
+                                                <input type="hidden" {...register('examTypeId', { required: t('validation.examRequired') })} />
+                                                {!modalityId ? (
+                                                    <div className="flex min-h-10 items-center rounded-xl border border-dashed border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/25 px-3 text-[10px] font-bold text-[var(--VIARA-muted)]">
+                                                        {isRtl ? 'اختر الجهاز أولًا لعرض الفحوص المتاحة' : 'Choose a device to see available examinations'}
+                                                    </div>
+                                                ) : useExamCards ? (
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {exTypes.map((e) => {
+                                                            const selected = String(examTypeId) === String(e.type_id);
+                                                            return (
+                                                                <button
+                                                                    key={e.type_id}
+                                                                    type="button"
+                                                                    aria-pressed={selected}
+                                                                    onClick={() => setValue('examTypeId', e.type_id, { shouldDirty: true, shouldValidate: true })}
+                                                                    className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl border px-3 text-[10px] font-black transition ${selected ? 'border-teal-500 bg-teal-600 text-white shadow-sm' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-ink)] hover:border-teal-300 hover:text-teal-700'}`}
+                                                                >
+                                                                    {selected && <CheckCircle2 size={11} />}
+                                                                    <span>{e.name}</span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ) : (
+                                                    <select id="appointment-exam-select" value={examTypeId || ''} onChange={(e) => setValue('examTypeId', e.target.value, { shouldDirty: true, shouldValidate: true })} className={inp}>
+                                                        <option value="">{t('booking.selectExam', 'Select type...')}</option>
+                                                        {exTypes.map((e) => <option key={e.type_id} value={e.type_id}>{e.name}</option>)}
+                                                    </select>
+                                                )}
+                                                <ErrMsg msg={errors.examTypeId?.message} />
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <label className={lbl}>
-                                            <Info size={11} className="text-violet-600 dark:text-violet-400" />
-                                            {t('booking.appointmentSource', 'Source')}
-                                        </label>
-                                        <select {...register('appointmentSource')} className={inp}>
-                                            {['Walk-in', 'Phone', 'Website', 'Patient Portal', 'Doctor Portal', 'Call Center'].map((v) => (
-                                                <option key={v} value={v}>
-                                                    {t(`appointmentSources.${v}`, v)}
-                                                </option>
-                                            ))}
-                                        </select>
+                                    {selExam && (
+                                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-teal-200/70 bg-teal-500/[0.035] px-3 py-2 dark:border-teal-900/60">
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <BadgeCheck size={14} className="shrink-0 text-teal-600" />
+                                                <span className="truncate text-xs font-black text-[var(--VIARA-ink)]">{selExam.name}</span>
+                                                {selectedExamBodyPart && <span className="hidden text-[10px] font-semibold text-[var(--VIARA-muted)] sm:inline">• {selectedExamBodyPart}</span>}
+                                            </div>
+                                            <div className="flex items-center gap-1.5 text-[9.5px] font-black text-[var(--VIARA-muted)]">
+                                                <span className="rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2 py-1">{duration} {t('bookingPage.minutesShort', 'min')}</span>
+                                                {selectedExamPrice != null && <span className="rounded-lg border border-emerald-200/70 bg-emerald-500/10 px-2 py-1 text-emerald-700 dark:border-emerald-900/50 dark:text-emerald-300">{Number(selectedExamPrice).toLocaleString(isRtl ? 'ar-EG' : 'en-US')} {isRtl ? 'ج.م' : t('bookingPage.currency', 'EGP')}</span>}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+                                        <div className="min-w-[260px] flex-1">
+                                            <label className={lbl}><Flame size={11} className="text-amber-600" />{t('booking.priority', 'Priority')}</label>
+                                            <input type="hidden" {...register('priority')} />
+                                            <div className="grid grid-cols-3 gap-1 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/50 p-1">
+                                                {['Routine', 'Urgent', 'Emergency'].map((value) => {
+                                                    const isSel = priority === value;
+                                                    return (
+                                                        <button key={value} type="button" onClick={() => setValue('priority', value, { shouldDirty: true })} aria-pressed={isSel} className={`min-h-8 rounded-lg px-2 text-[11px] font-black transition-all ${isSel ? PRIORITY_TONES[value] : 'border border-transparent text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface)] hover:text-[var(--VIARA-ink)]'}`}>
+                                                            {t(`priority.${value}`, value)}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-
-                                {/* Step Navigation Action Footer */}
-                                <div className="flex items-center justify-between border-t border-[var(--VIARA-line)] pt-2.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => goToSection(0)}
-                                        className="inline-flex min-h-8.5 items-center justify-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 text-xs font-black text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)] transition"
-                                    >
-                                        <ArrowLeft size={13} className="rtl:rotate-180" />
-                                        <span>{t('bookingPage.prevPatient', 'Previous: Patient')}</span>
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => advanceToSection(2)}
-                                        className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl px-3.5 text-xs font-black transition-all ${STEP_COLORS[1].button} active:scale-[.98]`}
-                                    >
-                                        <span>{t('bookingPage.nextDetails', 'Next: Care Details')}</span>
-                                        <ArrowRight size={13} className="rtl:rotate-180" />
-                                    </button>
                                 </div>
                             </div>
                         </StepCard>
                     </div>
 
-                    {/* ══════════════════════════════════════════════════
-                        STEP 3: Timing, Slot Conflict & Clinical Safety
-                    ══════════════════════════════════════════════════ */}
-                    <div
-                        ref={sectionRefs[2]}
-                        className={bookingMode === 'express' || activeSection === 2 ? "mb-4 block animate-in fade-in-50 duration-200" : "hidden"}
-                    >
-                        <StepCard className={STEP_COLORS[2].card} highlight={activeSection === 2}>
+                    {/* 2. Time slot — availability first; unavailable slots stay hidden by default */}
+                    <div ref={sectionRefs[2]}>
+                        <StepCard>
                             <CardHead
                                 icon={Clock3}
-                                stepNumber={isRtl ? '٣ / ٤' : '3 of 4'}
-                                title={t('bookingPage.step3Title', 'Start Time & Clinical Safety')}
-                                subtitle={t('bookingPage.step3Hint', 'Specify start time and safety clearances')}
-                                accentClass={STEP_COLORS[2].accent}
+                                title={isRtl ? 'اختيار وقت الموعد' : 'Choose appointment time'}
+                                subtitle={isRtl ? 'نعرض الأوقات المتاحة أولًا ونخفي المزدحم لتقليل التشتيت' : 'Available slots are shown first; busy slots stay out of the way'}
+                                accentClass="from-sky-500 to-cyan-600"
                                 right={<SlotStatus isPast={isPast} overlap={overlap} modalityId={modalityId} time={time} machine={selMachine?.name} t={t} />}
                             />
 
-                            <div className="space-y-3.5 p-3.5 sm:p-4">
-                                {/* Time Picker + Arrival Toggle */}
-                                <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-[150px_minmax(0,1fr)] lg:items-end">
-                                    <div>
-                                        <label htmlFor="appointment-time" className={lbl}>
-                                            <Clock3 size={11} className="text-sky-600 dark:text-sky-400" />
-                                            {t('booking.startTime', 'Start')} *
-                                        </label>
-                                        <input
-                                            id="appointment-time"
-                                            aria-label={t('booking.startTime', 'Start')}
-                                            type="time"
-                                            value={time || ''}
-                                            {...register('time', { required: t('validation.startTimeRequired') })}
-                                            onChange={(e) => setValue('time', e.target.value, { shouldDirty: true, shouldValidate: true })}
-                                            className={inp}
-                                        />
-                                        <ErrMsg msg={errors.time?.message} />
-                                    </div>
-
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <label className="flex min-h-9 cursor-pointer items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50/50 px-2.5 py-1 text-xs font-extrabold text-teal-900 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-200 shadow-sm transition">
-                                            <input
-                                                type="checkbox"
-                                                {...register('arrived')}
-                                                className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                                            />
-                                            <UserCheck size={13} className="text-teal-600" />
-                                            <span>{t('bookingPage.patientArrived', 'Arrived')}</span>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                {/* Suggested Quick Time Slots with Period Filter Tabs */}
-                                <div className="rounded-xl border border-sky-200/80 bg-gradient-to-r from-sky-500/10 via-cyan-500/5 to-transparent p-2.5 dark:border-sky-800/60 dark:from-sky-950/30">
-                                    <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
-                                        <div className="flex items-center gap-1 text-xs font-black text-sky-900 dark:text-sky-200">
-                                            <Clock3 size={12} className="text-sky-600" />
-                                            <span>{t('bookingPage.suggestedTimes', 'Suggested times')}</span>
+                            <div className="space-y-3 p-3.5 sm:p-4">
+                                <div className="flex flex-wrap items-end justify-between gap-2.5">
+                                    <div className="min-w-[300px] flex-1">
+                                        <div className="mb-1.5 flex items-center justify-between gap-2">
+                                            <span className={lbl}>{isRtl ? 'الفترة المناسبة' : 'Preferred period'}</span>
+                                            <span className="text-[9px] font-black text-emerald-700 dark:text-emerald-300">{availableSlotCount} {isRtl ? 'متاح' : 'available'}</span>
                                         </div>
-
-                                        {/* Period Filter Tabs */}
-                                        <div className="flex rounded-lg border border-sky-200 bg-white/70 p-0.5 dark:border-sky-800 dark:bg-slate-900/60">
+                                        <div className="grid grid-cols-4 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/40 p-1">
                                             {[
-                                                { id: 'all', label: t('bookingPage.allTimes', 'All') },
-                                                { id: 'morning', label: t('bookingPage.morning', 'Morning') },
-                                                { id: 'afternoon', label: t('bookingPage.afternoon', 'Afternoon') },
-                                                { id: 'evening', label: t('bookingPage.evening', 'Evening') }
+                                                { id: 'all', label: isRtl ? 'الكل' : t('bookingPage.allTimes', 'All') },
+                                                { id: 'morning', label: isRtl ? 'صباحًا' : t('bookingPage.morning', 'Morning') },
+                                                { id: 'afternoon', label: isRtl ? 'ظهرًا' : t('bookingPage.afternoon', 'Afternoon') },
+                                                { id: 'evening', label: isRtl ? 'مساءً' : t('bookingPage.evening', 'Evening') },
                                             ].map((period) => (
-                                                <button
-                                                    key={period.id}
-                                                    type="button"
-                                                    onClick={() => setTimePeriodFilter(period.id)}
-                                                    className={`rounded-md px-1.5 py-0.5 text-[9.5px] font-bold transition ${timePeriodFilter === period.id
-                                                        ? 'bg-sky-600 text-white shadow-xs'
-                                                        : 'text-slate-600 hover:text-sky-900 dark:text-slate-400'
-                                                        }`}
-                                                >
+                                                <button key={period.id} type="button" onClick={() => setTimePeriodFilter(period.id)} className={`min-h-8 rounded-lg px-2 text-[10px] font-black transition ${timePeriodFilter === period.id ? 'bg-[var(--VIARA-surface)] text-sky-700 shadow-sm ring-1 ring-sky-500/15 dark:text-sky-300' : 'text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)]'}`}>
                                                     {period.label}
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-wrap items-center gap-1">
-                                        {quickTimeOptions.length ? (
-                                            quickTimeOptions.map((option) => {
+                                    <div className="flex flex-wrap items-end gap-1.5">
+                                        {nextAvailableSlot && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setValue('time', nextAvailableSlot.value, { shouldDirty: true, shouldValidate: true })}
+                                                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-emerald-300/80 bg-emerald-50 px-3 text-[10px] font-black text-emerald-800 shadow-sm transition hover:border-emerald-400 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300"
+                                            >
+                                                <Sparkles size={12} />
+                                                <span>{isRtl ? 'أقرب وقت' : 'Earliest'}</span>
+                                                <span dir="ltr" className="font-mono">{nextAvailableSlot.value}</span>
+                                            </button>
+                                        )}
+
+                                        <div className="w-[132px]">
+                                            <label htmlFor="appointment-time" className="mb-1 block text-[8.5px] font-black text-[var(--VIARA-muted)]">{isRtl ? 'وقت مخصص' : 'Custom time'}</label>
+                                            <input
+                                                id="appointment-time"
+                                                type="time"
+                                                value={time || ''}
+                                                {...register('time', { required: t('validation.startTimeRequired') })}
+                                                onChange={(e) => setValue('time', e.target.value, { shouldDirty: true, shouldValidate: true })}
+                                                className={`${inp} min-h-10 py-1.5`}
+                                            />
+                                        </div>
+
+                                        <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[9.5px] font-bold text-[var(--VIARA-ink)] shadow-sm">
+                                            <input type="checkbox" {...register('arrived')} className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+                                            <UserCheck size={12} className="text-teal-600" />
+                                            <span>{isRtl ? 'وصل' : t('bookingPage.patientArrived', 'Arrived')}</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <ErrMsg msg={errors.time?.message} />
+
+                                <div className="rounded-xl border border-sky-200/70 bg-gradient-to-br from-sky-500/[0.045] to-transparent p-2.5 dark:border-sky-900/60">
+                                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2 text-[10px] font-bold text-[var(--VIARA-muted)]">
+                                            <span className="inline-flex items-center gap-1"><i className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{isRtl ? 'متاح' : 'Available'}</span>
+                                            {showUnavailableSlots && <span className="inline-flex items-center gap-1"><i className="h-1.5 w-1.5 rounded-full bg-amber-500" />{isRtl ? 'محجوز' : 'Booked'}</span>}
+                                        </div>
+                                        <button type="button" onClick={() => setShowUnavailableSlots((v) => !v)} className="rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 py-1 text-[9.5px] font-black text-[var(--VIARA-muted)] transition hover:text-[var(--VIARA-ink)]">
+                                            {showUnavailableSlots ? (isRtl ? 'إخفاء غير المتاح' : 'Hide unavailable') : (isRtl ? 'عرض كل الأوقات' : 'Show all slots')}
+                                        </button>
+                                    </div>
+
+                                    {!modalityId ? (
+                                        <div className="flex min-h-20 items-center justify-center gap-2 rounded-lg border border-dashed border-sky-200 bg-[var(--VIARA-surface)]/60 px-3 text-center text-[10.5px] font-bold text-[var(--VIARA-muted)] dark:border-sky-900/60">
+                                            <Layers size={13} className="text-sky-600" />
+                                            <span>{isRtl ? 'اختر الجهاز أولًا لعرض الأوقات المتاحة الفعلية.' : 'Choose a device first to see real availability.'}</span>
+                                        </div>
+                                    ) : visibleTimeOptions.length ? (
+                                        <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-7 2xl:grid-cols-8" dir="ltr">
+                                            {visibleTimeOptions.map((option) => {
                                                 const selected = time === option.value;
-                                                const blocked = option.isPast || Boolean(option.overlap) || !modalityId;
+                                                const blocked = option.isPast || Boolean(option.overlap);
                                                 return (
                                                     <button
                                                         key={option.value}
                                                         type="button"
                                                         disabled={blocked}
                                                         onClick={() => setValue('time', option.value, { shouldDirty: true, shouldValidate: true })}
-                                                        aria-pressed={selected}
-                                                        title={option.isPast
-                                                            ? t('booking.futureTimeShort', 'Past time')
-                                                            : option.overlap
-                                                                ? t('booking.machineBookedShort', 'Booked')
-                                                                : !modalityId
-                                                                    ? t('booking.selectMachineFirst', 'Select room first')
-                                                                    : t('booking.noOverlapShort', 'Available')}
-                                                        className={`group relative min-h-9 min-w-[62px] rounded-xl border px-2 font-mono text-[11px] font-black transition-all ${selected
-                                                            ? 'border-teal-600 bg-teal-600 text-white shadow-md shadow-teal-600/20 ring-2 ring-teal-500/15'
+                                                        title={option.overlap ? (isRtl ? 'محجوز' : 'Booked') : option.isPast ? (isRtl ? 'وقت سابق' : 'Past') : (isRtl ? 'متاح' : 'Available')}
+                                                        className={`relative min-h-9 rounded-lg border px-1.5 font-mono text-[10.5px] font-black transition-all ${selected
+                                                            ? 'border-teal-600 bg-teal-600 text-white shadow-md shadow-teal-600/15 ring-2 ring-teal-500/15'
                                                             : option.available
-                                                                ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800 hover:-translate-y-0.5 hover:border-emerald-400 hover:shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-300'
-                                                                : 'cursor-not-allowed border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/55 text-[var(--VIARA-muted)] opacity-55'
-                                                            }`}
+                                                                ? 'border-emerald-200/90 bg-[var(--VIARA-surface)] text-emerald-700 hover:-translate-y-0.5 hover:border-emerald-400 hover:shadow-sm dark:border-emerald-900/60 dark:text-emerald-300'
+                                                                : 'cursor-not-allowed border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/65 text-[var(--VIARA-muted)] opacity-45'}`}
                                                     >
-                                                        <span>{option.value}</span>
+                                                        {option.value}
                                                         <span className={`absolute end-1 top-1 h-1.5 w-1.5 rounded-full ${option.available ? 'bg-emerald-500' : option.overlap ? 'bg-amber-500' : 'bg-slate-400'}`} />
                                                     </button>
                                                 );
-                                            })
-                                        ) : (
-                                            <span className="text-xs text-[var(--VIARA-muted)]">
-                                                {t('bookingPage.noSuggestedTimes', 'Choose another day for suggested times')}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-sky-200/70 pt-2 text-[9px] font-bold text-[var(--VIARA-muted)] dark:border-sky-900/50">
-                                        <span className="inline-flex items-center gap-1"><i className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{t('booking.noOverlapShort', 'Available')}</span>
-                                        <span className="inline-flex items-center gap-1"><i className="h-1.5 w-1.5 rounded-full bg-amber-500" />{t('booking.machineBookedShort', 'Booked')}</span>
-                                        <span className="inline-flex items-center gap-1"><i className="h-1.5 w-1.5 rounded-full bg-slate-400" />{t('booking.futureTimeShort', 'Past time')}</span>
-                                    </div>
-                                </div>
-
-                                {/* Clinical Safety Matrix & Contrast Warning Hub */}
-                                <div className="rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-3 space-y-2.5">
-                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--VIARA-line)] pb-2">
-                                        <div className="flex items-center gap-1.5">
-                                            <ShieldCheck size={14} className="text-teal-600 dark:text-teal-400" />
-                                            <h4 className="text-xs font-black text-[var(--VIARA-ink)]">
-                                                {t('bookingPage.safety', 'Safety & preparation')}
-                                            </h4>
-                                        </div>
-
-                                        {/* IV Contrast Toggle */}
-                                        <label className={`flex min-h-7.5 cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-0.5 text-xs font-black transition ${contrastRequired
-                                            ? 'border-amber-400 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200 shadow-sm'
-                                            : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)]'
-                                            }`}>
-                                            <input
-                                                type="checkbox"
-                                                {...register('contrastRequired')}
-                                                className="h-3.5 w-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                                            />
-                                            <AlertTriangle size={12} className={contrastRequired ? 'text-amber-600' : 'text-slate-400'} />
-                                            <span>{t('booking.contrastRequired', 'Contrast')}</span>
-                                        </label>
-                                    </div>
-
-                                    {/* Prominent Contrast Alert Banner */}
-                                    {contrastRequired && (
-                                        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50/95 p-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                                            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400 animate-pulse" />
-                                            <div className="min-w-0 leading-relaxed text-[10.5px]">
-                                                <p className="font-black text-amber-900 dark:text-amber-100">
-                                                    {t('bookingPage.contrastAlertTitle', '⚠️ Contrast Study Alert:')}
-                                                </p>
-                                                <p className="mt-0.5 text-amber-800 dark:text-amber-300">
-                                                    {t('bookingPage.contrastAlertMsg', 'This examination requires IV contrast supplies.')}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Safety Clearance Selectors */}
-                                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                                        <div>
-                                            <label className={lbl}>{t('booking.preparation', 'Prep')}</label>
-                                            <select {...register('preparationStatus')} className={inp}>
-                                                {['Not Required', 'Pending', 'In Progress', 'Ready'].map((v) => (
-                                                    <option key={v} value={v}>
-                                                        {t(`prepStatus.${v}`, v)}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        {[
-                                            ['pregnancySafetyStatus', 'Pregnancy'],
-                                            ['implantSafetyStatus', 'Implant'],
-                                            ['renalSafetyStatus', 'Renal']
-                                        ].map(([name, label]) => (
-                                            <div key={name}>
-                                                <label className={lbl}>{t(`booking.${name.replace('SafetyStatus', 'Safety')}`, label)}</label>
-                                                <select {...register(name)} className={inp}>
-                                                    {['Unknown', 'Cleared', 'At Risk', 'Not Applicable'].map((v) => (
-                                                        <option key={v} value={v}>
-                                                            {t(`safety.${v}`, v)}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Referring Doctor Section */}
-                                <div className="rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-3 space-y-2">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <div className="flex items-center gap-1.5">
-                                            <UserPlus size={13} className="text-teal-600" />
-                                            <span className="text-xs font-black text-[var(--VIARA-ink)]">
-                                                {t('booking.referringDoctor', 'Referring Doctor')}
-                                            </span>
-                                        </div>
-                                        <div className="flex rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-0.5">
-                                            {[
-                                                ['directory', t('bookingPage.directoryDoctor', 'Directory')],
-                                                ['custom', t('bookingPage.customDoctor', 'Custom')]
-                                            ].map(([mode, label]) => (
-                                                <button
-                                                    key={mode}
-                                                    type="button"
-                                                    onClick={() => setRefMode(mode)}
-                                                    className={`rounded-md px-2 py-0.5 text-[10.5px] font-extrabold transition ${refMode === mode
-                                                        ? 'bg-teal-600 text-white shadow-sm'
-                                                        : 'text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)]'
-                                                        }`}
-                                                >
-                                                    {label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {refMode === 'directory' ? (
-                                        <select {...register('referringDoctorId')} className={inp}>
-                                            <option value="">{t('booking.selectFromDirectory', 'None / Walk-in')}</option>
-                                            {docs.map((d) => (
-                                                <option key={d.doctor_id} value={d.doctor_id}>
-                                                    {d.full_name} {d.specialty ? `· ${d.specialty}` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    ) : (
-                                        <input
-                                            {...register('referringDoctor', {
-                                                validate: (v) => refMode !== 'custom' || Boolean(v?.trim()) || t('validation.referringDoctorRequired'),
-                                                maxLength: { value: 255, message: t('validation.referringDoctorTooLong') }
                                             })}
-                                            placeholder={t('bookingPage.customDoctorPlaceholder', 'Doctor name, clinic, or walk-in source')}
-                                            className={inp}
-                                            autoComplete="organization"
-                                        />
+                                        </div>
+                                    ) : (
+                                        <div className="flex min-h-20 items-center justify-center rounded-lg border border-dashed border-amber-200 bg-amber-50/40 px-3 text-center text-[10.5px] font-bold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                                            {isRtl ? 'لا توجد أوقات متاحة في هذه الفترة. جرّب فترة أخرى أو يومًا آخر.' : 'No available slots in this period. Try another period or date.'}
+                                        </div>
                                     )}
-                                    <ErrMsg msg={errors.referringDoctor?.message} />
-                                </div>
-
-                                {/* Clinical Indication */}
-                                <div>
-                                    <label className={lbl}>
-                                        <FileText size={11} className="text-sky-600" />
-                                        {t('booking.clinicalIndication', 'Clinical Indication')}
-                                    </label>
-                                    <textarea
-                                        {...register('clinicalIndication')}
-                                        rows={2}
-                                        placeholder={t('booking.clinicalIndicationPlaceholder', 'Describe clinical indication...')}
-                                        className={`${inp} h-auto resize-none`}
-                                    />
-                                </div>
-
-                                {/* Step Navigation Action Footer */}
-                                <div className="flex items-center justify-between border-t border-[var(--VIARA-line)] pt-2.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => goToSection(1)}
-                                        className="inline-flex min-h-8.5 items-center justify-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 text-xs font-black text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)] transition"
-                                    >
-                                        <ArrowLeft size={13} className="rtl:rotate-180" />
-                                        <span>{t('bookingPage.prevExam', 'Previous: Examination')}</span>
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => advanceToSection(3)}
-                                        className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl px-3.5 text-xs font-black transition-all ${STEP_COLORS[2].button} active:scale-[.98]`}
-                                    >
-                                        <span>{t('bookingPage.nextReview', 'Next: Team & Billing')}</span>
-                                        <ArrowRight size={13} className="rtl:rotate-180" />
-                                    </button>
                                 </div>
                             </div>
                         </StepCard>
                     </div>
 
-                    {/* ══════════════════════════════════════════════════
-                        STEP 4: Care Team, Payment & Final Review
-                    ══════════════════════════════════════════════════ */}
-                    <div
-                        ref={sectionRefs[3]}
-                        className={bookingMode === 'express' || activeSection === 3 ? "mb-4 block animate-in fade-in-50 duration-200" : "hidden"}
-                    >
-                        <StepCard className={STEP_COLORS[3].card} highlight={activeSection === 3}>
+                    {/* 3. Payment — visible because it belongs to front-desk workflow */}
+                    <div ref={sectionRefs[3]}>
+                        <StepCard className="border-[var(--VIARA-line)]">
                             <CardHead
-                                icon={CalendarCheck2}
-                                stepNumber={isRtl ? '٤ / ٤' : '4 of 4'}
-                                title={t('bookingPage.step4Title', 'Care Team & Billing Review')}
-                                subtitle={t('bookingPage.step4Hint', 'Assign team, payment and confirm')}
-                                accentClass={STEP_COLORS[3].accent}
-                                right={<Opt label={t('bookingPage.optional', 'Optional')} />}
+                                icon={CreditCard}
+                                title={isRtl ? 'الدفع والملاحظات' : 'Payment & notes'}
+                                subtitle={isRtl ? 'السعر يُملأ من الفحص ويمكن تعديله عند الحاجة' : 'Price is filled from the exam and can be adjusted when needed'}
+                                accentClass="from-emerald-500 to-teal-600"
+                                right={<span className="rounded-full border border-emerald-300/60 bg-emerald-500/10 px-2 py-0.5 text-[9.5px] font-black text-emerald-700 dark:text-emerald-300">{paymentMethodLabel}</span>}
                             />
 
-                            <div className="space-y-3.5 p-3.5 sm:p-4">
-                                {/* Care Team Assignments */}
-                                <div className="rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-3 space-y-2.5">
-                                    <div className="flex items-center gap-1.5 border-b border-[var(--VIARA-line)] pb-2">
-                                        <Users size={14} className="text-emerald-600" />
-                                        <h4 className="text-xs font-black text-[var(--VIARA-ink)]">
-                                            {t('booking.careTeam', 'Care Team')}
-                                        </h4>
-                                    </div>
-
-                                    <div className="grid gap-2.5 sm:grid-cols-3">
-                                        <div>
-                                            <label className={lbl}>{t('booking.radiologist', 'Radiologist')}</label>
-                                            <select {...register('radiologistId')} className={inp}>
-                                                <option value="">{t('booking.unassignedRadiologist', 'Unassigned')}</option>
-                                                {roleStaff.radiologists.map((m) => (
-                                                    <option key={m.user_id} value={m.user_id}>
-                                                        {m.full_name}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        <div>
-                                            <label className={lbl}>{t('booking.technician', 'Technician')}</label>
-                                            <select {...register('technicianId')} className={inp}>
-                                                <option value="">{t('booking.unassigned', 'Unassigned')}</option>
-                                                {roleStaff.technicians.map((m) => (
-                                                    <option key={m.user_id} value={m.user_id}>
-                                                        {m.full_name}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        <div>
-                                            <label className={lbl}>{t('booking.nurse', 'Nurse')}</label>
-                                            <select {...register('nurseId')} className={inp}>
-                                                <option value="">{t('booking.unassigned', 'Unassigned')}</option>
-                                                {roleStaff.nurses.map((m) => (
-                                                    <option key={m.user_id} value={m.user_id}>
-                                                        {m.full_name}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Payment & Financial Method */}
-                                <div className="rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-3 space-y-2.5">
-                                    <div className="flex items-center justify-between border-b border-[var(--VIARA-line)] pb-2">
-                                        <div className="flex items-center gap-1.5">
-                                            <CreditCard size={14} className="text-emerald-600" />
-                                            <h4 className="text-xs font-black text-[var(--VIARA-ink)]">
-                                                {t('booking.paymentAndNotes', 'Payment & Notes')}
-                                            </h4>
-                                        </div>
-                                        <span className="rounded-full bg-emerald-500/15 border border-emerald-300/60 dark:border-emerald-700/60 px-2 py-0.5 text-[9.5px] font-black text-emerald-800 dark:text-emerald-300">
-                                            {payMethod}
-                                        </span>
-                                    </div>
-
-                                    <div className="grid gap-2.5 sm:grid-cols-2">
-                                        <div>
-                                            <label className={lbl}>{t('booking.paymentMethod', 'Payment Method')}</label>
-                                            <select {...register('paymentMethod')} className={inp}>
-                                                {['Cash', 'Credit Card', 'Insurance', 'Wallet', 'Bank Transfer'].map((v) => (
-                                                    <option key={v} value={v}>
-                                                        {t(`booking.${v.replace(/\s+/g, '').toLowerCase()}`, v)}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        <div>
-                                            <label className={lbl}>{t('booking.amount', 'Amount')}</label>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                step="0.01"
-                                                {...register('paymentAmount')}
-                                                className={inp}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Expandable Insurance Fields */}
-                                    <div
-                                        className={`grid transition-all duration-200 ${payMethod === 'Insurance'
-                                            ? 'grid-rows-[1fr] opacity-100'
-                                            : 'grid-rows-[0fr] opacity-0 overflow-hidden'
-                                            }`}
-                                    >
-                                        <div className="overflow-hidden space-y-2 rounded-xl border border-teal-200/80 bg-teal-50/50 p-2.5 dark:border-teal-900/50 dark:bg-teal-950/20">
-                                            <div>
-                                                <label className={lbl}>{t('booking.insuranceProvider', 'Insurance Provider')}</label>
-                                                <select {...register('insuranceProviderId')} className={inp}>
-                                                    <option value="">{t('booking.selectProvider', 'Select provider...')}</option>
-                                                    {insurers.map((p) => (
-                                                        <option key={p.provider_id} value={p.provider_id}>
-                                                            {p.name}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-
-                                            <div>
-                                                <label className={lbl}>{t('booking.approvalNumber', 'Approval #')}</label>
-                                                <input
-                                                    {...register('insuranceApprovalNumber')}
-                                                    placeholder={t('booking.approvalNumberPlaceholder', 'Insurance approval reference')}
-                                                    className={inp}
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-
+                            <div className="space-y-3 p-3.5 sm:p-4">
+                                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end">
                                     <div>
-                                        <label className={lbl}>{t('bookingPage.notes', 'Notes')}</label>
-                                        <textarea
-                                            {...register('notes')}
-                                            rows={2}
-                                            placeholder={t('booking.notesPlaceholder', 'Additional instructions, escort notes, or preparation reminders...')}
-                                            className={`${inp} h-auto resize-none`}
-                                        />
+                                        <label className={lbl}>{t('booking.paymentMethod', { defaultValue: isRtl ? 'جهة ووسيلة السداد المتوقعة' : 'Expected payer and payment method' })}</label>
+                                        <input type="hidden" {...register('paymentMethod')} />
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {paymentMethods.map((v) => {
+                                                const selected = payMethod === v;
+                                                return (
+                                                    <button
+                                                        key={v}
+                                                        type="button"
+                                                        aria-pressed={selected}
+                                                        onClick={() => setValue('paymentMethod', v, { shouldDirty: true })}
+                                                        className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl border px-3 text-[10px] font-black transition ${selected ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] hover:border-emerald-300 hover:text-emerald-700'}`}
+                                                    >
+                                                        {selected && <CheckCircle2 size={11} />}
+                                                        {v === 'Insurance' ? t('booking.insurance', 'Insurance / payer') : t(`billing.methods.${v}`, { defaultValue: v })}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <p className="mt-1.5 text-[10px] font-medium text-[var(--VIARA-muted)]">
+                                            {t('booking.collectionNotRecorded', { defaultValue: isRtl ? 'هذا يحدد جهة ووسيلة السداد المتوقعة فقط؛ تسجيل المقبوضات يتم من مساحة التحصيل.' : 'This records the expected payer/tender only. Actual receipts are recorded in the cashier workspace.' })}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <label className={lbl}>{t('booking.amount', 'Amount')}</label>
+                                        <div className="relative">
+                                            <input type="number" min="0" step="0.01" {...register('paymentAmount')} className={`${inp} pe-12 text-[14px] font-black`} />
+                                            <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-[var(--VIARA-muted)]">{isRtl ? 'ج.م' : t('bookingPage.currency', 'EGP')}</span>
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Step Navigation Action Footer */}
-                                <div className="flex items-center justify-between border-t border-[var(--VIARA-line)] pt-2.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => goToSection(2)}
-                                        className="inline-flex min-h-8.5 items-center justify-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 text-xs font-black text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)] transition"
-                                    >
-                                        <ArrowLeft size={13} className="rtl:rotate-180" />
-                                        <span>{t('bookingPage.prevTiming', 'Previous: Time & Safety')}</span>
-                                    </button>
+                                {payMethod === 'Insurance' && (
+                                    <div className="grid gap-2.5 rounded-xl border border-teal-200/80 bg-teal-50/45 p-3 dark:border-teal-900/50 dark:bg-teal-950/20 sm:grid-cols-2">
+                                        <div>
+                                            <label className={lbl}>{t('booking.insuranceProvider', 'Insurance Provider')} *</label>
+                                            <select {...register('insuranceProviderId')} className={inp} required>
+                                                <option value="">{t('booking.selectProvider', 'Select provider...')}</option>
+                                                {insurers.map((p) => <option key={p.provider_id} value={p.provider_id}>{p.name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className={lbl}>{t('booking.approvalNumber', 'Approval #')}</label>
+                                            <input {...register('insuranceApprovalNumber')} placeholder={t('booking.approvalNumberPlaceholder', 'Insurance approval reference')} className={inp} />
+                                        </div>
+                                    </div>
+                                )}
 
-                                    <button
-                                        type="button"
-                                        onClick={() => goToSection(0)}
-                                        className="inline-flex min-h-8.5 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-3.5 text-xs font-black text-white shadow-sm transition hover:brightness-105 active:scale-[.98]"
-                                    >
-                                        <CheckCircle2 size={13} />
-                                        <span>{t('bookingPage.reviewFromStart', 'Review from Start')}</span>
-                                    </button>
+                                <div>
+                                    <label className={lbl}>{t('bookingPage.notes', 'Notes')} <Opt label={isRtl ? 'اختياري' : t('bookingPage.optional', 'Optional')} /></label>
+                                    <textarea {...register('notes')} rows={1} placeholder={t('booking.notesPlaceholder', 'Additional instructions or preparation reminders...')} className={`${inp} h-auto resize-none`} />
                                 </div>
                             </div>
                         </StepCard>
+                    </div>
+
+                    {/* Progressive disclosure: one compact advanced panel with tabs */}
+                    <div className="overflow-hidden rounded-[18px] border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-[0_10px_34px_-28px_rgba(15,23,42,.4)]">
+                        <button
+                            type="button"
+                            onClick={() => setAdvancedOpen((v) => !v)}
+                            aria-expanded={advancedOpen}
+                            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-start transition hover:bg-[var(--VIARA-surface-muted)]/35"
+                        >
+                            <div className="flex min-w-0 items-center gap-2.5">
+                                <span className="grid h-8.5 w-8.5 shrink-0 place-items-center rounded-[11px] bg-teal-500/10 text-teal-700 dark:text-teal-300">
+                                    <SlidersHorizontal size={16} />
+                                </span>
+                                <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <h3 className="text-[13px] font-black text-[var(--VIARA-ink)]">{isRtl ? 'تفاصيل إضافية' : 'Additional details'}</h3>
+                                        <span className="rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/55 px-2 py-0.5 text-[9px] font-black text-[var(--VIARA-muted)]">{isRtl ? 'حسب الحاجة' : 'As needed'}</span>
+                                        {contrastRequired && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-black text-amber-700 dark:text-amber-300">{isRtl ? 'السلامة تحتاج مراجعة' : 'Safety review needed'}</span>}
+                                    </div>
+                                    <p className="mt-0.5 truncate text-[10px] font-medium text-[var(--VIARA-muted)]">{isRtl ? 'السلامة والإحالة وفريق الرعاية — افتح فقط ما تحتاجه' : 'Safety, referral and care team — open only what you need'}</p>
+                                </div>
+                            </div>
+                            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[13px] font-black text-[var(--VIARA-muted)]">{advancedOpen ? '−' : '+'}</span>
+                        </button>
+
+                        {advancedOpen && (
+                            <div className="border-t border-[var(--VIARA-line)]">
+                                <div className="flex gap-1 overflow-x-auto border-b border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/30 p-2.5">
+                                    {[
+                                        { id: 'safety', icon: ShieldCheck, label: isRtl ? 'السلامة والتحضير' : 'Safety & prep', alert: contrastRequired },
+                                        { id: 'referral', icon: UserPlus, label: isRtl ? 'الإحالة والمصدر' : 'Referral & source' },
+                                        { id: 'team', icon: Users, label: isRtl ? 'فريق الرعاية' : 'Care team' },
+                                    ].map(({ id, icon: Icon, label, alert }) => (
+                                        <button
+                                            key={id}
+                                            type="button"
+                                            onClick={() => setAdvancedTab(id)}
+                                            className={`inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[10px] font-black transition ${advancedTab === id ? 'bg-[var(--VIARA-surface)] text-teal-700 shadow-sm ring-1 ring-teal-500/15 dark:text-teal-300' : 'text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)]'}`}
+                                        >
+                                            <Icon size={12} />
+                                            <span>{label}</span>
+                                            {alert && <i className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <div className="p-3.5 sm:p-4">
+                                    {advancedTab === 'safety' && (
+                                        <section className="space-y-3">
+                                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/25 px-3 py-2">
+                                                <div className="flex items-center gap-2">
+                                                    <ShieldCheck size={14} className="text-teal-600" />
+                                                    <div>
+                                                        <p className="text-[11px] font-black text-[var(--VIARA-ink)]">{isRtl ? 'التحقق السريري قبل الفحص' : 'Pre-exam clinical clearance'}</p>
+                                                        <p className="text-[9px] font-medium text-[var(--VIARA-muted)]">{isRtl ? 'حدّث فقط البنود ذات الصلة بنوع الفحص.' : 'Update only the items relevant to this study.'}</p>
+                                                    </div>
+                                                </div>
+                                                <label className={`inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-black ${contrastRequired ? 'border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)]'}`}>
+                                                    <input type="checkbox" {...register('contrastRequired')} className="h-3.5 w-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
+                                                    <AlertTriangle size={11} />
+                                                    {isRtl ? 'يتطلب صبغة' : t('booking.contrastRequired', 'Contrast')}
+                                                </label>
+                                            </div>
+
+                                            {contrastRequired && (
+                                                <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/90 p-2.5 text-[10.5px] font-semibold text-amber-900 dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-200">
+                                                    <ShieldAlert size={14} className="mt-0.5 shrink-0" />
+                                                    <span>{isRtl ? 'هذا الفحص يتطلب مراجعة متطلبات الصبغة وسلامة وظائف الكلى قبل التنفيذ.' : t('bookingPage.contrastAlertMsg', 'This examination requires IV contrast supplies.')}</span>
+                                                </div>
+                                            )}
+
+                                            <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                                                <div>
+                                                    <label className={lbl}>{isRtl ? 'التحضير' : t('booking.preparation', 'Preparation')}</label>
+                                                    <select {...register('preparationStatus')} className={inp}>{['Not Required', 'Pending', 'In Progress', 'Ready'].map((v) => <option key={v} value={v}>{t(`prepStatus.${v}`, v)}</option>)}</select>
+                                                </div>
+                                                {[
+                                                    ['pregnancySafetyStatus', isRtl ? 'سلامة الحمل' : 'Pregnancy'],
+                                                    ['implantSafetyStatus', isRtl ? 'الزرعات والأجهزة' : 'Implants'],
+                                                    ['renalSafetyStatus', isRtl ? 'وظائف الكلى' : 'Renal'],
+                                                ].map(([name, label]) => (
+                                                    <div key={name}>
+                                                        <label className={lbl}>{label}</label>
+                                                        <select {...register(name)} className={inp}>{['Unknown', 'Cleared', 'At Risk', 'Not Applicable'].map((v) => <option key={v} value={v}>{t(`safety.${v}`, v)}</option>)}</select>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {advancedTab === 'referral' && (
+                                        <section className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
+                                            <div>
+                                                <div className="mb-1.5 flex items-center justify-between gap-2">
+                                                    <label className={lbl}>{isRtl ? 'الطبيب المُحيل' : t('booking.referringDoctor', 'Referring Doctor')}</label>
+                                                    <div className="flex rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/45 p-0.5">
+                                                        {[
+                                                            ['directory', isRtl ? 'الدليل' : t('bookingPage.directoryDoctor', 'Directory')],
+                                                            ['custom', isRtl ? 'يدوي' : t('bookingPage.customDoctor', 'Custom')],
+                                                        ].map(([mode, label]) => (
+                                                            <button key={mode} type="button" onClick={() => setRefMode(mode)} className={`rounded-md px-2 py-0.5 text-[9px] font-black transition ${refMode === mode ? 'bg-[var(--VIARA-surface)] text-teal-700 shadow-sm dark:text-teal-300' : 'text-[var(--VIARA-muted)]'}`}>{label}</button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                {refMode === 'directory' ? (
+                                                    <select {...register('referringDoctorId')} className={inp}>
+                                                        <option value="">{isRtl ? 'بدون إحالة / حضور مباشر' : t('booking.selectFromDirectory', 'None / Walk-in')}</option>
+                                                        {docs.map((d) => <option key={d.doctor_id} value={d.doctor_id}>{d.full_name}{d.specialty ? ` · ${d.specialty}` : ''}</option>)}
+                                                    </select>
+                                                ) : (
+                                                    <input {...register('referringDoctor', { validate: (v) => refMode !== 'custom' || Boolean(v?.trim()) || t('validation.referringDoctorRequired'), maxLength: { value: 255, message: t('validation.referringDoctorTooLong') } })} placeholder={isRtl ? 'اسم الطبيب أو العيادة' : t('bookingPage.customDoctorPlaceholder', 'Doctor name or clinic')} className={inp} />
+                                                )}
+                                                <ErrMsg msg={errors.referringDoctor?.message} />
+                                            </div>
+                                            <div>
+                                                <label className={lbl}>{isRtl ? 'مصدر الحجز' : t('booking.appointmentSource', 'Booking Source')}</label>
+                                                <select {...register('appointmentSource')} className={inp}>
+                                                    {['Walk-in', 'Phone', 'Website', 'Patient Portal', 'Doctor Portal', 'Call Center'].map((v) => <option key={v} value={v}>{t(`appointmentSources.${v}`, v)}</option>)}
+                                                </select>
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {advancedTab === 'team' && (
+                                        <section className="space-y-3">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <div>
+                                                    <p className="text-[11px] font-black text-[var(--VIARA-ink)]">{isRtl ? 'تعيين فريق الرعاية' : t('booking.careTeam', 'Care Team')}</p>
+                                                    <p className="mt-0.5 text-[9px] font-medium text-[var(--VIARA-muted)]">{isRtl ? 'اختياري أثناء الحجز ويمكن استكماله لاحقًا.' : 'Optional at booking time and can be completed later.'}</p>
+                                                </div>
+                                                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 py-1.5 text-[9.5px] font-bold text-[var(--VIARA-muted)]">
+                                                    <input type="checkbox" checked={dutyStaffOnly} onChange={(e) => setDutyStaffOnly(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+                                                    {isRtl ? 'المناوبون اليوم فقط' : 'On-duty only'}
+                                                </label>
+                                            </div>
+
+                                            <div className="grid gap-2.5 sm:grid-cols-3">
+                                                <div>
+                                                    <label className={lbl}>{isRtl ? 'طبيب الأشعة' : t('booking.radiologist', 'Radiologist')}</label>
+                                                    <select {...register('radiologistId')} className={inp}>
+                                                        <option value="">{isRtl ? 'غير معيّن' : t('booking.unassignedRadiologist', 'Unassigned')}</option>
+                                                        {roleStaff.radiologists.map((m) => <option key={m.user_id} value={m.user_id}>{m.full_name}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className={lbl}>{isRtl ? 'الفني' : t('booking.technician', 'Technician')}</label>
+                                                    <select {...register('technicianId')} className={inp}>
+                                                        <option value="">{isRtl ? 'غير معيّن' : t('booking.unassigned', 'Unassigned')}</option>
+                                                        {displayedTechnicians.map((m) => <option key={m.user_id} value={m.user_id}>{m.duty?.dot || ''} {m.full_name}{m.duty?.hasShiftToday ? ` — ${isRtl ? 'مناوب' : 'On duty'}` : ''}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className={lbl}>{isRtl ? 'التمريض' : t('booking.nurse', 'Nurse')}</label>
+                                                    <select {...register('nurseId')} className={inp}>
+                                                        <option value="">{isRtl ? 'غير معيّن' : t('booking.unassigned', 'Unassigned')}</option>
+                                                        {displayedNurses.map((m) => <option key={m.user_id} value={m.user_id}>{m.duty?.dot || ''} {m.full_name}{m.duty?.hasShiftToday ? ` — ${isRtl ? 'مناوب' : 'On duty'}` : ''}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {(selTechnicianDuty?.badgeText || selNurseDuty?.badgeText) && (
+                                                <div className="flex flex-wrap gap-1.5 text-[9px] font-bold text-[var(--VIARA-muted)]">
+                                                    {selTechnicianDuty?.badgeText && <span className={`rounded-lg border px-2 py-1 ${selTechnicianDuty.statusClass}`}>{isRtl ? 'الفني: ' : 'Technician: '}{selTechnicianDuty.badgeText}</span>}
+                                                    {selNurseDuty?.badgeText && <span className={`rounded-lg border px-2 py-1 ${selNurseDuty.statusClass}`}>{isRtl ? 'التمريض: ' : 'Nurse: '}{selNurseDuty.badgeText}</span>}
+                                                </div>
+                                            )}
+                                        </section>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                {/* ══════════════════════════════════════════════════
-                    ── RIGHT COLUMN: Pinned / Sticky Live Summary ──
-                ══════════════════════════════════════════════════ */}
-                <aside className="space-y-2.5 xl:sticky xl:top-[116px] xl:self-start">
-                    <StepCard className="border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-[0_22px_60px_-34px_rgba(15,23,42,.45)]">
-                        {/* Summary Header */}
-                        <div className="border-b border-[var(--VIARA-line)] bg-gradient-to-br from-teal-500/[0.08] via-[var(--VIARA-surface)] to-cyan-500/[0.04] p-3.5 sm:p-4">
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="grid h-7.5 w-7.5 place-items-center rounded-lg bg-teal-500/15 text-teal-700 dark:text-teal-300">
-                                        <CalendarCheck2 size={15} strokeWidth={2.2} />
-                                    </span>
-                                    <div>
-                                        <h3 className="text-xs font-black text-[var(--VIARA-ink)]">
-                                            {t('booking.summary', 'Appointment Summary')}
-                                        </h3>
-                                        <p className="text-[8.5px] text-[var(--VIARA-muted)]">
-                                            {t('bookingPage.liveSummary', 'Live Examination Overview')}
-                                        </p>
+                {/* ═══════════════════════════════════════════════════════
+                    STICKY SUMMARY — one summary, one primary action
+                ═══════════════════════════════════════════════════════ */}
+                <aside className="space-y-2.5 xl:sticky xl:top-3 xl:self-start">
+                    <StepCard className="shadow-[0_18px_55px_-34px_rgba(15,23,42,.55)]">
+                        <div className="border-b border-[var(--VIARA-line)] bg-gradient-to-br from-teal-500/[0.075] via-[var(--VIARA-surface)] to-emerald-500/[0.025] p-3">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex min-w-0 items-center gap-2.5">
+                                    <span className="grid h-8.5 w-8.5 shrink-0 place-items-center rounded-[11px] bg-teal-600 text-white shadow-sm"><CalendarCheck2 size={16} /></span>
+                                    <div className="min-w-0">
+                                        <h3 className="text-[12.5px] font-black text-[var(--VIARA-ink)]">{isRtl ? 'ملخص الحجز' : t('booking.summary', 'Appointment summary')}</h3>
+                                        <p className="mt-0.5 text-[9px] font-semibold text-[var(--VIARA-muted)]">{bookingReady ? (isRtl ? 'البيانات الأساسية مكتملة وجاهزة للتأكيد' : 'Essentials complete and ready to confirm') : (isRtl ? 'أكمل البنود المطلوبة أدناه' : 'Complete the required items below')}</p>
                                     </div>
                                 </div>
-
-                                <span
-                                    className={`rounded-full px-2 py-0.5 text-[8.5px] font-black border ${sectionComplete[3]
-                                        ? 'border-emerald-300 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                                        : 'border-amber-300 bg-amber-500/15 text-amber-700 dark:text-amber-300'
-                                        }`}
-                                >
-                                    {sectionComplete[3]
-                                        ? t('bookingPage.readyToBook', 'Ready')
-                                        : t('bookingPage.needsDetails', 'Needs details')}
+                                <span className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-black ${bookingReady ? 'border-emerald-300 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-amber-300 bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>
+                                    {bookingReady ? (isRtl ? 'جاهز' : 'Ready') : `${sectionComplete.filter(Boolean).length}/4`}
                                 </span>
                             </div>
 
-                            {/* Mini Step Quick Jump Indicators */}
-                            <div className="mt-2.5 grid grid-cols-4 gap-1.5 border-t border-[var(--VIARA-line)] pt-2.5">
-                                {[
-                                    { label: isRtl ? 'المريض' : 'Patient', step: '١', ready: Boolean(patientId), target: 0 },
-                                    { label: isRtl ? 'الفحص' : 'Exam', step: '٢', ready: Boolean(modalityId && examTypeId), target: 1 },
-                                    { label: isRtl ? 'الموعد' : 'Slot', step: '٣', ready: hasValidSlot, target: 2 },
-                                    { label: isRtl ? 'الدفع' : 'Pay', step: '٤', ready: Boolean(payMethod), target: 3 },
-                                ].map((item, i) => (
-                                    <button
-                                        key={item.label}
-                                        type="button"
-                                        onClick={() => goToSection(item.target)}
-                                        className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border py-1.5 px-1 text-center transition-all ${activeSection === i
-                                            ? 'border-teal-500 bg-teal-500/10 text-teal-800 dark:text-teal-300 ring-2 ring-teal-500/20'
-                                            : item.ready
-                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300'
-                                                : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] opacity-70 hover:opacity-100'
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-1">
-                                            <span className="font-mono text-[9px] font-black opacity-60">#{i + 1}</span>
-                                            {item.ready ? <CheckCircle2 size={11} className="text-emerald-600 dark:text-emerald-400" /> : <AlertCircle size={11} />}
-                                        </div>
-                                        <span className="truncate text-[10px] font-black">{item.label}</span>
-                                    </button>
-                                ))}
+                            <div className="mt-2.5 flex items-center gap-2">
+                                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--VIARA-surface-muted)]">
+                                    <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-[width] duration-300" style={{ width: `${bookingProgress}%` }} />
+                                </div>
+                                <span className="text-[9px] font-black tabular-nums text-[var(--VIARA-muted)]">{bookingProgress}%</span>
                             </div>
                         </div>
 
-                        {/* Summary Detail Items with 1-Click Jump to Step */}
-                        <div className="divide-y divide-[var(--VIARA-line)] text-[11px]">
-                            {/* Patient */}
-                            <div
-                                onClick={() => goToSection(0)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 hover:bg-teal-50/40 dark:hover:bg-teal-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-semibold text-[var(--VIARA-muted)] flex items-center gap-1">
-                                    <User size={11} />
-                                    {t('booking.selectedPatient', 'Patient')}
-                                </span>
-                                <span className="font-black text-end text-[var(--VIARA-ink)] break-words">
-                                    {selPt ? `${selPt.first_name} ${selPt.last_name}` : '—'}
-                                </span>
+                        {!bookingReady && (
+                            <div className="border-b border-[var(--VIARA-line)] bg-amber-500/[0.035] p-2.5">
+                                <p className="mb-1.5 text-[9px] font-black text-amber-800 dark:text-amber-300">{isRtl ? 'المطلوب قبل التأكيد' : 'Required before confirmation'}</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {missingChecklist.map((item) => (
+                                        <button key={item.key} type="button" onClick={() => goToSection(item.target)} className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-[var(--VIARA-surface)] px-2 py-1 text-[9px] font-black text-amber-800 transition hover:border-amber-400 dark:border-amber-900/60 dark:text-amber-300">
+                                            <AlertCircle size={10} />
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="space-y-2 p-2.5">
+                            <div className="grid grid-cols-2 gap-1.5">
+                                <button type="button" onClick={() => goToSection(0)} className={`min-w-0 rounded-xl border p-2.5 text-start transition ${selPt ? 'border-teal-200/80 bg-teal-500/[0.04] dark:border-teal-900/60' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/25 hover:border-teal-300'}`}>
+                                    <div className="flex items-center justify-between gap-1"><span className="flex items-center gap-1 text-[8.5px] font-bold text-[var(--VIARA-muted)]"><User size={10} />{isRtl ? 'المريض' : 'Patient'}</span>{selPt && <CheckCircle2 size={10} className="text-emerald-600" />}</div>
+                                    <p className={`mt-1 truncate text-[10.5px] font-black ${selPt ? 'text-[var(--VIARA-ink)]' : 'text-[var(--VIARA-muted)]'}`}>{selPt ? `${selPt.first_name} ${selPt.last_name}` : (isRtl ? 'غير محدد' : 'Not selected')}</p>
+                                    <p className="mt-0.5 truncate font-mono text-[8.5px] font-bold text-teal-700 dark:text-teal-300">{selPt?.mrn || '—'}</p>
+                                </button>
+
+                                <button type="button" onClick={() => goToSection(1)} className={`min-w-0 rounded-xl border p-2.5 text-start transition ${selExam ? 'border-sky-200/80 bg-sky-500/[0.035] dark:border-sky-900/60' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/25 hover:border-sky-300'}`}>
+                                    <div className="flex items-center justify-between gap-1"><span className="flex items-center gap-1 text-[8.5px] font-bold text-[var(--VIARA-muted)]"><Stethoscope size={10} />{isRtl ? 'الفحص' : 'Exam'}</span>{selExam && <CheckCircle2 size={10} className="text-emerald-600" />}</div>
+                                    <p className={`mt-1 truncate text-[10.5px] font-black ${selExam ? 'text-[var(--VIARA-ink)]' : 'text-[var(--VIARA-muted)]'}`}>{selExam?.name || (isRtl ? 'غير محدد' : 'Not selected')}</p>
+                                    <p className="mt-0.5 truncate text-[8.5px] font-semibold text-[var(--VIARA-muted)]">{selMachine?.name || '—'}</p>
+                                </button>
+
+                                <button type="button" onClick={() => goToSection(2)} className={`min-w-0 rounded-xl border p-2.5 text-start transition ${hasValidSlot ? 'border-emerald-200/80 bg-emerald-500/[0.04] dark:border-emerald-900/60' : isPast || overlap ? 'border-amber-300 bg-amber-50/55 dark:border-amber-900/60 dark:bg-amber-950/20' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/25 hover:border-emerald-300'}`}>
+                                    <div className="flex items-center justify-between gap-1"><span className="flex items-center gap-1 text-[8.5px] font-bold text-[var(--VIARA-muted)]"><Calendar size={10} />{isRtl ? 'الموعد' : 'Appointment'}</span>{hasValidSlot && <CheckCircle2 size={10} className="text-emerald-600" />}</div>
+                                    <p className="mt-1 truncate text-[10px] font-black text-[var(--VIARA-ink)]">{displayDate}</p>
+                                    <p dir="ltr" className={`mt-0.5 truncate font-mono text-[8.5px] font-black ${hasValidSlot ? 'text-teal-700 dark:text-teal-300' : 'text-[var(--VIARA-muted)]'}`}>{slot.start ? `${fmt(slot.start)} – ${fmt(slot.end)}` : '—'}</p>
+                                </button>
+
+                                <button type="button" onClick={() => goToSection(3)} className="min-w-0 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/20 p-2.5 text-start transition hover:border-emerald-300">
+                                    <div className="flex items-center justify-between gap-1"><span className="flex items-center gap-1 text-[8.5px] font-bold text-[var(--VIARA-muted)]"><CreditCard size={10} />{isRtl ? 'الدفع' : 'Payment'}</span><span className={`rounded px-1.5 py-0.5 text-[8px] font-black ${priority === 'Emergency' ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300' : priority === 'Urgent' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300' : 'bg-sky-500/15 text-sky-700 dark:text-sky-300'}`}>{t(`priority.${priority}`, priority)}</span></div>
+                                    <p className="mt-1 truncate text-[10.5px] font-black text-[var(--VIARA-ink)]">{paymentMethodLabel}</p>
+                                    <p className="mt-0.5 truncate text-[8.5px] font-semibold text-[var(--VIARA-muted)]">{selRoom ? `${isRtl ? 'غرفة' : 'Room'} ${selRoom.room_number || selRoom.name || '—'}` : (isRtl ? 'الغرفة تلقائيًا' : 'Room automatic')}</p>
+                                </button>
                             </div>
 
-                            {/* Room */}
-                            <div
-                                onClick={() => goToSection(1)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 hover:bg-violet-50/40 dark:hover:bg-violet-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-semibold text-[var(--VIARA-muted)] flex items-center gap-1">
-                                    <DoorOpen size={11} />
-                                    {isRtl ? 'الغرفة' : 'Room'}
-                                </span>
-                                <span className="font-black text-end text-[var(--VIARA-ink)]">
-                                    {selRoom ? (selRoom.room_number ? `${isRtl ? 'غرفة' : 'Room'} ${selRoom.room_number} ${selRoom.name ? `(${selRoom.name})` : ''}` : selRoom.name) : (selMachine?.room_number ? `${isRtl ? 'غرفة' : 'Room'} ${selMachine.room_number}` : '—')}
-                                </span>
-                            </div>
-
-                            {/* Modality Device */}
-                            <div
-                                onClick={() => goToSection(1)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 hover:bg-violet-50/40 dark:hover:bg-violet-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-semibold text-[var(--VIARA-muted)] flex items-center gap-1">
-                                    <Layers size={11} />
-                                    {t('booking.machine', 'Device')}
-                                </span>
-                                <span className="font-black text-end text-[var(--VIARA-ink)]">
-                                    {selMachine?.name || '—'}
-                                </span>
-                            </div>
-
-                            {/* Exam Type */}
-                            <div
-                                onClick={() => goToSection(1)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 hover:bg-violet-50/40 dark:hover:bg-violet-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-semibold text-[var(--VIARA-muted)] flex items-center gap-1">
-                                    <Stethoscope size={11} />
-                                    {t('booking.examination', 'Exam')}
-                                </span>
-                                <span className="font-black text-end text-violet-700 dark:text-violet-300 break-words">
-                                    {selExam?.name || '—'}
-                                </span>
-                            </div>
-
-                            {/* Date */}
-                            <div
-                                onClick={() => goToSection(0)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 hover:bg-teal-50/40 dark:hover:bg-teal-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-semibold text-[var(--VIARA-muted)] flex items-center gap-1">
-                                    <Calendar size={11} />
-                                    {t('booking.appointmentDate', 'Date')}
-                                </span>
-                                <span className="font-black text-end text-[var(--VIARA-ink)]">{date || '—'}</span>
-                            </div>
-
-                            {/* Time Window */}
-                            <div
-                                onClick={() => goToSection(2)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 hover:bg-sky-50/40 dark:hover:bg-sky-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-semibold text-[var(--VIARA-muted)] flex items-center gap-1">
-                                    <Clock3 size={11} />
-                                    {t('booking.startTime', 'Time')}
-                                </span>
-                                <span className="font-black text-end text-teal-700 dark:text-teal-300 font-mono">
-                                    {fmt(slot.start)} → {fmt(slot.end)}
-                                </span>
-                            </div>
-
-                            {/* Priority */}
-                            <div
-                                onClick={() => goToSection(1)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 hover:bg-amber-50/40 dark:hover:bg-amber-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-semibold text-[var(--VIARA-muted)] flex items-center gap-1">
-                                    <Flame size={11} />
-                                    {t('booking.priority', 'Priority')}
-                                </span>
-                                <span className="font-black text-end">
-                                    <span className={`inline-block rounded px-1.5 py-0.2 text-[8.5px] font-black ${priority === 'Emergency' ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300' :
-                                        priority === 'Urgent' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300' :
-                                            'bg-sky-500/15 text-sky-700 dark:text-sky-300'
-                                        }`}>
-                                        {t(`priority.${priority}`, priority)}
-                                    </span>
-                                </span>
-                            </div>
-
-                            {/* IV Contrast */}
-                            <div
-                                onClick={() => goToSection(2)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 hover:bg-amber-50/40 dark:hover:bg-amber-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-semibold text-[var(--VIARA-muted)] flex items-center gap-1">
-                                    <Shield size={11} />
-                                    {t('booking.contrast', 'Contrast')}
-                                </span>
-                                <span className="font-black text-end">
-                                    {contrastRequired ? (
-                                        <span className="text-amber-600 font-black">
-                                            {t('bookingPage.contrastRequiredTag', '⚠️ Contrast Required')}
-                                        </span>
-                                    ) : (
-                                        <span className="text-[var(--VIARA-muted)]">
-                                            {t('bookingPage.contrastNone', 'Non-Contrast')}
-                                        </span>
-                                    )}
-                                </span>
-                            </div>
-
-                            {/* Estimated Amount / Pricing */}
-                            <div
-                                onClick={() => goToSection(3)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 bg-[var(--VIARA-surface-muted)]/20 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-black text-[var(--VIARA-ink)] flex items-center gap-1">
-                                    <DollarSign size={12} className="text-emerald-600" />
-                                    {t('booking.amount', 'Amount')}
-                                </span>
-                                <span className="font-black text-end text-xs text-emerald-700 dark:text-emerald-300">
-                                    {selectedExamPrice != null
-                                        ? `${Number(selectedExamPrice).toLocaleString(isRtl ? 'ar-EG' : 'en-US')} ${t('bookingPage.currency', 'EGP')}`
-                                        : '—'}
-                                </span>
-                            </div>
-
-                            {/* Radiologist */}
-                            <div
-                                onClick={() => goToSection(3)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-semibold text-[var(--VIARA-muted)] flex items-center gap-1">
-                                    <UserCheck size={11} />
-                                    {t('booking.radiologist', 'Radiologist')}
-                                </span>
-                                <span className="font-black text-end text-[var(--VIARA-ink)] truncate max-w-36">
-                                    {selRad?.full_name || t('booking.unassignedRadiologist', 'Unassigned')}
-                                </span>
-                            </div>
-
-                            {/* Technician */}
-                            <div
-                                onClick={() => goToSection(3)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-semibold text-[var(--VIARA-muted)] flex items-center gap-1">
-                                    <Users size={11} />
-                                    {t('booking.technician', 'Technician')}
-                                </span>
-                                <span className="font-black text-end text-[var(--VIARA-ink)] truncate max-w-36">
-                                    {selTech ? `${selTech.full_name} ${selTechnicianDuty?.dot || ''}` : t('booking.unassigned', 'Unassigned')}
-                                </span>
-                            </div>
-
-                            {/* Nurse */}
-                            <div
-                                onClick={() => goToSection(3)}
-                                className="flex items-start justify-between gap-2 p-2 sm:px-3.5 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 cursor-pointer transition"
-                            >
-                                <span className="font-semibold text-[var(--VIARA-muted)] flex items-center gap-1">
-                                    <User size={11} />
-                                    {t('booking.nurse', 'Nurse')}
-                                </span>
-                                <span className="font-black text-end text-[var(--VIARA-ink)] truncate max-w-36">
-                                    {selNurse ? `${selNurse.full_name} ${selNurseDuty?.dot || ''}` : t('booking.unassigned', 'Unassigned')}
-                                </span>
+                            <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200/70 bg-emerald-500/[0.05] px-3 py-2.5 dark:border-emerald-900/60">
+                                <div>
+                                    <p className="text-[8.5px] font-bold text-[var(--VIARA-muted)]">{isRtl ? 'المبلغ المتوقع' : t('booking.amount', 'Amount')}</p>
+                                    <p className="mt-0.5 text-[13px] font-black text-emerald-700 dark:text-emerald-300">
+                                        {(paymentAmount !== undefined && paymentAmount !== '' ? Number(paymentAmount) : selectedExamPrice != null ? Number(selectedExamPrice) : null) != null
+                                            ? `${Number(paymentAmount !== undefined && paymentAmount !== '' ? paymentAmount : selectedExamPrice).toLocaleString(isRtl ? 'ar-EG' : 'en-US')} ${isRtl ? 'ج.م' : t('bookingPage.currency', 'EGP')}`
+                                            : '—'}
+                                    </p>
+                                </div>
+                                <div className="text-end">
+                                    <p className="text-[8.5px] font-bold text-[var(--VIARA-muted)]">{isRtl ? 'مدة الفحص' : 'Exam duration'}</p>
+                                    <p className="mt-0.5 text-[11px] font-black text-[var(--VIARA-ink)]">{selExam ? `${duration} ${isRtl ? 'دقيقة' : 'min'}` : '—'}</p>
+                                </div>
                             </div>
                         </div>
 
-                        {/* Direct Submit Action Button Inside Sticky Card */}
-                        <div className="p-3 border-t border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] space-y-1.5">
+                        {(isPast || overlap) && (
+                            <div className="mx-2.5 mb-2.5 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-[10px] font-semibold text-amber-900 dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-200">
+                                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                                <span>{overlap ? (isRtl ? 'هذا الوقت محجوز. اختر وقتًا آخر.' : 'This slot is already booked. Choose another time.') : (isRtl ? 'هذا الوقت أصبح في الماضي.' : 'This time is now in the past.')}</span>
+                            </div>
+                        )}
+
+                        <div className="space-y-1.5 border-t border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/20 p-2.5">
                             <button
                                 type="submit"
-                                form="book-appointment-form"
-                                disabled={isSaving || isPast || Boolean(overlap)}
-                                className="w-full min-h-11 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-[13px] font-black text-white shadow-lg shadow-teal-600/20 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-teal-600/20 active:translate-y-0 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
+                                title={isRtl ? 'اختصار لوحة المفاتيح: Ctrl + Enter' : 'Keyboard shortcut: Ctrl + Enter'}
+                                disabled={isSaving || !bookingReady}
+                                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-[12.5px] font-black text-white shadow-md shadow-teal-600/15 transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
                             >
-                                <CalendarCheck2 size={14} />
-                                <span>{isSaving ? t('booking.booking', 'Booking...') : t('booking.confirmBooking', 'Confirm Appointment')}</span>
+                                {isSaving ? <Activity size={15} className="animate-spin" /> : <CalendarCheck2 size={15} />}
+                                <span>{isSaving ? t('booking.booking', 'Booking...') : (isRtl ? 'تأكيد الحجز' : t('booking.confirmBooking', 'Confirm Appointment'))}</span>
                             </button>
-
-                            <button
-                                type="button"
-                                onClick={() => navigate(-1)}
-                                disabled={isSaving}
-                                className="w-full min-h-7.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10.5px] font-bold text-[var(--VIARA-muted)] hover:text-rose-600 hover:border-rose-300 hover:bg-rose-50/50 transition dark:hover:bg-rose-950/20"
-                            >
-                                {t('booking.cancel', 'Cancel')}
+                            <button type="button" onClick={() => navigate(-1)} disabled={isSaving} className="min-h-8 w-full rounded-lg px-2.5 text-[10px] font-bold text-[var(--VIARA-muted)] transition hover:bg-rose-50/60 hover:text-rose-600 dark:hover:bg-rose-950/20">
+                                {isRtl ? 'إلغاء' : t('booking.cancel', 'Cancel')}
                             </button>
                         </div>
                     </StepCard>
                 </aside>
             </form>
+
+            {/* Mobile / tablet primary action stays reachable without duplicating the whole summary */}
+            <div className="fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-2xl items-center gap-3 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)]/95 p-2.5 shadow-2xl backdrop-blur-xl xl:hidden">
+                <div className="min-w-0 flex-1 ps-1">
+                    <p className="truncate text-[10px] font-bold text-[var(--VIARA-muted)]">{selExam?.name || (isRtl ? 'اختر الفحص والموعد' : 'Choose exam and time')}</p>
+                    <p className="text-xs font-black text-[var(--VIARA-ink)]">{slot.start ? <><span>{displayDate}</span><span dir="ltr" className="ms-1">· {fmt(slot.start)}</span></> : (isRtl ? 'الحجز غير مكتمل' : 'Booking incomplete')}</p>
+                </div>
+                <button
+                    type="submit"
+                    form="book-appointment-form"
+                    disabled={isSaving || !bookingReady}
+                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-xs font-black text-white shadow-md disabled:opacity-40"
+                >
+                    <CalendarCheck2 size={14} />
+                    <span>{isSaving ? t('booking.booking', 'Booking...') : t('booking.confirmBooking', 'Confirm')}</span>
+                </button>
+            </div>
 
             {/* ── Quick Patient Registration Inline Modal ── */}
             {showQuickPatientModal && (

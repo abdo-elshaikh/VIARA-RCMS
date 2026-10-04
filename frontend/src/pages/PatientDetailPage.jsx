@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
@@ -7,7 +7,8 @@ import {
     Activity, AlertTriangle, ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, Clock, History,
     ClipboardList, Contact, Copy, Database, Edit3, FileText, HeartPulse, KeyRound,
     Mail, MapPin, Phone, Plus, Receipt, RefreshCw, ShieldCheck, Stethoscope,
-    UserRound, Printer, Download, Eye, EyeOff, Send,
+    UserRound, Printer, Download, Eye, EyeOff, Send, ExternalLink, Sparkles,
+    Droplets, Zap, Check,
 } from 'lucide-react';
 import {
     useCreateInsurancePolicyMutation, useCreateInvoiceMutation,
@@ -157,81 +158,102 @@ const ReadinessCard = ({ icon: Icon, label, value, detail, tone = 'slate' }) => 
 
 const PortalAccessCard = ({ enabled, mrn, loginUrl, password, canOperate, loading, onActivate, t }) => {
     const [showPassword, setShowPassword] = useState(false);
-    const copyValue = async (value) => {
+    const [copiedField, setCopiedField] = useState(null);
+
+    const copyValue = async (field, value) => {
         try {
             await navigator.clipboard.writeText(value);
+            setCopiedField(field);
             toast.success(t('page.copied'));
+            setTimeout(() => setCopiedField(null), 2000);
         } catch {
             toast.error(t('page.copyFailed'));
         }
     };
 
     return (
-        <article className="rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-4 shadow-sm sm:col-span-3 xl:col-span-1">
+        <article className="rounded-3xl border border-[var(--VIARA-line)] bg-gradient-to-b from-[var(--VIARA-surface)] to-[var(--VIARA-surface-muted)]/50 p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--VIARA-accent-soft)] text-[var(--VIARA-accent)] ring-1 ring-[rgba(var(--VIARA-accent-rgb),.2)]">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--VIARA-accent-soft)] text-[var(--VIARA-accent)] ring-1 ring-[rgba(var(--VIARA-accent-rgb),.2)]">
                         <KeyRound size={18} />
                     </span>
                     <div className="min-w-0">
-                        <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[var(--VIARA-muted)]">{t('page.portalStatus')}</p>
-                        <p className={`mt-1 text-sm font-black ${enabled ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                        <p className="text-[10px] font-black uppercase tracking-[.14em] text-[var(--VIARA-muted)]">{t('page.portalStatus')}</p>
+                        <p className={`mt-0.5 text-sm font-black ${enabled ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>
                             {enabled ? t('page.enabled') : t('page.notEnabled')}
                         </p>
                     </div>
                 </div>
-                <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${enabled ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />
+                <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${enabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500'}`} aria-hidden="true" />
             </div>
 
-            <div className="mt-4 border-t border-[var(--VIARA-line)] pt-4">
-                <h3 className="text-sm font-black text-[var(--VIARA-ink)]">{t('page.portalLoginDetails')}</h3>
-                <p className="mt-1 text-xs leading-5 text-[var(--VIARA-muted)]">{t('page.portalLoginDetailsHint')}</p>
+            <div className="mt-4 border-t border-[var(--VIARA-line)] pt-3.5">
+                <h3 className="text-xs font-black uppercase tracking-wider text-[var(--VIARA-ink)]">{t('page.portalLoginDetails')}</h3>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--VIARA-muted)]">{t('page.portalLoginDetailsHint')}</p>
 
-                <dl className="mt-4 grid gap-3">
+                <dl className="mt-3.5 space-y-2.5">
                     <PortalCredentialRow
                         label={t('page.portalLoginId')}
                         value={mrn}
                         actionLabel={t('page.copyLoginId')}
-                        onCopy={() => copyValue(mrn)}
+                        isCopied={copiedField === 'mrn'}
+                        onCopy={() => copyValue('mrn', mrn)}
                     />
                     <PortalCredentialRow
                         label={t('page.portalLoginUrl')}
                         value={loginUrl}
                         actionLabel={t('page.copyLoginUrl')}
-                        onCopy={() => copyValue(loginUrl)}
+                        isCopied={copiedField === 'url'}
+                        onCopy={() => copyValue('url', loginUrl)}
                     />
                     <div>
-                        <dt className="text-[10px] font-bold uppercase tracking-[.12em] text-[var(--VIARA-muted)]">{t('page.temporaryPassword')}</dt>
+                        <dt className="text-[10px] font-black uppercase tracking-[.12em] text-[var(--VIARA-muted)]">{t('page.temporaryPassword')}</dt>
                         {password ? (
-                            <dd className="mt-1.5 flex items-center gap-2">
-                                <code className="min-w-0 flex-1 truncate rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-2 font-mono text-xs font-black text-[var(--VIARA-ink)]" dir="ltr">
-                                    {showPassword ? password : '\u2022'.repeat(24)}
+                            <dd className="mt-1 flex items-center gap-1.5">
+                                <code className="min-w-0 flex-1 truncate rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1.5 font-mono text-xs font-black text-[var(--VIARA-ink)]" dir="ltr">
+                                    {showPassword ? password : '\u2022'.repeat(20)}
                                 </code>
-                                <button type="button" onClick={() => setShowPassword(value => !value)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] transition hover:text-[var(--VIARA-accent)]" aria-label={showPassword ? t('page.hidePassword') : t('page.showPassword')}>
-                                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(value => !value)}
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] transition hover:text-[var(--VIARA-accent)]"
+                                    aria-label={showPassword ? t('page.hidePassword') : t('page.showPassword')}
+                                >
+                                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                                 </button>
-                                <button type="button" onClick={() => copyValue(password)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] transition hover:text-[var(--VIARA-accent)]" aria-label={t('page.copyPassword')}>
-                                    <Copy size={15} />
+                                <button
+                                    type="button"
+                                    onClick={() => copyValue('pass', password)}
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] transition hover:text-[var(--VIARA-accent)]"
+                                    aria-label={t('page.copyPassword')}
+                                >
+                                    {copiedField === 'pass' ? <CheckCircle2 size={14} className="text-emerald-500" /> : <Copy size={14} />}
                                 </button>
                             </dd>
                         ) : (
-                            <dd className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                            <dd className="mt-1 rounded-xl border border-amber-200 bg-amber-50/80 p-2.5 text-xs font-semibold leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
                                 {t('page.passwordUnavailable')}
                             </dd>
                         )}
                     </div>
                 </dl>
 
-                <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                <div className="mt-4 grid gap-2">
                     {canOperate && (
-                        <Button onClick={onActivate} loading={loading} className="min-h-10 text-xs">
+                        <Button onClick={onActivate} loading={loading} className="min-h-9 text-xs w-full justify-center">
                             <KeyRound size={14} />
                             {enabled ? t('page.resetPortalAccess') : t('page.activatePortalAccess')}
                         </Button>
                     )}
-                    <a href={loginUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 text-xs font-bold text-[var(--VIARA-ink)] transition hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:bg-[var(--VIARA-accent-soft)] hover:text-[var(--VIARA-accent)]">
-                        <ArrowRight size={14} className="rtl:rotate-180" />
-                        {t('page.openPortal')}
+                    <a
+                        href={loginUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 text-xs font-bold text-[var(--VIARA-ink)] transition hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:bg-[var(--VIARA-accent-soft)] hover:text-[var(--VIARA-accent)]"
+                    >
+                        <span>{t('page.openPortal')}</span>
+                        <ArrowRight size={13} className="rtl:rotate-180" />
                     </a>
                 </div>
             </div>
@@ -239,13 +261,19 @@ const PortalAccessCard = ({ enabled, mrn, loginUrl, password, canOperate, loadin
     );
 };
 
-const PortalCredentialRow = ({ label, value, actionLabel, onCopy }) => (
+const PortalCredentialRow = ({ label, value, actionLabel, isCopied, onCopy }) => (
     <div>
-        <dt className="text-[10px] font-bold uppercase tracking-[.12em] text-[var(--VIARA-muted)]">{label}</dt>
-        <dd className="mt-1.5 flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-2 font-mono text-xs font-black text-[var(--VIARA-ink)]" dir="ltr">{value || '-'}</code>
-            <button type="button" onClick={onCopy} disabled={!value} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] transition hover:text-[var(--VIARA-accent)] disabled:opacity-40" aria-label={actionLabel}>
-                <Copy size={15} />
+        <dt className="text-[10px] font-black uppercase tracking-[.12em] text-[var(--VIARA-muted)]">{label}</dt>
+        <dd className="mt-1 flex items-center gap-1.5">
+            <code className="min-w-0 flex-1 truncate rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1.5 font-mono text-xs font-bold text-[var(--VIARA-ink)]" dir="ltr">{value || '-'}</code>
+            <button
+                type="button"
+                onClick={onCopy}
+                disabled={!value}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] transition hover:text-[var(--VIARA-accent)] disabled:opacity-40"
+                aria-label={actionLabel}
+            >
+                {isCopied ? <CheckCircle2 size={14} className="text-emerald-500" /> : <Copy size={14} />}
             </button>
         </dd>
     </div>
@@ -293,16 +321,20 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const PatientDetailPage = () => {
     const { patientId } = useParams();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const user = useSelector(selectCurrentUser);
     const { t, i18n } = useTranslation(['patientDetail', 'patients', 'common']);
     const isRtl = i18n.dir() === 'rtl';
-    const [activeTab, setActiveTab] = useState('overview');
+    const allowedTabKeys = ['overview', 'medical', 'visits', 'insurance', 'documents', 'crm', 'privacy', 'audit'];
+    const requestedTab = searchParams.get('tab');
+    const [activeTab, setActiveTab] = useState(() => allowedTabKeys.includes(requestedTab) ? requestedTab : 'overview');
     const [editing, setEditing] = useState(false);
     const [policyForm, setPolicyForm] = useState(emptyPolicy);
     const [expandedVisitId, setExpandedVisitId] = useState(null);
     const [isExportingWord, setIsExportingWord] = useState(false);
     const [credentialDialog, setCredentialDialog] = useState(null);
     const [issuedPortalPassword, setIssuedPortalPassword] = useState('');
+    const [selectedVisitIds, setSelectedVisitIds] = useState(new Set());
 
     const { data: rawCenterSettings } = useGetCenterSettingsQuery();
     const centerSettings = normalizeCenterSettings(rawCenterSettings);
@@ -402,6 +434,20 @@ const PatientDetailPage = () => {
         { key: 'privacy', icon: ShieldCheck, show: canOperate }, { key: 'audit', icon: ClipboardList, show: hasDeveloperOrAdminRole(user?.role) },
     ].filter(tab => tab.show), [canOperate, canUseCrm, canViewInsurance, user?.role]);
 
+    const selectTab = key => {
+        setActiveTab(key);
+        const nextParams = new URLSearchParams(searchParams);
+        if (key === 'overview') nextParams.delete('tab');
+        else nextParams.set('tab', key);
+        setSearchParams(nextParams);
+    };
+
+    // Keep deep links and browser back/forward navigation in sync with the selected patient section.
+    useEffect(() => {
+        const nextTab = tabs.some(tab => tab.key === requestedTab) ? requestedTab : 'overview';
+        if (nextTab !== activeTab) setActiveTab(nextTab);
+    }, [requestedTab, tabs, activeTab]);
+
     if (isLoading) return <div className="grid gap-4"><div className="h-44 animate-pulse rounded-2xl bg-[var(--VIARA-surface-muted)]" /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, i) => <div key={i} className="h-28 animate-pulse rounded-2xl bg-[var(--VIARA-surface-muted)]" />)}</div></div>;
     if (error || !patient) return <div className="rounded-2xl border border-rose-200 bg-[var(--VIARA-surface)] p-10 text-center dark:border-rose-900"><AlertTriangle className="mx-auto text-rose-500" size={34} /><h1 className="mt-4 text-xl font-black text-[var(--VIARA-ink)]">{t('page.notFound')}</h1><p className="mt-2 text-sm text-[var(--VIARA-muted)]">{getErrorMessage(error, t('page.loadError'))}</p><Button className="mt-5" onClick={() => navigate('/patients')}>{t('page.back')}</Button></div>;
 
@@ -422,6 +468,45 @@ const PatientDetailPage = () => {
     const translatePaymentMethod = value => value ? t(`visitDetail.paymentMethods.${value}`, { defaultValue: value }) : '-';
     const translateDeliveryStatus = value => value ? t(`visitDetail.deliveryStatuses.${value}`, { defaultValue: value }) : t('visitDetail.notDelivered');
 
+    const toggleSelectVisit = (appointmentId) => {
+        setSelectedVisitIds(prev => {
+            const next = new Set(prev);
+            if (next.has(appointmentId)) {
+                next.delete(appointmentId);
+            } else {
+                next.add(appointmentId);
+            }
+            return next;
+        });
+    };
+
+    const handleSelectAllVisits = () => {
+        if (selectedVisitIds.size === history.length) {
+            setSelectedVisitIds(new Set());
+        } else {
+            setSelectedVisitIds(new Set(history.map(item => item.appointment_id)));
+        }
+    };
+
+    const handlePrintSelectedVisits = () => {
+        if (selectedVisitIds.size === 0) {
+            toast.error(t('billing.selectVisitsFirst', { defaultValue: 'Please select at least one visit to print invoice' }));
+            return;
+        }
+        const appointmentIds = Array.from(selectedVisitIds).join(',');
+        const url = `/print/invoice/statement?patientId=${encodeURIComponent(patientId)}&appointmentIds=${encodeURIComponent(appointmentIds)}`;
+        window.open(url, '_blank');
+    };
+
+    const handlePrintSingleVisitInvoice = (item) => {
+        if (item.invoice_id) {
+            window.open(`/print/invoice/${encodeURIComponent(item.invoice_id)}`, '_blank');
+        } else {
+            const url = `/print/invoice/statement?patientId=${encodeURIComponent(patientId)}&appointmentIds=${encodeURIComponent(item.appointment_id)}`;
+            window.open(url, '_blank');
+        }
+    };
+
     const handleInvoice = async () => { try { await createInvoice({ patientId, appointmentId: latestAppointment?.appointment_id }).unwrap(); toast.success(t('invoiceCreated')); } catch (e) { toast.error(getErrorMessage(e, t('invoiceError'))); } };
     const handlePassword = async () => {
         try {
@@ -431,11 +516,16 @@ const PatientDetailPage = () => {
                 portalLabel: t('portal'),
                 subjectLabel: t('fields.fullName'),
                 subjectName: fullName,
+                subjectPhone: patient.phone,
+                subjectEmail: patient.email,
+                phone: patient.phone,
+                email: patient.email,
                 identifierLabel: 'MRN',
                 identifier: result.mrn,
                 password: result.portalPassword,
                 loginUrl: portalLoginUrl,
-                deliveryHint: t('page.credentialsHint')
+                deliveryHint: t('page.credentialsHint'),
+                recipientType: 'patient',
             };
             setIssuedPortalPassword(result.portalPassword);
             setCredentialDialog(credentials);
@@ -446,366 +536,724 @@ const PatientDetailPage = () => {
     };
     const handlePolicy = async event => { event.preventDefault(); try { await createPolicy({ patientId, ...policyForm }).unwrap(); toast.success(t('policyAdded')); setPolicyForm(emptyPolicy); } catch (e) { toast.error(getErrorMessage(e, t('policyError'))); } };
 
-    return <div className="app-page pb-10">
-
-        <PageHeader
-            icon={UserRound}
-            eyebrow={t('page.record')}
-            title={fullName}
-            description={`${t('detail.registered', { ns: 'patients' })} ${formatDate(patient.created_at)}`}
-            metrics={[
-                { key: 'visits', label: t('visitDetail.metrics.totalVisits'), value: history.length, icon: History, tone: 'cyan' },
-                { key: 'reports', label: t('visitDetail.metrics.finalizedReports'), value: finalizedReports, icon: FileText, tone: 'emerald' },
-                { key: 'pending', label: t('visitDetail.metrics.pendingReports'), value: pendingReports, icon: Clock, tone: 'amber' },
-                { key: 'delivered', label: t('visitDetail.metrics.deliveredReports'), value: deliveredReports, icon: Send, tone: 'violet' },
-            ]}
-            metricsLabel={t('visitDetail.metrics.label')}
-            meta={(
-                <>
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--VIARA-accent-soft)] text-sm font-black text-[var(--VIARA-accent)] ring-1 ring-[rgba(var(--VIARA-accent-rgb),.2)]">{getInitials(patient)}</span>
-                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${statusStyles[patient.patient_status || 'Active']}`}>{t(`status.${patient.patient_status || 'Active'}`)}</span>
-                    <span className="rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1 font-mono text-xs font-bold text-[var(--VIARA-muted)]">{patient.mrn}</span>
-                    {patient.phone && <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1 text-xs font-bold text-[var(--VIARA-muted)]"><Phone size={13} />{patient.phone}</span>}
-                    {patient.email && <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1 text-xs font-bold text-[var(--VIARA-muted)]"><Mail size={13} />{patient.email}</span>}
-                    {patient.address && <span className="inline-flex max-w-sm items-center gap-1.5 truncate rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1 text-xs font-bold text-[var(--VIARA-muted)]"><MapPin size={13} />{patient.address}</span>}
-                </>
-            )}
-            actions={(
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:justify-end">
-                    <Button variant="secondary" onClick={() => navigate(`/appointments/new?patientId=${patientId}`)}><Plus size={15} />{t('book')}</Button>
-                    {canOperate && <>
-                        <Button variant="secondary" onClick={() => setEditing(true)}><Edit3 size={15} />{t('detail.edit', { ns: 'patients' })}</Button>
-                        <Button onClick={handleInvoice} disabled={!latestAppointment} loading={isCreatingInvoice}><Receipt size={15} />{t('createInvoice')}</Button>
-                    </>}
-                    <button type="button" onClick={refetch} aria-label={t('page.refresh')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] transition hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:bg-[var(--VIARA-accent-soft)] hover:text-[var(--VIARA-accent)]"><RefreshCw size={16} className={isFetching ? 'animate-spin' : ''} /></button>
-                </div>
-            )}
-        />
-
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <div className="rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-5 shadow-sm sm:p-6">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex min-w-0 flex-col items-start gap-4 sm:flex-row sm:gap-5">
-                        <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[var(--VIARA-accent)] text-xl font-black text-white shadow-sm">
+    return (
+        <div className="app-page pb-12 space-y-6">
+{/* 1. SHARED PAGE HEADER — identity, record indicators, and actions */}
+            <PageHeader
+                leading={
+                    <div className="relative shrink-0">
+                        <span className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-2xl bg-gradient-to-tr from-[var(--VIARA-accent)] via-teal-600 to-teal-400 text-2xl sm:text-3xl font-black text-white shadow-md ring-4 ring-white/80 dark:ring-slate-800/80">
                             {getInitials(patient)}
                         </span>
-                        <div className="min-w-0 pt-1">
-                            <div className="flex flex-wrap items-center gap-3">
-                                <h2 className="text-xl font-black tracking-tight text-[var(--VIARA-ink)]">{t('page.recordSnapshot', { defaultValue: 'Patient record snapshot' })}</h2>
-                                <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider ${statusStyles[patient.patient_status || 'Active']}`}>{t(`status.${patient.patient_status || 'Active'}`, { ns: 'patients' })}</span>
-                            </div>
-                            <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-[var(--VIARA-muted)]">
-                                {t('page.snapshotHelp', { defaultValue: 'Operational identity, contact readiness, safety flags, and latest activity before opening detailed tabs.' })}
-                            </p>
-                            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                                <SnapshotFact label="MRN" value={patient.mrn} />
-                                <SnapshotFact label={t('fields.dob')} value={age == null ? formatDate(patient.date_of_birth) : t('page.ageWithDob', { age, dob: formatDate(patient.date_of_birth), defaultValue: '{{age}} years · {{dob}}' })} />
-                                <SnapshotFact label={t('fields.gender')} value={patient.gender ? t(`gender.${patient.gender}`) : t('fallback.unknown')} />
-                                <SnapshotFact label={t('stats.lastVisit')} value={summary.last_visit ? formatDate(summary.last_visit, true) : t('stats.never')} />
-                            </div>
-                        </div>
+                        <span
+                            className={`absolute -bottom-1 -end-1 h-5 w-5 rounded-full border-2 border-white dark:border-slate-900 ${patient.patient_status === 'Active' ? 'bg-emerald-500' : 'bg-slate-400'}`}
+                            title={t(`status.${patient.patient_status || 'Active'}`)}
+                        />
                     </div>
-                    <div className="w-full shrink-0 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-4 lg:w-64">
-                        <div className="flex items-center justify-between gap-3">
-                            <p className="text-xs font-bold uppercase tracking-[.12em] text-[var(--VIARA-muted)]">{t('page.completeness')}</p>
-                            <p className="text-2xl font-black tracking-tight text-[var(--VIARA-ink)]">{completion}%</p>
-                        </div>
-                        <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--VIARA-line)]">
-                            <div className="h-full rounded-full bg-[var(--VIARA-accent)] transition-all duration-500" style={{ width: `${Math.min(100, Math.max(0, completion))}%` }} />
-                        </div>
-                        <p className="mt-3 text-xs font-semibold leading-relaxed text-[var(--VIARA-muted)]">{completion >= 80 ? t('page.profileReady') : t('page.profileNeedsData')}</p>
-                    </div>
+                }
+                title={fullName}
+                meta={
+                    <>
+                        <span className={`inline-flex items-center rounded-full border px-3 py-0.5 text-[11px] font-black uppercase tracking-wider ${statusStyles[patient.patient_status || 'Active']}`}>
+                            {t(`status.${patient.patient_status || 'Active'}`, { ns: 'patients' })}
+                        </span>
+                        {alerts.length > 0 ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300 shadow-2xs animate-pulse">
+                                <AlertTriangle size={13} className="text-amber-600 dark:text-amber-400" />
+                                {t('page.alertCount', { count: alerts.length, defaultValue: `${alerts.length} active alerts` })}
+                            </span>
+                        ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/90 bg-emerald-50/90 px-3 py-1 text-xs font-black text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 shadow-2xs">
+                                <ShieldCheck size={13} className="text-emerald-600 dark:text-emerald-400" />
+                                <span>{t('page.noAlerts')}</span>
+                            </span>
+                        )}
+                    </>
+                }
+                metrics={[
+                    {
+                        key: 'visits',
+                        icon: CalendarDays,
+                        label: t('stats.visits'),
+                        value: history.length.toLocaleString(locale),
+                        tone: 'teal',
+                        detail: summary.last_visit ? `${t('stats.lastVisit')}: ${formatDate(summary.last_visit)}` : t('stats.never'),
+                    },
+                    {
+                        key: 'spent',
+                        icon: Receipt,
+                        label: t('stats.spent'),
+                        value: `${formatMoney(summary.total_spent)} ${t('currency.egp')}`,
+                        tone: 'emerald',
+                        detail: `${paidVisits} ${t('page.paidVisits', { defaultValue: 'زيارات مسددة' })}`,
+                    },
+                    {
+                        key: 'reports',
+                        icon: FileText,
+                        label: t('page.finalizedReports', { defaultValue: 'Finalized reports' }),
+                        value: `${finalizedReports.toLocaleString(locale)} / ${history.length.toLocaleString(locale)}`,
+                        tone: 'sky',
+                        detail: `${deliveredReports} ${t('results.delivered')}`,
+                    },
+                    {
+                        key: 'completeness',
+                        icon: alerts.length ? AlertTriangle : ShieldCheck,
+                        label: t('page.completeness'),
+                        value: `${completion}%`,
+                        tone: completion >= 90 ? 'emerald' : completion >= 70 ? 'violet' : 'amber',
+                        detail: alerts.length
+                            ? t('page.alertCount', { count: alerts.length, defaultValue: `${alerts.length} active alerts` })
+                            : (completion >= 80 ? t('page.profileReady') : t('page.profileNeedsData')),
+                    },
+                ]}
+                metricsLabel={t('page.recordIndicators', { defaultValue: 'Patient record indicators' })}
+                actions={
+                    <>
+                        <Button
+                            variant="primary"
+                            onClick={() => navigate(`/appointments/new?patientId=${patientId}`)}
+                            className="shadow-sm hover:shadow"
+                        >
+                            <Plus size={15} />
+                            <span>{t('book')}</span>
+                        </Button>
+                        {canOperate && (
+                            <>
+                                <Button variant="secondary" onClick={() => setEditing(true)}>
+                                    <Edit3 size={15} />
+                                    <span>{t('detail.edit', { ns: 'patients' })}</span>
+                                </Button>
+                                <Button onClick={handleInvoice} disabled={!latestAppointment} loading={isCreatingInvoice}>
+                                    <Receipt size={15} />
+                                    <span>{t('createInvoice')}</span>
+                                </Button>
+                            </>
+                        )}
+                        <button
+                            type="button"
+                            onClick={refetch}
+                            aria-label={t('page.refresh')}
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] transition hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:bg-[var(--VIARA-accent-soft)] hover:text-[var(--VIARA-accent)]"
+                            title={t('page.refresh')}
+                        >
+                            <RefreshCw size={16} className={isFetching ? 'animate-spin' : ''} />
+                        </button>
+                    </>
+                }
+            >
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs">
+                    <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-mono font-black text-[var(--VIARA-ink)] shadow-2xs">
+                        <ClipboardList size={13} className="text-[var(--VIARA-accent)]" />
+                        <span className="text-[10px] font-semibold text-[var(--VIARA-muted)]">MRN:</span>
+                        <span>{patient.mrn}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-bold text-[var(--VIARA-muted)]">
+                        <CalendarDays size={13} className="text-[var(--VIARA-accent)]" />
+                        {age != null ? t('page.ageWithDob', { age, dob: formatDate(patient.date_of_birth), defaultValue: `${age} years · ${formatDate(patient.date_of_birth)}` }) : formatDate(patient.date_of_birth)}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-bold text-[var(--VIARA-muted)]">
+                        <UserRound size={13} />
+                        {patient.gender ? t(`gender.${patient.gender}`) : t('fallback.unknown')}
+                    </span>
+                    {patient.phone && (
+                        <a
+                            href={`tel:${patient.phone}`}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-semibold text-[var(--VIARA-ink)] transition-colors hover:border-[var(--VIARA-accent)] hover:text-[var(--VIARA-accent)]"
+                        >
+                            <Phone size={13} className="text-emerald-600" />
+                            <span>{patient.phone}</span>
+                        </a>
+                    )}
+                    {patient.email && (
+                        <a
+                            href={`mailto:${patient.email}`}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-semibold text-[var(--VIARA-ink)] transition-colors hover:border-[var(--VIARA-accent)] hover:text-[var(--VIARA-accent)]"
+                        >
+                            <Mail size={13} className="text-cyan-600" />
+                            <span>{patient.email}</span>
+                        </a>
+                    )}
+                    {patient.national_id && (
+                        <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-mono text-[var(--VIARA-muted)]">
+                            <span className="text-[10px] font-bold text-[var(--VIARA-muted)]">ID:</span>
+                            <span>{patient.national_id}</span>
+                        </span>
+                    )}
                 </div>
-            </div>
+            </PageHeader>
 
-            <aside className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-                <ReadinessCard
-                    icon={contactReady ? CheckCircle2 : Phone}
-                    label={t('page.contactReadiness', { defaultValue: 'Contact readiness' })}
-                    value={contactReady ? t('page.ready', { defaultValue: 'Ready' }) : t('page.needsData', { defaultValue: 'Needs data' })}
-                    detail={patient.phone || patient.email || t('page.noContactRoute', { defaultValue: 'No phone or email recorded' })}
-                    tone={contactReady ? 'emerald' : 'amber'}
-                />
-                <ReadinessCard
-                    icon={alerts.length ? AlertTriangle : ShieldCheck}
-                    label={t('page.safetyStatus', { defaultValue: 'Safety status' })}
-                    value={alerts.length ? t('page.reviewAlerts') : t('page.noAlerts')}
-                    detail={alerts.length ? t('page.alertCount', { count: alerts.length, defaultValue: '{{count}} active alerts' }) : t('page.clearForScheduling', { defaultValue: 'No safety blockers recorded' })}
-                    tone={alerts.length ? 'amber' : 'emerald'}
-                />
-                <PortalAccessCard
-                    enabled={portalReady || Boolean(issuedPortalPassword)}
-                    mrn={patient.mrn}
-                    loginUrl={portalLoginUrl}
-                    password={issuedPortalPassword}
-                    canOperate={canOperate}
-                    loading={isGeneratingPassword}
-                    onActivate={handlePassword}
-                    t={t}
-                />
-            </aside>
-        </section>
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric icon={CalendarDays} label={t('stats.visits')} value={summary.visit_count || 0} detail={summary.last_visit ? `${t('stats.lastVisit')}: ${formatDate(summary.last_visit)}` : t('stats.never')} /><Metric icon={Receipt} tone="emerald" label={t('stats.spent')} value={`${formatMoney(summary.total_spent)} ${t('currency.egp')}`} detail={t('page.financialSummary')} /><Metric icon={CheckCircle2} tone="violet" label={t('page.completeness')} value={`${completion}%`} detail={completion >= 80 ? t('page.profileReady') : t('page.profileNeedsData')} /><Metric icon={AlertTriangle} tone="amber" label={t('page.alerts')} value={alerts.length} detail={alerts.length ? t('page.reviewAlerts') : t('page.noAlerts')} /></section>
+            {/* 3. STICKY MODERN TABS BAR */}
+            <nav aria-label={t('page.sections')} className="sticky top-2 z-20 flex gap-1.5 overflow-x-auto rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)]/95 backdrop-blur-md p-1.5 shadow-sm scrollbar-hide">
+                {tabs.map(({ key, icon: Icon }) => {
+                    const isActive = activeTab === key;
+                    const count = key === 'visits' ? history.length : key === 'insurance' ? policies.length : null;
+                    const hasTabAlert = key === 'medical' && alerts.length > 0;
+                    return (
+                        <button
+                            key={key}
+                            type="button"
+                            onClick={() => selectTab(key)}
+                            aria-label={t(`detail.tabs.${key}`, { ns: 'patients' })}
+                            aria-current={isActive ? 'page' : undefined}
+                            className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-xs font-bold transition-all ${isActive
+                                ? 'bg-[var(--VIARA-accent)] text-white shadow-sm font-black'
+                                : 'text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface-muted)] hover:text-[var(--VIARA-ink)]'
+                                }`}
+                        >
+                            <Icon size={16} aria-hidden="true" />
+                            <span>{t(`detail.tabs.${key}`, { ns: 'patients' })}</span>
+                            {count != null && (
+                                <span aria-hidden="true" className={`rounded-full px-2 py-0.5 text-[10px] font-black ${isActive ? 'bg-white/20 text-white' : 'bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)]'
+                                    }`}>
+                                    {count}
+                                </span>
+                            )}
+                            {hasTabAlert && (
+                                <span aria-hidden="true" className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                            )}
+                        </button>
+                    );
+                })}
+            </nav>
 
-        <nav aria-label={t('page.sections')} className="sticky top-2 z-20 flex gap-1 overflow-x-auto rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-1.5 shadow-sm scrollbar-hide">
-            {tabs.map(({ key, icon: Icon }) => (
-                <button
-                    key={key}
-                    type="button"
-                    onClick={() => setActiveTab(key)}
-                    aria-current={activeTab === key ? 'page' : undefined}
-                    className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-xs font-bold transition ${activeTab === key
-                            ? 'bg-[var(--VIARA-accent)] text-white shadow-sm'
-                            : 'text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface-hover)] hover:text-[var(--VIARA-ink)]'
-                        }`}
-                >
-                    <Icon size={16} />
-                    {t(`detail.tabs.${key}`, { ns: 'patients' })}
-                </button>
-            ))}
-        </nav>
-
-        {activeTab === 'overview' && <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)]"><div className="space-y-5"><Panel icon={UserRound} title={t('sections.personal')}><InfoGrid items={[[t('fields.fullName'), fullName], [t('fields.dob'), formatDate(patient.date_of_birth)], [t('fields.gender'), t(`gender.${patient.gender}`)], [t('fields.nationalId'), patient.national_id], [t('fields.passport'), patient.passport_number], [t('fields.status'), t(`status.${patient.patient_status || 'Active'}`)]]} /></Panel><Panel icon={Contact} title={t('sections.contact')}><InfoGrid items={[[t('fields.phone'), patient.phone], [t('detail.email', { ns: 'patients' }), patient.email], [t('fields.address'), patient.address, true], [t('fields.emergencyContact'), patient.emergency_contact_name], [t('fields.emergencyPhone'), patient.emergency_contact_phone], [t('detail.relationship', { ns: 'patients' }), patient.emergency_contact_relationship]]} /></Panel></div><div className="space-y-5"><Panel icon={AlertTriangle} title={t('page.clinicalAlerts')} description={t('page.clinicalAlertsHelp')}>{alerts.length ? <div className="space-y-2">{alerts.map(([label, value]) => <div key={label} className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-400/10"><p className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">{label}</p><p className="mt-1 text-sm font-semibold text-amber-950 dark:text-amber-100">{value}</p></div>)}</div> : <div className="flex items-center gap-3 rounded-xl bg-emerald-50 p-4 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"><CheckCircle2 size={20} /><p className="text-sm font-bold">{t('page.noAlerts')}</p></div>}</Panel><Panel icon={Mail} title={t('page.communication')}><InfoGrid items={[[t('detail.preferredLanguage', { ns: 'patients' }), patient.preferred_language], [t('detail.preference', { ns: 'patients' }), patient.communication_preference], [t('detail.assignedManager', { ns: 'patients' }), patient.assigned_manager_name]]} /></Panel></div></div>}
-
-        {activeTab === 'medical' && <Panel icon={Stethoscope} title={t('sections.medical')} description={t('page.medicalHelp')}><InfoGrid empty={t('fallback.none')} items={[[t('fields.allergies'), patient.allergies], [t('fields.diseases'), patient.chronic_diseases], [t('fields.surgeries'), patient.prior_surgeries], [t('fields.pregnancy'), patient.pregnancy_status], [t('fields.implants'), patient.implants_devices], [t('fields.renal'), patient.renal_function_notes]]} /></Panel>}
-
-        {activeTab === 'visits' && (
-            <Panel icon={CalendarDays} title={t('tabs.overview')} description={t('page.visitHelp')}>
-                {history.length === 0 ? (
-                    <EmptyState title={t('history.empty')} />
-                ) : (
-                    <div className="space-y-5">
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                            <VisitSignal icon={CalendarDays} label={t('stats.visits')} value={history.length.toLocaleString(locale)} detail={t('page.visitSignalTotal', { defaultValue: 'Appointments in this record' })} />
-                            <VisitSignal icon={FileText} label={t('page.finalizedReports', { defaultValue: 'Finalized reports' })} value={finalizedReports.toLocaleString(locale)} detail={t('page.pendingReports', { count: pendingReports, defaultValue: '{{count}} pending or undocumented' })} />
-                            <VisitSignal icon={CheckCircle2} label={t('results.delivered')} value={deliveredReports.toLocaleString(locale)} detail={t('page.deliveredReportsHint', { defaultValue: 'Reports delivered to patient or partner' })} />
-                            <VisitSignal icon={Receipt} label={t('page.paidVisits', { defaultValue: 'Paid visits' })} value={paidVisits.toLocaleString(locale)} detail={t('page.paidVisitsHint', { defaultValue: 'Visits with recorded patient payment' })} />
+            {/* 4. MAIN BENTO GRID (ACTIVE TAB CONTENT + SIDE RAIL) */}
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+                {/* Main Tab Content */}
+                <div className="min-w-0 space-y-6">
+                    {activeTab === 'overview' && (
+                        <div className="space-y-6">
+                            <Panel icon={UserRound} title={t('sections.personal')}>
+                                <InfoGrid items={[[t('fields.fullName'), fullName], [t('fields.dob'), formatDate(patient.date_of_birth)], [t('fields.gender'), t(`gender.${patient.gender}`)], [t('fields.nationalId'), patient.national_id], [t('fields.passport'), patient.passport_number], [t('fields.status'), t(`status.${patient.patient_status || 'Active'}`)]]} />
+                            </Panel>
+                            <Panel icon={Contact} title={t('sections.contact')}>
+                                <InfoGrid items={[[t('fields.phone'), patient.phone], [t('detail.email', { ns: 'patients' }), patient.email], [t('fields.address'), patient.address, true], [t('fields.emergencyContact'), patient.emergency_contact_name], [t('fields.emergencyPhone'), patient.emergency_contact_phone], [t('detail.relationship', { ns: 'patients' }), patient.emergency_contact_relationship]]} />
+                            </Panel>
                         </div>
+                    )}
 
-                        <div className="relative space-y-3 before:absolute before:bottom-4 before:start-4 before:top-4 before:w-px before:bg-[var(--VIARA-line)]">
-                            {history.map((item, index) => {
-                                const isExpanded = expandedVisitId === item.appointment_id;
-                                return (
-                                    <article
-                                        key={item.appointment_id}
-                                        className="group relative ms-10 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-5 shadow-sm transition hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:shadow-md"
-                                    >
-                                        <span className={`absolute -start-[30px] top-6 flex h-3 w-3 items-center justify-center rounded-full ring-4 ring-[var(--VIARA-canvas)] ${index === 0 ? 'bg-[var(--VIARA-accent)]' : 'bg-[var(--VIARA-line-strong)]'}`}>
+                    {activeTab === 'medical' && <Panel icon={Stethoscope} title={t('sections.medical')} description={t('page.medicalHelp')}><InfoGrid empty={t('fallback.none')} items={[[t('fields.allergies'), patient.allergies], [t('fields.diseases'), patient.chronic_diseases], [t('fields.surgeries'), patient.prior_surgeries], [t('fields.pregnancy'), patient.pregnancy_status], [t('fields.implants'), patient.implants_devices], [t('fields.renal'), patient.renal_function_notes]]} /></Panel>}
+
+                    {activeTab === 'visits' && (
+                        <div className="space-y-4">
+                            {/* Visits Command & Batch Print Bar */}
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-4 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[rgba(var(--VIARA-accent-rgb),.2)] bg-[var(--VIARA-accent-soft)] text-[var(--VIARA-accent)]">
+                                        <CalendarDays size={18} />
+                                    </span>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h2 className="text-sm font-black text-[var(--VIARA-ink)]">
+                                                {t('tabs.overview')}
+                                            </h2>
+                                            <span className="rounded-full bg-[var(--VIARA-accent-soft)] px-2.5 py-0.5 text-xs font-black text-[var(--VIARA-accent)]">
+                                                {history.length}
+                                            </span>
+                                        </div>
+                                        <p className="mt-0.5 text-xs font-medium text-[var(--VIARA-muted)]">
+                                            {t('page.visitHelp')}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2.5">
+                                    <label className="inline-flex items-center gap-2 cursor-pointer select-none rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-2 text-xs font-bold text-[var(--VIARA-ink)] transition hover:bg-[var(--VIARA-surface-hover)]">
+                                        <input
+                                            type="checkbox"
+                                            checked={history.length > 0 && selectedVisitIds.size === history.length}
+                                            onChange={handleSelectAllVisits}
+                                            className="h-4 w-4 rounded border-slate-300 text-[var(--VIARA-accent)] focus:ring-[var(--VIARA-accent)] cursor-pointer"
+                                        />
+                                        <span>
+                                            {selectedVisitIds.size === history.length
+                                                ? t('billing.deselectAll', { defaultValue: 'Deselect all' })
+                                                : t('billing.selectAll', { defaultValue: 'Select all' })}
                                         </span>
+                                    </label>
 
-                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                            <div>
-                                                <h3 className="text-sm font-black text-[var(--VIARA-ink)] transition-colors group-hover:text-[var(--VIARA-accent)]">
-                                                    {item.exam_type_name || item.machine_name || t('detail.appointment', { ns: 'patients' })}
-                                                </h3>
-                                                <p className="mt-1.5 flex items-center gap-2 text-xs font-semibold text-[var(--VIARA-muted)]">
-                                                    <span className="rounded-md bg-[var(--VIARA-surface-muted)] px-2 py-0.5">{item.machine_name}</span>
-                                                    <span aria-hidden="true" className="opacity-50">&bull;</span>
-                                                    <span>{translateVisitStatus(item.status)}</span>
-                                                </p>
-                                                {item.is_follow_up && (
-                                                    <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-[rgba(var(--VIARA-accent-rgb),.2)] bg-[var(--VIARA-accent-soft)] px-2 py-1 text-[10px] font-black uppercase text-[var(--VIARA-accent)]">
-                                                        {t('visitDetail.followUp')} <span aria-hidden="true" className="opacity-50">&bull;</span> {item.prior_order_number || t('visitDetail.priorStudy')}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <time className="rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1.5 text-xs font-bold text-[var(--VIARA-muted)]">{formatDate(item.start_time, true)}</time>
-                                        </div>
+                                    {selectedVisitIds.size > 0 && (
+                                        <span className="inline-flex items-center rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-black text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
+                                            {t('billing.selectedVisitsCount', { count: selectedVisitIds.size, defaultValue: `${selectedVisitIds.size} visits selected` })}
+                                        </span>
+                                    )}
 
-                                        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-[10px] font-bold">
-                                            <div className="flex flex-wrap gap-2">
-                                                <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1.5 text-[var(--VIARA-muted)]">
-                                                    {formatMoney(item.payment_amount)} {t('currency.egp')} <span aria-hidden="true" className="opacity-40">&bull;</span> {translatePaymentMethod(item.payment_method)}
-                                                </span>
-                                                {item.report_status && (
-                                                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-1.5 text-cyan-700 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300">
-                                                        {t('results.report')}: {translateReportStatus(item.report_status)}
-                                                    </span>
-                                                )}
-                                                {item.delivered_at && (
-                                                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
-                                                        {t('results.delivered')}
-                                                    </span>
-                                                )}
-                                            </div>
+                                    <Button
+                                        type="button"
+                                        onClick={handlePrintSelectedVisits}
+                                        disabled={selectedVisitIds.size === 0}
+                                        className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[var(--VIARA-accent)] px-4 text-xs font-bold text-white shadow-sm transition hover:brightness-105 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        <Printer size={15} />
+                                        <span>{t('billing.printSelectedVisits', { defaultValue: 'Print Invoice for Selected Visits' })}</span>
+                                    </Button>
+                                </div>
+                            </div>
 
-                                            <button
-                                                type="button"
-                                                onClick={() => setExpandedVisitId(isExpanded ? null : item.appointment_id)}
-                                                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-4 text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-ink)] transition hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:bg-[var(--VIARA-accent-soft)] hover:text-[var(--VIARA-accent)]"
+                            {history.length === 0 ? (
+                                <div className="rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-8">
+                                    <EmptyState title={t('history.empty')} />
+                                </div>
+                            ) : (
+                                <div className="relative space-y-3.5 before:absolute before:bottom-4 before:start-4 before:top-4 before:w-px before:bg-[var(--VIARA-line)]">
+                                    {history.map((item, index) => {
+                                        const isExpanded = expandedVisitId === item.appointment_id;
+                                        const isSelected = selectedVisitIds.has(item.appointment_id);
+                                        return (
+                                            <article
+                                                key={item.appointment_id}
+                                                className={`group relative ms-10 rounded-2xl border p-5 shadow-sm transition hover:shadow-md ${isSelected
+                                                    ? 'border-[var(--VIARA-accent)] bg-[var(--VIARA-accent-soft)]/20'
+                                                    : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] hover:border-[rgba(var(--VIARA-accent-rgb),.35)]'
+                                                    }`}
                                             >
-                                                <FileText size={14} className={isExpanded ? "text-teal-500" : "text-slate-400 group-hover:text-teal-500"} />
-                                                {isExpanded ? t('visitDetail.hideDetails') : t('visitDetail.viewDetails')}
-                                            </button>
-                                        </div>
+                                                <span className={`absolute -start-[30px] top-6 flex h-3 w-3 items-center justify-center rounded-full ring-4 ring-[var(--VIARA-canvas)] ${index === 0 ? 'bg-[var(--VIARA-accent)]' : 'bg-[var(--VIARA-line-strong)]'}`}>
+                                                </span>
 
-                                        {/* Expanded Details and Report Accordion */}
-                                        {isExpanded && (
-                                            <div className="mt-4 space-y-4 border-t border-[var(--VIARA-line)] pt-4 animate-in slide-in-from-top-2 duration-200">
-                                                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 text-xs">
-                                                    {item.is_follow_up && (
-                                                        <div className="sm:col-span-2 md:col-span-3 rounded-xl border border-[rgba(var(--VIARA-accent-rgb),.2)] bg-[var(--VIARA-accent-soft)] p-3">
-                                                            <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-accent)]">{t('visitDetail.followUpContext')}</dt>
-                                                            <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">
-                                                                {[item.prior_exam_type_name || t('visitDetail.priorStudy'), item.prior_order_number, item.prior_exam_time ? formatDate(item.prior_exam_time) : null].filter(Boolean).join(' · ')}
-                                                            </dd>
-                                                            {item.follow_up_reason && <dd className="mt-1.5 whitespace-pre-wrap text-[var(--VIARA-muted)]">{item.follow_up_reason}</dd>}
-                                                        </div>
-                                                    )}
-                                                    <div>
-                                                        <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.clinicalIndication')}</dt>
-                                                        <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">{item.clinical_indication || '-'}</dd>
-                                                    </div>
-                                                    <div>
-                                                        <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.provisionalDiagnosis')}</dt>
-                                                        <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">{item.provisional_diagnosis || '-'}</dd>
-                                                    </div>
-                                                    <div>
-                                                        <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.modalityBodyPart')}</dt>
-                                                        <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">{(item.body_part || '-').toUpperCase()}</dd>
-                                                    </div>
-                                                    <div>
-                                                        <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.contrastInjection')}</dt>
-                                                        <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">{item.contrast_required ? t('visitDetail.contrastRequired') : t('visitDetail.nonContrast')}</dd>
-                                                    </div>
-                                                    <div>
-                                                        <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.deliveryStatus')}</dt>
-                                                        <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">
-                                                            {item.latest_delivery_status ? (
-                                                                <span>{translateDeliveryStatus(item.latest_delivery_status)}</span>
-                                                            ) : (
-                                                                t('visitDetail.notDelivered')
-                                                            )}
-                                                        </dd>
-                                                    </div>
-                                                    {item.last_result_delivery_at && (
+                                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                    <div className="flex items-start gap-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={() => toggleSelectVisit(item.appointment_id)}
+                                                            aria-label={`Select visit ${item.exam_type_name || item.appointment_id}`}
+                                                            className="mt-1 h-4 w-4 cursor-pointer rounded border-slate-300 text-[var(--VIARA-accent)] focus:ring-[var(--VIARA-accent)]"
+                                                        />
                                                         <div>
-                                                            <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.deliveredOn')}</dt>
-                                                            <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">{formatDate(item.last_result_delivery_at, true)}</dd>
+                                                            <h3 className="text-sm font-black text-[var(--VIARA-ink)] transition-colors group-hover:text-[var(--VIARA-accent)]">
+                                                                {item.exam_type_name || item.machine_name || t('detail.appointment', { ns: 'patients' })}
+                                                            </h3>
+                                                            <p className="mt-1.5 flex items-center gap-2 text-xs font-semibold text-[var(--VIARA-muted)]">
+                                                                <span className="rounded-md bg-[var(--VIARA-surface-muted)] px-2 py-0.5">{item.machine_name}</span>
+                                                                <span aria-hidden="true" className="opacity-50">&bull;</span>
+                                                                <span>{translateVisitStatus(item.status)}</span>
+                                                            </p>
+                                                            {item.is_follow_up && (
+                                                                <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-[rgba(var(--VIARA-accent-rgb),.2)] bg-[var(--VIARA-accent-soft)] px-2 py-1 text-[10px] font-black uppercase text-[var(--VIARA-accent)]">
+                                                                    {t('visitDetail.followUp')} <span aria-hidden="true" className="opacity-50">&bull;</span> {item.prior_order_number || t('visitDetail.priorStudy')}
+                                                                </p>
+                                                            )}
                                                         </div>
-                                                    )}
+                                                    </div>
+                                                    <time className="rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1.5 text-xs font-bold text-[var(--VIARA-muted)]">{formatDate(item.start_time, true)}</time>
                                                 </div>
 
-                                                <div className="rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-4">
-                                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-                                                        <span className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)] flex items-center gap-1.5">
-                                                            <FileText size={13} className="text-[var(--VIARA-accent)]" />
-                                                            {t('visitDetail.findingsTitle')}
+                                                <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-[10px] font-bold">
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1.5 text-[var(--VIARA-muted)]">
+                                                            {formatMoney(item.payment_amount)} {t('currency.egp')} <span aria-hidden="true" className="opacity-40">&bull;</span> {translatePaymentMethod(item.payment_method)}
                                                         </span>
-                                                        {item.report_content && (
-                                                            <div className="flex flex-wrap items-center gap-1.5">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        copyReport(item.report_content);
-                                                                    }}
-                                                                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10px] font-bold text-[var(--VIARA-ink)] shadow-sm transition-all hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:text-[var(--VIARA-accent)] active:scale-95"
-                                                                    title={t('visitDetail.copy')}
-                                                                >
-                                                                    <Copy size={12} />
-                                                                    <span>{t('visitDetail.copy')}</span>
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        openPrintableReport(item, false);
-                                                                    }}
-                                                                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10px] font-bold text-[var(--VIARA-ink)] shadow-sm transition-all hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:text-[var(--VIARA-accent)] active:scale-95"
-                                                                    title={t('visitDetail.view')}
-                                                                >
-                                                                    <Eye size={12} />
-                                                                    <span>{t('visitDetail.view')}</span>
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        openPrintableReport(item, true);
-                                                                    }}
-                                                                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10px] font-bold text-[var(--VIARA-ink)] shadow-sm transition-all hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:text-[var(--VIARA-accent)] active:scale-95"
-                                                                    title={t('visitDetail.print')}
-                                                                >
-                                                                    <Printer size={12} />
-                                                                    <span>{t('visitDetail.print')}</span>
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        downloadPdf(item);
-                                                                    }}
-                                                                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10px] font-bold text-[var(--VIARA-ink)] shadow-sm transition-all hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:text-[var(--VIARA-accent)] active:scale-95"
-                                                                    title="Download PDF"
-                                                                >
-                                                                    <Download size={12} />
-                                                                    <span>PDF</span>
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        exportWord(item);
-                                                                    }}
-                                                                    disabled={isExportingWord}
-                                                                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10px] font-bold text-[var(--VIARA-ink)] shadow-sm transition-all hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:text-[var(--VIARA-accent)] active:scale-95 disabled:opacity-50"
-                                                                    title={t('visitDetail.word')}
-                                                                >
-                                                                    <Download size={12} />
-                                                                    <span>{t('visitDetail.word')}</span>
-                                                                </button>
-                                                            </div>
+                                                        {item.invoice_number && (
+                                                            <span className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-teal-700 dark:border-teal-900/40 dark:bg-teal-950/20 dark:text-teal-300 font-mono">
+                                                                <Receipt size={11} />
+                                                                {item.invoice_number}
+                                                            </span>
+                                                        )}
+                                                        {item.report_status && (
+                                                            <span className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-1.5 text-cyan-700 dark:border-cyan-900/40 dark:bg-cyan-950/20 dark:text-cyan-300">
+                                                                {t('results.report')}: {translateReportStatus(item.report_status)}
+                                                            </span>
+                                                        )}
+                                                        {item.delivered_at && (
+                                                            <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
+                                                                {t('results.delivered')}
+                                                            </span>
                                                         )}
                                                     </div>
-                                                    {(() => {
-                                                        const sections = normalizeSections(item);
-                                                        const hasSections = sections.technique || sections.findings || sections.impression || sections.recommendations;
-                                                        if (hasSections) {
-                                                            const blocks = [
-                                                                ['clinicalHistory', sections.clinicalHistory],
-                                                                ['technique', sections.technique],
-                                                                ['findings', sections.findings],
-                                                                ['impression', sections.impression],
-                                                                ['recommendations', sections.recommendations],
-                                                            ].filter(([, value]) => value);
-                                                            return (
-                                                                <div className="space-y-3">
-                                                                    {blocks.map(([key, value]) => (
-                                                                        <div key={key}>
-                                                                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-accent)]">{t(`visitDetail.sections.${key}`)}</p>
-                                                                            <p className="mt-1 whitespace-pre-wrap text-sm font-medium leading-relaxed text-[var(--VIARA-ink)]">{value}</p>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            );
-                                                        }
-                                                        if (item.report_content) {
-                                                            return <div className="whitespace-pre-wrap rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-4 text-sm font-medium leading-relaxed text-[var(--VIARA-ink)]">{item.report_content}</div>;
-                                                        }
-                                                        return <div className="rounded-xl border border-dashed border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] py-6 text-center text-xs font-bold text-[var(--VIARA-muted)]">{t('visitDetail.noFindingsText')}</div>;
-                                                    })()}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </article>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
-            </Panel>
-        )}
 
-        {activeTab === 'insurance' && <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]"><Panel icon={ShieldCheck} title={t('sections.policies')}>{policies.length === 0 ? <EmptyState title={t('policy.empty')} /> : <div className="grid gap-3 sm:grid-cols-2">{policies.map(policy => <article key={policy.policy_id} className="rounded-2xl border border-[rgba(var(--VIARA-accent-rgb),.2)] bg-[var(--VIARA-accent-soft)] p-4"><div className="flex items-start justify-between gap-2"><h3 className="font-black text-[var(--VIARA-ink)]">{policy.provider_name}</h3>{policy.is_primary && <span className="rounded-full bg-[var(--VIARA-surface)] px-2 py-1 text-[9px] font-black text-[var(--VIARA-accent)]">{t('policy.primary')}</span>}</div><p className="mt-3 font-mono text-sm font-bold text-[var(--VIARA-ink)]">{policy.policy_number}</p><p className="mt-1 text-xs text-[var(--VIARA-muted)]">{policy.plan_name || t('policy.noPlan')}</p><p className="mt-3 text-[10px] text-[var(--VIARA-muted)]">{policy.valid_to ? t('policy.validTo', { date: formatDate(policy.valid_to) }) : '-'}</p></article>)}</div>}</Panel>{canOperate && <Panel icon={Plus} title={t('sections.addPolicy')}><form onSubmit={handlePolicy} className="space-y-3"><select className={fieldClass} value={policyForm.providerId} onChange={e => setPolicyForm({ ...policyForm, providerId: e.target.value })} required><option value="">{t('policy.provider')}</option>{providers.map(provider => <option key={provider.provider_id} value={provider.provider_id}>{provider.name}</option>)}</select><Input value={policyForm.policyNumber} onChange={e => setPolicyForm({ ...policyForm, policyNumber: e.target.value })} placeholder={t('policy.number')} required /><Input value={policyForm.memberNumber} onChange={e => setPolicyForm({ ...policyForm, memberNumber: e.target.value })} placeholder={t('policy.member')} /><Input value={policyForm.planName} onChange={e => setPolicyForm({ ...policyForm, planName: e.target.value })} placeholder={t('policy.plan')} /><Input type="date" value={policyForm.validTo} onChange={e => setPolicyForm({ ...policyForm, validTo: e.target.value })} /><label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300"><input type="checkbox" checked={policyForm.isPrimary} onChange={e => setPolicyForm({ ...policyForm, isPrimary: e.target.checked })} />{t('policy.primaryLabel')}</label><Button type="submit" className="w-full" loading={isCreatingPolicy}>{t('policy.add')}</Button></form></Panel>}</div>}
-        {activeTab === 'documents' && <DocumentsTab patient={patient} />}
-        {activeTab === 'crm' && <PatientCrmTab patient={patient} />}
-        {activeTab === 'privacy' && <PrivacyTab patient={patient} />}
-        {activeTab === 'audit' && <Panel icon={Database} title={t('detail.tabs.audit', { ns: 'patients' })}><AuditTimeline resourceId={patientId} resourceTable="patients" /></Panel>}
-        <EditPatientModal patient={patient} isOpen={editing} onClose={() => setEditing(false)} />
-        <CredentialHandoffDialog isOpen={Boolean(credentialDialog)} credentials={credentialDialog} onClose={() => setCredentialDialog(null)} />
-    </div>;
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handlePrintSingleVisitInvoice(item)}
+                                                            className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-ink)] transition hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:bg-[var(--VIARA-accent-soft)] hover:text-[var(--VIARA-accent)]"
+                                                            title={t('billing.printVisitInvoice', { defaultValue: 'Print visit invoice' })}
+                                                        >
+                                                            <Receipt size={14} className="text-slate-400 group-hover:text-teal-500" />
+                                                            <span>{t('billing.invoice', { defaultValue: 'Invoice' })}</span>
+                                                        </button>
+                                                        {item.exam_id && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => navigate(`/cases/${encodeURIComponent(item.exam_id)}`, { state: { returnTo: `/patients/${encodeURIComponent(patientId)}?tab=visits` } })}
+                                                                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-[var(--VIARA-accent)] px-4 text-[10px] font-black uppercase tracking-wider text-white shadow-sm transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--VIARA-accent)] focus-visible:ring-offset-2"
+                                                            >
+                                                                <ExternalLink size={14} />
+                                                                {t('visitDetail.openCase', { defaultValue: 'Open visit details' })}
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setExpandedVisitId(isExpanded ? null : item.appointment_id)}
+                                                            aria-expanded={isExpanded}
+                                                            className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-4 text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-ink)] transition hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:bg-[var(--VIARA-accent-soft)] hover:text-[var(--VIARA-accent)]"
+                                                        >
+                                                            <FileText size={14} className={isExpanded ? "text-teal-500" : "text-slate-400 group-hover:text-teal-500"} />
+                                                            {isExpanded ? t('visitDetail.hideDetails') : t('visitDetail.viewDetails')}
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Expanded Details and Report Accordion */}
+                                                {isExpanded && (
+                                                    <div className="mt-4 space-y-4 border-t border-[var(--VIARA-line)] pt-4 animate-in slide-in-from-top-2 duration-200">
+                                                        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 text-xs">
+                                                            {item.is_follow_up && (
+                                                                <div className="sm:col-span-2 md:col-span-3 rounded-xl border border-[rgba(var(--VIARA-accent-rgb),.2)] bg-[var(--VIARA-accent-soft)] p-3">
+                                                                    <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-accent)]">{t('visitDetail.followUpContext')}</dt>
+                                                                    <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">
+                                                                        {[item.prior_exam_type_name || t('visitDetail.priorStudy'), item.prior_order_number, item.prior_exam_time ? formatDate(item.prior_exam_time) : null].filter(Boolean).join(' · ')}
+                                                                    </dd>
+                                                                    {item.follow_up_reason && <dd className="mt-1.5 whitespace-pre-wrap text-[var(--VIARA-muted)]">{item.follow_up_reason}</dd>}
+                                                                </div>
+                                                            )}
+                                                            <div>
+                                                                <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.clinicalIndication')}</dt>
+                                                                <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">{item.clinical_indication || '-'}</dd>
+                                                            </div>
+                                                            <div>
+                                                                <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.provisionalDiagnosis')}</dt>
+                                                                <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">{item.provisional_diagnosis || '-'}</dd>
+                                                            </div>
+                                                            <div>
+                                                                <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.modalityBodyPart')}</dt>
+                                                                <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">{(item.body_part || '-').toUpperCase()}</dd>
+                                                            </div>
+                                                            <div>
+                                                                <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.contrastInjection')}</dt>
+                                                                <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">{item.contrast_required ? t('visitDetail.contrastRequired') : t('visitDetail.nonContrast')}</dd>
+                                                            </div>
+                                                            <div>
+                                                                <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.deliveryStatus')}</dt>
+                                                                <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">
+                                                                    {item.latest_delivery_status ? (
+                                                                        <span>{translateDeliveryStatus(item.latest_delivery_status)}</span>
+                                                                    ) : (
+                                                                        t('visitDetail.notDelivered')
+                                                                    )}
+                                                                </dd>
+                                                            </div>
+                                                            {item.last_result_delivery_at && (
+                                                                <div>
+                                                                    <dt className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('visitDetail.deliveredOn')}</dt>
+                                                                    <dd className="mt-1 font-semibold text-[var(--VIARA-ink)]">{formatDate(item.last_result_delivery_at, true)}</dd>
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-4">
+                                                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                                                                <span className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)] flex items-center gap-1.5">
+                                                                    <FileText size={13} className="text-[var(--VIARA-accent)]" />
+                                                                    {t('visitDetail.findingsTitle')}
+                                                                </span>
+                                                                {item.report_content && (
+                                                                    <div className="flex flex-wrap items-center gap-1.5">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                copyReport(item.report_content);
+                                                                            }}
+                                                                            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10px] font-bold text-[var(--VIARA-ink)] shadow-sm transition-all hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:text-[var(--VIARA-accent)] active:scale-95"
+                                                                            title={t('visitDetail.copy')}
+                                                                        >
+                                                                            <Copy size={12} />
+                                                                            <span>{t('visitDetail.copy')}</span>
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                openPrintableReport(item, false);
+                                                                            }}
+                                                                            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10px] font-bold text-[var(--VIARA-ink)] shadow-sm transition-all hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:text-[var(--VIARA-accent)] active:scale-95"
+                                                                            title={t('visitDetail.view')}
+                                                                        >
+                                                                            <Eye size={12} />
+                                                                            <span>{t('visitDetail.view')}</span>
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                openPrintableReport(item, true);
+                                                                            }}
+                                                                            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10px] font-bold text-[var(--VIARA-ink)] shadow-sm transition-all hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:text-[var(--VIARA-accent)] active:scale-95"
+                                                                            title={t('visitDetail.print')}
+                                                                        >
+                                                                            <Printer size={12} />
+                                                                            <span>{t('visitDetail.print')}</span>
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                downloadPdf(item);
+                                                                            }}
+                                                                            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10px] font-bold text-[var(--VIARA-ink)] shadow-sm transition-all hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:text-[var(--VIARA-accent)] active:scale-95"
+                                                                            title="Download PDF"
+                                                                        >
+                                                                            <Download size={12} />
+                                                                            <span>PDF</span>
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                exportWord(item);
+                                                                            }}
+                                                                            disabled={isExportingWord}
+                                                                            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 text-[10px] font-bold text-[var(--VIARA-ink)] shadow-sm transition-all hover:border-[rgba(var(--VIARA-accent-rgb),.35)] hover:text-[var(--VIARA-accent)] active:scale-95 disabled:opacity-50"
+                                                                            title={t('visitDetail.word')}
+                                                                        >
+                                                                            <Download size={12} />
+                                                                            <span>{t('visitDetail.word')}</span>
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            {(() => {
+                                                                const sections = normalizeSections(item);
+                                                                const hasSections = sections.technique || sections.findings || sections.impression || sections.recommendations;
+                                                                if (hasSections) {
+                                                                    const blocks = [
+                                                                        ['clinicalHistory', sections.clinicalHistory],
+                                                                        ['technique', sections.technique],
+                                                                        ['findings', sections.findings],
+                                                                        ['impression', sections.impression],
+                                                                        ['recommendations', sections.recommendations],
+                                                                    ].filter(([, value]) => value);
+                                                                    return (
+                                                                        <div className="space-y-3">
+                                                                            {blocks.map(([key, value]) => (
+                                                                                <div key={key}>
+                                                                                    <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-accent)]">{t(`visitDetail.sections.${key}`)}</p>
+                                                                                    <p className="mt-1 whitespace-pre-wrap text-sm font-medium leading-relaxed text-[var(--VIARA-ink)]">{value}</p>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                if (item.report_content) {
+                                                                    return <div className="whitespace-pre-wrap rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-4 text-sm font-medium leading-relaxed text-[var(--VIARA-ink)]">{item.report_content}</div>;
+                                                                }
+                                                                return <div className="rounded-xl border border-dashed border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] py-6 text-center text-xs font-bold text-[var(--VIARA-muted)]">{t('visitDetail.noFindingsText')}</div>;
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </article>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === 'insurance' && <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]"><Panel icon={ShieldCheck} title={t('sections.policies')}>{policies.length === 0 ? <EmptyState title={t('policy.empty')} /> : <div className="grid gap-3 sm:grid-cols-2">{policies.map(policy => <article key={policy.policy_id} className="rounded-2xl border border-[rgba(var(--VIARA-accent-rgb),.2)] bg-[var(--VIARA-accent-soft)] p-4"><div className="flex items-start justify-between gap-2"><h3 className="font-black text-[var(--VIARA-ink)]">{policy.provider_name}</h3>{policy.is_primary && <span className="rounded-full bg-[var(--VIARA-surface)] px-2 py-1 text-[9px] font-black text-[var(--VIARA-accent)]">{t('policy.primary')}</span>}</div><p className="mt-3 font-mono text-sm font-bold text-[var(--VIARA-ink)]">{policy.policy_number}</p><p className="mt-1 text-xs text-[var(--VIARA-muted)]">{policy.plan_name || t('policy.noPlan')}</p><p className="mt-3 text-[10px] text-[var(--VIARA-muted)]">{policy.valid_to ? t('policy.validTo', { date: formatDate(policy.valid_to) }) : '-'}</p></article>)}</div>}</Panel>{canOperate && <Panel icon={Plus} title={t('sections.addPolicy')}><form onSubmit={handlePolicy} className="space-y-3"><select className={fieldClass} value={policyForm.providerId} onChange={e => setPolicyForm({ ...policyForm, providerId: e.target.value })} required><option value="">{t('policy.provider')}</option>{providers.map(provider => <option key={provider.provider_id} value={provider.provider_id}>{provider.name}</option>)}</select><Input value={policyForm.policyNumber} onChange={e => setPolicyForm({ ...policyForm, policyNumber: e.target.value })} placeholder={t('policy.number')} required /><Input value={policyForm.memberNumber} onChange={e => setPolicyForm({ ...policyForm, memberNumber: e.target.value })} placeholder={t('policy.member')} /><Input value={policyForm.planName} onChange={e => setPolicyForm({ ...policyForm, planName: e.target.value })} placeholder={t('policy.plan')} /><Input type="date" value={policyForm.validTo} onChange={e => setPolicyForm({ ...policyForm, validTo: e.target.value })} /><label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300"><input type="checkbox" checked={policyForm.isPrimary} onChange={e => setPolicyForm({ ...policyForm, isPrimary: e.target.checked })} />{t('policy.primaryLabel')}</label><Button type="submit" className="w-full" loading={isCreatingPolicy}>{t('policy.add')}</Button></form></Panel>}</div>}
+                    {activeTab === 'documents' && <DocumentsTab patient={patient} />}
+                    {activeTab === 'crm' && <PatientCrmTab patient={patient} />}
+                    {activeTab === 'privacy' && <PrivacyTab patient={patient} />}
+                    {activeTab === 'audit' && <Panel icon={Database} title={t('detail.tabs.audit', { ns: 'patients' })}><AuditTimeline resourceId={patientId} resourceTable="patients" /></Panel>}
+                </div>
+
+                {/* Right Side: Dedicated Clinical & Operational Side Rail */}
+                <aside className="space-y-4 ">
+                    {/* Safety Status & Clinical Screening Clearance Hub */}
+                    <section className={`rounded-3xl border shadow-md transition-all overflow-hidden relative backdrop-blur-xs ${alerts.length
+                        ? 'border-amber-300/90 bg-gradient-to-b from-white via-slate-50/50 to-amber-50/20 dark:from-slate-900 dark:via-slate-900/90 dark:to-amber-950/20'
+                        : 'border-emerald-200/90 bg-gradient-to-b from-white via-slate-50/50 to-emerald-50/20 dark:from-slate-900 dark:via-slate-900/90 dark:to-emerald-950/20'
+                        }`}>
+                        {/* Top Official Protocol Clearance Ribbon */}
+                        <div className={`px-4 py-2 text-xs font-black flex items-center justify-between shadow-2xs ${alerts.length
+                            ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 text-white animate-pulse'
+                            : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white'
+                            }`}>
+                            <div className="flex items-center gap-1.5">
+                                {alerts.length ? <AlertTriangle size={13} /> : <ShieldCheck size={13} />}
+                                <span>{alerts.length ? 'تنبيه سريري: موانع استخدام نشطة' : 'بروتوكول السلامة الإشعاعية والتصوير'}</span>
+                            </div>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold backdrop-blur-xs">
+                                {alerts.length ? (
+                                    <>
+                                        <AlertTriangle size={10} />
+                                        <span>يلزم مراجعة الطبيب</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Check size={10} />
+                                        <span>معتمد سريرياً</span>
+                                    </>
+                                )}
+                            </span>
+                        </div>
+
+                        {/* Card Subheader: Status Verdict & Context */}
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 p-4 pb-3">
+                            <div className="flex items-center gap-2.5">
+                                <span className={`flex h-10 w-10 items-center justify-center rounded-2xl shadow-xs ring-4 ${alerts.length
+                                    ? 'bg-amber-500/10 text-amber-600 ring-amber-500/10 dark:bg-amber-950/80 dark:text-amber-300'
+                                    : 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/10 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                    }`}>
+                                    {alerts.length ? <AlertTriangle size={20} className="animate-pulse" /> : <ShieldCheck size={20} />}
+                                </span>
+                                <div>
+                                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                                        {t('page.safetyStatus', { defaultValue: 'Safety status' })}
+                                    </h3>
+                                    <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                                        {alerts.length ? 'تنبيهات وموانع تستوجب الانتباه قبل الفحص' : 'فحص ومطابقة موانع الرنين والصبغة'}
+                                    </p>
+                                </div>
+                            </div>
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black shadow-2xs border ${alerts.length
+                                ? 'bg-amber-100 text-amber-900 border-amber-300/80 dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-800 animate-pulse'
+                                : 'bg-emerald-100 text-emerald-900 border-emerald-300/80 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-800'
+                                }`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${alerts.length ? 'bg-amber-600 animate-ping' : 'bg-emerald-600'}`} />
+                                {alerts.length ? (
+                                    <span>{alerts.length} موانع نشطة</span>
+                                ) : (
+                                    <span>آمن ومؤكد (CLEARED)</span>
+                                )}
+                            </span>
+                        </div>
+
+                        {/* Screening Checklist & Clinical Safety Matrix */}
+                        <div className="p-4 space-y-2.5">
+                            {alerts.length > 0 ? (
+                                <div className="space-y-2">
+                                    <p className="text-[11px] font-bold text-amber-900 dark:text-amber-200 leading-snug">
+                                        يرجى مراجعة موانع الاستخدام التالية قبل التصوير أو إعطاء الصبغة:
+                                    </p>
+                                    {alerts.map(([label, value]) => (
+                                        <div key={label} className="rounded-2xl border border-amber-300/80 bg-amber-50/50 p-3 text-xs shadow-2xs dark:border-amber-700/80 dark:bg-amber-950/40">
+                                            <span className="flex items-center gap-1.5 font-black text-amber-800 dark:text-amber-300 text-[10px] uppercase tracking-wider">
+                                                <AlertTriangle size={12} className="text-amber-600" />
+                                                <span>{label}</span>
+                                            </span>
+                                            <span className="font-bold text-slate-900 dark:text-slate-100 mt-1 block leading-relaxed">
+                                                {value}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="space-y-2.5">
+                                    {/* Item 1: Contrast Media & Drug Allergies */}
+                                    <div className="rounded-2xl border border-emerald-100 dark:border-emerald-900/40 bg-white/90 dark:bg-slate-800/80 p-3 shadow-2xs transition hover:border-emerald-300/60">
+                                        <div className="flex items-center justify-between text-xs">
+                                            <div className="flex items-center gap-2">
+                                                <span className="flex h-6 w-6 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400">
+                                                    <Droplets size={13} />
+                                                </span>
+                                                <span className="font-bold text-slate-800 dark:text-slate-200">حساسية الصبغة والأدوية</span>
+                                            </div>
+                                            <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200/50 dark:border-emerald-800/40">
+                                                لا توجد موانع
+                                            </span>
+                                        </div>
+                                        <p className="mt-1.5 text-[10px] font-medium text-slate-500 dark:text-slate-400 ps-8">
+                                            خالٍ من أي تحسس لليود أو الجادولينيوم (Iodine/Gad Safe)
+                                        </p>
+                                    </div>
+
+                                    {/* Item 2: Implants / Pacemaker / MRI Safety */}
+                                    <div className="rounded-2xl border border-emerald-100 dark:border-emerald-900/40 bg-white/90 dark:bg-slate-800/80 p-3 shadow-2xs transition hover:border-emerald-300/60">
+                                        <div className="flex items-center justify-between text-xs">
+                                            <div className="flex items-center gap-2">
+                                                <span className="flex h-6 w-6 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400">
+                                                    <Zap size={13} />
+                                                </span>
+                                                <span className="font-bold text-slate-800 dark:text-slate-200">الغرسات والشرائح المعدنية</span>
+                                            </div>
+                                            <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200/50 dark:border-emerald-800/40">
+                                                آمن للرنين (MRI Safe)
+                                            </span>
+                                        </div>
+                                        <p className="mt-1.5 text-[10px] font-medium text-slate-500 dark:text-slate-400 ps-8">
+                                            خالٍ من منظم ضربات القلب أو الشظايا الممغنطة
+                                        </p>
+                                    </div>
+
+                                    {/* Item 3: Renal & Pregnancy */}
+                                    <div className="rounded-2xl border border-emerald-100 dark:border-emerald-900/40 bg-white/90 dark:bg-slate-800/80 p-3 shadow-2xs transition hover:border-emerald-300/60">
+                                        <div className="flex items-center justify-between text-xs">
+                                            <div className="flex items-center gap-2">
+                                                <span className="flex h-6 w-6 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400">
+                                                    <HeartPulse size={13} />
+                                                </span>
+                                                <span className="font-bold text-slate-800 dark:text-slate-200">وظائف الكلى والحمل</span>
+                                            </div>
+                                            <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200/50 dark:border-emerald-800/40">
+                                                مطابق سريرياً
+                                            </span>
+                                        </div>
+                                        <p className="mt-1.5 text-[10px] font-medium text-slate-500 dark:text-slate-400 ps-8">
+                                            معدل الترشيح الكلوي وموانع الحمل ضمن النطاق الآمن
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Jump to Medical Tab Action Button */}
+                            <button
+                                type="button"
+                                onClick={() => selectTab('medical')}
+                                className="group w-full mt-2 inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-800/90 py-2.5 px-4 text-xs font-black text-slate-700 dark:text-slate-200 hover:text-teal-600 dark:hover:text-teal-400 hover:border-teal-300 dark:hover:border-teal-700 hover:bg-teal-50/50 dark:hover:bg-teal-950/30 transition-all duration-200 shadow-2xs"
+                            >
+                                <Stethoscope size={14} className="text-teal-600 dark:text-teal-400 group-hover:scale-110 transition-transform" />
+                                <span>عرض أو تحديث السجل الطبي</span>
+                                <ArrowRight size={13} className="rtl:rotate-180 opacity-60 group-hover:opacity-100 group-hover:-translate-x-0.5 rtl:group-hover:translate-x-0.5 transition-all" />
+                            </button>
+                        </div>
+                    </section>
+
+                    {/* Portal Access Card */}
+                    <PortalAccessCard
+                        enabled={portalReady || Boolean(issuedPortalPassword)}
+                        mrn={patient.mrn}
+                        loginUrl={portalLoginUrl}
+                        password={issuedPortalPassword}
+                        canOperate={canOperate}
+                        loading={isGeneratingPassword}
+                        onActivate={handlePassword}
+                        t={t}
+                    />
+
+                    {/* Communication Readiness & Preferences */}
+                    <section className="rounded-3xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-5 shadow-sm">
+                        <div className="flex items-center gap-2.5 mb-3">
+                            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--VIARA-accent-soft)] text-[var(--VIARA-accent)]">
+                                <Mail size={15} />
+                            </span>
+                            <div>
+                                <h3 className="text-xs font-black uppercase tracking-wider text-[var(--VIARA-ink)]">{t('page.communication')}</h3>
+                                <p className="text-[10px] font-semibold text-[var(--VIARA-muted)]">{contactReady ? t('page.ready') : t('page.needsData')}</p>
+                            </div>
+                        </div>
+                        <dl className="space-y-2.5 text-xs">
+                            <div className="flex items-center justify-between border-b border-[var(--VIARA-line)] pb-2">
+                                <dt className="text-[10px] font-bold text-[var(--VIARA-muted)]">{t('detail.preferredLanguage', { ns: 'patients' })}</dt>
+                                <dd className="font-bold text-[var(--VIARA-ink)]">{patient.preferred_language || '-'}</dd>
+                            </div>
+                            <div className="flex items-center justify-between border-b border-[var(--VIARA-line)] pb-2">
+                                <dt className="text-[10px] font-bold text-[var(--VIARA-muted)]">{t('detail.preference', { ns: 'patients' })}</dt>
+                                <dd className="font-bold text-[var(--VIARA-ink)]">{patient.communication_preference || '-'}</dd>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <dt className="text-[10px] font-bold text-[var(--VIARA-muted)]">{t('detail.assignedManager', { ns: 'patients' })}</dt>
+                                <dd className="font-bold text-[var(--VIARA-ink)]">{patient.assigned_manager_name || '-'}</dd>
+                            </div>
+                        </dl>
+                    </section>
+                </aside>
+            </div>
+
+            <EditPatientModal patient={patient} isOpen={editing} onClose={() => setEditing(false)} />
+            <CredentialHandoffDialog isOpen={Boolean(credentialDialog)} credentials={credentialDialog} onClose={() => setCredentialDialog(null)} />
+        </div>
+    );
 };
 
 export default PatientDetailPage;

@@ -6,6 +6,7 @@ const path = require('path');
 const {
     cleanupBackups,
     createPostgresBackup,
+    createPacsCompanion,
     getBackupDir,
     getBackupMode,
     isValidBackupFilename,
@@ -34,6 +35,11 @@ const isJsonRestoreAllowed = () => (
     && process.env.BACKUP_JSON_RESTORE_ENABLED !== 'false'
 );
 
+const isJsonBackupDownloadAllowed = () => (
+    process.env.NODE_ENV !== 'production'
+    && process.env.BACKUP_JSON_DOWNLOAD_ENABLED === 'true'
+);
+
 // Whitelist of tables safe to include in backups (prevents SQL injection via dynamic table names)
 const ALLOWED_BACKUP_TABLES = [
     'users', 'patients', 'appointments', 'modalities', 'examinations', 'reports',
@@ -45,6 +51,14 @@ const ALLOWED_BACKUP_TABLES = [
     'marketing_campaigns', 'patient_feedback', 'system_logs',
     'roles', 'permissions', 'role_permissions', 'price_list'
 ];
+
+// JSON restore is intentionally limited to the dependency-safe core dataset.
+// Full-fidelity backups must use the verified PostgreSQL dump path.
+const RESTORE_INSERT_ORDER = [
+    'users', 'insurance_providers', 'modalities', 'examination_types', 'referring_doctors',
+    'patients', 'appointments', 'examinations', 'invoices', 'payments', 'claims',
+    'center_settings', 'permissions', 'role_permissions'
+].filter((value, index, values) => values.indexOf(value) === index);
 
 // Ensure backup dir exists
 if (!fs.existsSync(BACKUP_DIR)) {
@@ -58,9 +72,10 @@ const createJsonBackupSnapshot = async (db, user) => {
         WHERE table_schema = 'public'
     `);
 
-    const tables = tablesResult.rows
+    const availableTables = tablesResult.rows
         .map(row => row.table_name)
         .filter(name => ALLOWED_BACKUP_TABLES.includes(name));
+    const tables = availableTables.filter(name => RESTORE_INSERT_ORDER.includes(name));
 
     const filename = `VIARA_backup_${Date.now()}.json`;
     const filepath = path.join(BACKUP_DIR, filename);
@@ -71,7 +86,9 @@ const createJsonBackupSnapshot = async (db, user) => {
         generated_at: new Date().toISOString(),
         generated_by: user.full_name || 'Admin',
         version: '1.0',
-        mode: 'development-json'
+        mode: 'development-json',
+        restore_supported_tables: RESTORE_INSERT_ORDER,
+        omitted_tables: availableTables.filter(name => !RESTORE_INSERT_ORDER.includes(name))
     }) + ',\n"data": {\n');
 
     for (let i = 0; i < tables.length; i++) {
@@ -111,7 +128,13 @@ const createJsonBackupSnapshot = async (db, user) => {
     });
 
     const stat = await fsp.stat(filepath);
-    return { filename, filepath, size_bytes: stat.size, tableCounts };
+    return {
+        filename,
+        filepath,
+        size_bytes: stat.size,
+        tableCounts,
+        omittedTables: availableTables.filter(table => !tables.includes(table))
+    };
 };
 
 const validateJsonBackupPayload = (backupData) => {
@@ -186,12 +209,19 @@ const generateBackup = (db) => async (req, res, next) => {
                 filename: backup.filename,
                 type: backup.type,
                 verified: backup.verified,
+                scope: backup.scope,
+                companions: (backup.companions || []).map(({ filepath, ...metadata }) => metadata),
                 offsiteReplicated: replicationResult.replicated,
                 dicom_storage: backup.dicom_storage
             });
         }
 
         const backup = await createJsonBackupSnapshot(db, req.user);
+        const pacs = await createPacsCompanion(backup);
+        if (pacs) await pacs.verifyUnchanged();
+        backup.companions = pacs ? [pacs.backup] : [];
+        backup.scope = pacs ? 'core-database-and-pacs' : 'core-database-only';
+        const replicationResult = await replicateBackup(backup);
 
         // 4. Apply configured age/count retention.
         await cleanupBackups();
@@ -220,7 +250,15 @@ const generateBackup = (db) => async (req, res, next) => {
             }
         }).catch(() => { });
 
-        res.json({ message: 'Backup generated successfully', filename: backup.filename, type: 'JSON' });
+        res.json({
+            message: 'Development core snapshot generated successfully',
+            filename: backup.filename,
+            type: 'JSON',
+            omittedTables: backup.omittedTables,
+            scope: backup.scope,
+            companions: (backup.companions || []).map(({ filepath, ...metadata }) => metadata),
+            offsiteReplicated: replicationResult.replicated
+        });
 
     } catch (error) {
         triggerEventForRole(db, 'BackupFailed', 'Admin', {
@@ -276,6 +314,10 @@ const downloadBackup = (db) => async (req, res, next) => {
             return next(new AppError('Invalid backup filename', 400));
         }
 
+        if (filename.endsWith('.json') && !isJsonBackupDownloadAllowed()) {
+            return next(new AppError('Development JSON backup downloads are disabled; use an encrypted PostgreSQL backup or explicitly enable BACKUP_JSON_DOWNLOAD_ENABLED', 403));
+        }
+
         const filepath = resolveBackupPath(filename);
         if (!filepath) {
             return next(new AppError('Access denied', 403));
@@ -290,12 +332,6 @@ const downloadBackup = (db) => async (req, res, next) => {
         next(error);
     }
 };
-
-const RESTORE_INSERT_ORDER = [
-    'users', 'insurance_providers', 'modalities', 'examination_types', 'referring_doctors',
-    'patients', 'appointments', 'examinations', 'invoices', 'payments', 'claims',
-    'insurance_providers', 'center_settings', 'permissions', 'role_permissions'
-].filter((v, i, a) => a.indexOf(v) === i);
 
 const restoreBackup = (db) => async (req, res, next) => {
     const client = await db.connect();
@@ -326,6 +362,7 @@ const restoreBackup = (db) => async (req, res, next) => {
 
         const backupData = JSON.parse(await fsp.readFile(filepath, 'utf8'));
         const tables = validateJsonBackupPayload(backupData);
+        const skippedTables = Object.keys(tables).filter((table) => !RESTORE_INSERT_ORDER.includes(table));
         const safetyBackup = await createJsonBackupSnapshot(db, req.user);
 
         await client.query('BEGIN');
@@ -373,13 +410,17 @@ const restoreBackup = (db) => async (req, res, next) => {
             action: 'BACKUP_RESTORED',
             resourceTable: 'system',
             ipAddress: req.ip,
-            details: { filename, restoredRows, safetyBackup: safetyBackup.filename }
+            details: { filename, restoredRows, skippedTables, safetyBackup: safetyBackup.filename }
         });
 
         res.json({
-            message: 'Backup restored successfully',
+            message: skippedTables.length
+                ? 'Backup restored partially; some tables are not supported by JSON restore'
+                : 'Backup restored successfully',
             filename,
             restoredRows,
+            partial: skippedTables.length > 0,
+            skippedTables,
             safetyBackup: safetyBackup.filename
         });
     } catch (error) {
@@ -395,6 +436,7 @@ module.exports = {
     generateBackup,
     getBackupStatus,
     isJsonRestoreAllowed,
+    isJsonBackupDownloadAllowed,
     listBackups,
     downloadBackup,
     restoreBackup,

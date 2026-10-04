@@ -1,8 +1,13 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useCallback, useState } from 'react';
 import { useGetWaitingListQuery } from '../../store/api';
-import ModernWaitlistPanel from './ModernWaitlistPanel';
 import DailyOperationsTable from './DailyOperationsTable';
-import ReceptionCaseDetailsModal from './ReceptionCaseDetailsModal';
+
+const ModernWaitlistPanel = lazy(() => import('./ModernWaitlistPanel'));
+const ReceptionCaseDetailsModal = lazy(() => import('./ReceptionCaseDetailsModal'));
+
+const PanelFallback = () => (
+    <div className="min-h-36 animate-pulse rounded-2xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800/80" />
+);
 
 const ScheduleView = ({
     displayDate,
@@ -19,10 +24,14 @@ const ScheduleView = ({
     queueKpis,
     canManageQueue,
     canDeliverResults,
+    canViewInvoices = false,
     canManageWaitlist,
     canCreateAppointments,
     onQueueMove,
     onPickup,
+    onRequestReport,
+    isRequestingReport = false,
+    onDeferReport,
     onOpenPayment,
     partialPaymentExceptions,
     onRequestPartialPaymentException,
@@ -32,7 +41,8 @@ const ScheduleView = ({
     externalRooms = null,
     externalModalities = null,
     onDeskChange = null,
-    onScopeChange = null
+    onScopeChange = null,
+    hasActiveReceptionShift = true
 }) => {
     const [isWaitlistOpen, setIsWaitlistOpen] = useState(false);
     const [selectedCase, setSelectedCase] = useState(null);
@@ -41,17 +51,27 @@ const ScheduleView = ({
     const { data: waitingList = [] } = useGetWaitingListQuery({
         active: 'true',
         date: selectedDate
+    }, {
+        skip: !canManageWaitlist,
+        refetchOnFocus: false,
     });
 
-    const toggleWaitlist = () => setIsWaitlistOpen((prev) => !prev);
+    const toggleWaitlist = useCallback(() => setIsWaitlistOpen((prev) => !prev), []);
+    const handleSelectCase = useCallback((row, opts) => {
+        setSelectedCase(row);
+        setIsEditMode(Boolean(opts?.editMode));
+    }, []);
+    const handleCloseCase = useCallback(() => {
+        setSelectedCase(null);
+        setIsEditMode(false);
+    }, []);
 
     return (
-        <div className="space-y-6">
-            <div className={`grid w-full min-w-0 gap-5 transition-all duration-200 ${isWaitlistOpen
-                    ? 'xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start'
-                    : 'grid-cols-1'
-                }`}>
-                {/* Main Operations Table */}
+        <div className="space-y-3">
+            <div className={`grid w-full min-w-0 gap-3 ${isWaitlistOpen
+                ? '2xl:grid-cols-[minmax(0,1fr)_320px] 2xl:items-start'
+                : 'grid-cols-1'
+            }`}>
                 <div className="min-w-0">
                     <DailyOperationsTable
                         appointments={appointments}
@@ -61,20 +81,21 @@ const ScheduleView = ({
                         appLoading={appLoading}
                         canManageQueue={canManageQueue}
                         canDeliverResults={canDeliverResults}
+                        canViewInvoices={canViewInvoices}
                         createAppointmentInvoice={createAppointmentInvoice}
                         onMove={onQueueMove || moveQueue}
                         onPickup={onPickup}
+                        onRequestReport={onRequestReport}
+                        isRequestingReport={isRequestingReport}
+                        onDeferReport={onDeferReport}
                         onOpenPayment={onOpenPayment}
                         partialPaymentExceptions={partialPaymentExceptions}
                         onRequestPartialPaymentException={onRequestPartialPaymentException}
                         i18n={i18n}
                         t={t}
-                        onSelectCase={(row, opts) => {
-                            setSelectedCase(row);
-                            setIsEditMode(Boolean(opts?.editMode));
-                        }}
+                        onSelectCase={handleSelectCase}
                         isWaitlistOpen={isWaitlistOpen}
-                        onToggleWaitlist={toggleWaitlist}
+                        onToggleWaitlist={canManageWaitlist ? toggleWaitlist : undefined}
                         waitlistCount={waitingList?.length || 0}
                         quickFilter={quickFilter}
                         externalDesk={externalDesk}
@@ -83,46 +104,47 @@ const ScheduleView = ({
                         externalModalities={externalModalities}
                         onDeskChange={onDeskChange}
                         onScopeChange={onScopeChange}
+                        hasActiveReceptionShift={hasActiveReceptionShift}
                     />
                 </div>
 
-                {/* Collapsible Waitlist Side Panel */}
                 {isWaitlistOpen && (
-                    <div className="min-w-0 xl:sticky xl:top-[88px] transition-all duration-200">
-                        <ModernWaitlistPanel
-                            selectedDate={selectedDate}
-                            t={t}
-                            canManage={canManageWaitlist}
-                            canCreateAppointments={canCreateAppointments}
-                            onClose={toggleWaitlist}
-                        />
-                    </div>
+                    <aside className="min-w-0 2xl:sticky 2xl:top-3">
+                        <Suspense fallback={<PanelFallback />}>
+                            <ModernWaitlistPanel
+                                selectedDate={selectedDate}
+                                t={t}
+                                canManage={canManageWaitlist}
+                                canCreateAppointments={canCreateAppointments}
+                                onClose={toggleWaitlist}
+                            />
+                        </Suspense>
+                    </aside>
                 )}
             </div>
 
-            {/* Comprehensive Case Details Modal */}
             {selectedCase && (
-                <ReceptionCaseDetailsModal
-                    isOpen={Boolean(selectedCase)}
-                    onClose={() => {
-                        setSelectedCase(null);
-                        setIsEditMode(false);
-                    }}
-                    caseItem={selectedCase}
-                    initialEditMode={isEditMode}
-                    onMove={onQueueMove || moveQueue}
-                    onOpenPayment={onOpenPayment}
-                    createAppointmentInvoice={createAppointmentInvoice}
-                    canCreateInvoices={Boolean(createAppointmentInvoice)}
-                    onPickup={onPickup}
-                    canManageQueue={canManageQueue}
-                    canDeliverResults={canDeliverResults}
-                    locale={i18n?.language}
-                    workstationDesk={externalDesk}
-                    workstationScope={externalScope}
-                    workstationRooms={externalRooms}
-                    workstationModalities={externalModalities}
-                />
+                <Suspense fallback={null}>
+                    <ReceptionCaseDetailsModal
+                        isOpen={Boolean(selectedCase)}
+                        onClose={handleCloseCase}
+                        caseItem={selectedCase}
+                        initialEditMode={isEditMode}
+                        onMove={onQueueMove || moveQueue}
+                        onOpenPayment={onOpenPayment}
+                        createAppointmentInvoice={createAppointmentInvoice}
+                        canCreateInvoices={Boolean(createAppointmentInvoice)}
+                        onPickup={onPickup}
+                        canManageQueue={canManageQueue}
+                        canDeliverResults={canDeliverResults}
+                        canViewInvoices={canViewInvoices}
+                        locale={i18n?.language}
+                        workstationDesk={externalDesk}
+                        workstationScope={externalScope}
+                        workstationRooms={externalRooms}
+                        workstationModalities={externalModalities}
+                    />
+                </Suspense>
             )}
         </div>
     );

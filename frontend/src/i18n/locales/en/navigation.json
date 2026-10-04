@@ -1,9 +1,12 @@
 {
   "groups": {
-    "clinical": "Clinical",
-    "management": "Management",
+    "core": "Overview & Core",
+    "reception": "Reception & Patients",
+    "clinical": "Clinical & Imaging",
+    "management": "Operations & Finance",
+    "governance": "People & IAM",
     "reports": "Reports & Analytics",
-    "system": "System"
+    "system": "System & Control"
   },
   "items": {
     "cashierReconciliation": "Shift reconciliation",
@@ -18,6 +21,7 @@
     "settingsSection_audit": "My activity",
     "settingsSection_team": "Team",
     "settingsSection_facility": "Facility",
+    "settingsSection_portalBuilder": "Portal Builder",
     "settingsSection_clinical": "Clinical operations",
     "settingsSection_integrations": "Integrations",
     "settingsSection_pacs": "PACS",
@@ -32,8 +36,10 @@
     "receptionPatients": "Patient directory",
     "receptionCashier": "Cashier queue",
     "receptionBilling": "Billing",
+    "receptionEndOfDay": "End-of-shift review",
     "equipmentMatrix": "Clinical matrix",
     "equipmentRooms": "Clinical rooms",
+    "equipmentWorkstations": "Reception workstations",
     "equipmentRegistry": "Equipment registry",
     "equipmentProcedures": "Procedures",
     "equipmentMaintenance": "Maintenance",
@@ -48,6 +54,8 @@
     "financialLedger": "General ledger",
     "financialClosures": "Period closures",
     "hrDirectory": "Staff directory",
+    "hrSupervisors": "Supervisors",
+    "hrDepartmentSupervisors": "Department supervisors",
     "hrShifts": "Shifts",
     "hrAttendance": "Attendance",
     "hrLeave": "Leave",
@@ -102,12 +110,12 @@
     "payroll": "Payroll",
     "insurance": "Insurance",
     "inventory": "Inventory",
-    "equipment": "Equipment",
+    "equipment": "Equipment & Maintenance",
     "hr": "HR & Staff",
     "marketing": "Marketing & CRM",
-    "users": "System Users",
-    "userActivity": "User Activity Tracking",
-    "auditLogs": "Audit Logs",
+    "users": "User Accounts & IAM",
+    "userActivity": "Staff Productivity & Operations",
+    "auditLogs": "Security Audit & Compliance",
     "roles": "Role Management",
     "facilitySettings": "Facility Settings",
     "integrations": "Integrations",
@@ -115,14 +123,17 @@
     "settings": "Settings",
     "help": "Help",
     "referrals": "Referrals",
-    "displayBoard": "Waiting-room screen"
+    "displayBoard": "Waiting-room screen",
+    "endOfDay": "End-of-Shift Review",
+    "executiveRevenue": "Executive Revenue"
   },
   "badge": {
     "new": "New"
   },
   "summary": {
     "title": "Your workspace",
-    "available": "{{count}} destinations available"
+    "available": "{{count}} destinations available",
+    "noFilterResults": "No matching destinations"
   },
   "aria": {
     "mainNavigation": "Main navigation"
@@ -130,6 +141,9 @@
   "actions": {
     "toggleSubmenu": "Expand or collapse {{section}} sections",
     "collapseSidebar": "Collapse sidebar",
-    "expandSidebar": "Expand sidebar"
+    "expandSidebar": "Expand sidebar",
+    "filterPlaceholder": "Search navigation...",
+    "collapseGroup": "Collapse section",
+    "expandGroup": "Expand section"
   }
 }

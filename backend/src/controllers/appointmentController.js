@@ -4,12 +4,15 @@ const {
     triggerEventForRole,
     scheduleAppointmentReminder,
     cancelPendingAppointmentReminders,
-    getAppointmentOccurrenceKey
+    getAppointmentOccurrenceKey,
+    markPatientCampaignConversion
 } = require('../services/notificationJobService');
-const { getWorkingHours, assertWithinWorkingHours } = require('../services/schedulingService');
+const { getWorkingHours, assertWithinWorkingHours, assertAppointmentScheduleRules } = require('../services/schedulingService');
 const { decrypt } = require('../utils/crypto');
 const { logAction } = require('../services/auditService');
 const { triggerMwlRegeneration } = require('../services/pacsMwlService');
+const { syncInvoicesAfterAppointmentReschedule } = require('../services/insuranceAuthorizationService');
+const { assertQuota } = require('../services/quotaService');
 const crypto = require('crypto');
 
 const generateOrderNumber = () => {
@@ -18,19 +21,8 @@ const generateOrderNumber = () => {
     return `ORD-${datePart}-${randomPart}`;
 };
 
-let catalogArchiveSchemaPromise = null;
-const ensureCatalogArchiveSchema = async (db) => {
-    if (!catalogArchiveSchemaPromise) {
-        catalogArchiveSchemaPromise = db.query(`
-            ALTER TABLE modalities ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-            ALTER TABLE examination_types ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-        `).catch((error) => {
-            catalogArchiveSchemaPromise = null;
-            throw error;
-        });
-    }
-    return catalogArchiveSchemaPromise;
-};
+let catalogArchiveSchemaPromise = Promise.resolve();
+const ensureCatalogArchiveSchema = async (db) => catalogArchiveSchemaPromise;
 
 const getExamDefaults = async (client, examTypeId, modalityId, requireActive = true) => {
     if (!examTypeId) {
@@ -82,6 +74,36 @@ const assertClinicalAssignees = async (client, data) => {
     const invalid = requested.find(({ userId, role }) => rolesById.get(String(userId)) !== role);
     if (invalid) {
         throw new AppError(`Selected ${invalid.role.toLowerCase()} is inactive or has the wrong role`, 422, true, 'ROLE_NOT_ELIGIBLE');
+    }
+};
+
+const assertReceptionistAssignment = async (client, receptionistId) => {
+    if (!receptionistId) return;
+
+    const result = await client.query(`
+        SELECT user_id, role, is_active
+        FROM users
+        WHERE user_id = $1
+        LIMIT 1
+    `, [receptionistId]);
+
+    if (!result.rows.length || result.rows[0].is_active !== true) {
+        throw new AppError('Selected receptionist is inactive or not available', 422, true, 'ROLE_NOT_ELIGIBLE');
+    }
+
+    if (!['Receptionist', 'Admin', 'Developer'].includes(result.rows[0].role)) {
+        throw new AppError('Selected receptionist is inactive or has the wrong role', 422, true, 'ROLE_NOT_ELIGIBLE');
+    }
+};
+
+const assertReceptionistRequiredForReceptionStage = (receptionistId, status, arrived) => {
+    if ((arrived === true || status === 'Checked-in') && !receptionistId) {
+        throw new AppError(
+            'A receptionist must be assigned before checking in an appointment. | يجب إسناد موظف استقبال قبل تسجيل وصول الموعد.',
+            422,
+            true,
+            'RECEPTIONIST_ASSIGNMENT_REQUIRED'
+        );
     }
 };
 
@@ -236,89 +258,7 @@ const insertOrderHistory = (client, {
     userId || null
 ]);
 
-const assertSchedulingRules = async (client, modalityId, startTime, endTime) => {
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
-        throw new AppError('Invalid appointment time range.', 400);
-    }
-
-    const workingHours = await getWorkingHours(client);
-    assertWithinWorkingHours(startTime, endTime, workingHours);
-
-    const machineResult = await client.query(`
-        SELECT m.modality_id, m.name, m.status, m.room_id, m.room_number,
-               r.name AS room_name, r.status AS room_status
-        FROM modalities m
-        LEFT JOIN rooms r ON m.room_id = r.room_id
-        WHERE m.modality_id = $1 AND m.deleted_at IS NULL
-    `, [modalityId]);
-
-    if (machineResult.rows.length === 0) {
-        throw new AppError('Machine not found.', 404);
-    }
-
-    const machine = machineResult.rows[0];
-
-    if (machine.status !== 'Active') {
-        throw new AppError(`This machine is ${machine.status.toLowerCase()} and cannot be scheduled.`, 409);
-    }
-
-    // Room Status check
-    if (machine.room_status && machine.room_status !== 'Active') {
-        throw new AppError(`Room (${machine.room_name || machine.room_number}) where this machine is located is currently ${machine.room_status.toLowerCase()} and cannot be scheduled.`, 409);
-    }
-
-    // Equipment Downtime check
-    const downtimeCheck = await client.query(`
-        SELECT downtime_id, reason FROM equipment_downtime
-        WHERE modality_id = $1 
-        AND status != 'Resolved'
-        AND tstzrange(start_time, end_time) && tstzrange($2, $3)
-    `, [modalityId, startTime, endTime]);
-
-    if (downtimeCheck.rows.length > 0) {
-        const d = downtimeCheck.rows[0];
-        throw new AppError(`This machine is under maintenance or experiencing downtime for the selected time slot. Reason: ${d.reason}`, 409);
-    }
-
-    // Active/Scheduled Equipment Maintenance check
-    const apptDate = start.toISOString().substring(0, 10);
-    const maintenanceCheck = await client.query(`
-        SELECT maintenance_id, maintenance_type, status, notes
-        FROM equipment_maintenance
-        WHERE modality_id = $1
-          AND scheduled_date = $2
-          AND status IN ('Scheduled', 'In Progress')
-        LIMIT 1
-    `, [modalityId, apptDate]);
-
-    if (maintenanceCheck.rows.length > 0) {
-        const m = maintenanceCheck.rows[0];
-        throw new AppError(`This machine has maintenance scheduled on this date (${m.maintenance_type}). Cannot schedule appointments during maintenance.`, 409);
-    }
-
-    // Room-level collision check: Ensure no other appointment overlaps in the same room even on a different machine
-    if (machine.room_id) {
-        const roomConflict = await client.query(`
-            SELECT a.appointment_id, m.name AS conflicting_machine
-            FROM appointments a
-            JOIN modalities m ON a.modality_id = m.modality_id
-            WHERE a.room_id = $1
-              AND a.modality_id <> $2
-              AND a.status NOT IN ('Cancelled', 'No-Show')
-              AND a.start_time < $4::timestamptz AND a.end_time > $3::timestamptz
-            LIMIT 1
-        `, [machine.room_id, modalityId, startTime, endTime]);
-
-        if (roomConflict.rows.length > 0) {
-            throw new AppError(`Room (${machine.room_name || machine.room_number}) is occupied at this time by another procedure on ${roomConflict.rows[0].conflicting_machine}.`, 409);
-        }
-    }
-
-    return machine;
-};
+const assertSchedulingRules = assertAppointmentScheduleRules;
 
 const createAppointment = (db) => async (req, res, next) => {
     let client;
@@ -330,6 +270,7 @@ const createAppointment = (db) => async (req, res, next) => {
         await ensureCatalogArchiveSchema(db);
         client = await db.connect();
         await client.query('BEGIN');
+        await assertQuota(client, 'appointments', { transaction: true });
 
         try {
             const idempotencyKey = req.get('Idempotency-Key');
@@ -399,12 +340,15 @@ const createAppointment = (db) => async (req, res, next) => {
 
             const scheduledMachine = await assertSchedulingRules(client, data.modalityId, data.startTime, data.endTime);
 
+            // Serialize concurrent bookings on the exact same modality slot to prevent race condition double bookings
+            const slotLockKey = `modality_slot:${data.modalityId}:${new Date(data.startTime).toISOString()}`;
+            await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [slotLockKey]);
+
             const conflictQuery = `
               SELECT appointment_id FROM appointments
               WHERE modality_id = $1
               AND status != 'Cancelled'
               AND start_time < $3::timestamptz AND end_time > $2::timestamptz
-              FOR UPDATE
             `;
 
             const conflictCheck = await client.query(conflictQuery, [
@@ -453,6 +397,8 @@ const createAppointment = (db) => async (req, res, next) => {
             }
 
             await assertClinicalAssignees(client, data);
+            assertReceptionistRequiredForReceptionStage(data.receptionistId, appointmentStatus, data.arrived);
+            await assertReceptionistAssignment(client, data.receptionistId);
             const orderFields = buildOrderFields(data, {}, examDefaults);
             const followUp = await resolveFollowUp(client, {
                 isFollowUp: Boolean(data.isFollowUp),
@@ -466,15 +412,16 @@ const createAppointment = (db) => async (req, res, next) => {
               INSERT INTO appointments (
                 patient_id, modality_id, exam_type_id, start_time, end_time, room_id, notes, created_by,
                 referring_doctor, referring_doctor_id, technician_id, nurse_id, radiologist_id, payment_method, payment_amount,
-                appointment_source, preparation_status, order_number, priority, clinical_indication,
+                                receptionist_id, receptionist_assigned_at, receptionist_desk, receptionist_assignment_version,
+                                appointment_source, preparation_status, order_number, priority, clinical_indication,
                 provisional_diagnosis, icd_code, body_part, contrast_required, pregnancy_safety_status,
                 implant_safety_status, renal_safety_status, status,
                 is_follow_up, prior_exam_id, follow_up_reason
               )
               VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-                $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-                $28, $29, $30, $31
+                                                                $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+                                                                $28, $29, $30, $31, $32, $33, $34, $35
               )
               RETURNING *
             `;
@@ -495,6 +442,10 @@ const createAppointment = (db) => async (req, res, next) => {
                 data.radiologistId || null,
                 data.paymentMethod,
                 data.paymentAmount,
+                data.receptionistId || null,
+                data.receptionistId ? new Date().toISOString() : null,
+                data.receptionistDesk || null,
+                data.receptionistId ? 1 : 0,
                 data.appointmentSource || 'Walk-in',
                 data.preparationStatus || 'Not Required',
                 orderFields.order_number,
@@ -516,6 +467,20 @@ const createAppointment = (db) => async (req, res, next) => {
             const result = await client.query(insertQuery, values);
             const appointment = result.rows[0];
 
+            await logAction(client, {
+                userId,
+                action: 'APPOINTMENT_CREATED',
+                resourceId: appointment.appointment_id,
+                resourceTable: 'appointments',
+                ipAddress: req.ip,
+                details: {
+                    patientId: appointment.patient_id,
+                    priority: appointment.priority,
+                    receptionistId: appointment.receptionist_id || null,
+                    appointmentSource: appointment.appointment_source || null
+                }
+            });
+
             await insertOrderHistory(client, {
                 appointmentId: appointment.appointment_id,
                 newStatus: appointment.status,
@@ -529,6 +494,9 @@ const createAppointment = (db) => async (req, res, next) => {
             const examStatus = data.arrived ? 'Checked-in' : 'Scheduled';
             const queueStage = data.arrived ? 'Arrived' : 'Scheduled';
             const arrivedAt = data.arrived ? new Date().toISOString() : null;
+            const reportRequestStatus = (data.imagesOnly || data.reportRequestStatus === 'NotRequested') ? 'NotRequested' : 'Requested';
+            const onlineSources = ['Website', 'Patient Portal'];
+            const reportRequestSource = onlineSources.includes(data.appointmentSource) ? 'Booking' : 'Reception';
 
             const examInsert = `
                 INSERT INTO examinations (
@@ -536,10 +504,11 @@ const createAppointment = (db) => async (req, res, next) => {
                     external_referring_doctor_id, status, queue_stage, current_station, arrived_at, order_number, priority, clinical_indication,
                     provisional_diagnosis, icd_code, body_part, contrast_required, pregnancy_safety_status,
                     implant_safety_status, renal_safety_status,
-                    is_follow_up, prior_exam_id, follow_up_reason
+                    is_follow_up, prior_exam_id, follow_up_reason,
+                    report_request_status, report_request_source
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                    $21, $22, $23
+                    $21, $22, $23, $24, $25
                 )
                 RETURNING exam_id, performing_radiologist_id, radiologist_assignment_version
             `;
@@ -566,7 +535,9 @@ const createAppointment = (db) => async (req, res, next) => {
                 appointment.renal_safety_status,
                 appointment.is_follow_up,
                 appointment.prior_exam_id,
-                appointment.follow_up_reason
+                appointment.follow_up_reason,
+                reportRequestStatus,
+                reportRequestSource
             ]);
 
             if (waitlistEntry) {
@@ -619,6 +590,7 @@ const createAppointment = (db) => async (req, res, next) => {
             }
 
             await client.query('COMMIT');
+            await markPatientCampaignConversion(db, appointment.patient_id).catch(() => {});
 
             // Fetch the patient's real name and exam/modality details for rich notifications
             const detailsResult = await db.query(`
@@ -776,6 +748,23 @@ const updateAppointment = (db) => async (req, res, next) => {
             await client.query('ROLLBACK');
             return next(new AppError(`A ${existing.status} appointment cannot be edited`, 409));
         }
+
+        if (req.user?.role === 'Receptionist' && (data.status === 'Checked-in' || data.arrived === true)) {
+            const shiftCheck = await client.query(`
+                SELECT session_id FROM reception_shift_sessions
+                WHERE user_id = $1 AND status = 'Open'
+                LIMIT 1
+            `, [req.user.user_id]);
+            if (!shiftCheck.rows.length) {
+                await client.query('ROLLBACK');
+                return next(new AppError(
+                    'Start your reception shift before checking in patients. | يجب بدء وردية الاستقبال أولاً لتسجيل وصول المرضى.',
+                    409,
+                    true,
+                    'RECEPTION_SHIFT_REQUIRED'
+                ));
+            }
+        }
         if (data.status) {
             if (['Cancelled', 'No-Show', 'Completed'].includes(data.status)) {
                 await client.query('ROLLBACK');
@@ -827,6 +816,8 @@ const updateAppointment = (db) => async (req, res, next) => {
             radiologist_id: data.radiologistId !== undefined ? data.radiologistId : existing.radiologist_id,
             payment_method: data.paymentMethod ?? existing.payment_method,
             payment_amount: data.paymentAmount ?? existing.payment_amount,
+            receptionist_id: data.receptionistId !== undefined ? data.receptionistId : existing.receptionist_id,
+            receptionist_desk: data.receptionistDesk !== undefined ? data.receptionistDesk : existing.receptionist_desk,
             appointment_source: data.appointmentSource ?? existing.appointment_source,
             preparation_status: data.preparationStatus ?? existing.preparation_status,
             cancellation_reason: existing.cancellation_reason,
@@ -842,6 +833,12 @@ const updateAppointment = (db) => async (req, res, next) => {
             nurseId: nextAppointment.nurse_id,
             radiologistId: nextAppointment.radiologist_id
         });
+        assertReceptionistRequiredForReceptionStage(
+            nextAppointment.receptionist_id,
+            nextAppointment.status,
+            data.arrived
+        );
+        await assertReceptionistAssignment(client, nextAppointment.receptionist_id);
 
         const schedulingChanged = data.modalityId !== undefined
             || data.startTime !== undefined
@@ -888,25 +885,36 @@ const updateAppointment = (db) => async (req, res, next) => {
                 radiologist_id = $12,
                 payment_method = $13,
                 payment_amount = $14,
-                appointment_source = $15,
-                preparation_status = $16,
-                cancellation_reason = $17,
-                order_number = $18,
-                priority = $19,
-                clinical_indication = $20,
-                provisional_diagnosis = $21,
-                icd_code = $22,
-                body_part = $23,
-                contrast_required = $24,
-                pregnancy_safety_status = $25,
-                implant_safety_status = $26,
-                renal_safety_status = $27,
-                is_follow_up = $28,
-                prior_exam_id = $29,
-                follow_up_reason = $30,
-                cancelled_by = CASE WHEN $6::varchar(20) = 'Cancelled' AND status != 'Cancelled' THEN $31 ELSE cancelled_by END,
+                receptionist_id = $15,
+                receptionist_assigned_at = CASE
+                    WHEN $15::uuid IS NULL THEN NULL
+                    WHEN receptionist_id IS DISTINCT FROM $15::uuid THEN NOW()
+                    ELSE receptionist_assigned_at
+                END,
+                receptionist_desk = $16,
+                receptionist_assignment_version = CASE
+                    WHEN receptionist_id IS DISTINCT FROM $15::uuid THEN receptionist_assignment_version + 1
+                    ELSE receptionist_assignment_version
+                END,
+                appointment_source = $17,
+                preparation_status = $18,
+                cancellation_reason = $19,
+                order_number = $20,
+                priority = $21,
+                clinical_indication = $22,
+                provisional_diagnosis = $23,
+                icd_code = $24,
+                body_part = $25,
+                contrast_required = $26,
+                pregnancy_safety_status = $27,
+                implant_safety_status = $28,
+                renal_safety_status = $29,
+                is_follow_up = $30,
+                prior_exam_id = $31,
+                follow_up_reason = $32,
+                cancelled_by = CASE WHEN $6::varchar(20) = 'Cancelled' AND status != 'Cancelled' THEN $33 ELSE cancelled_by END,
                 cancelled_at = CASE WHEN $6::varchar(20) = 'Cancelled' AND status != 'Cancelled' THEN NOW() ELSE cancelled_at END
-            WHERE appointment_id = $32
+            WHERE appointment_id = $34
             RETURNING *
         `;
 
@@ -925,6 +933,8 @@ const updateAppointment = (db) => async (req, res, next) => {
             nextAppointment.radiologist_id,
             nextAppointment.payment_method,
             nextAppointment.payment_amount,
+            nextAppointment.receptionist_id,
+            nextAppointment.receptionist_desk,
             nextAppointment.appointment_source,
             nextAppointment.preparation_status,
             nextAppointment.cancellation_reason,
@@ -944,6 +954,21 @@ const updateAppointment = (db) => async (req, res, next) => {
             req.user.user_id,
             id
         ]);
+
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'APPOINTMENT_UPDATED',
+            resourceId: id,
+            resourceTable: 'appointments',
+            ipAddress: req.ip,
+            details: {
+                status: nextAppointment.status,
+                priority: nextAppointment.priority,
+                receptionistId: nextAppointment.receptionist_id || null,
+                receptionistDesk: nextAppointment.receptionist_desk || null,
+                changedFields: Object.keys(data)
+            }
+        });
 
         const updatedExamResult = await client.query(`
             UPDATE examinations
@@ -997,6 +1022,16 @@ const updateAppointment = (db) => async (req, res, next) => {
                     arrived_at = COALESCE(arrived_at, NOW())
                 WHERE appointment_id = $1
             `, [id]);
+        }
+
+        const requestedReportStatus = data.imagesOnly === true ? 'NotRequested' : data.imagesOnly === false ? 'Requested' : data.reportRequestStatus;
+        if (requestedReportStatus) {
+            await client.query(`
+                UPDATE examinations
+                SET report_request_status = $2,
+                    report_request_source = 'Reception'
+                WHERE appointment_id = $1
+            `, [id, requestedReportStatus]);
         }
 
         let currentExamAssignment = updatedExamResult.rows[0] || null;
@@ -1108,21 +1143,37 @@ const updateAppointment = (db) => async (req, res, next) => {
             await cancelPendingAppointmentReminders(client, id, replacementOccurrence);
         }
 
-        // #10 — Sync linked exam status when appointment is Cancelled or Completed
+        // Sync cancellation to the linked exam, but never infer report finalization
+        // from an administrative appointment status change. Acquisition completion
+        // must go through the dedicated workflow where the result path is explicit.
         const newApptStatus = result.rows[0].status;
+        if (newApptStatus === 'Completed' && existing.status !== newApptStatus) {
+            const linkedExam = await client.query(`
+                SELECT exam_id, status, queue_stage
+                FROM examinations
+                WHERE appointment_id = $1
+                FOR UPDATE
+            `, [id]);
+            if (linkedExam.rows.some((exam) => !['Completed', 'Finalized'].includes(exam.status))) {
+                await client.query('ROLLBACK');
+                return next(new AppError(
+                    'Complete the linked examination from the acquisition workspace and choose its result path.',
+                    409,
+                    true,
+                    'ACQUISITION_COMPLETION_REQUIRED'
+                ));
+            }
+        }
         if (
-            (newApptStatus === 'Cancelled' || newApptStatus === 'Completed') &&
+            newApptStatus === 'Cancelled' &&
             existing.status !== newApptStatus
         ) {
-            const examStatus = newApptStatus === 'Cancelled' ? 'Scheduled' : 'Finalized';
             await client.query(`
                 UPDATE examinations
-                SET status = $1::exam_status,
-                    queue_stage = CASE WHEN $1::exam_status = 'Finalized' THEN 'Finalized' ELSE queue_stage END,
-                    current_station = CASE WHEN $1::exam_status = 'Finalized' THEN 'Delivery' ELSE current_station END
-                WHERE appointment_id = $2
+                SET status = 'Scheduled'::exam_status
+                WHERE appointment_id = $1
                   AND status != 'Finalized'
-            `, [examStatus, id]);
+            `, [id]);
         }
 
         await client.query('COMMIT');
@@ -1209,6 +1260,15 @@ const markNoShow = (db) => async (req, res, next) => {
             userId: req.user.user_id
         });
 
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'APPOINTMENT_NO_SHOW',
+            resourceId: id,
+            resourceTable: 'appointments',
+            ipAddress: req.ip,
+            details: { reason: reason || null }
+        });
+
         await cancelPendingAppointmentReminders(client, id);
 
         await client.query('COMMIT');
@@ -1255,7 +1315,7 @@ const rescheduleAppointment = (db) => async (req, res, next) => {
         await client.query('BEGIN');
 
         const existingResult = await client.query(
-            'SELECT * FROM appointments WHERE appointment_id = $1',
+            'SELECT * FROM appointments WHERE appointment_id = $1 FOR UPDATE',
             [id]
         );
 
@@ -1266,11 +1326,15 @@ const rescheduleAppointment = (db) => async (req, res, next) => {
 
         const existing = existingResult.rows[0];
 
-        // #15 — Block rescheduling appointments that are already completed
-        if (existing.status === 'Completed' || existing.status === 'Cancelled') {
+        // #15 — Completed orders are terminal. Cancelled ones can be revived:
+        // the UI exposes reschedule on cancelled rows, and rescheduling a
+        // cancelled order back to 'Confirmed' is the documented reopen path.
+        if (existing.status === 'Completed') {
             await client.query('ROLLBACK');
             return next(new AppError(`Cannot reschedule a ${existing.status} appointment.`, 422));
         }
+
+        const revivingCancelled = existing.status === 'Cancelled';
 
         await assertSchedulingRules(client, existing.modality_id, startTime, endTime);
 
@@ -1307,10 +1371,40 @@ const rescheduleAppointment = (db) => async (req, res, next) => {
             UPDATE appointments
             SET start_time = $1,
                 end_time = $2,
-                status = CASE WHEN status = 'No-Show' THEN 'Confirmed' ELSE status END
+                status = CASE
+                    WHEN status IN ('No-Show', 'Cancelled') THEN 'Confirmed'
+                    ELSE status
+                END
             WHERE appointment_id = $3
             RETURNING *
         `, [startTime, endTime, id]);
+
+        if (revivingCancelled) {
+            await client.query(`
+                UPDATE appointments
+                SET cancellation_reason = NULL,
+                    cancelled_by = NULL,
+                    cancelled_at = NULL
+                WHERE appointment_id = $1
+            `, [id]);
+
+            await client.query(`
+                UPDATE examinations
+                SET queue_stage = 'Scheduled'
+                WHERE appointment_id = $1 AND queue_stage = 'Cancelled'
+            `, [id]);
+
+            await insertOrderHistory(client, {
+                appointmentId: id,
+                oldStatus: 'Cancelled',
+                newStatus: 'Confirmed',
+                eventType: 'AppointmentReactivated',
+                notes: reason || 'Revived through reschedule',
+                userId: req.user.user_id
+            });
+        }
+
+        await syncInvoicesAfterAppointmentReschedule(client, id, startTime);
 
         await insertOrderHistory(client, {
             appointmentId: id,
@@ -1319,6 +1413,21 @@ const rescheduleAppointment = (db) => async (req, res, next) => {
             eventType: 'AppointmentRescheduled',
             notes: reason || null,
             userId: req.user.user_id
+        });
+
+        await logAction(client, {
+            userId: req.user.user_id,
+            action: 'APPOINTMENT_RESCHEDULED',
+            resourceId: id,
+            resourceTable: 'appointments',
+            ipAddress: req.ip,
+            details: {
+                oldStartTime: existing.start_time,
+                oldEndTime: existing.end_time,
+                newStartTime: startTime,
+                newEndTime: endTime,
+                reason: reason || null
+            }
         });
 
         await cancelPendingAppointmentReminders(
@@ -1771,6 +1880,48 @@ const getAppointments = (db) => async (req, res, next) => {
 const getAppointmentById = (db) => async (req, res, next) => {
     try {
         const { id } = req.params;
+        let targetId = id;
+        let attachedPayment = null;
+
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+        if (isUuid) {
+            const payCheck = await db.query(`
+                SELECT p.payment_id, p.amount, p.method, p.payment_reference, p.transaction_date, p.created_at,
+                       inv.invoice_id, inv.invoice_number, inv.appointment_id, inv.exam_id, inv.patient_id,
+                       e.appointment_id AS exam_appointment_id
+                FROM payments p
+                JOIN invoices inv ON inv.invoice_id = p.invoice_id
+                LEFT JOIN examinations e ON e.exam_id = inv.exam_id
+                WHERE p.payment_id = $1::uuid
+            `, [id]).catch(() => ({ rows: [] }));
+
+            if (payCheck.rows.length) {
+                const payRow = payCheck.rows[0];
+                attachedPayment = {
+                    payment_id: payRow.payment_id,
+                    amount: payRow.amount,
+                    method: payRow.method,
+                    payment_reference: payRow.payment_reference,
+                    transaction_date: payRow.transaction_date || payRow.created_at,
+                    invoice_number: payRow.invoice_number,
+                    invoice_id: payRow.invoice_id,
+                };
+                if (payRow.appointment_id || payRow.exam_appointment_id) {
+                    targetId = payRow.appointment_id || payRow.exam_appointment_id;
+                }
+            } else {
+                const invCheck = await db.query(`
+                    SELECT inv.appointment_id, inv.exam_id, e.appointment_id AS exam_appointment_id
+                    FROM invoices inv
+                    LEFT JOIN examinations e ON e.exam_id = inv.exam_id
+                    WHERE inv.invoice_id = $1::uuid
+                `, [id]).catch(() => ({ rows: [] }));
+                if (invCheck.rows.length && (invCheck.rows[0].appointment_id || invCheck.rows[0].exam_appointment_id)) {
+                    targetId = invCheck.rows[0].appointment_id || invCheck.rows[0].exam_appointment_id;
+                }
+            }
+        }
+
         const query = `
             SELECT a.*, p.mrn, p.first_name_enc, p.last_name_enc, m.name as machine_name, m.type as modality_type, et.name as exam_type_name,
                    et.preparation_instructions, et.body_part as exam_type_body_part, et.contrast_required as exam_type_contrast_required,
@@ -1814,9 +1965,60 @@ const getAppointmentById = (db) => async (req, res, next) => {
             LEFT JOIN modalities prior_m ON prior_m.modality_id = prior_e.modality_id
             WHERE a.appointment_id = $1
         `;
-        const queryParams = [id];
+        const queryParams = [targetId];
         const result = await db.query(`${query}${appendAppointmentVisibility(req, queryParams)}`, queryParams);
         if (result.rows.length === 0) {
+            if (attachedPayment) {
+                const invoiceDetails = await db.query(`
+                    SELECT inv.*, p.mrn, p.first_name_enc, p.last_name_enc, p.date_of_birth_enc, p.gender,
+                           m.name as machine_name, m.type as modality_type,
+                           et.name as exam_type_name, et.preparation_instructions
+                    FROM invoices inv
+                    JOIN patients p ON inv.patient_id = p.patient_id
+                    LEFT JOIN examinations e ON inv.exam_id = e.exam_id
+                    LEFT JOIN modalities m ON e.modality_id = m.modality_id
+                    LEFT JOIN examination_types et ON e.exam_type_id = et.type_id
+                    WHERE inv.invoice_id = $1
+                `, [attachedPayment.invoice_id]).catch(() => ({ rows: [] }));
+
+                if (invoiceDetails.rows.length) {
+                    const invRow = invoiceDetails.rows[0];
+                    const [itemsRes, paymentsRes] = await Promise.all([
+                        db.query(`SELECT item_id, description, quantity, unit_price, total_price, item_type FROM invoice_items WHERE invoice_id = $1 ORDER BY created_at ASC`, [invRow.invoice_id]).catch(() => ({ rows: [] })),
+                        db.query(`SELECT p.payment_id, p.amount, p.method, p.payment_reference, p.transaction_date, p.created_at, p.payment_status, u.full_name as cashier_name FROM payments p LEFT JOIN users u ON p.cashier_id = u.user_id WHERE p.invoice_id = $1 ORDER BY p.transaction_date ASC, p.created_at ASC`, [invRow.invoice_id]).catch(() => ({ rows: [] }))
+                    ]);
+                    const synthesized = {
+                        appointment_id: attachedPayment.payment_id,
+                        order_number: invRow.invoice_number,
+                        patient_id: invRow.patient_id,
+                        mrn: invRow.mrn,
+                        gender: invRow.gender,
+                        exam_type_name: invRow.exam_type_name || 'Medical Examination',
+                        machine_name: invRow.machine_name || 'Center',
+                        modality_type: invRow.modality_type || 'General',
+                        start_time: attachedPayment.transaction_date,
+                        created_at: invRow.created_at,
+                        payment: attachedPayment,
+                        invoice: {
+                            invoice_id: invRow.invoice_id,
+                            invoice_number: invRow.invoice_number,
+                            total_amount: invRow.total_amount,
+                            patient_payable_amount: invRow.patient_payable_amount,
+                            insurance_covered_amount: invRow.insurance_covered_amount,
+                            invoice_status: invRow.invoice_status
+                        },
+                        items: itemsRes.rows,
+                        payments: paymentsRes.rows
+                    };
+                    if (invRow.first_name_enc || invRow.last_name_enc) {
+                        synthesized.patient_name = [decrypt(invRow.first_name_enc), decrypt(invRow.last_name_enc)].filter(Boolean).join(' ');
+                    }
+                    if (invRow.date_of_birth_enc) {
+                        synthesized.date_of_birth = decrypt(invRow.date_of_birth_enc);
+                    }
+                    return res.json(synthesized);
+                }
+            }
             return res.status(404).json({ error: 'Appointment not found' });
         }
         
@@ -1833,6 +2035,46 @@ const getAppointmentById = (db) => async (req, res, next) => {
         delete mapped.first_name_enc;
         delete mapped.last_name_enc;
         delete mapped.date_of_birth_enc;
+
+        const resolvedInvoiceId = attachedPayment?.invoice_id || (await db.query(`
+            SELECT invoice_id FROM invoices
+            WHERE appointment_id = $1
+            ORDER BY created_at DESC LIMIT 1
+        `, [mapped.appointment_id]).then(r => r.rows[0]?.invoice_id).catch(() => null));
+
+        if (resolvedInvoiceId) {
+            const [invRowRes, itemsRes, paymentsRes] = await Promise.all([
+                db.query(`SELECT invoice_id, invoice_number, total_amount, patient_payable_amount, insurance_covered_amount, invoice_status FROM invoices WHERE invoice_id = $1`, [resolvedInvoiceId]).catch(() => ({ rows: [] })),
+                db.query(`SELECT item_id, description, quantity, unit_price, total_price, item_type FROM invoice_items WHERE invoice_id = $1 ORDER BY created_at ASC`, [resolvedInvoiceId]).catch(() => ({ rows: [] })),
+                db.query(`SELECT p.payment_id, p.amount, p.method, p.payment_reference, p.transaction_date, p.created_at, p.payment_status, u.full_name as cashier_name FROM payments p LEFT JOIN users u ON p.cashier_id = u.user_id WHERE p.invoice_id = $1 ORDER BY p.transaction_date ASC, p.created_at ASC`, [resolvedInvoiceId]).catch(() => ({ rows: [] }))
+            ]);
+            mapped.invoice = invRowRes.rows[0] || null;
+            mapped.items = itemsRes.rows;
+            mapped.payments = paymentsRes.rows;
+            if (attachedPayment) {
+                mapped.payment = attachedPayment;
+            } else if (paymentsRes.rows.length) {
+                mapped.payment = paymentsRes.rows[paymentsRes.rows.length - 1];
+            }
+        } else if (attachedPayment) {
+            mapped.payment = attachedPayment;
+        }
+
+        const relatedAppts = await db.query(`
+            SELECT a.appointment_id, a.order_number, a.start_time, a.status,
+                   et.name as exam_type_name, m.type as modality_type, m.name as machine_name,
+                   COALESCE(r.name, 'جناح ' || m.room_number) as room_name,
+                   COALESCE(r.room_number, m.room_number) as room_number
+            FROM appointments a
+            JOIN modalities m ON a.modality_id = m.modality_id
+            LEFT JOIN rooms r ON COALESCE(a.room_id, m.room_id) = r.room_id
+            LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
+            WHERE a.patient_id = $1
+              AND a.appointment_id != $2
+              AND a.start_time::date = $3::date
+            ORDER BY a.start_time ASC
+        `, [mapped.patient_id, mapped.appointment_id, mapped.start_time || new Date()]).catch(() => ({ rows: [] }));
+        mapped.related_appointments = relatedAppts.rows;
 
         res.json(mapped);
     } catch (error) {

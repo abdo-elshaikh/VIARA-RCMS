@@ -99,7 +99,7 @@ class DashboardService {
                         TO_CHAR(start_time, 'HH24:00') as time,
                         COUNT(CASE WHEN e.status IN ('Scheduled', 'Checked-in') THEN 1 END) as waiting,
                         COUNT(CASE WHEN e.status IN ('Scanning', 'Reporting') THEN 1 END) as in_progress,
-                        COUNT(CASE WHEN e.status = 'Finalized' THEN 1 END) as completed
+                        COUNT(CASE WHEN e.status IN ('Completed', 'Finalized') THEN 1 END) as completed
                     FROM appointments a
                     LEFT JOIN examinations e ON a.appointment_id = e.appointment_id
                     WHERE a.start_time >= ${CENTER_BUSINESS_MIDNIGHT_SQL}
@@ -433,74 +433,60 @@ class DashboardService {
      */
     async getFinanceStats({ cashierId = null, branchId = DEFAULT_BRANCH_ID } = {}) {
         const paymentParams = [cashierId, branchId];
-        const paymentsResult = await this.db.query(`
-            SELECT
-                COALESCE(SUM(amount) FILTER (
-                    WHERE business_date = ${CENTER_BUSINESS_DATE_SQL} AND payment_status = 'Completed'
-                ), 0) AS collected_today,
-                COALESCE(SUM(amount) FILTER (
-                    WHERE business_date >= DATE_TRUNC('week', ${CENTER_BUSINESS_DATE_SQL})::date
-                      AND payment_status = 'Completed'
-                ), 0) AS collected_week,
-                COUNT(*) FILTER (
-                    WHERE business_date = ${CENTER_BUSINESS_DATE_SQL} AND payment_status = 'Completed'
-                )::int AS transactions_today
-            FROM payments
-            WHERE ($1::uuid IS NULL OR processed_by = $1::uuid)
-              AND branch_id = $2::uuid
-        `, paymentParams);
-
-        const invoiceResult = await this.db.query(`
-            WITH payment_totals AS (
-                SELECT invoice_id,
-                       COALESCE(SUM(amount) FILTER (WHERE payment_status = 'Completed'), 0) AS paid_amount
+        const [paymentsResult, invoiceResult, refundResult, shiftResult] = await Promise.all([
+            this.db.query(`
+                SELECT
+                    COALESCE(SUM(amount) FILTER (
+                        WHERE business_date = ${CENTER_BUSINESS_DATE_SQL} AND payment_status = 'Completed'
+                    ), 0) AS collected_today,
+                    COALESCE(SUM(amount) FILTER (
+                        WHERE business_date >= DATE_TRUNC('week', ${CENTER_BUSINESS_DATE_SQL})::date
+                          AND payment_status = 'Completed'
+                    ), 0) AS collected_week,
+                    COUNT(*) FILTER (
+                        WHERE business_date = ${CENTER_BUSINESS_DATE_SQL} AND payment_status = 'Completed'
+                    )::int AS transactions_today
                 FROM payments
-                GROUP BY invoice_id
-            ), refund_totals AS (
-                SELECT invoice_id,
-                       COALESCE(SUM(amount) FILTER (WHERE status = 'Processed'), 0) AS refunded_amount
+                WHERE ($1::uuid IS NULL OR processed_by = $1::uuid)
+                  AND branch_id = $2::uuid
+            `, paymentParams),
+            this.db.query(`
+                WITH branch_invoices AS (
+                    SELECT i.invoice_id, i.patient_payable_amount
+                    FROM invoices i
+                    WHERE i.invoice_status <> 'Voided'
+                      AND i.branch_id = $1::uuid
+                ), positions AS (
+                    SELECT bi.invoice_id,
+                           GREATEST(
+                               bi.patient_payable_amount
+                               - COALESCE((SELECT SUM(c.patient_amount) FROM credit_notes c WHERE c.invoice_id = bi.invoice_id AND c.reversed_at IS NULL), 0)
+                               - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = bi.invoice_id AND p.payment_status = 'Completed'), 0)
+                               + COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id = bi.invoice_id AND r.status = 'Processed'), 0),
+                               0
+                           ) AS balance_amount
+                    FROM branch_invoices bi
+                )
+                SELECT
+                    COUNT(*) FILTER (WHERE balance_amount > 0)::int AS open_invoices,
+                    COALESCE(SUM(balance_amount), 0) AS outstanding_amount
+                FROM positions
+            `, [branchId]),
+            this.db.query(`
+                SELECT COUNT(*)::int AS pending_refunds
                 FROM refunds
-                GROUP BY invoice_id
-            ), credit_totals AS (
-                SELECT invoice_id,
-                       COALESCE(SUM(patient_amount) FILTER (WHERE reversed_at IS NULL), 0) AS credited_amount
-                FROM credit_notes
-                GROUP BY invoice_id
-            ), positions AS (
-                SELECT i.invoice_id, i.invoice_status,
-                       GREATEST(
-                           i.patient_payable_amount - COALESCE(c.credited_amount, 0)
-                           - COALESCE(p.paid_amount, 0) + COALESCE(r.refunded_amount, 0),
-                           0
-                       ) AS balance_amount
-                FROM invoices i
-                LEFT JOIN payment_totals p ON p.invoice_id = i.invoice_id
-                LEFT JOIN refund_totals r ON r.invoice_id = i.invoice_id
-                LEFT JOIN credit_totals c ON c.invoice_id = i.invoice_id
-                WHERE i.invoice_status <> 'Voided'
-                  AND i.branch_id = $1::uuid
-            )
-            SELECT
-                COUNT(*) FILTER (WHERE balance_amount > 0)::int AS open_invoices,
-                COALESCE(SUM(balance_amount), 0) AS outstanding_amount
-            FROM positions
-        `, [branchId]);
-
-        const refundResult = await this.db.query(`
-            SELECT COUNT(*)::int AS pending_refunds
-            FROM refunds
-            WHERE status IN ('Pending', 'Approved')
-              AND branch_id = $1::uuid
-        `, [branchId]);
-
-        const shiftResult = cashierId
-            ? await this.db.query(`
-                SELECT EXISTS (
-                    SELECT 1 FROM cashier_shifts
-                    WHERE cashier_id = $1 AND branch_id = $2::uuid AND status = 'Open'
-                ) AS shift_open
-            `, [cashierId, branchId])
-            : { rows: [{ shift_open: false }] };
+                WHERE status IN ('Pending', 'Approved')
+                  AND branch_id = $1::uuid
+            `, [branchId]),
+            cashierId
+                ? this.db.query(`
+                    SELECT EXISTS (
+                        SELECT 1 FROM cashier_shifts
+                        WHERE cashier_id = $1 AND branch_id = $2::uuid AND status = 'Open'
+                    ) AS shift_open
+                `, [cashierId, branchId])
+                : Promise.resolve({ rows: [{ shift_open: false }] })
+        ]);
 
         const payments = paymentsResult.rows[0];
         const invoices = invoiceResult.rows[0];
@@ -567,25 +553,17 @@ class DashboardService {
      */
     async getAdminStats() {
         try {
-            // Completed scans this week
             const scansQuery = `
                 SELECT COUNT(*) as count
                 FROM examinations
                 WHERE exam_completed_at >= DATE_TRUNC('week', ${CENTER_BUSINESS_DATE_SQL})
             `;
-            const scansResult = await this.db.query(scansQuery);
-            const totalScans = parseInt(scansResult.rows[0].count);
-
             const previousScansQuery = `
                 SELECT COUNT(*) as count
                 FROM examinations
                 WHERE exam_completed_at >= DATE_TRUNC('week', ${CENTER_BUSINESS_DATE_SQL}) - INTERVAL '7 days'
                 AND exam_completed_at < DATE_TRUNC('week', ${CENTER_BUSINESS_DATE_SQL})
             `;
-            const previousScansResult = await this.db.query(previousScansQuery);
-            const previousScans = parseInt(previousScansResult.rows[0].count);
-
-            // Net collections (this week)
             const revenueQuery = `
                 SELECT
                     COALESCE((SELECT SUM(amount) FROM payments
@@ -597,9 +575,6 @@ class DashboardService {
                                 WHERE business_date >= DATE_TRUNC('week', ${CENTER_BUSINESS_DATE_SQL})::date
                                   AND status = 'Processed'), 0) AS total
             `;
-            const revenueResult = await this.db.query(revenueQuery);
-            const revenue = parseFloat(revenueResult.rows[0].total);
-
             const previousRevenueQuery = `
                 SELECT
                     COALESCE((SELECT SUM(amount) FROM payments
@@ -614,35 +589,23 @@ class DashboardService {
                                   AND business_date < DATE_TRUNC('week', ${CENTER_BUSINESS_DATE_SQL})::date
                                   AND status = 'Processed'), 0) AS total
             `;
-            const previousRevenueResult = await this.db.query(previousRevenueQuery);
-            const previousRevenue = parseFloat(previousRevenueResult.rows[0].total);
-
-            // Active staff count
             const staffQuery = `
                 SELECT COUNT(*) as count
                 FROM users
                 WHERE is_active = true
             `;
-            const staffResult = await this.db.query(staffQuery);
-            const activeStaff = parseInt(staffResult.rows[0].count);
-
             const operationalQuery = `
                 SELECT
                     COUNT(*) FILTER (WHERE status != 'Finalized') as open_work,
                     COUNT(*) FILTER (WHERE exam_completed_at >= ${CENTER_BUSINESS_MIDNIGHT_SQL} AND exam_completed_at < ${CENTER_BUSINESS_MIDNIGHT_SQL} + interval '1 day') as scans_today
                 FROM examinations
             `;
-            const operationalResult = await this.db.query(operationalQuery);
-
             const leaveQuery = `
                 SELECT COUNT(DISTINCT user_id) as count
                 FROM leave_requests
                 WHERE status = 'Approved'
                 AND ${CENTER_BUSINESS_DATE_SQL} BETWEEN start_date AND end_date
             `;
-            const leaveResult = await this.db.query(leaveQuery);
-
-            // Weekly scan volume data with revenue
             const weeklyDataQuery = `
                 WITH days AS (
                     SELECT generate_series(DATE_TRUNC('week', ${CENTER_BUSINESS_DATE_SQL})::date, ${CENTER_BUSINESS_DATE_SQL}, '1 day')::date AS day
@@ -661,9 +624,6 @@ class DashboardService {
                 FROM days d LEFT JOIN cash c ON c.day = d.day
                 ORDER BY d.day
             `;
-            const weeklyDataResult = await this.db.query(weeklyDataQuery);
-
-            // Modality distribution
             const modalityQuery = `
                 SELECT 
                     m.type as name,
@@ -674,9 +634,40 @@ class DashboardService {
                 WHERE e.exam_completed_at >= DATE_TRUNC('week', ${CENTER_BUSINESS_DATE_SQL})
                 GROUP BY m.type
             `;
-            const modalityResult = await this.db.query(modalityQuery);
 
-            // Add colors to modality data
+            // Run all independent queries and sparklines in parallel
+            const [
+                scansResult,
+                previousScansResult,
+                revenueResult,
+                previousRevenueResult,
+                staffResult,
+                operationalResult,
+                leaveResult,
+                weeklyDataResult,
+                modalityResult,
+                sparklineScans,
+                sparklineRevenue
+            ] = await Promise.all([
+                this.db.query(scansQuery),
+                this.db.query(previousScansQuery),
+                this.db.query(revenueQuery),
+                this.db.query(previousRevenueQuery),
+                this.db.query(staffQuery),
+                this.db.query(operationalQuery),
+                this.db.query(leaveQuery),
+                this.db.query(weeklyDataQuery),
+                this.db.query(modalityQuery),
+                this.getWeeklySparkline('scans'),
+                this.getWeeklySparkline('revenue')
+            ]);
+
+            const totalScans = parseInt(scansResult.rows[0].count);
+            const previousScans = parseInt(previousScansResult.rows[0].count);
+            const revenue = parseFloat(revenueResult.rows[0].total);
+            const previousRevenue = parseFloat(previousRevenueResult.rows[0].total);
+            const activeStaff = parseInt(staffResult.rows[0].count);
+
             const colorMap = {
                 'MRI': '#3b82f6',
                 'CT': '#8b5cf6',
@@ -701,8 +692,8 @@ class DashboardService {
                 scansToday: parseInt(operationalResult.rows[0].scans_today),
                 scanVolumeData: weeklyDataResult.rows,
                 modalityData,
-                sparklineScans: await this.getWeeklySparkline('scans'),
-                sparklineRevenue: await this.getWeeklySparkline('revenue')
+                sparklineScans,
+                sparklineRevenue
             };
         } catch (error) {
             logger.error('Error in getAdminStats:', error);
@@ -740,7 +731,7 @@ class DashboardService {
                 WHERE e.modality_id = m.modality_id
                   AND e.exam_started_at IS NOT NULL
                   AND e.exam_completed_at IS NULL
-                  AND e.status NOT IN ('Finalized', 'Cancelled')
+                  AND e.status::text NOT IN ('Finalized', 'Cancelled')
                   AND e.exam_started_at >= NOW() - INTERVAL '12 hours'
                 ORDER BY e.exam_started_at DESC
                 LIMIT 1

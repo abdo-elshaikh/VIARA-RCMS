@@ -21,7 +21,7 @@ import toast from 'react-hot-toast';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { selectCurrentUser } from '../../store/authSlice';
-import { selectPreferences, updateAllPreferences } from '../../store/preferencesSlice';
+import { getPersistablePreferences, selectPreferences, updateAllPreferences } from '../../store/preferencesSlice';
 import { useUpdatePreferencesMutation } from '../../store/api';
 import {
     useGetMyNotificationsQuery,
@@ -168,7 +168,7 @@ export default function NotificationSettingsPanel({ embedded = false }) {
         const next = { ...preferences, ...changes };
         dispatch(updateAllPreferences(next));
         try {
-            await updatePreferences(next).unwrap();
+            await updatePreferences(getPersistablePreferences(next)).unwrap();
             toast.success(t('settings.notifications.saved', { defaultValue: 'Notification settings saved.' }));
         } catch (error) {
             dispatch(updateAllPreferences(previous));
@@ -200,32 +200,43 @@ export default function NotificationSettingsPanel({ embedded = false }) {
     };
 
     const testSound = () => {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextClass) {
-            toast.error(t('settings.notifications.soundUnavailable', { defaultValue: 'Audio is unavailable in this browser.' }));
-            return;
-        }
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) {
+                toast.error(t('settings.notifications.soundUnavailable', { defaultValue: 'Audio is unavailable in this browser.' }));
+                return;
+            }
 
-        if (!testSoundContext) {
-            testSoundContext = new AudioContextClass();
+            if (!testSoundContext || testSoundContext.state === 'closed') {
+                testSoundContext = new AudioContextClass();
+                if (typeof testSoundContext.addEventListener === 'function') {
+                    testSoundContext.addEventListener('error', () => { });
+                }
+            }
+            const context = testSoundContext;
+            if (context.state === 'suspended') {
+                context.resume().catch(() => { });
+            }
+            const volume = Number(preferences.soundVolume) || 0.5;
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            oscillator.frequency.value = 740;
+            gain.gain.setValueAtTime(volume * 0.08, context.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.22);
+            oscillator.connect(gain).connect(context.destination);
+            oscillator.start();
+            oscillator.stop(context.currentTime + 0.22);
+            oscillator.onended = () => {
+                try {
+                    oscillator.disconnect();
+                    gain.disconnect();
+                } catch {
+                    // Ignore disconnect error
+                }
+            };
+        } catch {
+            toast.error(t('settings.notifications.soundUnavailable', { defaultValue: 'Audio is unavailable in this browser.' }));
         }
-        const context = testSoundContext;
-        if (context.state === 'suspended') {
-            context.resume().catch(() => { });
-        }
-        const volume = Number(preferences.soundVolume) || 0.5;
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
-        oscillator.frequency.value = 740;
-        gain.gain.setValueAtTime(volume * 0.08, context.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.22);
-        oscillator.connect(gain).connect(context.destination);
-        oscillator.start();
-        oscillator.stop(context.currentTime + 0.22);
-        oscillator.onended = () => {
-            oscillator.disconnect();
-            gain.disconnect();
-        };
     };
 
     const handleMarkRead = async (id) => {

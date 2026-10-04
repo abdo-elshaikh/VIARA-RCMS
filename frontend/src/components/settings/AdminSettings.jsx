@@ -12,6 +12,7 @@ import {
     KeyRound,
     ListTodo,
     RefreshCw,
+    Package,
     Server,
     Settings as SettingsIcon,
     ShieldCheck,
@@ -22,8 +23,10 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { authenticatedFetch } from '../../utils/authenticatedFetch';
 import { NotificationTemplates, NotificationJobs } from '../../pages/NotificationSettings';
+import LicenseSettings from './LicenseSettings';
 import {
     useGenerateBackupMutation,
     useGetBackupsQuery,
@@ -34,15 +37,42 @@ import {
     useUpdateGovernancePoliciesMutation
 } from '../../store/api';
 import { getErrorMessage } from '../../utils/getErrorMessage';
+import ConfirmDialog from '../ui/ConfirmDialog';
+
+const VALID_SUB_TABS = new Set(['notifications', 'schedulers', 'governance', 'license']);
 
 const AdminSettings = ({ embedded = false }) => {
     const { t, i18n } = useTranslation(['settings', 'common']);
     const isRtl = i18n.dir() === 'rtl';
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
 
-    const [activeSubTab, setActiveSubTab] = useState('notifications');
+    const subtabParam = searchParams.get('subtab');
+    const initialSubTab = VALID_SUB_TABS.has(subtabParam) ? subtabParam : 'notifications';
+    const [activeSubTab, setActiveSubTab] = useState(initialSubTab);
     const [retentionDays, setRetentionDays] = useState('90');
     const [sessionTimeoutMins, setSessionTimeoutMins] = useState('30');
+
+    useEffect(() => {
+        const nextSubTab = VALID_SUB_TABS.has(subtabParam) ? subtabParam : 'notifications';
+        setActiveSubTab(nextSubTab);
+        if (subtabParam && !VALID_SUB_TABS.has(subtabParam)) {
+            setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('subtab', 'notifications');
+                return next;
+            }, { replace: true });
+        }
+    }, [subtabParam, setSearchParams]);
+
+    const handleSwitchSubTab = (tabId) => {
+        setActiveSubTab(tabId);
+        setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.set('subtab', tabId);
+            return next;
+        }, { replace: true });
+    };
 
     const { data: backups = [], isLoading: isLoadingBackups, refetch: refetchBackups } = useGetBackupsQuery();
     const [generateBackup, { isLoading: isGeneratingBackup }] = useGenerateBackupMutation();
@@ -101,6 +131,48 @@ const AdminSettings = ({ embedded = false }) => {
         }
     };
 
+    const [isSeedingDemo, setIsSeedingDemo] = useState(false);
+    const [isClearingDemo, setIsClearingDemo] = useState(false);
+    const [clearDemoConfirmOpen, setClearDemoConfirmOpen] = useState(false);
+
+    const handleSeedDemo = async () => {
+        setIsSeedingDemo(true);
+        try {
+            const res = await authenticatedFetch('/api/settings/demo-seed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'تعذّر تحميل البيانات التجريبية');
+            }
+            toast.success(data.message || 'تم تحميل البيانات التجريبية بنجاح.');
+        } catch (error) {
+            toast.error(error.message || 'فشل تحميل البيانات التجريبية');
+        } finally {
+            setIsSeedingDemo(false);
+        }
+    };
+
+    const handleClearDemo = async () => {
+        setIsClearingDemo(true);
+        try {
+            const res = await authenticatedFetch('/api/settings/demo-clear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'تعذّر حذف البيانات التجريبية');
+            }
+            toast.success(data.message || 'تم حذف البيانات التجريبية بنجاح.');
+        } catch (error) {
+            toast.error(error.message || 'فشل حذف البيانات التجريبية');
+        } finally {
+            setIsClearingDemo(false);
+        }
+    };
+
     const defaultServices = [
         { id: 'notifications', name: t('settings.adminHub.serviceNames.notifications', { defaultValue: 'Notification Dispatch Worker' }), interval: '60s', status: 'active', icon: BellRing, lastRun: '10s ago' },
         { id: 'pacs_mwl', name: t('settings.adminHub.serviceNames.pacs_mwl', { defaultValue: 'PACS Modality Worklist Sync' }), interval: '300s', status: 'active', icon: Server, lastRun: '2m ago' },
@@ -121,14 +193,15 @@ const AdminSettings = ({ embedded = false }) => {
         { id: 'auditLogs', label: t('settings.adminHub.quickLinks.audit', { defaultValue: 'Open audit logs' }), description: t('settings.adminHub.quickLinks.auditDesc', { defaultValue: 'Investigate administrative activity.' }), icon: FileText, path: '/settings?tab=auditLogs' },
         { id: 'backups', label: t('settings.adminHub.quickLinks.backups', { defaultValue: 'Manage backups' }), description: t('settings.adminHub.quickLinks.backupsDesc', { defaultValue: 'Review backup history and recovery tools.' }), icon: DatabaseBackup, path: '/settings?tab=backups' },
         { id: 'integrations', label: t('settings.adminHub.quickLinks.integrations', { defaultValue: 'Configure integrations' }), description: t('settings.adminHub.quickLinks.integrationsDesc', { defaultValue: 'Check connected clinical services.' }), icon: Server, path: '/settings?tab=integrations' },
-        { id: 'pacs', label: t('settings.adminHub.quickLinks.pacs', { defaultValue: 'Open PACS settings' }), description: t('settings.adminHub.quickLinks.pacsDesc', { defaultValue: 'Manage DICOM endpoints and archive health.' }), icon: HardDrive, path: '/settings?tab=pacs' }
+        { id: 'pacs', label: t('settings.adminHub.quickLinks.pacs', { defaultValue: 'Open PACS settings' }), description: t('settings.adminHub.quickLinks.pacsDesc', { defaultValue: 'Manage DICOM endpoints and archive health.' }), icon: HardDrive, path: '/settings?tab=pacs' },
+        { id: 'license', label: t('settings.adminHub.quickLinks.license', { defaultValue: isRtl ? 'ترخيص النظام والحصص' : 'System License & Quotas' }), description: t('settings.adminHub.quickLinks.licenseDesc', { defaultValue: isRtl ? 'إدارة فئة الترخيص وحصص التجربة وتفعيل المفاتيح.' : 'Manage license edition, trial quotas, and activate signed keys.' }), icon: ShieldCheck, path: '/settings?tab=admin&subtab=license' }
     ];
-
 
     const subTabs = [
         { id: 'notifications', label: t('settings.adminHub.tabNotifications', { defaultValue: 'Notifications & Dispatcher' }), icon: BellRing, count: null },
         { id: 'schedulers', label: t('settings.adminHub.tabServices', { defaultValue: 'System Health & Services' }), icon: Activity, count: backgroundServices.length },
         { id: 'governance', label: t('settings.adminHub.tabGovernance', { defaultValue: 'Data Governance & Policies' }), icon: Database, count: null },
+        { id: 'license', label: t('settings.adminHub.tabLicense', { defaultValue: isRtl ? 'الترخيص والإصدار' : 'Licensing & Edition' }), icon: ShieldCheck, count: null },
     ];
 
     return (
@@ -279,7 +352,7 @@ const AdminSettings = ({ embedded = false }) => {
                         <button
                             key={tab.id}
                             type="button"
-                            onClick={() => setActiveSubTab(tab.id)}
+                            onClick={() => handleSwitchSubTab(tab.id)}
                             className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold transition-all border-b-2 -mb-px shrink-0 ${
                                 isActive
                                     ? 'border-teal-600 text-teal-700 bg-teal-500/10 dark:bg-teal-500/10 dark:text-teal-300 dark:border-teal-500 shadow-2xs'
@@ -479,8 +552,70 @@ const AdminSettings = ({ embedded = false }) => {
                             </button>
                         </div>
                     </section>
+
+                    {/* Clinical Demo Dataset Management */}
+                    <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 md:col-span-2">
+                        <header className="flex items-start gap-3 border-b border-slate-200/80 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/50">
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 ring-1 ring-blue-500/20 shadow-2xs">
+                                <Package size={18} aria-hidden="true" />
+                            </span>
+                            <div>
+                                <h2 className="text-sm font-bold text-slate-950 dark:text-white">إدارة البيانات السريرية التجريبية (Clinical Demo Data)</h2>
+                                <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">تحميل عينات أجهزة وغرف فحص ومرضى ومواعيد لتجربة سير العمل أو حذفها للعودة لقاعدة بيانات نظيفة.</p>
+                            </div>
+                        </header>
+
+                        <div className="p-6 space-y-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/20">
+                                <div>
+                                    <h3 className="text-xs font-bold text-slate-900 dark:text-white">تحميل عينات سريرية استكشافية</h3>
+                                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">يضيف 4 أجهزة (رنين، مقطعية، أشعة، سونار)، 8 فحوصات، 5 مرضى مشفرين، و5 مواعيد لتجربة كافة الشاشات.</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleSeedDemo}
+                                    disabled={isSeedingDemo}
+                                    className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-blue-500 disabled:opacity-50 shrink-0"
+                                >
+                                    <RefreshCw size={14} className={isSeedingDemo ? 'animate-spin' : ''} />
+                                    <span>{isSeedingDemo ? 'جاري التحميل...' : '🌱 تحميل البيانات التجريبية'}</span>
+                                </button>
+                            </div>
+
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4 dark:border-rose-900/30 dark:bg-rose-950/10">
+                                <div>
+                                    <h3 className="text-xs font-bold text-rose-900 dark:text-rose-300">إزالة البيانات التجريبية (Clean Slate)</h3>
+                                    <p className="mt-0.5 text-xs text-rose-700/80 dark:text-rose-400">يحذف فقط السجلات التجريبية (DEMO) بأمان ويعيد النظام إلى حالة نظيفة تماماً لإدخال بيانات المركز الفعلية.</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setClearDemoConfirmOpen(true)}
+                                    disabled={isClearingDemo}
+                                    className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 text-xs font-bold text-rose-700 hover:bg-rose-500/20 dark:text-rose-300 disabled:opacity-50 shrink-0"
+                                >
+                                    <span>{isClearingDemo ? 'جاري الحذف...' : '🗑️ إزالة البيانات التجريبية'}</span>
+                                </button>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             )}
+
+            {/* Tab 4: Licensing & Edition */}
+            {activeSubTab === 'license' && (
+                <LicenseSettings />
+            )}
+
+            <ConfirmDialog
+                isOpen={clearDemoConfirmOpen}
+                onClose={() => setClearDemoConfirmOpen(false)}
+                onConfirm={handleClearDemo}
+                title="تأكيد إزالة البيانات التجريبية"
+                message="سيتم حذف السجلات والبيانات التجريبية فقط. لا يمكن التراجع عن هذا الإجراء."
+                confirmText="إزالة البيانات"
+                cancelLabel="إلغاء"
+                isLoading={isClearingDemo}
+            />
         </div>
     );
 };

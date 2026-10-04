@@ -56,7 +56,8 @@ import {
     useGetCenterSettingsQuery,
     useGetReportTemplatesQuery,
     useImproveReportFormatMutation,
-    useLazyLookupCaseReportQuery
+    useLazyLookupCaseReportQuery,
+    useRequestDeferredReportMutation
 } from '../store/api';
 import { selectCurrentUser } from '../store/authSlice';
 import { authenticatedFetch } from '../utils/authenticatedFetch';
@@ -71,7 +72,7 @@ import { printWhenReady } from '../utils/printDocument';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const REPORT_STATUSES = ['Draft', 'Typed', 'Reviewed', 'Approved', 'Finalized', 'Amended'];
-const EXAM_STATUSES = ['Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Finalized'];
+const EXAM_STATUSES = ['Scheduled', 'Checked-in', 'Scanning', 'Completed', 'Reporting', 'Finalized'];
 const PRIORITIES = ['Routine', 'Urgent', 'Emergency'];
 const DELIVERY_METHODS = ['Patient Portal', 'Email', 'SMS Link', 'WhatsApp Link', 'Printed', 'Physical Pickup'];
 
@@ -89,55 +90,121 @@ const EMPTY_FILTERS = {
     queue: ''
 };
 
-const ar = {
-    eyebrow: 'إدارة وتوثيق التقارير الطبية السريرية',
-    title: 'تقارير الحالات وسجل النتائج',
-    description: 'متابعة وإدارة التقارير التشخيصية، التسليم للمرضى، الطباعة والتصدير، والبحث السريع عبر رمز QR للإيصال.',
-    scanQr: 'مسح رمز QR للإيصال',
-    refresh: 'تحديث السجل',
-    totalReports: 'التقارير المسجلة',
-    finalizedReports: 'تقارير معتمدة',
-    pendingReports: 'بحاجة لتقرير / مراجعة',
-    deliveredReports: 'تم تسليمها للمريض',
-    queues: {
-        all: 'كل الحالات',
-        pending: 'بحاجة لتقرير',
-        finalized: 'معتمدة',
-        notDelivered: 'جاهزة للتسليم',
-        urgent: 'عاجلة',
-        today: 'اليوم'
+const I18N = {
+    ar: {
+        eyebrow: 'إدارة وتوثيق التقارير الطبية السريرية',
+        title: 'تقارير الحالات وسجل النتائج',
+        description: 'متابعة وإدارة التقارير التشخيصية، التسليم للمرضى، الطباعة والتصدير، والبحث السريع عبر رمز QR للإيصال.',
+        scanQr: 'مسح رمز QR للإيصال',
+        refresh: 'تحديث السجل',
+        totalReports: 'التقارير المسجلة',
+        finalizedReports: 'تقارير معتمدة',
+        pendingReports: 'بحاجة لتقرير / مراجعة',
+        deliveredReports: 'تم تسليمها للمريض',
+        queues: {
+            all: 'كل الحالات',
+            pending: 'بحاجة لتقرير',
+            finalized: 'معتمدة',
+            notDelivered: 'جاهزة للتسليم',
+            urgent: 'عاجلة',
+            today: 'اليوم'
+        },
+        searchPlaceholder: 'بحث باسم المريض، الرقم الطبي MRN، رقم الطلب، أو الفاتورة...',
+        allReportStatuses: 'جميع حالات التقرير',
+        allExamStatuses: 'جميع مراحل الفحص',
+        allPriorities: 'جميع درجات الأولوية',
+        allModalities: 'جميع أجهزة الأشعة',
+        apply: 'تطبيق الفلاتر',
+        clear: 'مسح التصفية',
+        advanced: 'فلاتر متقدمة',
+        from: 'من تاريخ',
+        to: 'إلى تاريخ',
+        delivered: 'حالة التسليم',
+        hasReport: 'محتوى التقرير',
+        receipt: 'رقم الإيصال',
+        registerTitle: 'سجل تقارير الحالات',
+        templateLabel: 'قالب التقرير:',
+        savedReport: 'التقرير المحفوظ',
+        exportCsv: 'تصدير CSV',
+        selectedCount: 'تم تحديد {{count}} تقرير',
+        printSelected: 'طباعة المحدد',
+        wordSelected: 'تصدير Word',
+        csvSelected: 'تصدير CSV',
+        clearSelection: 'إلغاء التحديد',
+        patientOrder: 'المريض / رقم الطلب',
+        examination: 'الفحص والجهاز',
+        priority: 'الأولوية',
+        reportStatusCol: 'حالة التقرير',
+        deliveryCol: 'التسليم للمريض',
+        actionsCol: 'الإجراءات السريعة',
+        deliveredStatus: 'تم التسليم',
+        notDeliveredStatus: 'لم يتم التسليم بعد',
+        perPage: 'لكل صفحة:',
+        loading: 'جاري تحميل سجل تقارير الحالات...',
+        errorLoading: 'تعذر تحميل تقارير الحالات',
+        retry: 'إعادة المحاولة',
+        noMatching: 'لا توجد تقارير مطابقة للفلاتر الحالية',
+        noMatchingHelp: 'جرب تغيير شروط البحث أو اختيار قائمة أخرى.',
+        syncing: 'جاري مزامنة السجل...',
+        cachedDataWarning: 'تعذر تحديث البيانات في الخلفية، يتم عرض البيانات المحفوظة محلياً.'
     },
-    searchPlaceholder: 'بحث باسم المريض، الرقم الطبي MRN، رقم الطلب، أو الفاتورة...',
-    allReportStatuses: 'جميع حالات التقرير',
-    allExamStatuses: 'جميع مراحل الفحص',
-    allPriorities: 'جميع درجات الأولوية',
-    allModalities: 'جميع أجهزة الأشعة',
-    apply: 'تطبيق الفلاتر',
-    clear: 'مسح التصفية',
-    advanced: 'فلاتر متقدمة',
-    from: 'من تاريخ',
-    to: 'إلى تاريخ',
-    delivered: 'حالة التسليم',
-    hasReport: 'محتوى التقرير',
-    receipt: 'رقم الإيصال',
-    registerTitle: 'سجل تقارير الحالات',
-    templateLabel: 'قالب التقرير:',
-    savedReport: 'التقرير المحفوظ',
-    exportCsv: 'تصدير CSV',
-    selectedCount: 'تم تحديد {{count}} تقرير',
-    printSelected: 'طباعة المحدد',
-    wordSelected: 'تصدير Word',
-    csvSelected: 'تصدير CSV',
-    clearSelection: 'إلغاء التحديد',
-    patientOrder: 'المريض / رقم الطلب',
-    examination: 'الفحص والجهاز',
-    priority: 'الأولوية',
-    reportStatusCol: 'حالة التقرير',
-    deliveryCol: 'التسليم للمريض',
-    actionsCol: 'الإجراءات السريعة',
-    deliveredStatus: 'تم التسليم',
-    notDeliveredStatus: 'لم يتم التسليم بعد',
-    perPage: 'لكل صفحة:'
+    en: {
+        eyebrow: 'Clinical Diagnostic Reporting Deck',
+        title: 'Case Reports Register',
+        description: 'Manage diagnostic reports, finalize impressions, record patient delivery, print/export documents, and look up receipt QR codes.',
+        scanQr: 'Scan Receipt QR',
+        refresh: 'Refresh',
+        totalReports: 'Total Reports',
+        finalizedReports: 'Finalized Reports',
+        pendingReports: 'Pending / Review',
+        deliveredReports: 'Delivered to Patient',
+        queues: {
+            all: 'All Cases',
+            pending: 'Needs Report',
+            finalized: 'Finalized',
+            notDelivered: 'Ready for Delivery',
+            urgent: 'Urgent',
+            today: 'Today'
+        },
+        searchPlaceholder: 'Search by patient name, MRN, order number, or invoice...',
+        allReportStatuses: 'All Report Statuses',
+        allExamStatuses: 'All Exam Stages',
+        allPriorities: 'All Priorities',
+        allModalities: 'All Modalities',
+        apply: 'Apply Filters',
+        clear: 'Clear Filters',
+        advanced: 'Advanced Filters',
+        from: 'Date From',
+        to: 'Date To',
+        delivered: 'Delivery Status',
+        hasReport: 'Report Content',
+        receipt: 'Receipt #',
+        registerTitle: 'Case Reports Register',
+        templateLabel: 'Report Template:',
+        savedReport: 'Saved Report',
+        exportCsv: 'Export CSV',
+        selectedCount: '{{count}} reports selected',
+        printSelected: 'Print Selected',
+        wordSelected: 'Export Word',
+        csvSelected: 'Export CSV',
+        clearSelection: 'Clear Selection',
+        patientOrder: 'Patient / Order #',
+        examination: 'Exam & Modality',
+        priority: 'Priority',
+        reportStatusCol: 'Report Status',
+        deliveryCol: 'Patient Delivery',
+        actionsCol: 'Quick Actions',
+        deliveredStatus: 'Delivered',
+        notDeliveredStatus: 'Not Delivered Yet',
+        perPage: 'Per page:',
+        loading: 'Loading case reports register...',
+        errorLoading: 'Could not load case reports',
+        retry: 'Retry',
+        noMatching: 'No matching case reports found',
+        noMatchingHelp: 'Try changing your search query or selecting another queue.',
+        syncing: 'Syncing register...',
+        cachedDataWarning: 'Could not refresh latest data. Showing cached results.'
+    }
 };
 
 const tr = (t, key, defaultEn, defaultAr, isAr) => t(key, { defaultValue: isAr ? defaultAr : defaultEn });
@@ -175,6 +242,37 @@ const priorityRail = {
 const reportStatus = (item) => item.report_status || (item.report_finalized_at ? 'Finalized' : item.report_content ? 'Typed' : 'Draft');
 const isFinalReport = (item) => ['Finalized', 'Amended'].includes(reportStatus(item));
 const fmtDate = (value, locale, options = { dateStyle: 'medium' }) => value ? formatLocalizedDate(value, locale, options) : '—';
+const reportStatusLabel = (status, isAr) => (isAr ? {
+    Draft: isAr ? 'مسودة' : "Draft",
+    Typed: 'مكتوب',
+    Reviewed: 'قيد المراجعة',
+    Approved: 'معتمد',
+    Finalized: 'نهائي',
+    Amended: 'معدّل'
+}[status] || status : status);
+const priorityLabel = (priority, isAr) => (isAr ? {
+    Routine: 'عادية',
+    Urgent: 'عاجلة',
+    Emergency: 'طارئة'
+}[priority] || priority : priority);
+const deliveryStatusLabel = (status, isAr) => (isAr ? {
+    'Picked Up': 'تم الاستلام',
+    Printed: 'تمت الطباعة',
+    Delivered: 'تم التسليم'
+}[status] || status : status);
+const operationalTimeline = (item, isAr) => [
+    ['arrived_at', isAr ? 'الوصول' : 'Arrived'],
+    ['prep_started_at', isAr ? 'بدء التحضير' : 'Preparation started'],
+    ['prep_completed_at', isAr ? 'انتهاء التحضير' : 'Preparation completed'],
+    ['exam_started_at', isAr ? 'بدء الفحص' : 'Examination started'],
+    ['exam_completed_at', isAr ? 'انتهاء الفحص' : 'Examination completed'],
+    ['images_ready_at', isAr ? 'جاهزية الصور' : 'Images ready'],
+    ['images_delivered_at', isAr ? 'تسليم الصور' : 'Images delivered'],
+    ['report_requested_at', isAr ? 'طلب التقرير' : 'Report requested'],
+    ['reporting_started_at', isAr ? 'بدء كتابة التقرير' : 'Reporting started'],
+    ['report_finalized_at', isAr ? 'اعتماد التقرير' : 'Report finalized'],
+    ['delivered_at', isAr ? 'تسليم النتيجة' : 'Result delivered']
+].filter(([field]) => item[field]);
 
 const normalizeSections = (item, template = null) => ({
     clinicalHistory: item.report_sections?.clinicalHistory || item.clinical_indication || template?.clinical_history || template?.clinicalHistory || '',
@@ -208,6 +306,8 @@ const CaseReports = () => {
     const isRtl = i18n.dir() === 'rtl';
     const locale = isAr ? 'ar-EG' : 'en-US';
     const reportLanguage = isAr ? 'ar' : 'en';
+    const ui = isAr ? I18N.ar : I18N.en;
+    const ar = ui;
 
     const currentUser = useSelector(selectCurrentUser);
     const canDeliver = useMemo(() => userHasPermission(currentUser, 'DELIVER_RESULTS'), [currentUser]);
@@ -235,6 +335,7 @@ const CaseReports = () => {
     });
     const [lookupReport, { isFetching: isLookingUp }] = useLazyLookupCaseReportQuery();
     const [deliverResult, { isLoading: isDelivering }] = useDeliverResultMutation();
+    const [requestDeferredReport, { isLoading: isRequestingReport }] = useRequestDeferredReportMutation();
     const { data: centerSettings } = useGetCenterSettingsQuery();
     const { data: reportTemplates = [], isFetching: isFetchingTemplates } = useGetReportTemplatesQuery({ active: true });
 
@@ -286,6 +387,18 @@ const CaseReports = () => {
         setExpandedId(null);
         setSelectedIds([]);
     };
+
+    const requestReport = useCallback(async (item) => {
+        try {
+            await requestDeferredReport({
+                examId: item.exam_id,
+                source: 'Reception'
+            }).unwrap();
+            toast.success(isAr ? 'تم إرسال الحالة إلى قائمة التقارير.' : 'The examination was sent to the reporting queue.');
+        } catch (error) {
+            toast.error(getErrorMessage(error, isAr ? 'تعذر طلب التقرير.' : 'Failed to request the report.'));
+        }
+    }, [isAr, requestDeferredReport]);
 
     const setQuickQueue = (queue) => {
         const nextFilters = { ...EMPTY_FILTERS, queue };
@@ -511,18 +624,20 @@ const CaseReports = () => {
     };
 
     return (
-        <div className="space-y-4 pb-12" dir={isRtl ? 'rtl' : 'ltr'}>
+        <div className="case-reports-page space-y-4 pb-12" dir={isRtl ? 'rtl' : 'ltr'}>
             {/* Header */}
             <PageHeader
+                className="case-reports-header"
+                compact
                 icon={FileText}
                 eyebrowIcon={ShieldCheck}
-                eyebrow={tr(t, 'caseReports.eyebrow', 'Clinical Diagnostic Reporting Deck', ar.eyebrow, isAr)}
-                title={tr(t, 'caseReports.title', 'Case Reports Register', ar.title, isAr)}
-                description={tr(t, 'caseReports.description', 'Manage diagnostic reports, finalize impressions, record patient delivery, print/export documents, and look up receipt QR codes.', ar.description, isAr)}
+                eyebrow={tr(t, 'caseReports.eyebrow', 'Clinical Diagnostic Reporting Deck', ui.eyebrow, isAr)}
+                title={tr(t, 'caseReports.title', 'Case Reports Register', ui.title, isAr)}
+                description={tr(t, 'caseReports.description', 'Manage diagnostic reports, finalize impressions, record patient delivery, print/export documents, and look up receipt QR codes.', ui.description, isAr)}
                 meta={isFetching && (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-black text-teal-700 dark:text-teal-300">
                         <Loader2 size={13} className="animate-spin" />
-                        <span>{tr(t, 'caseReports.syncing', 'Syncing register...', 'جاري المزامنة...', isAr)}</span>
+                        <span>{tr(t, 'caseReports.syncing', 'Syncing register...', ui.syncing, isAr)}</span>
                     </span>
                 )}
                 actions={
@@ -533,7 +648,7 @@ const CaseReports = () => {
                             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95"
                         >
                             <QrCode size={16} />
-                            <span>{tr(t, 'caseReports.scanQr', 'Scan Receipt QR', ar.scanQr, isAr)}</span>
+                            <span>{tr(t, 'caseReports.scanQr', 'Scan Receipt QR', ui.scanQr, isAr)}</span>
                         </button>
                         <button
                             type="button"
@@ -542,21 +657,21 @@ const CaseReports = () => {
                             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 px-4 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800"
                         >
                             <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
-                            <span>{tr(t, 'caseReports.refresh', 'Refresh', ar.refresh, isAr)}</span>
+                            <span>{tr(t, 'caseReports.refresh', 'Refresh', ui.refresh, isAr)}</span>
                         </button>
                     </div>
                 }
                 metrics={[
-                    { key: 'total', icon: FileText, tone: 'slate', label: ar.totalReports, value: summary.total, loading: isLoading, error: isError },
-                    { key: 'final', icon: CheckCircle2, tone: 'emerald', label: ar.finalizedReports, value: summary.finalized, loading: isLoading, error: isError },
-                    { key: 'pending', icon: PenLine, tone: 'amber', label: ar.pendingReports, value: summary.pending, loading: isLoading, error: isError },
-                    { key: 'delivered', icon: Send, tone: 'teal', label: ar.deliveredReports, value: summary.delivered, loading: isLoading, error: isError },
+                    { key: 'total', icon: FileText, tone: 'slate', label: ui.totalReports, value: summary.total, loading: isLoading, error: isError },
+                    { key: 'final', icon: CheckCircle2, tone: 'emerald', label: ui.finalizedReports, value: summary.finalized, loading: isLoading, error: isError },
+                    { key: 'pending', icon: PenLine, tone: 'amber', label: ui.pendingReports, value: summary.pending, loading: isLoading, error: isError },
+                    { key: 'delivered', icon: Send, tone: 'teal', label: ui.deliveredReports, value: summary.delivered, loading: isLoading, error: isError },
                 ]}
                 metricsLabel={tr(t, 'caseReports.metricsLabel', 'Case report record indicators', 'مؤشرات سجل التقارير', isAr)}
             />
 
             {/* Quick Queue Filter Pills */}
-            <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+            <div className="case-reports-queues flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                 {QUICK_QUEUES.map((queue) => {
                     const isActive = (activeFilters.queue || '') === queue.key;
                     const Icon = queue.icon;
@@ -566,19 +681,19 @@ const CaseReports = () => {
                             type="button"
                             onClick={() => setQuickQueue(queue.key)}
                             className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all ${isActive
-                                    ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20'
-                                    : 'border border-transparent text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                                ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20'
+                                : 'border border-transparent text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
                                 }`}
                         >
                             <Icon size={14} />
-                            <span>{ar.queues[queue.labelKey] || queue.labelKey}</span>
+                            <span>{ui.queues[queue.labelKey] || queue.labelKey}</span>
                         </button>
                     );
                 })}
             </div>
 
             {/* Search & Comprehensive Filters */}
-            <section className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 space-y-3">
+            <section className="case-reports-filters rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 space-y-3">
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[1fr_180px_180px_160px_160px_auto_auto]">
                     {/* Search Field */}
                     <div className="relative">
@@ -588,7 +703,7 @@ const CaseReports = () => {
                             value={filters.search}
                             onChange={(e) => setFilter('search', e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
-                            placeholder={ar.searchPlaceholder}
+                            placeholder={ui.searchPlaceholder}
                             className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 ps-10 pe-4 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-slate-950/40 dark:text-white"
                         />
                         {filters.search && (
@@ -604,7 +719,7 @@ const CaseReports = () => {
                         onChange={(e) => setFilter('reportStatus', e.target.value)}
                         className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-white"
                     >
-                        <option value="">{ar.allReportStatuses}</option>
+                        <option value="">{ui.allReportStatuses}</option>
                         {REPORT_STATUSES.map((st) => (
                             <option key={st} value={st}>{st}</option>
                         ))}
@@ -616,7 +731,7 @@ const CaseReports = () => {
                         onChange={(e) => setFilter('status', e.target.value)}
                         className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-white"
                     >
-                        <option value="">{ar.allExamStatuses}</option>
+                        <option value="">{ui.allExamStatuses}</option>
                         {EXAM_STATUSES.map((st) => (
                             <option key={st} value={st}>{st}</option>
                         ))}
@@ -628,7 +743,7 @@ const CaseReports = () => {
                         onChange={(e) => setFilter('priority', e.target.value)}
                         className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-white"
                     >
-                        <option value="">{ar.allPriorities}</option>
+                        <option value="">{ui.allPriorities}</option>
                         {PRIORITIES.map((p) => (
                             <option key={p} value={p}>{p}</option>
                         ))}
@@ -640,7 +755,7 @@ const CaseReports = () => {
                         onChange={(e) => setFilter('modality', e.target.value)}
                         className="h-10 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-white"
                     >
-                        <option value="">{ar.allModalities}</option>
+                        <option value="">{ui.allModalities}</option>
                         {modalityOptions.map((m) => (
                             <option key={m} value={m}>{m}</option>
                         ))}
@@ -653,7 +768,7 @@ const CaseReports = () => {
                         className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-4 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95"
                     >
                         <Filter size={14} />
-                        <span>{ar.apply}</span>
+                        <span>{ui.apply}</span>
                     </button>
 
                     {/* Clear Button */}
@@ -663,7 +778,7 @@ const CaseReports = () => {
                         className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                     >
                         <FilterX size={14} />
-                        <span>{ar.clear}</span>
+                        <span>{ui.clear}</span>
                     </button>
                 </div>
 
@@ -671,7 +786,7 @@ const CaseReports = () => {
                 <details className="overflow-hidden rounded-xl border border-slate-200/60 bg-slate-50/50 dark:border-slate-800/60 dark:bg-slate-950/30">
                     <summary className="flex cursor-pointer select-none items-center gap-2 p-3 text-xs font-black uppercase tracking-wider text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">
                         <SlidersHorizontal size={14} />
-                        <span>{ar.advanced}</span>
+                        <span>{ui.advanced}</span>
                         {activeFilterCount > 0 && (
                             <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[10px] font-black text-teal-700 dark:text-teal-300">
                                 {activeFilterCount}
@@ -680,7 +795,7 @@ const CaseReports = () => {
                     </summary>
                     <div className="grid gap-3 border-t border-slate-200/50 p-3 sm:grid-cols-2 lg:grid-cols-4 dark:border-slate-800">
                         <div>
-                            <span className="block text-[10px] font-black uppercase text-slate-400 mb-1">{ar.from}</span>
+                            <span className="block text-[10px] font-black uppercase text-slate-400 mb-1">{ui.from}</span>
                             <input
                                 type="date"
                                 value={filters.dateFrom}
@@ -689,7 +804,7 @@ const CaseReports = () => {
                             />
                         </div>
                         <div>
-                            <span className="block text-[10px] font-black uppercase text-slate-400 mb-1">{ar.to}</span>
+                            <span className="block text-[10px] font-black uppercase text-slate-400 mb-1">{ui.to}</span>
                             <input
                                 type="date"
                                 value={filters.dateTo}
@@ -698,7 +813,7 @@ const CaseReports = () => {
                             />
                         </div>
                         <div>
-                            <span className="block text-[10px] font-black uppercase text-slate-400 mb-1">{ar.delivered}</span>
+                            <span className="block text-[10px] font-black uppercase text-slate-400 mb-1">{ui.delivered}</span>
                             <select
                                 value={filters.delivered}
                                 onChange={(e) => setFilter('delivered', e.target.value)}
@@ -710,7 +825,7 @@ const CaseReports = () => {
                             </select>
                         </div>
                         <div>
-                            <span className="block text-[10px] font-black uppercase text-slate-400 mb-1">{ar.receipt}</span>
+                            <span className="block text-[10px] font-black uppercase text-slate-400 mb-1">{ui.receipt}</span>
                             <input
                                 type="text"
                                 value={filters.receipt}
@@ -724,12 +839,12 @@ const CaseReports = () => {
             </section>
 
             {/* Register Container & Table */}
-            <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+            <section className="case-reports-register overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                 {/* Table Header Controls */}
                 <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30">
                     <div>
                         <h2 className="text-sm font-black text-slate-900 dark:text-white">
-                            {ar.registerTitle}
+                            {ui.registerTitle}
                         </h2>
                         <p className="mt-0.5 text-xs font-semibold text-slate-400">
                             {isAr ? `عرض ${pageStart} - ${pageEnd} من إجمالي ${summary.total}` : `Showing ${pageStart} - ${pageEnd} of ${summary.total}`}
@@ -740,14 +855,14 @@ const CaseReports = () => {
                         {/* Template Dropdown */}
                         <div className="flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 dark:border-slate-700 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300">
                             <FileText size={14} className="text-teal-600" />
-                            <span className="text-[10px] uppercase text-slate-400">{ar.templateLabel}</span>
+                            <span className="text-[10px] uppercase text-slate-400">{ui.templateLabel}</span>
                             <select
                                 value={selectedTemplateId}
                                 onChange={(e) => setSelectedTemplateId(e.target.value)}
                                 disabled={isFetchingTemplates}
                                 className="bg-transparent outline-none cursor-pointer max-w-[150px] text-xs font-black"
                             >
-                                <option value="">{ar.savedReport}</option>
+                                <option value="">{ui.savedReport}</option>
                                 {reportTemplates.map((t) => (
                                     <option key={t.template_id} value={t.template_id}>{t.name}</option>
                                 ))}
@@ -762,7 +877,7 @@ const CaseReports = () => {
                             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                         >
                             <FileSpreadsheet size={14} />
-                            <span>{ar.exportCsv}</span>
+                            <span>{ui.exportCsv}</span>
                         </button>
                     </div>
                 </div>
@@ -782,7 +897,7 @@ const CaseReports = () => {
                                 className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-teal-600 px-3 text-xs font-bold text-white hover:bg-teal-500 disabled:opacity-50"
                             >
                                 <Printer size={13} />
-                                <span>{ar.printSelected}</span>
+                                <span>{ui.printSelected}</span>
                             </button>
                             <button
                                 type="button"
@@ -791,7 +906,7 @@ const CaseReports = () => {
                                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-teal-500/30 bg-white px-3 text-xs font-bold text-teal-800 hover:bg-teal-50 dark:bg-slate-900 dark:text-teal-300"
                             >
                                 <FileText size={13} />
-                                <span>{ar.wordSelected}</span>
+                                <span>{ui.wordSelected}</span>
                             </button>
                             <button
                                 type="button"
@@ -799,9 +914,22 @@ const CaseReports = () => {
                                 className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                             >
                                 <X size={13} />
-                                <span>{ar.clearSelection}</span>
+                                <span>{ui.clearSelection}</span>
                             </button>
                         </div>
+                    </div>
+                )}
+
+                {/* Background sync warning alert */}
+                {isError && items.length > 0 && (
+                    <div className="flex items-center justify-between gap-2 border-b border-rose-200 bg-rose-50/80 px-4 py-2 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+                        <div className="flex items-center gap-2">
+                            <AlertTriangle size={15} className="text-rose-500 shrink-0" />
+                            <span>{ui.cachedDataWarning}</span>
+                        </div>
+                        <button type="button" onClick={() => refetch()} className="underline hover:text-rose-900 dark:hover:text-rose-100">
+                            {ui.retry}
+                        </button>
                     </div>
                 )}
 
@@ -814,36 +942,36 @@ const CaseReports = () => {
                     >
                         {allPageSelected ? <CheckSquare size={16} className="text-teal-600" /> : <Square size={16} />}
                     </button>
-                    <span>{ar.patientOrder}</span>
-                    <span>{ar.examination}</span>
-                    <span>{ar.priority}</span>
-                    <span>{ar.reportStatusCol}</span>
-                    <span>{ar.deliveryCol}</span>
-                    <span className="text-end">{ar.actionsCol}</span>
+                    <span>{ui.patientOrder}</span>
+                    <span>{ui.examination}</span>
+                    <span>{ui.priority}</span>
+                    <span>{ui.reportStatusCol}</span>
+                    <span>{ui.deliveryCol}</span>
+                    <span className="text-end">{ui.actionsCol}</span>
                 </div>
 
                 {/* Table Body Rows */}
                 {isLoading ? (
                     <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 text-slate-400">
                         <Loader2 size={28} className="animate-spin text-teal-600" />
-                        <p className="text-xs font-bold">Loading case reports register...</p>
+                        <p className="text-xs font-bold">{ui.loading}</p>
                     </div>
-                ) : isError ? (
+                ) : isError && items.length === 0 ? (
                     <div className="p-8 text-center">
                         <AlertTriangle size={36} className="mx-auto text-rose-500" />
-                        <p className="mt-2 text-sm font-bold text-slate-800 dark:text-slate-200">Could not load case reports</p>
-                        <button type="button" onClick={() => refetch()} className="mt-3 inline-flex h-9 items-center rounded-xl bg-teal-600 px-4 text-xs font-bold text-white">
-                            Retry
+                        <p className="mt-2 text-sm font-bold text-slate-800 dark:text-slate-200">{ui.errorLoading}</p>
+                        <button type="button" onClick={() => refetch()} className="mt-3 inline-flex h-9 items-center rounded-xl bg-teal-600 px-4 text-xs font-bold text-white hover:bg-teal-700 transition">
+                            {ui.retry}
                         </button>
                     </div>
                 ) : items.length === 0 ? (
                     <div className="p-12 text-center">
                         <FileText size={40} className="mx-auto text-slate-300 dark:text-slate-600" />
                         <h3 className="mt-3 text-sm font-black text-slate-800 dark:text-white">
-                            {isAr ? 'لا توجد تقارير مطابقة للفلاتر الحالية' : 'No matching case reports'}
+                            {ui.noMatching}
                         </h3>
                         <p className="mt-1 text-xs text-slate-400">
-                            {isAr ? 'جرب تغيير شروط البحث أو اختيار قائمة أخرى.' : 'Try changing your search query or queue filters.'}
+                            {ui.noMatchingHelp}
                         </p>
                     </div>
                 ) : (
@@ -859,8 +987,8 @@ const CaseReports = () => {
                                 <article
                                     key={item.exam_id}
                                     className={`group relative transition-all duration-150 ${isSelected
-                                            ? 'bg-teal-50/60 dark:bg-teal-950/20'
-                                            : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/40'
+                                        ? 'bg-teal-50/60 dark:bg-teal-950/20'
+                                        : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/40'
                                         }`}
                                 >
                                     {/* Acuity Side Stripe */}
@@ -907,29 +1035,51 @@ const CaseReports = () => {
                                         {/* Priority Badge */}
                                         <div>
                                             <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${priorityTone[priorityKey] || priorityTone.Routine}`}>
-                                                {priorityKey}
+                                                {priorityLabel(priorityKey, isAr)}
                                             </span>
                                         </div>
 
                                         {/* Report Status Badge */}
                                         <div>
                                             <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${statusTone[status] || statusTone.Draft}`}>
-                                                {status}
+                                                {reportStatusLabel(status, isAr)}
                                             </span>
                                         </div>
 
                                         {/* Delivery Info */}
                                         <div className="min-w-0 text-xs">
                                             <p className="font-bold text-slate-700 dark:text-slate-300">
-                                                {item.last_delivery_status || (item.delivered_at ? ar.deliveredStatus : ar.notDeliveredStatus)}
+                                                {deliveryStatusLabel(item.last_delivery_status, isAr) || (item.delivered_at ? ui.deliveredStatus : ui.notDeliveredStatus)}
                                             </p>
                                             <p className="font-mono text-[10.5px] text-slate-400">
                                                 {fmtDate(item.last_delivery_at || item.delivered_at || item.report_finalized_at, locale, { dateStyle: 'short', timeStyle: 'short' })}
                                             </p>
+                                            {item.report_requested_at && (
+                                                <p className="mt-0.5 text-[10px] font-semibold text-violet-600 dark:text-violet-300">
+                                                    {isAr ? 'طُلب التقرير: ' : 'Report requested: '}
+                                                    {fmtDate(item.report_requested_at, locale, { dateStyle: 'short', timeStyle: 'short' })}
+                                                </p>
+                                            )}
                                         </div>
 
                                         {/* Quick Action Icons */}
                                         <div className="flex flex-wrap items-center justify-start lg:justify-end gap-1">
+                                            {/* Request report after image delivery */}
+                                            {item.status === 'Completed'
+                                                && item.queue_stage === 'Images Delivered'
+                                                && item.report_request_status === 'NotRequested' && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => requestReport(item)}
+                                                        disabled={isRequestingReport}
+                                                        title={isAr ? 'طلب كتابة التقرير' : 'Request report'}
+                                                        aria-label={isAr ? 'طلب كتابة التقرير' : 'Request report'}
+                                                        className="grid h-8 w-8 place-items-center rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-700 hover:bg-violet-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-300 transition"
+                                                    >
+                                                        <PenLine size={14} />
+                                                    </button>
+                                                )}
+
                                             {/* Open / Edit Report */}
                                             <button
                                                 type="button"
@@ -1002,8 +1152,8 @@ const CaseReports = () => {
                                                 onClick={() => setExpandedId(isExpanded ? null : item.exam_id)}
                                                 title="Toggle Case Metadata"
                                                 className={`grid h-8 w-8 place-items-center rounded-lg border text-slate-500 transition ${isExpanded
-                                                        ? 'border-teal-500 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300 rotate-180'
-                                                        : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                                                    ? 'border-teal-500 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300 rotate-180'
+                                                    : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
                                                     }`}
                                             >
                                                 <ChevronDown size={14} />
@@ -1036,6 +1186,25 @@ const CaseReports = () => {
                                                     <p className="font-mono font-bold text-slate-800 dark:text-slate-200">{item.receipt_number || '—'}</p>
                                                 </div>
                                             </div>
+
+                                            {operationalTimeline(item, isAr).length > 0 && (
+                                                <div className="border-t border-slate-200 pt-3 dark:border-slate-800">
+                                                    <span className="text-[10px] font-black uppercase text-slate-400">
+                                                        {isAr ? 'السجل الزمني الفعلي للحالة' : 'Actual operational timeline'}
+                                                    </span>
+                                                    <div className="mt-2 flex flex-wrap gap-2">
+                                                        {operationalTimeline(item, isAr).map(([field, label]) => (
+                                                            <span
+                                                                key={field}
+                                                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                                                            >
+                                                                <strong>{label}:</strong>
+                                                                {fmtDate(item[field], locale, { dateStyle: 'short', timeStyle: 'short' })}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             {item.clinical_indication && (
                                                 <div className="rounded-xl border border-slate-200/80 bg-white p-3 text-xs dark:border-slate-800 dark:bg-slate-900">
@@ -1070,7 +1239,7 @@ const CaseReports = () => {
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-400">{ar.perPage}</span>
+                            <span className="text-xs font-bold text-slate-400">{ui.perPage}</span>
                             <select
                                 value={pageSize}
                                 onChange={(e) => handlePageSizeChange(Number(e.target.value))}
@@ -1142,8 +1311,10 @@ const ScannerDialog = ({ value, onChange, onClose, onLookup, busy, t, isAr }) =>
 
     const stopCamera = useCallback(() => {
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        streamRef.current?.getTracks().forEach((track) => track.stop());
+        const stream = streamRef.current;
         streamRef.current = null;
+        if (videoRef.current?.srcObject === stream) videoRef.current.srcObject = null;
+        stream?.getTracks().forEach((track) => track.stop());
         setCameraState('idle');
     }, []);
 
@@ -1205,7 +1376,10 @@ const ScannerDialog = ({ value, onChange, onClose, onLookup, busy, t, isAr }) =>
             };
             rafRef.current = requestAnimationFrame(tick);
         } catch {
-            if (!closedRef.current) setCameraState('blocked');
+            if (!closedRef.current) {
+                stopCamera();
+                setCameraState('blocked');
+            }
         }
     };
 

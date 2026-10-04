@@ -44,11 +44,12 @@ async function performRefreshRequest(): Promise<string | null> {
     const csrfMatch =
       typeof document === "undefined" ? null : document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
     const csrfToken = csrfMatch ? decodeURIComponent(csrfMatch[1]) : null;
-    const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+    const res = await fetch(`${API_BASE_URL}/portal/auth/refresh`, {
       method: "POST",
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
+        "x-portal-client": "true",
         ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
       },
     });
@@ -100,12 +101,15 @@ export async function fetchWithAuthRetry(endpoint: string, init: RequestInit = {
   const isAuthEndpoint =
     endpoint.endsWith("/login") ||
     endpoint.endsWith("/auth/refresh") ||
+    endpoint.endsWith("/portal/auth/refresh") ||
+    endpoint.endsWith("/portal/auth/logout") ||
     endpoint.endsWith("/auth/logout") ||
     endpoint.endsWith("/auth/change-password");
 
   const buildRequest = (): RequestInit => {
     const token = getAuthToken();
     const headers: Record<string, string> = {
+      "x-portal-client": "true",
       ...(init.headers as Record<string, string>),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     };

@@ -108,6 +108,7 @@ describe('DailyOperationsTable', () => {
                 appLoading={false}
                 canManageQueue={true}
                 canDeliverResults={true}
+                canViewInvoices={true}
                 t={t}
                 i18n={{ language: 'ar' }}
                 onSelectCase={onSelectCase}
@@ -142,6 +143,7 @@ describe('DailyOperationsTable', () => {
                 invoices={mockInvoices}
                 appLoading={false}
                 canManageQueue={true}
+                canViewInvoices={true}
                 t={t}
                 i18n={{ language: 'ar' }}
             />
@@ -158,10 +160,59 @@ describe('DailyOperationsTable', () => {
         expect(screen.getByText('Khaled Omar')).toBeInTheDocument();
 
         // Filter by modality
+        fireEvent.click(screen.getByRole('button', { name: /فلاتر/ }));
         const modalitySelect = screen.getByLabelText('الجهاز / القسم');
         fireEvent.change(modalitySelect, { target: { value: 'MRI Room 1' } });
         expect(screen.getByText('Khaled Omar')).toBeInTheDocument();
         expect(screen.queryByText('Sarah Nabil')).not.toBeInTheDocument();
+    });
+
+    it('shows the assigned receptionist name when the ownership is stored on the queue item', () => {
+        render(
+            <DailyOperationsTable
+                appointments={[{ ...mockAppointments[0], receptionist_id: null, receptionist_name: null, receptionist_desk: null }]}
+                queueItems={[{
+                    ...mockQueueItems[0],
+                    receptionist_id: 'user-42',
+                    receptionist_name: 'سارة أحمد',
+                    receptionist_desk: 'شباك 2',
+                }]}
+                invoices={[]}
+                appLoading={false}
+                canManageQueue={true}
+                canViewInvoices={true}
+                t={t}
+                i18n={{ language: 'ar' }}
+            />
+        );
+
+        expect(screen.getByText('موظف الاستقبال:')).toBeInTheDocument();
+        expect(screen.getAllByText('سارة أحمد').length).toBeGreaterThan(0);
+        expect(screen.getByText('شباك 2')).toBeInTheDocument();
+    });
+
+    it('shows the assigned receptionist name in the daily operations table with a clear label', () => {
+        render(
+            <DailyOperationsTable
+                appointments={[{
+                    ...mockAppointments[0],
+                    receptionist_id: 'user-42',
+                    receptionist_name: 'سارة أحمد',
+                    receptionist_desk: 'شباك 2',
+                }]}
+                queueItems={[]}
+                invoices={[]}
+                appLoading={false}
+                canManageQueue={true}
+                canViewInvoices={true}
+                t={t}
+                i18n={{ language: 'ar' }}
+            />
+        );
+
+        expect(screen.getByText('موظف الاستقبال:')).toBeInTheDocument();
+        expect(screen.getAllByText('سارة أحمد').length).toBeGreaterThan(0);
+        expect(screen.getByText('شباك 2')).toBeInTheDocument();
     });
 
     it('switches between table and cards view mode', () => {
@@ -172,6 +223,7 @@ describe('DailyOperationsTable', () => {
                 invoices={mockInvoices}
                 appLoading={false}
                 canManageQueue={true}
+                canViewInvoices={true}
                 t={t}
                 i18n={{ language: 'ar' }}
             />
@@ -235,6 +287,7 @@ describe('DailyOperationsTable', () => {
                 onRequestPartialPaymentException={onRequestPartialPaymentException}
                 appLoading={false}
                 canManageQueue={true}
+                canViewInvoices={true}
                 t={t}
                 i18n={{ language: 'ar' }}
             />
@@ -282,6 +335,7 @@ describe('DailyOperationsTable', () => {
                 onMove={onMove}
                 appLoading={false}
                 canManageQueue={true}
+                canViewInvoices={true}
                 t={t}
                 i18n={{ language: 'ar' }}
             />
@@ -293,5 +347,42 @@ describe('DailyOperationsTable', () => {
             expect.objectContaining({ exam_id: 'exam-1' }),
             'Ready for Exam'
         );
+    });
+
+    it('does not show all cases when a room-scoped workstation has no linked rooms', () => {
+        render(
+            <DailyOperationsTable
+                appointments={mockAppointments}
+                queueItems={mockQueueItems}
+                externalScope="rooms"
+                externalRooms={[]}
+                externalModalities={[]}
+                appLoading={false}
+                t={t}
+                i18n={{ language: 'ar' }}
+            />
+        );
+
+        expect(screen.queryByText('Khaled Omar')).not.toBeInTheDocument();
+        expect(screen.queryByText('Sarah Nabil')).not.toBeInTheDocument();
+        expect(screen.queryByText('Mostafa Ali')).not.toBeInTheDocument();
+    });
+
+    it('does not render financial status without invoice viewing permission', () => {
+        render(
+            <DailyOperationsTable
+                appointments={[mockAppointments[0]]}
+                queueItems={[mockQueueItems[0]]}
+                invoices={mockInvoices}
+                appLoading={false}
+                canManageQueue={true}
+                canViewInvoices={false}
+                t={t}
+                i18n={{ language: 'ar' }}
+            />
+        );
+
+        expect(screen.queryByText('الموقف المالي')).not.toBeInTheDocument();
+        expect(screen.queryByText('خالص')).not.toBeInTheDocument();
     });
 });

@@ -26,14 +26,14 @@ const {
 
 const originalFetch = global.fetch;
 
-const makeRes = () => ({
-    setTimeout: jest.fn(),
-    setHeader: jest.fn(),
-    end: jest.fn(),
-    headersSent: false,
-    json: jest.fn(),
-    status: jest.fn(function status() { return this; })
-});
+const { Writable } = require('stream');
+const makeRes = () => {
+    const chunks = [];
+    const res = new Writable({ write(chunk, encoding, done) { chunks.push(Buffer.from(chunk)); done(); } });
+    Object.assign(res, { setTimeout: jest.fn(), setHeader: jest.fn(), headersSent: false,
+        json: jest.fn(), status: jest.fn(function () { return this; }), body: () => Buffer.concat(chunks) });
+    return res;
+};
 
 describe('PACS controller authorization', () => {
     afterEach(() => {
@@ -312,7 +312,8 @@ describe('PACS controller authorization', () => {
                     headers: { 'content-type': 'application/json' }
                 });
             }
-            if (href.endsWith('/instances/instance-1/preview')) {
+            if (href.endsWith('/instances/instance-1/frames')) return new Response('[0]', { status: 200 });
+            if (href.endsWith('/instances/instance-1/frames/0/preview')) {
                 return new Response(Buffer.from([1, 2, 3]), {
                     status: 200,
                     headers: { 'content-type': 'image/jpeg' }
@@ -340,8 +341,8 @@ describe('PACS controller authorization', () => {
         expect(next).not.toHaveBeenCalled();
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.setHeader).toHaveBeenCalledWith('X-VIARA-PACS-Export-Format', 'images');
-        expect(Buffer.isBuffer(res.end.mock.calls[0][0])).toBe(true);
-        expect(res.end.mock.calls[0][0].subarray(0, 4).toString('hex')).toBe('504b0304');
+        expect(Buffer.isBuffer(res.body())).toBe(true);
+        expect(res.body().subarray(0, 4).toString('hex')).toBe('504b0304');
         expect(writeAudit).toHaveBeenCalledWith(db, expect.objectContaining({
             eventType: 'STUDY_EXPORTED',
             detail: expect.objectContaining({ format: 'images', imageCount: 1, seriesCount: 1 })

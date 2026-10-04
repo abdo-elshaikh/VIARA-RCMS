@@ -10,7 +10,12 @@ import { useLandingContent } from '../../../hooks/use-landing-content';
  * rate, average imaging time). When the overview is unavailable the band is
  * omitted entirely — no invented "3.0T / 128-slice / 24-7" style claims.
  */
-export const WhyViaraSection = () => {
+interface WhyViaraSectionProps {
+  heading?: string;
+  subheading?: string;
+}
+
+export const WhyViaraSection = ({ heading, subheading }: WhyViaraSectionProps) => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith('ar');
   const reduceMotion = useReducedMotion();
@@ -66,10 +71,10 @@ export const WhyViaraSection = () => {
               {isRtl ? `لماذا ${centerName}؟` : `Why ${centerName}?`}
             </span>
             <h2 className="mt-2 max-w-xl text-3xl font-bold leading-tight text-[#0B2348] dark:text-white sm:text-4xl">
-              {isRtl ? <>دقة تبدأ من التقنية،<span className="block">وتكتمل بخبرة الطبيب.</span></> : <>Technology brings detail.<span className="block">Medical expertise brings meaning.</span></>}
+              {heading || (isRtl ? <>دقة تبدأ من التقنية،<span className="block">وتكتمل بخبرة الطبيب.</span></> : <>Technology brings detail.<span className="block">Medical expertise brings meaning.</span></>)}
             </h2>
             <p className="mt-4 max-w-xl text-sm font-normal leading-7 text-muted-foreground">
-              {isRtl ? 'نصمم التجربة كاملة حول سؤال واحد: كيف نمنح المريض وطبيبه إجابة أوضح بأقل قدر من القلق والانتظار؟' : 'Every part of the experience answers one question: how can we give patients and physicians clearer answers with less anxiety and delay?'}
+              {subheading || (isRtl ? 'نصمم التجربة كاملة حول سؤال واحد: كيف نمنح المريض وطبيبه إجابة أوضح بأقل قدر من القلق والانتظار؟' : 'Every part of the experience answers one question: how can we give patients and physicians clearer answers with less anxiety and delay?')}
             </p>
 
             <div className="mt-8 grid gap-x-8 gap-y-6 sm:grid-cols-2">

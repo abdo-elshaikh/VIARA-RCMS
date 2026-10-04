@@ -13,6 +13,9 @@ const decryptOptional = (value) => value ? decrypt(value) : '';
 const INVALID_LOGIN_ERROR = 'Invalid credentials';
 const UNKNOWN_ACCOUNT_HASH = '$2b$10$j58V.FjnUf.jiJK9F4/LEe0HeU5NIOS0/mQVANGNvtCJBVor2cUV6';
 
+const PORTAL_INVOICES_CACHE_TTL_MS = 3000;
+const portalInvoicesCache = new Map();
+
 const recordFailedPatientLogin = (db, patientId) => db.query(`
     UPDATE patients
     SET portal_failed_login_attempts = portal_failed_login_attempts + 1,
@@ -90,7 +93,7 @@ const patientLogin = (db) => async (req, res, next) => {
               AND (portal_failed_login_attempts <> 0 OR portal_locked_until IS NOT NULL)
         `, [patient.patient_id]);
 
-        res.cookie('refreshToken', refreshToken, {
+        res.cookie('portalRefreshToken', refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
@@ -135,23 +138,23 @@ const getMyRecords = (db) => async (req, res, next) => {
                 e.report_locked,
                 e.report_finalized_at,
                 CASE WHEN (
-                    e.status = 'Finalized'
-                    OR e.report_status IN ('Finalized', 'Amended')
-                    OR COALESCE(e.report_locked, FALSE) = TRUE
+                    e.report_status IN ('Finalized', 'Amended')
+                    AND COALESCE(e.report_locked, FALSE) = TRUE
+                    AND e.report_finalized_at IS NOT NULL
                 ) THEN e.report_content ELSE NULL END AS report_content,
                 e.clinical_indication as exam_clinical_indication,
                 e.provisional_diagnosis as exam_provisional_diagnosis,
                 e.body_part as exam_body_part,
                 e.contrast_required as exam_contrast_required,
                 CASE WHEN (
-                    e.status = 'Finalized'
-                    OR e.report_status IN ('Finalized', 'Amended')
-                    OR COALESCE(e.report_locked, FALSE) = TRUE
+                    e.report_status IN ('Finalized', 'Amended')
+                    AND COALESCE(e.report_locked, FALSE) = TRUE
+                    AND e.report_finalized_at IS NOT NULL
                 ) THEN e.report_sections ELSE NULL END AS report_sections,
                 CASE WHEN (
-                    e.status = 'Finalized'
-                    OR e.report_status IN ('Finalized', 'Amended')
-                    OR COALESCE(e.report_locked, FALSE) = TRUE
+                    e.report_status IN ('Finalized', 'Amended')
+                    AND COALESCE(e.report_locked, FALSE) = TRUE
+                    AND e.report_finalized_at IS NOT NULL
                 ) THEN u.full_name ELSE NULL END AS radiologist_name
             FROM appointments a
             LEFT JOIN modalities m ON a.modality_id = m.modality_id
@@ -172,50 +175,45 @@ const getMyRecords = (db) => async (req, res, next) => {
 
 const getMyInvoices = (db) => async (req, res, next) => {
     try {
+        const userId = req.user.userId;
+        if (process.env.NODE_ENV !== 'test') {
+            const cached = portalInvoicesCache.get(userId);
+            if (cached && (Date.now() - cached.timestamp < PORTAL_INVOICES_CACHE_TTL_MS)) {
+                return res.json(cached.data);
+            }
+        }
+
         const result = await db.query(`
-            WITH payment_totals AS (
-                SELECT invoice_id,
-                       COALESCE(SUM(amount) FILTER (WHERE payment_status = 'Completed'), 0) as paid_amount
-                FROM payments
-                GROUP BY invoice_id
-            ),
-            refund_totals AS (
-                SELECT invoice_id,
-                       COALESCE(SUM(amount) FILTER (WHERE status = 'Processed'), 0) as refunded_amount
-                FROM refunds
-                GROUP BY invoice_id
-            ),
-            credit_totals AS (
-                SELECT invoice_id,
-                       COALESCE(SUM(patient_amount) FILTER (WHERE reversed_at IS NULL), 0) as credited_amount
-                FROM credit_notes
-                GROUP BY invoice_id
-            )
             SELECT i.invoice_id, i.invoice_number, i.invoice_status, i.total_amount,
                    i.patient_payable_amount, i.generated_at, i.due_date,
-                   COALESCE(pt.paid_amount, 0) as paid_amount,
-                   COALESCE(rt.refunded_amount, 0) as refunded_amount,
-                   COALESCE(ct.credited_amount, 0) as credited_amount,
+                   COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.invoice_id AND p.payment_status = 'Completed'), 0) as paid_amount,
+                   COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0) as refunded_amount,
+                   COALESCE((SELECT SUM(c.patient_amount) FROM credit_notes c WHERE c.invoice_id = i.invoice_id AND c.reversed_at IS NULL), 0) as credited_amount,
                    GREATEST(
                        i.patient_payable_amount
-                       - COALESCE(ct.credited_amount, 0)
-                       - COALESCE(pt.paid_amount, 0)
-                       + COALESCE(rt.refunded_amount, 0),
+                       - COALESCE((SELECT SUM(c.patient_amount) FROM credit_notes c WHERE c.invoice_id = i.invoice_id AND c.reversed_at IS NULL), 0)
+                       - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.invoice_id AND p.payment_status = 'Completed'), 0)
+                       + COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0),
                        0
                    ) as balance_amount,
                    COALESCE(a.order_number, e.order_number) as order_number,
                    COALESCE(et.name, 'Medical Examination / فحص طبي') as exam_type_name
             FROM invoices i
-            LEFT JOIN payment_totals pt ON pt.invoice_id = i.invoice_id
-            LEFT JOIN refund_totals rt ON rt.invoice_id = i.invoice_id
-            LEFT JOIN credit_totals ct ON ct.invoice_id = i.invoice_id
             LEFT JOIN appointments a ON i.appointment_id = a.appointment_id
-            LEFT JOIN examinations e ON (i.exam_id = e.exam_id OR e.appointment_id = a.appointment_id)
+            LEFT JOIN examinations e ON (i.exam_id = e.exam_id OR (i.exam_id IS NULL AND a.appointment_id IS NOT NULL AND e.appointment_id = a.appointment_id))
             LEFT JOIN examination_types et ON et.type_id = COALESCE(a.exam_type_id, e.exam_type_id)
             WHERE (i.patient_id = $1::uuid OR a.patient_id = $1::uuid OR e.patient_id = $1::uuid)
               AND i.invoice_status != 'Voided'
             ORDER BY i.generated_at DESC
-        `, [req.user.userId]);
+        `, [userId]);
+
+        if (process.env.NODE_ENV !== 'test') {
+            portalInvoicesCache.set(userId, { timestamp: Date.now(), data: result.rows });
+            if (portalInvoicesCache.size > 200) {
+                const oldest = portalInvoicesCache.keys().next().value;
+                portalInvoicesCache.delete(oldest);
+            }
+        }
 
         res.json(result.rows);
     } catch (error) {

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { DEFAULT_PREFERENCES, normalizePreferences, selectPreferences, updateAllPreferences } from '../../store/preferencesSlice';
+import { DEFAULT_PREFERENCES, getPersistablePreferences, normalizePreferences, selectPreferences, updateAllPreferences } from '../../store/preferencesSlice';
 import { useExportPersonalDataMutation, useUpdatePreferencesMutation } from '../../store/api';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 import { canAccessRoute } from '../../config/routes';
@@ -32,6 +32,12 @@ import {
 } from './SettingsControls';
 
 const DEFAULTS = DEFAULT_PREFERENCES;
+const APPEARANCE_PREFERENCE_KEYS = [
+    'theme', 'primaryColor', 'customColor', 'colorOverrides', 'density', 'fontScale',
+    'fontFamily', 'borderRadius', 'motion', 'highContrast'
+];
+
+const getSupportedLanguage = (language) => String(language || '').split('-')[0] === 'ar' ? 'ar' : 'en';
 
 const TIMEZONES = ['auto', 'Africa/Cairo', 'Asia/Riyadh', 'UTC', 'Europe/London', 'America/New_York', 'Asia/Dubai'];
 const DATE_FORMATS = ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'];
@@ -100,56 +106,59 @@ const PreferencesSettings = () => {
 
     const formattedTimeStr = useMemo(() => {
         try {
-            return new Intl.DateTimeFormat(i18n.language === 'ar' ? 'ar-EG' : 'en-US', {
+            return new Intl.DateTimeFormat(getSupportedLanguage(i18n.resolvedLanguage || i18n.language) === 'ar' ? 'ar-EG' : 'en-US', {
                 dateStyle: 'full',
                 timeStyle: 'medium',
                 timeZone: activeTimezone,
                 hour12: preferences.timeFormat === '12h'
             }).format(liveTime);
         } catch {
-            return liveTime.toLocaleString();
+            return new Intl.DateTimeFormat(getSupportedLanguage(i18n.resolvedLanguage || i18n.language) === 'ar' ? 'ar-EG' : 'en-US', {
+                dateStyle: 'full',
+                timeStyle: 'medium',
+                hour12: preferences.timeFormat === '12h'
+            }).format(liveTime);
         }
-    }, [activeTimezone, liveTime, i18n.language, preferences.timeFormat]);
+    }, [activeTimezone, liveTime, i18n.resolvedLanguage, i18n.language, preferences.timeFormat]);
 
-    const persist = async (changes, languageChanged = false) => {
+    const persist = async (changes, languageChanged = false, successMessage) => {
         const previous = preferences;
         const next = { ...preferences, ...changes };
         dispatch(updateAllPreferences(next));
-        if (languageChanged) await i18n.changeLanguage(next.language);
-
         try {
-            await updatePreferences(next).unwrap();
-            toast.success(t('settings.preferences.saved', { defaultValue: 'Preferences updated successfully.' }));
+            if (languageChanged) await i18n.changeLanguage(next.language);
+            // The organization-wide timeout is an administrative policy returned by the API,
+            // not a personal preference that this screen may edit or export.
+            await updatePreferences(getPersistablePreferences(next)).unwrap();
+            toast.success(successMessage || t('settings.preferences.saved', { defaultValue: 'Preferences updated successfully.' }));
             return true;
         } catch (error) {
             dispatch(updateAllPreferences(previous));
-            if (languageChanged) await i18n.changeLanguage(previous.language);
+            if (languageChanged) {
+                try {
+                    await i18n.changeLanguage(previous.language);
+                } catch {
+                    // Keep the original persistence error visible even if locale rollback fails.
+                }
+            }
             toast.error(getErrorMessage(error, t('settings.preferences.saveFailed', { defaultValue: 'Failed to save preferences.' })));
             return false;
         }
     };
 
-    const resetPreferences = () => persist({
-        language: i18n.resolvedLanguage || 'en',
-        timezone: 'auto',
-        dateFormat: 'DD/MM/YYYY',
-        timeFormat: '12h',
-        firstDayOfWeek: 0,
-        startPage: '/dashboard',
-        sessionTimeout: 15,
-        calendarView: 'week',
-        showNotificationBadge: true,
-        notificationSound: false,
-        soundVolume: 0.5,
-        desktopNotificationPreview: false,
-        notificationQuietHours: false,
-        notificationQuietStart: '22:00',
-        notificationQuietEnd: '07:00',
-        criticalNotificationBypass: true,
-        emailNotifications: DEFAULTS.emailNotifications
-    });
+    const resetPreferences = () => {
+        const personalDefaults = Object.fromEntries(
+            Object.entries(DEFAULTS).filter(([key]) => !APPEARANCE_PREFERENCE_KEYS.includes(key) && key !== 'organizationSessionTimeout')
+        );
+        const language = getSupportedLanguage(i18n.resolvedLanguage || i18n.language || preferences.language);
+        return persist({ ...personalDefaults, language }, language !== preferences.language);
+    };
 
-    const resetAllPreferences = () => persist({ ...DEFAULTS, language: i18n.resolvedLanguage || DEFAULTS.language }, true);
+    const resetAllPreferences = () => {
+        const language = DEFAULTS.language;
+        setConfirmResetAll(false);
+        return persist({ ...DEFAULTS, organizationSessionTimeout: preferences.organizationSessionTimeout, language }, language !== preferences.language);
+    };
 
     const commitSoundVolume = () => {
         const nextVolume = Math.min(1, Math.max(0.1, Number(soundVolumeDraft) || 0.5));
@@ -164,6 +173,9 @@ const PreferencesSettings = () => {
                 return;
             }
             const context = new AudioContext();
+            if (typeof context.addEventListener === 'function') {
+                context.addEventListener('error', () => {});
+            }
             const volume = Number(soundVolumeDraft) || 0.5;
 
             // Dual tone medical chime
@@ -181,7 +193,13 @@ const PreferencesSettings = () => {
             playChime(587.33, context.currentTime, 0.15); // D5
             playChime(880, context.currentTime + 0.15, 0.25); // A5
 
-            setTimeout(() => context.close(), 500);
+            setTimeout(() => {
+                try {
+                    context.close().catch(() => {});
+                } catch {
+                    // Ignore close error
+                }
+            }, 500);
             toast.success(t('settings.preferences.soundTested', { defaultValue: 'Tested chime audio.' }));
         } catch {
             toast.error(t('settings.preferences.soundUnavailable', { defaultValue: 'Audio Web API unavailable' }));
@@ -228,7 +246,9 @@ const PreferencesSettings = () => {
             type: 'VIARA.preferences',
             version: 1,
             exportedAt: new Date().toISOString(),
-            preferences: normalizePreferences(preferences)
+            preferences: Object.fromEntries(
+                Object.entries(normalizePreferences(preferences)).filter(([key]) => key !== 'organizationSessionTimeout')
+            )
         };
         const url = URL.createObjectURL(new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' }));
         const anchor = document.createElement('a');
@@ -260,18 +280,25 @@ const PreferencesSettings = () => {
                 if (!imported || typeof imported !== 'object' || Array.isArray(imported)) {
                     throw new Error('Invalid preferences payload');
                 }
-                const allowed = Object.keys(DEFAULTS).reduce((acc, key) => {
+                const allowed = Object.keys(DEFAULTS).filter(key => key !== 'organizationSessionTimeout').reduce((acc, key) => {
                     if (Object.prototype.hasOwnProperty.call(imported, key)) acc[key] = imported[key];
                     return acc;
                 }, {});
                 const next = normalizePreferences({ ...preferences, ...allowed });
-                await persist(next, next.language !== preferences.language);
-                toast.success(t('settings.preferences.preferencesImported', { defaultValue: 'Workspace preferences imported.' }));
+                await persist(
+                    next,
+                    next.language !== preferences.language,
+                    t('settings.preferences.preferencesImported', { defaultValue: 'Workspace preferences imported.' })
+                );
             } catch {
                 toast.error(t('settings.preferences.invalidPreferencesFile', { defaultValue: 'Choose a valid VIARA preferences JSON file.' }));
             } finally {
                 event.target.value = '';
             }
+        };
+        reader.onerror = () => {
+            toast.error(t('settings.preferences.invalidPreferencesFile', { defaultValue: 'Choose a valid VIARA preferences JSON file.' }));
+            event.target.value = '';
         };
         reader.readAsText(file);
     };
@@ -669,11 +696,11 @@ const PreferencesSettings = () => {
                             <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 space-y-3 dark:border-slate-800 dark:bg-slate-950/50">
                                 <div className="flex items-center justify-between gap-4">
                                     <div>
-                                        <p className="text-xs font-extrabold text-[var(--VIARA-ink)]">{t('settings.preferences.quietHoursTitle', { defaultValue: 'Quiet hours' })}</p>
-                                        <p className="mt-0.5 text-[11px] text-[var(--VIARA-muted)]">{t('settings.preferences.quietHoursHelp', { defaultValue: 'Pause non-critical desktop alerts during protected hours.' })}</p>
+                                        <p className="text-xs font-extrabold text-[var(--VIARA-ink)]">{t('settings.preferences.desktopQuietHoursTitle', { defaultValue: 'Desktop quiet hours' })}</p>
+                                        <p className="mt-0.5 text-[11px] text-[var(--VIARA-muted)]">{t('settings.preferences.desktopQuietHoursHelp', { defaultValue: 'Pause non-critical alerts on this device only. Email and SMS delivery is managed in Notifications.' })}</p>
                                     </div>
                                     <Toggle
-                                        label={t('settings.preferences.quietHoursTitle', { defaultValue: 'Quiet hours' })}
+                                        label={t('settings.preferences.desktopQuietHoursTitle', { defaultValue: 'Desktop quiet hours' })}
                                         checked={Boolean(preferences.notificationQuietHours)}
                                         disabled={isSaving}
                                         onChange={checked => persist({ notificationQuietHours: checked })}

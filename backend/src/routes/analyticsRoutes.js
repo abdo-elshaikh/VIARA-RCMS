@@ -11,15 +11,17 @@ const {
 } = require('../controllers/analyticsController');
 const { validateQuery } = require('../middleware/validateRequest');
 const { analyticsQuerySchema, analyticsExportQuerySchema } = require('../schemas/analyticsSchema');
+const checkFeature = require('../middleware/checkFeature');
 
 module.exports = (pool, authenticateToken, authorizeRole) => {
     const router = express.Router();
     // Only Admin, Accountant, and Marketing can access analytics
     router.use(authenticateToken);
-    
+
     // Referral analytics can be accessed by Marketing as well
     router.get('/referrals', authorizeRole(['Admin', 'Accountant', 'Marketing']), validateQuery(analyticsQuerySchema), getReferrals(pool));
     router.get('/export',
+        checkFeature('export'),
         authorizeRole(['Admin', 'Accountant', 'Marketing']),
         validateQuery(analyticsExportQuerySchema),
         (req, res, next) => {

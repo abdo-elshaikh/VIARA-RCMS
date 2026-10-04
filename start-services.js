@@ -1,6 +1,7 @@
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const net = require('net');
 
 const isWindows = process.platform === 'win32';
 
@@ -98,7 +99,8 @@ function dockerCmd() {
 function compose(...extraArgs) {
   const cmd = dockerCmd();
   if (!cmd) throw new Error('Docker Compose is not installed');
-  const parts = [cmd, '-f', composeFile, '-p', composeProject, ...extraArgs];
+  const localPacsFiles = !dockerAll && !dockerOnly ? ['-f', path.join(__dirname, 'docker-compose.local-pacs.yml')] : [];
+  const parts = [cmd, '-f', composeFile, ...localPacsFiles, '-p', composeProject, ...extraArgs];
   return parts.join(' ');
 }
 
@@ -321,7 +323,49 @@ function attemptToStartDockerDaemon(maxWaitSec = 25) {
   return false;
 }
 
-function handleDockerStartup() {
+let activeInfraServices = [];
+
+function checkPortOpen(port, host = '127.0.0.1', timeoutMs = 800) {
+  return new Promise(resolve => {
+    const socket = new net.Socket();
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, host);
+  });
+}
+
+async function isLocalPostgresActive(port = 5432) {
+  const isOpen = await checkPortOpen(port, '127.0.0.1', 800);
+  if (!isOpen) return false;
+  try {
+    const pgPath = path.join(__dirname, 'backend', 'node_modules', 'pg');
+    if (fs.existsSync(pgPath)) {
+      const { Client } = require(pgPath);
+      const dbUrl = process.env.DATABASE_URL ||
+        `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || ''}@127.0.0.1:${port}/${process.env.POSTGRES_DB || 'rcms'}`;
+      const client = new Client({ connectionString: dbUrl, connectionTimeoutMillis: 1500 });
+      await client.connect();
+      await client.end();
+      return true;
+    }
+  } catch (err) {
+    return true;
+  }
+  return true;
+}
+
+async function handleDockerStartup() {
   if (noDocker) {
     console.log(`${colors.gray}[docker] Automatic Docker startup is disabled (--no-docker).${colors.reset}\n`);
     return false;
@@ -353,10 +397,26 @@ function handleDockerStartup() {
     process.exit(0);
   }
 
-  const infraServices = customDockerServices ||
+  let infraServices = customDockerServices ||
     (process.env.DOCKER_INFRA_SERVICES ? process.env.DOCKER_INFRA_SERVICES.split(' ') : ['postgres', 'orthanc', 'ohif']);
 
-  if (!dockerAll && reuseExistingStack(infraServices)) {
+  const configuredPgPort = parseInt(process.env.POSTGRES_PORT || '5432', 10);
+  if (!customDockerServices && infraServices.includes('postgres')) {
+    const isLocalPg = await isLocalPostgresActive(configuredPgPort);
+    if (isLocalPg) {
+      console.log(`${colors.cyan}[docker] ℹ️ Detected active PostgreSQL service on 127.0.0.1:${configuredPgPort}. Using host database and skipping Docker postgres.${colors.reset}`);
+      infraServices = infraServices.filter(s => s !== 'postgres');
+    }
+  }
+
+  activeInfraServices = [...infraServices];
+
+  if (infraServices.length === 0) {
+    console.log(`${colors.green}[docker] ✅ All required infrastructure is running on the host system.${colors.reset}\n`);
+    return true;
+  }
+
+  if (!dockerAll && !infraServices.some(name => ['orthanc', 'ohif'].includes(name)) && reuseExistingStack(infraServices)) {
     return true;
   }
 
@@ -366,7 +426,8 @@ function handleDockerStartup() {
   console.log(`${colors.bright}${colors.blue}[docker] 🐳 Starting Docker infrastructure services (${dockerAll ? 'all containers' : targetServicesStr})...${colors.reset}`);
 
   try {
-    execSync(compose('up', '-d', '--force-recreate', '--remove-orphans', targetServicesStr), { stdio: 'inherit' });
+    const extraComposeFlags = infraServices.includes('postgres') ? [] : ['--no-deps'];
+    execSync(compose('up', '-d', ...extraComposeFlags, '--force-recreate', targetServicesStr), { stdio: 'inherit' });
     console.log(`${colors.green}[docker] ✅ Docker infrastructure services started successfully.${colors.reset}\n`);
 
     if (!dockerAll && infraServices.includes('postgres')) {
@@ -432,12 +493,12 @@ function runDatabaseMigrations() {
   }
 }
 
-function main() {
+async function main() {
   console.log(`${colors.bright}${colors.cyan}==================================================${colors.reset}`);
   console.log(`${colors.bright}   🚀 Launching VIARA Services (Backend, Frontend, Portal)${colors.reset}`);
   console.log(`${colors.bright}${colors.cyan}==================================================${colors.reset}`);
 
-  const dockerStarted = handleDockerStartup();
+  const dockerStarted = await handleDockerStartup();
 
   if (dockerStartupFatal) {
     process.exitCode = 1;
@@ -445,10 +506,9 @@ function main() {
   }
 
   if (dockerStarted) {
-    const infraServices = customDockerServices ||
-      (process.env.DOCKER_INFRA_SERVICES ? process.env.DOCKER_INFRA_SERVICES.split(' ') : ['postgres', 'orthanc', 'ohif']);
+    const displayedInfra = activeInfraServices.length > 0 ? activeInfraServices.join(', ') : 'none (using host DB)';
     const dockerStopNote = stopDockerOnExit ? ' (stopped on exit)' : '';
-    console.log(`  * ${colors.blue}${'docker'.padEnd(12)}${colors.reset} -> ${colors.yellow}infra: ${infraServices.join(', ')}${dockerStopNote}${colors.reset}`);
+    console.log(`  * ${colors.blue}${'docker'.padEnd(12)}${colors.reset} -> ${colors.yellow}infra: ${displayedInfra}${dockerStopNote}${colors.reset}`);
   }
   services.forEach(s => {
     console.log(`  * ${s.color}${s.name.padEnd(12)}${colors.reset} -> ${colors.yellow}${s.url}${colors.reset}`);
@@ -456,7 +516,12 @@ function main() {
   console.log(`${colors.bright}${colors.cyan}==================================================${colors.reset}\n`);
 
   if (!noMigrate && !dockerManagedLocalServices.has('backend')) {
-    runDatabaseMigrations();
+    const migrateOk = runDatabaseMigrations();
+    if (!migrateOk) {
+      console.error(`${colors.red}[database] Aborting startup due to migration failure.${colors.reset}`);
+      stopAllServices();
+      return;
+    }
   }
 
   services.forEach(service => {
@@ -529,4 +594,7 @@ function stopAllServices() {
 process.on('SIGINT', stopAllServices);
 process.on('SIGTERM', stopAllServices);
 
-main();
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
+});

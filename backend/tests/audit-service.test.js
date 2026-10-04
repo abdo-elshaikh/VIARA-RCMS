@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const { logAction } = require('../src/services/auditService');
 const AuditService = require('../src/services/auditService');
 const { runAuditPatternDetections } = require('../src/services/auditDetectionService');
@@ -223,5 +225,17 @@ describe('audit logging resilience', () => {
         expect(insert.params[22]).toBe('system_jobs');
         expect(insert.params[30]).toBe('jest-job');
         expect(JSON.parse(insert.params[5])).toEqual({ jobName: 'retention-test', processed: 2 });
+    });
+
+    it('keeps the canonical schema aligned with the structured audit contract', () => {
+        const schemaPath = path.join(__dirname, '../../database/schema.sql');
+        const schema = fs.readFileSync(schemaPath, 'utf8');
+
+        expect(schema).toContain('CREATE TABLE system_logs');
+        expect(schema).toContain('audit_hash_version');
+        expect(schema).toContain('actor_type');
+        expect(schema).toContain('event_code');
+        expect(schema).toContain('risk_score');
+        expect(schema).toContain('CREATE TABLE audit_alerts');
     });
 });

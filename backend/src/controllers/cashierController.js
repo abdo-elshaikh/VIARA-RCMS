@@ -79,7 +79,36 @@ const openShift = (db) => async (req, res, next) => {
             ? `[handover] Previous closing balance: ${previousClosingBalance}; opening balance: ${openingBalance}; difference: ${handoverDifference}. ${String(req.body.notes).trim()}`
             : (req.body.notes || null);
 
-        await ensureActiveAttendanceClockIn(client, req.user.user_id, '[نظام] تسجيل حضور تلقائي عند فتح وردية الخزينة');
+        const activeAttendance = await client.query(`
+            SELECT log_id, clock_in, shift_id
+            FROM attendance_logs
+            WHERE user_id = $1 AND clock_out IS NULL
+            ORDER BY clock_in DESC
+            LIMIT 1
+            FOR SHARE
+        `, [req.user.user_id]);
+
+        if (!activeAttendance.rows.length) {
+            await client.query('ROLLBACK');
+            return next(new AppError(
+                'Attendance clock-in is required before opening an operational shift. Please register attendance first. | يجب تسجيل الحضور أولاً قبل فتح وردية الخزينة بناءً على جدول وردياتك المعتمد.',
+                403,
+                true,
+                'ATTENDANCE_REQUIRED_BEFORE_SHIFT'
+            ));
+        }
+
+        const attendanceSession = activeAttendance.rows[0];
+        const isStale = new Date(attendanceSession.clock_in) < new Date(Date.now() - 24 * 60 * 60 * 1000);
+        if (isStale) {
+            await client.query('ROLLBACK');
+            return next(new AppError(
+                'Your previous attendance session is stale (exceeded 24 hours). Please settle and conclude it before opening a new shift. | جلسة الحضور السابقة معلقة وتجاوزت 24 ساعة. يرجى تسوية الانصراف أولاً.',
+                403,
+                true,
+                'ATTENDANCE_STALE_SESSION'
+            ));
+        }
 
         const result = await client.query(`
             INSERT INTO cashier_shifts (
@@ -110,6 +139,7 @@ const openShift = (db) => async (req, res, next) => {
             required: true
         });
         await client.query('COMMIT');
+        currentCashierShiftCache.clear();
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
@@ -241,6 +271,7 @@ const closeShift = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+        currentCashierShiftCache.clear();
 
         if (materialVariance) {
             const variancePayload = {
@@ -435,10 +466,22 @@ const getReconciliation = (db) => async (req, res, next) => {
     }
 };
 
+const CURRENT_CASHIER_SHIFT_CACHE_TTL_MS = 3000;
+const currentCashierShiftCache = new Map();
+
 const getCurrentCashierShift = (db) => async (req, res, next) => {
     try {
         const branchId = req.query?.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID;
         const userId = req.user?.user_id || req.user?.userId || req.user?.id;
+        const cacheKey = `${userId}:${branchId}`;
+        const now = Date.now();
+        if (process.env.NODE_ENV !== 'test') {
+            const cached = currentCashierShiftCache.get(cacheKey);
+            if (cached && (now - cached.timestamp < CURRENT_CASHIER_SHIFT_CACHE_TTL_MS)) {
+                return res.json(cached.data);
+            }
+        }
+
         const result = await db.query(`
             SELECT s.*, u.full_name AS cashier_name,
                    COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.cashier_shift_id = s.shift_id AND p.payment_status = 'Completed'), 0)
@@ -465,6 +508,9 @@ const getCurrentCashierShift = (db) => async (req, res, next) => {
         `, [userId, branchId]);
 
         if (!result.rows[0]) {
+            if (process.env.NODE_ENV !== 'test') {
+                currentCashierShiftCache.set(cacheKey, { timestamp: now, data: null });
+            }
             return res.json(null);
         }
 
@@ -488,6 +534,14 @@ const getCurrentCashierShift = (db) => async (req, res, next) => {
             }));
         } catch {
             shift.payments = shift.payments || [];
+        }
+
+        if (process.env.NODE_ENV !== 'test') {
+            currentCashierShiftCache.set(cacheKey, { timestamp: now, data: shift });
+            if (currentCashierShiftCache.size > 200) {
+                const oldest = currentCashierShiftCache.keys().next().value;
+                currentCashierShiftCache.delete(oldest);
+            }
         }
 
         res.json(shift);

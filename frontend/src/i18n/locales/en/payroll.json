@@ -84,12 +84,15 @@
     "name": "Name",
     "amount": "Amount",
     "percentage": "Percentage",
+    "recurrenceType": "Recurrence",
+    "maxOccurrences": "Maximum occurrences",
     "penaltyType": "Penalty type",
     "reason": "Reason",
     "ruleType": "Rule type",
     "method": "Method",
     "value": "Value",
-    "paymentDate": "Payment date"
+    "paymentDate": "Payment date",
+    "source": "Source"
   },
   "placeholders": {
     "periodName": "July 2026 payroll",
@@ -104,7 +107,8 @@
     "markPaid": "Mark paid",
     "lock": "Lock",
     "save": "Save",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "cancelPayroll": "Cancel payroll"
   },
   "dialog": {
     "confirmTitle": "Confirm payroll action",
@@ -127,10 +131,65 @@
     "periodDates": "Payroll period end date must be on or after start date.",
     "monthlySalary": "Monthly compensation requires a base salary greater than zero.",
     "hourlyRate": "Hourly compensation requires an hourly rate greater than zero.",
-    "deductionValue": "Deduction requires an amount or percentage."
+    "deductionValue": "Deduction requires an amount or percentage.",
+    "paymentReference": "Enter a payment reference for this method."
   },
   "states": {
     "loading": "Loading..."
+  },
+  "payrollStatuses": {
+    "Draft": "Draft",
+    "Calculated": "Calculated",
+    "Reviewed": "Reviewed",
+    "Approved": "Approved",
+    "Paid": "Paid",
+    "Locked": "Locked",
+    "Cancelled": "Cancelled"
+  },
+  "penaltyStatuses": {
+    "Pending Approval": "Pending approval",
+    "Approved": "Approved",
+    "Rejected": "Rejected",
+    "Cancelled": "Cancelled",
+    "Applied": "Applied"
+  },
+  "deductionStatuses": {
+    "Draft": "Pending approval",
+    "Approved": "Approved",
+    "Paused": "Paused",
+    "Cancelled": "Cancelled",
+    "Completed": "Completed"
+  },
+  "deductionReview": {
+    "selfApprovalBlocked": "The creator cannot approve their own deduction.",
+    "runReservationBlocked": "Cancel or recalculate the reserved payroll run first."
+  },
+  "acknowledgementStatuses": {
+    "Pending": "Awaiting acknowledgement",
+    "Acknowledged": "Acknowledged",
+    "Disputed": "Under dispute review",
+    "Resolved": "Dispute resolved"
+  },
+  "employee": {
+    "eyebrow": "Payroll records",
+    "title": "My penalties",
+    "description": "Review approved penalties, acknowledge them, or submit a reasoned dispute for HR review.",
+    "incidentDate": "Incident date",
+    "loadError": "Your penalty records could not be loaded.",
+    "empty": "There are no penalty records for your account.",
+    "acknowledge": "Acknowledge",
+    "acknowledged": "Acknowledged",
+    "dispute": "Dispute",
+    "disputeTitle": "Dispute a penalty",
+    "disputeMessage": "Explain why you dispute this {{type}} penalty. Your reason will be sent to HR and administration.",
+    "disputeReason": "Dispute reason",
+    "disputePlaceholder": "Describe the issue and any relevant dates or evidence...",
+    "disputeReasonRequired": "Enter a reason of at least 3 characters.",
+    "submitDispute": "Submit dispute",
+    "disputeSubmitted": "Dispute submitted for review.",
+    "disputeInReview": "Your dispute is under review:",
+    "disputeResolved": "Dispute review completed:",
+    "actionFailed": "The penalty action could not be completed."
   },
   "toast": {
     "periodCreated": "Payroll period created",
@@ -143,7 +202,8 @@
     "deductionSaved": "Deduction saved",
     "penaltySaved": "Penalty saved",
     "ruleSaved": "Rule saved",
-    "saveFailed": "Could not save payroll setup"
+    "saveFailed": "Could not save payroll setup",
+    "createPeriodFailed": "Failed to create payroll period"
   },
   "indefiniteDurationAutoRenewing": "Indefinite duration (auto-renewing)",
   "medicalCenter": "Medical Center",
@@ -253,7 +313,8 @@
   "payslip": {
     "docRef": "Document Ref: {{contractId}} · Issue Date: {{issueDate}}",
     "designation": "Designation: {{role}}",
-    "staffId": "Staff ID: {{id}}"
+    "staffId": "Staff ID: {{id}}",
+    "title": "Payslip"
   },
   "disbursementDetails": "Disbursement details",
   "newCompensationContract": "New Compensation Contract",
@@ -283,5 +344,115 @@
   "areYouSureYouWantTo": "Are you sure you want to proceed with this action?",
   "payrollSetup": {
     "changeStatusConfirm": "Change status to {{status}}?"
+  },
+  "penaltyReview": {
+    "cancelTitle": "Cancel approved penalty",
+    "cancelMessage": "Cancel {{name}}? Enter the reason. The penalty can only be cancelled while its payroll run is still editable.",
+    "reason": "Decision reason",
+    "reasonRequired": "Enter a reason of at least 3 characters.",
+    "cancelPlaceholder": "Explain why this penalty should be cancelled...",
+    "cancelAction": "Cancel penalty"
+  },
+  "disputeReview": {
+    "title": "Resolve employee dispute",
+    "message": "Choose the outcome for {{name}}. Your resolution will be recorded in the audit trail.",
+    "outcomes": {
+      "Approved": "Uphold the penalty",
+      "Rejected": "Reject the penalty"
+    },
+    "actions": {
+      "Approved": "Uphold penalty",
+      "Rejected": "Reject penalty"
+    },
+    "resolutionPlaceholder": "Summarize the evidence and decision...",
+    "uphold": "Uphold penalty",
+    "reject": "Reject penalty"
+  },
+  "exportColumns": {
+    "employeeName": "Employee Name",
+    "role": "Role",
+    "grossEarnings": "Gross Earnings",
+    "deductions": "Deductions",
+    "penalties": "Penalties",
+    "employerContributions": "Employer Contributions",
+    "netPay": "Net Pay",
+    "currency": "Currency",
+    "period": "Period",
+    "paymentDate": "Payment Date",
+    "paymentMethod": "Payment Method",
+    "paymentReference": "Payment Reference",
+    "runStatus": "Run Status"
+  },
+  "addDeductionOrLoan": "Add Deduction or Loan / Advance",
+  "recordDisciplinaryPenalty": "Record Disciplinary Penalty",
+  "addDeductionHelp": "Create fixed or percentage deduction, or multi-period loan/advance with balance tracking.",
+  "recordPenaltyHelp": "Record an administrative or policy violation to flow into approved payroll cycles.",
+  "loansAndAdvances": "Loans & Advances",
+  "recurringDeductions": "Recurring Deductions",
+  "disciplinaryPenalties": "Disciplinary Penalties",
+  "deductionTypes": {
+    "Fixed": "Fixed Amount",
+    "Percentage": "Percentage of Base",
+    "Installment": "Monthly Installment",
+    "Advance": "Cash Advance",
+    "Loan": "Employee Loan"
+  },
+  "recurrenceTypes": {
+    "OneTime": "One time",
+    "Recurring": "Recurring",
+    "Installment": "Installment plan"
+  },
+  "optional": "Optional",
+  "penaltyTypes": {
+    "Policy": "Policy Violation",
+    "Late": "Late Arrival",
+    "Absence": "Unexcused Absence",
+    "Disciplinary": "Disciplinary Action",
+    "Damage": "Equipment Damage",
+    "Other": "Other"
+  },
+  "penaltySources": {
+    "Manual": "Manual Direct Entry",
+    "Attendance": "Attendance System",
+    "Policy": "Policy review",
+    "Import": "Imported record"
+  },
+  "totalPrincipal": "Total Principal Amount",
+  "remainingBalance": "Remaining Balance",
+  "incidentDate": "Incident Date",
+  "targetPeriod": "Target Payroll Period",
+  "activeLoanBalances": "Active Loan & Advance Balances",
+  "activeDeductionsCount": "Active Recurring Deductions",
+  "pendingPenaltiesCount": "Pending Penalties Awaiting Approval",
+  "approvedPenaltiesCount": "Approved Penalties",
+  "searchAdjustments": "Search adjustments by employee or reason...",
+  "noAdjustmentsFound": "No adjustments or penalties match the current filter",
+  "repaid": "Repaid",
+  "progress": "Progress",
+  "allCategories": "All Categories",
+  "saveDeduction": "Save Deduction",
+  "savePenalty": "Save & Submit Penalty",
+  "optionalTargetPeriod": "Apply to Current Period (Optional)",
+  "reasonPlaceholder": "Details and reason for recording the violation...",
+  "notesPlaceholderDeduction": "Additional notes regarding installment or advance terms...",
+  "paymentMethods": {
+    "BankTransfer": "Bank transfer",
+    "Cash": "Cash",
+    "Check": "Bank check",
+    "Wallet": "E-Wallet",
+    "Other": "Other"
+  },
+  "loanProgress": "Loan repayment progress",
+  "salarySimulator": "Salary & Payout Simulator",
+  "salarySimulatorHelp": "Live simulation of gross-to-net salary with overtime, late penalties, absence & loan deductions",
+  "exportWps": "Export WPS / Bank SIF File",
+  "exportWpsSuccess": "Wage Protection System (WPS) bank file exported successfully",
+  "preflightCheck": {
+    "title": "Pre-Flight Calculation Readiness Check",
+    "allReady": "All calculation prerequisites are verified and clear of operational blockers",
+    "missingComp": "{{count}} employees missing active compensation profiles (will be skipped)",
+    "pendingPenalties": "{{count}} penalties awaiting financial approval",
+    "disputedPenalties": "{{count}} disputed penalties frozen from deductions",
+    "draftDeductions": "{{count}} draft deductions/loans awaiting activation"
   }
 }

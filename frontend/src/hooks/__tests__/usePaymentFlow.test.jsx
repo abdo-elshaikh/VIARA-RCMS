@@ -73,6 +73,7 @@ describe('usePaymentFlow', () => {
         const { result } = renderHook(() => usePaymentFlow({
             currentShift: { shift_id: 'shift-1' },
             queueItems,
+            canManageQueue: true,
         }));
 
         act(() => {
@@ -117,6 +118,7 @@ describe('usePaymentFlow', () => {
         const { result } = renderHook(() => usePaymentFlow({
             currentShift: { shift_id: 'shift-1' },
             queueItems: [],
+            canManageQueue: true,
         }));
 
         act(() => {
@@ -150,6 +152,7 @@ describe('usePaymentFlow', () => {
         const { result } = renderHook(() => usePaymentFlow({
             currentShift: { shift_id: 'shift-1' },
             queueItems: [{ appointment_id: 'appt-1', exam_id: 'exam-1', queue_stage: 'Payment Pending' }],
+            canManageQueue: true,
         }));
 
         act(() => result.current.openPayment(invoice));

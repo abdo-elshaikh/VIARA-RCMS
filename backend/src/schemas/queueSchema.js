@@ -8,6 +8,8 @@ const queueStageSchema = z.enum([
     'Prep Pending',
     'Ready for Exam',
     'In Exam',
+    'Images Ready',
+    'Images Delivered',
     'Reporting',
     'Finalized',
     'Delivered',

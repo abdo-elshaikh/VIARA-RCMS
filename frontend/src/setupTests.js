@@ -1,5 +1,8 @@
 import '@testing-library/jest-dom';
 
+// jsdom has no viewport scrolling; animation measurements still call this API.
+Object.defineProperty(window, 'scrollTo', { writable: true, value: () => {} });
+
 class IntersectionObserverMock {
     constructor(callback, options = {}) {
         this.callback = callback;

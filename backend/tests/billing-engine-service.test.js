@@ -3,6 +3,8 @@ const {
     invoiceJournalEntries,
     invoiceAdjustmentEntries,
     mapInputItem,
+    applyPrioritySurcharge,
+    getDefaultInvoiceSource,
     requireDiscountPermission,
     withInvoiceCommission,
     updateInvoicePaymentStatus,
@@ -11,6 +13,39 @@ const {
 const { AppError } = require('../src/middleware/errorHandler');
 
 describe('billingEngineService', () => {
+    describe('getDefaultInvoiceSource', () => {
+        test('keeps the booking priority surcharge as a separate invoice line', async () => {
+            const client = {
+                query: jest.fn().mockResolvedValue({
+                    rows: [{
+                        appointment_id: 'appointment-1',
+                        patient_id: 'patient-1',
+                        payment_amount: '500.00',
+                        payment_method: 'Cash',
+                        priority: 'Urgent',
+                        priority_fee_amount: '75.00',
+                        exam_id: null,
+                        exam_type_id: 'exam-type-1',
+                        exam_type_name: 'MRI Brain',
+                        price: '500.00',
+                    }]
+                })
+            };
+
+            const source = await getDefaultInvoiceSource(client, { appointmentId: 'appointment-1' });
+
+            expect(source.priorityFeeAmount).toBe(75);
+            expect(source.priorityFeeItem).toEqual(expect.objectContaining({
+                description: 'Urgent priority surcharge',
+                quantity: 1,
+                unitPrice: 75,
+                totalAmount: 75,
+            }));
+            expect(source.items).toHaveLength(1);
+            expect(source.items[0].description).toBe('MRI Brain');
+        });
+    });
+
     describe('legacyStatus', () => {
         test('maps statuses correctly to legacy statuses', () => {
             expect(legacyStatus('Paid')).toBe('Paid');
@@ -53,6 +88,37 @@ describe('billingEngineService', () => {
             const mapped = mapInputItem(item);
             expect(mapped.totalAmount).toBe(85);
             expect(mapped.unitPrice).toBe(100);
+        });
+    });
+
+    describe('applyPrioritySurcharge', () => {
+        test('keeps exactly one server-priced priority surcharge with custom invoice items', () => {
+            const items = [
+                { description: 'MRI Brain', unitPrice: 500, totalAmount: 500 },
+                { description: 'Urgent priority surcharge', unitPrice: 1, totalAmount: 1 },
+            ];
+            const priorityFeeItem = {
+                description: 'Urgent priority surcharge',
+                quantity: 1,
+                unitPrice: 75,
+                totalAmount: 75,
+                itemType: 'PrioritySurcharge',
+            };
+
+            const result = applyPrioritySurcharge(items, priorityFeeItem);
+
+            expect(result).toHaveLength(2);
+            expect(result[0]).toBe(items[0]);
+            expect(result[1]).toBe(priorityFeeItem);
+        });
+
+        test('removes client priority-fee lines when the configured fee is zero', () => {
+            const result = applyPrioritySurcharge([
+                { description: 'Emergency priority surcharge', unitPrice: 900, totalAmount: 900 },
+                { description: 'CT Chest', unitPrice: 250, totalAmount: 250 },
+            ], null);
+
+            expect(result).toEqual([{ description: 'CT Chest', unitPrice: 250, totalAmount: 250 }]);
         });
     });
 

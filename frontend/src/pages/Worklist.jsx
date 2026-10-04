@@ -1187,7 +1187,7 @@ const EmptyQueue = React.memo(({ role, t, hasFilters = false, onClearFilters, ta
 
 // ─── Main Worklist View Tabs ────────────────────────────────────────
 
-const ViewTabs = React.memo(({ tab, onChange, counts, t, role }) => {
+const ViewTabs = React.memo(({ tab, onChange, counts, t, role, isArabic }) => {
     return (
         <div className="flex w-full overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1 dark:border-slate-800 dark:bg-slate-950/40 xl:w-auto">
             <button
@@ -1200,7 +1200,7 @@ const ViewTabs = React.memo(({ tab, onChange, counts, t, role }) => {
                 }`}
             >
                 <ListChecks size={15} />
-                <span>{t(`roleCommand.${role}.title`, { defaultValue: 'Clinical Queue' })}</span>
+                <span>{t(`roleCommand.${role}.title`, { defaultValue: isArabic ? 'طابور العمل السريري' : 'Clinical Queue' })}</span>
                 <span className={`rounded-lg px-2 py-0.5 text-[10px] font-black ${
                     tab === 'queue' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                 }`}>
@@ -1282,7 +1282,7 @@ const Worklist = () => {
         isLoading: scheduleLoading,
         isError: scheduleError,
         refetch: refetchSchedule
-    } = useGetAppointmentsQuery(appointmentParams, { pollingInterval: 60000 });
+    } = useGetAppointmentsQuery(appointmentParams, { skip: tab !== 'schedule', pollingInterval: 60000 });
 
     const {
         data: queueResponse,
@@ -1488,6 +1488,7 @@ const Worklist = () => {
     const onNavigate = useCallback((path) => navigate(path), [navigate]);
     const onViewCase = useCallback((item) => navigate(`/cases/${item.exam_id}`), [navigate]);
 
+    const activeTabError = tab === "queue" ? queueError : scheduleError;
     const roleTitle = t(`header.roles.${role}.title`, { defaultValue: t('header.title') });
     const roleDescription = t(`header.roles.${role}.description`, { defaultValue: t('header.description') });
 
@@ -1561,9 +1562,9 @@ const Worklist = () => {
                 description={roleDescription}
                 meta={(
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${scheduleError || queueError ? 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>
-                            {scheduleError || queueError ? <AlertTriangle size={12} /> : <span className="h-2 w-2 rounded-full bg-emerald-500" />}
-                            {scheduleError || queueError ? t('roleCommand.loadError') : t('overview.live')}
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${activeTabError ? 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>
+                            {activeTabError ? <AlertTriangle size={12} /> : <span className="h-2 w-2 rounded-full bg-emerald-500" />}
+                            {activeTabError ? t('roleCommand.loadError') : t('overview.live')}
                         </span>
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
                             <ListChecks size={12} className="text-teal-600 dark:text-teal-300" />
@@ -1619,7 +1620,7 @@ const Worklist = () => {
             />
 
             {/* Error Notice */}
-            {(scheduleError || queueError) && (
+            {activeTabError && (
                 <div className="flex items-start gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs font-semibold text-rose-700 dark:text-rose-300">
                     <AlertTriangle size={18} className="mt-0.5 shrink-0" />
                     <span>{t('roleCommand.loadError', { defaultValue: 'Some worklist data could not be loaded. Refresh to try again.' })}</span>
@@ -1636,6 +1637,7 @@ const Worklist = () => {
                         counts={{ schedule: visibleAppointments.length, queue: visibleQueue.length }}
                         t={t}
                         role={role}
+                        isArabic={isArabic}
                     />
 
                     {/* Search bar */}

@@ -44,6 +44,7 @@ import {
 import PageHeader from '../components/ui/PageHeader';
 import Pagination from '../components/ui/Pagination';
 import { getEffectivePermissions } from '../utils/effectivePermissions';
+import useDebounce from '../hooks/useDebounce';
 
 const PAGE_SIZE = 25;
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -67,9 +68,16 @@ const EMPTY_FILTERS = {
 const CATEGORIES = ['AUTH', 'RBAC', 'PHI_ACCESS', 'PRIVACY', 'BILLING', 'CONFIG', 'DATA_WRITE', 'SECURITY'];
 const OUTCOMES = ['success', 'failure', 'denied'];
 const ACTOR_TYPES = ['USER', 'SYSTEM', 'PATIENT', 'API_TOKEN', 'INTEGRATION'];
+const toLocalDateInput = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 
 const AuditLogs = ({ embedded = false }) => {
     const { t, i18n } = useTranslation('admin');
+    const isRtl = i18n.language?.startsWith('ar');
     const token = useSelector((state) => state.auth?.token);
     const currentUser = useSelector((state) => state.auth?.user);
     const searchInputRef = useRef(null);
@@ -83,6 +91,7 @@ const AuditLogs = ({ embedded = false }) => {
     const [copiedId, setCopiedId] = useState(null);
     const [autoRefresh, setAutoRefresh] = useState(false);
     const [quickTab, setQuickTab] = useState('all');
+    const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
 
     const [verifyResult, setVerifyResult] = useState(null);
     const [verifyChain, verifyState] = useLazyVerifyAuditChainQuery();
@@ -96,6 +105,7 @@ const AuditLogs = ({ embedded = false }) => {
     const canVerifyAudit = elevatedRole || permissions.has('VERIFY_AUDIT_CHAIN');
     const canRunDetections = elevatedRole || permissions.has('RUN_AUDIT_DETECTIONS');
     const canReviewAlerts = elevatedRole || permissions.has('REVIEW_AUDIT_ALERTS');
+    const canViewUserActivity = elevatedRole || permissions.has('VIEW_AUDIT_LOGS') || permissions.has('VIEW_STAFF_ACTIVITY');
 
     useEffect(() => { setMounted(true); }, []);
 
@@ -118,9 +128,10 @@ const AuditLogs = ({ embedded = false }) => {
         style: { transitionDelay: `${delay}ms` },
     });
 
+    const debouncedQuery = useDebounce(filters.q, 250);
     const activeParams = useMemo(() => Object.fromEntries(
-        Object.entries(filters).filter(([, value]) => value !== '' && value !== null && value !== undefined)
-    ), [filters]);
+        Object.entries({ ...filters, q: debouncedQuery }).filter(([, value]) => value !== '' && value !== null && value !== undefined)
+    ), [filters, debouncedQuery]);
 
     const params = { ...activeParams, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE };
     const { data, isLoading, isFetching, isError, refetch } = useGetAuditLogsQuery(params);
@@ -144,6 +155,7 @@ const AuditLogs = ({ embedded = false }) => {
 
     const updateFilter = (field, value) => {
         setFilters((current) => ({ ...current, [field]: value }));
+        setQuickTab('all');
         setPage(1);
         setExpandedId(null);
     };
@@ -157,6 +169,7 @@ const AuditLogs = ({ embedded = false }) => {
 
     const handleQuickTabSelect = (tabKey) => {
         setQuickTab(tabKey);
+        setAdvancedFiltersOpen(tabKey === 'risky');
         setPage(1);
         if (tabKey === 'all') {
             setFilters(EMPTY_FILTERS);
@@ -177,9 +190,10 @@ const AuditLogs = ({ embedded = false }) => {
         start.setDate(end.getDate() - days);
         setFilters((current) => ({
             ...current,
-            startDate: start.toISOString().split('T')[0],
-            endDate: end.toISOString().split('T')[0]
+            startDate: toLocalDateInput(start),
+            endDate: toLocalDateInput(end)
         }));
+        setQuickTab('all');
         setPage(1);
     };
 
@@ -356,7 +370,7 @@ const AuditLogs = ({ embedded = false }) => {
     );
 
     return (
-        <main className={embedded ? 'space-y-5' : 'mx-auto max-w-[1600px] space-y-6 pb-28'}>
+        <main className={embedded ? 'space-y-4' : 'mx-auto max-w-[1680px] space-y-4 pb-24 sm:space-y-5'}>
             {embedded ? (
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
                     <div className="flex items-center gap-2.5">
@@ -367,9 +381,7 @@ const AuditLogs = ({ embedded = false }) => {
                             <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
                                 {t('audit.title', { defaultValue: 'Compliance Audit Stream' })}
                             </h3>
-                            <p className="text-[11px] font-semibold text-slate-400">
-                                Cryptographic audit trail · Real-time event monitoring
-                            </p>
+                            <p className="text-[11px] font-semibold text-slate-400">{t('audit.embeddedDescription', { defaultValue: 'Tamper-evident events and security monitoring' })}</p>
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -388,6 +400,15 @@ const AuditLogs = ({ embedded = false }) => {
                     description={t('audit.description', { defaultValue: 'Tamper-evident audit trail capturing user access, PHI queries, role modifications, and system security events.' })}
                     actions={(
                         <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+                            {canViewUserActivity ? (
+                                <Link
+                                    to="/user-activity"
+                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-bold text-sky-800 shadow-sm transition hover:bg-sky-100 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-300"
+                                >
+                                    <Activity size={14} className="text-sky-600 dark:text-sky-400" />
+                                    <span>{isRtl ? 'لوحة نشاط الموظفين' : 'Staff Activity'}</span>
+                                </Link>
+                            ) : null}
                             {autoRefreshButton}
                             {canRunDetections ? detectButton : null}
                             {canVerifyAudit ? verifyButton : null}
@@ -395,14 +416,6 @@ const AuditLogs = ({ embedded = false }) => {
                             {canExportAudit ? exportCsvButton : null}
                         </div>
                     )}
-                    metrics={[
-                        { key: 'events', icon: Activity, label: t('audit.matchingEvents', { defaultValue: 'Matching Events' }), value: total.toLocaleString(locale), detail: t('audit.serverTotal', { defaultValue: 'Filtered result set' }), tone: 'teal', loading: isLoading, error: isError },
-                        { key: 'failures', icon: ShieldAlert, label: t('audit.failures', { defaultValue: 'Failed Events' }), value: Number(serverSummary.failures || 0).toLocaleString(locale), tone: serverSummary.failures ? 'rose' : 'emerald', loading: isLoading, error: isError },
-                        { key: 'denied', icon: ShieldX, label: t('audit.denied', { defaultValue: 'Access Denied' }), value: Number(serverSummary.denied || 0).toLocaleString(locale), tone: serverSummary.denied ? 'amber' : 'emerald', loading: isLoading, error: isError },
-                        { key: 'phi', icon: Eye, label: t('audit.phiAccess', { defaultValue: 'PHI Views' }), value: Number(serverSummary.phiAccess || 0).toLocaleString(locale), tone: 'blue', loading: isLoading, error: isError },
-                        { key: 'risk', icon: AlertTriangle, label: t('audit.risky', { defaultValue: 'High Risk' }), value: Number(serverSummary.risky || 0).toLocaleString(locale), tone: serverSummary.risky ? 'rose' : 'emerald', loading: isLoading, error: isError },
-                    ]}
-                    metricsLabel={t('audit.summary')}
                 />
             )}
 
@@ -425,7 +438,7 @@ const AuditLogs = ({ embedded = false }) => {
             ) : null}
 
             {/* Executive Metrics Overview */}
-            <section style={reveal(40).style} className={`grid grid-cols-2 gap-4 lg:grid-cols-6 ${reveal(40).className}`} aria-label={t('audit.summary')}>
+            <section style={reveal(40).style} className={`grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3 2xl:grid-cols-6 ${reveal(40).className}`} aria-label={t('audit.summary')}>
                 <SummaryCard icon={Activity} label={t('audit.matchingEvents', { defaultValue: 'Matching Events' })} value={isLoading ? '-' : total.toLocaleString(locale)} note={t('audit.serverTotal', { defaultValue: 'Filtered result set' })} />
                 <SummaryCard icon={ShieldAlert} label={t('audit.failures', { defaultValue: 'Failed Events' })} value={isLoading ? '-' : Number(serverSummary.failures || 0).toLocaleString(locale)} note={t('audit.serverTotal', { defaultValue: 'All failed operations' })} tone={serverSummary.failures ? 'danger' : 'default'} />
                 <SummaryCard icon={ShieldX} label={t('audit.denied', { defaultValue: 'Access Denied' })} value={isLoading ? '-' : Number(serverSummary.denied || 0).toLocaleString(locale)} note={t('audit.serverTotal', { defaultValue: 'Forbidden RBAC checks' })} tone={serverSummary.denied ? 'warning' : 'default'} />
@@ -538,6 +551,21 @@ const AuditLogs = ({ embedded = false }) => {
 
                         <button
                             type="button"
+                            aria-expanded={advancedFiltersOpen}
+                            aria-controls="audit-advanced-filters"
+                            onClick={() => setAdvancedFiltersOpen((open) => !open)}
+                            className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition ${advancedFiltersOpen
+                                ? 'border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300'
+                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'}`}
+                        >
+                            <Filter size={13} />
+                            {t('audit.advancedFilters', { defaultValue: 'Advanced filters' })}
+                            {activeFilters > 0 && <span className="rounded-full bg-teal-600 px-1.5 py-0.5 text-[9px] text-white">{activeFilters}</span>}
+                            <ChevronDown size={12} className={`transition-transform ${advancedFiltersOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        <button
+                            type="button"
                             onClick={resetFilters}
                             disabled={!activeFilters}
                             className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
@@ -549,7 +577,7 @@ const AuditLogs = ({ embedded = false }) => {
                 </div>
 
                 <div className="p-4 sm:p-5">
-                    <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         <FilterField label={t('audit.search', { defaultValue: 'Fulltext Search' })} icon={Search}>
                             <input
                                 ref={searchInputRef}
@@ -575,6 +603,7 @@ const AuditLogs = ({ embedded = false }) => {
                             </select>
                         </FilterField>
 
+                        {advancedFiltersOpen && <div id="audit-advanced-filters" className="contents">
                         <FilterField label={t('audit.severity', { defaultValue: 'Min Severity' })}>
                             <select className={INPUT} value={filters.minSeverity} onChange={(event) => updateFilter('minSeverity', event.target.value)}>
                                 <option value="">{t('audit.anySeverity', { defaultValue: 'Any Severity' })}</option>
@@ -628,6 +657,7 @@ const AuditLogs = ({ embedded = false }) => {
                                 <option value="85">{t('audit.riskCritical', { defaultValue: '85+ Critical Risk' })}</option>
                             </select>
                         </FilterField>
+                        </div>}
 
                         <FilterField label={t('audit.startDate', { defaultValue: 'Start Date' })} icon={Calendar}>
                             <input
@@ -649,7 +679,7 @@ const AuditLogs = ({ embedded = false }) => {
                             />
                         </FilterField>
 
-                        <FilterField label={t('audit.actionType', { defaultValue: 'Action Pattern' })} icon={Search}>
+                        {advancedFiltersOpen && <FilterField label={t('audit.actionType', { defaultValue: 'Action Pattern' })} icon={Search}>
                             <input
                                 type="text"
                                 placeholder="e.g. LOGIN, UPDATE"
@@ -657,13 +687,13 @@ const AuditLogs = ({ embedded = false }) => {
                                 value={filters.action}
                                 onChange={(event) => updateFilter('action', event.target.value)}
                             />
-                        </FilterField>
+                        </FilterField>}
                     </div>
 
                     {/* Active Filter Chips */}
                     {activeFilters > 0 && (
                         <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3 dark:border-slate-800">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active Filters:</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('audit.activeFilterLabel', { defaultValue: 'Active filters' })}:</span>
                             {Object.entries(filters).map(([key, val]) => {
                                 if (!val) return null;
                                 return (
@@ -898,10 +928,10 @@ const TONE_ICON = {
 };
 
 const SummaryCard = ({ icon: Icon, label, value, note, tone = 'default' }) => (
-    <article className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
+    <article className="group rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl transition duration-200 hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md dark:border-slate-800/80 dark:bg-slate-900/70 dark:hover:border-teal-900">
         <div className="flex items-start justify-between gap-2">
             <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</p>
-            <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${TONE_ICON[tone] || TONE_ICON.default}`}>
+            <span className={`flex h-9 w-9 items-center justify-center rounded-xl transition-transform group-hover:scale-105 ${TONE_ICON[tone] || TONE_ICON.default}`}>
                 <Icon size={16} aria-hidden="true" />
             </span>
         </div>
@@ -1036,10 +1066,10 @@ const AuditCard = ({ log, locale, t, systemLabel, detailsLabel, expanded, copied
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{log.actor_role || log.user_role || log.actor_type || systemLabel} · {formatDate(log.timestamp, locale)}</p>
             </div>
             <div className="flex items-center gap-1">
-                <button type="button" onClick={onInspect} title="Inspect Full Event" className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
+                <button type="button" onClick={onInspect} title={t('audit.inspectEvent', { defaultValue: 'Inspect event' })} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
                     <Maximize2 size={15} />
                 </button>
-                <button type="button" onClick={onCopy} title="Copy JSON payload" className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
+                <button type="button" onClick={onCopy} title={t('audit.copyPayload', { defaultValue: 'Copy event payload' })} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
                     {copiedId === log.log_id ? <Check size={15} className="text-emerald-600" /> : <Copy size={15} />}
                 </button>
                 <button type="button" onClick={onToggle} aria-expanded={expanded} aria-label={detailsLabel} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
@@ -1076,10 +1106,10 @@ const AuditRow = ({ log, locale, t, systemLabel, detailsLabel, expanded, copiedI
             <td className="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{log.ip_address || '-'}</td>
             <td className="px-3 py-3 text-center">
                 <div className="flex items-center justify-center gap-1">
-                    <button type="button" onClick={onInspect} title="Inspect Full Event Modal" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+                    <button type="button" onClick={onInspect} title={t('audit.inspectEvent', { defaultValue: 'Inspect event' })} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">
                         <Maximize2 size={14} />
                     </button>
-                    <button type="button" onClick={onCopy} title="Copy JSON Payload" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+                    <button type="button" onClick={onCopy} title={t('audit.copyPayload', { defaultValue: 'Copy event payload' })} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">
                         {copiedId === log.log_id ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
                     </button>
                     <button type="button" onClick={onToggle} aria-expanded={expanded} aria-label={detailsLabel} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">

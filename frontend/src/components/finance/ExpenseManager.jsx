@@ -3,47 +3,49 @@ import {
     AlertTriangle, 
     Calendar, 
     CreditCard, 
-    Filter, 
+    Pencil,
     Plus, 
     Receipt, 
     RotateCcw, 
     Search, 
-    Tag, 
-    WalletCards, 
-    X 
+    Tag
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { useCreateExpenseMutation, useDeleteExpenseMutation, useGetExpenseCategoriesQuery, useGetExpensesQuery, useGetSuppliersQuery } from '../../store/api';
-import { formatFinancialCurrency, formatFinancialDate } from '../../utils/financialFormat';
+import { useCreateExpenseMutation, useDeleteExpenseMutation, useGetExpenseCategoriesQuery, useGetExpensesQuery, useGetSuppliersQuery, useUpdateExpenseMutation } from '../../store/api';
+import { formatFinancialCurrency, formatFinancialDate, toFinancialDateInput } from '../../utils/financialFormat';
 import { generateUUID } from '../../utils/uuid';
+import Modal from '../ui/Modal';
 
 const initialForm = () => ({
     categoryId: '',
     supplierId: '',
     amount: '',
     taxAmount: '0',
-    expenseDate: new Date().toISOString().substring(0, 10),
+    expenseDate: toFinancialDateInput(),
     paymentMethod: 'Cash',
     referenceNumber: '',
     notes: ''
 });
 
-const ExpenseManager = () => {
+const ExpenseManager = ({ dateRange }) => {
     const { t, i18n } = useTranslation('workspace');
-    const isAr = i18n.language?.startsWith('ar');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
-    const { data: expenses = [], isLoading, isError } = useGetExpensesQuery();
+    const { data: expenses = [], isLoading, isError } = useGetExpensesQuery(dateRange || undefined);
     const { data: categories = [] } = useGetExpenseCategoriesQuery();
     const { data: suppliers = [] } = useGetSuppliersQuery();
     const [createExpense, { isLoading: isCreating }] = useCreateExpenseMutation();
+    const [updateExpense, { isLoading: isUpdating }] = useUpdateExpenseMutation();
     const [deleteExpense, { isLoading: isReversing }] = useDeleteExpenseMutation();
     
-    const [showNew, setShowNew] = useState(false);
+    const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+    const [editingExpense, setEditingExpense] = useState(null);
     const [form, setForm] = useState(initialForm);
     const [reverseDraft, setReverseDraft] = useState({ expense: null, reason: '' });
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
+    const isEditing = Boolean(editingExpense);
+    const isSaving = isCreating || isUpdating;
 
     const totals = useMemo(() => expenses.reduce((sum, expense) => ({
         amount: sum.amount + Number(expense.amount || 0),
@@ -68,21 +70,61 @@ const ExpenseManager = () => {
 
     const setField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
+    const openCreateModal = () => {
+        setEditingExpense(null);
+        setForm(initialForm());
+        setIsExpenseModalOpen(true);
+    };
+
+    const openEditModal = (expense) => {
+        setEditingExpense(expense);
+        setForm({
+            categoryId: expense.category_id || '',
+            supplierId: expense.supplier_id || '',
+            amount: String(expense.amount ?? ''),
+            taxAmount: String(expense.tax_amount ?? 0),
+            expenseDate: String(expense.expense_date || '').slice(0, 10),
+            paymentMethod: expense.payment_method || 'Cash',
+            referenceNumber: expense.reference_number || '',
+            notes: expense.notes || '',
+        });
+        setIsExpenseModalOpen(true);
+    };
+
+    const closeExpenseModal = () => {
+        if (isSaving) return;
+        setIsExpenseModalOpen(false);
+        setEditingExpense(null);
+        setForm(initialForm());
+    };
+
     const handleSubmit = async (event) => {
         event.preventDefault();
         try {
-            await createExpense({
-                ...form,
-                amount: parseFloat(form.amount),
-                taxAmount: parseFloat(form.taxAmount || 0),
-                supplierId: form.supplierId || null,
-                idempotencyKey: generateUUID()
-            }).unwrap();
-            toast.success(t('finance.expenses.success'));
-            setShowNew(false);
+            if (isEditing) {
+                await updateExpense({
+                    id: editingExpense.expense_id,
+                    categoryId: form.categoryId,
+                    supplierId: form.supplierId || null,
+                    referenceNumber: form.referenceNumber,
+                    notes: form.notes,
+                }).unwrap();
+                toast.success(t('finance.expenses.updateSuccess'));
+            } else {
+                await createExpense({
+                    ...form,
+                    amount: parseFloat(form.amount),
+                    taxAmount: parseFloat(form.taxAmount || 0),
+                    supplierId: form.supplierId || null,
+                    idempotencyKey: generateUUID()
+                }).unwrap();
+                toast.success(t('finance.expenses.success'));
+            }
+            setIsExpenseModalOpen(false);
+            setEditingExpense(null);
             setForm(initialForm());
         } catch (error) {
-            toast.error(error?.data?.message || t('finance.expenses.saveError'));
+            toast.error(error?.data?.message || t(isEditing ? 'finance.expenses.updateError' : 'finance.expenses.saveError'));
         }
     };
 
@@ -122,12 +164,13 @@ const ExpenseManager = () => {
 
                 <button
                     type="button"
-                    onClick={() => setShowNew((value) => !value)}
-                    aria-expanded={showNew}
+                    onClick={openCreateModal}
+                    aria-haspopup="dialog"
+                    aria-expanded={isExpenseModalOpen}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-rose-600/20 transition hover:brightness-110"
                 >
-                    {showNew ? <X size={16} /> : <Plus size={16} />}
-                    {showNew ? t('finance.expenses.closeForm') : (isAr ? 'تسجيل مصروف جديد' : 'Record Expense')}
+                    <Plus size={16} />
+                    {t('finance.expenses.addExpense')}
                 </button>
             </div>
 
@@ -135,8 +178,8 @@ const ExpenseManager = () => {
             <div className="grid grid-cols-1 gap-4 border-b border-slate-100/80 p-5 dark:border-white/5 sm:grid-cols-2 lg:grid-cols-4">
                 <ExpenseMetric label={t('finance.expenses.records')} value={expenses.length.toLocaleString(i18n.language)} />
                 <ExpenseMetric label={t('finance.expenses.recordedAmount')} value={money(totals.amount)} tone="rose" />
-                <ExpenseMetric label={isAr ? 'نقداً (خزينة)' : 'Cash Out'} value={money(totals.cash)} />
-                <ExpenseMetric label={isAr ? 'تحويل بنكي / بطاقات' : 'Bank & Cards'} value={money(totals.bank + totals.card)} />
+                <ExpenseMetric label={t('finance.expenses.cashOut')} value={money(totals.cash)} />
+                <ExpenseMetric label={t('finance.expenses.bankAndCards')} value={money(totals.bank + totals.card)} />
             </div>
 
             {/* Category Filter Chips & Search Bar */}
@@ -151,7 +194,7 @@ const ExpenseManager = () => {
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
                         }`}
                     >
-                        {isAr ? 'كافة البنود' : 'All Categories'} ({expenses.length})
+                        {t('finance.expenses.allCategories')} ({expenses.length})
                     </button>
                     {categories.map((cat) => (
                         <button
@@ -175,18 +218,45 @@ const ExpenseManager = () => {
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder={isAr ? 'بحث بالمصروف أو المورد...' : 'Search expenses...'}
+                        placeholder={t('finance.expenses.searchPlaceholder')}
                         className="h-9 w-full rounded-xl border border-slate-200 bg-white ps-8 pe-3 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                     />
                 </div>
             </div>
 
-            {/* Form */}
-            {showNew && (
-                <form onSubmit={handleSubmit} className="border-b border-slate-200/80 bg-rose-50/40 p-5 backdrop-blur-md dark:border-white/5 dark:bg-rose-950/20 sm:p-6">
+            <Modal
+                isOpen={isExpenseModalOpen}
+                onClose={closeExpenseModal}
+                title={t(isEditing ? 'finance.expenses.editTitle' : 'finance.expenses.newTitle')}
+                size="wide"
+                footer={(
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                        <button
+                            type="button"
+                            onClick={closeExpenseModal}
+                            disabled={isSaving}
+                            className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-white/5"
+                        >
+                            {t('finance.common.cancel')}
+                        </button>
+                        <button
+                            type="submit"
+                            form="expense-form"
+                            disabled={isSaving}
+                            className="rounded-xl bg-rose-600 px-6 py-2.5 text-xs font-bold text-white shadow-md shadow-rose-600/20 transition hover:bg-rose-700 disabled:opacity-50"
+                        >
+                            {isSaving
+                                ? t(isEditing ? 'finance.expenses.updating' : 'finance.expenses.saving')
+                                : t(isEditing ? 'finance.expenses.update' : 'finance.expenses.save')}
+                        </button>
+                    </div>
+                )}
+            >
+                <form id="expense-form" onSubmit={handleSubmit} className="p-5 sm:p-6">
                     <div className="mb-5">
-                        <h3 className="font-black text-slate-900 dark:text-white text-base">{t('finance.expenses.newTitle')}</h3>
-                        <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{t('finance.expenses.formHelp')}</p>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                            {isEditing ? t('finance.expenses.immutableFieldsNote') : t('finance.expenses.formHelp')}
+                        </p>
                     </div>
 
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -198,6 +268,9 @@ const ExpenseManager = () => {
                                 onChange={(event) => setField('categoryId', event.target.value)}
                             >
                                 <option value="">{t('finance.expenses.selectCategory')}</option>
+                                {isEditing && form.categoryId && !categories.some((category) => category.category_id === form.categoryId) ? (
+                                    <option value={form.categoryId}>{editingExpense.category_name || t('finance.expenses.uncategorized')}</option>
+                                ) : null}
                                 {categories.map((category) => (
                                     <option key={category.category_id} value={category.category_id}>{category.name}</option>
                                 ))}
@@ -210,7 +283,8 @@ const ExpenseManager = () => {
                                 min="0.01"
                                 step="0.01"
                                 required
-                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 font-mono text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
+                                disabled={isEditing}
+                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 font-mono text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
                                 value={form.amount}
                                 onChange={(event) => setField('amount', event.target.value)}
                                 placeholder="0.00"
@@ -221,8 +295,10 @@ const ExpenseManager = () => {
                             <input
                                 type="number"
                                 min="0"
+                                max={form.amount || undefined}
                                 step="0.01"
-                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 font-mono text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
+                                disabled={isEditing}
+                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 font-mono text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
                                 value={form.taxAmount}
                                 onChange={(event) => setField('taxAmount', event.target.value)}
                             />
@@ -235,6 +311,9 @@ const ExpenseManager = () => {
                                 onChange={(event) => setField('supplierId', event.target.value)}
                             >
                                 <option value="">{t('finance.expenses.noSupplier')}</option>
+                                {isEditing && form.supplierId && !suppliers.some((supplier) => supplier.supplier_id === form.supplierId) ? (
+                                    <option value={form.supplierId}>{editingExpense.supplier_name || t('finance.expenses.noSupplier')}</option>
+                                ) : null}
                                 {suppliers.map((supplier) => (
                                     <option key={supplier.supplier_id} value={supplier.supplier_id}>{supplier.name}</option>
                                 ))}
@@ -245,7 +324,8 @@ const ExpenseManager = () => {
                             <input
                                 type="date"
                                 required
-                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
+                                disabled={isEditing}
+                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
                                 value={form.expenseDate}
                                 onChange={(event) => setField('expenseDate', event.target.value)}
                             />
@@ -253,6 +333,7 @@ const ExpenseManager = () => {
 
                         <Field label={t('finance.expenses.paymentMethod')}>
                             <select
+                                disabled={isEditing}
                                 className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
                                 value={form.paymentMethod}
                                 onChange={(event) => setField('paymentMethod', event.target.value)}
@@ -288,24 +369,8 @@ const ExpenseManager = () => {
                         </div>
                     </div>
 
-                    <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                        <button
-                            type="button"
-                            onClick={() => setShowNew(false)}
-                            className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-white dark:text-slate-400 dark:hover:bg-white/5"
-                        >
-                            {t('finance.common.cancel')}
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={isCreating}
-                            className="rounded-xl bg-rose-600 px-6 py-2.5 text-xs font-bold text-white shadow-md shadow-rose-600/20 transition hover:bg-rose-700 disabled:opacity-50"
-                        >
-                            {isCreating ? t('finance.expenses.saving') : t('finance.expenses.save')}
-                        </button>
-                    </div>
                 </form>
-            )}
+            </Modal>
 
             {/* List */}
             {isLoading ? (
@@ -316,7 +381,7 @@ const ExpenseManager = () => {
                 <div className="p-12 text-center">
                     <Receipt className="mx-auto text-slate-300 dark:text-slate-600" size={40} />
                     <p className="mt-3 font-black text-slate-700 dark:text-slate-300">
-                        {searchQuery ? (isAr ? 'لا توجد مصروفات تطابق البحث' : 'No matching expenses') : t('finance.expenses.emptyTitle')}
+                        {searchQuery ? t('finance.expenses.noSearchResults') : t('finance.expenses.emptyTitle')}
                     </p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('finance.expenses.emptyDescription')}</p>
                 </div>
@@ -327,6 +392,7 @@ const ExpenseManager = () => {
                             <ExpenseCard
                                 key={expense.expense_id}
                                 expense={expense}
+                                onEdit={() => openEditModal(expense)}
                                 onReverse={() => setReverseDraft({ expense, reason: '' })}
                             />
                         ))}
@@ -346,6 +412,7 @@ const ExpenseManager = () => {
                                     <ExpenseRow
                                         key={expense.expense_id}
                                         expense={expense}
+                                        onEdit={() => openEditModal(expense)}
                                         onReverse={() => setReverseDraft({ expense, reason: '' })}
                                     />
                                 ))}
@@ -426,7 +493,7 @@ const ExpenseMetric = ({ label, value, tone }) => (
     </div>
 );
 
-const ExpenseCard = ({ expense, onReverse }) => {
+const ExpenseCard = ({ expense, onEdit, onReverse }) => {
     const { t, i18n } = useTranslation('workspace');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
     return (
@@ -455,6 +522,17 @@ const ExpenseCard = ({ expense, onReverse }) => {
                 ) : null}
             </div>
             {expense.notes ? <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">{expense.notes}</p> : null}
+            {!expense.reversed_at ? (
+                <button
+                    type="button"
+                    onClick={onEdit}
+                    aria-label={t('finance.expenses.editExpense')}
+                    className="mt-4 inline-flex min-h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                    <Pencil size={14} />
+                    {t('finance.expenses.editExpense')}
+                </button>
+            ) : null}
             <button
                 type="button"
                 onClick={onReverse}
@@ -468,7 +546,7 @@ const ExpenseCard = ({ expense, onReverse }) => {
     );
 };
 
-const ExpenseRow = ({ expense, onReverse }) => {
+const ExpenseRow = ({ expense, onEdit, onReverse }) => {
     const { t, i18n } = useTranslation('workspace');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
     const method = expense.payment_method ? t(`finance.methods.${expense.payment_method}`, { defaultValue: expense.payment_method }) : '';
@@ -494,6 +572,17 @@ const ExpenseRow = ({ expense, onReverse }) => {
                 <p className="font-mono font-black text-rose-600 dark:text-rose-400">{money(expense.amount)}</p>
                 {Number(expense.tax_amount) > 0 ? (
                     <p className="mt-1 text-[10px] font-semibold text-slate-400">{t('finance.expenses.includesTax', { amount: money(expense.tax_amount) })}</p>
+                ) : null}
+                {!expense.reversed_at ? (
+                    <button
+                        type="button"
+                        onClick={onEdit}
+                        aria-label={t('finance.expenses.editExpense')}
+                        className="mt-2 inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                        <Pencil size={13} />
+                        {t('finance.expenses.editExpense')}
+                    </button>
                 ) : null}
                 <button
                     type="button"

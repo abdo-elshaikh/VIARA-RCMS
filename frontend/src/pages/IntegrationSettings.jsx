@@ -46,7 +46,8 @@ const IntegrationSettings = ({ embedded = false }) => {
         {
             status: logStatusFilter !== 'all' ? logStatusFilter : undefined,
             provider: logProviderFilter !== 'all' ? logProviderFilter : undefined,
-            event_type: logSearch.trim() || undefined
+            event_type: logSearch.trim() || undefined,
+            limit: 500
         },
         { skip: activeTab !== 'logs' }
     );

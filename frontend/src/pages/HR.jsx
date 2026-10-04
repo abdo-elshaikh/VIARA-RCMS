@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { BadgeCheck, CalendarClock, CalendarOff, RefreshCw, ShieldCheck, Target, Users, UserCheck, Clock, Sparkles } from 'lucide-react';
+import { useSearchParams, Link } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import { BadgeCheck, CalendarClock, CalendarOff, RefreshCw, ShieldCheck, Target, Users, UserCheck, Clock, Sparkles, Activity } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import EmployeeDirectory from '../components/hr/EmployeeDirectory';
 import ShiftManager from '../components/hr/ShiftManager';
@@ -8,8 +9,11 @@ import LeaveManager from '../components/hr/LeaveManager';
 import ProductivityReport from '../components/hr/ProductivityReport';
 import AttendanceManager from '../components/hr/AttendanceManager';
 import CredentialsManager from '../components/hr/CredentialsManager';
+import ReceptionSupervisorManager from '../components/hr/ReceptionSupervisorManager';
+import StaffSupervisorManager from '../components/hr/StaffSupervisorManager';
 import PageHeader from '../components/ui/PageHeader';
 import { useGetAttendanceQuery, useGetEmployeeProfilesQuery, useGetLeaveRequestsQuery, useGetStaffCredentialsQuery } from '../store/api';
+import { selectCurrentUser } from '../store/authSlice';
 
 const dateInput = date => {
     const offset = date.getTimezoneOffset();
@@ -20,6 +24,8 @@ const HR = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const { t, i18n } = useTranslation('workspace');
     const isArabic = i18n.language.startsWith('ar');
+    const currentUser = useSelector(selectCurrentUser);
+    const canManageUsers = ['Developer', 'Admin'].includes(currentUser?.role) || currentUser?.permissions?.includes('MANAGE_USERS');
     const currentDate = useMemo(() => dateInput(new Date()), []);
     
     const profilesQuery = useGetEmployeeProfilesQuery();
@@ -51,13 +57,15 @@ const HR = () => {
 
     const tabs = [
         { id: 'directory', icon: Users, label: t('hr.tabs.directory', { defaultValue: 'Employee Directory' }), count: null },
+        { id: 'supervisors', icon: ShieldCheck, label: isArabic ? 'إدارة المشرفين' : 'Supervisor Management', count: null },
         { id: 'shifts', icon: CalendarClock, label: t('hr.tabs.shifts', { defaultValue: 'Shift Roster' }), count: null },
         { id: 'attendance', icon: Clock, label: t('hr.tabs.attendance', { defaultValue: 'Attendance' }), count: clockedIn > 0 ? clockedIn : null, countTone: 'emerald' },
         { id: 'leave', icon: CalendarOff, label: t('hr.tabs.leave', { defaultValue: 'Leave Requests' }), count: pendingLeaves > 0 ? pendingLeaves : null, countTone: 'amber' },
         { id: 'credentials', icon: BadgeCheck, label: t('hr.tabs.credentials', { defaultValue: 'Credentials' }), count: expiringCredentials > 0 ? expiringCredentials : null, countTone: 'amber' },
         { id: 'productivity', icon: Target, label: t('hr.tabs.productivity', { defaultValue: 'Productivity' }), count: null },
     ];
-    const requestedTab = searchParams.get('tab');
+    const rawTab = searchParams.get('tab');
+    const requestedTab = rawTab === 'department-supervisors' ? 'supervisors' : rawTab;
     const activeTab = tabs.some((tab) => tab.id === requestedTab) ? requestedTab : 'directory';
     const setActiveTab = (tab) => setSearchParams((current) => { const next = new URLSearchParams(current); next.set('tab', tab); return next; }, { replace: true });
 
@@ -96,15 +104,33 @@ const HR = () => {
                     </span>
                 }
                 actions={
-                    <button
-                        type="button"
-                        onClick={refreshHeader}
-                        disabled={headerFetching}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-4 text-xs font-black text-slate-700 shadow-sm transition hover:border-teal-500/40 hover:text-teal-700 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-teal-500/40"
-                    >
-                        <RefreshCw size={15} className={headerFetching ? 'animate-spin text-teal-600' : ''} />
-                        {t('hr.header.refresh')}
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {canManageUsers && (
+                            <Link
+                                to="/users"
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-teal-500/30 bg-teal-50/70 px-4 text-xs font-black text-teal-800 shadow-sm transition hover:bg-teal-100 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300"
+                            >
+                                <ShieldCheck size={15} className="text-teal-600 dark:text-teal-400" />
+                                <span>{isArabic ? 'حسابات الدخول (IAM)' : 'IAM Accounts'}</span>
+                            </Link>
+                        )}
+                        <Link
+                            to="/user-activity"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-sky-500/30 bg-sky-50/70 px-4 text-xs font-black text-sky-800 shadow-sm transition hover:bg-sky-100 dark:border-sky-900/50 dark:bg-sky-950/40 dark:text-sky-300"
+                        >
+                            <Activity size={15} className="text-sky-600 dark:text-sky-400" />
+                            <span>{isArabic ? 'لوحة النشاط' : 'Staff Activity'}</span>
+                        </Link>
+                        <button
+                            type="button"
+                            onClick={refreshHeader}
+                            disabled={headerFetching}
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-4 text-xs font-black text-slate-700 shadow-sm transition hover:border-teal-500/40 hover:text-teal-700 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-teal-500/40"
+                        >
+                            <RefreshCw size={15} className={headerFetching ? 'animate-spin text-teal-600' : ''} />
+                            {t('hr.header.refresh')}
+                        </button>
+                    </div>
                 }
                 metrics={[
                     { key: 'profiles', icon: Users, label: t('hr.directory.staffCount'), value: profiles.length, tone: 'teal', loading: headerLoading },
@@ -160,6 +186,7 @@ const HR = () => {
 
             <div id={`hr-panel-${activeTab}`} role="tabpanel" aria-labelledby={`hr-tab-${activeTab}`} className="transition-all duration-300">
                 {activeTab === 'directory' && <EmployeeDirectory />}
+                {(activeTab === 'supervisors' || activeTab === 'department-supervisors') && <ReceptionSupervisorManager />}
                 {activeTab === 'shifts' && <ShiftManager />}
                 {activeTab === 'attendance' && <AttendanceManager />}
                 {activeTab === 'leave' && <LeaveManager />}

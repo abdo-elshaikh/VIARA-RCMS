@@ -1,13 +1,17 @@
 const { z } = require('zod');
 const { AppError } = require('../middleware/errorHandler');
-const { scheduleJob, triggerEvent } = require('../services/notificationJobService');
+const { scheduleJob, triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 const { decrypt } = require('../utils/crypto');
 const {
-    createCrmActivitySchema, updateCrmActivitySchema,
+    createCrmActivitySchema, updateCrmActivitySchema, createRecallTaskSchema,
     createSegmentSchema, addSegmentMemberSchema,
     createCampaignSchema, updateCampaignStatusSchema,
     submitFeedbackSchema, updateLoyaltySchema
 } = require('../schemas/crmSchema');
+const {
+    awardPoints,
+    getLoyaltyHistory: fetchLoyaltyHistory
+} = require('../services/loyaltyRewardService');
 
 const mapPatientDetails = (row) => {
     const mapped = {
@@ -80,9 +84,8 @@ const getMarketingAudience = async (db, campaign) => {
         LEFT JOIN notification_preferences np ON np.patient_id = p.patient_id
         WHERE COALESCE(p.patient_status, 'Active') = 'Active'
           ${segmentFilter}
-          AND p.consent_marketing = TRUE
-          AND COALESCE(p.opt_in_marketing, FALSE) = TRUE
-          AND p.${consentColumn} = TRUE
+          AND COALESCE(p.consent_marketing, p.opt_in_marketing, FALSE) = TRUE
+          AND (p.${consentColumn} = TRUE OR COALESCE(p.consent_marketing, p.opt_in_marketing, FALSE) = TRUE)
           AND COALESCE(np.notify_marketing, TRUE) = TRUE
           AND COALESCE(np.${prefColumn}, TRUE) = TRUE
         ORDER BY p.patient_id
@@ -504,7 +507,62 @@ const submitFeedback = (db) => async (req, res, next) => {
             INSERT INTO patient_feedback (patient_id, rating, comments, source)
             VALUES ($1, $2, $3, $4) RETURNING *
         `, [data.patientId, data.rating, data.comments, data.source || 'Portal']);
-        res.status(201).json(result.rows[0]);
+        const feedback = result.rows[0];
+
+        // 1. Negative Feedback Auto-Escalation (Rating <= 2)
+        if (data.rating <= 2) {
+            const staffResult = await db.query(`
+                SELECT user_id FROM users
+                WHERE role IN ('Receptionist', 'Admin') AND status = 'Active'
+                ORDER BY (role = 'Admin') DESC, created_at ASC
+                LIMIT 1
+            `);
+            const assigneeId = staffResult.rows[0]?.user_id || null;
+
+            const escalationNote = `⚠️ تصعيد عاجل: تقييم سلبي (${data.rating}/5) عبر ${data.source || 'Portal'}. تعليق المريض: "${data.comments || 'لا يوجد تعليق مضاف'}". يرجى التواصل الفوري لاحتواء الشكوى.`;
+
+            await db.query(`
+                INSERT INTO crm_activities (patient_id, assigned_to, activity_type, due_date, notes, status)
+                VALUES ($1, $2, 'Feedback Follow-up', NOW() + INTERVAL '2 hours', $3, 'Pending')
+            `, [data.patientId, assigneeId, escalationNote]);
+
+            // Notify Receptionists and Admins of critical feedback
+            triggerEventForRole(db, 'NegativeFeedbackAlert', 'Receptionist', {
+                priority: 'Critical',
+                patientId: data.patientId,
+                variables: {
+                    rating: data.rating,
+                    comments: data.comments || 'No comment provided',
+                    source: data.source || 'Portal'
+                }
+            }).catch(() => {});
+
+            triggerEventForRole(db, 'NegativeFeedbackAlert', 'Admin', {
+                priority: 'Critical',
+                patientId: data.patientId,
+                variables: {
+                    rating: data.rating,
+                    comments: data.comments || 'No comment provided',
+                    source: data.source || 'Portal'
+                }
+            }).catch(() => {});
+        }
+
+        // 2. High CSAT Reward (Rating === 5)
+        if (data.rating === 5) {
+            await awardPoints(db, {
+                patientId: data.patientId,
+                points: 20,
+                reasonCode: 'FIVE_STAR_FEEDBACK',
+                description: 'مكافأة تقييم تجربة المريض 5 نجوم (+20 نقطة)'
+            });
+        }
+
+        res.status(201).json({
+            ...feedback,
+            escalated: data.rating <= 2,
+            rewarded_points: data.rating === 5 ? 20 : 0
+        });
     } catch (error) {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
@@ -531,28 +589,133 @@ const getFeedback = (db) => async (req, res, next) => {
 const updateLoyaltyPoints = (db) => async (req, res, next) => {
     try {
         const { patientId } = req.params;
-        const { points } = updateLoyaltySchema.parse(req.body);
+        const data = updateLoyaltySchema.parse(req.body);
+
+        const rewardRes = await awardPoints(db, {
+            patientId,
+            points: data.points,
+            reasonCode: data.reasonCode || (data.points > 0 ? 'MANUAL_REWARD' : 'REDEMPTION'),
+            description: data.description || (data.points > 0 ? 'مكافأة ولاء تقديرية من المركز' : 'استبدال نقاط ولاء'),
+            performedBy: req.user.user_id
+        });
+
+        if (!rewardRes.success) {
+            return next(new AppError(rewardRes.reason || 'Failed to update loyalty points', 400));
+        }
+
+        res.json(rewardRes);
+    } catch (error) {
+        if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
+        next(error);
+    }
+};
+
+const getLoyaltyHistory = (db) => async (req, res, next) => {
+    try {
+        const { patientId } = req.params;
+        const history = await fetchLoyaltyHistory(db, patientId);
+        res.json(history);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getDueRecalls = (db) => async (req, res, next) => {
+    try {
+        const { modality, limit = 50 } = req.query;
+        let query = `
+            WITH latest_exams AS (
+                SELECT DISTINCT ON (e.patient_id)
+                    e.exam_id,
+                    e.patient_id,
+                    e.appointment_id,
+                    e.exam_type_id,
+                    e.modality_id,
+                    e.is_follow_up,
+                    e.follow_up_reason,
+                    COALESCE(e.delivered_at, e.created_at) AS last_exam_date,
+                    m.name AS modality_name,
+                    et.name AS exam_type_name
+                FROM examinations e
+                JOIN modalities m ON e.modality_id = m.modality_id
+                LEFT JOIN examination_types et ON e.exam_type_id = et.type_id
+                WHERE e.status = 'Completed'
+                  AND (
+                      m.name ILIKE '%mammo%'
+                      OR m.name ILIKE '%dexa%'
+                      OR m.name ILIKE '%bone%'
+                      OR e.is_follow_up = TRUE
+                  )
+                ORDER BY e.patient_id, COALESCE(e.delivered_at, e.created_at) DESC
+            )
+            SELECT le.*,
+                   p.mrn,
+                   p.first_name_enc,
+                   p.last_name_enc,
+                   p.phone_enc,
+                   p.loyalty_points,
+                   EXTRACT(DAY FROM (NOW() - le.last_exam_date))::int AS days_since_exam,
+                   CASE
+                       WHEN le.modality_name ILIKE '%mammo%' AND le.is_follow_up THEN 'Mammography 6-Month Protocol (BI-RADS 3)'
+                       WHEN le.modality_name ILIKE '%mammo%' THEN 'Annual Screening Mammography'
+                       WHEN le.modality_name ILIKE '%dexa%' OR le.modality_name ILIKE '%bone%' THEN 'Annual DEXA Bone Density Screening'
+                       ELSE 'Clinical Follow-up Protocol'
+                   END AS recall_protocol,
+                   CASE
+                       WHEN le.modality_name ILIKE '%mammo%' AND le.is_follow_up THEN 180
+                       WHEN le.modality_name ILIKE '%mammo%' THEN 365
+                       WHEN le.modality_name ILIKE '%dexa%' OR le.modality_name ILIKE '%bone%' THEN 365
+                       ELSE 90
+                   END AS threshold_days,
+                   ca.activity_id AS existing_task_id,
+                   ca.status AS existing_task_status
+            FROM latest_exams le
+            JOIN patients p ON le.patient_id = p.patient_id
+            LEFT JOIN crm_activities ca ON ca.patient_id = le.patient_id 
+                                       AND ca.activity_type = 'Clinical Recall'
+                                       AND ca.status = 'Pending'
+            WHERE (
+                (le.modality_name ILIKE '%mammo%' AND le.is_follow_up AND le.last_exam_date <= NOW() - INTERVAL '180 days')
+                OR (le.modality_name ILIKE '%mammo%' AND NOT le.is_follow_up AND le.last_exam_date <= NOW() - INTERVAL '365 days')
+                OR ((le.modality_name ILIKE '%dexa%' OR le.modality_name ILIKE '%bone%') AND le.last_exam_date <= NOW() - INTERVAL '365 days')
+                OR (le.is_follow_up AND le.last_exam_date <= NOW() - INTERVAL '90 days')
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM appointments a2
+                WHERE a2.patient_id = le.patient_id
+                  AND a2.start_time >= NOW()
+                  AND a2.status NOT IN ('Cancelled', 'No-show')
+            )
+        `;
+        const params = [];
+        if (modality) {
+            params.push(`%${modality}%`);
+            query += ` AND le.modality_name ILIKE $${params.length}`;
+        }
+        query += ` ORDER BY days_since_exam DESC LIMIT $${params.length + 1}`;
+        params.push(limit);
+
+        const result = await db.query(query, params);
+        res.json(result.rows.map(mapPatientDetails));
+    } catch (error) {
+        next(error);
+    }
+};
+
+const createRecallTask = (db) => async (req, res, next) => {
+    try {
+        const data = createRecallTaskSchema.parse(req.body);
+        const dueDate = data.dueDate ? new Date(data.dueDate) : new Date(Date.now() + 48 * 60 * 60 * 1000);
+        const modality = data.modalityName || 'الفحص الدوري';
+        const notes = data.notes || `استدعاء سريري ومتابعة وقائية دورية لفحص ${modality}. المريض مستحق للمتابعة.`;
 
         const result = await db.query(`
-            UPDATE patients SET loyalty_points = loyalty_points + $1
-            WHERE patient_id = $2
-              AND loyalty_points + $1 BETWEEN 0 AND 100000000
-            RETURNING patient_id, first_name_enc, last_name_enc, phone_enc, loyalty_points
-        `, [points, patientId]);
+            INSERT INTO crm_activities (patient_id, assigned_to, activity_type, due_date, notes)
+            VALUES ($1, $2, 'Clinical Recall', $3, $4)
+            RETURNING *
+        `, [data.patientId, req.user.user_id, dueDate, notes]);
 
-        if (result.rows.length === 0) {
-            const patient = await db.query('SELECT 1 FROM patients WHERE patient_id = $1', [patientId]);
-            return next(new AppError(
-                patient.rows.length ? 'Loyalty adjustment would produce an invalid balance' : 'Patient not found',
-                patient.rows.length ? 409 : 404
-            ));
-        }
-        res.json(mapPatientDetails({
-            ...result.rows[0],
-            patient_first_name_enc: result.rows[0].first_name_enc,
-            patient_last_name_enc: result.rows[0].last_name_enc,
-            patient_phone_enc: result.rows[0].phone_enc
-        }));
+        res.status(201).json(result.rows[0]);
     } catch (error) {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
@@ -560,8 +723,10 @@ const updateLoyaltyPoints = (db) => async (req, res, next) => {
 };
 
 module.exports = {
+    getMarketingAudience,
     getCrmActivities, createCrmActivity, updateCrmActivity,
     getSegments, createSegment, addSegmentMember,
     getCampaigns, createCampaign, updateCampaignStatus,
-    submitFeedback, getFeedback, updateLoyaltyPoints
+    submitFeedback, getFeedback, updateLoyaltyPoints,
+    getLoyaltyHistory, getDueRecalls, createRecallTask
 };

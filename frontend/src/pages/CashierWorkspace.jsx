@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
     Activity,
@@ -30,48 +30,20 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { useReviewCashierClosureMutation, useGetCashierReconciliationQuery } from '../store/api';
+import { useReviewCashierClosureMutation } from '../store/api';
 import BillingTab from '../components/reception/BillingTab';
 import ShiftSupervisorPanel from '../components/reception/ShiftSupervisorPanel';
 import CashDrawerReconciliation from '../components/reception/CashDrawerReconciliation';
 import Modal from '../components/ui/Modal';
-import PageHeader from '../components/ui/PageHeader';
 import { selectCurrentUser } from '../store/authSlice';
 import { getErrorMessage } from '../utils/getErrorMessage';
-import { useReceptionPermissions } from '../hooks/useReceptionPermissions';
 import { useShiftFlow } from '../hooks/useShiftFlow';
-
-const ar = {
-    eyebrow: 'إدارة عمليات الدفع والتحصيل المالي',
-    title: 'مساحة عمل أمين الصندوق (الخزينة)',
-    description: 'تسجيل وتحصيل مدفوعات المرضى، معالجة المبالغ المستردة، ومطابقة وجرد درج الخزينة للوردية الحالية.',
-    signedInAs: 'أمين الصندوق الحالي',
-    shiftOpen: 'الوردية مفتوحة ونشطة',
-    shiftClosedStatus: 'الوردية مغلقة حالياً',
-    openShift: 'فتح وردية جديدة',
-    closeShift: 'إغلاق الوردية وجرد الدرج',
-    loadingShift: 'جاري تحميل بيانات الوردية...',
-    shiftSummary: 'تم تحصيل {{amount}} ج.م عبر {{count}} عملية دفع منذ {{time}}',
-    openShiftHelp: 'يُرجى فتح وردية جديدة وبدء تسجيل الرصيد الافتتاحي للدرج لتتمكن من استلام المدفوعات.',
-    openingBalance: 'الرصيد الافتتاحي بالدرج (Opening Balance)',
-    countedCash: 'المبلغ الفعلي المعدود بالدرج (Physical Counted Cash)',
-    shiftNotes: 'ملاحظات الوردية',
-    varianceReason: 'ملاحظات الجرد / سبب الفارق المالي (إن وجد)',
-    blindCountHelp: 'يُرجى جرد النقدية الفعلية داخل الدرج وكتابة المبلغ بدقة. المبلغ المتوقع بالنظام يبقى مخفياً لضمان دقة الجرد.',
-    tabs: {
-        billing: 'الفواتير والتحصيل المالي',
-        reconciliation: 'مطابقة وجرد الخزينة',
-        supervisor: 'لوحة المشرف المالي'
-    },
-    metrics: {
-        status: 'حالة الوردية',
-        collected: 'المتحصلات النقدية',
-        count: 'عدد العمليات',
-        opening: 'الرصيد الافتتاحي'
-    }
-};
-
-const tr = (t, key, defaultEn, defaultAr, isAr) => t(key, { defaultValue: isAr ? defaultAr : defaultEn });
+import CashierQueueTab from '../components/reception/CashierQueueTab';
+import PaymentCollectionModal from '../components/reception/PaymentCollectionModal';
+import { useReceptionData } from '../hooks/useReceptionData';
+import { usePaymentFlow } from '../hooks/usePaymentFlow';
+import { useReceptionPermissions } from '../hooks/useReceptionPermissions';
+import { toLocalDateInput } from '../components/reception/receptionLogic';
 
 const CashierWorkspace = () => {
     const { t, i18n } = useTranslation(['reception', 'common']);
@@ -81,18 +53,41 @@ const CashierWorkspace = () => {
     const [searchParams, setSearchParams] = useSearchParams();
 
     const requestedTab = searchParams.get('tab');
-    const activeTab = ['billing', 'reconciliation', 'supervisor'].includes(requestedTab) ? requestedTab : 'billing';
     const [reviewTarget, setReviewTarget] = useState(null);
     const [reviewNotes, setReviewNotes] = useState('');
 
     // Permissions
+    const permissions = useReceptionPermissions();
     const {
         canProcessPayments,
         canReconcileShifts,
         canOpenCashierShift: canOpenShift,
         canCloseCashierShift: canCloseShift,
         canReviewShiftVariance,
-    } = useReceptionPermissions();
+    } = permissions;
+
+    const canCollectPayments = canProcessPayments && permissions.canViewInvoices;
+    const fallbackTab = canCollectPayments
+        ? 'collection'
+        : permissions.canViewInvoices
+            ? 'billing'
+            : canReviewShiftVariance
+                ? 'supervisor'
+                : canCloseShift
+                    ? 'reconciliation'
+                    : 'billing';
+    const normalizedRequestedTab = ['billing', 'collection', 'reconciliation', 'supervisor'].includes(requestedTab)
+        ? requestedTab
+        : fallbackTab;
+    const activeTab = normalizedRequestedTab === 'collection' && !canCollectPayments
+        ? fallbackTab
+        : normalizedRequestedTab === 'billing' && !permissions.canViewInvoices
+            ? fallbackTab
+        : normalizedRequestedTab === 'reconciliation' && !canCloseShift
+        ? fallbackTab
+        : normalizedRequestedTab === 'supervisor' && !canReviewShiftVariance
+            ? fallbackTab
+            : normalizedRequestedTab;
 
     const [reviewCashierClosure, { isLoading: isReviewing }] = useReviewCashierClosureMutation();
 
@@ -125,10 +120,21 @@ const CashierWorkspace = () => {
         setSearchParams(nextParams);
     }, [searchParams, setSearchParams]);
     useEffect(() => {
-        const unauthorized = (activeTab === 'reconciliation' && !canCloseShift)
-            || (activeTab === 'supervisor' && !canReviewShiftVariance);
-        if (unauthorized) handleTabChange('billing');
-    }, [activeTab, canCloseShift, canReviewShiftVariance, handleTabChange]);
+        if (requestedTab !== activeTab && requestedTab !== null) handleTabChange(activeTab);
+    }, [activeTab, requestedTab, handleTabChange]);
+
+    const receptionData = useReceptionData({
+        selectedDate: toLocalDateInput(),
+        canViewAppointments: permissions.has('VIEW_APPOINTMENTS'),
+        canViewQueue: permissions.has('VIEW_APPOINTMENTS') && permissions.canViewExams,
+        canViewInvoices: permissions.canViewInvoices,
+    });
+    const paymentFlow = usePaymentFlow({
+        currentShift,
+        queueItems: receptionData.queueItems,
+        refreshWorkspace: receptionData.refreshWorkspace,
+        canManageQueue: permissions.canManageQueue,
+    });
 
     const onSubmit = async (e) => {
         e.preventDefault();
@@ -171,7 +177,7 @@ const CashierWorkspace = () => {
                             <div className="flex flex-wrap items-center gap-2">
                                 <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
                                     <Zap size={11} />
-                                    <span>{tr(t, 'cashier.commandCenter', 'Payment & Cash Operations', ar.eyebrow, isAr)}</span>
+                                    <span>{t('cashier.commandCenter')}</span>
                                 </span>
                                 <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-black ${
                                     currentShift
@@ -182,14 +188,14 @@ const CashierWorkspace = () => {
                                         {currentShift && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />}
                                         <span className={`relative inline-flex h-2 w-2 rounded-full ${currentShift ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                                     </span>
-                                    <span>{currentShift ? ar.shiftOpen : ar.shiftClosedStatus}</span>
+                                    <span>{currentShift ? t('billing.shiftOpen') : t('billing.shiftClosedStatus')}</span>
                                 </span>
                             </div>
                             <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
-                                {tr(t, 'cashier.workspaceTitle', 'Cashier & Treasury Workspace', ar.title, isAr)}
+                                {t('cashier.workspaceTitle')}
                             </h1>
                             <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
-                                {ar.signedInAs}: {user?.name || user?.fullName || 'Cashier'} · {tr(t, 'cashier.workspaceDescription', 'Collect patient fees and reconcile active shifts.', ar.description, isAr)}
+                                {t('cashier.signedInAs', { defaultValue: isAr ? 'أمين الصندوق الحالي' : 'Signed in as' })}: {user?.name || user?.fullName || t('cashier.cashier')} · {t('cashier.workspaceDescription')}
                             </p>
                         </div>
                     </div>
@@ -206,7 +212,7 @@ const CashierWorkspace = () => {
                             }`}
                         >
                             {currentShift ? <LockKeyhole size={15} /> : <WalletCards size={15} />}
-                            <span>{currentShift ? ar.closeShift : ar.openShift}</span>
+                            <span>{currentShift ? t('billing.closeShift') : t('billing.openShift')}</span>
                         </button>
                     </div>
                 </div>
@@ -267,7 +273,7 @@ const CashierWorkspace = () => {
                 }`}>
                     <div className="flex items-center justify-between">
                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            {ar.metrics.status}
+                            {t('cashier.shiftMetrics.status')}
                         </p>
                         <span className={`grid h-8 w-8 place-items-center rounded-xl ${
                             currentShift
@@ -278,10 +284,10 @@ const CashierWorkspace = () => {
                         </span>
                     </div>
                     <p className="mt-2 text-xl font-black text-slate-900 dark:text-white">
-                        {currentShift ? ar.shiftOpen : ar.shiftClosedStatus}
+                        {currentShift ? t('billing.shiftOpen') : t('billing.shiftClosedStatus')}
                     </p>
                     <p className="mt-0.5 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        {currentShift ? (currentShift.opened_at ? new Date(currentShift.opened_at).toLocaleTimeString() : 'Active') : 'Closed'}
+                        {currentShift ? (currentShift.opened_at ? new Date(currentShift.opened_at).toLocaleTimeString(isAr ? 'ar-EG' : 'en-EG') : 'Active') : 'Closed'}
                     </p>
                 </div>
 
@@ -289,17 +295,17 @@ const CashierWorkspace = () => {
                 <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                     <div className="flex items-center justify-between">
                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                            {ar.metrics.collected}
+                            {t('billing.netCollected')}
                         </p>
                         <span className="grid h-8 w-8 place-items-center rounded-xl border border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300">
                             <Banknote size={16} />
                         </span>
                     </div>
                     <p className="mt-2 text-2xl font-black tabular-nums text-slate-900 dark:text-white">
-                        {Number(currentShift?.collected_amount || 0).toLocaleString()} <span className="text-xs font-bold text-slate-400">EGP</span>
+                        {Number(currentShift?.collected_amount || 0).toLocaleString(isAr ? 'ar-EG' : 'en-EG')} <span className="text-xs font-bold text-slate-400">{currentShift?.currency_code || 'EGP'}</span>
                     </p>
                     <p className="mt-0.5 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        {isAr ? 'صافي المقبوضات بكل وسائل الدفع' : 'Net receipts across all payment methods'}
+                        {t('cashier.shiftMetrics.collectedDetail')}
                     </p>
                 </div>
 
@@ -307,7 +313,7 @@ const CashierWorkspace = () => {
                 <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                     <div className="flex items-center justify-between">
                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                            {ar.metrics.count}
+                            {t('billing.paymentCount')}
                         </p>
                         <span className="grid h-8 w-8 place-items-center rounded-xl border border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300">
                             <Receipt size={16} />
@@ -317,7 +323,7 @@ const CashierWorkspace = () => {
                         {currentShift?.payment_count || 0}
                     </p>
                     <p className="mt-0.5 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        {isAr ? 'عمليات الدفع المسجلة' : 'Completed transactions'}
+                        {t('cashier.shiftMetrics.countDetail')}
                     </p>
                 </div>
 
@@ -325,24 +331,36 @@ const CashierWorkspace = () => {
                 <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                     <div className="flex items-center justify-between">
                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                            {ar.metrics.opening}
+                            {t('billing.openingBalance')}
                         </p>
                         <span className="grid h-8 w-8 place-items-center rounded-xl border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                             <Wallet size={16} />
                         </span>
                     </div>
                     <p className="mt-2 text-2xl font-black tabular-nums text-slate-900 dark:text-white">
-                        {Number(currentShift?.opening_balance || 0).toLocaleString()} <span className="text-xs font-bold text-slate-400">EGP</span>
+                        {Number(currentShift?.opening_balance || 0).toLocaleString(isAr ? 'ar-EG' : 'en-EG')} <span className="text-xs font-bold text-slate-400">{currentShift?.currency_code || 'EGP'}</span>
                     </p>
                     <p className="mt-0.5 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        {isAr ? 'العهدة النقدية بالدرج' : 'Initial drawer float'}
+                        {t('cashier.shiftMetrics.openingDetail')}
                     </p>
                 </div>
             </section>
 
             {/* Workspace Navigation Tabs */}
 <div data-workspace-tabs className="flex flex-wrap items-center gap-1.5 rounded-3xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                <button
+                {canCollectPayments && <button
+                    type="button"
+                    onClick={() => handleTabChange('collection')}
+                    className={`inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-xs font-black transition-all ${
+                        activeTab === 'collection'
+                            ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20'
+                            : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                    }`}
+                >
+                    <CreditCard size={15} />
+                    <span>{t('cashier.subTabs.queue', { defaultValue: isAr ? 'مهام التحصيل' : 'Collection Tasks' })}</span>
+                </button>}
+                {permissions.canViewInvoices && <button
                     type="button"
                     onClick={() => handleTabChange('billing')}
                     className={`inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-xs font-black transition-all ${
@@ -352,8 +370,8 @@ const CashierWorkspace = () => {
                     }`}
                 >
                     <Receipt size={15} />
-                    <span>{ar.tabs.billing}</span>
-                </button>
+                    <span>{t('billing.title', { defaultValue: isAr ? 'الفواتير والتحصيل المالي' : 'Billing & Payments' })}</span>
+                </button>}
 
                 {canCloseShift && <button
                     type="button"
@@ -365,7 +383,7 @@ const CashierWorkspace = () => {
                     }`}
                 >
                     <History size={15} />
-                    <span>{ar.tabs.reconciliation}</span>
+                    <span>{t('cashier.subTabs.reconciliation', { defaultValue: isAr ? 'مطابقة وجرد الخزينة' : 'Cash Drawer Reconciliation' })}</span>
                 </button>}
 
                 {canReviewShiftVariance && <button
@@ -378,14 +396,38 @@ const CashierWorkspace = () => {
                     }`}
                 >
                     <ShieldCheck size={15} />
-                    <span>{ar.tabs.supervisor}</span>
+                    <span>{t('cashier.subTabs.supervisor', { defaultValue: isAr ? 'لوحة المشرف المالي' : 'Finance Supervisor' })}</span>
                 </button>}
             </div>
 
             {/* Tab Contents */}
-            {activeTab === 'billing' && <BillingTab receptionShift={currentShift} />}
+            {activeTab === 'collection' && canCollectPayments && (
+                <CashierQueueTab
+                    canAppendSupplies={permissions.canAppendSupplies}
+                    canCloseShift={canCloseShift}
+                    canOpenShift={canOpenShift}
+                    canReconcileShifts={canReconcileShifts}
+                    canReviewShiftVariance={canReviewShiftVariance}
+                    currentShift={currentShift}
+                    currentUserId={user?.user_id || user?.id}
+                    invoices={receptionData.invoices}
+                    isLoadingShift={isLoadingShift}
+                    items={receptionData.cashierPending}
+                    locale={i18n.language}
+                    onCreateInvoice={permissions.has('CREATE_INVOICES') ? receptionData.createAppointmentInvoice : undefined}
+                    onMoveQueue={permissions.canManageQueue ? receptionData.moveQueue : undefined}
+                    onOpenPayment={paymentFlow.openPayment}
+                    onReconcile={handleReconciliation}
+                    onRefresh={receptionData.refreshWorkspace}
+                    onSupplyConsumed={receptionData.refreshWorkspace}
+                    onShiftAction={openShiftDialog}
+                    receptionScope="all"
+                    t={t}
+                />
+            )}
+            {activeTab === 'billing' && permissions.canViewInvoices && <BillingTab receptionShift={currentShift} onOpenPayment={paymentFlow.openPayment} />}
 
-            {activeTab === 'reconciliation' && (
+            {activeTab === 'reconciliation' && canCloseShift && (
                 <CashDrawerReconciliation
                     currentShift={currentShift}
                     onReconcile={handleReconciliation}
@@ -403,7 +445,7 @@ const CashierWorkspace = () => {
                 />
             )}
 
-            {activeTab === 'supervisor' && (
+            {activeTab === 'supervisor' && canReviewShiftVariance && (
                 <ShiftSupervisorPanel
                     currentShift={currentShift}
                     onOpenShift={() => openShiftDialog('open')}
@@ -420,7 +462,7 @@ const CashierWorkspace = () => {
                 title={
                     <span className="flex items-center gap-2">
                         {shiftAction === 'open' ? <WalletCards size={18} className="text-teal-600" /> : <LockKeyhole size={18} className="text-rose-600" />}
-                        <span>{shiftAction === 'open' ? ar.openShift : ar.closeShift}</span>
+                        <span>{shiftAction === 'open' ? t('billing.openShiftTitle', { defaultValue: isAr ? 'فتح وردية أمين الصندوق' : 'Open Cashier Shift' }) : t('billing.closeShiftTitle', { defaultValue: isAr ? 'إغلاق وردية أمين الصندوق' : 'Close Cashier Shift' })}</span>
                     </span>
                 }
                 size="default"
@@ -454,7 +496,7 @@ const CashierWorkspace = () => {
                     {shiftAction === 'open' ? (
                         <div>
                             <label className="mb-1.5 block font-bold text-slate-700 dark:text-slate-300">
-                                {ar.openingBalance}
+                                {t('billing.openingBalance', { defaultValue: isAr ? 'الرصيد الافتتاحي' : 'Opening Cash Float' })}
                             </label>
                             <input
                                 type="number"
@@ -471,11 +513,11 @@ const CashierWorkspace = () => {
                     ) : (
                         <>
                             <div className="rounded-xl border border-blue-200/80 bg-blue-50/70 p-3.5 text-xs font-medium text-blue-800 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-300">
-                                {ar.blindCountHelp}
+                                {t('billing.blindCountHelp', { defaultValue: isAr ? 'عُد النقد الفعلي قبل الإرسال. يظل المبلغ المتوقع مخفيًا حتى إغلاق الصندوق.' : 'Count physical cash before submitting. Expected amount remains hidden until the drawer is closed.' })}
                             </div>
                             <div>
                                 <label className="mb-1.5 block font-bold text-slate-700 dark:text-slate-300">
-                                    {ar.countedCash}
+                                    {t('billing.countedCash', { defaultValue: isAr ? 'النقد الفعلي المعدود' : 'Counted Cash' })}
                                 </label>
                                 <input
                                     type="number"
@@ -494,18 +536,26 @@ const CashierWorkspace = () => {
 
                     <div>
                         <label className="mb-1.5 block font-bold text-slate-700 dark:text-slate-300">
-                            {shiftAction === 'close' ? ar.varianceReason : ar.shiftNotes}
+                            {shiftAction === 'close' ? t('billing.varianceReason', { defaultValue: isAr ? '\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0627\u0644\u062c\u0631\u062f / \u0633\u0628\u0628 \u0627\u0644\u0641\u0627\u0631\u0642 \u0627\u0644\u0645\u0627\u0644\u064a' : 'Count Note / Variance Reason' }) : t('billing.shiftNotes', { defaultValue: isAr ? '\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0627\u0644\u0648\u0631\u062f\u064a\u0629' : 'Shift Notes' })}
+                            {shiftAction === 'close' && <span className="text-slate-400 ms-1">({isAr ? '\u0645\u0637\u0644\u0648\u0628 \u0639\u0646\u062f \u0648\u062c\u0648\u062f \u0641\u0631\u0642' : 'required if a variance exists'})</span>}
                         </label>
                         <textarea
                             rows={3}
                             value={shiftNotes}
                             onChange={(e) => setShiftNotes(e.target.value)}
-                            placeholder={isAr ? 'ملاحظات إضافية عن الوردية...' : 'Optional notes...'}
-                            className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-900 outline-none focus:border-teal-500 focus:bg-white dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                            placeholder={shiftAction === 'close'
+                                ? t('billing.varianceReason', { defaultValue: isAr ? '\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0627\u0644\u062c\u0631\u062f / \u0633\u0628\u0628 \u0627\u0644\u0641\u0627\u0631\u0642 \u0627\u0644\u0645\u0627\u0644\u064a' : 'Count Note / Variance Reason' })
+                                : t('billing.shiftNotesPlaceholder', { defaultValue: isAr ? '\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0625\u0636\u0627\u0641\u064a\u0629 \u0639\u0646 \u0627\u0644\u0648\u0631\u062f\u064a\u0629...' : 'Optional notes...' })}
+                            className={`w-full rounded-xl border p-3 text-xs text-slate-900 outline-none focus:bg-white dark:bg-slate-950 dark:text-white ${shiftAction === 'close' && countedCash !== '' && Math.abs(Number(countedCash) - (Number(currentShift?.opening_balance || 0) + Number(currentShift?.payment_totals?.Cash || 0))) > 0.01 && (!shiftNotes || shiftNotes.trim().length < 3) ? 'border-amber-500 bg-amber-50/40 focus:border-amber-600' : 'border-slate-200 bg-slate-50 focus:border-teal-500 dark:border-slate-700'}`}
                         />
                     </div>
                 </form>
             </Modal>
+
+            <PaymentCollectionModal
+                {...paymentFlow.paymentModalProps}
+                canDiscount={permissions.canDiscount}
+            />
 
             {/* Shift Variance Review Modal */}
             <Modal

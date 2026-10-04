@@ -6,6 +6,7 @@ describe('Database Migrations and Seeds Integrity Suite', () => {
     const databaseDir = path.resolve(__dirname, '../../database');
     const migrationsDir = path.join(databaseDir, 'migrations');
     const migrateJsPath = path.join(databaseDir, 'migrate.js');
+    const releaseDatabaseDir = path.resolve(__dirname, '../../viara-production-package/database');
 
     it('ensures database/migrate.js exists and defines MIGRATION_FILES and SEED_FILES', () => {
         expect(fs.existsSync(migrateJsPath)).toBe(true);
@@ -40,6 +41,49 @@ describe('Database Migrations and Seeds Integrity Suite', () => {
 
         expect(missing).toEqual([]);
         expect(empty).toEqual([]);
+    });
+
+    it('keeps the customer package migration manifest and SQL files identical to source', () => {
+        const sourceContent = fs.readFileSync(migrateJsPath, 'utf8');
+        const releaseContent = fs.readFileSync(path.join(releaseDatabaseDir, 'migrate.js'), 'utf8');
+        const sourceMatch = sourceContent.match(/MIGRATION_FILES\s*=\s*\[([\s\S]*?)\];/);
+        const releaseMatch = releaseContent.match(/MIGRATION_FILES\s*=\s*\[([\s\S]*?)\];/);
+        expect(sourceMatch).toBeTruthy();
+        expect(releaseMatch).toBeTruthy();
+
+        const sourceFiles = eval('[' + sourceMatch[1] + ']');
+        const releaseFiles = eval('[' + releaseMatch[1] + ']');
+        expect(releaseFiles).toEqual(sourceFiles);
+
+        const sourceSeedMatch = sourceContent.match(/SEED_FILES\s*=\s*\[([\s\S]*?)\];/);
+        const releaseSeedMatch = releaseContent.match(/SEED_FILES\s*=\s*\[([\s\S]*?)\];/);
+        expect(sourceSeedMatch).toBeTruthy();
+        expect(releaseSeedMatch).toBeTruthy();
+        const sourceSeeds = eval('[' + sourceSeedMatch[1] + ']');
+        const releaseSeeds = eval('[' + releaseSeedMatch[1] + ']');
+        expect(releaseSeeds).toEqual(sourceSeeds);
+
+        const releaseMigrationsDir = path.join(releaseDatabaseDir, 'migrations');
+        const packagedFiles = fs.readdirSync(releaseMigrationsDir)
+            .filter(filename => filename.endsWith('.sql'))
+            .sort();
+        expect(packagedFiles).toEqual([...sourceFiles].sort());
+
+        for (const filename of sourceFiles) {
+            const source = fs.readFileSync(path.join(migrationsDir, filename));
+            const packaged = fs.readFileSync(path.join(releaseMigrationsDir, filename));
+            const sourceChecksum = crypto.createHash('sha256').update(source).digest('hex');
+            const packagedChecksum = crypto.createHash('sha256').update(packaged).digest('hex');
+            expect(packagedChecksum).toBe(sourceChecksum);
+        }
+
+        for (const filename of ['schema.sql', '00_create_orthanc_db.sql', ...sourceSeeds]) {
+            const source = fs.readFileSync(path.join(databaseDir, filename));
+            const packaged = fs.readFileSync(path.join(releaseDatabaseDir, filename));
+            const sourceChecksum = crypto.createHash('sha256').update(source).digest('hex');
+            const packagedChecksum = crypto.createHash('sha256').update(packaged).digest('hex');
+            expect(packagedChecksum).toBe(sourceChecksum);
+        }
     });
 
     it('ensures every registered seed file exists on disk and is non-empty', () => {

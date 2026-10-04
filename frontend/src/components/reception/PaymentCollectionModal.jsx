@@ -5,14 +5,17 @@ import {
     AlertCircle,
     AlertTriangle,
     BadgePercent,
+    Banknote,
     Building2,
     Check,
     CheckCircle2,
     ChevronDown,
     ClipboardCheck,
+    CreditCard,
     FileCheck2,
     FileText,
     History,
+    Landmark,
     LockKeyhole,
     PackagePlus,
     Shield,
@@ -30,7 +33,7 @@ import { inputClass, labelClass, primaryBtn, secondaryBtn } from '../../utils/de
 import { formatMoney } from '../../utils/financialFormat';
 import { getInvoiceCoverageCategory, getContractRequirementsChecklist } from './receptionLogic';
 
-const PAYMENT_METHODS = ['Cash', 'Card', 'Credit Card', 'Wallet', 'Bank Transfer', 'Installment', 'Insurance'];
+const PAYMENT_METHODS = ['Cash', 'Card', 'Credit Card', 'Wallet', 'Bank Transfer'];
 const FORM_ID = 'collect-payment-form';
 
 const PaymentCollectionModal = ({
@@ -77,6 +80,28 @@ const PaymentCollectionModal = ({
     );
     const coverageCategory = useMemo(() => getInvoiceCoverageCategory(activeInv), [activeInv]);
     const checklist = useMemo(() => getContractRequirementsChecklist(coverageCategory, isAr), [coverageCategory, isAr]);
+    const expectedPaymentMethod = activeInv?.expected_payment_method || activeInv?.appointment_payment_method || null;
+    const completedPayments = useMemo(
+        () => (activeInv?.payments || []).filter((payment) => payment.payment_status === 'Completed'),
+        [activeInv?.payments]
+    );
+    const collectedByMethod = useMemo(() => completedPayments.reduce((summary, payment) => {
+        const method = payment.method || 'Cash';
+        summary[method] = (summary[method] || 0) + Number(payment.amount || 0);
+        return summary;
+    }, {}), [completedPayments]);
+    const paymentMethodLabel = (method) => {
+        if (!method) return t('billing.methodNotRecorded', { defaultValue: isAr ? 'غير محدد عند الحجز' : 'Not recorded at booking' });
+        if (method === 'Insurance') return t('billing.expectedInsurance', { defaultValue: isAr ? 'تأمين / جهة سداد' : 'Insurance / payer' });
+        return t(`billing.methods.${method}`, { defaultValue: method });
+    };
+
+    const isCardEquivalent = (a, b) => Boolean(a && b && /card/i.test(a) && /card/i.test(b));
+    const isMethodMatch = Boolean(
+        expectedPaymentMethod &&
+        paymentMethod &&
+        (expectedPaymentMethod === paymentMethod || isCardEquivalent(expectedPaymentMethod, paymentMethod))
+    );
 
     const isContrastRequired = Boolean(
         activeInv?.contrast_required ||
@@ -179,7 +204,7 @@ const PaymentCollectionModal = ({
                             {coverageCategory.type === 'self_pay' && (
                                 <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-slate-200/60 px-3 py-1 text-xs font-black text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                     <User size={14} />
-                                    <span>{isAr ? 'حساب خاص (نقدي / سداد مباشر)' : 'Self-Pay / Private Patient'}</span>
+                                    <span>{isAr ? 'حساب خاص (سداد مباشر)' : 'Self-Pay / Private Patient'}</span>
                                 </span>
                             )}
                         </div>
@@ -205,6 +230,59 @@ const PaymentCollectionModal = ({
                             <StatusPill status={invoice.invoice_status} />
                         </div>
                     </div>
+
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 dark:border-slate-800 dark:bg-slate-950/50">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t('billing.expectedPaymentMethod', { defaultValue: isAr ? 'وسيلة السداد المتوقعة عند الحجز' : 'Expected at booking' })}</p>
+                            <div className="mt-1 flex items-baseline justify-between gap-2">
+                                <strong className="text-sm font-black text-slate-800 dark:text-slate-100">{paymentMethodLabel(expectedPaymentMethod)}</strong>
+                                {Number(activeInv?.expected_payment_amount) > 0 && <span className="font-mono text-xs font-bold text-slate-500">{money(activeInv.expected_payment_amount)}</span>}
+                            </div>
+                        </div>
+                        <div className="rounded-xl border border-teal-200 bg-teal-50/70 px-3.5 py-3 dark:border-teal-900/50 dark:bg-teal-950/20">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-teal-700 dark:text-teal-300">{t('billing.currentCollectionMethod', { defaultValue: isAr ? 'وسيلة التحصيل لهذه الدفعة' : 'Method for this collection' })}</p>
+                            <div className="mt-1 flex items-baseline justify-between gap-2">
+                                <strong className="text-sm font-black text-teal-900 dark:text-teal-100">{paymentMethodLabel(paymentMethod)}</strong>
+                                <span className="font-mono text-xs font-bold text-teal-800 dark:text-teal-200">{money(paymentAmount || 0)}</span>
+                            </div>
+                            {expectedPaymentMethod === 'Insurance' ? (
+                                <p className="mt-1 text-[10px] font-medium text-teal-800 dark:text-teal-200">
+                                    {t('billing.insuranceCopayMethodNote', { defaultValue: isAr ? 'التأمين جهة التغطية الأساسية؛ اختر هنا وسيلة تحصيل مساهمة المريض (نسبة التحمل).' : 'Insurance is the primary payer; select how the patient copay is collected here.' })}
+                                </p>
+                            ) : isMethodMatch ? (
+                                <p className="mt-1 flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                    <CheckCircle2 size={12} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                    <span>{isAr ? 'وسيلة التحصيل متطابقة مع المسجلة عند الحجز ✓' : 'Tender matches booking ✓'}</span>
+                                </p>
+                            ) : expectedPaymentMethod && paymentMethod ? (
+                                <p className="mt-1 flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                                    <AlertCircle size={12} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                                    <span>{t('billing.methodDiffersFromBooking', { defaultValue: isAr ? 'تختلف الوسيلة الفعلية عن المتوقعة؛ ستُسجل الدفعة بالوسيلة الفعلية.' : 'This differs from the expected method; the receipt will record the actual method.' })}</span>
+                                </p>
+                            ) : null}
+                        </div>
+                    </div>
+
+                    {completedPayments.length > 0 && (
+                        <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 dark:border-slate-800 dark:bg-slate-950/50">
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t('billing.actualCollected', { defaultValue: isAr ? 'المبالغ المحصلة فعليًا' : 'Actually collected' })}</p>
+                                <strong className="font-mono text-sm font-black text-slate-800 dark:text-slate-100">{money(completedPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0))}</strong>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                {Object.entries(collectedByMethod).map(([method, amount]) => (
+                                    <span key={method} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                                        {paymentMethodLabel(method)} <span className="font-mono">{money(amount)}</span>
+                                    </span>
+                                ))}
+                                {Number(activeInv?.refunded_amount || 0) > 0 && (
+                                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/20 dark:text-rose-300">
+                                        {t('billing.refunded', { defaultValue: isAr ? 'مسترد' : 'Refunded' })} <span className="font-mono">{money(activeInv.refunded_amount)}</span>
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Contrast Requirement Alert & Quick Action */}
                     {needsContrastWarning && (
@@ -383,28 +461,70 @@ const PaymentCollectionModal = ({
                             {Number(paymentAmount || 0) <= 0 && Number(discountAmount || 0) <= 0 && <ValidationMessage>{t('billing.amountRequired', { defaultValue: 'Enter an amount greater than zero.' })}</ValidationMessage>}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label htmlFor="payment-method" className={labelClass}>{t('billing.paymentMethod', { defaultValue: 'Payment method' })}</label>
-                                <select id="payment-method" value={paymentMethod} onChange={(event) => onMethodChange(event.target.value)} className={`${inputClass} h-10 rounded-xl font-medium`}>
-                                    {PAYMENT_METHODS.map((method) => <option key={method} value={method}>{t(`billing.methods.${method}`, { defaultValue: method })}</option>)}
-                                </select>
+                        <div>
+                            <label className={labelClass}>{t('billing.paymentMethod', { defaultValue: 'Payment method' })}</label>
+                            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                                {PAYMENT_METHODS.map((method) => {
+                                    const active = paymentMethod === method;
+                                    const MethodIcon = /cash/i.test(method) ? Banknote
+                                        : /card/i.test(method) ? CreditCard
+                                            : /wallet/i.test(method) ? Wallet
+                                                : /bank/i.test(method) ? Landmark
+                                                    : /insurance/i.test(method) ? Shield
+                                                        : FileText;
+                                    return (
+                                        <button
+                                            key={method}
+                                            type="button"
+                                            onClick={() => onMethodChange(method)}
+                                            aria-pressed={active}
+                                            className={`flex min-h-10 items-center gap-2 rounded-xl border px-2.5 text-start text-[10.5px] font-black transition ${active
+                                                ? 'border-teal-500 bg-teal-600 text-white shadow-sm shadow-teal-600/15'
+                                                : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface)] hover:text-[var(--VIARA-ink)]'
+                                            }`}
+                                        >
+                                            <MethodIcon size={13} className="shrink-0" />
+                                            <span className="truncate">{t(`billing.methods.${method}`, { defaultValue: method })}</span>
+                                        </button>
+                                    );
+                                })}
                             </div>
+
                             {paymentMethod !== 'Cash' && (
-                                <div className="animate-in fade-in zoom-in-95 duration-200">
-                                    <label htmlFor="payment-reference" className={labelClass}>
-                                        {paymentMethod === 'Insurance' ? (isAr ? 'رقم الموافقة / البوليصة' : 'Policy / Approval #') : t('billing.paymentReference', { defaultValue: 'Reference' })}
-                                    </label>
+                                <div className="mt-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                                    <div className="flex items-center justify-between">
+                                        <label htmlFor="payment-reference" className={labelClass}>
+                                            {paymentMethod === 'Wallet'
+                                                ? (isAr ? 'رقم عملية المحفظة / مرجع التحويل (Wallet / InstaPay Ref)' : t('billing.paymentReference', { defaultValue: 'Wallet Reference / ID' }))
+                                                : paymentMethod === 'Bank Transfer'
+                                                    ? (isAr ? 'رقم الحوالة البنكية / إشعار الإيداع (Bank Transfer Ref)' : t('billing.paymentReference', { defaultValue: 'Bank Transfer / Deposit Slip #' }))
+                                                    : (isAr ? 'رقم إيصال الماكينة / كود التفويض (POS Auth Code)' : t('billing.paymentReference', { defaultValue: 'POS Terminal Receipt / Auth Code' }))}
+                                        </label>
+                                        <span className="text-[10px] font-bold text-rose-500">
+                                            {isAr ? '* إلزامي للتحصيل غير النقدي' : '* Required for non-cash'}
+                                        </span>
+                                    </div>
                                     <input
                                         id="payment-reference"
                                         type="text"
                                         maxLength={150}
-                                        required={paymentMethod !== 'Cash'}
+                                        required={Number(paymentAmount || 0) > 0 && paymentMethod !== 'Cash'}
                                         value={paymentReference}
                                         onChange={(event) => onReferenceChange(event.target.value)}
-                                        placeholder={paymentMethod === 'Insurance' ? (coverageCategory.policyNumber || 'Approval Code') : (isAr ? 'رقم الإيصال / المعاملة' : 'Transaction Ref')}
+                                        placeholder={paymentMethod === 'Wallet'
+                                            ? (isAr ? 'أدخل رقم عملية فودافون كاش / إنستاباي / المحفظة الإلكترونية' : t('billing.walletReferencePlaceholder', { defaultValue: 'Wallet transaction ID' }))
+                                            : paymentMethod === 'Bank Transfer'
+                                                ? (isAr ? 'أدخل رقم الحوالة أو إشعار الإيداع البنكي' : t('billing.bankReferencePlaceholder', { defaultValue: 'Bank transfer reference' }))
+                                                : (isAr ? 'أدخل رقم كود التفويض (Auth Code) أو إيصال ماكينة الدفع' : t('billing.cardReferencePlaceholder', { defaultValue: 'Card authorization or terminal receipt number' }))}
                                         className={`${inputClass} h-10 rounded-xl`}
                                     />
+                                    <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                        {paymentMethod === 'Wallet'
+                                            ? (isAr ? 'يُستخدم للتحقق ومطابقة ميزان المحافظ الإلكترونية في نهاية الوردية.' : 'Used to reconcile electronic wallet receipts at shift closure.')
+                                            : paymentMethod === 'Bank Transfer'
+                                                ? (isAr ? 'يُستخدم للمطابقة والتحقق مع كشف الحساب البنكي.' : 'Used to verify and match against bank deposit statements.')
+                                                : (isAr ? 'يُستخدم لمطابقة إجمالي تسوية ماكينات نقاط البيع (POS Batch Settlement).' : 'Used to reconcile POS terminal batch settlements at shift closure.')}
+                                    </p>
                                 </div>
                             )}
                         </div>
@@ -488,12 +608,10 @@ const PaymentCollectionModal = ({
                                 <button
                                     type="submit"
                                     disabled={isLoading || isLoadingInvoiceDetail || paymentInvalid || needsContrastWarning || (Number(paymentAmount || 0) > 0 && !currentShift)}
-                                    className={`${primaryBtn} min-h-10 w-full rounded-xl text-xs font-black sm:min-w-48 ${paymentMethod === 'Insurance' ? 'bg-teal-700 shadow-teal-900/10 hover:bg-teal-800' : ''}`}
+                                    className={`${primaryBtn} min-h-10 w-full rounded-xl text-xs font-black sm:min-w-48`}
                                 >
                                     {isLoading || isLoadingInvoiceDetail ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <Check size={16} />}
-                                    <span>
-                                        {isLoading ? t('billing.processing', { defaultValue: 'Processing...' }) : paymentMethod === 'Insurance' ? (isAr ? 'اعتماد مطالبة التأمين وإصدار الإيصال' : 'Approve & Issue Receipt') : (isAr ? 'تأكيد التحصيل وطباعة الإيصال' : t('billing.confirmPayment', { defaultValue: 'Confirm Payment' }))}
-                                    </span>
+                                    <span>{isLoading ? t('billing.processing', { defaultValue: 'Processing...' }) : (isAr ? 'تأكيد التحصيل وطباعة الإيصال' : t('billing.confirmPayment', { defaultValue: 'Confirm Payment' }))}</span>
                                 </button>
                             )}
                         </div>

@@ -50,9 +50,11 @@ describe('JWT authentication responses', () => {
     });
 
     test('keeps password-change enforcement as a genuine 403 response', async () => {
+        configureAuthDatabase({ query: jest.fn().mockResolvedValue({ rows: [{ current_session_id: 'session-1', is_active: true, role: 'Admin', must_change_password: true }] }) });
         const token = jwt.sign({
             user_id: 'user-1',
             role: 'Admin',
+            session_id: 'session-1',
             must_change_password: true
         }, TEST_SECRET, { expiresIn: '5m' });
         const req = { headers: { authorization: `Bearer ${token}` }, path: '/api/profile/preferences' };
@@ -67,10 +69,12 @@ describe('JWT authentication responses', () => {
             code: 'PASSWORD_CHANGE_REQUIRED'
         });
         expect(next).not.toHaveBeenCalled();
+        configureAuthDatabase(undefined);
     });
 
     test('strips revoked emergency claims before any controller can trust them', async () => {
         const db = { query: jest.fn()
+            .mockResolvedValueOnce({ rows: [{ current_session_id: 'session-1', is_active: true, role: 'Nurse', must_change_password: false }] })
             .mockResolvedValueOnce({ rows: [{
                 grant_id: '1a19df4f-c08a-47e3-ae6d-b0a2ea9ef9ac',
                 user_id: '4a8cc118-1d4e-4411-bbf7-6e9464fce34e',
@@ -84,6 +88,7 @@ describe('JWT authentication responses', () => {
         const token = jwt.sign({
             user_id: '4a8cc118-1d4e-4411-bbf7-6e9464fce34e',
             role: 'Nurse',
+            session_id: 'session-1',
             emergencyAccessId: '1a19df4f-c08a-47e3-ae6d-b0a2ea9ef9ac',
             elevatedPermissions: ['VIEW_EXAMS'],
             breakGlassExpiry: Date.now() + 60_000,

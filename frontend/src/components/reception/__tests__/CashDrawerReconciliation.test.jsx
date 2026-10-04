@@ -35,12 +35,13 @@ const mockT = (key, optionsOrDefault) => {
 };
 
 describe('CashDrawerReconciliation (True Blind Count)', () => {
+    // expected = opening_balance (500) + payment_totals.Cash (750) = 1250.00
     const mockShift = {
         shift_id: 'shift-101',
         cashier_id: 101,
         status: 'Open',
         opening_balance: 500,
-        expected_cash: 1250,
+        payment_totals: { Cash: 750 },
         collected_amount: 750,
         transaction_count: 5,
     };
@@ -57,12 +58,12 @@ describe('CashDrawerReconciliation (True Blind Count)', () => {
             </Provider>
         );
 
-        // Expected amount must be hidden behind blind count lock indicator
+        // Expected amount must stay masked behind the blind count lock indicator
         expect(screen.queryByText('1250.00')).not.toBeInTheDocument();
-        expect(screen.getAllByText(/محمي \(جرد أعمى\)|Confidential/i).length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByText('محمي').length).toBeGreaterThanOrEqual(1);
 
         // Regular cashier should not see supervisor reveal toggle
-        expect(screen.queryByText(/كشف المتوقع \(مشرف\)|Reveal Expected/i)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /كشف المتوقع/ })).not.toBeInTheDocument();
     });
 
     it('allows supervisors to toggle visibility of expected amount', () => {
@@ -78,12 +79,12 @@ describe('CashDrawerReconciliation (True Blind Count)', () => {
         );
 
         // Supervisor toggle button should be present
-        const revealBtn = screen.getByText(/كشف المتوقع \(مشرف\)|Reveal Expected/i);
+        const revealBtn = screen.getByRole('button', { name: /كشف المتوقع/ });
         expect(revealBtn).toBeInTheDocument();
 
         // Clicking reveal should show expected cash
         fireEvent.click(revealBtn);
-        expect(screen.getByText('1250.00')).toBeInTheDocument();
+        expect(screen.getAllByText('1250.00').length).toBeGreaterThanOrEqual(1);
     });
 
     it('transitions to review step upon entering count and reveals reconciliation details', async () => {
@@ -103,18 +104,15 @@ describe('CashDrawerReconciliation (True Blind Count)', () => {
         const input = screen.getByPlaceholderText('0.00');
         fireEvent.change(input, { target: { value: '1250' } });
 
-        const reviewBtn = screen.getByText(/مراجعة وتدقيق الجرد|Reconcile/i);
-        fireEvent.click(reviewBtn);
+        fireEvent.click(screen.getByRole('button', { name: /مراجعة ومطابقة الجرد/ }));
 
         // Now in review mode: expected and counted should be visible
         await waitFor(() => {
-            expect(screen.getByText(/Drawer is balanced|تمت التسوية|متطابق/i)).toBeInTheDocument();
-            expect(screen.getByText('1250.00')).toBeInTheDocument();
+            expect(screen.getByText('الدرج متطابق')).toBeInTheDocument();
+            expect(screen.getAllByText('1250.00').length).toBeGreaterThanOrEqual(1);
         });
 
-        // Click confirm
-        const confirmBtn = screen.getByText(/Confirm Reconciliation|تأكيد التسوية/i);
-        fireEvent.click(confirmBtn);
+        fireEvent.click(screen.getByRole('button', { name: /تأكيد المطابقة/ }));
 
         await waitFor(() => {
             expect(onReconcile).toHaveBeenCalledWith(expect.objectContaining({
@@ -142,18 +140,16 @@ describe('CashDrawerReconciliation (True Blind Count)', () => {
         const input = screen.getByPlaceholderText('0.00');
         fireEvent.change(input, { target: { value: '1200' } }); // 50 deficit
 
-        const reviewBtn = screen.getByText(/مراجعة وتدقيق الجرد|Reconcile/i);
-        fireEvent.click(reviewBtn);
+        fireEvent.click(screen.getByRole('button', { name: /مراجعة ومطابقة الجرد/ }));
 
         await waitFor(() => {
-            expect(screen.getByText(/Variance detected|تم رصد فرق/i)).toBeInTheDocument();
+            expect(screen.getByText('تم اكتشاف فرق')).toBeInTheDocument();
         });
 
-        const notesField = screen.getByPlaceholderText(/ملاحظات ومبررات الفرق/i);
+        const notesField = screen.getByPlaceholderText(/اذكر سبب الفرق/);
         fireEvent.change(notesField, { target: { value: 'عجز 50 تم توثيقه' } });
 
-        const confirmBtn = screen.getByText(/Confirm Reconciliation|تأكيد التسوية/i);
-        fireEvent.click(confirmBtn);
+        fireEvent.click(screen.getByRole('button', { name: /تأكيد المطابقة/ }));
 
         await waitFor(() => {
             expect(onReconcile).toHaveBeenCalledWith(expect.objectContaining({

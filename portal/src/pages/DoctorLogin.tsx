@@ -83,7 +83,7 @@ const DoctorLogin = () => {
   };
 
   const inputClass =
-    "h-12 w-full rounded-lg border border-[#DCE8E5] bg-[#F8FBFA] text-sm font-medium text-[#0B2348] outline-none transition placeholder:text-[#8A9AAD] hover:border-primary/35 focus:border-primary focus:bg-white focus:ring-2 focus:ring-primary/15 dark:border-white/10 dark:bg-white/[0.04] dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-white/[0.06]";
+    "h-12 w-full rounded-xl border border-[#DCE8E5] bg-[#F8FBFA] text-sm font-medium text-[#0B2348] outline-none transition duration-200 placeholder:text-[#8A9AAD] hover:border-primary/45 hover:bg-white focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white dark:placeholder:text-slate-500 dark:hover:bg-white/[0.06] dark:focus:bg-white/[0.06]";
 
   return (
     <PortalAuthShell
@@ -210,7 +210,7 @@ const DoctorLogin = () => {
         <button
           type="submit"
           disabled={isLoading || throttle.locked}
-          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-bold text-white shadow-[0_8px_24px_rgba(8,120,95,0.2)] transition hover:-translate-y-0.5 hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60"
+          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-white shadow-[0_10px_24px_rgba(8,120,95,0.24)] transition duration-200 hover:-translate-y-0.5 hover:bg-primary-dark hover:shadow-[0_14px_28px_rgba(8,120,95,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60"
         >
           {isLoading ? (
             <>

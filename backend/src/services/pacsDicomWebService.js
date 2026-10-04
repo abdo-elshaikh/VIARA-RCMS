@@ -1,5 +1,4 @@
 const logger = require('../config/logger');
-const settingsService = require('./settingsService');
 const dcmjs = require('dcmjs');
 const jpegLossless = require('jpeg-lossless-decoder-js');
 const { Readable } = require('stream');
@@ -10,41 +9,10 @@ const { createCircuitBreaker } = require('../utils/circuitBreaker');
 // A future native DIMSE+DICOMweb engine swaps this module out while the
 // frontend keeps talking to /api/pacs/dicom-web unchanged.
 
-const LEGACY_DEFAULTS = {
-    url: 'http://orthanc:8042',
-    username: 'VIARA'
-};
-
-const envOrthancUrl = () => process.env.ORTHANC_API_URL || process.env.ORTHANC_URL || LEGACY_DEFAULTS.url;
-
-const preferEnvOverLegacyDefault = (settingValue, envValue, legacyDefault) => {
-    if (settingValue === 'orthanc' || !settingValue) return envValue || legacyDefault;
-    if (envValue && (settingValue === legacyDefault || settingValue.includes('localhost') || settingValue.includes('127.0.0.1')) && !envValue.includes('localhost') && !envValue.includes('127.0.0.1')) {
-        return envValue;
-    }
-    return settingValue || envValue || legacyDefault;
-};
-
+const { getOrthancConnection } = require('./orthancConnectionService');
 const getOrthancConfig = async () => {
-    const envUrl = envOrthancUrl();
-    const envUsername = process.env.ORTHANC_USERNAME || LEGACY_DEFAULTS.username;
-    const envPassword = process.env.ORTHANC_PASSWORD;
-    if (!envPassword) {
-        throw new Error('ORTHANC_PASSWORD environment variable is required but not set');
-    }
-
-    const settingUrl = await settingsService.get('orthanc_api_url', envUrl);
-    const settingUsername = await settingsService.get('orthanc_username', envUsername);
-    const settingPassword = await settingsService.get('orthanc_password', envPassword);
-
-    const url = preferEnvOverLegacyDefault(settingUrl, envUrl, LEGACY_DEFAULTS.url).replace(/\/+$/, '');
-    const username = preferEnvOverLegacyDefault(settingUsername, envUsername, LEGACY_DEFAULTS.username);
-    const password = preferEnvOverLegacyDefault(settingPassword, envPassword, envPassword);
-
-    return {
-        url,
-        authorization: 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
-    };
+    const { url, username, password } = await getOrthancConnection();
+    return { url, authorization: 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64') };
 };
 
 const getOrthancUrl = async () => (await getOrthancConfig()).url;
@@ -95,16 +63,52 @@ const rewriteBulkDataUri = (value) => {
     }
 };
 
-const rewriteDicomJsonBulkDataUris = (value) => {
+const repairMojibakeString = (str) => {
+    if (typeof str !== 'string' || !str) return str;
+    if (/[ØÙ][\u0080-\u00BF]/.test(str)) {
+        try {
+            const buf = Buffer.from(str, 'latin1');
+            const utf8 = buf.toString('utf8');
+            if (utf8 && !utf8.includes('\uFFFD')) {
+                return utf8;
+            }
+        } catch {
+            // retain str if decode fails
+        }
+    }
+    return str;
+};
+
+const rewriteDicomJsonBulkDataUris = (value, parentIndex) => {
     if (Array.isArray(value)) {
-        value.forEach(rewriteDicomJsonBulkDataUris);
+        value.forEach((item, idx) => rewriteDicomJsonBulkDataUris(item, idx));
         return value;
     }
     if (!value || typeof value !== 'object') return value;
 
+    // Synthesize valid InstanceNumber (0020,0013) on instance objects in metadata to prevent 'I: NaN' in OHIF/Cornerstone
+    if (value['00080018'] && parentIndex !== undefined) {
+        const instTag = value['00200013'];
+        const hasValidNum = instTag && Array.isArray(instTag.Value) && instTag.Value[0] != null && !Number.isNaN(Number(instTag.Value[0]));
+        if (!hasValidNum) {
+            value['00200013'] = { vr: 'IS', Value: [parentIndex + 1] };
+        }
+    }
+
     for (const [key, nestedValue] of Object.entries(value)) {
         if (key === 'BulkDataURI') {
             value[key] = rewriteBulkDataUri(nestedValue);
+        } else if (key === 'Value' && Array.isArray(nestedValue)) {
+            for (let i = 0; i < nestedValue.length; i++) {
+                if (typeof nestedValue[i] === 'string') {
+                    nestedValue[i] = repairMojibakeString(nestedValue[i]);
+                } else if (typeof nestedValue[i] === 'object' && nestedValue[i] !== null) {
+                    if (typeof nestedValue[i].Alphabetic === 'string') {
+                        nestedValue[i].Alphabetic = repairMojibakeString(nestedValue[i].Alphabetic);
+                    }
+                    rewriteDicomJsonBulkDataUris(nestedValue[i]);
+                }
+            }
         } else {
             rewriteDicomJsonBulkDataUris(nestedValue);
         }
@@ -118,7 +122,7 @@ const getSopInstanceUid = (req, subPath) => {
         return queryParams.get('objectUID');
     }
 
-    const renderedMatch = subPath.match(/\/instances\/([^/]+)\/rendered$/);
+    const renderedMatch = subPath.match(/\/instances\/([^/]+)\/(?:frames\/\d+\/)?rendered$/);
     if (renderedMatch) {
         return decodeURIComponent(renderedMatch[1]);
     }
@@ -203,9 +207,9 @@ const encodeGrayscaleBmp = (pixels, width, height) => {
     return buffer;
 };
 
-const renderDicomFileToBmp = async (orthancUrl, authorization, instanceId) => {
+const renderDicomFileToBmp = async (orthancUrl, authorization, instanceId, frameIndex = 0, signal) => {
     const fileRes = await fetch(`${orthancUrl}/instances/${instanceId}/file`, {
-        headers: { Authorization: authorization, Accept: 'application/dicom' }
+        headers: { Authorization: authorization, Accept: 'application/dicom' }, signal
     });
     if (!fileRes.ok) return null;
 
@@ -229,7 +233,7 @@ const renderDicomFileToBmp = async (orthancUrl, authorization, instanceId) => {
 
     const bytesPerPixel = bitsAllocated / 8;
     const framePixels = width * height;
-    if (pixelBuffer.byteLength < framePixels * bytesPerPixel) return null;
+    if (pixelBuffer.byteLength < (frameIndex + 1) * framePixels * bytesPerPixel) return null;
 
     const view = new DataView(pixelBuffer);
     const raw = new Float32Array(framePixels);
@@ -239,7 +243,7 @@ const renderDicomFileToBmp = async (orthancUrl, authorization, instanceId) => {
     const intercept = numberFromDicomValue(dataset.RescaleIntercept, 0) || 0;
 
     for (let i = 0; i < framePixels; i += 1) {
-        const value = getPixelValue(view, i * bytesPerPixel, bitsAllocated, signed);
+        const value = getPixelValue(view, (frameIndex * framePixels + i) * bytesPerPixel, bitsAllocated, signed);
         if (value === null) return null;
         const scaled = value * slope + intercept;
         raw[i] = scaled;
@@ -269,9 +273,10 @@ const renderDicomFileToBmp = async (orthancUrl, authorization, instanceId) => {
     return encodeGrayscaleBmp(output, width, height);
 };
 
-const lookupInstanceId = async (orthancUrl, authorization, sopInstanceUid) => {
+const lookupInstanceId = async (orthancUrl, authorization, sopInstanceUid, signal) => {
     const findRes = await fetch(`${orthancUrl}/tools/find`, {
         method: 'POST',
+        signal,
         headers: { Authorization: authorization, 'Content-Type': 'application/json' },
         body: JSON.stringify({
             Level: 'Instance',
@@ -289,6 +294,7 @@ const lookupInstanceId = async (orthancUrl, authorization, sopInstanceUid) => {
     // path for newer archives while /tools/find covers the bundled image.
     const lookupRes = await fetch(`${orthancUrl}/tools/lookup`, {
         method: 'POST',
+        signal,
         headers: { Authorization: authorization, 'Content-Type': 'text/plain' },
         body: sopInstanceUid
     });
@@ -297,19 +303,20 @@ const lookupInstanceId = async (orthancUrl, authorization, sopInstanceUid) => {
     return parseLookupResult(await lookupRes.json());
 };
 
-const fetchPreviewFallback = async (orthancUrl, authorization, sopInstanceUid) => {
+const fetchPreviewFallback = async (orthancUrl, authorization, sopInstanceUid, frameIndex, signal) => {
     if (!sopInstanceUid) return null;
 
-    const instanceId = await lookupInstanceId(orthancUrl, authorization, sopInstanceUid);
+    const instanceId = await lookupInstanceId(orthancUrl, authorization, sopInstanceUid, signal);
     if (!instanceId) return null;
 
-    const previewRes = await fetch(`${orthancUrl}/instances/${instanceId}/preview`, {
-        headers: { Authorization: authorization, Accept: 'image/jpeg, image/png;q=0.9, */*;q=0.1' }
+    const previewPath = frameIndex === null ? 'preview' : `frames/${frameIndex}/preview`;
+    const previewRes = await fetch(`${orthancUrl}/instances/${instanceId}/${previewPath}`, {
+        headers: { Authorization: authorization, Accept: 'image/jpeg, image/png;q=0.9, */*;q=0.1' }, signal
     });
 
     if (previewRes.ok) return previewRes;
 
-    const bmp = await renderDicomFileToBmp(orthancUrl, authorization, instanceId);
+    const bmp = await renderDicomFileToBmp(orthancUrl, authorization, instanceId, frameIndex || 0, signal);
     if (!bmp) return null;
 
     logger.warn('PACS: Orthanc preview failed, rendered DICOM pixels in VIARA fallback', {
@@ -356,7 +363,10 @@ const proxyToOrthanc = async (req, res, subPath) => {
     }
 
     const abortController = new AbortController();
-    const onClientClosed = () => abortController.abort();
+    const deadline = setTimeout(() => abortController.abort(), 5 * 60 * 1000);
+    deadline.unref?.();
+    res.once('finish', () => clearTimeout(deadline));
+    const onClientClosed = () => { clearTimeout(deadline); abortController.abort(); };
     req.on('aborted', onClientClosed);
     res.on('close', onClientClosed);
 
@@ -375,7 +385,9 @@ const proxyToOrthanc = async (req, res, subPath) => {
                 sopInstanceUid, status: upstream.status, path: subPath
             });
 
-            const previewRes = await fetchPreviewFallback(orthancUrl, headers.Authorization, sopInstanceUid);
+            const frameMatch = subPath.match(/\/frames\/(\d+)\/rendered$/);
+            const previewRes = await fetchPreviewFallback(orthancUrl, headers.Authorization, sopInstanceUid,
+                frameMatch ? Math.max(0, Number(frameMatch[1]) - 1) : null, abortController.signal);
             if (previewRes) {
                 upstream = previewRes;
             } else {
@@ -432,11 +444,15 @@ const proxyToOrthanc = async (req, res, subPath) => {
         const normalizedKey = key.toLowerCase();
         const staleBufferedHeader = bufferedBody && ['content-length', 'etag', 'content-md5'].includes(normalizedKey);
         if (!STRIP_RESPONSE_HEADERS.has(normalizedKey) && !staleBufferedHeader) {
+            if (normalizedKey === 'content-length' && upstream.headers.get('content-encoding')) return;
             res.setHeader(key, value);
         }
     });
 
     if (bufferedBody) {
+        if (isDicomJson) {
+            res.setHeader('Content-Type', 'application/dicom+json; charset=utf-8');
+        }
         res.setHeader('Content-Length', String(bufferedBody.length));
         req.off('aborted', onClientClosed);
         res.off('close', onClientClosed);

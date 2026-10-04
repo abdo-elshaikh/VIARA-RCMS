@@ -22,13 +22,32 @@
       "copyPassword": "Copy Password",
       "copyAll": "Copy All",
       "print": "Print",
-      "done": "Done"
+      "done": "Done",
+      "sendToPatient": "Send to Patient",
+      "sendViaWhatsapp": "Send via WhatsApp",
+      "sendViaSms": "Send via SMS",
+      "sendViaEmail": "Send via Email",
+      "copyPatientMessage": "Copy Message Text",
+      "toggleSendOptions": "Dispatch Options"
     },
     "toasts": {
       "passwordCopied": "Password copied.",
       "credentialsCopied": "Credentials copied.",
       "copyFailed": "Failed to copy credentials.",
-      "popupBlocked": "Allow popups to print credentials."
+      "popupBlocked": "Allow popups to print credentials.",
+      "messageCopied": "Patient message copied to clipboard.",
+      "phoneRequired": "Phone number is required for messaging.",
+      "emailRequired": "Email address is required."
+    },
+    "dispatch": {
+      "title": "Send Credentials to Patient",
+      "subtitle": "Dispatch login details directly via patient's preferred channel",
+      "phoneLabel": "Mobile / WhatsApp Number",
+      "emailLabel": "Email Address",
+      "whatsappHint": "Opens WhatsApp with pre-composed patient login details",
+      "smsHint": "Opens SMS messaging with login instructions",
+      "emailHint": "Prepares an official credential email for the recipient",
+      "preview": "Message Preview"
     },
     "print": {
       "title": "{{portal}} Credentials",
@@ -404,7 +423,12 @@
     "noOpenAlerts": "No open alerts.",
     "resolve": "Resolve",
     "dismiss": "Dismiss",
-    "requestId": "Request ID"
+    "requestId": "Request ID",
+    "advancedFilters": "Advanced filters",
+    "inspectEvent": "Inspect event",
+    "copyPayload": "Copy event payload",
+    "activeFilterLabel": "Active filters",
+    "embeddedDescription": "Tamper-evident events and security monitoring"
   },
   "rbac": {
     "eyebrow": "Access & Security Governance",
@@ -895,8 +919,9 @@
       "VIEW_USERS": "Browse user accounts",
       "MANAGE_USERS": "Create, edit & deactivate users",
       "MANAGE_ROLES": "Manage permissions & role matrix",
-      "VIEW_AUDIT_LOGS": "Browse the core audit log",
-      "VIEW_AUDIT_TRAILS": "Browse the detailed security audit trail",
+      "VIEW_AUDIT_LOGS": "View staff activity and core operations",
+      "EXPORT_STAFF_ACTIVITY": "Export limited staff activity",
+      "VIEW_AUDIT_TRAILS": "View the detailed security audit trail and alerts",
       "EXPORT_AUDIT_TRAILS": "Export audit & security records",
       "VERIFY_AUDIT_CHAIN": "Verify the audit encryption chain",
       "RUN_AUDIT_DETECTIONS": "Run security risk detection rules",
@@ -1022,8 +1047,9 @@
       "VIEW_USERS": "Allows browsing system user accounts and activation status.",
       "MANAGE_USERS": "Allows creating new users, assigning roles, and changing passwords.",
       "MANAGE_ROLES": "Allows editing and customizing the permissions granted to each system role.",
-      "VIEW_AUDIT_LOGS": "Allows tracing the core operations log to know who did what and when.",
-      "VIEW_AUDIT_TRAILS": "Allows accessing the advanced security audit log and risk alerts.",
+      "VIEW_AUDIT_LOGS": "Allows viewing limited staff operations without sensitive security or clinical details.",
+      "EXPORT_STAFF_ACTIVITY": "Allows exporting limited staff activity when permitted by the organization.",
+      "VIEW_AUDIT_TRAILS": "Allows viewing detailed security, compliance, and risk audit events.",
       "EXPORT_AUDIT_TRAILS": "Allows exporting security audit records for regulators and inspectors.",
       "VERIFY_AUDIT_CHAIN": "Allows programmatically verifying the audit log encryption chain against tampering.",
       "RUN_AUDIT_DETECTIONS": "Allows running the automated scanning engine to detect suspicious or abnormal operations.",
@@ -1361,7 +1387,7 @@
       "title": "Archive storage",
       "help": "Manage hot Orthanc storage visibility, VIARA archive index health, and tiering logs for long-term retention.",
       "runTiering": "Run eligibility scan",
-      "confirmTiering": "Run a tiering scan for eligible hot items? This updates VIARA storage records and does not delete Orthanc files unless the deployment archive is configured.",
+      "confirmTiering": "Create verified encrypted archive copies of eligible images? The original images remain in Orthanc and are not deleted.",
       "tiered": "Tiering completed: {{count}} item(s) migrated",
       "tierError": "Failed to start the tiering scan",
       "loading": "Loading storage summary",
@@ -1420,9 +1446,9 @@
     "updateSuccess": "User security profile & permissions updated successfully",
     "notFound": "User Not Found",
     "notFoundDesc": "The requested user account does not exist or has been removed.",
-    "eyebrow": "Access control",
-    "title": "System users",
-    "description": "Manage staff identities, role coverage, account status, and secure access across the radiology center management system.",
+    "eyebrow": "Identity & Access Governance (IAM)",
+    "title": "User Accounts & IAM Management",
+    "description": "Manage staff digital identities, authentication credentials, security role coverage, and access permissions adhering to Separation of Duties (SoD).",
     "header": {
       "staffRoles": "{{count}} staff roles",
       "portalRoles": "{{count}} portal roles managed separately",
@@ -1438,7 +1464,8 @@
       "retry": "Retry",
       "export": "Export CSV",
       "copyEmail": "Copy email",
-      "generatePassword": "Generate password"
+      "generatePassword": "Generate password",
+      "viewDetails": "View Details & Movements"
     },
     "metrics": {
       "label": "User access summary",
@@ -1720,7 +1747,38 @@
       "No Show": "No Show",
       "Waiting": "Waiting",
       "In Queue": "In Queue"
-    }
+    },
+    "interactionSuccess": "Visit and interaction details logged successfully",
+    "interactionError": "Failed to save doctor interaction record",
+    "logVisit": "Log Field Visit",
+    "fieldVisits": "Field Visits & Interactions Log",
+    "noInteractions": "No visits or interactions logged for this doctor",
+    "noInteractionsDesc": "Log field visits and calls to track referral relationship engagement and feedback.",
+    "logFirstVisit": "Log First Field Visit",
+    "types": {
+      "visit": "Clinic Visit (Field Visit)",
+      "call": "Phone Call",
+      "meeting": "Official Meeting",
+      "whatsapp": "WhatsApp Message",
+      "note": "Internal Note"
+    },
+    "purposes": {
+      "routine": "Routine Liaison",
+      "materials": "Marketing Materials Delivery",
+      "feedback": "Feedback / Issue Resolution",
+      "contract": "Contract & Commission Discussion",
+      "modality": "New Modality & Service Intro"
+    },
+    "materialsDelivered": "Materials & Brochures Delivered",
+    "nextFollowUp": "Next Follow-up Date",
+    "logVisitModalTitle": "Log Field Visit or Doctor Interaction",
+    "interactionType": "Interaction Type",
+    "purpose": "Interaction Purpose",
+    "interactionDate": "Interaction Date & Time",
+    "materialsPlaceholder": "e.g. MRI flyers, referral pads, discount vouchers...",
+    "notesAndFeedback": "Notes & Doctor Feedback",
+    "notesPlaceholder": "Enter discussion highlights, doctor feedback on report turnaround or pricing, suggestions...",
+    "saveInteraction": "Save & Log Interaction"
   },
   "referringDoctors": {
     "eyebrow": "Referral network",
@@ -1735,7 +1793,10 @@
       "retry": "Retry",
       "cancel": "Cancel",
       "save": "Save physician",
-      "saving": "Saving..."
+      "saving": "Saving...",
+      "viewDetails": "View details and referrals",
+      "viewDetailsShort": "View details",
+      "viewFullProfile": "View full profile and referrals"
     },
     "metrics": {
       "label": "Referral network summary",
@@ -1753,6 +1814,16 @@
     "directory": {
       "title": "Physician directory",
       "description": "Review contact details and referral performance, then select a physician for full details."
+    },
+    "badges": {
+      "governed": "Managed referral network",
+      "commissions": "Commission tracking",
+      "portal": "Doctor portal access"
+    },
+    "viewMode": {
+      "label": "Directory layout",
+      "table": "Table",
+      "cards": "Cards"
     },
     "filters": {
       "searchLabel": "Search referring physicians",
@@ -1790,6 +1861,20 @@
       "commission": "Commission",
       "contactLegal": "Contact & legal details"
     },
+    "portal": {
+      "emailRequired": "Add an email address before generating doctor portal credentials.",
+      "credentialsTitle": "Doctor portal credentials",
+      "portalLabel": "Referring doctor portal",
+      "credentialsHint": "Give these credentials directly to the referring doctor or authorized clinic contact. Keep the password private.",
+      "generateFailed": "Could not generate doctor portal credentials.",
+      "generate": "Generate portal credentials",
+      "generateShort": "Portal access",
+      "generating": "Generating credentials...",
+      "emailHint": "The doctor's portal login will be sent to this email address.",
+      "generateAfterSave": "Generate portal access after saving",
+      "generateAfterSaveHint": "Save the physician first, then securely hand off the portal credentials.",
+      "saveAndGenerate": "Save and generate"
+    },
     "states": {
       "errorTitle": "Referral directory unavailable",
       "errorDescription": "Failed to load the referring physician directory. Please try again.",
@@ -1816,7 +1901,9 @@
       "commission": "Commission rate (%)",
       "active": "Active physician account",
       "notes": "Additional notes",
-      "notesPlaceholder": "Add relevant relationship or contract notes..."
+      "notesPlaceholder": "Add relevant relationship or contract notes...",
+      "modalHint": "Keep referral and contact details accurate for clinic coordination.",
+      "moreDetails": "Business details and notes"
     },
     "contactMethods": {
       "Phone": "Phone call",
@@ -1839,5 +1926,10 @@
       "imported": "Imported {{count}} referring physicians.",
       "importFailed": "CSV import failed."
     }
+  },
+  "status": "Status",
+  "common": {
+    "back": "Back",
+    "saveChanges": "Save changes"
   }
 }

@@ -1,11 +1,9 @@
-/* eslint-disable react-refresh/only-export-components -- form defaults and catalog are intentionally co-located */
 import React from 'react';
 import { Clock3, Contrast, Edit3, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Modal from '../../ui/Modal';
 import { Status, Field, Select, Check, Actions } from './SharedComponents';
-
-export const emptyExam = { modalityId: '', code: '', name: '', price: '', durationMinutes: '30', bodyPart: '', preparationInstructions: '', contrastRequired: false, isActive: true };
+import { emptyExam } from '../../../types/equipment';
 
 export const ExamCatalog = ({ records, t: propT, onEdit, onDelete }) => {
     const { t: hookT } = useTranslation('settings');

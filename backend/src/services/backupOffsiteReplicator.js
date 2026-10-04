@@ -214,6 +214,9 @@ const replicateBackup = async (backup) => {
     try {
         const checksum = await computeChecksum(filepath);
         await uploadToRemote(filepath, filename, checksum);
+        for (const companion of backup.companions || []) {
+            await uploadToRemote(companion.filepath, companion.filename, await computeChecksum(companion.filepath));
+        }
         logger.info(`Offsite backup replicated: ${filename} (SHA-256: ${checksum.substring(0, 16)}...)`);
         return { replicated: true, filename, checksum };
     } catch (error) {

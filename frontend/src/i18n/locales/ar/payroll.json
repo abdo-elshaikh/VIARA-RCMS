@@ -61,7 +61,7 @@
     "inactive": "غير نشط",
     "remaining": "المتبقي",
     "manual": "يدوي",
-    "approvalRequired": "????? ?????????",
+    "approvalRequired": "يتطلب الاعتماد",
     "auto": "تلقائي"
   },
   "summary": {
@@ -84,12 +84,15 @@
     "name": "الاسم",
     "amount": "المبلغ",
     "percentage": "النسبة",
+    "recurrenceType": "دورية الاستقطاع",
+    "maxOccurrences": "الحد الأقصى للتكرار",
     "penaltyType": "نوع الجزاء",
     "reason": "السبب",
     "ruleType": "نوع القاعدة",
     "method": "طريقة الحساب",
     "value": "القيمة",
-    "paymentDate": "تاريخ الدفع"
+    "paymentDate": "تاريخ الدفع",
+    "source": "المصدر"
   },
   "placeholders": {
     "periodName": "مرتبات يوليو 2026",
@@ -104,7 +107,8 @@
     "approve": "اعتماد",
     "markPaid": "تسجيل الدفع",
     "lock": "إغلاق",
-    "save": "حفظ"
+    "save": "حفظ",
+    "cancelPayroll": "إلغاء مسير الرواتب"
   },
   "dialog": {
     "confirmTitle": "تأكيد إجراء الرواتب",
@@ -127,10 +131,65 @@
     "periodDates": "يجب أن يكون تاريخ نهاية فترة الرواتب بعد تاريخ البداية أو مساويا له.",
     "monthlySalary": "يتطلب التعويض الشهري راتبا أساسيا أكبر من صفر.",
     "hourlyRate": "يتطلب التعويض بالساعة أجرا بالساعة أكبر من صفر.",
-    "deductionValue": "يتطلب الخصم مبلغا أو نسبة."
+    "deductionValue": "يتطلب الخصم مبلغا أو نسبة.",
+    "paymentReference": "أدخل مرجع الدفع لهذه الطريقة."
   },
   "states": {
     "loading": "جاري التحميل..."
+  },
+  "payrollStatuses": {
+    "Draft": "مسودة",
+    "Calculated": "تم الحساب",
+    "Reviewed": "تمت المراجعة",
+    "Approved": "معتمد",
+    "Paid": "مدفوع",
+    "Locked": "مغلق",
+    "Cancelled": "ملغى"
+  },
+  "penaltyStatuses": {
+    "Pending Approval": "بانتظار الاعتماد",
+    "Approved": "معتمد",
+    "Rejected": "مرفوض",
+    "Cancelled": "ملغى",
+    "Applied": "تم تطبيقه"
+  },
+  "deductionStatuses": {
+    "Draft": "بانتظار الاعتماد",
+    "Approved": "معتمد",
+    "Paused": "موقوف مؤقتًا",
+    "Cancelled": "ملغى",
+    "Completed": "مكتمل"
+  },
+  "deductionReview": {
+    "selfApprovalBlocked": "لا يمكن لمنشئ الخصم اعتماد طلبه بنفسه.",
+    "runReservationBlocked": "ألغِ مسير الرواتب المرتبط أو أعد حسابه أولًا."
+  },
+  "acknowledgementStatuses": {
+    "Pending": "بانتظار الإقرار",
+    "Acknowledged": "تم الإقرار",
+    "Disputed": "قيد مراجعة الاعتراض",
+    "Resolved": "تم حسم الاعتراض"
+  },
+  "employee": {
+    "eyebrow": "سجل الرواتب",
+    "title": "جزاءاتي",
+    "description": "راجع الجزاءات المعتمدة، وأقر بها أو أرسل اعتراضًا مسببًا لمراجعة الموارد البشرية.",
+    "incidentDate": "تاريخ الواقعة",
+    "loadError": "تعذر تحميل سجل الجزاءات الخاص بك.",
+    "empty": "لا توجد جزاءات مسجلة على حسابك.",
+    "acknowledge": "الإقرار بالجزاء",
+    "acknowledged": "تم الإقرار",
+    "dispute": "اعتراض",
+    "disputeTitle": "الاعتراض على جزاء",
+    "disputeMessage": "وضح سبب اعتراضك على جزاء {{type}}. سيُرسل السبب إلى الموارد البشرية والإدارة للمراجعة.",
+    "disputeReason": "سبب الاعتراض",
+    "disputePlaceholder": "اشرح المشكلة وأي تواريخ أو مستندات ذات صلة...",
+    "disputeReasonRequired": "أدخل سببًا لا يقل عن 3 أحرف.",
+    "submitDispute": "إرسال الاعتراض",
+    "disputeSubmitted": "تم إرسال الاعتراض للمراجعة.",
+    "disputeInReview": "اعتراضك قيد المراجعة:",
+    "disputeResolved": "تم حسم الاعتراض:",
+    "actionFailed": "تعذر إكمال الإجراء على الجزاء."
   },
   "toast": {
     "periodCreated": "تم إنشاء فترة المرتبات",
@@ -143,7 +202,8 @@
     "deductionSaved": "تم حفظ الخصم",
     "penaltySaved": "تم حفظ الجزاء",
     "ruleSaved": "تم حفظ القاعدة",
-    "saveFailed": "تعذر حفظ إعدادات المرتبات"
+    "saveFailed": "تعذر حفظ إعدادات المرتبات",
+    "createPeriodFailed": "تعذر إنشاء فترة المرتبات"
   },
   "indefiniteDurationAutoRenewing": "عقد غير محدد المدة (يتجدد تلقائياً)",
   "medicalCenter": "المنشأة الطبية",
@@ -253,7 +313,8 @@
   "payslip": {
     "docRef": "رقم التوثيق: {{contractId}} · تاريخ التحرير: {{issueDate}}",
     "designation": "المسمى الوظيفي: {{role}}",
-    "staffId": "المعرف الوظيفي: {{id}}"
+    "staffId": "المعرف الوظيفي: {{id}}",
+    "title": "قسيمة الراتب"
   },
   "disbursementDetails": "بيانات الصرف والتحويل البنكي",
   "newCompensationContract": "إضافة وتوثيق عقد تعويض جديد",
@@ -283,5 +344,115 @@
   "areYouSureYouWantTo": "هل أنت متأكد من تنفيذ هذا الإجراء؟",
   "payrollSetup": {
     "changeStatusConfirm": "تغيير الحالة إلى {{status}}؟"
+  },
+  "penaltyReview": {
+    "cancelTitle": "إلغاء جزاء معتمد",
+    "cancelMessage": "هل تريد إلغاء {{name}}؟ اكتب السبب. لا يمكن الإلغاء بعد أن يصبح مسير الرواتب غير قابل للتعديل.",
+    "reason": "سبب القرار",
+    "reasonRequired": "أدخل سببًا لا يقل عن 3 أحرف.",
+    "cancelPlaceholder": "وضح سبب إلغاء هذا الجزاء...",
+    "cancelAction": "إلغاء الجزاء"
+  },
+  "disputeReview": {
+    "title": "حسم اعتراض الموظف",
+    "message": "اختر نتيجة الاعتراض على {{name}}. سيُحفظ قرارك في سجل التدقيق.",
+    "outcomes": {
+      "Approved": "تأييد الجزاء",
+      "Rejected": "رفض الجزاء"
+    },
+    "actions": {
+      "Approved": "تأييد الجزاء",
+      "Rejected": "رفض الجزاء"
+    },
+    "resolutionPlaceholder": "لخص المستندات وأسباب القرار...",
+    "uphold": "تأييد الجزاء",
+    "reject": "إلغاء الجزاء"
+  },
+  "exportColumns": {
+    "employeeName": "اسم الموظف",
+    "role": "الوظيفة",
+    "grossEarnings": "إجمالي المستحقات",
+    "deductions": "الاستقطاعات",
+    "penalties": "الجزاءات",
+    "employerContributions": "مساهمات جهة العمل",
+    "netPay": "صافي الراتب",
+    "currency": "العملة",
+    "period": "الفترة",
+    "paymentDate": "تاريخ الصرف",
+    "paymentMethod": "وسيلة الدفع",
+    "paymentReference": "مرجع الدفع",
+    "runStatus": "حالة المسير"
+  },
+  "addDeductionOrLoan": "إضافة استقطاع أو سلفة / قسط",
+  "recordDisciplinaryPenalty": "تسجيل جزاء إداري أو مخالفة",
+  "addDeductionHelp": "إنشاء استقطاع ثابت أو نسبة أو سلفة/قرض بأقساط شهرية مع متابعة الرصيد المتبقي.",
+  "recordPenaltyHelp": "تسجيل مخالفة إدارية أو لائحة مع ربطها بالموظف والسبب لتدخل في دورة الاعتماد.",
+  "loansAndAdvances": "السلف والأقساط",
+  "recurringDeductions": "الاستقطاعات الدورية",
+  "disciplinaryPenalties": "الجزاءات والمخالفات",
+  "deductionTypes": {
+    "Fixed": "مبلغ ثابت",
+    "Percentage": "نسبة من الأساسي",
+    "Installment": "قسط شهري",
+    "Advance": "سلفة نقدية",
+    "Loan": "قرض موظف"
+  },
+  "recurrenceTypes": {
+    "OneTime": "مرة واحدة",
+    "Recurring": "متكرر",
+    "Installment": "خطة أقساط"
+  },
+  "optional": "اختياري",
+  "penaltyTypes": {
+    "Policy": "مخالفة لائحة وسياسات",
+    "Late": "تأخير غير مبرر",
+    "Absence": "غياب بدون إذن",
+    "Disciplinary": "سلوك وانضباط إداري",
+    "Damage": "تعويض تلفيات معدات/أجهزة",
+    "Other": "أخرى"
+  },
+  "penaltySources": {
+    "Manual": "إدخال يدوي مباشر",
+    "Attendance": "سجل الحضور والانصراف",
+    "Policy": "مراجعة اللوائح والسياسات",
+    "Import": "سجل مستورد"
+  },
+  "totalPrincipal": "إجمالي مبلغ السلفة / القرض",
+  "remainingBalance": "الرصيد المتبقي",
+  "incidentDate": "تاريخ الواقعة",
+  "targetPeriod": "فترة الرواتب المستهدفة",
+  "activeLoanBalances": "إجمالي السلف والأقساط القائمة",
+  "activeDeductionsCount": "استقطاعات دورية نشطة",
+  "pendingPenaltiesCount": "جزاءات معلقة بانتظار الاعتماد",
+  "approvedPenaltiesCount": "جزاءات معتمدة ومدرجة",
+  "searchAdjustments": "بحث في الاستقطاعات والجزاءات بالموظف أو السبب...",
+  "noAdjustmentsFound": "لا توجد استقطاعات أو جزاءات تطابق الفلتر الحالي",
+  "repaid": "مسدد",
+  "progress": "نسبة السداد",
+  "allCategories": "الكل",
+  "saveDeduction": "حفظ وتفعيل الاستقطاع",
+  "savePenalty": "حفظ وإرسال الجزاء للاعتماد",
+  "optionalTargetPeriod": "ربط بفترة محددة (اختياري)",
+  "reasonPlaceholder": "تفاصيل وسبب تسجيل الجزاء أو المخالفة...",
+  "notesPlaceholderDeduction": "ملاحظات إضافية حول القسط أو شروط السلفة...",
+  "paymentMethods": {
+    "BankTransfer": "تحويل بنكي",
+    "Cash": "نقدي (الخزينة)",
+    "Check": "شيك مصرفي",
+    "Wallet": "محفظة إلكترونية",
+    "Other": "أخرى"
+  },
+  "loanProgress": "تقدم سداد القرض",
+  "salarySimulator": "محاكي الرواتب والبدلات",
+  "salarySimulatorHelp": "محاكاة فورية لصافي الراتب وحسابات الأوفرتايم والتأخير والغياب والسلف",
+  "exportWps": "تصدير مسير حماية الأجور (WPS / SIF)",
+  "exportWpsSuccess": "تم تصدير ملف حماية الأجور (WPS) بنجاح",
+  "preflightCheck": {
+    "title": "الفحص المسبق لجاهزية مسير الرواتب",
+    "allReady": "جميع متطلبات الاحتساب مكتملة ولا توجد عوائق تشغيلية",
+    "missingComp": "{{count}} موظفين بدون ملف تعويض نشط (سيتم استبعادهم)",
+    "pendingPenalties": "{{count}} جزاءات بانتظار الاعتماد المالي",
+    "disputedPenalties": "{{count}} جزاءات محل نزاع مجمدة من الخصم",
+    "draftDeductions": "{{count}} استقطاعات/سلف مسودة بانتظار التفعيل"
   }
 }

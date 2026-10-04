@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, lazy, Suspense } from 'react';
+import React, { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import {
     Activity,
     AlertTriangle,
@@ -8,7 +8,6 @@ import {
     ChevronRight,
     Database,
     FileText,
-    Microscope,
     Monitor,
     Palette,
     PanelLeftClose,
@@ -36,7 +35,6 @@ import AuditSettings from '../components/settings/AuditSettings';
 import IntegrationsSettings from '../components/settings/IntegrationsSettings';
 import AiProviderSettings from '../components/settings/AiProviderSettings';
 import TeamSettings from '../components/settings/TeamSettings';
-import ClinicalOperationsSettings from '../components/settings/ClinicalOperationsSettings';
 import NotificationSettingsPanel from '../components/settings/NotificationSettingsPanel';
 import CenterSettings from './CenterSettings';
 import PageHeader from '../components/ui/PageHeader';
@@ -48,6 +46,7 @@ const RoleManagement = lazy(() => import('./RoleManagement'));
 const PrivacyCenter = lazy(() => import('./PrivacyCenter'));
 const BackupManagement = lazy(() => import('./BackupManagement'));
 const AuditLogs = lazy(() => import('./AuditLogs'));
+const PortalBuilderSettings = lazy(() => import('../components/settings/PortalBuilderSettings'));
 
 const SECTION_COMPONENTS = {
     appearance: AppearanceSettings,
@@ -55,8 +54,8 @@ const SECTION_COMPONENTS = {
     notifications: NotificationSettingsPanel,
     audit: AuditSettings,
     team: TeamSettings,
-    clinical: ClinicalOperationsSettings,
     facility: CenterSettings,
+    portalBuilder: PortalBuilderSettings,
     integrations: IntegrationsSettings,
     ai: AiProviderSettings,
     pacs: PacsSettings,
@@ -170,6 +169,18 @@ const NavItem = ({ tab, selected, collapsed, groupName, onClick }) => {
     );
 };
 
+// Deep links that predate the current information architecture. They are
+// redirected to wherever that content now lives, so an old bookmark still
+// lands somewhere useful instead of on a blank or wrong settings section.
+const LEGACY_TAB_REDIRECTS = {
+    clinical: '/equipment?tab=rooms',
+    clinicalOperations: '/equipment?tab=rooms',
+    security: '/profile?section=security',
+    profile: '/profile',
+    license: '/settings?tab=admin&subtab=license',
+    licensing: '/settings?tab=admin&subtab=license',
+};
+
 const Settings = () => {
     const { t, i18n } = useTranslation(['settings', 'common']);
     const currentUser = useSelector(selectCurrentUser);
@@ -183,6 +194,7 @@ const Settings = () => {
         if (saved !== null) return saved === 'true';
         return Boolean(preferences?.compactSidebar);
     });
+    const lastCompactPreference = useRef(Boolean(preferences?.compactSidebar));
 
     const role = currentUser?.role || 'Staff';
     const mustChangePassword = Boolean(currentUser?.mustChangePassword);
@@ -197,6 +209,14 @@ const Settings = () => {
         localStorage.setItem('VIARA_settings_nav_collapsed', String(isNavCollapsed));
     }, [isNavCollapsed]);
 
+    useEffect(() => {
+        const compactPreference = Boolean(preferences?.compactSidebar);
+        if (compactPreference === lastCompactPreference.current) return;
+        lastCompactPreference.current = compactPreference;
+        setIsNavCollapsed(compactPreference);
+        localStorage.setItem('VIARA_settings_nav_collapsed', String(compactPreference));
+    }, [preferences?.compactSidebar]);
+
     const tabs = useMemo(() => {
         const available = [
             { id: 'appearance', group: 'personal', label: t('settings.tabs.appearance'), description: t('settings.tabDescriptions.appearance'), icon: Palette },
@@ -205,7 +225,7 @@ const Settings = () => {
             { id: 'audit', group: 'personal', label: t('settings.tabs.audit'), description: t('settings.tabDescriptions.audit'), icon: Activity },
             { id: 'team', group: 'organization', label: t('settings.tabs.team'), description: t('settings.tabDescriptions.team'), icon: Users },
             { id: 'facility', group: 'organization', label: t('settings.tabs.facility'), description: t('settings.tabDescriptions.facility'), icon: FileText },
-            { id: 'clinical', group: 'organization', label: t('settings.tabs.clinical'), description: t('settings.tabDescriptions.clinical'), icon: Microscope },
+            { id: 'portalBuilder', group: 'organization', label: t('settings.tabs.portalBuilder'), description: t('settings.tabDescriptions.portalBuilder'), icon: Palette },
             { id: 'integrations', group: 'organization', label: t('settings.tabs.integrations'), description: t('settings.tabDescriptions.integrations'), icon: Blocks },
             { id: 'pacs', group: 'organization', label: t('settings.tabs.pacs'), description: t('settings.tabDescriptions.pacs'), icon: Monitor },
             { id: 'admin', group: 'organization', label: t('settings.tabs.system'), description: t('settings.tabDescriptions.system'), icon: SettingsIcon },
@@ -220,11 +240,14 @@ const Settings = () => {
     }, [currentUser, t]);
 
     const normalizedQuery = query.trim().toLocaleLowerCase(locale);
-    const filteredTabs = normalizedQuery
+    const active = tabs.find(tab => tab.id === activeTab) || tabs[0];
+    const matchingTabs = normalizedQuery
         ? tabs.filter(tab => `${tab.label} ${tab.description}`.toLocaleLowerCase(locale).includes(normalizedQuery))
         : tabs;
+    const filteredTabs = normalizedQuery && active && !matchingTabs.some(tab => tab.id === active.id)
+        ? [active, ...matchingTabs]
+        : matchingTabs;
 
-    const active = tabs.find(tab => tab.id === activeTab) || tabs[0];
     const ActiveComponent = SECTION_COMPONENTS[active.id];
     const formattedSectionCount = new Intl.NumberFormat(locale).format(tabs.length);
     const sectionCountLabel = t('settings.sectionCount', { count: tabs.length, formattedCount: formattedSectionCount });
@@ -246,10 +269,10 @@ const Settings = () => {
 
     useEffect(() => {
         const legacyTab = searchParams.get('tab');
-        if (mustChangePassword || legacyTab === 'security') {
+        if (legacyTab && Object.prototype.hasOwnProperty.call(LEGACY_TAB_REDIRECTS, legacyTab)) {
+            navigate(LEGACY_TAB_REDIRECTS[legacyTab], { replace: true });
+        } else if (mustChangePassword) {
             navigate('/profile?section=security', { replace: true });
-        } else if (legacyTab === 'profile') {
-            navigate('/profile', { replace: true });
         }
     }, [mustChangePassword, navigate, searchParams]);
 
@@ -257,6 +280,14 @@ const Settings = () => {
         if (!tabs.length) return;
 
         const param = searchParams.get('tab');
+
+        // Legacy links are being redirected by the effect above. Normalising
+        // them here in the same commit would overwrite that redirect and drop
+        // the user back onto the first settings section.
+        if (param && Object.prototype.hasOwnProperty.call(LEGACY_TAB_REDIRECTS, param)) {
+            return;
+        }
+
         if (param && tabs.some(tab => tab.id === param)) {
             if (param !== activeTab) {
                 setActiveTab(param);

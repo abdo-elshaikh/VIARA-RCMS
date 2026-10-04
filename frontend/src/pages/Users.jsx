@@ -65,6 +65,10 @@ const Users = () => {
     const navigate = useNavigate();
     const currentUser = useSelector(selectCurrentUser);
     const locale = isArabic ? 'ar-EG' : 'en-EG';
+    const permissions = useMemo(() => new Set(currentUser?.permissions || []), [currentUser?.permissions]);
+    const isSuperAdmin = ['Developer', 'Admin'].includes(currentUser?.role);
+    const canViewStaff = isSuperAdmin || permissions.has('VIEW_STAFF') || currentUser?.role === 'HR';
+    const canViewAudit = isSuperAdmin || permissions.has('VIEW_AUDIT_TRAILS');
     const { data: staff = [], isLoading, isFetching, isError, refetch } = useGetStaffQuery();
     const [createStaff, { isLoading: isCreating }] = useCreateStaffMutation();
     const [updateStaff, { isLoading: isUpdating }] = useUpdateStaffMutation();
@@ -285,13 +289,33 @@ const Users = () => {
                 description={t('users.description')}
                 actions={(
                     <div className="flex flex-wrap items-center gap-2.5">
+                        {canViewStaff && (
+                            <button
+                                type="button"
+                                onClick={() => navigate('/hr?tab=directory')}
+                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-50/70 px-4 text-xs font-black text-cyan-800 shadow-2xs transition hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/40 dark:text-cyan-300"
+                            >
+                                <Briefcase size={15} className="text-cyan-600 dark:text-cyan-400" />
+                                <span>{isArabic ? 'دليل الموظفين (HR)' : 'Employee Directory'}</span>
+                            </button>
+                        )}
+                        {canViewAudit && (
+                            <button
+                                type="button"
+                                onClick={() => navigate('/audit-logs')}
+                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-50/70 px-4 text-xs font-black text-emerald-800 shadow-2xs transition hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300"
+                            >
+                                <ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400" />
+                                <span>{isArabic ? 'سجل الأمان' : 'Security Audit'}</span>
+                            </button>
+                        )}
                         <button
                             type="button"
                             onClick={() => navigate('/user-activity')}
                             className="inline-flex h-10 items-center gap-2 rounded-xl border border-teal-500/30 bg-teal-50/70 px-4 text-xs font-black text-teal-800 shadow-2xs transition hover:bg-teal-100 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300"
                         >
                             <Activity size={15} className="text-teal-600 dark:text-teal-400" />
-                            <span>{isArabic ? 'تتبع نشاط المستخدمين' : 'Activity Tracker'}</span>
+                            <span>{isArabic ? 'لوحة النشاط' : 'Activity'}</span>
                         </button>
                         <button
                             type="button"
@@ -450,6 +474,7 @@ const Users = () => {
                                                 <td className="px-5 py-3.5 text-slate-500">{formatCreatedAt(user.created_at, locale, t)}</td>
                                                 <td className="px-5 py-3.5">
                                                     <div className="flex justify-end gap-1">
+                                                        <IconButton label={isArabic ? 'الملف الوظيفي بالموارد البشرية (HR)' : 'View HR Employment Profile'} icon={Briefcase} onClick={() => navigate('/hr?tab=directory')} tone="teal" />
                                                         <IconButton label={t('users.actions.viewDetails', 'View Details & Movements')} icon={Eye} onClick={() => navigate(`/users/${user.user_id}`)} tone="teal" />
                                                         <IconButton label={t('users.actions.copyEmail')} icon={Copy} onClick={() => copyText(user.email, t)} tone="slate" disabled={!user.email} />
                                                         <IconButton label={t('users.actions.edit')} icon={Edit2} onClick={() => openEdit(user)} tone="cyan" disabled={!canMutateUser(user)} />

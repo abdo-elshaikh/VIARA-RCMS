@@ -1,6 +1,13 @@
 const twilio = require('twilio');
 const { dispatch, notifyClients, computeActionUrl } = require('../services/notificationService');
-const { processJobs, validateRequiredVariables, validateTemplatePlaceholders } = require('../services/notificationJobService');
+const {
+    processJobs,
+    validateRequiredVariables,
+    validateTemplatePlaceholders,
+    getRepairableNotificationJobs,
+    repairRetryableNotificationJobs,
+    normalizeNotificationLanguage
+} = require('../services/notificationJobService');
 const { AppError } = require('../middleware/errorHandler');
 const { decrypt, hash } = require('../utils/crypto');
 const { verifyUnsubscribeToken } = require('../utils/notificationUnsubscribeToken');
@@ -301,7 +308,9 @@ const getMyNotifications = (db) => async (req, res, next) => {
                 total: counts.all,
                 limit,
                 offset,
-                counts
+                counts,
+                searchLimited: result.rows.length > SEARCH_SCAN_LIMIT,
+                searchScanLimit: SEARCH_SCAN_LIMIT
             });
         }
 
@@ -499,9 +508,6 @@ const createTemplate = (db) => async (req, res, next) => {
         const requiredVars = await validateRequiredVariables(db, data.eventType, {});
         const templateText = `${data.subject || ''}\n${data.body || ''}`;
         const allMissing = validateTemplatePlaceholders(templateText, requiredVars);
-        if (/\{\{\s*(?:#|\/)|\|\||[^{}]*[^\w.\s][^{}]*\}\}/.test(templateText)) {
-            return next(new AppError('Template contains unsupported syntax; use simple {{variable}} placeholders', 400));
-        }
 
         if (allMissing.length > 0) {
             return next(new AppError(`Template is missing required placeholders: ${allMissing.join(', ')}`, 400));
@@ -534,9 +540,6 @@ const updateTemplate = (db) => async (req, res, next) => {
         const requiredVars = await validateRequiredVariables(db, t.event_type, {});
         const templateText = `${subject || ''}\n${body || ''}`;
         const allMissing = validateTemplatePlaceholders(templateText, requiredVars);
-        if (/\{\{\s*(?:#|\/)|\|\||[^{}]*[^\w.\s][^{}]*\}\}/.test(templateText)) {
-            return next(new AppError('Template contains unsupported syntax; use simple {{variable}} placeholders', 400));
-        }
 
         if (allMissing.length > 0) {
             return next(new AppError(`Template is missing required placeholders: ${allMissing.join(', ')}`, 400));
@@ -619,7 +622,7 @@ const retryJob = (db) => async (req, res, next) => {
                 locked_at = NULL,
                 locked_by = NULL,
                 error_message = NULL
-            WHERE job_id = $1 AND status = 'Failed'
+            WHERE job_id = $1 AND status IN ('Failed', 'DeadLetter')
             RETURNING *
         `, [id]);
         if (result.rows.length === 0) return next(new AppError('Job not found or not in Failed state', 404));
@@ -633,6 +636,37 @@ const triggerProcessJobs = (db) => async (req, res, next) => {
     try {
         const result = await processJobs(db);
         res.json({ message: `Processed ${result.processed} of ${result.total} jobs`, ...result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getRepairableJobs = (db) => async (req, res, next) => {
+    try {
+        const limit = Math.min(Math.max(Number(req.query?.limit || 50), 1), 200);
+        const dryRun = req.query?.dryRun !== 'false';
+        const result = await getRepairableNotificationJobs(db, { dryRun, limit });
+        res.json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const retryRepairableJobs = (db) => async (req, res, next) => {
+    try {
+        const payload = req.body || {};
+        const dryRun = payload.dryRun !== false && req.query?.dryRun !== 'false';
+        const limit = Math.min(Math.max(Number(payload.limit || req.query?.limit || 50), 1), 200);
+        const jobIds = payload.jobIds || null;
+        if (!dryRun && (!Array.isArray(jobIds) || jobIds.length < 1 || jobIds.length > 20)) {
+            return next(new AppError('Select 1 to 20 jobIds before requeueing notifications', 400));
+        }
+        if (jobIds !== null && (!Array.isArray(jobIds)
+            || jobIds.some(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))) {
+            return next(new AppError('jobIds must be an array of UUIDs', 400));
+        }
+        const result = await repairRetryableNotificationJobs(db, { dryRun, limit, jobIds });
+        res.json(result);
     } catch (error) {
         next(error);
     }
@@ -692,14 +726,11 @@ const sendManual = (db) => async (req, res, next) => {
                 entityType: data.entityType,
                 entityId: data.entityId,
                 patientId: data.patientId,
-                // Custom external messages are private operational records. They
-                // must never become globally visible merely because no patient ID
-                // was supplied.
-                // sentBy belongs in the audit trail, not recipient_user_id. An
-                // external manual dispatch must not become an inbox item for its
-                // sender merely to give the delivery log an owner.
-                recipientUserId: null,
-                audienceType: data.patientId ? 'Patient' : 'Staff',
+                // Keep outbound records visible to the operator who sent them.
+                // This is an operational log entry, not an inbox delivery.
+                recipientUserId: getUserId(req),
+                audienceType: 'Staff',
+                audienceRole: req.user?.role || null,
                 priority: 'Action'
             }
         );
@@ -886,9 +917,12 @@ const sendReminder = (db) => async (req, res, next) => {
 
         const appointmentResult = await db.query(`
             SELECT a.appointment_id, a.patient_id, a.order_number, a.start_time, a.status,
-                   p.email_enc, p.first_name_enc, p.last_name_enc
+                     p.email_enc, p.first_name_enc, p.last_name_enc,
+                     p.preferred_language, p.consent_email,
+                     np.email_enabled, np.notify_appointment_reminder
             FROM appointments a
             JOIN patients p ON p.patient_id = a.patient_id
+                 LEFT JOIN notification_preferences np ON np.patient_id = p.patient_id
             WHERE a.appointment_id = $1
             LIMIT 1
         `, [appointmentId]);
@@ -900,6 +934,12 @@ const sendReminder = (db) => async (req, res, next) => {
         if (!appointment.start_time || new Date(appointment.start_time) <= new Date()) {
             return next(new AppError('Appointment time must be in the future', 409));
         }
+        if (appointment.consent_email !== true) {
+            return next(new AppError('Patient has not consented to email notifications', 409));
+        }
+        if (appointment.email_enabled === false || appointment.notify_appointment_reminder === false) {
+            return next(new AppError('Patient email reminder preferences are disabled', 409));
+        }
         const recipientEmail = decrypt(appointment.email_enc);
         if (!recipientEmail) return next(new AppError('Patient email is unavailable', 409));
         const patientName = [decrypt(appointment.first_name_enc), decrypt(appointment.last_name_enc)]
@@ -908,8 +948,14 @@ const sendReminder = (db) => async (req, res, next) => {
 
         const allSettings = await settingsService.getAll();
         const centerName = [allSettings['center.name'], allSettings['center.branch']].filter(Boolean).join(' - ') || 'Radiology Center';
-        const subject = `Appointment Reminder: ${patientName}`;
-        const body = `Dear ${patientName},\n\nThis is a reminder for your appointment at ${centerName} scheduled for ${new Date(time).toLocaleString()}.\n\nPlease arrive 15 minutes early.\n\nRegards,\n${centerName} Team`;
+        const language = normalizeNotificationLanguage(appointment.preferred_language);
+        const appointmentTime = new Date(time).toLocaleString(language === 'ar' ? 'ar-EG' : 'en-US');
+        const subject = language === 'ar'
+            ? `تذكير بالموعد: ${patientName}`
+            : `Appointment Reminder: ${patientName}`;
+        const body = language === 'ar'
+            ? `عزيزي/عزيزتي ${patientName}،\n\nهذا تذكير بموعدك في ${centerName} بتاريخ ${appointmentTime}.\n\nيرجى الحضور قبل الموعد بـ 15 دقيقة.\n\nمع التحية،\nفريق ${centerName}`
+            : `Dear ${patientName},\n\nThis is a reminder for your appointment at ${centerName} scheduled for ${appointmentTime}.\n\nPlease arrive 15 minutes early.\n\nRegards,\n${centerName} Team`;
 
         await logAction(db, {
             userId: getUserId(req),
@@ -1119,12 +1165,23 @@ const applyTwilioDeliveryReceipt = async (db, { MessageSid, MessageStatus }) => 
         await db.query(`
             UPDATE notification_jobs
             SET status = CASE
-                    WHEN $1::text = 'Failed' THEN 'Failed'
+                    WHEN $1::text = 'Failed' AND retry_count < max_retries THEN 'Pending'
+                    WHEN $1::text = 'Failed' THEN 'DeadLetter'
                     WHEN $1::text IN ('Sent', 'Delivered') THEN 'Sent'
                     ELSE status
                 END,
+                retry_count = CASE
+                    WHEN $1::text = 'Failed' AND retry_count < max_retries THEN retry_count + 1
+                    ELSE retry_count
+                END,
+                next_retry_at = CASE
+                    WHEN $1::text = 'Failed' AND retry_count < max_retries
+                        THEN NOW() + (LEAST(60, 5 * POWER(2, retry_count))::int * INTERVAL '1 minute')
+                    ELSE NULL
+                END,
                 processed_at = CASE
-                    WHEN $1::text IN ('Sent', 'Delivered', 'Failed') THEN COALESCE(processed_at, NOW())
+                    WHEN $1::text IN ('Sent', 'Delivered') THEN COALESCE(processed_at, NOW())
+                    WHEN $1::text = 'Failed' AND retry_count >= max_retries THEN COALESCE(processed_at, NOW())
                     ELSE processed_at
                 END,
                 error_message = CASE
@@ -1132,8 +1189,9 @@ const applyTwilioDeliveryReceipt = async (db, { MessageSid, MessageStatus }) => 
                     WHEN $1::text = 'Delivered' THEN NULL
                     ELSE error_message
                 END
-            WHERE notification_id = $2
-              AND status NOT IN ('Cancelled', 'Skipped')
+                        WHERE notification_id = $2
+                            AND status NOT IN ('Cancelled', 'Skipped')
+                            AND status <> 'DeadLetter'
         `, [mappedStatus, row.notification_id]);
         await notifyClients(db, row.notification_id);
     }
@@ -1174,6 +1232,7 @@ module.exports = {
     getMyNotifications, markMyNotificationRead, markAllMyNotificationsRead,
     getTemplates, createTemplate, updateTemplate, deleteTemplate,
     getJobs, retryJob, triggerProcessJobs,
+    getRepairableJobs, retryRepairableJobs,
     sendManual, sendReminder, unsubscribe,
     getPreferences, updatePreferences,
     getStaffPreferences, updateStaffPreferences,

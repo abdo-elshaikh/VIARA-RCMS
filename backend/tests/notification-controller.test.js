@@ -6,12 +6,14 @@ jest.mock('../src/services/notificationService', () => ({
 
 const {
     getNotifications,
+    getMyNotifications,
     getUnreadCount,
     markNotificationRead,
     getStaffPreferences,
     unsubscribe,
     handleTwilioWebhook
 } = require('../src/controllers/notificationController');
+const { getMarketingAudience } = require('../src/controllers/crmController');
 const { notifyClients } = require('../src/services/notificationService');
 const { createUnsubscribeToken } = require('../src/utils/notificationUnsubscribeToken');
 
@@ -71,6 +73,33 @@ describe('notification controller hardening', () => {
             total: 1,
             counts: expect.objectContaining({ all: 1, unread: 1, sent: 1, failed: 0 }),
             items: [expect.objectContaining({ notification_id: 'n-1' })]
+        }));
+    });
+
+    test('personal inbox search reports when the bounded scan may omit older matches', async () => {
+        const rows = Array.from({ length: 1001 }, (_, index) => ({
+            notification_id: `notification-${index}`,
+            recipient: 'staff@example.com',
+            subject: 'Matching notification',
+            content: 'Search term appears here',
+            status: 'Sent',
+            channel: 'InApp',
+            event_type: 'SystemAlert',
+            priority: 'Normal',
+            is_read: false
+        }));
+        const db = { query: jest.fn().mockResolvedValue({ rows }) };
+        const res = buildRes();
+
+        await getMyNotifications(db)(
+            { query: { q: 'search term', limit: 10, offset: 0 }, user: { user_id: 'user-1', role: 'Admin' } },
+            res,
+            jest.fn()
+        );
+
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            searchLimited: true,
+            searchScanLimit: 1000
         }));
     });
 
@@ -209,6 +238,17 @@ describe('notification controller hardening', () => {
         expect(res.json).toHaveBeenCalledWith({
             message: 'If the unsubscribe request was valid, marketing preferences have been updated.'
         });
+    });
+
+    test('marketing audience uses a single canonical consent check and keeps legacy opt-in compatibility', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+
+        await getMarketingAudience(db, { channel: 'Email', target_segment: null });
+
+        expect(db.query).toHaveBeenCalledTimes(1);
+        const sql = db.query.mock.calls[0][0];
+        expect(sql).toContain('COALESCE(p.consent_marketing, p.opt_in_marketing, FALSE) = TRUE');
+        expect(sql).not.toContain('p.opt_in_marketing IS NOT FALSE');
     });
 
     test('Twilio webhook maps delivered receipts and notifies connected clients', async () => {

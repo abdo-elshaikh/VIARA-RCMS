@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { generateSecurePassword } = require('../utils/passwordGenerator');
 const { logAction } = require('../services/auditService');
+const { assertQuota, withQuotaTransaction } = require('../services/quotaService');
 
 const stripSensitivePatientFields = (patient) => {
     const {
@@ -118,6 +119,7 @@ const decryptPatientRow = (patient) => {
 
 const createPatient = (db) => async (req, res, next) => {
     try {
+        await assertQuota(db, 'patients');
         const validatedData = req.body;
 
         // Auto-generate MRN if not provided
@@ -206,6 +208,12 @@ const createPatient = (db) => async (req, res, next) => {
         // Generate portal password
         const generatedPassword = generateSecurePassword();
         const passwordHash = await bcrypt.hash(generatedPassword, 10);
+        const consentMarketing = validatedData.consentMarketing !== undefined
+            ? Boolean(validatedData.consentMarketing)
+            : (validatedData.optInMarketing !== undefined ? Boolean(validatedData.optInMarketing) : false);
+        const optInMarketing = validatedData.optInMarketing !== undefined
+            ? Boolean(validatedData.optInMarketing)
+            : consentMarketing;
 
         const query = `
       INSERT INTO patients (
@@ -237,6 +245,7 @@ const createPatient = (db) => async (req, res, next) => {
         consent_email,
         consent_whatsapp,
         consent_marketing,
+        opt_in_marketing,
         patient_status,
         email,
         assigned_manager_id,
@@ -254,7 +263,8 @@ const createPatient = (db) => async (req, res, next) => {
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
         $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-        $31, $32, $33, $34, $35, $36, $37, $38, $39, $40
+        $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
+        $41
       )
       RETURNING patient_id, mrn, created_at
     `;
@@ -287,7 +297,8 @@ const createPatient = (db) => async (req, res, next) => {
             validatedData.consentSms || false,
             validatedData.consentEmail || false,
             validatedData.consentWhatsapp || false,
-            validatedData.consentMarketing || false,
+            consentMarketing,
+            optInMarketing,
             validatedData.patientStatus || 'Active',
             email,
             validatedData.assignedManagerId || null,
@@ -302,7 +313,7 @@ const createPatient = (db) => async (req, res, next) => {
             emailHash
         ];
 
-        const result = await db.query(query, values);
+        const result = await withQuotaTransaction(db, 'patients', client => client.query(query, values));
 
         await logAction(db, {
             userId: req.user?.user_id,
@@ -561,6 +572,7 @@ const getPatientHistory = (db) => async (req, res, next) => {
                    prior_e.report_status AS prior_report_status,
                    COALESCE(prior_a.start_time, prior_e.created_at) AS prior_exam_time,
                    prior_et.name AS prior_exam_type_name,
+                   inv.invoice_id, inv.invoice_number, inv.invoice_status, inv.total_amount as invoice_total,
                    COALESCE(SUM(rd.print_copy_count), 0)::int as print_copy_count,
                    MAX(rd.delivered_at) as last_result_delivery_at,
                    MAX(rd.delivery_status) as latest_delivery_status
@@ -572,10 +584,18 @@ const getPatientHistory = (db) => async (req, res, next) => {
             LEFT JOIN appointments prior_a ON prior_a.appointment_id = prior_e.appointment_id
             LEFT JOIN examination_types prior_et ON prior_et.type_id = prior_e.exam_type_id
             LEFT JOIN result_deliveries rd ON rd.exam_id = e.exam_id
+            LEFT JOIN LATERAL (
+                SELECT invoice_id, invoice_number, invoice_status, total_amount
+                FROM invoices
+                WHERE appointment_id = a.appointment_id
+                ORDER BY generated_at DESC
+                LIMIT 1
+            ) inv ON true
             WHERE a.patient_id = $1
             GROUP BY a.appointment_id, m.name, et.name, e.exam_id, e.report_status, e.report_finalized_at, e.delivered_at,
                      e.report_content, e.clinical_indication, e.provisional_diagnosis, e.priority, e.body_part, e.contrast_required, e.report_sections,
-                     prior_e.order_number, prior_e.report_status, prior_a.start_time, prior_e.created_at, prior_et.name
+                     prior_e.order_number, prior_e.report_status, prior_a.start_time, prior_e.created_at, prior_et.name,
+                     inv.invoice_id, inv.invoice_number, inv.invoice_status, inv.total_amount
             ORDER BY a.start_time DESC
         `;
         const apptResult = await db.query(apptQuery, [id]);
@@ -675,6 +695,7 @@ const updatePatient = (db, auditService) => async (req, res, next) => {
             data.consentEmail !== undefined ? data.consentEmail : existing.consent_email,
             data.consentWhatsapp !== undefined ? data.consentWhatsapp : existing.consent_whatsapp,
             data.consentMarketing !== undefined ? data.consentMarketing : existing.consent_marketing,
+            data.optInMarketing !== undefined ? data.optInMarketing : existing.opt_in_marketing,
             data.patientStatus !== undefined ? data.patientStatus : existing.patient_status,
             data.email !== undefined ? (data.email ? encrypt(data.email.trim().toLowerCase()) : null) : existing.email_enc,
             data.gender !== undefined ? data.gender : existing.gender,
@@ -718,17 +739,19 @@ const updatePatient = (db, auditService) => async (req, res, next) => {
                 consent_email = $26,
                 consent_whatsapp = $27,
                 consent_marketing = $28,
-                patient_status = $29,
-                email_enc = $30,
-                gender = $31,
-                assigned_manager_id = $32,
-                lead_status = $33,
-                planned_activity = $34,
-                first_name_hash = $35,
-                last_name_hash = $36,
-                phone_hash = $37,
-                email_hash = $39
-            WHERE patient_id = $38
+                opt_in_marketing = $29,
+                patient_status = $30,
+                current_session_id = CASE WHEN $30 = 'Active' THEN current_session_id ELSE NULL END,
+                email_enc = $31,
+                gender = $32,
+                assigned_manager_id = $33,
+                lead_status = $34,
+                planned_activity = $35,
+                first_name_hash = $36,
+                last_name_hash = $37,
+                phone_hash = $38,
+                email_hash = $40
+            WHERE patient_id = $39
             RETURNING *
         `, values);
 
@@ -846,6 +869,7 @@ const mergePatients = (db) => async (req, res, next) => {
         await client.query(`
             UPDATE patients
             SET patient_status = 'Merged',
+                current_session_id = NULL,
                 merged_into_patient_id = $1,
                 merged_at = NOW(),
                 merged_by = $2,
@@ -854,7 +878,8 @@ const mergePatients = (db) => async (req, res, next) => {
                 consent_sms = FALSE,
                 consent_email = FALSE,
                 consent_whatsapp = FALSE,
-                consent_marketing = FALSE
+                consent_marketing = FALSE,
+                opt_in_marketing = FALSE
             WHERE patient_id = $4
         `, [targetPatientId, req.user.user_id, reason, sourcePatientId]);
         await logAction(client, {
@@ -901,10 +926,12 @@ const deletePatient = (db) => async (req, res, next) => {
         await client.query(`
             UPDATE patients
             SET patient_status = 'Restricted',
+                current_session_id = NULL,
                 consent_sms = FALSE,
                 consent_email = FALSE,
                 consent_whatsapp = FALSE,
                 consent_marketing = FALSE,
+                opt_in_marketing = FALSE,
                 password_hash = NULL
             WHERE patient_id = $1
         `, [id]);
@@ -942,7 +969,7 @@ const generatePortalPassword = (db) => async (req, res, next) => {
         const passwordHash = await bcrypt.hash(generatedPassword, 10);
 
         const result = await db.query(
-            "UPDATE patients SET password_hash = $1 WHERE patient_id = $2 RETURNING mrn",
+            "UPDATE patients SET password_hash = $1, current_session_id = NULL WHERE patient_id = $2 RETURNING mrn",
             [passwordHash, patientId]
         );
 

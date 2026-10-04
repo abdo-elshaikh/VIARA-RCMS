@@ -10,23 +10,36 @@ const logger = require('../config/logger');
 // Store all active client connections on this local instance
 let clients = [];
 
-// In-memory store for short-lived SSE session tokens.
-// Maps sse-session-token -> { userId, role, patientId, doctorId, expiresAt }
-const sseSessionTokens = new Map();
 const SSE_SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-// Periodic cleanup of expired SSE session tokens
-const sessionCleanupInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [token, session] of sseSessionTokens.entries()) {
-        if (session.expiresAt < now) {
-            sseSessionTokens.delete(token);
-        }
-    }
-}, 60 * 1000); // every minute
-sessionCleanupInterval.unref?.();
+const getSseSecret = () => {
+    if (process.env.SSE_SESSION_SECRET) return process.env.SSE_SESSION_SECRET;
+    if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+    if (process.env.NODE_ENV === 'test') return 'viara-test-sse-secret';
+    throw new Error('SSE_SESSION_SECRET or JWT_SECRET must be configured');
+};
+
+const encodeTokenPart = value => Buffer.from(value).toString('base64url');
+const decodeTokenPart = value => Buffer.from(value, 'base64url').toString('utf8');
+
+const signSsePayload = payload => {
+    const encodedPayload = encodeTokenPart(JSON.stringify(payload));
+    const signature = crypto.createHmac('sha256', getSseSecret()).update(encodedPayload).digest('base64url');
+    return `${encodedPayload}.${signature}`;
+};
+
+const verifySseToken = token => {
+    const [encodedPayload, signature] = String(token || '').split('.');
+    if (!encodedPayload || !signature) return null;
+    const expected = crypto.createHmac('sha256', getSseSecret()).update(encodedPayload).digest();
+    const received = Buffer.from(signature, 'base64url');
+    if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) return null;
+    const payload = JSON.parse(decodeTokenPart(encodedPayload));
+    return payload.exp > Date.now() ? payload : null;
+};
 
 const REALTIME_CHANNEL = 'viara_realtime_events';
+const NODE_ID = `${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
 let dbPool = null;
 let listenerClient = null;
 
@@ -66,7 +79,7 @@ const initDistributedSubscriber = async (pool) => {
 };
 
 const handleDistributedMessage = ({ target, targetId, event, data, originNodeId }) => {
-    if (originNodeId === process.pid) return; // already handled locally
+    if (originNodeId === NODE_ID) return; // already handled locally
     switch (target) {
         case 'user':
             sendToUserLocal(targetId, event, data);
@@ -91,12 +104,14 @@ const handleDistributedMessage = ({ target, targetId, event, data, originNodeId 
 const publishDistributed = (target, targetId, event, data) => {
     if (!dbPool) return;
     try {
+        const distributedData = data && typeof data === 'object' ? { ...data } : data;
+        if (distributedData?.exceptSessionId) delete distributedData.exceptSessionId;
         const payload = JSON.stringify({
-            originNodeId: process.pid,
+            originNodeId: NODE_ID,
             target,
             targetId,
             event,
-            data
+            data: distributedData
         });
         dbPool.query('SELECT pg_notify($1, $2)', [REALTIME_CHANNEL, payload]).catch(() => {});
     } catch (e) {
@@ -119,15 +134,15 @@ const createSseSession = (decoded) => {
     const doctorId = isDoctorPortal
         ? (decoded.doctorId || decoded.doctor_id || null)
         : null;
-    const sessionToken = crypto.randomBytes(32).toString('hex');
-    sseSessionTokens.set(sessionToken, {
+    return signSsePayload({
+        nonce: crypto.randomBytes(16).toString('hex'),
         userId: isPatient || isDoctorPortal ? null : (decoded.user_id || decoded.userId || null),
         role: decoded.role || null,
+        sessionId: decoded.session_id || null,
         patientId,
         doctorId,
-        expiresAt: Date.now() + SSE_SESSION_TTL_MS
+        exp: Date.now() + SSE_SESSION_TTL_MS
     });
-    return sessionToken;
 };
 
 /**
@@ -183,33 +198,36 @@ const writeSse = (clientInfo, payload) => {
 /**
  * Register a new SSE connection client.
  * Expects a short-lived SSE session token (not the user's access JWT).
- * The token is accepted from the query string (legacy EventSource clients) or
- * from the Authorization header (fetch-based clients), so it never needs to
- * appear in URL/access logs.
+ * The preferred location is an httpOnly cookie. Query-string support remains
+ * for legacy EventSource clients during migration.
  */
 const registerClient = (req, res) => {
     const authorization = typeof req.headers?.authorization === 'string' ? req.headers.authorization : '';
-    const sessionToken = (req.query.token || (authorization.startsWith('Bearer ') ? authorization.slice(7) : '')).trim();
+    const sessionToken = (req.cookies?.viaraSseSession
+        || req.query.token
+        || (authorization.startsWith('Bearer ') ? authorization.slice(7) : '')).trim();
     if (!sessionToken) {
         res.status(401).json({ error: 'SSE session token required' });
         return;
     }
 
-    // Validate against the in-memory session token store
-    const session = sseSessionTokens.get(sessionToken);
-    if (!session || session.expiresAt < Date.now()) {
+    let session;
+    try {
+        session = verifySseToken(sessionToken);
+    } catch {
+        session = null;
+    }
+    if (!session) {
         res.status(401).json({ error: 'Invalid or expired SSE session token' });
         return;
     }
-
-    // Remove the session token after use (single-use)
-    sseSessionTokens.delete(sessionToken);
 
     try {
         const clientInfo = {
             res,
             userId: session.userId,
             role: session.role,
+            sessionId: session.sessionId,
             patientId: session.patientId,
             doctorId: session.doctorId
         };
@@ -278,7 +296,8 @@ const registerClient = (req, res) => {
  */
 const sendToUserLocal = (userId, event, data) => {
     if (!userId) return;
-    const targetClients = clients.filter(c => String(c.userId) === String(userId));
+    const targetClients = clients.filter(c => String(c.userId) === String(userId)
+        && (!data?.exceptSessionId || c.sessionId !== data.exceptSessionId));
     targetClients.forEach(client => {
         writeSse(client, { event, data });
     });
@@ -294,7 +313,8 @@ const sendToUser = (userId, event, data) => {
  */
 const sendToPatientLocal = (patientId, event, data) => {
     if (!patientId) return;
-    const targetClients = clients.filter(c => String(c.patientId) === String(patientId));
+    const targetClients = clients.filter(c => String(c.patientId) === String(patientId)
+        && (!data?.exceptSessionId || c.sessionId !== data.exceptSessionId));
     targetClients.forEach(client => {
         writeSse(client, { event, data });
     });
@@ -310,7 +330,8 @@ const sendToPatient = (patientId, event, data) => {
  */
 const sendToDoctorLocal = (doctorId, event, data) => {
     if (!doctorId) return;
-    const targetClients = clients.filter(c => String(c.doctorId) === String(doctorId));
+    const targetClients = clients.filter(c => String(c.doctorId) === String(doctorId)
+        && (!data?.exceptSessionId || c.sessionId !== data.exceptSessionId));
     targetClients.forEach(client => {
         writeSse(client, { event, data });
     });

@@ -99,7 +99,7 @@ describe('analyticsReportExport', () => {
 
         await exportAnalyticsReport(mockReportData, 'pdf');
 
-        expect(window.open).toHaveBeenCalledWith('', '_blank', 'noopener,noreferrer');
+        expect(window.open).toHaveBeenCalledWith('', '_blank');
         expect(writeMock).toHaveBeenCalled();
         const writtenHtml = writeMock.mock.calls[0][0];
         expect(writtenHtml).toContain('dir="rtl"');

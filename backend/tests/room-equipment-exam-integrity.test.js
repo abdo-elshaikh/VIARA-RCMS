@@ -1,12 +1,13 @@
-jest.mock('../src/services/schedulingService', () => ({
-    getWorkingHours: jest.fn().mockResolvedValue({ start: 0, end: 24, holidays: [] }),
-    assertWithinWorkingHours: jest.fn()
-}));
+// Import the real module — assertAppointmentScheduleRules calls service.getWorkingHours internally
+// (where service === module.exports), so spyOn correctly overrides the functions.
+const schedulingService = require('../src/services/schedulingService');
 
 const { AppError } = require('../src/middleware/errorHandler');
 const { getRooms, createRoom, updateRoom, deleteRoom, getClinicalHierarchyMatrix } = require('../src/controllers/roomController');
 const { getExamTypes } = require('../src/controllers/examTypeController');
-const { assertSchedulingRules, createAppointment } = require('../src/controllers/appointmentController');
+const { createAppointment } = require('../src/controllers/appointmentController');
+const assertSchedulingRules = schedulingService.assertAppointmentScheduleRules;
+
 
 describe('Room, Equipment & Clinical Examination Integrity', () => {
 
@@ -106,6 +107,8 @@ describe('Room, Equipment & Clinical Examination Integrity', () => {
 
     describe('assertSchedulingRules & Collision Invariants', () => {
         let mockDb;
+        let getWorkingHoursSpy;
+        let assertWithinWorkingHoursSpy;
         const now = new Date();
         const startTime = new Date(now.getTime() + 86400000).toISOString();
         const endTime = new Date(now.getTime() + 86400000 + 3600000).toISOString();
@@ -114,6 +117,17 @@ describe('Room, Equipment & Clinical Examination Integrity', () => {
             mockDb = {
                 query: jest.fn().mockResolvedValue({ rows: [] })
             };
+            // Spy on the exported service object \u2014 the same object assertAppointmentScheduleRules
+            // uses internally (service === module.exports), so these spies are honoured.
+            getWorkingHoursSpy = jest.spyOn(schedulingService, 'getWorkingHours')
+                .mockResolvedValue({ start: 0, end: 24, timezone: 'UTC', holidays: [], workingDays: [0,1,2,3,4,5,6] });
+            assertWithinWorkingHoursSpy = jest.spyOn(schedulingService, 'assertWithinWorkingHours')
+                .mockImplementation(() => {});
+        });
+
+        afterEach(() => {
+            getWorkingHoursSpy.mockRestore();
+            assertWithinWorkingHoursSpy.mockRestore();
         });
 
         test('blocks appointment if the parent room is Under Maintenance', async () => {

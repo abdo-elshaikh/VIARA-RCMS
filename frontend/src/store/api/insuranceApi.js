@@ -120,6 +120,34 @@ export const insuranceApi = api.injectEndpoints({
             }),
             invalidatesTags: ['Claims', 'FinancialReports'],
         }),
+        getInsuranceClaimsSummary: builder.query({
+            query: (params) => ({
+                url: '/insurance/reports/claims-summary',
+                params,
+            }),
+            providesTags: ['Claims'],
+        }),
+        getPayerStatement: builder.query({
+            query: (params) => ({
+                url: '/insurance/reports/statement',
+                params,
+            }),
+            providesTags: ['Claims'],
+        }),
+        getInsuranceAgingReport: builder.query({
+            query: (params) => ({
+                url: '/insurance/reports/aging',
+                params,
+            }),
+            providesTags: ['Claims'],
+        }),
+        getContractsPerformanceReport: builder.query({
+            query: (params) => ({
+                url: '/insurance/reports/contracts-performance',
+                params,
+            }),
+            providesTags: ['Insurance'],
+        }),
     }),
     overrideExisting: false,
 });

@@ -1,4 +1,4 @@
 export const isFinalizedRecord = (record: any): boolean =>
-  record?.exam_status === "Finalized" ||
-  ["Finalized", "Amended"].includes(record?.report_status) ||
-  record?.report_locked === true;
+  ["Finalized", "Amended"].includes(record?.report_status) &&
+  record?.report_locked === true &&
+  Boolean(record?.report_finalized_at || record?.finalized_at);

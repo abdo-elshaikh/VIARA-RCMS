@@ -11,6 +11,7 @@ const {
     paymentAccount,
     payrollPaymentJournalEntries,
     calculateDeductionAmount,
+    applyPaidDeductionBalances,
     cairoDateKey,
     enumerateWeekdays,
     enumerateDates,
@@ -134,6 +135,16 @@ describe('Payroll Calculation Service Unit Tests', () => {
             expect(calculateDeductionAmount({ deduction_type: 'Percentage', percentage: 5 }, 10000)).toBe(500);
             expect(calculateDeductionAmount({ deduction_type: 'Installment', amount: 1000, remaining_amount: 400 }, 10000)).toBe(400);
             expect(calculateDeductionAmount({ deduction_type: 'Fixed', amount: 250 }, 10000)).toBe(250);
+        });
+
+        test('completes OneTime deductions when their payroll run is paid', async () => {
+            const query = jest.fn(async () => ({ rows: [] }));
+
+            await applyPaidDeductionBalances({ query }, 'run-1', 'user-1');
+
+            const updateSql = String(query.mock.calls[0][0]);
+            expect(updateSql).toContain("WHEN d.recurrence_type = 'OneTime' THEN 'Completed'");
+            expect(updateSql).toContain("OR d.recurrence_type IN ('OneTime', 'Recurring')");
         });
     });
 

@@ -12,6 +12,7 @@ const { encrypt, decrypt, hash } = require('../utils/crypto');
 const AuthService = require('../services/authService');
 const { attachActiveEmergencyClaims } = require('../services/emergencyAccessService');
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
+const { assertQuota, withQuotaTransaction } = require('../services/quotaService');
 
 // 12 rounds per current OWASP guidance for medical systems; existing hashes
 // embed their own cost factor so verification of old hashes is unaffected.
@@ -49,6 +50,7 @@ const generateTokens = async (db, userPayload, ownerId, ownerTypeOrIsPatient = f
 const register = (db) => async (req, res, next) => {
     try {
         const { fullName, email, password, role } = req.body;
+        await assertQuota(db, 'users');
 
         const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
@@ -58,7 +60,7 @@ const register = (db) => async (req, res, next) => {
       RETURNING user_id, full_name, email, role, created_at
     `;
 
-        const result = await db.query(query, [fullName, email, hashedPassword, role]);
+        const result = await withQuotaTransaction(db, 'users', client => client.query(query, [fullName, email, hashedPassword, role]));
 
         res.status(201).json({ message: 'User registered successfully', user: result.rows[0] });
 
@@ -310,14 +312,35 @@ const refresh = (db) => async (req, res, next) => {
     let client;
     let transactionComplete = false;
     try {
-        // Manually parse cookies
-        const cookies = req.headers.cookie;
-        if (!cookies) return next(new AppError('No refresh token provided', 401));
+        const cookies = req.headers.cookie || '';
+        const isPortalClient = Boolean(
+            req.headers['x-portal-client'] === 'true'
+            || req.originalUrl?.includes('/portal/')
+            || req.path?.includes('/portal/')
+        );
 
-        const match = cookies.match(/(^| )refreshToken=([^;]+)/);
-        if (!match) return next(new AppError('No refresh token provided', 401));
+        let rawToken = null;
+        let cookieName = 'refreshToken';
 
-        const rawToken = match[2];
+        if (isPortalClient) {
+            const portalMatch = cookies.match(/(?:^|;\s*)portalRefreshToken=([^;]+)/);
+            const legacyMatch = cookies.match(/(?:^|;\s*)refreshToken=([^;]+)/);
+            if (portalMatch) {
+                rawToken = portalMatch[1];
+                cookieName = 'portalRefreshToken';
+            } else if (legacyMatch) {
+                rawToken = legacyMatch[1];
+                cookieName = 'portalRefreshToken';
+            }
+        } else {
+            const match = cookies.match(/(?:^|;\s*)refreshToken=([^;]+)/);
+            if (match) {
+                rawToken = match[1];
+                cookieName = 'refreshToken';
+            }
+        }
+
+        if (!rawToken) return next(new AppError('No refresh token provided', 401));
         const refreshHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
         client = await db.connect();
@@ -333,7 +356,6 @@ const refresh = (db) => async (req, res, next) => {
             LEFT JOIN patients p ON rt.patient_id = p.patient_id
             LEFT JOIN referring_doctors rd ON rt.doctor_id = rd.doctor_id
             WHERE rt.token_hash = $1 AND rt.expires_at > NOW()
-            FOR UPDATE OF rt
         `, [refreshHash]);
 
         if (result.rows.length === 0) {
@@ -344,20 +366,71 @@ const refresh = (db) => async (req, res, next) => {
 
         const genericOwnerId = tokenData.user_id || tokenData.patient_id || tokenData.doctor_id;
 
-        if (tokenData.revoked) {
-            // Token reuse detected - Security Breach!
-            await client.query(`UPDATE refresh_tokens SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'token_reuse_detected' WHERE user_id = $1 OR patient_id = $1 OR doctor_id = $1`, [genericOwnerId]);
+        // A refresh token is valid only for the exact login session that issued
+        // it. Lock the owner row so login and refresh cannot race past each other.
+        let sessionTable;
+        let sessionOwnerColumn;
+        let sessionOwnerId;
+        if (tokenData.user_id) {
+            sessionTable = 'users';
+            sessionOwnerColumn = 'user_id';
+            sessionOwnerId = tokenData.user_id;
+        } else if (tokenData.patient_id) {
+            sessionTable = 'patients';
+            sessionOwnerColumn = 'patient_id';
+            sessionOwnerId = tokenData.patient_id;
+        } else if (tokenData.doctor_id) {
+            sessionTable = 'referring_doctors';
+            sessionOwnerColumn = 'doctor_id';
+            sessionOwnerId = tokenData.doctor_id;
+        }
+
+        const ownerSession = sessionTable && await client.query(
+            `SELECT current_session_id FROM ${sessionTable} WHERE ${sessionOwnerColumn} = $1 FOR UPDATE`,
+            [sessionOwnerId]
+        );
+
+        // Lock and re-read the token only after locking the account row. This
+        // serializes concurrent rotations and uses the same lock order as login.
+        const latestToken = await client.query(
+            'SELECT revoked, revoked_reason, session_id FROM refresh_tokens WHERE token_id = $1 FOR UPDATE',
+            [tokenData.token_id]
+        );
+        if (!latestToken.rows.length) return next(new AppError('Invalid refresh token', 401));
+        Object.assign(tokenData, latestToken.rows[0]);
+
+        if (tokenData.revoked && tokenData.revoked_reason !== 'rotated') {
+            return next(new AppError('Refresh token has been revoked', 401));
+        }
+
+        if (!tokenData.session_id || !ownerSession?.rows.length || ownerSession.rows[0].current_session_id !== tokenData.session_id) {
+            await client.query(`
+                UPDATE refresh_tokens
+                SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'stale_session'
+                WHERE token_id = $1
+            `, [tokenData.token_id]);
+            await client.query('COMMIT');
+            transactionComplete = true;
+            return next(new AppError('Login session was replaced. Please sign in again.', 401));
+        }
+
+        if (tokenData.revoked && tokenData.revoked_reason === 'rotated') {
+            // Only a reused token from the still-current session indicates theft.
+            await client.query(`
+                UPDATE refresh_tokens
+                SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'token_reuse_detected'
+                WHERE ${sessionOwnerColumn} = $1 AND session_id = $2
+            `, [genericOwnerId, tokenData.session_id]);
+            await client.query(
+                `UPDATE ${sessionTable} SET current_session_id = NULL WHERE ${sessionOwnerColumn} = $1 AND current_session_id = $2`,
+                [genericOwnerId, tokenData.session_id]
+            );
             await logSecurityEvent(client, { eventType: 'TOKEN_REUSE_DETECTED', severity: 'critical', details: { tokenId: tokenData.token_id, ownerId: genericOwnerId } });
+            await client.query('COMMIT');
+            transactionComplete = true;
             triggerEventForRole(db, 'TOKEN_REUSE_DETECTED', 'Admin', { priority: 'Critical' }).catch(() => { });
             triggerEventForRole(db, 'TOKEN_REUSE_DETECTED', 'HR', { priority: 'Critical' }).catch(() => { });
-            try {
-                await client.query('COMMIT');
-                transactionComplete = true;
-            } catch (commitErr) {
-                logger.error('Token reuse COMMIT failed', { error: commitErr.message, userId: genericOwnerId });
-                await client.query('ROLLBACK');
-            }
-            return next(new AppError('Security breach detected. All sessions revoked.', 401));
+            return next(new AppError('Security breach detected. This login session was revoked.', 401));
         }
 
         // Revoke old token to implement rotation
@@ -368,15 +441,36 @@ const refresh = (db) => async (req, res, next) => {
         let ownerColumn = 'user_id';
 
         if (tokenData.user_id) {
+            if (isPortalClient) {
+                return next(new AppError('Staff accounts cannot authenticate via portal endpoints', 403));
+            }
             if (!tokenData.u_active) return next(new AppError('User is inactive', 401));
             payload = { user_id: tokenData.user_id, role: tokenData.role, email: tokenData.email, full_name: tokenData.full_name, must_change_password: tokenData.must_change_password };
             userId = tokenData.user_id;
         } else if (tokenData.patient_id) {
+            if (!isPortalClient) {
+                res.clearCookie('refreshToken', {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+                    path: '/api/auth'
+                });
+                return next(new AppError('Portal accounts cannot authenticate to internal administration', 403));
+            }
             if (tokenData.p_active !== 'Active') return next(new AppError('Patient is inactive', 401));
-            payload = { userId: tokenData.patient_id, role: 'Patient', name: decrypt(tokenData.first_name_enc) + ' ' + decrypt(tokenData.last_name_enc) };
+            payload = { userId: tokenData.patient_id, patient_id: tokenData.patient_id, role: 'Patient', name: decrypt(tokenData.first_name_enc) + ' ' + decrypt(tokenData.last_name_enc) };
             userId = tokenData.patient_id;
             ownerColumn = 'patient_id';
         } else if (tokenData.doctor_id) {
+            if (!isPortalClient) {
+                res.clearCookie('refreshToken', {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+                    path: '/api/auth'
+                });
+                return next(new AppError('Portal accounts cannot authenticate to internal administration', 403));
+            }
             if (!tokenData.doctor_active) return next(new AppError('Doctor portal account is inactive', 401));
             payload = {
                 doctorId: tokenData.doctor_id,
@@ -396,12 +490,13 @@ const refresh = (db) => async (req, res, next) => {
 
         await client.query(`
             INSERT INTO refresh_tokens (
-                ${ownerColumn}, token_hash, expires_at, parent_token_id,
+                ${ownerColumn}, session_id, token_hash, expires_at, parent_token_id,
                 ip_address, user_agent, last_used_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
         `, [
             userId,
+            tokenData.session_id,
             newRefreshHash,
             expiresAt,
             tokenData.token_id,
@@ -420,26 +515,17 @@ const refresh = (db) => async (req, res, next) => {
         const cookieOptions = {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+            sameSite: isPortalClient ? 'strict' : (process.env.NODE_ENV === 'production' ? 'strict' : 'lax'),
             path: '/api/auth',
             maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
         };
 
-        res.cookie('refreshToken', newRefreshToken, cookieOptions);
+        res.cookie(cookieName, newRefreshToken, cookieOptions);
 
-        // Staff tokens carry the session binding and any active break-glass claims.
-        // The refresh payload is rebuilt from scratch, so both must be re-attached
-        // here: without the session_id, single-active-session verification and
-        // emergency-grant validation silently stop working after a token refresh,
-        // dropping a clinician's emergency elevation mid-grant.
+        // Preserve the same session binding for staff and portal accounts.
+        payload.session_id = tokenData.session_id;
         if (tokenData.user_id) {
             try {
-                const sessionRes = await db.query(
-                    'SELECT current_session_id FROM users WHERE user_id = $1',
-                    [tokenData.user_id]
-                );
-                const sessionId = sessionRes.rows[0]?.current_session_id || null;
-                if (sessionId) payload.session_id = sessionId;
                 payload = await attachActiveEmergencyClaims(db, payload);
             } catch (claimError) {
                 logger.warn('Failed to re-attach session/emergency claims during token refresh', {
@@ -472,15 +558,20 @@ const refresh = (db) => async (req, res, next) => {
 
 const logout = (db) => async (req, res, next) => {
     try {
-        const cookies = req.headers.cookie;
-        if (cookies) {
-            const match = cookies.match(/(^| )refreshToken=([^;]+)/);
-            if (match) {
-                const rawToken = match[2];
-                const refreshHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-                // Revoke token
-                await db.query(`UPDATE refresh_tokens SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'logout' WHERE token_hash = $1`, [refreshHash]);
-            }
+        const cookies = req.headers.cookie || '';
+        const isPortalClient = Boolean(
+            req.headers['x-portal-client'] === 'true'
+            || req.originalUrl?.includes('/portal/')
+            || req.path?.includes('/portal/')
+        );
+
+        const cookieName = isPortalClient ? 'portalRefreshToken' : 'refreshToken';
+        const match = cookies.match(new RegExp('(?:^|;\\s*)' + cookieName + '=([^;]+)'))
+            || (isPortalClient ? cookies.match(/(?:^|;\s*)refreshToken=([^;]+)/) : null);
+        if (match) {
+            const rawToken = match[1];
+            const refreshHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+            await db.query(`UPDATE refresh_tokens SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'logout' WHERE token_hash = $1`, [refreshHash]);
         }
         // Immediate access-token invalidation (SEC-007): clearing the owner's
         // current_session_id makes the per-request single-session check in
@@ -516,12 +607,21 @@ const logout = (db) => async (req, res, next) => {
                 }
             } catch { /* expired/invalid token on logout — nothing to invalidate */ }
         }
-        res.clearCookie('refreshToken', {
+        res.clearCookie(cookieName, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+            sameSite: isPortalClient ? 'strict' : (process.env.NODE_ENV === 'production' ? 'strict' : 'lax'),
             path: '/api/auth'
         });
+        if (isPortalClient) {
+            res.clearCookie('portalRefreshToken', {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict',
+                path: '/api/portal'
+            });
+        }
+        res.clearCookie('pacs_viewer_token', { path: '/api/pacs', httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
         res.json({ message: 'Logged out successfully' });
     } catch (error) {
         next(error);
@@ -660,7 +760,7 @@ const changePortalPassword = (db) => async (req, res, next) => {
             }
             const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
             await client.query(
-                'UPDATE patients SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE patient_id = $2',
+                'UPDATE patients SET password_hash = $1, current_session_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE patient_id = $2',
                 [passwordHash, userId]
             );
         } else {
@@ -678,7 +778,7 @@ const changePortalPassword = (db) => async (req, res, next) => {
             }
             const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
             await client.query(
-                'UPDATE referring_doctors SET portal_password_hash = $1 WHERE doctor_id = $2',
+                'UPDATE referring_doctors SET portal_password_hash = $1, current_session_id = NULL WHERE doctor_id = $2',
                 [passwordHash, doctorId]
             );
         }

@@ -1283,12 +1283,13 @@ async function seedInventory() {
     ];
 
     for (const item of items) {
+        const isContrast = /contrast/i.test(item.category || '') || /صبغة|contrast/i.test(item.name || '');
         await pool.query(`
             INSERT INTO inventory_items (
-                name, category, quantity, unit, min_level
-            ) VALUES ($1, $2, $3, $4, $5)
+                name, category, quantity, unit, min_level, is_contrast_agent
+            ) VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT DO NOTHING;
-        `, [item.name, item.category, item.qty, item.unit, item.min]);
+        `, [item.name, item.category, item.qty, item.unit, item.min, isContrast]);
     }
 
     const suppliers = [

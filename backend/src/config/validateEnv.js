@@ -71,6 +71,41 @@ function validateEnv() {
             }
         }
 
+        const pacsOidcConfig = ['PACS_OIDC_ISSUER', 'PACS_OIDC_AUDIENCE', 'PACS_OIDC_JWKS_URL'];
+        if (pacsOidcConfig.some((name) => process.env[name])) {
+            for (const name of pacsOidcConfig) {
+                if (!process.env[name]?.trim()) missing.push(name);
+            }
+            for (const name of ['PACS_OIDC_ISSUER', 'PACS_OIDC_JWKS_URL']) {
+                if (!process.env[name]) continue;
+                try {
+                    const url = new URL(process.env[name]);
+                    if (!['https:', ...(process.env.NODE_ENV === 'production' ? [] : ['http:'])].includes(url.protocol)
+                        || url.search || url.hash || url.username || url.password) {
+                        invalid.push(`${name} must be an HTTPS URL without credentials, query, or fragment`);
+                    }
+                    if (process.env.NODE_ENV !== 'production' && url.protocol === 'http:'
+                        && !(name === 'PACS_OIDC_JWKS_URL'
+                            ? ['localhost', '127.0.0.1', '::1', 'keycloak'].includes(url.hostname)
+                            : ['localhost', '127.0.0.1', '::1'].includes(url.hostname))) {
+                        invalid.push(`${name} may use HTTP only on loopback or the local Keycloak service outside production`);
+                    }
+                } catch {
+                    invalid.push(`${name} must be a valid absolute URL`);
+                }
+            }
+            if (process.env.PACS_OIDC_MAX_TOKEN_TTL_SECONDS) {
+                const ttl = Number.parseInt(process.env.PACS_OIDC_MAX_TOKEN_TTL_SECONDS, 10);
+                if (!Number.isInteger(ttl) || ttl < 60 || ttl > 600) {
+                    invalid.push('PACS_OIDC_MAX_TOKEN_TTL_SECONDS must be between 60 and 600');
+                }
+            }
+            if (process.env.PACS_OIDC_USER_ID_CLAIM
+                && !/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(process.env.PACS_OIDC_USER_ID_CLAIM)) {
+                invalid.push('PACS_OIDC_USER_ID_CLAIM must be a simple claim name or dotted path');
+            }
+        }
+
         if (process.env.WEBAUTHN_ORIGIN && process.env.WEBAUTHN_RP_ID) {
             try {
                 const webauthnUrl = new URL(process.env.WEBAUTHN_ORIGIN);

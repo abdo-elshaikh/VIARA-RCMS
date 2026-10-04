@@ -2,6 +2,10 @@ const express = require('express');
 const { authenticateToken, authorizeRole } = require('../middleware/authMiddleware');
 const { hasPermission, hasAnyPermission } = require('../middleware/rbacMiddleware');
 const { validateRequest } = require('../middleware/validateRequest');
+const checkFeature = require('../middleware/checkFeature');
+
+/** Every path prefix owned by this router; see the gate note below. */
+const INVENTORY_PATHS = ['/inventory', '/suppliers', '/purchase-orders'];
 
 const {
     createInventoryItemSchema,
@@ -42,6 +46,10 @@ const {
 
 module.exports = function inventoryRoutes(pool) {
     const router = express.Router();
+
+    // Gated by explicit path prefix — see the note in financeRoutes.js. The
+    // coverage invariant is enforced by tests/feature-gate-mounting.test.js.
+    router.use(INVENTORY_PATHS, checkFeature('inventory'));
 
     // ─── Suppliers ──────────────────────────────────────────────────────────
     router.get('/suppliers', authenticateToken, authorizeRole(['Admin', 'Accountant', 'Technician']), getSuppliers(pool));

@@ -5,3 +5,6 @@ process.env.PORT = '3001';
 process.env.ORTHANC_PASSWORD = 'VIARA-ci-orthanc-password';
 process.env.PACS_WEBHOOK_SECRET = 'VIARA-ci-pacs-webhook-secret';
 process.env.BLIND_INDEX_KEY = 'VIARA-ci-blind-index-key-32-chars';
+process.env.BACKUP_ENCRYPTION_KEY = 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+// Developer edition license — no expiry, no hardware binding, all modules
+process.env.LICENSE_KEY = ''; // blank = developer fallback in licenseService

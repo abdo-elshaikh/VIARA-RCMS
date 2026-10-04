@@ -352,9 +352,9 @@ export const StatusPill = memo(({ locked, status, dirty, t }) => (
 ));
 StatusPill.displayName = 'StatusPill';
 
-export const WorkflowStepper = memo(({ status, t }) => {
+export const WorkflowStepper = memo(({ status, currentStatus, t }) => {
     const WORKFLOW = ['Draft', 'Typed', 'Reviewed', 'Approved', 'Finalized'];
-    const activeIndex = WORKFLOW.indexOf(status || 'Draft');
+    const activeIndex = WORKFLOW.indexOf(status || currentStatus || 'Draft');
     const safeIndex = activeIndex >= 0 ? activeIndex : 0;
 
     return (

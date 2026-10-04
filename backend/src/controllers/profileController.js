@@ -109,7 +109,7 @@ const changePassword = (db) => async (req, res, next) => {
 
         const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
         await client.query(
-            'UPDATE users SET password_hash = $1, must_change_password = FALSE, failed_login_attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
+            'UPDATE users SET password_hash = $1, current_session_id = NULL, must_change_password = FALSE, failed_login_attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
             [passwordHash, userId]
         );
         await client.query(`

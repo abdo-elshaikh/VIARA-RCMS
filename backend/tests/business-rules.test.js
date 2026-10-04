@@ -830,6 +830,10 @@ describe('request and lifecycle business rules', () => {
         const db = {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
+                // Permission check for VIEW_INVOICES: Technician doesn't have it
+                if (text.includes('role_permissions')) {
+                    return { rows: [] };
+                }
                 if (text.includes('stage_counts AS')) {
                     return {
                         rows: [{
@@ -861,14 +865,19 @@ describe('request and lifecycle business rules', () => {
             user: { user_id: 'technician-1', role: 'Technician' }
         }, res, next);
 
-        expect(db.query).toHaveBeenCalledTimes(2);
-        const [pageSql, pageValues] = db.query.mock.calls[0];
-        const [kpiSql, kpiValues] = db.query.mock.calls[1];
+        // 3 queries: (1) VIEW_INVOICES permission check, (2+3) paginated list + KPI (run in Promise.all)
+        expect(db.query).toHaveBeenCalledTimes(3);
+        // Find the queries by content since page+KPI run concurrently in Promise.all
+        const allCalls = db.query.mock.calls;
+        const [pageSql, pageValues] = allCalls.find(([sql]) => String(sql).includes('LIMIT $5 OFFSET $6')) || [];
+        const [kpiSql, kpiValues] = allCalls.find(([sql]) => String(sql).includes('stage_counts AS')) || [];
         expect(pageSql).toContain('e.modality_id');
         expect(pageSql).toContain('clinical_task_hold_intervals');
         expect(pageSql).toContain('active_stage_minutes');
         expect(pageSql).toContain("WHEN e.queue_stage = 'Scheduled' THEN a.start_time");
         expect(pageSql).toContain('GREATEST(0');
+        expect(pageSql).toContain('e.current_station = $3');
+        expect(pageSql).toContain('(a.technician_id = $4 OR a.technician_id IS NULL)');
         expect(pageSql).toContain('LIMIT $5 OFFSET $6');
         expect(pageValues).toEqual(['Ready for Exam', 'Routine', 'Modality', 'technician-1', 1, 1]);
         // Lightweight KPI statement: same filter tree, aggregation-only columns.
@@ -1190,6 +1199,38 @@ describe('request and lifecycle business rules', () => {
         expect(updateSql).not.toContain('$1::text');
         expect(client.query).toHaveBeenCalledWith('COMMIT');
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'Approved' }));
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    test('queue role filters use bind parameters when defaulting to a clinical station', async () => {
+        const db = {
+            query: jest.fn(async (sql) => {
+                if (String(sql).includes('role_permissions')) return { rows: [] };
+                if (String(sql).includes('stage_counts AS')) return { rows: [{}] };
+                return { rows: [] };
+            })
+        };
+        const res = createResponse();
+        const next = jest.fn();
+        const userId = '00000000-0000-4000-8000-000000000001';
+
+        await getQueue(db)({
+            query: { includeDelivered: 'false', limit: '500' },
+            user: { user_id: userId, role: 'Radiologist' }
+        }, res, next);
+
+        const calls = db.query.mock.calls;
+        const [pageSql, pageValues] = calls.find(([sql]) => String(sql).includes('LIMIT $4 OFFSET $5')) || [];
+        const [kpiSql, kpiValues] = calls.find(([sql]) => String(sql).includes('stage_counts AS')) || [];
+        expect(pageSql).toContain('e.current_station = $1');
+        expect(pageSql).toContain('e.queue_stage = ANY($2::text[])');
+        expect(pageSql).toContain('(e.performing_radiologist_id = $3 OR e.performing_radiologist_id IS NULL)');
+        expect(pageValues).toEqual(['Radiologist', ['Reporting'], userId, 500, 0]);
+        expect(kpiSql).toContain('e.current_station = $1');
+        expect(kpiSql).toContain('e.queue_stage = ANY($2::text[])');
+        expect(kpiSql).toContain('(e.performing_radiologist_id = $3 OR e.performing_radiologist_id IS NULL)');
+        expect(kpiSql).toContain('task_assignee_id = $4::uuid');
+        expect(kpiValues).toEqual(['Radiologist', ['Reporting'], userId, userId]);
         expect(next).not.toHaveBeenCalled();
     });
 });

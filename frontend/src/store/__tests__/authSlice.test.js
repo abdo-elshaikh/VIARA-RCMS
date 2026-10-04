@@ -147,4 +147,28 @@ describe('staff access token storage', () => {
         expect(store.getState().auth.user).not.toHaveProperty('breakGlassExpiry');
         expect(store.getState().auth.token).toBe(token);
     });
+
+    it('rejects external portal roles (Patient, Doctor) from authenticating or rehydrating in staff administration', () => {
+        const patientToken = createMockJwt({
+            userId: 'pat-123',
+            role: 'Patient',
+            name: 'Mohamed Patient'
+        });
+        const store = makeStore();
+
+        // 1. setCredentials with Patient role is rejected
+        store.dispatch(setCredentials({
+            user: { id: 'pat-123', role: 'Patient' },
+            token: patientToken
+        }));
+        expect(store.getState().auth.isAuthenticated).toBe(false);
+        expect(store.getState().auth.user).toBeNull();
+
+        // 2. rehydrateUser with Patient JWT is rejected
+        store.dispatch(rehydrateUser(patientToken));
+        expect(store.getState().auth.isAuthenticated).toBe(false);
+        expect(store.getState().auth.user).toBeNull();
+        expect(localStorage.getItem('user')).toBeNull();
+        expect(sessionStorage.getItem('user')).toBeNull();
+    });
 });

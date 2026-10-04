@@ -185,12 +185,17 @@ export const exportReportToWord = async ({
     ).trim().replace(/\s*\r?\n\s*/g, ' | ');
     const themeColor = colorHex(center.print_settings?.themeColor, '0F766E');
     const font = rtl ? (center.print_settings?.fontFamily || 'Segoe UI') : (center.print_settings?.fontFamily || 'Aptos');
-    const reportStatus = exam.report_status || (exam.report_locked ? 'Finalized' : 'Draft');
-    const finalized = Boolean(exam.report_locked || ['Finalized', 'Amended'].includes(reportStatus));
+    const reportStatus = exam.report_status || 'Draft';
+    const finalized = Boolean(
+        ['Finalized', 'Amended'].includes(reportStatus)
+        && exam.report_locked
+        && (exam.report_finalized_at || exam.finalized_at)
+    );
+    const documentStatus = finalized ? reportStatus : 'Draft';
     const includeHeader = documentSettings.includeHeader !== false;
     const includeFooter = documentSettings.includeFooter !== false;
     const includeSignature = documentSettings.includeSignature !== false;
-    const statusTone = STATUS_TONES[reportStatus] || STATUS_TONES.Draft;
+    const statusTone = STATUS_TONES[documentStatus] || STATUS_TONES.Draft;
     const logoRun = includeHeader ? await loadLogoRun(center.logo_url) : null;
     const logoText = String(center.center_name || 'VIARA').trim().slice(0, 4).toUpperCase();
     const tr = (key: string, fallback: string) => typeof t === 'function'
@@ -232,7 +237,7 @@ export const exportReportToWord = async ({
         of: tr('editor.word.of', rtl ? 'من' : 'of')
     };
 
-    const statusText = tr(`statuses.${reportStatus}`, statusTone.label);
+    const statusText = tr(`statuses.${documentStatus}`, statusTone.label);
     const priorityText = tr(`priorities.${exam.priority || 'Routine'}`, exam.priority || 'Routine');
     const examinationName = exam.exam_type_name || exam.modality_name || labels.subtitle;
     const radiologistName = exam.digital_signature_name || exam.radiologist_name || '-';

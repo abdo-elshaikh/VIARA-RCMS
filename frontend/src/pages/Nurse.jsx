@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import {
@@ -9,6 +10,7 @@ import {
     Syringe,
     Clock,
     AlertTriangle,
+    Bell,
     Edit3,
     Users,
     Stethoscope,
@@ -35,9 +37,12 @@ import {
     useGetQueueQuery,
     useReleaseQueueTaskAssignmentMutation,
     useTransitionQueueMutation,
-    useGetStockMovementsQuery
+    useGetStockMovementsQuery,
+    useBroadcastPatientCallMutation,
+    useGetEquipmentDowntimeQuery
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
+import { playHospitalChime } from '../utils/audioChime';
 import ConsumeItemModal from '../components/inventory/ConsumeItemModal';
 import HoldReasonDialog from '../components/clinical/HoldReasonDialog';
 import EditComplaintDialog from '../components/clinical/EditComplaintDialog';
@@ -114,6 +119,8 @@ const Nurse = () => {
         data: queueResponse,
         isLoading,
         isFetching,
+        isError,
+        error,
         refetch
     } = useGetQueueQuery(
         queueQuery,
@@ -123,7 +130,37 @@ const Nurse = () => {
     const [transitionQueue, { isLoading: isMoving }] = useTransitionQueueMutation();
     const [claimQueueTask, { isLoading: isClaiming }] = useClaimQueueTaskMutation();
     const [releaseAssignment, { isLoading: isReleasingAssignment }] = useReleaseQueueTaskAssignmentMutation();
+    const [broadcastPatientCall] = useBroadcastPatientCallMutation();
     const { data: stockMovements = [] } = useGetStockMovementsQuery();
+    const { data: downtimeRecords = [] } = useGetEquipmentDowntimeQuery(undefined, { pollingInterval: 30000 });
+
+    const activeDowntimes = useMemo(() => {
+        return (Array.isArray(downtimeRecords) ? downtimeRecords : []).filter(r => r.status !== 'Resolved');
+    }, [downtimeRecords]);
+
+    const handleCallPatient = async (item) => {
+        const token = item.order_number || item.accession_number || String(item.exam_id);
+        const patName = item.patient_name || '';
+        const room = isRtl ? 'غرفة التحضير' : 'Preparation Room';
+        try {
+            await broadcastPatientCall({
+                orderNumber: token,
+                patientName: patName,
+                queueNumber: item.queue_number || null,
+                roomName: room,
+                deskIdentifier: 'غرفة التحضير',
+                modalityId: item.modality_id || null,
+                callByName: Boolean(patName),
+            }).unwrap();
+            playHospitalChime();
+            toast.success(isRtl
+                ? `🔔 تم نداء المريض ${patName || token} للتوجه إلى غرفة التحضير`
+                : `🔔 Patient ${patName || token} called to Preparation Room`
+            );
+        } catch (error) {
+            toast.error(isRtl ? '\u062a\u0639\u0630\u0631 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0646\u062f\u0627\u0621. \u062d\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649.' : (error?.data?.message || 'Could not send the patient call. Please try again.'));
+        }
+    };
 
     const [consumeExamId, setConsumeExamId] = useState(null);
     const [holdItem, setHoldItem] = useState(null);
@@ -368,6 +405,35 @@ const Nurse = () => {
                     metricsLabel={t('nurse.recordIndicators', { defaultValue: 'Nursing queue record indicators' })}
                 />
 
+                {/* Equipment Downtime Warning Banner */}
+                {activeDowntimes.length > 0 && (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50/90 p-4 text-xs font-semibold text-amber-950 shadow-xs dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                        <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                                <AlertTriangle size={18} />
+                            </div>
+                            <div>
+                                <p className="font-black text-slate-900 dark:text-white">
+                                    {isRtl
+                                        ? `تنبيه صيانة الأجهزة: يوجد (${activeDowntimes.length}) جهاز في حالة توقف أو صيانة حالياً.`
+                                        : `Equipment Maintenance Alert: (${activeDowntimes.length}) machine(s) currently under maintenance.`}
+                                </p>
+                                <p className="mt-0.5 text-[11px] text-amber-800 dark:text-amber-300">
+                                    {isRtl
+                                        ? 'يرجى التنسيق مع فنيي الأشعة والتأكد من جاهزية الجهاز قبل بدء تحضير المريض أو تركيب الكانيولا وحقن الصبغة.'
+                                        : 'Please coordinate with radiology technicians before contrast injection or patient preparation.'}
+                                </p>
+                            </div>
+                        </div>
+                        <Link
+                            to="/equipment?tab=downtime"
+                            className="inline-flex items-center justify-center shrink-0 rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-black text-white shadow-xs hover:bg-amber-700 transition"
+                        >
+                            {isRtl ? 'سجل الأعطال والصيانة' : 'View Maintenance'}
+                        </Link>
+                    </div>
+                )}
+
                 {/* Filter & Command Control Bar */}
                 <section className={`${cardClass} p-3.5 sm:p-4 space-y-3.5`}>
                     {/* First Row: Date Mode Switcher & Search Bar */}
@@ -600,6 +666,30 @@ const Nurse = () => {
                         <tbody className="divide-y divide-[var(--VIARA-line)]">
                             {isLoading ? (
                                 <tr><td colSpan={5}><LoadingState label={t('nurse.loading')} /></td></tr>
+                            ) : isError ? (
+                                <tr>
+                                    <td colSpan={5}>
+                                        <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
+                                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 ring-1 ring-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:ring-rose-800">
+                                                <AlertTriangle size={24} />
+                                            </div>
+                                            <p className="text-sm font-bold text-[var(--VIARA-ink)]">
+                                                {isRtl ? 'حدث خطأ أثناء تحميل مهام التمريض' : 'Failed to load nursing queue'}
+                                            </p>
+                                            <p className="max-w-md text-xs text-[var(--VIARA-muted)]">
+                                                {getErrorMessage(error) || (isRtl ? 'تعذر جلب البيانات من الخادم، يرجى إعادة المحاولة أو التحقق من الصلاحيات.' : 'Could not fetch data from server.')}
+                                            </p>
+                                            <button
+                                                type="button"
+                                                onClick={() => refetch()}
+                                                className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--VIARA-accent)] px-3.5 py-1.5 text-xs font-bold text-white transition hover:brightness-105"
+                                            >
+                                                <RefreshCcw size={13} />
+                                                <span>{t('common.refresh', { defaultValue: 'Retry' })}</span>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
                             ) : filteredItems.length === 0 ? (
                                 <tr>
                                     <td colSpan={5}>
@@ -727,7 +817,13 @@ const Nurse = () => {
                                                 <div className="flex flex-wrap items-center justify-end gap-1.5">
                                                     <ActionButton icon={expanded ? ChevronUp : ChevronDown} label={t(expanded ? 'nurse.hideDetails' : 'nurse.showDetails', { defaultValue: expanded ? 'Hide details' : 'Details' })} tone="slate" onClick={() => toggleExpanded(item.exam_id)} />
                                                     {item.assignment_status === 'Unassigned' ? (
-                                                        <ActionButton icon={UserCheck} label={t('taskScope.accept')} tone="teal" solid disabled={isClaiming} onClick={() => claim(item)} />
+                                                        item.queue_stage === 'Prep Pending' ? (
+                                                            <ActionButton icon={UserCheck} label={t('taskScope.accept')} tone="teal" solid disabled={isClaiming} onClick={() => claim(item)} />
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                                                {t('nurse.awaitingPrepStage', { defaultValue: 'بانتظار وصول الحالة للتمريض' })}
+                                                            </span>
+                                                        )
                                                     ) : (
                                                         <>
                                                             {item.is_on_hold ? (
@@ -781,6 +877,26 @@ const Nurse = () => {
                 <section className="space-y-3 md:hidden">
                     {isLoading ? (
                         <div className={cardClass}><LoadingState label={t('nurse.loading')} /></div>
+                    ) : isError ? (
+                        <div className={`${cardClass} p-8 text-center flex flex-col items-center justify-center gap-3`}>
+                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 ring-1 ring-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:ring-rose-800">
+                                <AlertTriangle size={24} />
+                            </div>
+                            <p className="text-sm font-bold text-[var(--VIARA-ink)]">
+                                {isRtl ? 'حدث خطأ أثناء تحميل مهام التمريض' : 'Failed to load nursing queue'}
+                            </p>
+                            <p className="max-w-xs text-xs text-[var(--VIARA-muted)]">
+                                {getErrorMessage(error) || (isRtl ? 'تعذر جلب البيانات من الخادم، يرجى إعادة المحاولة أو التحقق من الصلاحيات.' : 'Could not fetch data from server.')}
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => refetch()}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--VIARA-accent)] px-3.5 py-1.5 text-xs font-bold text-white transition hover:brightness-105"
+                            >
+                                <RefreshCcw size={13} />
+                                <span>{t('common.refresh', { defaultValue: 'Retry' })}</span>
+                            </button>
+                        </div>
                     ) : filteredItems.length === 0 ? (
                         <div className={cardClass}>
                             <EmptyState
@@ -813,9 +929,10 @@ const Nurse = () => {
                             onReady={() => move(item, { toStage: 'Ready for Exam' })}
                             onEditComplaint={() => setEditComplaintItem(item)}
                             onEditSafety={() => setEditSafetyItem(item)}
-                             onClaim={() => claim(item)}
-                             onReturn={() => setReleaseAssignmentItem(item)}
+                            onClaim={() => claim(item)}
+                            onReturn={() => setReleaseAssignmentItem(item)}
                             onRequestPaymentException={() => requestPaymentException(item)}
+                            onCallPatient={handleCallPatient}
                             isArabic={isRtl}
                              isClaiming={isClaiming}
                             isReleasingAssignment={isReleasingAssignment}
@@ -972,6 +1089,7 @@ const NurseQueueCard = ({
     onClaim,
     onReturn,
     onRequestPaymentException,
+    onCallPatient,
     isArabic,
     expanded,
     onToggleDetails
@@ -1087,7 +1205,13 @@ const NurseQueueCard = ({
 
             <div className="mt-3.5 flex flex-wrap gap-1.5 ps-2">
                 {item.assignment_status === 'Unassigned' ? (
-                    <ActionButton icon={UserCheck} label={t('taskScope.accept')} tone="teal" solid disabled={isClaiming} onClick={onClaim} />
+                    item.queue_stage === 'Prep Pending' ? (
+                        <ActionButton icon={UserCheck} label={t('taskScope.accept')} tone="teal" solid disabled={isClaiming} onClick={onClaim} />
+                    ) : (
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                            {t('nurse.awaitingPrepStage', { defaultValue: 'بانتظار وصول الحالة للتمريض' })}
+                        </span>
+                    )
                 ) : (
                     <>
                         {item.is_on_hold ? (
@@ -1114,6 +1238,17 @@ const NurseQueueCard = ({
                                 }
                             }}
                         />
+                        {onCallPatient && (
+                            <button
+                                type="button"
+                                onClick={() => onCallPatient(item)}
+                                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-amber-300 bg-amber-50 text-amber-700 hover:border-amber-400 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 transition active:scale-95 shadow-2xs"
+                                title={isArabic ? 'نداء المريض إلى غرفة التحضير على شاشات العرض' : 'Call patient to Preparation Room on display board'}
+                                aria-label={isArabic ? 'نداء المريض إلى غرفة التحضير' : 'Call patient to Preparation Room'}
+                            >
+                                <Bell size={14} />
+                            </button>
+                        )}
                     </>
                 )}
             </div>

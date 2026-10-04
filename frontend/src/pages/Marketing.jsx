@@ -31,6 +31,7 @@ import TaskBoard from '../components/crm/TaskBoard';
 import FeedbackDashboard from '../components/crm/FeedbackDashboard';
 import ReferralsTab from '../components/marketing/ReferralsTab';
 import MarketingDashboard from '../components/marketing/MarketingDashboard';
+import ClinicalRecallsTab from '../components/crm/ClinicalRecallsTab';
 import { selectCurrentUser } from '../store/authSlice';
 import { hasDeveloperOrAdminRole } from '../utils/roles';
 import PageHeader from '../components/ui/PageHeader';
@@ -135,6 +136,13 @@ const Marketing = () => {
             label: isArabic ? 'رضا المرضى والتقييمات' : 'Patient Feedback & CSAT',
             badge: `${averageRating}★`,
             visible: canViewFeedback
+        },
+        {
+            id: 'recalls',
+            icon: HeartHandshake,
+            label: isArabic ? 'الاستدعاء الدوري والفحوصات الوقائية' : 'Clinical Recalls & Screening',
+            badge: isArabic ? 'وقائي' : 'Recall',
+            visible: canViewTasks || canViewCampaigns
         },
         {
             id: 'referrals',
@@ -258,7 +266,7 @@ const Marketing = () => {
             />
 
             {/* 2. Single-Tier Segmented Tabs Navigation Bar */}
-<div data-workspace-tabs className="rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 lg:hidden">
+            <div data-workspace-tabs className="rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
                 <nav aria-label={isArabic ? 'أقسام التسويق' : 'Marketing sections'} className="flex flex-wrap gap-1">
                     {tabs.map((tab) => {
                         const Icon = tab.icon;
@@ -296,6 +304,7 @@ const Marketing = () => {
                 {safeTab === 'campaigns' && <CampaignManager />}
                 {safeTab === 'tasks' && <TaskBoard />}
                 {safeTab === 'feedback' && <FeedbackDashboard />}
+                {safeTab === 'recalls' && <ClinicalRecallsTab />}
                 {safeTab === 'referrals' && <ReferralsTab />}
             </div>
         </main>

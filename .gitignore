@@ -30,7 +30,10 @@ logs/
 # Test, coverage, and tooling output
 coverage/
 test-results/
+performance-tests/reports/*
+!performance-tests/reports/.gitkeep
 .playwright-mcp/
+
 .vite/
 .vite-temp/
 .pytest_cache/
@@ -64,3 +67,17 @@ portal/unused-images/
 pacs-worklists/*.wl
 !pacs-worklists/.gitkeep
 /ChatGPT Image*
+
+# License keys — NEVER commit these
+keys/privateKey.pem
+keys/
+.viara-activation
+.viara-license
+client_license_*.txt
+
+# Demo lease ledger — holds customer names and issued trial license keys
+.demo/
+.refact/
+.*-profile/
+.tmp-*
+/pacs-cold-storage/

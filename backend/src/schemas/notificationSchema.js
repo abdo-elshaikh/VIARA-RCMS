@@ -29,7 +29,7 @@ const getNotificationsQuerySchema = z.object({
 });
 
 const getNotificationJobsQuerySchema = z.object({
-    status: z.enum(['Pending', 'Processing', 'Sent', 'Failed', 'Cancelled', 'Skipped']).optional(),
+    status: z.enum(['Pending', 'Processing', 'Sent', 'Failed', 'DeadLetter', 'Cancelled', 'Skipped']).optional(),
     eventType: z.string().trim().max(80).optional(),
     limit: z.coerce.number().int().min(1).max(200).default(50),
     offset: z.coerce.number().int().min(0).default(0)
@@ -38,7 +38,7 @@ const getNotificationJobsQuerySchema = z.object({
 const notificationTemplateSchema = z.object({
     eventType: z.string().trim().min(1).max(80),
     channel: z.enum(['Email', 'SMS', 'WhatsApp', 'InApp']),
-    language: z.string().trim().max(10).default('en'),
+    language: z.enum(['ar', 'en']).default('en'),
     subject: z.string().trim().max(300).optional(),
     body: z.string().trim().min(1).max(5000),
     isActive: z.boolean().default(true)

@@ -22,7 +22,7 @@ const getBackupMode = () => (
 ).toLowerCase();
 
 const isValidBackupFilename = (filename) => (
-    typeof filename === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]*\.(json|dump|dump\.enc)$/.test(filename)
+    typeof filename === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]*\.(json|dump|dump\.enc|pacs\.zip|pacs\.zip\.enc)$/.test(filename)
 );
 
 const MAGIC = Buffer.from('VIARABKP2');
@@ -174,7 +174,7 @@ const listBackupFiles = async () => {
             filename: entry.name,
             created_at: stat.mtime,
             size_bytes: stat.size,
-            type: entry.name.endsWith('.dump.enc') ? 'PostgreSQL (encrypted)'
+            type: entry.name.endsWith('.pacs.zip.enc') ? 'PACS images (encrypted)' : entry.name.endsWith('.pacs.zip') ? 'PACS images' : entry.name.endsWith('.dump.enc') ? 'PostgreSQL (encrypted)'
                 : entry.name.endsWith('.dump') ? 'PostgreSQL' : 'JSON'
         });
     }
@@ -188,10 +188,13 @@ const cleanupBackups = async () => {
     const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
     const backups = await listBackupFiles();
     const deleted = [];
+    const groups = new Map();
 
     for (let index = 0; index < backups.length; index += 1) {
         const backup = backups[index];
-        if (index >= maxBackups || backup.created_at.getTime() < cutoff) {
+        const key = backup.filename.replace(/\.(?:dump(?:\.enc)?|json|pacs\.zip(?:\.enc)?)$/, '');
+        if (!groups.has(key)) groups.set(key, groups.size);
+        if (groups.get(key) >= maxBackups || backup.created_at.getTime() < cutoff) {
             const filepath = resolveBackupPath(backup.filename);
             if (filepath) {
                 await fsp.unlink(filepath);
@@ -206,15 +209,17 @@ const cleanupBackups = async () => {
 const createPostgresBackup = async () => {
     const backupDir = await ensureBackupDir();
     const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
-    const filename = `VIARA_pg_${timestamp}.dump.enc`;
+    const filename = `VIARA_pg_${timestamp}_${crypto.randomUUID()}.dump.enc`;
     const filepath = path.join(backupDir, filename);
-    const temporaryPath = path.join(backupDir, `VIARA_pg_${timestamp}.dump.tmp`);
+    const temporaryPath = filepath.replace(/\.dump\.enc$/, '.dump.tmp');
     const encryptedTemporaryPath = `${filepath}.tmp`;
     const environment = buildPgEnvironment();
     const pgDump = process.env.PG_DUMP_PATH || 'pg_dump';
     const pgRestore = process.env.PG_RESTORE_PATH || 'pg_restore';
 
+    let pacs;
     try {
+        pacs = await createPacsCompanion({ filename, filepath });
         await runProcess(pgDump, [
             '--format=custom',
             '--no-owner',
@@ -222,6 +227,7 @@ const createPostgresBackup = async () => {
             `--file=${temporaryPath}`
         ], environment);
         await runProcess(pgRestore, ['--list', temporaryPath], environment);
+        await pacs?.verifyUnchanged?.();
         await encryptBackup(temporaryPath, encryptedTemporaryPath);
         await fsp.unlink(temporaryPath);
         await fsp.rename(encryptedTemporaryPath, filepath);
@@ -243,12 +249,35 @@ const createPostgresBackup = async () => {
             created_at: stat.mtime,
             type: 'PostgreSQL',
             verified: true,
+            scope: pacs ? 'database-and-pacs' : 'database-only',
+            companions: pacs ? [pacs.backup] : [],
             dicom_storage: dicomStorage
         };
     } catch (error) {
         if (fs.existsSync(temporaryPath)) await fsp.unlink(temporaryPath);
         if (fs.existsSync(encryptedTemporaryPath)) await fsp.unlink(encryptedTemporaryPath);
+        if (pacs?.backup?.filepath) await fsp.unlink(pacs.backup.filepath).catch(() => {});
         throw error;
+    }
+};
+
+const createPacsCompanion = async (backup) => {
+    const enabled = process.env.PACS_BACKUP_ENABLED ?? (process.env.NODE_ENV === 'test' ? 'false' : 'true');
+    if (enabled !== 'true') return null;
+    const filename = backup.filename.replace(/\.(?:json|dump(?:\.enc)?)$/, '.pacs.zip.enc');
+    const filepath = path.join(path.dirname(backup.filepath), filename);
+    const temporary = filepath + '.partial.zip';
+    const encrypted = filepath + '.partial';
+    try {
+        const snapshot = await require('./pacsBackupService').snapshotPacs(temporary);
+        await encryptBackup(temporary, encrypted);
+        await fsp.rename(encrypted, filepath);
+        return { verifyUnchanged: snapshot.verifyUnchanged, backup: { filename, filepath,
+            checksum: await computeFileChecksum(filepath), instance_count: snapshot.manifest.instances.length,
+            size_bytes: (await fsp.stat(filepath)).size, type: 'PACS', verified: true } };
+    } finally {
+        await fsp.unlink(temporary).catch(() => {});
+        await fsp.unlink(encrypted).catch(() => {});
     }
 };
 
@@ -295,11 +324,123 @@ const getDicomStorageStatus = async () => {
     }
 };
 
+const restorePostgresBackup = async (filename, options = {}) => {
+    if (!filename || !isValidBackupFilename(filename)) {
+        throw new Error('Valid backup filename is required');
+    }
+    const filepath = resolveBackupPath(filename);
+    if (!filepath || !fs.existsSync(filepath)) {
+        throw new Error(`Backup file not found: ${filename}`);
+    }
+
+    const isEncrypted = filename.endsWith('.dump.enc');
+    const isDump = filename.endsWith('.dump') || isEncrypted;
+    if (!isDump) {
+        throw new Error('PostgreSQL restore only supports .dump and .dump.enc archives');
+    }
+
+    const environment = buildPgEnvironment(options.databaseUrl);
+    const pgRestore = process.env.PG_RESTORE_PATH || 'pg_restore';
+    const runner = options.runProcess || runProcess;
+    const backupDir = getBackupDir();
+    const tempDecryptedPath = path.join(backupDir, `${filename}.${crypto.randomUUID()}.restore.tmp`);
+    let pathToRestore = filepath;
+    let companionDecrypted = null;
+
+    try {
+        if (isEncrypted) {
+            await decryptBackup(filepath, tempDecryptedPath);
+            pathToRestore = tempDecryptedPath;
+        }
+
+        // 1. Verify PostgreSQL archive structure
+        await runner(pgRestore, ['--list', pathToRestore], environment);
+
+        // 2. Pre-verify companion PACS archive if present
+        const companionEnc = filepath.replace(/\.dump(?:\.enc)?$/, '.pacs.zip.enc');
+        const companionRaw = filepath.replace(/\.dump(?:\.enc)?$/, '.pacs.zip');
+        let pacsResult = null;
+
+        const hasCompanionEnc = fs.existsSync(companionEnc);
+        const hasCompanionRaw = fs.existsSync(companionRaw);
+
+        let pacsZipToVerify = null;
+        let manifest = null;
+        const pacsBackupService = require('./pacsBackupService');
+
+        if ((hasCompanionEnc || hasCompanionRaw) && options.restorePacs !== false) {
+            const companionPath = hasCompanionEnc ? companionEnc : companionRaw;
+            pacsZipToVerify = companionPath;
+            if (hasCompanionEnc) {
+                companionDecrypted = path.join(backupDir, `companion.${crypto.randomUUID()}.pacs.zip`);
+                await decryptBackup(companionPath, companionDecrypted);
+                pacsZipToVerify = companionDecrypted;
+            }
+            manifest = await pacsBackupService.verifyPacsZip(pacsZipToVerify);
+        }
+
+        // 3. If not verifyOnly, execute pg_restore against target database FIRST
+        if (!options.verifyOnly) {
+            const cleanArgs = options.clean !== false ? ['--clean', '--if-exists'] : [];
+            const restoreArgs = [
+                '--no-owner',
+                '--no-privileges',
+                ...cleanArgs,
+                '-d',
+                environment.PGDATABASE,
+                pathToRestore
+            ];
+            await runner(pgRestore, restoreArgs, environment);
+
+            // 4. On successful database restore, proceed to restore PACS DICOM instances
+            if ((hasCompanionEnc || hasCompanionRaw) && options.restorePacs !== false) {
+                const orthancUrl = options.orthancUrl || process.env.ORTHANC_URL || 'http://orthanc:8042';
+                const orthancUser = options.orthancUser || process.env.PACS_RESTORE_USERNAME || process.env.ORTHANC_USERNAME || 'orthanc';
+                const orthancPass = options.orthancPassword || process.env.PACS_RESTORE_PASSWORD || process.env.ORTHANC_PASSWORD || 'orthanc';
+
+                if (hasCompanionEnc) {
+                    const { restorePacsBackup } = require('../../scripts/restorePacsBackup');
+                    pacsResult = await restorePacsBackup({
+                        file: companionEnc,
+                        target: orthancUrl,
+                        username: orthancUser,
+                        password: orthancPass,
+                        allowNonEmpty: Boolean(options.allowNonEmptyPacs)
+                    });
+                } else {
+                    pacsResult = await pacsBackupService.restorePacs(companionRaw, {
+                        connection: { url: orthancUrl, username: orthancUser, password: orthancPass },
+                        allowNonEmpty: Boolean(options.allowNonEmptyPacs)
+                    });
+                }
+            }
+        } else if (manifest) {
+            pacsResult = { verified: true, instance_count: manifest.instances.length };
+        }
+
+        return {
+            filename,
+            verified: true,
+            dry_run: Boolean(options.verifyOnly),
+            restored_at: new Date().toISOString(),
+            pacs: pacsResult
+        };
+    } finally {
+        if (fs.existsSync(tempDecryptedPath)) {
+            await fsp.unlink(tempDecryptedPath).catch(() => {});
+        }
+        if (companionDecrypted && fs.existsSync(companionDecrypted)) {
+            await fsp.unlink(companionDecrypted).catch(() => {});
+        }
+    }
+};
+
 module.exports = {
     buildPgEnvironment,
     cleanupBackups,
     computeFileChecksum,
     createPostgresBackup,
+    createPacsCompanion,
     decryptBackup,
     encryptBackup,
     ensureBackupDir,
@@ -308,5 +449,6 @@ module.exports = {
     getDicomStorageStatus,
     isValidBackupFilename,
     listBackupFiles,
-    resolveBackupPath
+    resolveBackupPath,
+    restorePostgresBackup
 };

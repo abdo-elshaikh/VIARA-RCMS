@@ -183,7 +183,7 @@ const syncModalityToOrthanc = (db) => async (req, res, next) => {
         const port = parseInt(req.body?.port, 10);
 
         if (!aet) return next(new AppError('Application Entity Title (AET) is required', 400));
-        if (aet.length > 50) return next(new AppError('AET must be 50 characters or fewer', 400));
+        if (!aet || aet.length > 16 || /[\\\x00-\x1f\x7f]/.test(aet)) return next(new AppError('AET must contain 1-16 valid characters', 400));
         if (!isValidDicomHost(ipAddress)) {
             return next(new AppError('A valid modality host or IPv4 address is required', 400));
         }
@@ -361,7 +361,23 @@ const PACS_CONFIG_KEYS = [
     'orthanc_api_url',
     'orthanc_username',
     'pacs_is_enabled',
-    'pacs_auto_import'
+    'pacs_auto_import',
+    'pacs_storage_mode',
+    'pacs_local_storage_path',
+    'pacs_cloud_provider',
+    'pacs_s3_bucket',
+    'pacs_s3_region',
+    'pacs_s3_endpoint',
+    'pacs_s3_access_key',
+    'pacs_s3_storage_class',
+    'pacs_azure_container',
+    'pacs_peer_url',
+    'pacs_peer_aet',
+    'pacs_peer_username',
+    'pacs_auto_sync_enabled',
+    'pacs_tiering_days',
+    'pacs_cold_prefix',
+    'pacs_external_viewer_url'
 ];
 
 const diagnosticCheck = (key, label, status, detail = '', meta = {}) => ({
@@ -466,6 +482,10 @@ const getPacsConfig = () => async (req, res, next) => {
         }
         data.orthanc_password = '';
         data.has_orthanc_password = Boolean(all.orthanc_password);
+        data.pacs_s3_secret_key = '';
+        data.has_s3_secret = Boolean(all.pacs_s3_secret_key);
+        data.pacs_peer_password = '';
+        data.has_peer_password = Boolean(all.pacs_peer_password);
         res.json({ success: true, data });
     } catch (error) {
         next(error);
@@ -636,7 +656,7 @@ const updatePacsConfig = (db) => async (req, res, next) => {
 
         if (body.pacs_server_aet !== undefined) {
             const aet = String(body.pacs_server_aet).trim();
-            if (aet.length > 50) return next(new AppError('AET must be 50 characters or fewer', 400));
+            if (!aet || aet.length > 16 || /[\\\x00-\x1f\x7f]/.test(aet)) return next(new AppError('AET must contain 1-16 valid characters', 400));
             updates.pacs_server_aet = aet;
         }
         if (body.pacs_server_ip !== undefined) {
@@ -657,7 +677,8 @@ const updatePacsConfig = (db) => async (req, res, next) => {
             const url = String(body.orthanc_api_url).trim();
             try {
                 // eslint-disable-next-line no-new
-                new URL(url);
+                const parsed = new URL(url);
+                if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Invalid protocol or embedded credentials');
             } catch {
                 return next(new AppError('A valid Orthanc API URL is required', 400));
             }
@@ -675,6 +696,53 @@ const updatePacsConfig = (db) => async (req, res, next) => {
         // Only overwrite the password when a real value is provided.
         if (body.orthanc_password !== undefined && String(body.orthanc_password).length > 0) {
             updates.orthanc_password = encrypt(String(body.orthanc_password));
+        }
+
+        // Storage & Cloud Sync Configuration
+        if (body.pacs_storage_mode !== undefined) {
+            const mode = String(body.pacs_storage_mode).trim().toLowerCase();
+            if (['local', 'cloud', 'hybrid'].includes(mode)) {
+                updates.pacs_storage_mode = mode;
+            }
+        }
+        if (body.pacs_local_storage_path !== undefined) {
+            updates.pacs_local_storage_path = String(body.pacs_local_storage_path).trim().slice(0, 500);
+        }
+        if (body.pacs_cloud_provider !== undefined) {
+            const provider = String(body.pacs_cloud_provider).trim().toLowerCase();
+            if (['s3', 'wasabi', 'r2', 'azure', 'minio', 'gcs'].includes(provider)) {
+                updates.pacs_cloud_provider = provider;
+            }
+        }
+        if (body.pacs_s3_bucket !== undefined) updates.pacs_s3_bucket = String(body.pacs_s3_bucket).trim().slice(0, 100);
+        if (body.pacs_s3_region !== undefined) updates.pacs_s3_region = String(body.pacs_s3_region).trim().slice(0, 50);
+        if (body.pacs_s3_endpoint !== undefined) updates.pacs_s3_endpoint = String(body.pacs_s3_endpoint).trim().slice(0, 255);
+        if (body.pacs_s3_access_key !== undefined) updates.pacs_s3_access_key = String(body.pacs_s3_access_key).trim().slice(0, 150);
+        if (body.pacs_s3_storage_class !== undefined) updates.pacs_s3_storage_class = String(body.pacs_s3_storage_class).trim().slice(0, 50);
+        if (body.pacs_s3_secret_key !== undefined && String(body.pacs_s3_secret_key).length > 0) {
+            updates.pacs_s3_secret_key = encrypt(String(body.pacs_s3_secret_key));
+        }
+        if (body.pacs_azure_container !== undefined) updates.pacs_azure_container = String(body.pacs_azure_container).trim().slice(0, 100);
+        if (body.pacs_peer_url !== undefined) updates.pacs_peer_url = String(body.pacs_peer_url).trim().slice(0, 255);
+        if (body.pacs_peer_aet !== undefined) updates.pacs_peer_aet = String(body.pacs_peer_aet).trim().slice(0, 50);
+        if (body.pacs_peer_username !== undefined) updates.pacs_peer_username = String(body.pacs_peer_username).trim().slice(0, 100);
+        if (body.pacs_peer_password !== undefined && String(body.pacs_peer_password).length > 0) {
+            updates.pacs_peer_password = encrypt(String(body.pacs_peer_password));
+        }
+        if (body.pacs_auto_sync_enabled !== undefined) {
+            updates.pacs_auto_sync_enabled = String(body.pacs_auto_sync_enabled === true);
+        }
+        if (body.pacs_tiering_days !== undefined) {
+            const days = parseInt(body.pacs_tiering_days, 10);
+            if (Number.isInteger(days) && days > 0) {
+                updates.pacs_tiering_days = String(days);
+            }
+        }
+        if (body.pacs_cold_prefix !== undefined) {
+            updates.pacs_cold_prefix = String(body.pacs_cold_prefix).trim().slice(0, 255);
+        }
+        if (body.pacs_external_viewer_url !== undefined) {
+            updates.pacs_external_viewer_url = String(body.pacs_external_viewer_url).trim().slice(0, 500);
         }
 
         if (!Object.keys(updates).length) {
@@ -755,12 +823,21 @@ const getPacsAudit = (db) => async (req, res, next) => {
     }
 };
 
+const PACS_WORKLIST_PREVIEW_CACHE_TTL_MS = 3000;
+const pacsWorklistPreviewCache = new Map();
+
 const getPacsWorklistPreview = (db) => async (req, res, next) => {
     try {
         const date = String(req.query.date || '').trim() || null;
         const modalityId = String(req.query.modalityId || '').trim() || null;
         const includeInvalid = String(req.query.includeInvalid || 'true').toLowerCase() !== 'false';
-        const rows = await fetchScheduledWorklist(db, { date, modalityId, includeInvalid });
+        const cacheKey = `${date || ''}:${modalityId || ''}:${includeInvalid}`;
+        const cached = pacsWorklistPreviewCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp < PACS_WORKLIST_PREVIEW_CACHE_TTL_MS)) {
+            return res.json(cached.data);
+        }
+
+        const rows = await fetchScheduledWorklist(db, { date, modalityId, includeInvalid, autoProvision: false });
         const items = rows.map((row) => {
             const validation = validateWorklistRow(row);
             return {
@@ -778,14 +855,22 @@ const getPacsWorklistPreview = (db) => async (req, res, next) => {
             };
         });
 
-        res.json({
+        const responsePayload = {
             date: date || new Date().toISOString().slice(0, 10),
             worklist_dir: WORKLIST_DIR,
             total: items.length,
             valid: items.filter((item) => item.valid).length,
             warnings: items.filter((item) => !item.valid).length,
             items
-        });
+        };
+
+        pacsWorklistPreviewCache.set(cacheKey, { timestamp: Date.now(), data: responsePayload });
+        if (pacsWorklistPreviewCache.size > 100) {
+            const oldest = pacsWorklistPreviewCache.keys().next().value;
+            pacsWorklistPreviewCache.delete(oldest);
+        }
+
+        res.json(responsePayload);
     } catch (error) {
         next(error);
     }
@@ -793,6 +878,7 @@ const getPacsWorklistPreview = (db) => async (req, res, next) => {
 
 const refreshPacsWorklist = (db) => async (req, res, next) => {
     try {
+        pacsWorklistPreviewCache.clear();
         const result = await regenerateWorklists(db);
         await writeAudit(db, {
             eventType: 'PACS_MWL_REGENERATED',
@@ -812,6 +898,7 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
         const { rows: tierRows } = await db.query(
             `SELECT storage_tier, COUNT(*)::int AS instances,
                     COALESCE(SUM(file_size_bytes), 0)::bigint AS bytes,
+                    COUNT(*) FILTER (WHERE file_size_bytes IS NULL)::int AS unknown_size_instances,
                     MIN(created_at) AS oldest_instance_at,
                     MAX(created_at) AS newest_instance_at
              FROM pacs_instances
@@ -819,6 +906,7 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
         );
         const { rows: indexRows } = await db.query(
             `SELECT
+                (SELECT COUNT(DISTINCT study_instance_uid)::int FROM pacs_series) AS study_count,
                 (SELECT COUNT(*)::int FROM pacs_series) AS series_count,
                 (SELECT COUNT(*)::int FROM pacs_instances) AS instance_count,
                 (SELECT COUNT(*)::int FROM pacs_quarantine_studies WHERE status = 'Pending') AS pending_quarantine,
@@ -852,9 +940,9 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
             const orthancUrl = String(all.orthanc_api_url || process.env.ORTHANC_API_URL || process.env.ORTHANC_URL || 'http://orthanc:8042').replace(/\/+$/, '');
             const headers = buildOrthancHeaders(
                 String(all.orthanc_username || process.env.ORTHANC_USERNAME || '').trim(),
-                String(all.orthanc_password || process.env.ORTHANC_PASSWORD || '')
+                safeDecrypt(all.orthanc_password) || process.env.ORTHANC_PASSWORD || ''
             );
-            const response = await fetch(`${orthancUrl}/statistics`, { headers });
+            const response = await fetch(`${orthancUrl}/statistics`, { headers, signal: AbortSignal.timeout(15000) });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const stats = await response.json();
             orthanc = {
@@ -873,6 +961,7 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
             tiers[row.storage_tier] = {
                 instances: row.instances,
                 bytes: Number(row.bytes || 0),
+                unknown_size_instances: Number(row.unknown_size_instances || 0),
                 oldest_instance_at: row.oldest_instance_at,
                 newest_instance_at: row.newest_instance_at
             };
@@ -881,6 +970,7 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
             if (!tiers[tier]) tiers[tier] = { instances: 0, bytes: 0, oldest_instance_at: null, newest_instance_at: null };
         }
         const indexedBytes = Object.values(tiers).reduce((sum, tier) => sum + Number(tier.bytes || 0), 0);
+        const unknownSizeInstances = Object.values(tiers).reduce((sum, tier) => sum + Number(tier.unknown_size_instances || 0), 0);
         const indexedInstances = Number(indexRows[0]?.instance_count || 0);
         const orthancInstances = Number(orthanc?.instances || 0);
         const instanceGap = orthanc ? orthancInstances - indexedInstances : null;
@@ -906,11 +996,14 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
                 oldest_eligible_at: eligible.oldest_eligible_at || null,
                 last_run_at: lastTiering?.created_at || null,
                 last_result: lastTiering?.detail || null,
-                physical_archiver: Boolean(process.env.PACS_COLD_ARCHIVER)
+                physical_archiver: Boolean(process.env.PACS_COLD_STORAGE_DIR),
+                archive_mode: 'verified-encrypted-copy',
+                hot_eviction: false
             },
             index: indexRows[0] || {},
             totals: {
                 indexed_bytes: indexedBytes,
+                unknown_size_instances: unknownSizeInstances,
                 indexed_instances: indexedInstances,
                 orthanc_instances: orthancInstances,
                 instance_gap: instanceGap
@@ -1330,6 +1423,7 @@ const dicomWebProxy = (db) => async (req, res, next) => {
         }
 
         await assertDicomWebStudyScope(db, req, subPath);
+        await require('../services/pacsColdStorageService').ensureArchivedStudiesAvailable(db, getRequestedStudyUids(subPath, req.query || {}));
 
         // Audit study-level access (WADO/QIDO on a specific study) without
         // spamming on every per-frame request.
@@ -1653,9 +1747,15 @@ const getExamUploadProgress = (db) => async (req, res, next) => {
  * it everywhere else, so it is not a general-purpose credential.
  */
 const exportPacsStudy = (db) => async (req, res, next) => {
-    const studyInstanceUid = decodeDicomUid(req.params.studyInstanceUid || '');
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 30 * 60 * 1000);
+    deadline.unref();
+    const cancel = () => { if (!res.writableFinished) controller.abort(); };
+    res.on('close', cancel);
+    let studyInstanceUid;
     const format = String(req.query?.format || 'dicom').toLowerCase();
     try {
+        studyInstanceUid = decodeDicomUid(req.params.studyInstanceUid || '');
         if (!isValidStudyUid(studyInstanceUid)) {
             throw new AppError('Invalid StudyInstanceUID', 400);
         }
@@ -1679,33 +1779,38 @@ const exportPacsStudy = (db) => async (req, res, next) => {
                 orthancStudyId,
                 study: { ...study, orthanc_study_id: orthancStudyId },
                 filename: `${baseName}-images.zip`,
-                res
+                res, signal: controller.signal
             });
             await auditPacsStudyExport(db, req, { ...study, orthanc_study_id: orthancStudyId }, format, result);
             return;
         }
 
-        await auditPacsStudyExport(db, req, { ...study, orthanc_study_id: orthancStudyId }, format);
         await streamOrthancStudyPackage({
             orthancUrl,
             auth,
             orthancStudyId,
             mode: format === 'cd' ? 'cd' : 'dicom',
             filename: `${baseName}-${format === 'cd' ? 'cd-media' : 'dicom'}.zip`,
-            res
+            res, signal: controller.signal
         });
+        await auditPacsStudyExport(db, req, { ...study, orthanc_study_id: orthancStudyId }, format);
     } catch (error) {
         await auditPacsAccessDenied(db, req, error, {
             requested_study_uids: [studyInstanceUid],
             action: 'export_study',
             format
         });
-        next(error);
+        if (res.headersSent) res.destroy(error);
+        else next(error);
+    } finally {
+        clearTimeout(deadline);
+        res.off('close', cancel);
     }
 };
 
 const createViewerSession = (db) => async (req, res, next) => {
     try {
+        if (!req.user.session_id) throw new AppError('An active staff login is required for the viewer', 401);
         const requestedUids = parseStudyUidList(req.body?.studyInstanceUids || req.body?.StudyInstanceUIDs);
         const accessionNumber =
             req.body?.accessionNumber ||
@@ -1724,6 +1829,8 @@ const createViewerSession = (db) => async (req, res, next) => {
         const token = jwt.sign(
             {
                 user_id: req.user.user_id,
+                session_id: req.user.session_id,
+                parent_session_expires_at: req.user.exp,
                 role: req.user.role,
                 scope: 'pacs-viewer',
                 study_instance_uids: studyUids,
@@ -1731,20 +1838,16 @@ const createViewerSession = (db) => async (req, res, next) => {
                 order_number: examContext?.order_number || null
             },
             process.env.JWT_SECRET,
-            { expiresIn: process.env.PACS_VIEWER_TOKEN_TTL || '12h' }
+            { expiresIn: 10 * 60 }
         );
-        res.cookie('pacs_viewer_token', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            path: '/api/pacs',
-            maxAge: 12 * 60 * 60 * 1000
-        });
+        res.set('Cache-Control', 'no-store');
         res.json({
             success: true,
             studyInstanceUids: studyUids,
             viewerSessionReady: true,
-            authMode: 'httpOnlyCookie',
+            authMode: 'scopedBearer',
+            viewerToken: token,
+            expiresInSeconds: 10 * 60,
             exam: examContext || null
         });
     } catch (error) {

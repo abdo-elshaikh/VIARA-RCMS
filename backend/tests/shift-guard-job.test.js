@@ -92,6 +92,24 @@ describe('shift guard job', () => {
         });
     });
 
+    test('runOnce performs stale reception task cleanup during the guard sweep', async () => {
+        const db = {
+            query: jest.fn(async (sql) => {
+                const text = String(sql);
+                if (text.includes('SELECT a.log_id')) return { rows: [] };
+                if (text.includes('SELECT s.shift_id')) return { rows: [] };
+                if (text.includes('SELECT session_id')) return { rows: [] };
+                if (text.includes('SELECT COUNT(*)::int AS active')) return { rows: [{ active: 0 }] };
+                return { rows: [] };
+            }),
+            connect: jest.fn(),
+        };
+
+        await require('../src/jobs/shiftGuardJob').runOnce(db);
+
+        expect(cleanupExpiredReceptionTasks).toHaveBeenCalledWith(db);
+    });
+
     describe('abandoned reception shifts', () => {
         const shiftRow = {
             session_id: SESSION_ID,
@@ -199,6 +217,37 @@ describe('shift guard job', () => {
     });
 
     describe('unattended concluded shifts', () => {
+        test('skips a concluded shift when an overlapping attendance session already exists for the same employee', async () => {
+            const db = {
+                query: jest.fn(async () => ({
+                    rows: [{
+                        shift_id: 'shift-missed-1',
+                        user_id: USER_ID,
+                        role: 'Technician',
+                        full_name: 'Technician One',
+                        start_time: '2026-09-04T08:00:00Z',
+                        end_time: '2026-09-04T16:00:00Z'
+                    }]
+                })),
+                connect: jest.fn(async () => ({
+                    query: jest.fn(async (sql) => {
+                        const text = String(sql);
+                        if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') return { rows: [] };
+                        if (text.includes('pg_advisory_xact_lock')) return { rows: [] };
+                        if (text.includes('SELECT log_id') && text.includes('FROM attendance_logs')) return { rows: [{ log_id: 'existing-log-1' }] };
+                        if (text.includes('SELECT 1 FROM attendance_logs')) return { rows: [{ log_id: 'conflict-log-1' }] };
+                        throw new Error(`Unexpected SQL: ${text}`);
+                    }),
+                    release: jest.fn(),
+                })),
+            };
+
+            const result = await settleUnattendedShifts(db);
+
+            expect(result).toEqual({ scanned: 1, marked: 0 });
+            expect(triggerEvent).not.toHaveBeenCalled();
+        });
+
         test('marks ended shifts with no attendance as Absent and triggers compliance notification', async () => {
             let capturedInsert = null;
             const db = {
@@ -215,9 +264,10 @@ describe('shift guard job', () => {
                 connect: jest.fn(async () => ({
                     query: jest.fn(async (sql, params) => {
                         const text = String(sql);
-                        if (text === 'BEGIN' || text === 'COMMIT') return { rows: [] };
+                        if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') return { rows: [] };
                         if (text.includes('pg_advisory_xact_lock')) return { rows: [] };
-                        if (text.includes('SELECT log_id FROM attendance_logs')) return { rows: [] };
+                        if (text.includes('SELECT log_id') && text.includes('FROM attendance_logs')) return { rows: [] };
+                        if (text.includes('SELECT 1 FROM attendance_logs')) return { rows: [] };
                         if (text.includes('INSERT INTO attendance_logs')) {
                             capturedInsert = params;
                             return { rows: [{ log_id: 'auto-absent-log-1', status: 'Absent' }] };

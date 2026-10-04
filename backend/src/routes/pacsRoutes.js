@@ -2,6 +2,8 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { Transform } = require('stream');
+const { pipeline } = require('stream/promises');
 const multer = require('multer');
 const { AppError } = require('../middleware/errorHandler');
 const { hasAnyPermission } = require('../middleware/rbacMiddleware');
@@ -55,15 +57,25 @@ const PACS_MAX_FILES = positiveInteger(process.env.PACS_UPLOAD_MAX_FILES, 20);
 const PACS_MAX_REQUEST_BYTES = positiveInteger(process.env.PACS_UPLOAD_MAX_REQUEST_BYTES, 200 * 1024 * 1024);
 
 const upload = multer({
-    storage: multer.diskStorage({
-        destination: (_req, _file, cb) => {
-            fs.mkdir(PACS_QUARANTINE_DIR, { recursive: true }, (error) => cb(error, PACS_QUARANTINE_DIR));
-        },
-        filename: (_req, file, cb) => {
+    storage: {
+        _handleFile: (req, file, cb) => {
             const extension = path.extname(file.originalname || '').toLowerCase().slice(0, 12);
-            cb(null, `${Date.now()}-${crypto.randomBytes(12).toString('hex')}${extension}`);
-        }
-    }),
+            const filename = `${Date.now()}-${crypto.randomBytes(12).toString('hex')}${extension}`;
+            const target = path.join(PACS_QUARANTINE_DIR, filename);
+            let size = 0;
+            const budget = new Transform({ transform(chunk, encoding, done) {
+                size += chunk.length;
+                req.pacsReceivedFileBytes = (req.pacsReceivedFileBytes || 0) + chunk.length;
+                if (req.pacsReceivedFileBytes > PACS_MAX_REQUEST_BYTES) return done(new AppError('PACS upload request is too large', 413));
+                done(null, chunk);
+            } });
+            fs.promises.mkdir(PACS_QUARANTINE_DIR, { recursive: true })
+                .then(() => pipeline(file.stream, budget, fs.createWriteStream(target, { flags: 'wx', mode: 0o600 })))
+                .then(() => cb(null, { destination: PACS_QUARANTINE_DIR, filename, path: target, size }))
+                .catch(async error => { await fs.promises.unlink(target).catch(() => {}); cb(error); });
+        },
+        _removeFile: (_req, file, cb) => fs.unlink(file.path, cb)
+    },
     limits: {
         fileSize: PACS_MAX_FILE_BYTES,
         files: PACS_MAX_FILES,
@@ -127,8 +139,15 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
         dicomWebProxy(pool)
     );
 
+    const { getBookmarks, saveBookmarks } = require('../controllers/pacsBookmarksController');
+    const { readMeasurements, saveMeasurements, renewViewerSession } = require('../controllers/pacsMeasurementsController');
+    router.get('/viewer-state/:studyInstanceUid/measurements', authenticateDicomWeb, hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), readMeasurements(pool));
+    router.put('/viewer-state/:studyInstanceUid/measurements', authenticateDicomWeb, hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), saveMeasurements(pool));
+    router.post('/viewer-renew', authenticateDicomWeb, hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), renewViewerSession());
     // --- Authenticated VIARA API ---
     router.use(authenticateToken);
+    router.get('/studies/:studyInstanceUid/bookmarks', hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), getBookmarks(pool));
+    router.put('/studies/:studyInstanceUid/bookmarks', hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), saveBookmarks(pool));
 
     // Mint the short-lived viewer cookie for the OHIF iframe. Guarded like the
     // DICOMweb proxy so only users who may view images can obtain one.

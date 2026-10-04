@@ -23,6 +23,7 @@ const deliveryStatusSchema = z.enum([
 
 const deliverResultSchema = z.object({
     deliveryMethod: deliveryMethodSchema,
+    resultType: z.enum(['Images', 'Report', 'ImagesAndReport']).default('Report'),
     recipientName: z.string().trim().max(150).optional(),
     recipientContact: z.string().trim().max(150).optional(),
     deliveryStatus: deliveryStatusSchema.optional(),

@@ -11,7 +11,12 @@ import { LandingSectionSkeleton } from './LandingStates';
  * trust and legal hazard for a medical business, so the whole section hides
  * itself when nothing is configured.
  */
-export const TestimonialsSection = () => {
+interface TestimonialsSectionProps {
+  heading?: string;
+  subheading?: string;
+}
+
+export const TestimonialsSection = ({ heading, subheading }: TestimonialsSectionProps = {}) => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith('ar');
   const reduceMotion = useReducedMotion();
@@ -63,9 +68,14 @@ export const TestimonialsSection = () => {
         <div className="grid items-center gap-10 lg:grid-cols-[0.78fr_1.22fr] lg:gap-16">
           <div>
             <span className="text-xs font-semibold text-primary">{isRtl ? 'آراء المرضى والأطباء' : 'Patient and physician stories'}</span>
-            <h2 className="mt-2 max-w-md text-3xl font-bold leading-tight text-[#0B2348] dark:text-white sm:text-4xl">{isRtl ? 'تجارب نعتز بثقتها' : 'Experiences built on trust'}</h2>
+            <h2 className="mt-2 max-w-md text-3xl font-bold leading-tight text-[#0B2348] dark:text-white sm:text-4xl">
+              {heading || (isRtl ? 'تجارب نعتز بثقتها' : 'Experiences built on trust')}
+            </h2>
             <p className="mt-4 max-w-md text-sm leading-7 text-muted-foreground">
-              {isRtl ? 'آراء حقيقية تشاركها تجارب مرضانا وأطبائنا المعالجين.' : 'Real feedback shared by our patients and treating physicians.'}
+              {subheading ||
+                (isRtl
+                  ? 'آراء حقيقية تشاركها تجارب مرضانا وأطبائنا المعالجين.'
+                  : 'Real feedback shared by our patients and treating physicians.')}
             </p>
 
             <div className="mt-8 hidden border-y border-[#E2ECE9] dark:border-border lg:block">

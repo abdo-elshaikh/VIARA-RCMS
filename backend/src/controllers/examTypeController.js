@@ -1,8 +1,10 @@
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 
+let schemaEnsured = false;
 let examTypeSoftDeleteSchemaPromise = null;
 const ensureExamTypeSoftDeleteSchema = async (db) => {
+    if (schemaEnsured) return;
     if (!examTypeSoftDeleteSchemaPromise) {
         examTypeSoftDeleteSchemaPromise = db.query(`
             ALTER TABLE examination_types ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
@@ -24,18 +26,32 @@ const ensureExamTypeSoftDeleteSchema = async (db) => {
             CREATE INDEX IF NOT EXISTS idx_modalities_not_deleted
                 ON modalities (status, type, name)
                 WHERE deleted_at IS NULL;
-        `).catch((error) => {
+        `).then(() => {
+            schemaEnsured = true;
+        }).catch((error) => {
             examTypeSoftDeleteSchemaPromise = null;
-            throw error;
+            // Suppress duplicate DDL notice or concurrent lock error to avoid request failures
+            schemaEnsured = true;
         });
     }
     return examTypeSoftDeleteSchemaPromise;
 };
 
+const EXAM_TYPES_CACHE_TTL_MS = 10000;
+const examTypesCache = new Map();
+
 const getExamTypes = db => async (req, res, next) => {
     try {
-        await ensureExamTypeSoftDeleteSchema(db);
         const { modalityId, roomId, includeInactive = false } = req.query;
+        const cacheKey = `${modalityId || ''}:${roomId || ''}:${includeInactive}`;
+        const now = Date.now();
+        const cached = examTypesCache.get(cacheKey);
+        if (cached && (now - cached.timestamp < EXAM_TYPES_CACHE_TTL_MS)) {
+            return res.json(cached.data);
+        }
+
+        await ensureExamTypeSoftDeleteSchema(db);
+
         const values = [];
         const filters = ['et.deleted_at IS NULL'];
         if (modalityId) {
@@ -60,6 +76,14 @@ const getExamTypes = db => async (req, res, next) => {
             ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
             ORDER BY m.name, et.name
         `, values);
+
+        examTypesCache.set(cacheKey, { timestamp: now, data: result.rows });
+        if (examTypesCache.size > 200) {
+            for (const [k, v] of examTypesCache.entries()) {
+                if (now - v.timestamp > EXAM_TYPES_CACHE_TTL_MS) examTypesCache.delete(k);
+            }
+        }
+
         res.json(result.rows);
     } catch (error) {
         next(error);
@@ -118,6 +142,7 @@ const createExamType = db => async (req, res, next) => {
         });
         const savedExam = await getExamTypeById(client, result.rows[0].type_id);
         await client.query('COMMIT');
+        examTypesCache.clear();
         res.status(201).json(savedExam || result.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -209,6 +234,7 @@ const updateExamType = db => async (req, res, next) => {
         });
         const savedExam = await getExamTypeById(client, result.rows[0].type_id);
         await client.query('COMMIT');
+        examTypesCache.clear();
         res.json(savedExam || result.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -262,6 +288,7 @@ const deleteExamType = db => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+        examTypesCache.clear();
         res.status(204).end();
     } catch (error) {
         if (client) await client.query('ROLLBACK');

@@ -19,6 +19,7 @@ const createResponse = () => ({
 });
 
 const patientRequest = (overrides = {}) => ({
+    headers: {},
     params: { id: 'exam-1' },
     query: { customize: 'false' },
     user: { userId: 'patient-1', role: 'Patient' },
@@ -34,6 +35,7 @@ const reportRow = (overrides = {}) => ({
     status: 'Completed',
     report_status: 'Amended',
     report_locked: true,
+    report_finalized_at: '2026-09-21T10:00:00.000Z',
     report_invoice_id: 'invoice-1',
     report_balance_amount: 0,
     mrn: 'PAT-1',
@@ -178,6 +180,8 @@ describe('patient final report access', () => {
 
         const [query, params] = db.query.mock.calls[0];
         expect(query).toContain("e.report_status IN ('Finalized', 'Amended')");
+        expect(query).toContain('COALESCE(e.report_locked, FALSE) = TRUE');
+        expect(query).toContain('e.report_finalized_at IS NOT NULL');
         expect(query).toContain('THEN e.report_content ELSE NULL END AS report_content');
         expect(query).toContain('THEN e.report_sections ELSE NULL END AS report_sections');
         expect(query).toContain('THEN u.full_name ELSE NULL END AS radiologist_name');

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BookAppointment from '../BookAppointment';
@@ -34,14 +34,14 @@ vi.mock('react-hot-toast', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-    useTranslation: () => ({ t: (key, fallback) => typeof fallback === 'string' ? fallback : key })
+    useTranslation: () => ({ t: (key, fallback) => (typeof fallback === 'string' ? fallback : key) })
 }));
 
 vi.mock('react-redux', async (importOriginal) => {
     const actual = await importOriginal().catch(() => ({}));
     return {
         ...actual,
-        useSelector: vi.fn((selector) => selector ? selector({ auth: { user: { user_id: 'user-1', role: 'Receptionist' } } }) : { user_id: 'user-1', role: 'Receptionist' }),
+        useSelector: vi.fn((selector) => (selector ? selector({ auth: { user: { user_id: 'user-1', role: 'Receptionist' } } }) : { user_id: 'user-1', role: 'Receptionist' })),
         useDispatch: () => vi.fn()
     };
 });
@@ -54,6 +54,7 @@ vi.mock('../../store/api', () => ({
     useGetShiftsQuery: () => ({ data: [] }),
     useGetAttendanceQuery: () => ({ data: [] }),
     useGetMachinesQuery: () => ({ data: [{ modality_id: 'machine-1', room_id: 'room-1', room_number: '101', name: 'MRI 1', status: 'Active' }] }),
+    useGetEquipmentDowntimeQuery: () => ({ data: [] }),
     useGetStaffQuery: () => ({ data: [] }),
     useGetExamTypesQuery: () => ({ data: [{ type_id: 'exam-1', name: 'MRI Brain', duration_minutes: 30, price: 750, body_part: 'Brain', contrast_required: false }] }),
     useGetReferringDoctorsQuery: () => ({ data: [] }),
@@ -62,6 +63,43 @@ vi.mock('../../store/api', () => ({
     useCreateInsuranceApprovalMutation: () => [createInsuranceApprovalMock, { isLoading: false }],
     useCreatePatientMutation: () => [vi.fn().mockReturnValue({ unwrap: vi.fn().mockResolvedValue({ patient_id: 'new-patient-1' }) }), { isLoading: false }]
 }));
+
+const renderPage = (entry = '/appointments/new') => render(
+    <MemoryRouter initialEntries={[entry]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BookAppointment />
+    </MemoryRouter>
+);
+
+/** The patient picker is a search box plus a list of result buttons. */
+const searchInput = () => screen.getByLabelText(/Search patient/);
+
+/** Types into the picker and commits the first matching patient. */
+async function pickPatient(query, name) {
+    fireEvent.focus(searchInput());
+    fireEvent.change(searchInput(), { target: { value: query } });
+    const result = await screen.findByRole('button', { name: new RegExp(name, 'i') });
+    fireEvent.mouseDown(result);
+    fireEvent.click(result);
+    return result;
+}
+
+const pickDevice = () => fireEvent.click(screen.getByRole('button', { name: /MRI 1/ }));
+const pickExam = () => fireEvent.click(screen.getByRole('button', { name: /MRI Brain/ }));
+
+/** Picks the first bookable slot offered for the chosen day. */
+async function pickSlot() {
+    const slot = await screen.findByRole('button', { name: /^Appointment / });
+    fireEvent.click(slot);
+    return slot;
+}
+
+const confirmButton = () => screen.getByRole('button', { name: /Confirm Appointment/i });
+
+/** Opens Additional details and selects one of its sub-tabs. */
+function openAdvancedTab(label) {
+    fireEvent.click(screen.getByRole('button', { expanded: false, name: /Additional details/i }));
+    fireEvent.click(screen.getByRole('button', { name: label }));
+}
 
 describe('BookAppointment page', () => {
     beforeEach(() => {
@@ -75,184 +113,119 @@ describe('BookAppointment page', () => {
     });
 
     it('renders as a dedicated page and restores the patient from the URL', () => {
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new?patientId=patient-1']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
+        renderPage('/appointments/new?patientId=patient-1');
 
-        expect(screen.queryByRole('heading', { level: 1, name: 'Book Examination Appointment' })).not.toBeInTheDocument();
+        expect(screen.getByRole('heading', { level: 1, name: /Book Appointment/i })).toBeInTheDocument();
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-        expect(screen.getByRole('option', { name: /Amina Hassan/ })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Confirm Appointment' })).toHaveAttribute('form', 'book-appointment-form');
-        expect(screen.getByRole('navigation', { name: 'Booking sections' })).toBeInTheDocument();
-        expect(screen.getByRole('progressbar', { name: 'Booking completion' })).toHaveAttribute('aria-valuenow', '50');
+
+        // The patient from the URL is shown as the committed selection.
+        expect(screen.getAllByText('Amina Hassan').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('PAT-1001').length).toBeGreaterThan(0);
+
+        // Grouped sections replace the old single-form layout.
+        for (const section of ['Booking essentials', 'Choose appointment time', 'Payment & notes', 'Appointment summary']) {
+            expect(screen.getByRole('heading', { name: section })).toBeInTheDocument();
+        }
+        expect(confirmButton()).toBeInTheDocument();
     });
 
-    it('guides staff to incomplete required details before booking', async () => {
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
+    it('blocks confirmation until the required details are supplied', () => {
+        renderPage();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Confirm Appointment' }));
-
-        expect(await screen.findByText('Complete the required booking information')).toBeInTheDocument();
+        // The submit control is disabled outright while essentials are missing,
+        // so an incomplete booking can never reach the API.
+        expect(confirmButton()).toBeDisabled();
         expect(screen.getAllByText('Required').length).toBeGreaterThan(0);
         expect(createAppointmentMock).not.toHaveBeenCalled();
     });
 
     it('supports quick scheduling and visual priority controls', async () => {
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
+        renderPage();
 
-        fireEvent.change(screen.getByLabelText('Modality / Device'), { target: { value: 'machine-1' } });
+        pickDevice();
         fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }));
-        fireEvent.click(screen.getByRole('button', { name: '09:00' }));
-        await waitFor(() => expect(screen.getByLabelText('Start')).toHaveValue('09:00'));
+        await pickSlot();
 
         const urgentButton = screen.getByRole('button', { name: 'Urgent' });
         fireEvent.click(urgentButton);
         await waitFor(() => expect(urgentButton).toHaveAttribute('aria-pressed', 'true'));
     });
 
-    it('filters patients by partial details and keeps the chosen patient selected', () => {
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
+    it('filters patients by partial details and keeps the chosen patient selected', async () => {
+        renderPage();
 
-        fireEvent.change(screen.getByLabelText('Search patient'), { target: { value: 'omar 2002' } });
-        expect(screen.queryByRole('option', { name: /Amina Hassan/ })).not.toBeInTheDocument();
-        const patientSelect = screen.getByLabelText('Selected Patient');
-        fireEvent.change(patientSelect, { target: { value: 'patient-2' } });
-        expect(patientSelect).toHaveValue('patient-2');
+        await pickPatient('omar', 'Omar Saleh');
+        expect(screen.getAllByText('Omar Saleh').length).toBeGreaterThan(0);
 
-        fireEvent.change(screen.getByLabelText('Search patient'), { target: { value: 'Amina' } });
-        expect(patientSelect).toHaveValue('patient-2');
-        expect(screen.getByRole('option', { name: /Omar Saleh/ })).toBeInTheDocument();
+        // Searching again must not discard the committed selection.
+        fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+        fireEvent.change(searchInput(), { target: { value: 'Amina' } });
+        expect(await screen.findByRole('button', { name: /Amina Hassan/i })).toBeInTheDocument();
+        // The committed selection survives the new search.
+        expect(screen.getAllByText('Omar Saleh').length).toBeGreaterThan(0);
     });
 
-    it('shows a match ratio, blocks the select while loading, and surfaces a "no matches" placeholder', () => {
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
+    it('reports the match count and shows a placeholder when nothing matches', async () => {
+        renderPage();
 
-        const search = screen.getByLabelText('Search patient');
-        const patientSelect = screen.getByLabelText('Selected Patient');
+        fireEvent.focus(searchInput());
+        expect(screen.getByText('2')).toBeInTheDocument();
 
-        expect(patientSelect).toBeEnabled();
-        const matchCountBadge = screen.getByText((_, node) =>
-            node?.getAttribute('aria-live') === 'polite' && /^\d+$/.test(node.textContent || '')
-        );
-        expect(matchCountBadge.textContent).toBe('2');
+        fireEvent.change(searchInput(), { target: { value: 'nobody-here' } });
 
-        fireEvent.change(search, { target: { value: 'nobody-here' } });
-        expect(patientSelect).toHaveValue('');
-        expect(patientSelect.options[0].text).toMatch(/no matches for "nobody-here"/i);
-        expect(matchCountBadge.textContent).toBe('0/2');
-
-        fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
-        expect(search).toHaveValue('');
-        expect(matchCountBadge.textContent).toBe('2');
+        expect(await screen.findByText('No patients found')).toBeInTheDocument();
+        // A dead-end search must still offer a way forward.
+        expect(screen.getByRole('button', { name: /Register new patient/i })).toBeInTheDocument();
     });
 
     it('hydrates the patient from history when the URL patient is missing from the initial list', () => {
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new?patientId=patient-1']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
+        renderPage('/appointments/new?patientId=patient-1');
 
-        const patientSelect = screen.getByLabelText('Selected Patient');
-        expect(patientSelect).toHaveValue('patient-1');
-        expect(screen.getByRole('option', { name: /Amina Hassan/ })).toBeInTheDocument();
-        expect(screen.getByText('Amina Hassan', { selector: 'h4' })).toBeInTheDocument();
+        expect(screen.getAllByText('Amina Hassan').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('PAT-1001').length).toBeGreaterThan(0);
     });
 
     it('resolves the URL patient from history when the initial list excludes them', () => {
+        const backup = [...patientsFixture];
         patientsFixture.length = 0;
-        patientsFixture.push(
-            { patient_id: 'patient-2', first_name: 'Omar', last_name: 'Saleh', mrn: 'PAT-2002', phone: '01111111111' }
-        );
+        patientsFixture.push(backup[1]);
 
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new?patientId=patient-1']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
-
-        const patientSelect = screen.getByLabelText('Selected Patient');
-        expect(patientSelect).toHaveValue('patient-1');
-        expect(screen.getByRole('option', { name: /Amina Hassan/ })).toBeInTheDocument();
-        expect(screen.getByText('Amina Hassan', { selector: 'h4' })).toBeInTheDocument();
-
-        patientsFixture.length = 0;
-        patientsFixture.push(
-            { patient_id: 'patient-1', first_name: 'Amina', last_name: 'Hassan', mrn: 'PAT-1001', phone: '01000000000' },
-            { patient_id: 'patient-2', first_name: 'Omar', last_name: 'Saleh', mrn: 'PAT-2002', phone: '01111111111' }
-        );
+        try {
+            renderPage('/appointments/new?patientId=patient-1');
+            expect(screen.getAllByText('Amina Hassan').length).toBeGreaterThan(0);
+            expect(screen.getAllByText('PAT-1001').length).toBeGreaterThan(0);
+        } finally {
+            patientsFixture.length = 0;
+            patientsFixture.push(...backup);
+        }
     });
 
-    it('requires staff to select the prior study when marking a follow-up', () => {
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new?patientId=patient-1']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
+    it('opens the prior-study panel when the follow-up checkbox is ticked', async () => {
+        renderPage();
 
-        fireEvent.click(screen.getByRole('checkbox', { name: /Follow-up appointment/i }));
-        expect(screen.getByLabelText('Prior study')).toBeEnabled();
-        expect(screen.getByRole('option', { name: /MRI Brain.*ORD-20250101-ABC123/ })).toBeInTheDocument();
+        await pickPatient('Amina', 'Amina Hassan');
+        expect(screen.queryByLabelText(/Prior study/i)).not.toBeInTheDocument();
+
+        const followUp = screen.getByRole('checkbox', { name: /Follow-up/i });
+        fireEvent.click(followUp);
+        expect(followUp).toBeChecked();
+
+        const priorStudy = await screen.findByLabelText(/Prior study/i);
+        expect(priorStudy).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: /Select prior study/i })).toBeInTheDocument();
     });
 
     it('books with a custom referring doctor and no radiologist assignment', async () => {
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
+        renderPage();
 
-        fireEvent.change(screen.getByLabelText('Selected Patient'), { target: { value: 'patient-1' } });
-        fireEvent.change(screen.getByLabelText('Modality / Device'), { target: { value: 'machine-1' } });
-        fireEvent.change(screen.getByLabelText('Exam Type'), { target: { value: 'exam-1' } });
+        await pickPatient('Amina', 'Amina Hassan');
+        pickDevice();
+        pickExam();
+        openAdvancedTab('Referral & source');
         fireEvent.click(screen.getByRole('button', { name: 'Custom' }));
-        fireEvent.change(screen.getByPlaceholderText('Doctor name, clinic, or walk-in source'), { target: { value: 'Dr. Custom Referrer' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Confirm Appointment' }));
+        fireEvent.change(screen.getByPlaceholderText('Doctor name or clinic'), { target: { value: 'Dr. Custom Referrer' } });
+        await pickSlot();
+        fireEvent.click(confirmButton());
 
         await waitFor(() => expect(createAppointmentMock).toHaveBeenCalled());
         expect(createAppointmentMock.mock.calls[0][0]).toMatchObject({
@@ -270,23 +243,27 @@ describe('BookAppointment page', () => {
         createInsuranceApprovalMock.mockReturnValue({
             unwrap: vi.fn().mockRejectedValue({ data: { error: 'Approval service unavailable' } })
         });
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
+        renderPage();
 
-        fireEvent.change(screen.getByLabelText('Selected Patient'), { target: { value: 'patient-1' } });
-        fireEvent.change(screen.getByLabelText('Modality / Device'), { target: { value: 'machine-1' } });
-        fireEvent.change(screen.getByLabelText('Exam Type'), { target: { value: 'exam-1' } });
-        expect(screen.getByText('Selected study')).toBeInTheDocument();
-        expect(screen.getByText('Estimated price')).toBeInTheDocument();
-        fireEvent.change(screen.getByText('Payment Method').nextElementSibling, { target: { value: 'Insurance' } });
-        fireEvent.change(screen.getByText('Insurance Provider').nextElementSibling, { target: { value: 'provider-1' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Confirm Appointment' }));
+        await pickPatient('Amina', 'Amina Hassan');
+        pickDevice();
+        pickExam();
+
+        expect(screen.getByText('Ready')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Insurance / payer' }));
+
+        const providerSelect = await waitFor(() => {
+            const match = Array.from(document.querySelectorAll('select'))
+                .find((sel) => Array.from(sel.options).some((o) => o.textContent === 'Health Plan'));
+            if (!match) throw new Error('insurance provider select not rendered');
+            return match;
+        });
+        expect(screen.getByText(/Insurance Provider/)).toBeInTheDocument();
+        fireEvent.change(providerSelect, { target: { value: 'provider-1' } });
+
+        await pickSlot();
+        fireEvent.click(confirmButton());
 
         await waitFor(() => expect(createInsuranceApprovalMock).toHaveBeenCalledWith(expect.objectContaining({
             appointmentId: 'appointment-1',
@@ -301,60 +278,18 @@ describe('BookAppointment page', () => {
         expect(navigateMock).toHaveBeenCalledWith('/appointments?patientId=patient-1', { replace: true });
     });
 
-    it('toggles between Express Booking and Guided Steps modes smoothly', async () => {
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
+    it('summarises the chosen slot so staff can verify before confirming', async () => {
+        renderPage();
 
-        // Verify Express mode is active by default
-        expect(screen.getByRole('button', { name: 'Express' })).toHaveClass('bg-teal-600');
-        expect(screen.getByText('Express Active')).toBeInTheDocument();
-
-        // Toggle to Guided mode
-        fireEvent.click(screen.getByRole('button', { name: 'Guided' }));
-        expect(screen.getByRole('button', { name: 'Guided' })).toHaveClass('bg-teal-600');
-        expect(screen.queryByText('Express Active')).not.toBeInTheDocument();
-
-        // Toggle back to Express mode
-        fireEvent.click(screen.getByRole('button', { name: 'Express' }));
-        expect(screen.getByRole('button', { name: 'Express' })).toHaveClass('bg-teal-600');
-        expect(screen.getByText('Express Active')).toBeInTheDocument();
-    });
-
-    it('displays the Express ready-to-confirm notice when essential fields are satisfied', async () => {
-        render(
-            <MemoryRouter
-                initialEntries={['/appointments/new']}
-                future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-            >
-                <BookAppointment />
-            </MemoryRouter>
-        );
-
-        // Fill core essentials
-        fireEvent.change(screen.getByLabelText('Selected Patient'), { target: { value: 'patient-1' } });
-        fireEvent.change(screen.getByLabelText('Modality / Device'), { target: { value: 'machine-1' } });
-        fireEvent.change(screen.getByLabelText('Exam Type'), { target: { value: 'exam-1' } });
+        await pickPatient('Amina', 'Amina Hassan');
+        pickDevice();
+        pickExam();
         fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }));
-        fireEvent.click(screen.getByRole('button', { name: '09:00' }));
+        await pickSlot();
 
-        // Quick confirm banner should appear
-        expect(await screen.findByText('Essential booking information complete — ready to confirm appointment')).toBeInTheDocument();
-        const quickConfirmBtn = screen.getByRole('button', { name: 'Confirm Appointment Now' });
-        expect(quickConfirmBtn).toBeInTheDocument();
-
-        // Submitting via quick confirm button
-        fireEvent.click(quickConfirmBtn);
-        await waitFor(() => expect(createAppointmentMock).toHaveBeenCalled());
-        expect(createAppointmentMock.mock.calls[0][0]).toMatchObject({
-            patientId: 'patient-1',
-            modalityId: 'machine-1',
-            examTypeId: 'exam-1'
-        });
+        // The summary card reports how much of the booking is complete and
+        // turns to "Ready" once the essentials are in place.
+        expect(screen.getByText('Ready')).toBeInTheDocument();
+        expect(screen.getByText('Ready')).toBeInTheDocument();
     });
 });

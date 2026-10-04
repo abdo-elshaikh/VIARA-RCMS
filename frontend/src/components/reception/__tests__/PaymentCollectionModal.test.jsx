@@ -62,7 +62,7 @@ describe('PaymentCollectionModal', () => {
         expect(screen.getByText('Test Patient')).toBeInTheDocument();
         expect(screen.getByLabelText('Amount to pay')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Confirm Payment' })).toBeEnabled();
-        expect(screen.getByText(/EGP\s+120\.00/)).toBeInTheDocument();
+        expect(screen.getAllByText(/EGP\s+120\.00/).length).toBeGreaterThan(0);
         expect(screen.getByLabelText('Amount to pay')).toHaveValue(120);
     });
 
@@ -75,7 +75,7 @@ describe('PaymentCollectionModal', () => {
             remainingBalance={34.5}
         />);
 
-        expect(screen.getByText('$1,234.50')).toBeInTheDocument();
+        expect(screen.getAllByText('$1,234.50').length).toBeGreaterThan(0);
         expect(screen.getByText('Remaining: $34.50')).toBeInTheDocument();
         expect(screen.getByText('USD')).toBeInTheDocument();
         expect(screen.getByLabelText('Amount to pay')).toHaveValue(1234.5);
@@ -90,7 +90,7 @@ describe('PaymentCollectionModal', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Previous Payments' }));
 
-        expect(screen.getByText(/١٢٠٫٠٠/)).toBeInTheDocument();
+        expect(screen.getAllByText(/١٢٠٫٠٠/).length).toBeGreaterThan(0);
         expect(screen.getByText((content, element) => element?.tagName === 'P' && /٢٠٫٠٠/.test(content))).toBeInTheDocument();
     });
 
@@ -102,7 +102,7 @@ describe('PaymentCollectionModal', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Half' }));
         expect(onAmountChange).toHaveBeenCalledWith('60.00');
 
-        fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Card' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Card' }));
         expect(onMethodChange).toHaveBeenCalledWith('Card');
     });
 

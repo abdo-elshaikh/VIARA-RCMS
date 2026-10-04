@@ -479,9 +479,9 @@ const loadCalculationInputs = async (client, period) => {
     };
 };
 
-const calculateDeductionAmount = (deduction, gross) => {
+const calculateDeductionAmount = (deduction, baseGross) => {
     if (deduction.deduction_type === 'Percentage') {
-        return roundMoney(gross * (Number(deduction.percentage || 0) / 100));
+        return roundMoney(baseGross * (Number(deduction.percentage || 0) / 100));
     }
     if (['Installment', 'Advance', 'Loan'].includes(deduction.deduction_type)) {
         const installment = Number(deduction.amount || 0);
@@ -509,6 +509,7 @@ const applyPaidDeductionBalances = async (client, runId, userId) => {
                 ),
                 applied_occurrences = d.applied_occurrences + 1,
                 status = CASE
+                    WHEN d.recurrence_type = 'OneTime' THEN 'Completed'
                     WHEN d.deduction_type IN ('Installment', 'Advance', 'Loan')
                      AND GREATEST(0::numeric, COALESCE(d.remaining_amount, d.total_amount, d.amount) - applied.applied_amount) <= 0
                         THEN 'Completed'
@@ -524,7 +525,7 @@ const applyPaidDeductionBalances = async (client, runId, userId) => {
             WHERE d.deduction_id = applied.deduction_id
               AND (
                   d.deduction_type IN ('Installment', 'Advance', 'Loan')
-                  OR d.recurrence_type = 'Recurring'
+                                    OR d.recurrence_type IN ('OneTime', 'Recurring')
               )
               RETURNING d.deduction_id, applied.applied_amount, d.remaining_amount, d.status
         )

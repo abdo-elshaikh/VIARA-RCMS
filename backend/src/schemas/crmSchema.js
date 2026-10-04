@@ -6,7 +6,7 @@ const { calendarDateSchema } = require('../utils/dateValidation');
 const createCrmActivitySchema = z.object({
     patientId: z.string().uuid(),
     assignedTo: z.string().uuid().optional().nullable(),
-    activityType: z.enum(['Call', 'WhatsApp', 'Visit', 'Email', 'Feedback Follow-up', 'Patient Reminder']),
+    activityType: z.enum(['Call', 'WhatsApp', 'Visit', 'Email', 'Feedback Follow-up', 'Patient Reminder', 'Clinical Recall']),
     dueDate: z.string().datetime().optional(),
     notes: z.string().optional()
 }).superRefine((data, ctx) => {
@@ -23,6 +23,14 @@ const updateCrmActivitySchema = z.object({
     status: z.enum(['Pending', 'Completed', 'Cancelled']).optional(),
     notes: z.string().optional(),
     dueDate: z.string().datetime().optional()
+});
+
+const createRecallTaskSchema = z.object({
+    patientId: z.string().uuid(),
+    examId: z.string().uuid().optional().nullable(),
+    modalityName: z.string().optional(),
+    dueDate: z.string().datetime().optional(),
+    notes: z.string().optional()
 });
 
 // ─── Patient Segments ─────────────────────────────────────────────────────────
@@ -71,11 +79,13 @@ const submitFeedbackSchema = z.object({
 });
 
 const updateLoyaltySchema = z.object({
-    points: z.number().int().min(-100000).max(100000).refine(value => value !== 0, 'Points adjustment cannot be zero')
+    points: z.number().int().min(-100000).max(100000).refine(value => value !== 0, 'Points adjustment cannot be zero'),
+    reasonCode: z.string().max(50).optional(),
+    description: z.string().max(500).optional()
 });
 
 module.exports = {
-    createCrmActivitySchema, updateCrmActivitySchema,
+    createCrmActivitySchema, updateCrmActivitySchema, createRecallTaskSchema,
     createSegmentSchema, addSegmentMemberSchema,
     createCampaignSchema, updateCampaignStatusSchema,
     submitFeedbackSchema, updateLoyaltySchema

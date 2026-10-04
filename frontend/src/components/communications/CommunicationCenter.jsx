@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectPreferences } from '../../store/preferencesSlice';
@@ -103,13 +104,17 @@ import {
     UserCheck,
     Settings,
     LogOut,
-    ShieldCheck
+    ShieldCheck,
+    AlertTriangle,
+    FileText,
+    Flame
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { selectCurrentUser } from '../../store/authSlice';
 import {
     useGetChatUsersQuery,
     useGetChatMessagesQuery,
+    useLazyGetChatMessagesQuery,
     useSendChatMessageMutation,
     useGetChatChannelsQuery,
     useCreateChatChannelMutation,
@@ -121,9 +126,11 @@ import {
     useUpdateChannelMemberRoleMutation,
     useGetPatientConversationsQuery,
     useGetPatientMessageHistoryQuery,
+    useLazyGetPatientMessageHistoryQuery,
     useSendPatientReplyMutation,
     useGetDoctorConversationsQuery,
     useGetDoctorMessageHistoryQuery,
+    useLazyGetDoctorMessageHistoryQuery,
     useSendDoctorReplyMutation,
     useGetPatientsQuery,
     useGetReferringDoctorsQuery
@@ -135,6 +142,8 @@ import {
     STICKER_OPTIONS,
     createChatFormData
 } from './chatRichContent';
+
+const MESSAGE_HISTORY_PAGE_SIZE = 150;
 import {
     getLocalizedChannelDescription,
     getLocalizedChannelName,
@@ -142,6 +151,7 @@ import {
     getLocalizedStaffRole
 } from './chatLocalization';
 import { getLocalizedDemoUserName } from '../../utils/localizedDemoData';
+import { playHospitalChime } from '../../utils/audioChime';
 
 const COLOR_PRESETS = [
     { labelKey: 'chat.colorAccent', defaultLabel: 'Theme Accent', value: 'from-[var(--VIARA-accent)] to-[var(--VIARA-accent-dark)]', preview: 'bg-gradient-to-r from-teal-500 to-cyan-600' },
@@ -222,18 +232,7 @@ const compareNewest = (a, b) => getTimeValue(b) - getTimeValue(a);
 // Play a pleasant synthesizer chime sound using Web Audio API
 const playNotificationSound = () => {
     try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
-        osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.12); // A5
-        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.3);
+        playHospitalChime('call');
     } catch (_) {
         // Audio is optional and can be blocked by browser autoplay policies.
     }
@@ -296,7 +295,7 @@ export default function CommunicationCenter() {
     const navigate = useNavigate();
     const currentUser = useSelector(selectCurrentUser);
     const currentUserId = currentUser?.id || currentUser?.user_id || currentUser?.userId;
-    const canAccessExternalInbox = ['Admin', 'Receptionist', 'Marketing', 'Developer'].includes(currentUser?.role);
+    const canAccessExternalInbox = ['Admin', 'Receptionist', 'Developer'].includes(currentUser?.role);
 
     const handleNavigateProfile = (type, id, e) => {
         if (e) e.stopPropagation();
@@ -311,7 +310,10 @@ export default function CommunicationCenter() {
     };
 
     const [activeSection, setActiveSection] = useState('staff'); // 'staff' | 'patient' | 'doctor'
-    const [selectedChat, setSelectedChat] = useState({ type: 'channel', id: 'general' });
+    const [selectedChat, setSelectedChat] = useState({ type: 'channel', id: null });
+    const [olderMessages, setOlderMessages] = useState([]);
+    const [olderHistoryHasMore, setOlderHistoryHasMore] = useState(null);
+    const [isLoadingOlder, setIsLoadingOlder] = useState(false);
     const [messageText, setMessageText] = useState('');
     const [pendingFiles, setPendingFiles] = useState([]);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -326,8 +328,10 @@ export default function CommunicationCenter() {
     const [showContextPanel, setShowContextPanel] = useState(true);
     const [mobileShowChat, setMobileShowChat] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
+    const [isStatPriority, setIsStatPriority] = useState(false);
 
     const messageEndRef = useRef(null);
+    const historyLoadSequenceRef = useRef(0);
     const fileInputRef = useRef(null);
 
     // Toggle Sound alert
@@ -344,10 +348,27 @@ export default function CommunicationCenter() {
     // Queries
     const { data: dbChannels = [], refetch: refetchChannels, isFetching: isChannelsFetching } = useGetChatChannelsQuery(undefined, { pollingInterval: 12000 });
     const { data: staffUsers = [], refetch: refetchStaff, isFetching: isStaffFetching } = useGetChatUsersQuery(undefined, { pollingInterval: 10000 });
-    const { data: patientConversations = [], refetch: refetchPatients, isFetching: isPatientsFetching } = useGetPatientConversationsQuery(undefined, { skip: !canAccessExternalInbox, pollingInterval: 10000 });
-    const { data: doctorConversations = [], refetch: refetchDoctors, isFetching: isDoctorsFetching } = useGetDoctorConversationsQuery(undefined, { skip: !canAccessExternalInbox, pollingInterval: 10000 });
+    const { data: patientConversations = [], refetch: refetchPatients, isFetching: isPatientsFetching } = useGetPatientConversationsQuery(undefined, { skip: !canAccessExternalInbox, pollingInterval: 30000 });
+    const { data: doctorConversations = [], refetch: refetchDoctors, isFetching: isDoctorsFetching } = useGetDoctorConversationsQuery(undefined, { skip: !canAccessExternalInbox, pollingInterval: 30000 });
 
     const channels = dbChannels;
+    const selectedChannel = channels.find(channel =>
+        String(channel.channel_id || channel.id) === String(selectedChat.id)
+    );
+
+    useEffect(() => {
+        if (isChannelsFetching || selectedChat.type !== 'channel' || selectedChannel) return;
+        const firstChannel = channels.find(channel => channel.channel_id || channel.id);
+        if (!firstChannel) return;
+
+        const channelId = firstChannel.channel_id || firstChannel.id;
+        setSelectedChat(current => {
+            if (current.type !== 'channel' || channels.some(channel =>
+                String(channel.channel_id || channel.id) === String(current.id)
+            )) return current;
+            return { type: 'channel', id: channelId };
+        });
+    }, [channels, isChannelsFetching, selectedChat.id, selectedChat.type, selectedChannel]);
 
     const isGlobalFetching = isChannelsFetching || isStaffFetching
         || (canAccessExternalInbox && (isPatientsFetching || isDoctorsFetching));
@@ -389,9 +410,9 @@ export default function CommunicationCenter() {
     const [updateChannelMemberRole, { isLoading: isUpdatingMemberRole }] = useUpdateChannelMemberRoleMutation();
 
     // Query members for the managing channel
-    const { data: channelMembers = [], refetch: refetchChannelMembers } = useGetChannelMembersQuery(
-        managingChannelId || selectedChat.id,
-        { skip: !managingChannelId && selectedChat.type !== 'channel' }
+    const { data: channelMembers = [] } = useGetChannelMembersQuery(
+        managingChannelId,
+        { skip: !showMembersModal || !managingChannelId }
     );
 
     const handleCreateChannel = async (e) => {
@@ -548,19 +569,30 @@ export default function CommunicationCenter() {
     const isDoctor = selectedChat.type === 'doctor';
 
     const { data: chatMessages = [], refetch: refetchChatMsgs } = useGetChatMessagesQuery(
-        isChannel ? { channelName: selectedChat.id } : isDM ? { recipientId: selectedChat.id } : null,
-        { skip: !isChannel && !isDM, pollingInterval: 4000 }
+        isChannel ? { channelName: selectedChannel?.channel_id || selectedChannel?.id } : isDM ? { recipientId: selectedChat.id } : null,
+        { skip: (!isChannel && !isDM) || (isChannel && !selectedChannel), pollingInterval: 4000 }
     );
 
     const { data: patientMessages = [], refetch: refetchPatientMsgs } = useGetPatientMessageHistoryQuery(
         selectedChat.id,
-        { skip: !canAccessExternalInbox || !isPatient, pollingInterval: 4000 }
+        { skip: !canAccessExternalInbox || !isPatient, pollingInterval: 30000 }
     );
 
     const { data: doctorMessages = [], refetch: refetchDoctorMsgs } = useGetDoctorMessageHistoryQuery(
         selectedChat.id,
-        { skip: !canAccessExternalInbox || !isDoctor, pollingInterval: 4000 }
+        { skip: !canAccessExternalInbox || !isDoctor, pollingInterval: 30000 }
     );
+
+    const [loadOlderChatMessages] = useLazyGetChatMessagesQuery();
+    const [loadOlderPatientMessages] = useLazyGetPatientMessageHistoryQuery();
+    const [loadOlderDoctorMessages] = useLazyGetDoctorMessageHistoryQuery();
+
+    useEffect(() => {
+        historyLoadSequenceRef.current += 1;
+        setOlderMessages([]);
+        setOlderHistoryHasMore(null);
+        setIsLoadingOlder(false);
+    }, [selectedChat.type, selectedChat.id]);
 
     const refreshAll = () => {
         refetchChannels();
@@ -569,7 +601,7 @@ export default function CommunicationCenter() {
             refetchPatients();
             refetchDoctors();
         }
-        if (isChannel || isDM) refetchChatMsgs();
+        if ((isChannel && selectedChannel) || isDM) refetchChatMsgs();
         if (isPatient) refetchPatientMsgs();
         if (isDoctor) refetchDoctorMsgs();
         toast.success(t('chat.refreshed', { defaultValue: 'Communications refreshed' }));
@@ -645,7 +677,7 @@ export default function CommunicationCenter() {
     // Active Chat metadata
     const activeChatMeta = useMemo(() => {
         if (isChannel) {
-            const found = channels.find(c => (c.channel_id || c.id) === selectedChat.id);
+            const found = selectedChannel;
             if (found) {
                 return {
                     channel_id: found.channel_id || found.id,
@@ -666,24 +698,17 @@ export default function CommunicationCenter() {
                     canManageMembers: found.can_manage_members
                 };
             }
-            return {
-                channel_id: selectedChat.id,
-                name: selectedChat.id,
-                slug: selectedChat.id,
-                description: '',
-                iconColor: 'from-teal-500 to-cyan-600',
-                canPost: true
-            };
+            return null;
         }
         if (isDM) return staffUsers.find(u => u.user_id === selectedChat.id);
         if (isPatient) return patientConversations.find(p => p.patient_id === selectedChat.id);
         if (isDoctor) return doctorConversations.find(d => d.doctor_id === selectedChat.id);
         return null;
-    }, [selectedChat, isChannel, isDM, isPatient, isDoctor, channels, staffUsers, patientConversations, doctorConversations, t]);
+    }, [selectedChat, selectedChannel, isChannel, isDM, isPatient, isDoctor, staffUsers, patientConversations, doctorConversations, t]);
 
     const isPostingAllowed = useMemo(() => {
         if (!isChannel) return true;
-        if (!activeChatMeta) return true;
+        if (!activeChatMeta) return false;
         return activeChatMeta.canPost !== false;
     }, [isChannel, activeChatMeta]);
 
@@ -701,7 +726,7 @@ export default function CommunicationCenter() {
     }, [isDoctor, selectedChat.id, doctorsData]);
 
     // Active Messages List
-    const rawActiveMessages = useMemo(() => {
+    const latestActiveMessages = useMemo(() => {
         let msgs = [];
         if (isChannel || isDM) msgs = [...chatMessages];
         else if (isPatient) msgs = [...patientMessages];
@@ -709,6 +734,47 @@ export default function CommunicationCenter() {
 
         return msgs.sort((a, b) => getTimeValue(a.created_at) - getTimeValue(b.created_at));
     }, [isChannel, isDM, isPatient, isDoctor, chatMessages, patientMessages, doctorMessages]);
+
+    const rawActiveMessages = useMemo(() => {
+        const uniqueMessages = new Map();
+        [...olderMessages, ...latestActiveMessages].forEach(message => {
+            uniqueMessages.set(String(message.message_id), message);
+        });
+        return [...uniqueMessages.values()].sort((a, b) => getTimeValue(a.created_at) - getTimeValue(b.created_at));
+    }, [olderMessages, latestActiveMessages]);
+    const canLoadOlderMessages = olderHistoryHasMore ?? latestActiveMessages.length === MESSAGE_HISTORY_PAGE_SIZE;
+    const newestMessageId = latestActiveMessages[latestActiveMessages.length - 1]?.message_id;
+
+    const handleLoadOlderMessages = async () => {
+        const before = rawActiveMessages[0]?.message_id;
+        if (!before || isLoadingOlder) return;
+
+        const requestSequence = historyLoadSequenceRef.current;
+        setIsLoadingOlder(true);
+        try {
+            let olderPage;
+            if (isPatient) {
+                olderPage = await loadOlderPatientMessages({ patientId: selectedChat.id, before }).unwrap();
+            } else if (isDoctor) {
+                olderPage = await loadOlderDoctorMessages({ doctorId: selectedChat.id, before }).unwrap();
+            } else {
+                const conversation = isChannel
+                    ? { channelName: selectedChat.id }
+                    : { recipientId: selectedChat.id };
+                olderPage = await loadOlderChatMessages({ ...conversation, before }).unwrap();
+            }
+
+            if (requestSequence !== historyLoadSequenceRef.current) return;
+            const existingIds = new Set(rawActiveMessages.map(message => String(message.message_id)));
+            const uniqueOlderMessages = olderPage.filter(message => !existingIds.has(String(message.message_id)));
+            setOlderMessages(current => [...uniqueOlderMessages, ...current]);
+            setOlderHistoryHasMore(olderPage.length === MESSAGE_HISTORY_PAGE_SIZE);
+        } catch (error) {
+            toast.error(error?.data?.message || t('chat.historyLoadFailed', { defaultValue: 'Could not load earlier messages' }));
+        } finally {
+            if (requestSequence === historyLoadSequenceRef.current) setIsLoadingOlder(false);
+        }
+    };
 
     // Filter messages inside thread if inChatSearch is typed
     const activeMessages = useMemo(() => {
@@ -726,7 +792,7 @@ export default function CommunicationCenter() {
     // Auto scroll to bottom on new message
     useEffect(() => {
         messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [rawActiveMessages.length]);
+    }, [newestMessageId]);
 
     // SSE Realtime event sync
     useEffect(() => {
@@ -738,14 +804,14 @@ export default function CommunicationCenter() {
                 refetchPatients();
                 refetchDoctors();
             }
-            if (isChannel || isDM) refetchChatMsgs();
+            if ((isChannel && selectedChannel) || isDM) refetchChatMsgs();
             if (isPatient) refetchPatientMsgs();
             if (isDoctor) refetchDoctorMsgs();
         };
 
         window.addEventListener('SSE_REALTIME_MESSAGE', handleMsgAlert);
         return () => window.removeEventListener('SSE_REALTIME_MESSAGE', handleMsgAlert);
-    }, [selectedChat, isChannel, isDM, isPatient, isDoctor, soundEnabled, canAccessExternalInbox, refetchChannels, refetchStaff, refetchPatients, refetchDoctors, refetchChatMsgs, refetchPatientMsgs, refetchDoctorMsgs]);
+    }, [selectedChat, selectedChannel, isChannel, isDM, isPatient, isDoctor, soundEnabled, canAccessExternalInbox, refetchChannels, refetchStaff, refetchPatients, refetchDoctors, refetchChatMsgs, refetchPatientMsgs, refetchDoctorMsgs]);
 
     const openChat = (chat) => {
         setSelectedChat(chat);
@@ -776,9 +842,23 @@ export default function CommunicationCenter() {
         setShowEmojiPicker(false);
     };
 
+    const handleInsertCaseReference = () => {
+        if (isPatient && (patientDetails?.patient_mrn || activeChatMeta?.patient_mrn)) {
+            const mrn = patientDetails?.patient_mrn || activeChatMeta?.patient_mrn;
+            setMessageText(prev => `${prev ? `${prev} ` : ''}[MRN: ${mrn}] `);
+            return;
+        }
+        const sample = 'ACC-' + Math.floor(10000 + Math.random() * 90000);
+        const caseInput = window.prompt(t('chat.caseRefPrompt', { defaultValue: 'Enter Study Accession Number or Case ID (e.g. ACC-10928):' }), sample);
+        if (caseInput && caseInput.trim()) {
+            setMessageText(prev => `${prev ? `${prev} ` : ''}[Case: ${caseInput.trim()}] `);
+        }
+    };
+
     const handleSendMessage = async (e, directText = null) => {
         if (e?.preventDefault) e.preventDefault();
-        const textToSend = (directText !== null ? directText : messageText).trim();
+        const rawText = (directText !== null ? directText : messageText).trim();
+        const textToSend = isStatPriority && rawText ? `🚨 [STAT] ${rawText}` : rawText;
         if (!textToSend && pendingFiles.length === 0) return;
 
         try {
@@ -820,6 +900,7 @@ export default function CommunicationCenter() {
 
             setMessageText('');
             setPendingFiles([]);
+            setIsStatPriority(false);
             setShowEmojiPicker(false);
             setShowStickerPicker(false);
         } catch (error) {
@@ -902,7 +983,7 @@ export default function CommunicationCenter() {
         }
     }, [activeSection, t]);
 
-    const headerTitle = isChannel ? `# ${activeChatMeta?.name || ''}`
+    const headerTitle = isChannel && activeChatMeta ? `# ${activeChatMeta.name}`
         : isDM ? getLocalizedDemoUserName(activeChatMeta?.full_name, t)
             : isPatient ? activeChatMeta?.patient_name
                 : isDoctor ? activeChatMeta?.doctor_name
@@ -922,22 +1003,22 @@ export default function CommunicationCenter() {
     }, [isDM, activeChatMeta, isDoctor, isPatient, primaryColor]);
 
     return (
-        <div className="h-[calc(100dvh-4.6rem)] text-slate-950 dark:text-slate-100 border-red-500" dir={isRtl ? 'rtl' : 'ltr'}>
-            {/* Main Chat Hub Container - Full Viewport Height & Glassmorphic Style */}
-            <div className="flex h-full w-full overflow-hidden rounded-3xl border border-slate-200/90 bg-white/95 shadow-xl shadow-slate-900/5 ring-1 ring-slate-100 backdrop-blur-2xl dark:border-slate-800/90 dark:bg-[#070e1a] dark:ring-slate-900">
+        <div className="communication-center h-[calc(100dvh-4.6rem)] text-slate-950 dark:text-slate-100" dir={isRtl ? 'rtl' : 'ltr'}>
+            {/* Main Chat Hub Container - Full Viewport Height */}
+            <div className="communication-center__shell flex h-full w-full overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-lg shadow-slate-900/[0.04] ring-1 ring-white dark:border-slate-800 dark:bg-[#070e1a] dark:ring-slate-900 sm:rounded-3xl">
 
                 {/* ─── LEFT/RIGHT SIDEBAR PANEL: Navigation & Chats List ────────────────────────── */}
-                <div className={`${mobileShowChat ? 'hidden' : 'flex'} lg:flex w-full lg:w-[22.5rem] xl:w-[24.5rem] shrink-0 flex-col border-e border-slate-200/80 bg-slate-50/60 dark:border-slate-800/80 dark:bg-[#091222]`}>
+                <div className={`communication-center__inbox ${mobileShowChat ? 'hidden' : 'flex'} lg:flex w-full lg:w-[21rem] xl:w-[23rem] shrink-0 flex-col border-e border-slate-200/80 bg-slate-50/90 dark:border-slate-800 dark:bg-[#091222]`}>
 
                     {/* Top Hub Brand Deck & Quick Controls */}
-                    <div className="p-3.5 pb-2.5 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/50 dark:bg-[#08101e]">
+                    <div className="communication-center__inbox-header border-b border-slate-200/80 bg-white p-4 pb-3 dark:border-slate-800 dark:bg-[#08101e]">
                         <div className="flex items-center justify-between gap-2 mb-3">
                             <div className="flex items-center gap-2.5">
-                                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-md shadow-teal-500/20">
-                                    <MessageSquare size={18} />
+                                <div className="communication-center__brand-icon flex h-10 w-10 items-center justify-center rounded-2xl bg-teal-600 text-white shadow-sm shadow-teal-900/15 dark:bg-teal-500">
+                                    <MessageSquare size={19} />
                                 </div>
                                 <div>
-                                    <h1 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white leading-tight">
+                                    <h1 className="text-sm font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
                                         {isRtl ? 'مركز التواصل والمحادثات' : 'Communication Hub'}
                                     </h1>
                                     <div className="mt-0.5 flex items-center gap-1.5">
@@ -984,7 +1065,7 @@ export default function CommunicationCenter() {
                                 aria-label={t('chat.searchPlaceholder', { defaultValue: 'Search chats, users, MRNs...' })}
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="h-9 w-full rounded-2xl border border-slate-200/90 bg-white ps-9 pe-8 text-xs font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-[#0b1426] dark:text-slate-200"
+                                    className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 ps-9 pe-8 text-xs font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-[#0b1426] dark:text-slate-200 dark:focus:bg-slate-950"
                             />
                             {searchQuery && (
                                 <button
@@ -1032,14 +1113,13 @@ export default function CommunicationCenter() {
                     </div>
 
                     {/* Segmented Category Switcher Tabs */}
-                    <div className={`grid ${canAccessExternalInbox ? 'grid-cols-3' : 'grid-cols-1'} gap-1.5 p-2.5 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/30 dark:bg-[#070e1a]/40`}>
+                    <div className={`communication-center__tabs grid ${canAccessExternalInbox ? 'grid-cols-3' : 'grid-cols-1'} gap-1 border-b border-slate-200/80 bg-white p-2.5 dark:border-slate-800 dark:bg-[#08101e]`} role="group" aria-label={t('chat.conversations', { defaultValue: 'Conversations' })}>
                         {[
                             {
                                 key: 'staff',
                                 icon: Users,
                                 label: t('chat.tabStaff', { defaultValue: 'Team' }),
                                 count: staffUnreadSum,
-                                activeGrad: 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-md shadow-teal-600/20'
                             },
                             ...(canAccessExternalInbox ? [
                                 {
@@ -1047,30 +1127,29 @@ export default function CommunicationCenter() {
                                     icon: MessageSquare,
                                     label: t('chat.tabPatients', { defaultValue: 'Patients' }),
                                     count: patientUnreadSum,
-                                    activeGrad: 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-md shadow-teal-600/20'
                                 },
                                 {
                                     key: 'doctor',
                                     icon: Stethoscope,
                                     label: t('chat.tabDoctors', { defaultValue: 'Doctors' }),
                                     count: doctorUnreadSum,
-                                    activeGrad: 'bg-gradient-to-r from-purple-600 to-violet-600 text-white shadow-md shadow-purple-600/20'
                                 }
                             ] : [])
-                        ].map(({ key, icon: Icon, label, count, activeGrad }) => (
+                        ].map(({ key, icon: Icon, label, count }) => (
                             <button
                                 type="button"
                                 key={key}
                                 onClick={() => { setActiveSection(key); setActiveFilter('all'); }}
-                                className={`relative flex flex-col items-center gap-1 rounded-2xl py-2 px-1 text-[11px] font-black uppercase tracking-wider transition-all duration-200 ${activeSection === key
-                                    ? activeGrad
-                                    : 'bg-white border border-slate-200/70 text-slate-600 hover:bg-slate-100 dark:bg-slate-800/50 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-800'
+                                aria-pressed={activeSection === key}
+                                className={`communication-center__tab relative flex min-w-0 items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-[11px] font-bold transition-all duration-200 ${activeSection === key
+                                    ? 'bg-teal-700 text-white shadow-sm shadow-teal-900/15 dark:bg-teal-600'
+                                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
                                     }`}
                             >
                                 <div className="relative">
                                     <Icon size={16} />
                                     {count > 0 && (
-                                        <span className={`absolute -top-1.5 -end-2.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[8px] font-black ${activeSection === key ? 'bg-amber-300 text-amber-950 ring-2 ring-indigo-900/30' : 'bg-rose-500 text-white ring-2 ring-slate-50 dark:ring-[#08101e]'
+                                        <span className={`absolute -top-2 -end-2 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[8px] font-bold ${activeSection === key ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
                                             }`}>
                                             {count}
                                         </span>
@@ -1082,7 +1161,7 @@ export default function CommunicationCenter() {
                     </div>
 
                     {/* Chat Lists Viewport */}
-                    <div className="flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                    <div className="communication-center__list flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
                         <div className="px-2.5 pb-1 pt-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
                             {sectionTitle}
                         </div>
@@ -1344,11 +1423,11 @@ export default function CommunicationCenter() {
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
-                    className={`${mobileShowChat ? 'flex' : 'hidden lg:flex'} relative min-w-0 flex-1 flex-col bg-slate-50/40 dark:bg-[#070e1a]`}
+                    className={`communication-center__thread ${mobileShowChat ? 'flex' : 'hidden lg:flex'} relative min-w-0 flex-1 flex-col bg-slate-50 dark:bg-[#070e1a]`}
                 >
                     {/* Drag & Drop File Overlay */}
                     {isDraggingOver && (
-                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-teal-900/90 to-cyan-900/90 backdrop-blur-md p-6 text-white animate-in fade-in duration-200">
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-teal-900/90 p-6 text-white animate-in fade-in duration-200">
                             <UploadCloud size={48} className="animate-bounce text-cyan-300" />
                             <h3 className="mt-3 text-lg font-black">{t('chat.dropFilesHere', { defaultValue: 'Drop files to attach to message' })}</h3>
                             <p className="mt-1 text-xs text-cyan-100">{t('chat.dropSubtitle', { defaultValue: 'Images, documents, and PDFs supported (up to 10MB)' })}</p>
@@ -1356,20 +1435,21 @@ export default function CommunicationCenter() {
                     )}
 
                     {/* Integrated Chat Conversation Header */}
-                    <div className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/95 px-4 backdrop-blur-md dark:border-slate-800/80 dark:bg-[#070e1a]/95 lg:px-6">
+                    <div className="communication-center__thread-header flex min-h-16 shrink-0 items-center justify-between gap-2 border-b border-slate-200/80 bg-white/95 px-3 py-2 shadow-sm shadow-slate-900/[0.02] dark:border-slate-800 dark:bg-[#070e1a] sm:gap-3 sm:px-4 lg:px-6">
                         <div
                             onClick={() => {
                                 if (isPatient) handleNavigateProfile('patient', selectedChat.id);
                                 else if (isDoctor) handleNavigateProfile('doctor', selectedChat.id);
                                 else if (isDM) handleNavigateProfile('staff', selectedChat.id);
                             }}
-                            className={`flex min-w-0 items-center gap-3 ${!isChannel ? 'cursor-pointer group' : ''}`}
+                            className={`flex min-w-0 flex-1 items-center gap-2 sm:gap-3 ${!isChannel ? 'cursor-pointer group' : ''}`}
                         >
                             <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); setMobileShowChat(false); }}
                                 className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"
                                 title={t('chat.back', { defaultValue: 'Back' })}
+                                aria-label={t('chat.back', { defaultValue: 'Back' })}
                             >
                                 <ArrowLeft size={18} className={isRtl ? 'rotate-180' : ''} />
                             </button>
@@ -1412,18 +1492,18 @@ export default function CommunicationCenter() {
                         </div>
 
                         {/* In-Thread Action Controls */}
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
                             {/* Channel Specific Action Controls */}
-                            {isChannel && (
+                            {isChannel && activeChatMeta && (
                                 <>
                                     <button
                                         type="button"
-                                        onClick={() => handleOpenMembersModal(selectedChat.id)}
+                                        onClick={() => handleOpenMembersModal(activeChatMeta.channel_id)}
                                         className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 transition"
                                         title={t('chat.channelMembers', { defaultValue: 'Channel members' })}
                                     >
                                         <Users size={13} className="text-teal-600 dark:text-teal-400" />
-                                        <span>{activeChatMeta?.memberCount || channelMembers.length || 1}</span>
+                                        <span>{activeChatMeta?.memberCount ?? 0}</span>
                                     </button>
 
                                     {activeChatMeta?.canEdit && (
@@ -1458,6 +1538,7 @@ export default function CommunicationCenter() {
                                     : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
                                     }`}
                                 title={t('chat.searchInChat', { defaultValue: 'Search in active conversation...' })}
+                                aria-label={t('chat.searchInChat', { defaultValue: 'Search in active conversation...' })}
                             >
                                 <Search size={15} />
                             </button>
@@ -1468,6 +1549,7 @@ export default function CommunicationCenter() {
                                 onClick={exportTranscript}
                                 className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
                                 title={t('chat.exportTranscript', { defaultValue: 'Export conversation transcript' })}
+                                aria-label={t('chat.exportTranscript', { defaultValue: 'Export conversation transcript' })}
                             >
                                 <Download size={15} />
                             </button>
@@ -1526,7 +1608,29 @@ export default function CommunicationCenter() {
                     )}
 
                     {/* Messages List Viewport - Ambient Radiology Theme */}
-                    <div className="relative flex-1 overflow-y-auto bg-gradient-to-b from-slate-100/40 via-slate-50/20 to-slate-100/40 p-4 dark:from-[#050b14] dark:via-[#070e19] dark:to-[#081326] lg:p-6 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                    <div className="communication-center__messages relative flex-1 overflow-y-auto bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-100/80 via-slate-50 to-slate-50 p-3 dark:from-slate-900/60 dark:via-[#070e1a] dark:to-[#070e1a] sm:p-4 lg:p-6 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                        {rawActiveMessages.length > 0 && canLoadOlderMessages && (
+                            <div className="mb-3 flex justify-center">
+                                <button
+                                    type="button"
+                                    onClick={handleLoadOlderMessages}
+                                    disabled={isLoadingOlder}
+                                    className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-teal-400 hover:text-teal-700 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                                >
+                                    {isLoadingOlder
+                                        ? t('chat.loadingEarlier', { defaultValue: 'Loading earlier messages...' })
+                                        : t('chat.loadEarlier', { defaultValue: 'Load earlier messages' })}
+                                </button>
+                            </div>
+                        )}
+                        {/* Official Broadcast Channel Notice */}
+                        {isChannel && activeChatMeta?.postPermission === 'admins_only' && (
+                            <div className="mx-auto mb-3 max-w-xl rounded-2xl border border-purple-200 bg-purple-50 p-2.5 text-center text-xs font-bold text-purple-900 shadow-2xs dark:border-purple-900/50 dark:bg-[#130d22] dark:text-purple-200 flex items-center justify-center gap-2">
+                                <Megaphone size={15} className="text-purple-600 dark:text-purple-400 shrink-0" />
+                                <span>{t('chat.broadcastChannelNotice', { defaultValue: 'Official Broadcast Channel: Visible to all medical staff; postings managed by admins.' })}</span>
+                            </div>
+                        )}
+
                         {activeMessages.length === 0 ? (
                             <div className="flex h-full flex-col items-center justify-center text-center text-slate-400">
                                 <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-teal-500/15 to-cyan-500/15 text-teal-600 dark:text-teal-400 shadow-inner ring-1 ring-teal-500/20">
@@ -1543,6 +1647,7 @@ export default function CommunicationCenter() {
                             const prevIsMe = prev && ((isChannel || isDM) ? String(prev.sender_id) === String(currentUserId) : prev.sender_role === 'Staff');
                             const showDayDivider = !prev || new Date(prev.created_at).toDateString() !== new Date(msg.created_at).toDateString();
                             const groupStart = showDayDivider || prevIsMe !== isMe || prev?.sender_id !== msg.sender_id;
+                            const isStatMessage = msg.priority === 'stat' || msg.priority === 'urgent' || (msg.body && (msg.body.includes('[STAT]') || msg.body.includes('[URGENT]') || msg.body.startsWith('🚨')));
                             const senderName = isMe
                                 ? t('chat.you', { defaultValue: 'You' })
                                 : getLocalizedDemoUserName(msg.sender_name, t) || (isPatient
@@ -1556,14 +1661,14 @@ export default function CommunicationCenter() {
                             return (
                                 <React.Fragment key={msg.message_id || i}>
                                     {showDayDivider && (
-                                        <div className="flex items-center justify-center py-3.5">
-                                            <span className="rounded-full border border-slate-200/90 bg-white/95 px-4 py-1 text-[10.5px] font-bold tracking-wide text-slate-600 shadow-xs backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-400">
+                                        <div className="flex items-center justify-center py-2.5">
+                                            <span className="rounded-full border border-slate-200 bg-white px-3.5 py-0.5 text-[10px] font-bold tracking-wide text-slate-600 shadow-2xs dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
                                                 {formatDay(msg.created_at)}
                                             </span>
                                         </div>
                                     )}
 
-                                    <div className={`group/msg flex w-full gap-2.5 ${isMe ? 'justify-end' : 'justify-start'} ${groupStart ? 'mt-3.5' : 'mt-1'} animate-in fade-in duration-150`}>
+                                    <div className={`group/msg flex w-full gap-2.5 ${isMe ? 'justify-end' : 'justify-start'} ${groupStart ? 'mt-2.5' : 'mt-1'} animate-in fade-in duration-150`}>
                                         {/* Avatar for received messages */}
                                         {!isMe && (
                                             <div className="shrink-0 pb-0.5">
@@ -1590,10 +1695,21 @@ export default function CommunicationCenter() {
                                             )}
 
                                             {/* Beautiful Speech Bubbles */}
-                                            <div className={`relative px-4 py-2.5 text-xs font-semibold leading-relaxed transition-all ${isMe
-                                                ? 'bg-gradient-to-br from-teal-600 to-cyan-700 text-white shadow-md shadow-teal-900/15 border border-teal-500/30 rounded-2xl'
-                                                : 'bg-white text-slate-900 border border-slate-200/90 shadow-2xs dark:bg-slate-800/95 dark:border-slate-700/60 dark:text-slate-100 rounded-2xl'
+                                            <div className={`relative px-3.5 py-2 text-xs font-semibold leading-relaxed transition-all rounded-2xl ${isStatMessage
+                                                ? isMe
+                                                    ? 'bg-gradient-to-br from-rose-700 to-red-800 text-white shadow-lg shadow-rose-950/20 border-2 border-rose-500 ring-2 ring-rose-500/30'
+                                                    : 'bg-rose-50 text-slate-900 border-2 border-rose-400 shadow-md shadow-rose-900/10 dark:bg-[#1f0910] dark:border-rose-600 dark:text-rose-100 ring-2 ring-rose-500/20'
+                                                : isMe
+                                                    ? 'bg-gradient-to-br from-teal-600 to-cyan-700 text-white shadow-md shadow-teal-900/15 border border-teal-500/30'
+                                                    : 'bg-white text-slate-900 border border-slate-200/90 shadow-2xs dark:bg-slate-800/95 dark:border-slate-700/60 dark:text-slate-100'
                                                 }`}>
+                                                {isStatMessage && (
+                                                    <div className="mb-1.5 flex items-center gap-1.5 rounded-lg bg-rose-600 px-2 py-0.5 text-[9.5px] font-black uppercase tracking-wider text-white shadow-xs">
+                                                        <span className="flex h-1.5 w-1.5 rounded-full bg-white animate-ping" />
+                                                        <AlertTriangle size={11} className="text-white shrink-0" />
+                                                        <span>{t('chat.statAlertBanner', { defaultValue: 'STAT / Critical Clinical Alert' })}</span>
+                                                    </div>
+                                                )}
                                                 <div dir="auto" className="text-start">
                                                     <ChatMessageContent message={msg} displayBody={getLocalizedSeedMessage(msg.body, t)} isMe={isMe} t={t} />
                                                 </div>
@@ -1659,12 +1775,18 @@ export default function CommunicationCenter() {
                     {!isPostingAllowed ? (
                         <div className="border-t border-slate-200/80 bg-slate-50/80 p-4 dark:border-slate-800/80 dark:bg-[#070e1a]">
                             <div className="flex items-center justify-center gap-2.5 rounded-2xl border border-purple-200 bg-purple-50/70 p-3 text-center text-xs font-bold text-purple-900 shadow-2xs dark:border-purple-900/40 dark:bg-purple-950/30 dark:text-purple-200">
-                                <Lock size={16} className="text-purple-600 dark:text-purple-400 shrink-0" />
-                                <span>{t('chat.postingRestrictedNotice', { defaultValue: 'Posting in this channel is restricted to channel administrators and staff admins.' })}</span>
+                                {activeChatMeta
+                                    ? <Lock size={16} className="text-purple-600 dark:text-purple-400 shrink-0" />
+                                    : <MessageSquare size={16} className="text-teal-600 dark:text-teal-400 shrink-0" />}
+                                <span>{activeChatMeta
+                                    ? t('chat.postingRestrictedNotice', { defaultValue: 'Posting in this channel is restricted to channel administrators and staff admins.' })
+                                    : isChannelsFetching
+                                        ? t('chat.loadingChannels', { defaultValue: 'Loading communication channels…' })
+                                        : t('chat.noChannelsAvailable', { defaultValue: 'No communication channels are currently available.' })}</span>
                             </div>
                         </div>
                     ) : (
-                        <form onSubmit={(e) => handleSendMessage(e)} className="border-t border-slate-200/80 bg-white p-3 dark:border-slate-800/80 dark:bg-[#070e1a] lg:p-3.5">
+                        <form onSubmit={(e) => handleSendMessage(e)} className="communication-center__composer border-t border-slate-200/80 bg-white p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.035)] dark:border-slate-800/80 dark:bg-[#070e1a] lg:p-3.5">
                             <PendingAttachmentPreview files={pendingFiles} onRemove={removePendingFile} t={t} />
                             {showEmojiPicker && (
                                 <div className="mb-2 flex flex-wrap gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-800 dark:bg-[#091222]">
@@ -1685,10 +1807,10 @@ export default function CommunicationCenter() {
                                     ))}
                                 </div>
                             )}
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
                                 <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx" onChange={(e) => handleFilesSelected(e.target.files)} className="hidden" />
 
-                                <div className="flex items-center gap-1">
+                                <div className="flex w-full items-center justify-between gap-1 sm:w-auto sm:justify-start">
                                     <button
                                         type="button"
                                         onClick={() => fileInputRef.current?.click()}
@@ -1713,6 +1835,26 @@ export default function CommunicationCenter() {
                                     >
                                         <Sticker size={16} />
                                     </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleInsertCaseReference}
+                                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700 dark:border-slate-800 dark:bg-[#091222] dark:text-slate-300 dark:hover:bg-cyan-950/30"
+                                        title={t('chat.insertCaseRef', { defaultValue: 'Insert study or case accession reference' })}
+                                    >
+                                        <FileText size={16} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsStatPriority(prev => !prev)}
+                                        className={`inline-flex items-center gap-1 rounded-xl border px-2.5 h-9 text-xs font-black transition ${isStatPriority
+                                            ? 'border-rose-500 bg-rose-600 text-white shadow-md shadow-rose-600/30 ring-2 ring-rose-500/20'
+                                            : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 dark:border-slate-800 dark:bg-[#091222] dark:text-slate-300 dark:hover:bg-rose-950/30 dark:hover:text-rose-300'
+                                            }`}
+                                        title={t('chat.statPriority', { defaultValue: 'Mark message as STAT / Critical Alert' })}
+                                    >
+                                        <Flame size={14} className={isStatPriority ? 'animate-bounce text-white' : 'text-rose-500'} />
+                                        <span className="text-[10px] uppercase tracking-wider">{t('chat.statPriorityLabel', { defaultValue: 'STAT' })}</span>
+                                    </button>
                                 </div>
 
                                 <textarea
@@ -1725,19 +1867,38 @@ export default function CommunicationCenter() {
                                         }
                                     }}
                                     dir="auto"
-                                    placeholder={t('chat.composePlaceholder', { defaultValue: 'Type a message... (Press Enter to send)' })}
+                                    placeholder={isStatPriority ? t('chat.composeStatPlaceholder', { defaultValue: 'Urgent clinical alert message... (Press Enter to send)' }) : t('chat.composePlaceholder', { defaultValue: 'Type a message... (Press Enter to send)' })}
                                     rows={1}
-                                    className="max-h-32 flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-800 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-[#091222] dark:text-slate-100 dark:focus:bg-[#070e1a] placeholder:text-slate-400"
+                                    className={`order-2 max-h-32 min-w-0 flex-1 basis-[calc(100%_-_2.75rem)] resize-none rounded-xl border px-4 py-2.5 text-xs font-medium outline-none transition focus:ring-4 sm:order-none sm:basis-0 ${isStatPriority
+                                        ? 'border-rose-400 bg-rose-50/60 text-rose-950 placeholder:text-rose-400 focus:border-rose-500 focus:ring-4 focus:ring-rose-500/20 dark:border-rose-600 dark:bg-rose-950/30 dark:text-rose-100'
+                                        : 'border-slate-200 bg-slate-50 text-slate-800 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-[#091222] dark:text-slate-100 dark:focus:bg-[#070e1a]'
+                                        }`}
                                 />
 
                                 <button
                                     type="submit"
                                     disabled={(!messageText.trim() && pendingFiles.length === 0) || isSending}
                                     aria-label={t('chat.sendMessage', { defaultValue: 'Send message' })}
-                                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-md shadow-teal-600/30 transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                                    className={`order-3 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-sm transition hover:brightness-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 sm:order-none ${isStatPriority
+                                        ? 'bg-gradient-to-r from-rose-600 to-red-600 shadow-rose-600/30'
+                                        : 'bg-gradient-to-r from-teal-600 to-cyan-600 shadow-teal-600/30'
+                                        }`}
                                 >
                                     <Send size={15} className={isRtl ? 'rotate-180' : ''} />
                                 </button>
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between px-1 text-[10.5px]">
+                                <span className="flex items-center gap-1 font-medium text-slate-400 dark:text-slate-500">
+                                    <CornerDownLeft size={11} className="text-slate-400 shrink-0" />
+                                    <span>{t('chat.keyboardHint', { defaultValue: 'Enter ↵ to send · Shift+Enter for new line' })}</span>
+                                </span>
+                                {isStatPriority && (
+                                    <span className="flex items-center gap-1 font-black text-rose-600 dark:text-rose-400 animate-pulse">
+                                        <span className="flex h-1.5 w-1.5 rounded-full bg-rose-500" />
+                                        <span>{t('chat.statActiveNotice', { defaultValue: 'STAT Alert mode active' })}</span>
+                                    </span>
+                                )}
                             </div>
                         </form>
                     )}
@@ -1747,10 +1908,10 @@ export default function CommunicationCenter() {
                 {showContextPanel && hasContext && (
                     <>
                         <div
-                            className="fixed inset-0 z-30 bg-slate-950/40 backdrop-blur-xs xl:hidden"
+                            className="fixed inset-0 z-30 bg-slate-950/60 xl:hidden"
                             onClick={() => setShowContextPanel(false)}
                         />
-                        <div className="fixed end-0 top-0 z-40 h-full w-80 max-w-[85vw] shrink-0 overflow-y-auto border-s border-slate-200/80 bg-white p-5 shadow-2xl animate-in slide-in-from-end duration-200 dark:border-slate-800 dark:bg-[#070e1a] xl:static xl:z-auto xl:h-auto xl:max-w-none xl:animate-none xl:bg-slate-50/50 xl:shadow-none dark:xl:bg-[#091222]">
+                        <div className="communication-center__context fixed end-0 top-0 z-40 h-full w-80 max-w-[85vw] shrink-0 overflow-y-auto border-s border-slate-200/80 bg-white p-5 shadow-2xl animate-in slide-in-from-end duration-200 dark:border-slate-800 dark:bg-[#070e1a] xl:static xl:z-auto xl:h-auto xl:max-w-none xl:animate-none xl:bg-slate-50 xl:shadow-none dark:xl:bg-[#091222]">
                             <button
                                 type="button"
                                 onClick={() => setShowContextPanel(false)}
@@ -1984,8 +2145,8 @@ export default function CommunicationCenter() {
                 )}
 
                 {/* ─── Create Channel Modal Dialog ────────────────────────── */}
-                {showCreateChannelModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
+                {showCreateChannelModal && createPortal((
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-4 bg-slate-950/70 animate-in fade-in duration-150">
                         <div dir={isRtl ? 'rtl' : 'ltr'} className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-[#091222] animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto scrollbar-thin">
                             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
                                 <div className="flex items-center gap-2.5">
@@ -2052,7 +2213,7 @@ export default function CommunicationCenter() {
                                     />
                                 </div>
 
-                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3.5 dark:border-slate-800 dark:bg-[#081120] space-y-3">
+                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-[#081120] space-y-3">
                                     <div className="flex items-center justify-between">
                                         <div>
                                             <p className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -2173,11 +2334,11 @@ export default function CommunicationCenter() {
                             </form>
                         </div>
                     </div>
-                )}
+                ), document.body)}
 
                 {/* ─── Edit Channel Modal Dialog ────────────────────────── */}
-                {showEditChannelModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
+                {showEditChannelModal && createPortal((
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-4 bg-slate-950/70 animate-in fade-in duration-150">
                         <div dir={isRtl ? 'rtl' : 'ltr'} className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-[#091222] animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto scrollbar-thin">
                             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
                                 <div className="flex items-center gap-2.5">
@@ -2223,7 +2384,7 @@ export default function CommunicationCenter() {
                                     />
                                 </div>
 
-                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3.5 dark:border-slate-800 dark:bg-[#081120] space-y-3">
+                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-[#081120] space-y-3">
                                     <div className="flex items-center justify-between">
                                         <div>
                                             <p className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -2344,11 +2505,11 @@ export default function CommunicationCenter() {
                             </form>
                         </div>
                     </div>
-                )}
+                ), document.body)}
 
                 {/* ─── Channel Members Management Modal ────────────────────────── */}
-                {showMembersModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
+                {showMembersModal && createPortal((
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-4 bg-slate-950/70 animate-in fade-in duration-150">
                         <div dir={isRtl ? 'rtl' : 'ltr'} className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-[#091222] animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
                             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
                                 <div className="flex items-center gap-2.5">
@@ -2370,7 +2531,7 @@ export default function CommunicationCenter() {
                             </div>
 
                             {/* Add New Member Section */}
-                            <form onSubmit={handleAddMember} className="mt-4 p-3 rounded-2xl border border-slate-200/80 bg-slate-50/60 dark:border-slate-800 dark:bg-[#081120] shrink-0">
+                            <form onSubmit={handleAddMember} className="mt-4 p-3 rounded-2xl border border-slate-200/80 bg-slate-50 dark:border-slate-800 dark:bg-[#081120] shrink-0">
                                 <p className="text-[10.5px] font-black uppercase tracking-wider text-slate-500 mb-2">
                                     {t('chat.addMemberToChannel', { defaultValue: 'Add Member to Channel' })}
                                 </p>
@@ -2492,7 +2653,7 @@ export default function CommunicationCenter() {
                             </div>
                         </div>
                     </div>
-                )}
+                ), document.body)}
             </div>
         </div>
     );

@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { AlertTriangle, CalendarDays, CheckCircle2, Megaphone, PauseCircle, Play, Plus, Search, Send, Square, Tag, Users } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle2, Megaphone, PauseCircle, Play, Plus, Search, Send, Square, Tag, UserPlus, Users, X } from 'lucide-react';
 import {
+    useAddSegmentMemberMutation,
     useCreateCampaignMutation,
     useCreateSegmentMutation,
     useGetCampaignsQuery,
+    useGetPatientsQuery,
     useGetSegmentsQuery,
     useUpdateCampaignStatusMutation,
 } from '../../store/api';
@@ -21,14 +23,16 @@ const inputClass = 'min-h-11 w-full rounded-xl border border-slate-200 bg-white 
 const CampaignManager = () => {
     const { t, i18n } = useTranslation('workspace');
     const copy = (key, options) => t(`marketing.campaigns.${key}`, options);
-    const locale = i18n.language?.startsWith('ar') ? 'ar-EG' : 'en-EG';
+    const isArabic = i18n.language?.startsWith('ar');
+    const locale = isArabic ? 'ar-EG' : 'en-EG';
     const user = useSelector(selectCurrentUser);
     const effectivePermissions = getEffectivePermissions(user);
     const canManage = ['Developer', 'Admin'].includes(user?.role) || effectivePermissions.has('MANAGE_CRM');
     const { data: campaigns = [], isLoading, isError, refetch, isFetching } = useGetCampaignsQuery();
-    const { data: segments = [], isLoading: segmentsLoading } = useGetSegmentsQuery();
+    const { data: segments = [], isLoading: segmentsLoading, refetch: refetchSegments } = useGetSegmentsQuery();
     const [createCampaign, { isLoading: isCreating }] = useCreateCampaignMutation();
     const [createSegment, { isLoading: isCreatingSegment }] = useCreateSegmentMutation();
+    const [addSegmentMember, { isLoading: isAddingMember }] = useAddSegmentMemberMutation();
     const [updateStatus, { isLoading: isUpdatingStatus }] = useUpdateCampaignStatusMutation();
 
     const [showNew, setShowNew] = useState(false);
@@ -37,6 +41,19 @@ const CampaignManager = () => {
     const [search, setSearch] = useState('');
     const [form, setForm] = useState(emptyCampaign);
     const [segmentForm, setSegmentForm] = useState(emptySegment);
+
+    // Segment member assignment state
+    const [activeSegmentForAdd, setActiveSegmentForAdd] = useState(null);
+    const [patientSearch, setPatientSearch] = useState('');
+    const { data: patientsData } = useGetPatientsQuery(
+        { limit: 20, q: patientSearch.trim() || undefined },
+        { skip: !activeSegmentForAdd }
+    );
+    const patientOptions = Array.isArray(patientsData)
+        ? patientsData
+        : Array.isArray(patientsData?.data)
+            ? patientsData.data
+            : [];
 
     const summary = useMemo(() => ({
         total: campaigns.length,
@@ -94,8 +111,21 @@ const CampaignManager = () => {
             await createSegment({ name: segmentForm.name.trim(), description: segmentForm.description.trim() || undefined }).unwrap();
             toast.success(copy('segmentSuccess'));
             closeSegmentForm();
+            refetchSegments();
         } catch (error) {
             toast.error(getErrorMessage(error, copy('segmentError')));
+        }
+    };
+
+    const handleAddMember = async (segmentId, patientId) => {
+        try {
+            await addSegmentMember({ segmentId, patientId }).unwrap();
+            toast.success(isArabic ? 'تمت إضافة المريض للشريحة بنجاح' : 'Patient added to segment successfully');
+            setActiveSegmentForAdd(null);
+            setPatientSearch('');
+            refetchSegments();
+        } catch (error) {
+            toast.error(getErrorMessage(error, isArabic ? 'تعذر إضافة المريض للشريحة' : 'Failed to add patient to segment'));
         }
     };
 
@@ -152,17 +182,133 @@ const CampaignManager = () => {
                             </select>
                         </label>
                         <button type="button" onClick={() => refetch()} disabled={isFetching} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">{copy('refresh')}</button>
-                        {canManage && <button type="button" onClick={() => setShowSegment(value => !value)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-pink-200 bg-pink-50 px-4 text-sm font-bold text-pink-800 hover:bg-pink-100 dark:border-pink-900 dark:bg-pink-400/10 dark:text-pink-200"><Users size={16} />{showSegment ? copy('closeSegment') : copy('newSegment')}</button>}
+                        {canManage && (
+                            <button
+                                type="button"
+                                onClick={() => setShowSegment(value => !value)}
+                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-pink-200 bg-pink-50 px-4 text-sm font-bold text-pink-800 hover:bg-pink-100 dark:border-pink-900 dark:bg-pink-400/10 dark:text-pink-200"
+                            >
+                                <Users size={16} />
+                                {showSegment ? (isArabic ? 'إغلاق الشرائح' : copy('closeSegment')) : (isArabic ? 'إدارة الشرائح والمجموعات' : copy('newSegment'))}
+                            </button>
+                        )}
                         {canManage && <button type="button" onClick={() => setShowNew(value => !value)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-pink-700 px-4 text-sm font-bold text-white hover:bg-pink-800"><Plus size={16} />{showNew ? copy('closeForm') : copy('newCampaign')}</button>}
                     </div>
                 </header>
 
                 {showSegment && canManage && (
-                    <form onSubmit={handleSegmentCreate} className="grid gap-4 border-b border-pink-100 bg-pink-50/40 p-5 md:grid-cols-[minmax(200px,.5fr)_minmax(240px,1fr)_auto] dark:border-pink-900 dark:bg-pink-400/10">
-                        <Field label={copy('segmentName')}><input required maxLength={100} value={segmentForm.name} onChange={event => updateSegment('name', event.target.value)} className={inputClass} /></Field>
-                        <Field label={copy('segmentDescription')}><input value={segmentForm.description} onChange={event => updateSegment('description', event.target.value)} className={inputClass} /></Field>
-                        <div className="flex items-end gap-2"><button type="button" onClick={closeSegmentForm} className="min-h-11 rounded-xl px-4 text-sm font-bold text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-800">{copy('cancel')}</button><button type="submit" disabled={isCreatingSegment} className="min-h-11 rounded-xl bg-pink-700 px-5 text-sm font-bold text-white disabled:opacity-50">{isCreatingSegment ? copy('saving') : copy('saveSegment')}</button></div>
-                    </form>
+                    <div className="border-b border-pink-100 bg-pink-50/40 p-5 space-y-5 dark:border-pink-900 dark:bg-pink-400/10 animate-in fade-in">
+                        {/* New Segment Form */}
+                        <form onSubmit={handleSegmentCreate} className="grid gap-4 md:grid-cols-[minmax(200px,.5fr)_minmax(240px,1fr)_auto]">
+                            <Field label={copy('segmentName')}>
+                                <input required maxLength={100} value={segmentForm.name} onChange={event => updateSegment('name', event.target.value)} placeholder={isArabic ? 'مثال: مرضى الفحص الدوري' : 'e.g. Regular Check-up'} className={inputClass} />
+                            </Field>
+                            <Field label={copy('segmentDescription')}>
+                                <input value={segmentForm.description} onChange={event => updateSegment('description', event.target.value)} placeholder={isArabic ? 'وصف الفئة المستهدفة...' : 'Target group description...'} className={inputClass} />
+                            </Field>
+                            <div className="flex items-end gap-2">
+                                <button type="button" onClick={closeSegmentForm} className="min-h-11 rounded-xl px-4 text-sm font-bold text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-800">{copy('cancel')}</button>
+                                <button type="submit" disabled={isCreatingSegment} className="min-h-11 rounded-xl bg-pink-700 px-5 text-sm font-bold text-white disabled:opacity-50 hover:bg-pink-800">{isCreatingSegment ? copy('saving') : copy('saveSegment')}</button>
+                            </div>
+                        </form>
+
+                        {/* Existing Segments List & Member Assignment */}
+                        <div className="border-t border-pink-100/80 pt-4 dark:border-pink-900/80">
+                            <h4 className="text-xs font-black uppercase tracking-wider text-pink-900 dark:text-pink-200 mb-3 flex items-center gap-2">
+                                <Users size={15} />
+                                <span>{isArabic ? 'الشرائح المستهدفة الحالية وإسناد المرضى' : 'Active Segments & Member Assignment'}</span>
+                                <span className="rounded-full bg-pink-200/80 px-2 py-0.5 text-[10px] text-pink-800 dark:bg-pink-900/60 dark:text-pink-200 font-mono">
+                                    {segments.length}
+                                </span>
+                            </h4>
+
+                            {segments.length === 0 ? (
+                                <p className="text-xs text-slate-500 dark:text-slate-400 py-2">
+                                    {isArabic ? 'لم يتم إنشاء أي شرائح بعد. أنشئ شريحة أولاً لتصنيف المرضى.' : 'No segments created yet. Create one above.'}
+                                </p>
+                            ) : (
+                                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                                    {segments.map((seg) => {
+                                        const isAddingToThis = activeSegmentForAdd === seg.segment_id;
+                                        return (
+                                            <div
+                                                key={seg.segment_id}
+                                                className="rounded-xl border border-pink-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800 dark:bg-slate-900"
+                                            >
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <h5 className="text-sm font-black text-slate-900 dark:text-white">{seg.name}</h5>
+                                                        {seg.description && (
+                                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{seg.description}</p>
+                                                        )}
+                                                    </div>
+                                                    <span className="rounded-full bg-pink-100 px-2.5 py-0.5 text-[11px] font-black text-pink-800 dark:bg-pink-950/60 dark:text-pink-300 whitespace-nowrap">
+                                                        {seg.member_count || 0} {isArabic ? 'مريض' : 'members'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="mt-3 border-t border-slate-100 pt-2.5 dark:border-slate-800">
+                                                    {!isAddingToThis ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setActiveSegmentForAdd(seg.segment_id);
+                                                                setPatientSearch('');
+                                                            }}
+                                                            className="inline-flex items-center gap-1.5 text-xs font-bold text-pink-700 hover:text-pink-800 dark:text-pink-300"
+                                                        >
+                                                            <UserPlus size={13} />
+                                                            <span>{isArabic ? 'إضافة مريض للشريحة' : 'Add Patient to Segment'}</span>
+                                                        </button>
+                                                    ) : (
+                                                        <div className="space-y-2 animate-in fade-in">
+                                                            <div className="flex items-center gap-1">
+                                                                <input
+                                                                    type="text"
+                                                                    value={patientSearch}
+                                                                    onChange={(e) => setPatientSearch(e.target.value)}
+                                                                    placeholder={isArabic ? 'بحث بالاسم أو MRN...' : 'Search name or MRN...'}
+                                                                    className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setActiveSegmentForAdd(null)}
+                                                                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                                                >
+                                                                    <X size={14} />
+                                                                </button>
+                                                            </div>
+
+                                                            {patientOptions.length > 0 && (
+                                                                <div className="max-h-28 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/90 p-1 dark:border-slate-700 dark:bg-slate-800/90">
+                                                                    {patientOptions.slice(0, 5).map(p => {
+                                                                        const pId = p.patient_id || p.id;
+                                                                        const pName = p.name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.patient_name || 'Patient';
+                                                                        return (
+                                                                            <button
+                                                                                key={pId}
+                                                                                type="button"
+                                                                                disabled={isAddingMember}
+                                                                                onClick={() => handleAddMember(seg.segment_id, pId)}
+                                                                                className="w-full text-start rounded-md px-2 py-1 text-[11px] font-bold transition flex items-center justify-between hover:bg-pink-100 dark:hover:bg-pink-950/50 text-slate-800 dark:text-slate-200"
+                                                                            >
+                                                                                <span className="truncate">{pName}</span>
+                                                                                <span className="font-mono text-[10px] text-slate-400 ms-1">{p.mrn}</span>
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 )}
 
                 {showNew && canManage && (

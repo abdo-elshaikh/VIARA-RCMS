@@ -24,8 +24,8 @@
 }
 
 .portal-hero-visual {
-  transform: translate3d(var(--hero-card-x), var(--hero-card-y), 36px)
-    rotateX(var(--hero-rotate-x)) rotateY(var(--hero-rotate-y));
+  transform: translate3d(var(--hero-card-x), var(--hero-card-y), 36px) rotateX(var(--hero-rotate-x))
+    rotateY(var(--hero-rotate-y));
   transform-style: preserve-3d;
   transition: transform 0.2s ease-out;
   will-change: transform;
@@ -42,7 +42,202 @@
 
 .portal-gradient-border {
   position: relative;
-  background: linear-gradient(var(--VIARA-surface), var(--VIARA-surface)) padding-box,
-              linear-gradient(135deg, rgba(14, 124, 123, 0.4), rgba(255, 107, 87, 0.3)) border-box;
+  background:
+    linear-gradient(var(--VIARA-surface), var(--VIARA-surface)) padding-box,
+    linear-gradient(135deg, rgba(14, 124, 123, 0.4), rgba(255, 107, 87, 0.3)) border-box;
   border: 1px solid transparent;
+}
+
+/* Portal builder spacing preset; presentation only. */
+.portal-density-compact section {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+}
+
+/* The page shell covers header, every section and footer with the same preset. */
+.portal-page {
+  --portal-content-width: 80rem;
+  --portal-section-space: 4rem;
+  --portal-card-radius: 1.25rem;
+}
+.portal-width-boxed {
+  --portal-content-width: 70rem;
+}
+.portal-width-narrow {
+  --portal-content-width: 56rem;
+}
+.portal-spacing-compact {
+  --portal-section-space: 2rem;
+}
+.portal-spacing-spacious {
+  --portal-section-space: 6rem;
+}
+.portal-page :is(header, footer, section) > .mx-auto {
+  max-width: var(--portal-content-width);
+}
+.portal-page .portal-modern__grid {
+  max-width: var(--portal-content-width);
+}
+.portal-page .portal-minimal__column {
+  max-width: min(54rem, var(--portal-content-width));
+}
+.portal-page [data-portal-section] > section {
+  padding-block: var(--portal-section-space);
+}
+.portal-page .portal-template-minimal,
+.portal-page .portal-template-professional {
+  max-width: var(--portal-content-width);
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+.portal-hero-compact [data-portal-section="hero"] > section {
+  min-height: auto;
+  padding-block: 2rem;
+}
+.portal-hero-tall [data-portal-section="hero"] > section {
+  min-height: 70vh;
+  display: grid;
+  align-content: center;
+}
+.portal-cards-outlined [data-portal-section] :is(.rounded-lg, .rounded-xl, .rounded-2xl) {
+  box-shadow: none;
+  border: 1px solid var(--VIARA-border, #dce8e5);
+}
+.portal-cards-elevated [data-portal-section] :is(.rounded-lg, .rounded-xl, .rounded-2xl) {
+  box-shadow: 0 12px 32px rgb(11 35 72 / 10%);
+}
+.portal-cards-soft [data-portal-section] :is(.rounded-lg, .rounded-xl, .rounded-2xl) {
+  border-radius: var(--portal-card-radius);
+}
+.portal-nav-solid > header {
+  padding-block: 0;
+  background: var(--VIARA-surface, white);
+  border-bottom: 1px solid var(--VIARA-border, #dce8e5);
+}
+.portal-nav-solid > header > div > div {
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
+}
+.portal-page-modern [data-portal-section]:nth-of-type(even) > section {
+  background: var(--VIARA-surface, white);
+}
+.portal-page-doctor [data-portal-section] > section {
+  border: 1px solid var(--VIARA-border, #dce8e5);
+  border-radius: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.portal-page-minimal [data-portal-section] > section {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--VIARA-border, #dce8e5);
+}
+.portal-page-minimal [data-portal-section] h2 {
+  font-size: 1.6rem;
+}
+.portal-page-minimal [data-portal-section="services"] img {
+  display: none;
+}
+.portal-page-minimal [data-portal-section="services"] button {
+  min-height: auto;
+}
+@media (min-width: 1024px) {
+  .portal-modern__cell:not(.portal-modern__cell--full) :is(#why-viara, #testimonials) > div > .grid,
+  .portal-page-doctor [data-portal-section="why"] > section > div > .grid,
+  .portal-page-doctor [data-portal-section="testimonials"] > section > div > .grid {
+    grid-template-columns: 1fr;
+  }
+  .portal-page-doctor .portal-professional {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.5rem;
+  }
+  .portal-page-doctor .portal-professional > :not([data-portal-section]),
+  .portal-page-doctor [data-portal-section="hero"],
+  .portal-page-doctor [data-portal-section="services"],
+  .portal-page-doctor [data-portal-section="locations"] {
+    grid-column: 1 / -1;
+  }
+  .portal-page-doctor [data-portal-section="faq"] > section > div {
+    grid-template-columns: 1fr;
+  }
+  .portal-page-minimal [data-portal-section="services"] section > div > .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+  }
+  .portal-page-minimal [data-portal-section="services"] section > div > .grid > button {
+    grid-column: auto;
+    grid-row: auto;
+    order: initial;
+  }
+}
+
+.portal-modern__grid {
+  display: grid;
+  gap: 1.5rem;
+  max-width: var(--portal-content-width);
+  margin-inline: auto;
+}
+.portal-modern__cell {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 1.5rem;
+}
+.portal-professional__entry {
+  padding-block: 1.5rem;
+}
+.portal-professional__entry-grid {
+  display: grid;
+  gap: 1rem;
+}
+.portal-professional__card {
+  display: block;
+  padding: 2rem;
+  border: 1px solid var(--VIARA-border, #dce8e5);
+  border-radius: 1.25rem;
+  background: var(--VIARA-surface, white);
+}
+.portal-professional__card h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+.portal-professional__card p {
+  margin-top: 0.75rem;
+  line-height: 1.8;
+}
+.portal-professional__card--featured {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.portal-professional__cta {
+  display: inline-block;
+  margin-top: 1.5rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+@media (min-width: 768px) {
+  .portal-professional__entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .portal-modern__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .portal-modern__cell--full {
+    grid-column: 1 / -1;
+  }
+  .portal-modern__cell:not(.portal-modern__cell--full) section > div {
+    grid-template-columns: 1fr;
+  }
+  .portal-modern__cell:not(.portal-modern__cell--full) #services-section > div > .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+  }
+  .portal-modern__cell:not(.portal-modern__cell--full) #services-section > div > .grid > button {
+    grid-column: auto;
+    grid-row: auto;
+    order: initial;
+    min-height: auto;
+  }
 }

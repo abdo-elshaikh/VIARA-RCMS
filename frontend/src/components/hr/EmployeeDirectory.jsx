@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Briefcase, Calendar, CheckCircle2, Filter, LayoutGrid, List, Mail, Pencil, Phone, RefreshCw, Search, ShieldCheck, UserCheck, Users, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
@@ -31,6 +32,7 @@ const calculateCompletion = (employee) => {
 };
 
 const EmployeeDirectory = () => {
+    const navigate = useNavigate();
     const { t, i18n } = useTranslation('workspace');
     const copy = (key, options) => t(`hr.directory.${key}`, options);
     const locale = i18n.language.startsWith('ar') ? 'ar-EG' : 'en-EG';
@@ -226,6 +228,8 @@ const EmployeeDirectory = () => {
                                 copy={copy}
                                 formatDate={formatDate}
                                 onEdit={openEdit}
+                                onNavigateIAM={(id) => navigate(`/users/${id}`)}
+                                locale={locale}
                                 t={t}
                             />
                         ))}
@@ -278,14 +282,25 @@ const EmployeeDirectory = () => {
                                             {formatDate(employee.hire_date)}
                                         </td>
                                         <td className="px-4 py-3 text-end">
-                                            <button
-                                                type="button"
-                                                onClick={() => openEdit(employee)}
-                                                className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-700 shadow-xs hover:border-teal-400 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-                                            >
-                                                <Pencil size={12} />
-                                                <span>{copy('edit', { defaultValue: 'Edit' })}</span>
-                                            </button>
+                                            <div className="flex items-center justify-end gap-1.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => navigate(`/users/${employee.user_id}`)}
+                                                    title={locale.startsWith('ar') ? 'إدارة حساب الدخول والأمان (IAM)' : 'Manage IAM & Security Login Account'}
+                                                    className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-700 shadow-xs hover:border-teal-400 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                                                >
+                                                    <ShieldCheck size={12} className="text-teal-600" />
+                                                    <span className="hidden sm:inline">{locale.startsWith('ar') ? 'حساب IAM' : 'IAM'}</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openEdit(employee)}
+                                                    className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-700 shadow-xs hover:border-teal-400 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                                                >
+                                                    <Pencil size={12} />
+                                                    <span>{copy('edit', { defaultValue: 'Edit' })}</span>
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -352,7 +367,7 @@ const Field = ({ label, children }) => (
     </label>
 );
 
-const EmployeeCard = ({ employee, copy, formatDate, onEdit, t }) => {
+const EmployeeCard = ({ employee, copy, formatDate, onEdit, onNavigateIAM, locale, t }) => {
     const completion = calculateCompletion(employee);
     const isActive = employee.is_active !== false;
 
@@ -437,6 +452,26 @@ const EmployeeCard = ({ employee, copy, formatDate, onEdit, t }) => {
                     />
                 </div>
             </div>
+
+            {/* Quick IAM link */}
+            {onNavigateIAM && (
+                <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5 dark:border-slate-800">
+                    <button
+                        type="button"
+                        onClick={() => onNavigateIAM(employee.user_id)}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-teal-700 hover:text-teal-800 dark:text-teal-400 dark:hover:text-teal-300 transition"
+                        title={locale?.startsWith('ar') ? 'إدارة حساب الدخول الرقمي والأمان (IAM)' : 'Manage IAM & Security Login Account'}
+                    >
+                        <ShieldCheck size={13} />
+                        <span>{locale?.startsWith('ar') ? 'إدارة حساب الدخول (IAM)' : 'IAM & Security'}</span>
+                    </button>
+                    <span className="text-[10px] font-bold text-slate-400">
+                        {employee.is_active !== false
+                            ? (locale?.startsWith('ar') ? 'حساب نشط' : 'Active')
+                            : (locale?.startsWith('ar') ? 'معطل' : 'Disabled')}
+                    </span>
+                </div>
+            )}
         </article>
     );
 };

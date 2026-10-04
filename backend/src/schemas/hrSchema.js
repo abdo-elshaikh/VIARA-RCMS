@@ -61,6 +61,18 @@ const clockInSchema = z.object({
 });
 
 const clockOutSchema = z.object({
+    notes: optionalTrimmedString(500),
+    force: z.boolean().optional(),
+    isEmergency: z.boolean().optional(),
+    emergencyReason: optionalTrimmedString(500)
+});
+
+const breakStartSchema = z.object({
+    notes: optionalTrimmedString(500),
+    isPaid: z.boolean().optional()
+});
+
+const breakEndSchema = z.object({
     notes: optionalTrimmedString(500)
 });
 
@@ -158,10 +170,24 @@ const updateAttendanceSettingsSchema = z.object({
     enforceShiftLoginRestriction: z.boolean().optional(),
     loginBufferBeforeMinutes: z.number().int().min(0).max(180).optional(),
     loginBufferAfterMinutes: z.number().int().min(0).max(180).optional(),
-    exemptRolesFromLoginRestriction: z.string().trim().max(255).optional()
+    exemptRolesFromLoginRestriction: z.preprocess((val) => {
+        if (Array.isArray(val)) return val.filter(Boolean).join(',');
+        return val;
+    }, z.string().trim().max(500).optional())
 });
 
-const createShiftRequestSchema = z.object({
+const createShiftRequestSchema = z.preprocess((raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    return {
+        shiftId: raw.shiftId || raw.shift_id || undefined,
+        targetUserId: raw.targetUserId || raw.target_user_id || undefined,
+        targetShiftId: raw.targetShiftId || raw.target_shift_id || undefined,
+        requestType: raw.requestType || raw.request_type,
+        requestedStartTime: raw.requestedStartTime || raw.requested_start_time || raw.proposed_start_time || undefined,
+        requestedEndTime: raw.requestedEndTime || raw.requested_end_time || raw.proposed_end_time || undefined,
+        reason: raw.reason,
+    };
+}, z.object({
     shiftId: z.string().uuid().nullable().optional(),
     targetUserId: z.string().uuid().nullable().optional(),
     targetShiftId: z.string().uuid().nullable().optional(),
@@ -169,7 +195,7 @@ const createShiftRequestSchema = z.object({
     requestedStartTime: z.string().optional().nullable(),
     requestedEndTime: z.string().optional().nullable(),
     reason: z.string().trim().min(3).max(500)
-});
+}));
 
 const updateShiftRequestStatusSchema = z.object({
     status: z.enum(['Approved', 'Rejected', 'Cancelled']),
@@ -190,6 +216,32 @@ const createStaffEvaluationSchema = z.object({
     status: z.enum(['Draft', 'Finalized', 'Acknowledged']).optional()
 });
 
+const shiftTemplateBaseSchema = z.object({
+    name: z.string().trim().min(1).max(100),
+    role: z.enum(['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse', 'Cashier', 'Accountant', 'Insurance_Staff', 'Marketing']),
+    roomId: z.string().uuid().nullable().optional(),
+    startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    recurrenceRule: z.object({
+        freq: z.enum(['daily', 'weekly', 'monthly']),
+        byday: z.array(z.number().int().min(0).max(6)).optional(),
+        bymonthday: z.array(z.number().int().min(1).max(31)).optional(),
+        until: z.string().datetime().optional()
+    }),
+    isActive: z.boolean().optional().default(true)
+});
+
+const shiftTemplateSchema = shiftTemplateBaseSchema.refine(data => data.endTime > data.startTime, {
+    path: ['endTime'],
+    message: 'End time must be after start time'
+});
+
+const updateShiftTemplateSchema = shiftTemplateBaseSchema.partial().refine(
+    data => !data.startTime || !data.endTime || data.endTime > data.startTime,
+    { path: ['endTime'], message: 'End time must be after start time' }
+);
+
+
 module.exports = {
     updateProfileSchema,
     createShiftSchema, updateShiftSchema,
@@ -203,6 +255,8 @@ module.exports = {
     updateAttendanceSettingsSchema,
     createShiftRequestSchema,
     updateShiftRequestStatusSchema,
-    createStaffEvaluationSchema
+    createStaffEvaluationSchema,
+    breakStartSchema, breakEndSchema,
+    shiftTemplateSchema,
+    updateShiftTemplateSchema
 };
-

@@ -97,6 +97,49 @@ describe('Patient Controller Hardening & Canonical Routes', () => {
             // No INSERT may run after a duplicate hit: exactly one query total.
             expect(mockDb.query).toHaveBeenCalledTimes(1);
         });
+
+        it('keeps marketing consent fields synchronized when creating a patient', async () => {
+            const insertRow = {
+                patient_id: 'p-1002',
+                mrn: 'PAT-2026-CONSENT',
+                created_at: new Date().toISOString()
+            };
+            const mockDb = {
+                query: jest.fn()
+                    .mockResolvedValueOnce({ rows: [] })
+                    .mockResolvedValueOnce({ rows: [insertRow] })
+            };
+
+            const req = {
+                body: {
+                    firstName: 'Sara',
+                    lastName: 'Ali',
+                    dateOfBirth: '1992-02-02',
+                    gender: 'Female',
+                    phone: '+966500000000',
+                    consentMarketing: true,
+                    optInMarketing: true
+                },
+                user: { user_id: 'u-admin-1', role: 'Admin' },
+                ip: '127.0.0.1'
+            };
+
+            const res = {
+                status: jest.fn().mockReturnThis(),
+                json: jest.fn()
+            };
+            const next = jest.fn();
+
+            const handler = createPatient(mockDb);
+            await handler(req, res, next);
+
+            expect(res.status).toHaveBeenCalledWith(201);
+            const insertCall = mockDb.query.mock.calls[1];
+            expect(insertCall[0]).toContain('opt_in_marketing');
+            expect(insertCall[1]).toEqual(expect.arrayContaining([expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), true, expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String), expect.any(String)]));
+            expect(insertCall[1][28]).toBe(true);
+            expect(insertCall[1][29]).toBe('Active');
+        });
     });
 
     describe('getPatientById canonical route (BUG-H03)', () => {

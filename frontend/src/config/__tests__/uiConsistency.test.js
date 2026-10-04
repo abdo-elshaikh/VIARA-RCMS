@@ -8,7 +8,6 @@ const readSource = (relativePath) => fs.readFileSync(path.join(srcRoot, relative
 
 const routedOperationalPages = [
     'pages/DashboardHome.jsx',
-    'pages/Help.jsx',
     'pages/Admin.jsx',
     'pages/Users.jsx',
     'pages/UserDetailPage.jsx',
@@ -23,7 +22,6 @@ const routedOperationalPages = [
     'pages/Worklist.jsx',
     'pages/CaseReports.jsx',
     'pages/CaseDetailsPage.jsx',
-    'pages/ReportEditorPage.jsx',
     'pages/Appointments.jsx',
     'pages/BookAppointment.jsx',
     'pages/Patients.jsx',
@@ -100,6 +98,25 @@ describe('operational UI consistency', () => {
         expect(source).toMatch(/<PageHeader\b/);
     });
 
+    it('gates case details actions through the shared route access resolver', () => {
+        const source = readSource('pages/CaseDetailsPage.jsx');
+        expect(source).toMatch(/canAccessRoute\('\/case-reports', user\)/);
+        expect(source).toMatch(/canAccessRoute\('\/reports\/editor\/:examId', user\)/);
+        expect(source).toMatch(/canAccessRoute\('\/pacs\/viewer', user\)/);
+        expect(source).toMatch(/canAccessRoute\('\/patients\/:patientId', user\)/);
+        expect(source).toMatch(/!canViewReport/);
+        expect(source).toMatch(/\{canResumeReport &&/);
+        expect(source).toMatch(/\{canViewPacs && /);
+        expect(source).toMatch(/\{canOpenPatientRecord && /);
+    });
+
+    it('drives the case workflow stepper from queue_stage rather than legacy status', () => {
+        const source = readSource('pages/CaseDetailsPage.jsx');
+        expect(source).toMatch(/exam\?\.queue_stage \|\| exam\?\.status/);
+        expect(source).toMatch(/queue_stage/);
+        expect(source).toMatch(/Cancelled/);
+    });
+
     it.each(routedOperationalPages.filter((file) => file !== 'pages/AnalyticsDashboard.jsx'))(
         '%s integrates its record indicators in the shared header',
         (file) => {
@@ -117,12 +134,34 @@ describe('operational UI consistency', () => {
         expect(source).not.toMatch(/\bmetricsLabel=/);
     });
 
-    it('keeps the full-screen PACS header specialized while integrating study indicators', () => {
+    it('keeps the PACS header concise and makes series navigation explicit', () => {
         const source = readSource('pages/PacsViewer.jsx');
         expect(source).toMatch(/<WorkstationHeader\b/);
-        expect(source).toMatch(/seriesCount=\{seriesGroups\.length\}/);
-        expect(source).toMatch(/instanceCount=/);
-        expect(source).toMatch(/keyImageCount=\{keyImages\.size\}/);
+        expect(source).toMatch(/seriesSummary/);
+        expect(source).toMatch(/seriesResults/);
+        expect(source).toMatch(/<SeriesThumbnail\b/);
+        expect(source).toMatch(/rootMargin: '120px'/);
+        expect(source).toMatch(/aria-pressed=\{isSelected\}/);
+        expect(source).toMatch(/viewTransformStatus/);
+    });
+
+    it('does not place PACS credentials in Weasis launch links', () => {
+        const source = readSource('pages/PacsViewer.jsx');
+        expect(source).toContain('/api/pacs/dicom-web');
+        expect(source).toMatch(/handleCopy\(dicomWebBaseUrl, 'weasis-url'\)/);
+        expect(source).toMatch(/handleCopy\(studyUid, 'weasis-study'\)/);
+        expect(source).not.toContain('weasis://$dicom:get');
+        expect(source).not.toContain('weasisProtocolUrl');
+        expect(source).not.toContain('weasis-auth');
+        expect(source).not.toContain('Copy Authorization Header');
+    });
+
+    it('offers ViewerHub direct launch through the configured external viewer URL', () => {
+        const viewer = readSource('pages/PacsViewer.jsx');
+        const settings = readSource('pages/PacsSettings.jsx');
+        expect(viewer).toMatch(/handleOpenWindow\(customViewerUrl\)/);
+        expect(settings).toContain('/display/auth?viewer=WEASIS&studyUID={studyUid}');
+        expect(settings).toMatch(/never put access tokens in this URL/i);
     });
 
     it('keeps the full-height Communication Center specialized with integrated hub controls', () => {

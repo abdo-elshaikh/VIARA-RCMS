@@ -10,7 +10,8 @@
       "printing": "Printing",
       "branding": "Branding",
       "branches": "Branches"
-    }
+    },
+    "identityEyebrow": "Facility and clinical identity"
   },
   "navigation": {
     "label": "Facility settings sections",
@@ -18,7 +19,7 @@
     "branding": "Branding",
     "contact": "Contact",
     "legal": "Legal and billing",
-    "branches": "Branches",
+    "branches": "Branches & Medical Chains",
     "portal": "Portal",
     "profile": "Profile and contact",
     "homepage": "Public homepage",
@@ -39,7 +40,18 @@
   },
   "branding": {
     "title": "Branding",
-    "description": "Logo variants and colors used by the identity resolver, print templates, and portal surfaces."
+    "description": "Logo variants and colors used by the identity resolver, print templates, and portal surfaces.",
+    "presetsTitle": "Color palette presets",
+    "presetsDescription": "Apply a coordinated clinical palette across the facility interface.",
+    "previewMode": "Preview mode",
+    "light": "Light",
+    "dark": "Dark",
+    "presets": {
+      "emerald": "Clinical emerald",
+      "cyan": "Healthcare cyan",
+      "indigo": "Modern indigo",
+      "slate": "Professional slate"
+    }
   },
   "contact": {
     "title": "Contact information",
@@ -50,14 +62,83 @@
     "description": "Identifiers used by invoices, receipts, report footers, and regulated documents."
   },
   "branches": {
-    "title": "Primary branch override",
-    "description": "This branch identity overrides organization values where documents originate from this location. Dedicated branch records can use the same resolver fields."
+    "title": "Multi-Branch & Medical Chains Management",
+    "description": "Comprehensive management of radiology branch network, primary headquarters, satellite clinics, independent licenses, equipment modalities, and operating hours.",
+    "addBranch": "Add New Branch",
+    "editBranch": "Edit Branch Details",
+    "duplicateBranch": "Duplicate Branch",
+    "deleteBranch": "Delete Branch",
+    "deleteConfirm": "Are you sure you want to delete this branch? This action cannot be undone.",
+    "cannotDeleteMain": "Cannot delete the primary headquarters branch. Please set another primary branch first.",
+    "setAsMain": "Set as Primary HQ",
+    "isMainBadge": "Primary HQ",
+    "filterAll": "All Branches",
+    "searchPlaceholder": "Search by branch name, code, city, manager...",
+    "noBranchesFound": "No branches matched your search.",
+    "emptyStateTitle": "No branches configured",
+    "emptyStateDesc": "Add your healthcare facilities and diagnostic branches for centralized management.",
+    "primaryHQSync": "Auto-synced with primary facility record",
+    "stats": {
+      "total": "Total Branches",
+      "active": "Active Locations",
+      "maintenance": "Under Maintenance",
+      "inactive": "Inactive",
+      "mainBranch": "Main HQ",
+      "modalities": "Active Modalities"
+    },
+    "types": {
+      "main": "Main HQ / Flagship",
+      "branch": "Full-Service Branch",
+      "satellite": "Satellite Center",
+      "clinic": "Specialized Clinic",
+      "mobile": "Mobile Imaging Unit",
+      "lab": "Diagnostic Lab"
+    },
+    "statuses": {
+      "active": "Active / Operational",
+      "maintenance": "Under Maintenance",
+      "inactive": "Inactive / Suspended"
+    },
+    "modal": {
+      "addTitle": "Add New Branch Location",
+      "editTitle": "Edit Branch Details",
+      "tabs": {
+        "general": "General & Info",
+        "contact": "Location & Contact",
+        "legal": "Licensing & Billing",
+        "modalities": "Modalities & Hours",
+        "documents": "Document Letterheads"
+      },
+      "codeHint": "Unique branch code identifier (e.g., MDI-01, DKI-02).",
+      "managerName": "Branch Manager / Clinical Lead",
+      "managerHint": "Primary operational or medical director for this location.",
+      "isMainLabel": "Set this location as the Primary Headquarters (Primary HQ)",
+      "isMainHint": "The central facility record will synchronize with this branch's details.",
+      "typeLabel": "Branch Classification Type",
+      "statusLabel": "Operational Status",
+      "modalitiesTitle": "Available Modalities & Diagnostic Equipment",
+      "modalitiesHint": "Select diagnostic imaging modalities available at this location for appointment scheduling.",
+      "hoursTitle": "Branch Operating Hours & Shifts",
+      "hoursOverride": "Override operating hours for this specific branch",
+      "inheritHours": "Inherit facility-wide operating hours automatically",
+      "reportHeaderOverride": "Custom Report Header for this Branch (HTML / Text)",
+      "reportHeaderHint": "Leave empty to inherit the organization's central report header.",
+      "reportFooterOverride": "Custom Report Footer for this Branch (HTML / Text)",
+      "notesLabel": "Internal Operational Notes",
+      "saveBranch": "Save Branch Details",
+      "cancel": "Cancel"
+    },
+    "previews": {
+      "contextLabel": "Branch Preview Context:",
+      "masterOrg": "Organization Master (Default)"
+    }
   },
   "portal": {
     "title": "Portal identity",
     "description": "Portal shell uses organization identity; individual appointments and studies can still show originating branch identity.",
     "welcomeMessage": "Portal welcome message",
-    "welcomeMessageAr": "Portal welcome message Arabic"
+    "welcomeMessageAr": "Portal welcome message Arabic",
+    "openBuilder": "Customize the public page in Portal Builder"
   },
   "profile": {
     "title": "Facility profile",
@@ -154,7 +235,29 @@
     "invalid": "Opening and closing hours must be between 0 and 24.",
     "window": "Configured scheduling window",
     "duration": "{{count}} operating hours",
-    "operationalNote": "Appointment availability also considers configured resources, existing bookings, holidays retained in the settings record, and equipment downtime."
+    "operationalNote": "Appointment availability also considers configured resources, existing bookings, holidays retained in the settings record, and equipment downtime.",
+    "presetsTitle": "Quick schedule presets",
+    "presets": {
+      "standard": "Standard day (08:00 - 17:00)",
+      "extended": "Extended clinical (07:00 - 22:00)",
+      "early": "Early shift (06:00 - 18:00)",
+      "continuous": "Continuous (00:00 - 24:00)"
+    },
+    "workingDays": "Working days",
+    "workingDaysDescription": "Choose the days available for patient scheduling and appointment booking.",
+    "days": {
+      "0": "Sunday",
+      "1": "Monday",
+      "2": "Tuesday",
+      "3": "Wednesday",
+      "4": "Thursday",
+      "5": "Friday",
+      "6": "Saturday"
+    },
+    "holidaysTitle": "Facility holidays and closure dates",
+    "holidaysDescription": "Add holiday exceptions that booking schedules should observe.",
+    "holidayPlaceholder": "Add a holiday, for example Friday or Eid al-Fitr",
+    "noHolidays": "No holiday dates have been added."
   },
   "documents": {
     "title": "Document and invoice settings",
@@ -171,7 +274,14 @@
     "reportDisclaimer": "Report disclaimer",
     "reportDisclaimerAr": "Report disclaimer Arabic",
     "invoiceFooter": "Invoice footer",
-    "receiptFooter": "Receipt footer"
+    "receiptFooter": "Receipt footer",
+    "tagHint": "Select a placeholder to insert it into the report header.",
+    "previewTitle": "Document preview",
+    "previewDescription": "Preview the configured logo, colors, tax identifiers, and disclaimers.",
+    "officialReport": "Official report",
+    "patientPreview": "Patient details and findings preview",
+    "disclaimer": "Disclaimer",
+    "defaultDisclaimer": "No custom disclaimer. The system default will be used."
   },
   "printing": {
     "title": "Printing preferences",
@@ -218,7 +328,11 @@
     "saving": "Saving...",
     "discard": "Discard changes",
     "retry": "Try again",
-    "saveHint": "Updates apply facility-wide"
+    "saveHint": "Updates apply facility-wide",
+    "add": "Add",
+    "close": "Close preview",
+    "upload": "Upload",
+    "remove": "Remove"
   },
   "states": {
     "loading": "Loading facility settings...",
@@ -233,6 +347,47 @@
     "logoImageOnly": "Use PNG, JPG, SVG, or WebP for logos.",
     "logoTooLarge": "Logo image must be smaller than 800 KB.",
     "logoInvalid": "The selected file does not look like a supported image.",
-    "logoReadFailed": "Logo image could not be read."
+    "logoReadFailed": "Logo image could not be read.",
+    "paletteApplied": "Applied {{preset}} palette.",
+    "shiftApplied": "Schedule updated: {{preset}}.",
+    "tagAppended": "Inserted {{tag}}.",
+    "logoUploaded": "Logo updated successfully.",
+    "discarded": "Changes discarded.",
+    "identityCopied": "Facility identity details copied."
+  },
+  "summary": {
+    "primaryEntity": "Primary organization",
+    "activeBranch": "Active branch",
+    "directHotline": "Direct hotline",
+    "clinicalHours": "Clinical hours",
+    "noEmail": "No email configured",
+    "noTaxNumber": "No tax number configured",
+    "organizationDefault": "Organization default",
+    "copyDetails": "Copy details",
+    "brandColors": "Brand colors",
+    "branchIdentity": "Branch identity",
+    "noAddress": "No address configured"
+  },
+  "previews": {
+    "title": "Branding previews",
+    "description": "Preview how facility identity appears in documents and the patient portal.",
+    "expand": "Expand preview",
+    "inheritedDisclaimer": "The organization disclaimer will be used.",
+    "billingTerms": "Billing terms and tax details will appear here.",
+    "receiptFooter": "Receipt footer preview.",
+    "medicalReport": "Medical report",
+    "billingInvoice": "Billing invoice",
+    "receiptSlip": "Receipt",
+    "tabs": {
+      "all": "All",
+      "report": "Report",
+      "invoice": "Invoice",
+      "sticker": "Sticker",
+      "portal": "Portal"
+    },
+    "addressInherited": "Address inherited from settings",
+    "phoneHotline": "Phone / hotline",
+    "samplePatient": "Sample patient: Alex Morgan [M/45]",
+    "portalWelcome": "Welcome to the Radiology Patient Portal"
   }
 }

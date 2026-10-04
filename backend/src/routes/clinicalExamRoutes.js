@@ -9,9 +9,16 @@ const {
     getWorklistQuerySchema,
     improveReportSchema,
     generatePreliminaryReportSchema,
-    markAiReportDraftAppliedSchema
+    markAiReportDraftAppliedSchema,
+    completeAcquisitionSchema,
+    requestReportSchema
 } = require('../schemas/examSchema');
-const { getQueueQuerySchema, transitionQueueSchema } = require('../schemas/queueSchema');
+const {
+    getQueueQuerySchema,
+    transitionQueueSchema,
+    assignQueueTaskSchema,
+    releaseQueueTaskSchema
+} = require('../schemas/queueSchema');
 
 const {
     reportTemplateSchema,
@@ -50,7 +57,13 @@ const {
 
 const {
     getQueue,
-    transitionQueue
+    transitionQueue,
+    completeAcquisition,
+    requestDeferredReport,
+    deferReportForImages,
+    claimQueueTask,
+    assignQueueTask,
+    releaseQueueTaskAssignment
 } = require('../controllers/queueController');
 
 module.exports = function clinicalExamRoutes(pool, auditService) {
@@ -80,10 +93,12 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
     );
 
     // ─── Report Templates ───────────────────────────────────────────────────
-    router.get('/templates', authenticateToken, authorizeRole(['Radiologist', 'Admin']), validateQuery(getReportTemplatesQuerySchema), getReportTemplates(pool));
-    router.post('/templates', authenticateToken, authorizeRole(['Radiologist', 'Admin']), hasPermission(pool, 'MANAGE_REPORT_TEMPLATES'), validateRequest(reportTemplateSchema), createReportTemplate(pool));
-    router.put('/templates/:id', authenticateToken, authorizeRole(['Radiologist', 'Admin']), hasPermission(pool, 'MANAGE_REPORT_TEMPLATES'), validateRequest(updateReportTemplateSchema), updateReportTemplate(pool));
-    router.delete('/templates/:id', authenticateToken, authorizeRole(['Radiologist', 'Admin']), hasPermission(pool, 'MANAGE_REPORT_TEMPLATES'), deleteReportTemplate(pool));
+    ['/templates', '/report-templates'].forEach((base) => {
+        router.get(base, authenticateToken, authorizeRole(['Radiologist', 'Admin']), validateQuery(getReportTemplatesQuerySchema), getReportTemplates(pool));
+        router.post(base, authenticateToken, authorizeRole(['Radiologist', 'Admin']), hasPermission(pool, 'MANAGE_REPORT_TEMPLATES'), validateRequest(reportTemplateSchema), createReportTemplate(pool));
+        router.put(`${base}/:id`, authenticateToken, authorizeRole(['Radiologist', 'Admin']), hasPermission(pool, 'MANAGE_REPORT_TEMPLATES'), validateRequest(updateReportTemplateSchema), updateReportTemplate(pool));
+        router.delete(`${base}/:id`, authenticateToken, authorizeRole(['Radiologist', 'Admin']), hasPermission(pool, 'MANAGE_REPORT_TEMPLATES'), deleteReportTemplate(pool));
+    });
 
     // ─── Examination Details & Reports ──────────────────────────────────────
     router.get('/exams/:id',
@@ -99,6 +114,29 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         hasAnyPermission(pool, ['WRITE_REPORTS', 'EDIT_REPORTS']),
         validateRequest(updateExamReportSchema),
         updateReport(pool)
+    );
+
+    router.post('/exams/:examId/complete-acquisition',
+        authenticateToken,
+        authorizeRole(['Technician', 'Admin', 'Developer']),
+        hasPermission(pool, 'MANAGE_QUEUE'),
+        validateRequest(completeAcquisitionSchema),
+        completeAcquisition(pool)
+    );
+
+    router.post('/exams/:examId/report/request',
+        authenticateToken,
+        authorizeRole(['Receptionist', 'Admin', 'Developer']),
+        hasPermission(pool, 'MANAGE_QUEUE'),
+        validateRequest(requestReportSchema),
+        requestDeferredReport(pool)
+    );
+
+    router.post('/exams/:examId/report/defer',
+        authenticateToken,
+        authorizeRole(['Receptionist', 'Admin', 'Developer', 'Technician']),
+        hasAnyPermission(pool, ['MANAGE_QUEUE', 'DELIVER_RESULTS', 'CONDUCT_EXAMS']),
+        deferReportForImages(pool)
     );
 
     router.post('/exams/report/improve-format',
@@ -175,6 +213,7 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         authenticateToken,
         auditRead(auditService, { resourceTable: 'examinations' }),
         authorizeRole(['Receptionist', 'Admin', 'Accountant', 'Radiologist', 'Technician', 'Nurse']),
+        hasAnyPermission(pool, ['VIEW_EXAMS', 'MANAGE_QUEUE']),
         validateQuery(getQueueQuerySchema),
         getQueue(pool)
     );
@@ -185,6 +224,28 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         hasPermission(pool, 'MANAGE_QUEUE'),
         validateRequest(transitionQueueSchema),
         transitionQueue(pool)
+    );
+
+    router.post('/queue/:examId/claim',
+        authenticateToken,
+        authorizeRole(['Nurse', 'Technician', 'Radiologist', 'Admin']),
+        hasPermission(pool, 'MANAGE_QUEUE'),
+        claimQueueTask(pool)
+    );
+
+    router.post('/queue/:examId/release',
+        authenticateToken,
+        authorizeRole(['Nurse', 'Technician', 'Radiologist', 'Admin']),
+        hasPermission(pool, 'MANAGE_QUEUE'),
+        validateRequest(releaseQueueTaskSchema),
+        releaseQueueTaskAssignment(pool)
+    );
+
+    router.post('/queue/:examId/assign',
+        authenticateToken,
+        authorizeRole(['Admin', 'Radiologist']),
+        validateRequest(assignQueueTaskSchema),
+        assignQueueTask(pool)
     );
 
     return router;

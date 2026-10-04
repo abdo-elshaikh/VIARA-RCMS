@@ -60,6 +60,9 @@ server {
 
     # Backend API
     location /api/ {
+        # Match the staff gateway's upload envelope. PACS enforces its own
+        # 200 MiB aggregate budget and 25 MiB per-file limit in the backend.
+        client_max_body_size 250m;
         proxy_pass http://VIARA-backend;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -73,10 +76,15 @@ server {
         proxy_connect_timeout 30s;
     }
 
-    # Health & Metrics (no auth required for scraping)
+    # Metrics: only a local scraper may access this location by default.
+    # Add explicit monitoring-network CIDRs here before remote scraping.
     location /metrics {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
         proxy_pass http://VIARA-backend;
         proxy_http_version 1.1;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header Connection "";
         access_log off;
     }
@@ -92,6 +100,13 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 5m;
+        # The global frontend policy forbids framing. OHIF is intentionally
+        # frameable only by this same origin, and must not inherit X-Frame-Options: DENY.
+        add_header Content-Security-Policy "frame-ancestors 'self'" always;
+        add_header X-Frame-Options "" always;
+        add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     }
 
     # Frontend (Staff)
@@ -122,19 +137,30 @@ CLIENT_URL=https://VIARA.example.com
 
 ```caddy
 VIARA.example.com {
-    reverse_proxy /api/* VIARA-backend:3000
-    reverse_proxy /pacs-viewer/* VIARA-ohif:3005
-    reverse_proxy VIARA-frontend:5173
+    route {
+        handle_path /api/* {
+            reverse_proxy VIARA-backend:3000
+        }
+        handle_path /pacs-viewer/* {
+            header {
+                Content-Security-Policy "frame-ancestors 'self'"
+                -X-Frame-Options
+                Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+                X-Content-Type-Options "nosniff"
+                Referrer-Policy "strict-origin-when-cross-origin"
+            }
+            reverse_proxy VIARA-ohif:3005
+        }
+        handle {
+            reverse_proxy VIARA-frontend:5173
+        }
+    }
 
     encode gzip
-    header {
-        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
 }
 ```
+
+The OHIF proxy path must remain on the **same HTTPS origin** as the staff application. Do not assign it a separate hostname: the viewer authorization is scoped to the browser origin. `CLIENT_URL` must be the exact staff origin (scheme and host, with no path), and the release OHIF image must be built with the VIARA OHIF Dockerfile, runtime entrypoint, app config, and Nginx template. The OHIF readiness check proxies `/health/ready` to the backend.
 
 ## Cloudflare Tunnel
 

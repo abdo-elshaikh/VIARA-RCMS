@@ -12,7 +12,8 @@ const {
     isValidBackupFilename,
     resolveBackupPath,
     cleanupBackups,
-    getBackupDir
+    getBackupDir,
+    restorePostgresBackup
 } = require('../src/services/postgresBackupService');
 
 describe('PostgresBackupService', () => {
@@ -194,6 +195,148 @@ describe('PostgresBackupService', () => {
             expect(fs.existsSync(file1)).toBe(false);
             expect(fs.existsSync(file2)).toBe(true);
             expect(fs.existsSync(file3)).toBe(true);
+        });
+    });
+
+    describe('restorePostgresBackup', () => {
+        beforeEach(() => {
+            process.env.DATABASE_URL = 'postgresql://viara_user:secret_pass@127.0.0.1:5432/viara_db';
+        });
+
+        it('rejects invalid or unsafe filenames', async () => {
+            await expect(restorePostgresBackup('../evil.dump'))
+                .rejects.toThrow('Valid backup filename is required');
+            await expect(restorePostgresBackup('invalid_ext.txt'))
+                .rejects.toThrow('Valid backup filename is required');
+            await expect(restorePostgresBackup(''))
+                .rejects.toThrow('Valid backup filename is required');
+        });
+
+        it('rejects unsupported backup formats like json', async () => {
+            const jsonFile = path.join(testDir, 'backup.json');
+            await fsp.writeFile(jsonFile, '{}');
+            await expect(restorePostgresBackup('backup.json'))
+                .rejects.toThrow('PostgreSQL restore only supports .dump and .dump.enc archives');
+        });
+
+        it('rejects nonexistent backup files', async () => {
+            await expect(restorePostgresBackup('VIARA_pg_missing.dump'))
+                .rejects.toThrow('Backup file not found');
+        });
+
+        it('decrypts encrypted backup, verifies archive, and executes pg_restore', async () => {
+            const rawData = Buffer.from('PG_DUMP_CUSTOM_TEST_DATA');
+            const rawDumpPath = path.join(testDir, 'source.dump');
+            const encName = 'VIARA_pg_20261005_test.dump.enc';
+            const encDumpPath = path.join(testDir, encName);
+
+            await fsp.writeFile(rawDumpPath, rawData);
+            await encryptBackup(rawDumpPath, encDumpPath);
+            await fsp.unlink(rawDumpPath);
+
+            const executedCommands = [];
+            const mockRunner = jest.fn(async (cmd, args, env) => {
+                executedCommands.push({ cmd, args, env });
+            });
+
+            const result = await restorePostgresBackup(encName, {
+                runProcess: mockRunner,
+                restorePacs: false
+            });
+
+            expect(result.verified).toBe(true);
+            expect(result.dry_run).toBe(false);
+            expect(result.filename).toBe(encName);
+
+            // Verify two calls: 1) --list verification, 2) pg_restore database restore
+            expect(executedCommands).toHaveLength(2);
+            expect(executedCommands[0].args[0]).toBe('--list');
+            expect(executedCommands[1].args).toEqual(
+                expect.arrayContaining(['--no-owner', '--no-privileges', '--clean', '--if-exists', '-d', 'viara_db'])
+            );
+            expect(executedCommands[1].env.PGDATABASE).toBe('viara_db');
+            expect(executedCommands[1].env.PGUSER).toBe('viara_user');
+
+            // Verify temporary decrypted file was cleaned up
+            const filesInDir = await fsp.readdir(testDir);
+            const tempFiles = filesInDir.filter(f => f.endsWith('.restore.tmp'));
+            expect(tempFiles).toHaveLength(0);
+        });
+
+        it('verifyOnly mode runs integrity check but skips database restore', async () => {
+            const rawData = Buffer.from('PG_DUMP_CUSTOM_TEST_DATA');
+            const rawDumpPath = path.join(testDir, 'source2.dump');
+            const encName = 'VIARA_pg_verify_only.dump.enc';
+            const encDumpPath = path.join(testDir, encName);
+
+            await fsp.writeFile(rawDumpPath, rawData);
+            await encryptBackup(rawDumpPath, encDumpPath);
+            await fsp.unlink(rawDumpPath);
+
+            const executedCommands = [];
+            const mockRunner = jest.fn(async (cmd, args, env) => {
+                executedCommands.push({ cmd, args, env });
+            });
+
+            const result = await restorePostgresBackup(encName, {
+                runProcess: mockRunner,
+                verifyOnly: true,
+                restorePacs: false
+            });
+
+            expect(result.verified).toBe(true);
+            expect(result.dry_run).toBe(true);
+            expect(executedCommands).toHaveLength(1);
+            expect(executedCommands[0].args[0]).toBe('--list');
+
+            const filesInDir = await fsp.readdir(testDir);
+            expect(filesInDir.filter(f => f.endsWith('.restore.tmp'))).toHaveLength(0);
+        });
+
+        it('cleans up temporary decrypted files even if runner fails', async () => {
+            const rawData = Buffer.from('PG_DUMP_CUSTOM_TEST_DATA');
+            const rawDumpPath = path.join(testDir, 'source3.dump');
+            const encName = 'VIARA_pg_failed.dump.enc';
+            const encDumpPath = path.join(testDir, encName);
+
+            await fsp.writeFile(rawDumpPath, rawData);
+            await encryptBackup(rawDumpPath, encDumpPath);
+            await fsp.unlink(rawDumpPath);
+
+            const mockRunner = jest.fn(async () => {
+                throw new Error('pg_restore process crashed');
+            });
+
+            await expect(restorePostgresBackup(encName, { runProcess: mockRunner, restorePacs: false }))
+                .rejects.toThrow('pg_restore process crashed');
+
+            const filesInDir = await fsp.readdir(testDir);
+            expect(filesInDir.filter(f => f.endsWith('.restore.tmp'))).toHaveLength(0);
+        });
+
+        it('does not restore PACS companion if database restore fails', async () => {
+            const rawData = Buffer.from('PG_DUMP_DATA');
+            const encName = 'VIARA_pg_with_pacs_fail.dump.enc';
+            const encDumpPath = path.join(testDir, encName);
+            const sourceDump = path.join(testDir, 'source.dump');
+            await fsp.writeFile(sourceDump, rawData);
+            await encryptBackup(sourceDump, encDumpPath);
+            await fsp.unlink(sourceDump);
+
+            // Create fake companion pacs zip
+            const companionEnc = path.join(testDir, 'VIARA_pg_with_pacs_fail.pacs.zip.enc');
+            await encryptBackup(encDumpPath, companionEnc); // dummy encryption
+
+            let callCount = 0;
+            const mockRunner = jest.fn(async (cmd, args) => {
+                callCount += 1;
+                if (args[0] === '--list') return; // list succeeds
+                throw new Error('Database connection lost during restore');
+            });
+
+            // Even if companion exists, since pg_restore failed, restorePacsBackup must not be invoked
+            await expect(restorePostgresBackup(encName, { runProcess: mockRunner, restorePacs: true }))
+                .rejects.toThrow();
         });
     });
 });

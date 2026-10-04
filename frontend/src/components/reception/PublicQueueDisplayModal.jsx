@@ -135,7 +135,7 @@ export const PublicQueueDisplayModal = ({
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white p-1.5 shadow-lg shadow-emerald-950/40 ring-2 ring-emerald-400/50 shrink-0">
                         <img
                             src={boardData?.center?.logoLightUrl || boardData?.center?.logoUrl || '/center-logo.png'}
-                            alt={boardData?.center?.name_ar || (isArabic ? 'مركز طيبة للأشعة' : 'Tiba Scan Center')}
+                            alt={boardData?.center?.name_ar || (isArabic ? 'مركز فيارا للأشعة' : 'VIARA Imaging Center')}
                             className="h-full w-full object-contain"
                             onError={(e) => {
                                 e.currentTarget.onerror = null;
@@ -146,7 +146,7 @@ export const PublicQueueDisplayModal = ({
                     <div>
                         <div className="flex items-center gap-2">
                             <h1 className="text-base sm:text-lg font-black text-white">
-                                {boardData?.center?.name_ar || (isArabic ? 'مركز طيبة للأشعة' : 'Tiba Scan Center')}
+                                {boardData?.center?.name_ar || (isArabic ? 'مركز فيارا للأشعة' : 'VIARA Imaging Center')}
                             </h1>
                             <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-black text-emerald-400 ring-1 ring-emerald-500/30">
                                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />

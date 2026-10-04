@@ -1,6 +1,7 @@
 const express = require('express');
 const { authenticateToken, authorizeRole } = require('../middleware/authMiddleware');
 const { hasPermission } = require('../middleware/rbacMiddleware');
+const auditRead = require('../middleware/auditRead');
 const {
     chatAttachmentUpload,
     validateChatAttachments,
@@ -31,7 +32,7 @@ const {
     sendPortalMessage
 } = require('../controllers/portalChatController');
 
-module.exports = function chatRoutes(pool) {
+module.exports = function chatRoutes(pool, auditService) {
     const router = express.Router();
 
     // ─── Staff Chat & Internal Channels ─────────────────────────────────────
@@ -52,17 +53,22 @@ module.exports = function chatRoutes(pool) {
     // ─── Patient Portal Messages (Staff Inbox) ──────────────────────────────
     router.get('/messages/patients',
         authenticateToken,
-        authorizeRole(['Admin', 'Receptionist', 'Marketing']),
+        authorizeRole(['Admin', 'Receptionist', 'Developer']),
+        hasPermission(pool, 'VIEW_PORTAL_MESSAGES'),
+        auditRead(auditService, { resourceTable: 'patient_portal_messages' }),
         getPatientConversations(pool)
     );
     router.get('/messages/patients/:patientId',
         authenticateToken,
-        authorizeRole(['Admin', 'Receptionist', 'Marketing']),
+        authorizeRole(['Admin', 'Receptionist', 'Developer']),
+        hasPermission(pool, 'VIEW_PORTAL_MESSAGES'),
+        auditRead(auditService, { resourceTable: 'patient_portal_messages', resourceIdParam: 'patientId' }),
         getPatientMessageHistory(pool)
     );
     router.post('/messages/patients/:patientId',
         authenticateToken,
-        authorizeRole(['Admin', 'Receptionist', 'Marketing']),
+        authorizeRole(['Admin', 'Receptionist', 'Developer']),
+        hasPermission(pool, 'VIEW_PORTAL_MESSAGES'),
         hasPermission(pool, 'MANAGE_CHAT'),
         chatAttachmentUpload.array('attachments'),
         validateChatAttachments,
@@ -72,17 +78,22 @@ module.exports = function chatRoutes(pool) {
     // ─── Referring Doctor Messages (Staff Inbox) ────────────────────────────
     router.get('/messages/doctors',
         authenticateToken,
-        authorizeRole(['Admin', 'Receptionist', 'Marketing']),
+        authorizeRole(['Admin', 'Receptionist', 'Developer']),
+        hasPermission(pool, 'VIEW_PORTAL_MESSAGES'),
+        auditRead(auditService, { resourceTable: 'doctor_portal_messages' }),
         getDoctorConversations(pool)
     );
     router.get('/messages/doctors/:doctorId',
         authenticateToken,
-        authorizeRole(['Admin', 'Receptionist', 'Marketing']),
+        authorizeRole(['Admin', 'Receptionist', 'Developer']),
+        hasPermission(pool, 'VIEW_PORTAL_MESSAGES'),
+        auditRead(auditService, { resourceTable: 'doctor_portal_messages', resourceIdParam: 'doctorId' }),
         getDoctorMessageHistory(pool)
     );
     router.post('/messages/doctors/:doctorId',
         authenticateToken,
-        authorizeRole(['Admin', 'Receptionist', 'Marketing']),
+        authorizeRole(['Admin', 'Receptionist', 'Developer']),
+        hasPermission(pool, 'VIEW_PORTAL_MESSAGES'),
         hasPermission(pool, 'MANAGE_CHAT'),
         chatAttachmentUpload.array('attachments'),
         validateChatAttachments,

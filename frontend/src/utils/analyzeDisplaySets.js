@@ -58,7 +58,7 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
  * Group a flat list of WADO-RS instance metadata objects by SeriesInstanceUID,
  * preserving useful series-level descriptors for display.
  */
-export const groupInstancesBySeries = (instances = []) => {
+export const groupInstancesBySeries = (instances = [], { expandFrames = false } = {}) => {
     const groups = new Map();
     for (const instance of instances) {
         const [seriesUid] = getTag(instance, '0020000E') || [];
@@ -72,9 +72,25 @@ export const groupInstancesBySeries = (instances = []) => {
                 instances: []
             });
         }
-        groups.get(seriesUid).instances.push(instance);
+        if (expandFrames) {
+            const frames = Math.min(10000, Math.max(1, getNumber(instance, '00280008') || 1));
+            for (let frame = 1; frame <= frames; frame += 1) {
+                groups.get(seriesUid).instances.push({ ...instance, __frameNumber: frame });
+            }
+        } else groups.get(seriesUid).instances.push(instance);
     }
-    return [...groups.values()];
+    const result = [...groups.values()].sort((a, b) => (a.seriesNumber || 0) - (b.seriesNumber || 0));
+    for (const series of result) {
+        const orientation = getNumbers(series.instances[0], '00200037');
+        const normal = orientation.length === 6 ? cross(orientation.slice(0, 3), orientation.slice(3, 6)) : null;
+        series.instances.sort((a, b) => {
+            const ap = getNumbers(a, '00200032'); const bp = getNumbers(b, '00200032');
+            const depth = normal && ap.length === 3 && bp.length === 3 ? dot(ap, normal) - dot(bp, normal) : 0;
+            return depth || (getNumber(a, '00200013') || 0) - (getNumber(b, '00200013') || 0)
+                || (a.__frameNumber || 1) - (b.__frameNumber || 1);
+        });
+    }
+    return result;
 };
 
 /**

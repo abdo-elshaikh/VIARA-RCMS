@@ -106,12 +106,22 @@ export const financeApi = api.injectEndpoints({
             providesTags: ['Invoices'],
         }),
         getInvoiceSummary: builder.query({
-            query: () => '/invoice-summary',
+            query: (params) => ({ url: '/invoice-summary', params }),
             providesTags: ['Invoices'],
         }),
         getInvoice: builder.query({
             query: (id) => `/invoices/${id}`,
             providesTags: (result, error, id) => [{ type: 'Invoices', id }],
+        }),
+        getVisitsStatement: builder.query({
+            query: ({ patientId, appointmentIds }) => ({
+                url: '/invoices/statement',
+                params: {
+                    patientId,
+                    appointmentIds: Array.isArray(appointmentIds) ? appointmentIds.join(',') : appointmentIds
+                }
+            }),
+            providesTags: ['Invoices'],
         }),
         createInvoice: builder.mutation({
             query: ({ idempotencyKey = generateUUID(), ...data }) => ({

@@ -77,7 +77,8 @@ describe('Phase 3 Remediation Suite: Distributed Pub/Sub, Native S3 Replicator &
             expect(parsed.target).toBe('staff');
             expect(parsed.event).toBe(event);
             expect(parsed.data).toEqual(data);
-            expect(parsed.originNodeId).toBe(process.pid);
+            // NODE_ID is now `${process.pid}-${randomHex}` for uniqueness across cluster restarts
+            expect(String(parsed.originNodeId)).toMatch(new RegExp(`^${process.pid}(-|$)`));
         });
 
         test('sendToUser dispatches locally and publishes distributed message to user target', () => {
@@ -256,6 +257,53 @@ describe('Phase 3 Remediation Suite: Distributed Pub/Sub, Native S3 Replicator &
             }));
             expect(broadcastSpy).toHaveBeenCalledWith('DISPLAY_CALL', expect.objectContaining({
                 orderNumber: 'ORD-2026-999'
+            }));
+
+            broadcastSpy.mockRestore();
+        });
+
+        test('broadcastPatientCall accepts queueNumber and callByName (name resolved from DB)', async () => {
+            const db = {
+                query: jest.fn().mockResolvedValue({
+                    rows: [{ call_id: 'call-102', called_at: new Date().toISOString() }]
+                })
+            };
+
+            const broadcastSpy = jest.spyOn(realtimeService, 'broadcastToStaff');
+
+            const req = {
+                body: {
+                    orderNumber: 'ORD-2026-888',
+                    queueNumber: 4,
+                    roomName: 'جناح الرنين المغناطيسي',
+                    modalityId: 'mod-mri-1',
+                    // callByName without a verifiable DB patient record resolves to false
+                    callByName: true
+                },
+                user: { user_id: 'user-tech-1' }
+            };
+            const res = mockResponse();
+            const next = jest.fn();
+
+            await broadcastPatientCall(db)(req, res, next);
+
+            expect(next).not.toHaveBeenCalled();
+            expect(res.status).toHaveBeenCalledWith(200);
+            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+                success: true,
+                call: expect.objectContaining({
+                    orderNumber: 'ORD-2026-888',
+                    queueNumber: 4,
+                    roomName: 'جناح الرنين المغناطيسي',
+                    // patientName is null because the mock db returns no encrypted patient record
+                    patientName: null,
+                    // callByName is false because resolvedPatientName is null (security policy)
+                    callByName: false
+                })
+            }));
+            expect(broadcastSpy).toHaveBeenCalledWith('DISPLAY_CALL', expect.objectContaining({
+                orderNumber: 'ORD-2026-888',
+                queueNumber: 4
             }));
 
             broadcastSpy.mockRestore();

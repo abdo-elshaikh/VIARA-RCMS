@@ -3,6 +3,7 @@ const { AppError } = require('../middleware/errorHandler');
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 const { logAction } = require('../services/auditService');
 const { resolveDocumentIdentity } = require('../services/documentIdentityService');
+const { assertInsuranceAuthorization } = require('../services/insuranceAuthorizationService');
 const settingsService = require('../services/settingsService');
 const { decrypt, hash } = require('../utils/crypto');
 const { permissionCache, refreshPermissionCache } = require('../middleware/rbacMiddleware');
@@ -26,6 +27,7 @@ const {
     invoiceAdjustmentEntries,
     withInvoiceCommission,
     mapInputItem,
+    applyPrioritySurcharge,
     getDefaultInvoiceSource,
     resolveInvoiceInsurancePolicy,
     getOpenShiftId,
@@ -42,6 +44,21 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, character 
 })[character]);
 
 const formatMoney = (value) => moneyNumber(value).toFixed(2);
+
+const INVOICES_LIST_CACHE_TTL_MS = 3000;
+const invoicesListCache = new Map();
+
+const INVOICE_SUMMARY_CACHE_TTL_MS = 5000;
+const invoiceSummaryCache = new Map();
+
+const INVOICE_DETAILS_CACHE_TTL_MS = 3000;
+const invoiceDetailsCache = new Map();
+
+const invalidateInvoiceCaches = () => {
+    invoiceSummaryCache.clear();
+    invoiceDetailsCache.clear();
+    invoicesListCache.clear();
+};
 
 const parseJSONSafe = (value) => {
     if (!value) return {};
@@ -168,7 +185,8 @@ const createInvoice = (db) => async (req, res, next) => {
         const postingDate = await lockFinancialBusinessDate(client);
 
         const source = await getDefaultInvoiceSource(client, req.body);
-        const items = (req.body.items?.length ? req.body.items.map(mapInputItem) : source.items);
+        const requestedItems = req.body.items?.length ? req.body.items.map(mapInputItem) : source.items;
+        const items = applyPrioritySurcharge(requestedItems, source.priorityFeeItem);
 
         if (items.length === 0) {
             throw new AppError('At least one invoice item or priced appointment is required', 400);
@@ -185,7 +203,7 @@ const createInvoice = (db) => async (req, res, next) => {
         const insurancePolicyId = totals.insurance > 0
             ? await resolveInvoiceInsurancePolicy(client, {
                 patientId: invoicePatientId,
-                serviceDate: postingDate.businessDate,
+                serviceDate: source.service_date || postingDate.businessDate,
                 requestedPolicyId: req.body.insurancePolicyId || null
             })
             : null;
@@ -224,7 +242,7 @@ const createInvoice = (db) => async (req, res, next) => {
             VALUES (
                 $1, $2, $3, 'Pending', $4, $5, $6, $7, $8, $9,
                 $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, 'Pending',
-                $20, $20, $21, $22, $23, $24, $25
+                $20, $21, $22, $23, $24, $25, $26
             )
             RETURNING *
         `, [
@@ -248,6 +266,7 @@ const createInvoice = (db) => async (req, res, next) => {
             req.body.dueDate || null,
             req.body.notes || null,
             postingDate.businessDate,
+            source.service_date || postingDate.businessDate,
             postingDate.branchId,
             'EGP',
             idempotencyKey,
@@ -306,6 +325,7 @@ const createInvoice = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+        invalidateInvoiceCaches();
 
         // Fire PaymentDue notification when patient owes money
         if (invoice.patient_payable_amount > 0) {
@@ -352,13 +372,24 @@ const getInvoices = (db) => async (req, res, next) => {
         validateEnum(status, VALID_INVOICE_STATUSES, 'status');
         validateSearchQuery(q);
 
+        const cacheKey = !q ? `${status || ''}:${patientId || ''}:${startDate || ''}:${endDate || ''}:${appointmentDate || ''}:${date || ''}:${openOnly}:${includeMeta}:${sortBy}:${sortDirection}:${pageLimit}:${pageOffset}` : null;
+        if (process.env.NODE_ENV !== 'test' && cacheKey) {
+            const cached = invoicesListCache.get(cacheKey);
+            if (cached && (Date.now() - cached.timestamp < INVOICES_LIST_CACHE_TTL_MS)) {
+                return res.json(cached.data);
+            }
+        }
+
         const values = [];
         let param = 1;
         let query = `
-            SELECT i.*, p.mrn, p.first_name_enc, p.last_name_enc, a.order_number,
+            SELECT i.*, a.payment_method AS expected_payment_method,
+                   a.payment_amount AS expected_payment_amount,
+                   p.mrn, p.first_name_enc, p.last_name_enc, a.order_number,
                    COALESCE(e.contrast_required, a.contrast_required, et.contrast_required, false) AS contrast_required,
                    et.name AS exam_type_name,
                    ins.provider_name, ins.policy_number, ins.member_number, ins.plan_name, ins.payer_code,
+                   COALESCE(preauth.preauthorization_required, false) AS preauthorization_required,
                    COALESCE(SUM(pay.amount) FILTER (WHERE pay.payment_status = 'Completed'), 0) as paid_amount,
                    COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0) as refunded_amount,
                    COALESCE((SELECT SUM(c.patient_amount) FROM credit_notes c WHERE c.invoice_id = i.invoice_id AND c.reversed_at IS NULL), 0) as credited_amount,
@@ -406,9 +437,11 @@ const getInvoices = (db) => async (req, res, next) => {
             LEFT JOIN appointments a ON i.appointment_id = a.appointment_id
             LEFT JOIN examinations e ON i.exam_id = e.exam_id OR a.appointment_id = e.appointment_id
             LEFT JOIN examination_types et ON a.exam_type_id = et.type_id OR e.exam_type_id = et.type_id
+            LEFT JOIN modalities m ON m.modality_id = COALESCE(e.modality_id, a.modality_id)
             LEFT JOIN payments pay ON pay.invoice_id = i.invoice_id
             LEFT JOIN LATERAL (
-                SELECT pip.policy_number, pip.member_number, pip.plan_name, ip.name AS provider_name, ip.payer_code
+                SELECT pip.policy_number, pip.member_number, pip.plan_name, pip.provider_id, pip.contract_id,
+                       ip.name AS provider_name, ip.payer_code
                 FROM patient_insurance_policies pip
                 JOIN insurance_providers ip ON pip.provider_id = ip.provider_id
                 WHERE pip.policy_id = i.insurance_policy_id
@@ -419,6 +452,24 @@ const getInvoices = (db) => async (req, res, next) => {
                 ORDER BY pip.is_primary DESC, pip.created_at DESC
                 LIMIT 1
             ) ins ON true
+            LEFT JOIN LATERAL (
+                SELECT r.preauthorization_required
+                FROM insurance_coverage_rules r
+                WHERE r.provider_id = ins.provider_id
+                  AND r.is_active = true
+                  AND (r.contract_id IS NOT DISTINCT FROM ins.contract_id
+                       OR (ins.contract_id IS NOT NULL AND r.contract_id IS NULL))
+                  AND (r.exam_type_id = COALESCE(e.exam_type_id, a.exam_type_id) OR r.exam_type_id IS NULL)
+                  AND (r.modality_type = m.type OR r.modality_type IS NULL)
+                  AND (r.effective_from IS NULL OR r.effective_from <= COALESCE(i.service_date, i.business_date, CURRENT_DATE))
+                  AND (r.effective_to IS NULL OR r.effective_to >= COALESCE(i.service_date, i.business_date, CURRENT_DATE))
+                ORDER BY
+                  CASE WHEN r.contract_id IS NOT DISTINCT FROM ins.contract_id THEN 1 ELSE 2 END,
+                  CASE WHEN r.exam_type_id = COALESCE(e.exam_type_id, a.exam_type_id) THEN 1 ELSE 2 END,
+                  CASE WHEN r.modality_type = m.type THEN 1 ELSE 2 END,
+                  r.created_at DESC
+                LIMIT 1
+            ) preauth ON true
             WHERE 1=1
         `;
 
@@ -477,7 +528,7 @@ const getInvoices = (db) => async (req, res, next) => {
         }
 
         query += `
-            GROUP BY i.invoice_id, p.mrn, p.first_name_enc, p.last_name_enc, a.order_number, e.contrast_required, a.contrast_required, et.contrast_required, et.name, ins.provider_name, ins.policy_number, ins.member_number, ins.plan_name, ins.payer_code
+            GROUP BY i.invoice_id, p.mrn, p.first_name_enc, p.last_name_enc, a.order_number, a.payment_method, a.payment_amount, e.contrast_required, a.contrast_required, et.contrast_required, et.name, ins.provider_name, ins.policy_number, ins.member_number, ins.plan_name, ins.payer_code, preauth.preauthorization_required
         `;
 
         if (openOnly) {
@@ -516,25 +567,53 @@ const getInvoices = (db) => async (req, res, next) => {
             payment_status: invoice.invoice_status,
             patient_name: [decrypt(first_name_enc), decrypt(last_name_enc)].filter(Boolean).join(' ')
         }));
-        if (includeMeta) {
-            return res.json({
-                items,
-                meta: {
-                    total: Number(result.rows[0]?.filtered_count || 0),
-                    limit: pageLimit,
-                    offset: pageOffset
-                }
-            });
+        const responseData = includeMeta ? {
+            items,
+            meta: {
+                total: Number(result.rows[0]?.filtered_count || 0),
+                limit: pageLimit,
+                offset: pageOffset
+            }
+        } : items;
+
+        if (process.env.NODE_ENV !== 'test' && cacheKey) {
+            invoicesListCache.set(cacheKey, { timestamp: Date.now(), data: responseData });
+            if (invoicesListCache.size > 200) {
+                const oldest = invoicesListCache.keys().next().value;
+                invoicesListCache.delete(oldest);
+            }
         }
-        res.json(items);
+
+        res.json(responseData);
     } catch (error) {
         next(error);
     }
 };
 
+
+const findInvoiceForUpdate = async (client, id) => {
+    const cleanId = String(id || '').trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cleanId);
+    return client.query(
+        isUuid
+            ? 'SELECT * FROM invoices WHERE invoice_id = $1::uuid FOR UPDATE'
+            : 'SELECT * FROM invoices WHERE invoice_number = $1 FOR UPDATE',
+        [cleanId]
+    );
+};
+
 const getInvoiceSummary = (db) => async (req, res, next) => {
     try {
         const { startDate, endDate, date } = req.query;
+        const cacheKey = `${startDate || ''}:${endDate || ''}:${date || ''}`;
+        if (process.env.NODE_ENV !== 'test') {
+            const cached = invoiceSummaryCache.get(cacheKey);
+            const now = Date.now();
+            if (cached && (now - cached.timestamp < INVOICE_SUMMARY_CACHE_TTL_MS)) {
+                return res.json(cached.data);
+            }
+        }
+
         const values = [];
         let param = 1;
         let whereClause = '';
@@ -635,7 +714,250 @@ const getInvoiceSummary = (db) => async (req, res, next) => {
             if (row.method) byMethod[row.method] = Number(row.collected || 0);
         });
 
-        res.json({ ...result.rows[0], by_method: byMethod });
+        const summaryPayload = { ...result.rows[0], by_method: byMethod };
+        if (process.env.NODE_ENV !== 'test') {
+            invoiceSummaryCache.set(cacheKey, { timestamp: Date.now(), data: summaryPayload });
+        }
+        res.json(summaryPayload);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getVisitsStatement = (db) => async (req, res, next) => {
+    try {
+        const patientId = req.query.patientId || req.params.patientId || req.params.id;
+        const { appointmentIds } = req.query;
+
+        if (!patientId) {
+            return res.status(400).json({ error: 'patientId is required' });
+        }
+
+        // 1. Fetch Patient
+        const patientRes = await db.query(
+            `SELECT p.*, manager.full_name as assigned_manager_name
+             FROM patients p
+             LEFT JOIN users manager ON p.assigned_manager_id = manager.user_id
+             WHERE p.patient_id = $1`,
+            [patientId]
+        );
+        if (patientRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Patient not found' });
+        }
+        const patientRow = patientRes.rows[0];
+        const patientName = [decrypt(patientRow.first_name_enc), decrypt(patientRow.last_name_enc)]
+            .filter(Boolean)
+            .join(' ');
+
+        // 2. Parse appointment IDs if provided
+        let apptFilter = '';
+        const queryParams = [patientId];
+        let apptIdsArray = [];
+        if (appointmentIds) {
+            apptIdsArray = Array.isArray(appointmentIds)
+                ? appointmentIds
+                : String(appointmentIds).split(',').map(s => s.trim()).filter(Boolean);
+            if (apptIdsArray.length > 0) {
+                queryParams.push(apptIdsArray);
+                apptFilter = `AND a.appointment_id = ANY($2::uuid[])`;
+            }
+        }
+
+        // 3. Fetch selected appointments with machine, exam type, invoice & insurance details
+        const apptsQuery = `
+            SELECT a.appointment_id, a.order_number, a.start_time, a.status,
+                   a.payment_amount, a.payment_method, a.clinical_indication,
+                   et.name as exam_type_name, et.price as exam_type_price,
+                   m.name as machine_name, m.type as modality_type,
+                   inv.invoice_id, inv.invoice_number, inv.total_amount as invoice_total,
+                   inv.subtotal_amount, inv.discount_amount, inv.tax_amount,
+                   inv.patient_payable_amount, inv.insurance_covered_amount,
+                   inv.invoice_status, inv.insurance_policy_id
+            FROM appointments a
+            LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
+            LEFT JOIN modalities m ON a.modality_id = m.modality_id
+            LEFT JOIN LATERAL (
+                SELECT * FROM invoices
+                WHERE appointment_id = a.appointment_id
+                ORDER BY generated_at DESC
+                LIMIT 1
+            ) inv ON true
+            WHERE a.patient_id = $1
+              ${apptFilter}
+            ORDER BY a.start_time ASC
+        `;
+        const apptsRes = await db.query(apptsQuery, queryParams);
+        const appointments = apptsRes.rows;
+
+        // 4. Fetch insurance details for any invoice having insurance_policy_id
+        const policyIds = appointments.map(a => a.insurance_policy_id).filter(Boolean);
+        let insuranceInfo = null;
+        if (policyIds.length > 0) {
+            const insRes = await db.query(
+                `SELECT pip.*, ip.name as provider_name, ip.payer_code
+                 FROM patient_insurance_policies pip
+                 JOIN insurance_providers ip ON pip.provider_id = ip.provider_id
+                 WHERE pip.policy_id = ANY($1::uuid[])
+                 ORDER BY pip.is_primary DESC, pip.created_at DESC
+                 LIMIT 1`,
+                [policyIds]
+            );
+            if (insRes.rows.length > 0) {
+                insuranceInfo = insRes.rows[0];
+            }
+        }
+
+        // 5. Fetch invoice items and payments for linked invoices
+        const linkedInvoiceIds = appointments.map(a => a.invoice_id).filter(Boolean);
+        const invoiceItemsByInvId = {};
+        const paymentsByInvId = {};
+
+        if (linkedInvoiceIds.length > 0) {
+            const [itemsRes, paymentsRes] = await Promise.all([
+                db.query(
+                    `SELECT ii.*, inv.appointment_id
+                     FROM invoice_items ii
+                     JOIN invoices inv ON ii.invoice_id = inv.invoice_id
+                     WHERE ii.invoice_id = ANY($1::uuid[])
+                     ORDER BY ii.created_at ASC`,
+                    [linkedInvoiceIds]
+                ),
+                db.query(
+                    `SELECT p.*
+                     FROM payments p
+                     WHERE p.invoice_id = ANY($1::uuid[])
+                       AND p.payment_status = 'Completed'
+                     ORDER BY p.transaction_date ASC`,
+                    [linkedInvoiceIds]
+                )
+            ]);
+
+            itemsRes.rows.forEach(item => {
+                if (!invoiceItemsByInvId[item.invoice_id]) invoiceItemsByInvId[item.invoice_id] = [];
+                invoiceItemsByInvId[item.invoice_id].push(item);
+            });
+
+            paymentsRes.rows.forEach(p => {
+                if (!paymentsByInvId[p.invoice_id]) paymentsByInvId[p.invoice_id] = [];
+                paymentsByInvId[p.invoice_id].push(p);
+            });
+        }
+
+        // 6. Build consolidated line items and payments
+        const consolidatedItems = [];
+        const consolidatedPayments = [];
+        let totalAmount = 0;
+        let discountAmount = 0;
+        let taxAmount = 0;
+        let insuranceCovered = 0;
+        let patientPayable = 0;
+        let paidAmount = 0;
+
+        const seenPaymentIds = new Set();
+
+        appointments.forEach((appt, idx) => {
+            const dateStr = appt.start_time
+                ? new Date(appt.start_time).toLocaleDateString('en-GB')
+                : '';
+            const apptItems = appt.invoice_id ? invoiceItemsByInvId[appt.invoice_id] : null;
+
+            if (apptItems && apptItems.length > 0) {
+                apptItems.forEach((it, itIdx) => {
+                    const lineTotal = Number(it.total_amount || (Number(it.unit_price || 0) * Number(it.quantity || 1)));
+                    consolidatedItems.push({
+                        item_id: it.item_id || `item-${appt.appointment_id}-${itIdx}`,
+                        name: `${it.description || appt.exam_type_name} · [${dateStr}]`,
+                        description: `${it.description || appt.exam_type_name} · [${dateStr}]`,
+                        unit_price: Number(it.unit_price || 0),
+                        price: Number(it.unit_price || 0),
+                        quantity: Number(it.quantity || 1),
+                        total_amount: lineTotal,
+                        appointment_id: appt.appointment_id,
+                        order_number: appt.order_number
+                    });
+                });
+            } else {
+                // Synthesize item from appointment
+                const itemPrice = Number(appt.invoice_total || appt.payment_amount || appt.exam_type_price || 0);
+                consolidatedItems.push({
+                    item_id: `synth-${appt.appointment_id}`,
+                    name: `${appt.exam_type_name || 'Medical Examination'} · [${dateStr}]`,
+                    description: `${appt.exam_type_name || 'Medical Examination'} · [${dateStr}]`,
+                    unit_price: itemPrice,
+                    price: itemPrice,
+                    quantity: 1,
+                    total_amount: itemPrice,
+                    appointment_id: appt.appointment_id,
+                    order_number: appt.order_number
+                });
+            }
+
+            // Financial accumulations
+            if (appt.invoice_id) {
+                totalAmount += Number(appt.invoice_total || 0);
+                discountAmount += Number(appt.discount_amount || 0);
+                taxAmount += Number(appt.tax_amount || 0);
+                insuranceCovered += Number(appt.insurance_covered_amount || 0);
+                patientPayable += Number(appt.patient_payable_amount ?? (appt.invoice_total - (appt.insurance_covered_amount || 0)));
+
+                const apptPayments = paymentsByInvId[appt.invoice_id] || [];
+                apptPayments.forEach(p => {
+                    if (!seenPaymentIds.has(p.payment_id)) {
+                        seenPaymentIds.add(p.payment_id);
+                        consolidatedPayments.push(p);
+                        paidAmount += Number(p.amount || 0);
+                    }
+                });
+            } else {
+                const apptPrice = Number(appt.payment_amount || appt.exam_type_price || 0);
+                totalAmount += apptPrice;
+                patientPayable += apptPrice;
+                if (Number(appt.payment_amount) > 0) {
+                    paidAmount += Number(appt.payment_amount);
+                    consolidatedPayments.push({
+                        payment_id: `pay-synth-${appt.appointment_id}`,
+                        amount: Number(appt.payment_amount),
+                        method: appt.payment_method || 'Cash',
+                        transaction_date: appt.start_time,
+                        payment_reference: appt.order_number || '-'
+                    });
+                }
+            }
+        });
+
+        const itemsTotal = consolidatedItems.reduce((acc, it) => acc + Number(it.total_amount || 0), 0);
+        if (totalAmount <= 0) totalAmount = itemsTotal;
+        if (patientPayable <= 0) patientPayable = Math.max(0, totalAmount - insuranceCovered);
+        const balanceAmount = Math.max(0, patientPayable - paidAmount);
+        const invoiceStatus = balanceAmount <= 0.01 ? 'Paid' : (paidAmount > 0 ? 'Partial' : 'Pending');
+
+        const statementPayload = {
+            invoice_id: `stmt-${patientRow.patient_id}`,
+            invoice_number: `STMT-${patientRow.mrn || 'VIARA'}-${String(Date.now()).slice(-6)}`,
+            patient_id: patientRow.patient_id,
+            patient_name: patientName || 'Patient',
+            mrn: patientRow.mrn || '-',
+            provider_name: insuranceInfo?.provider_name || null,
+            policy_number: insuranceInfo?.policy_number || null,
+            member_number: insuranceInfo?.member_number || null,
+            generated_at: new Date().toISOString(),
+            service_date: appointments[0]?.start_time || new Date().toISOString(),
+            invoice_status: invoiceStatus,
+            items: consolidatedItems,
+            payments: consolidatedPayments,
+            subtotal_amount: totalAmount,
+            total_amount: totalAmount,
+            discount_amount: discountAmount,
+            tax_amount: taxAmount,
+            insurance_covered_amount: insuranceCovered,
+            patient_payable_amount: patientPayable,
+            paid_amount: paidAmount,
+            balance_amount: balanceAmount,
+            selected_visits_count: appointments.length,
+            is_statement: true
+        };
+
+        res.json(statementPayload);
     } catch (error) {
         next(error);
     }
@@ -644,17 +966,33 @@ const getInvoiceSummary = (db) => async (req, res, next) => {
 const getInvoiceById = (db) => async (req, res, next) => {
     try {
         const { id } = req.params;
+        const cleanId = String(id || '').trim();
+        if (process.env.NODE_ENV !== 'test') {
+            const cached = invoiceDetailsCache.get(cleanId);
+            const now = Date.now();
+            if (cached && (now - cached.timestamp < INVOICE_DETAILS_CACHE_TTL_MS)) {
+                return res.json(cached.data);
+            }
+        }
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cleanId);
+        const whereClause = isUuid ? 'i.invoice_id = $1::uuid' : 'i.invoice_number = $1';
+
         const invoiceResult = await db.query(`
-            SELECT i.*, p.mrn, p.first_name_enc, p.last_name_enc, a.order_number,
+            SELECT i.*, a.payment_method AS expected_payment_method,
+                   a.payment_amount AS expected_payment_amount,
+                   p.mrn, p.first_name_enc, p.last_name_enc, a.order_number,
                    COALESCE(e.contrast_required, a.contrast_required, et.contrast_required, false) AS contrast_required,
                    et.name AS exam_type_name,
                    ins.provider_name, ins.policy_number, ins.member_number, ins.plan_name, ins.payer_code,
+                   COALESCE(preauth.preauthorization_required, false) AS preauthorization_required,
                    ins.holder_name, ins.valid_from, ins.valid_to, ins.approval_document_url, ins.notes as policy_notes
             FROM invoices i
             JOIN patients p ON i.patient_id = p.patient_id
             LEFT JOIN appointments a ON i.appointment_id = a.appointment_id
-            LEFT JOIN examinations e ON i.exam_id = e.exam_id OR a.appointment_id = e.appointment_id
-            LEFT JOIN examination_types et ON a.exam_type_id = et.type_id OR e.exam_type_id = et.type_id
+            LEFT JOIN examinations e ON e.exam_id = i.exam_id
+                OR (i.exam_id IS NULL AND e.appointment_id = a.appointment_id)
+            LEFT JOIN examination_types et ON et.type_id = COALESCE(a.exam_type_id, e.exam_type_id)
+            LEFT JOIN modalities m ON m.modality_id = COALESCE(e.modality_id, a.modality_id)
             LEFT JOIN LATERAL (
                 SELECT pip.*, ip.name AS provider_name, ip.payer_code
                 FROM patient_insurance_policies pip
@@ -667,8 +1005,26 @@ const getInvoiceById = (db) => async (req, res, next) => {
                 ORDER BY pip.is_primary DESC, pip.created_at DESC
                 LIMIT 1
             ) ins ON true
-            WHERE i.invoice_id::text = $1 OR i.invoice_number = $1
-        `, [id]);
+            LEFT JOIN LATERAL (
+                SELECT r.preauthorization_required
+                FROM insurance_coverage_rules r
+                WHERE r.provider_id = ins.provider_id
+                  AND r.is_active = true
+                  AND (r.contract_id IS NOT DISTINCT FROM ins.contract_id
+                       OR (ins.contract_id IS NOT NULL AND r.contract_id IS NULL))
+                  AND (r.exam_type_id = COALESCE(e.exam_type_id, a.exam_type_id) OR r.exam_type_id IS NULL)
+                  AND (r.modality_type = m.type OR r.modality_type IS NULL)
+                  AND (r.effective_from IS NULL OR r.effective_from <= COALESCE(i.service_date, i.business_date, CURRENT_DATE))
+                  AND (r.effective_to IS NULL OR r.effective_to >= COALESCE(i.service_date, i.business_date, CURRENT_DATE))
+                ORDER BY
+                  CASE WHEN r.contract_id IS NOT DISTINCT FROM ins.contract_id THEN 1 ELSE 2 END,
+                  CASE WHEN r.exam_type_id = COALESCE(e.exam_type_id, a.exam_type_id) THEN 1 ELSE 2 END,
+                  CASE WHEN r.modality_type = m.type THEN 1 ELSE 2 END,
+                  r.created_at DESC
+                LIMIT 1
+            ) preauth ON true
+            WHERE ${whereClause}
+        `, [cleanId]);
 
         if (invoiceResult.rows.length === 0) {
             return next(new AppError('Invoice not found', 404));
@@ -689,7 +1045,7 @@ const getInvoiceById = (db) => async (req, res, next) => {
         const creditedAmount = creditNotes.rows
             .reduce((sum, creditNote) => sum + Number(creditNote.patient_amount || 0), 0);
 
-        res.json({
+        const detailPayload = {
             ...invoice,
             status: invoice.invoice_status,
             payment_status: invoice.invoice_status,
@@ -702,7 +1058,14 @@ const getInvoiceById = (db) => async (req, res, next) => {
             payments: payments.rows,
             refunds: refunds.rows,
             credit_notes: creditNotes.rows
-        });
+        };
+        if (process.env.NODE_ENV !== 'test') {
+            invoiceDetailsCache.set(cleanId, { timestamp: Date.now(), data: detailPayload });
+            if (invoice.invoice_number) {
+                invoiceDetailsCache.set(invoice.invoice_number, { timestamp: Date.now(), data: detailPayload });
+            }
+        }
+        res.json(detailPayload);
     } catch (error) {
         next(error);
     }
@@ -714,10 +1077,7 @@ const updateInvoice = (db) => async (req, res, next) => {
         const { id } = req.params;
         client = await db.connect();
         await client.query('BEGIN');
-        const existing = await client.query(
-            'SELECT * FROM invoices WHERE invoice_id::text = $1 OR invoice_number = $1 FOR UPDATE',
-            [id]
-        );
+        const existing = await findInvoiceForUpdate(client, id);
 
         if (existing.rows.length === 0) {
             throw new AppError('Invoice not found', 404);
@@ -898,6 +1258,7 @@ const updateInvoice = (db) => async (req, res, next) => {
             required: true
         });
         await client.query('COMMIT');
+        invalidateInvoiceCaches();
         res.json(updatedInvoice);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -917,7 +1278,7 @@ const collectPayment = (db) => async (req, res, next) => {
         client = await db.connect();
         await client.query('BEGIN');
 
-        const invoiceResult = await client.query('SELECT * FROM invoices WHERE invoice_id::text = $1 OR invoice_number = $1 FOR UPDATE', [id]);
+        const invoiceResult = await findInvoiceForUpdate(client, id);
         if (invoiceResult.rows.length === 0) {
             await client.query('ROLLBACK');
             return next(new AppError('Invoice not found', 404));
@@ -930,10 +1291,11 @@ const collectPayment = (db) => async (req, res, next) => {
         }
 
         const coverageResult = await client.query(`
-            SELECT i.insurance_covered_amount, pip.policy_number, pip.member_number
+            SELECT i.insurance_covered_amount, i.insurance_policy_id, i.patient_id,
+                   i.appointment_id, i.exam_id, pip.policy_number, pip.member_number, pip.provider_id
             FROM invoices i
             LEFT JOIN LATERAL (
-                SELECT policy_number, member_number
+                SELECT policy_number, member_number, provider_id
                 FROM patient_insurance_policies
                 WHERE policy_id = i.insurance_policy_id
                   AND i.insurance_covered_amount > 0
@@ -947,7 +1309,14 @@ const collectPayment = (db) => async (req, res, next) => {
         const coverage = coverageResult.rows[0] || {};
         if (Number(coverage.insurance_covered_amount || 0) > 0) {
             const requiredChecks = ['card', 'referral', 'patient_copay_sign'];
-            if (Number(coverage.insurance_covered_amount || 0) > 0) requiredChecks.push('preauth');
+            let authorizationRequired = false;
+            try {
+                authorizationRequired = Boolean(await assertInsuranceAuthorization(client, invoice.invoice_id));
+            } catch (error) {
+                await client.query('ROLLBACK');
+                return next(error);
+            }
+            if (authorizationRequired) requiredChecks.push('preauth');
             const missingCheck = requiredChecks.find((key) => verificationChecklist?.[key] !== true);
             if (missingCheck) {
                 await client.query('ROLLBACK');
@@ -973,20 +1342,37 @@ const collectPayment = (db) => async (req, res, next) => {
         {
             const contrastCheck = await client.query(`
                 SELECT COALESCE(e.contrast_required, a.contrast_required, et.contrast_required, false) AS contrast_required,
-                         EXISTS (
-                            SELECT 1
-                            FROM stock_movements sm
-                            JOIN inventory_items inventory_item ON inventory_item.item_id = sm.item_id
-                            WHERE sm.reference_type = 'Exam'
-                              AND (sm.reference_id = $2 OR sm.reference_id = e.exam_id)
-                              AND sm.movement_type = 'Consume'
-                              AND sm.quantity_change < 0
-                              AND inventory_item.is_contrast_agent = true
+                         (
+                            EXISTS (
+                                SELECT 1
+                                FROM stock_movements sm
+                                JOIN inventory_items inventory_item ON inventory_item.item_id = sm.item_id
+                                WHERE sm.reference_type = 'Exam'
+                                  AND (sm.reference_id = $2 OR sm.reference_id = e.exam_id)
+                                  AND sm.movement_type = 'Consume'
+                                  AND sm.quantity_change < 0
+                                  AND (
+                                      inventory_item.is_contrast_agent = true
+                                      OR LOWER(TRIM(COALESCE(inventory_item.category, ''))) IN ('contrast', 'contrast agent')
+                                      OR inventory_item.name ILIKE '%صبغة%'
+                                      OR inventory_item.name ILIKE '%contrast%'
+                                  )
+                            )
+                            OR EXISTS (
+                                SELECT 1
+                                FROM invoice_items ii
+                                WHERE ii.invoice_id = i.invoice_id
+                                  AND (
+                                      ii.description ILIKE '%صبغة%'
+                                      OR ii.description ILIKE '%contrast%'
+                                      OR ii.description ILIKE '%dye%'
+                                  )
+                            )
                         ) AS has_verified_contrast
                 FROM invoices i
                 LEFT JOIN appointments a ON i.appointment_id = a.appointment_id
-                LEFT JOIN examinations e ON i.exam_id = e.exam_id OR a.appointment_id = e.appointment_id
-                LEFT JOIN examination_types et ON a.exam_type_id = et.type_id OR e.exam_type_id = et.type_id
+                LEFT JOIN examinations e ON (i.exam_id = e.exam_id OR (i.exam_id IS NULL AND a.appointment_id IS NOT NULL AND e.appointment_id = a.appointment_id))
+                LEFT JOIN examination_types et ON et.type_id = COALESCE(e.exam_type_id, a.exam_type_id)
                 WHERE i.invoice_id = $1
                 LIMIT 1
             `, [invoice.invoice_id, invoice.exam_id || null]);
@@ -1008,11 +1394,9 @@ const collectPayment = (db) => async (req, res, next) => {
 
         const paymentTotalsResult = await client.query(`
             SELECT
-                COALESCE(SUM(p.amount) FILTER (WHERE p.payment_status = 'Completed'), 0) AS paid_amount,
-                COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id = $1 AND r.status = 'Processed'), 0) AS refunded_amount,
-                COALESCE((SELECT SUM(c.patient_amount) FROM credit_notes c WHERE c.invoice_id = $1 AND c.reversed_at IS NULL), 0) AS credited_amount
-            FROM payments p
-            WHERE p.invoice_id = $1
+                COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = $1 AND payment_status = 'Completed'), 0) AS paid_amount,
+                COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id = $1 AND status = 'Processed'), 0) AS refunded_amount,
+                COALESCE((SELECT SUM(patient_amount) FROM credit_notes WHERE invoice_id = $1 AND reversed_at IS NULL), 0) AS credited_amount
         `, [invoice.invoice_id]);
         const paidAmount = moneyNumber(paymentTotalsResult.rows[0]?.paid_amount);
         const refundedAmount = moneyNumber(paymentTotalsResult.rows[0]?.refunded_amount);
@@ -1189,7 +1573,9 @@ const collectPayment = (db) => async (req, res, next) => {
                     FROM examinations e
                     JOIN patients p ON p.patient_id = e.patient_id
                     WHERE (e.exam_id = $1 OR e.appointment_id = $2)
-                      AND (e.report_status IN ('Finalized', 'Amended') OR e.report_locked = TRUE OR e.status = 'Finalized')
+                      AND e.report_status IN ('Finalized', 'Amended')
+                      AND e.report_locked = TRUE
+                      AND e.report_finalized_at IS NOT NULL
                     LIMIT 1
                 ), inserted AS (
                     INSERT INTO result_deliveries (
@@ -1234,12 +1620,14 @@ const collectPayment = (db) => async (req, res, next) => {
             required: true
         });
         await client.query('COMMIT');
+        invalidateInvoiceCaches();
 
         if (paymentResult.rows[0]) {
             const paymentVariables = {
                 invoice_number: invoice.invoice_number,
                 amount: String(paymentAmount),
-                payment_method: method
+                payment_method: method,
+                payment_date: paymentDate?.businessDate || paymentResult.rows[0]?.created_at || new Date().toISOString()
             };
             triggerEvent(db, 'PaymentReceived', {
                 patientId: invoice.patient_id,
@@ -1295,7 +1683,7 @@ const refundInvoice = (db) => async (req, res, next) => {
         client = await db.connect();
         await client.query('BEGIN');
 
-        const invoiceResult = await client.query('SELECT * FROM invoices WHERE invoice_id::text = $1 OR invoice_number = $1 FOR UPDATE', [id]);
+        const invoiceResult = await findInvoiceForUpdate(client, id);
         if (invoiceResult.rows.length === 0) {
             await client.query('ROLLBACK');
             return next(new AppError('Invoice not found', 404));
@@ -1419,6 +1807,7 @@ const refundInvoice = (db) => async (req, res, next) => {
             required: true
         });
         await client.query('COMMIT');
+        invalidateInvoiceCaches();
 
         triggerEvent(db, 'RefundRequested', {
             patientId: invoice.patient_id,
@@ -1659,6 +2048,7 @@ const reviewRefund = (db) => async (req, res, next) => {
             required: true
         });
         await client.query('COMMIT');
+        invalidateInvoiceCaches();
 
         if (status === 'Processed') {
             triggerEvent(db, 'RefundProcessed', {
@@ -1763,7 +2153,7 @@ const getInvoicePdf = (db) => async (req, res, next) => {
 
         const isInsuranceCase = Number(payload.insurance_covered_amount || 0) > 0 || Boolean(payload.provider_name);
         const caseClassification = !isInsuranceCase
-            ? label('Self-Pay / Private', 'حساب خاص (نقدي)')
+            ? label('Self-Pay / Private', 'حساب خاص (سداد مباشر)')
             : String(payload.provider_name || '').toLowerCase().includes('نقابة') || String(payload.provider_name || '').toLowerCase().includes('شركة') || String(payload.provider_name || '').toLowerCase().includes('contract')
                 ? label(`Corporate Contract (${payload.provider_name})`, `تعاقد جهة / نقابة (${payload.provider_name})`)
                 : label(`Health Insurance (${payload.provider_name || 'Insurance'})`, `تأمين صحي (${payload.provider_name || 'تأمين'})`);
@@ -1821,6 +2211,7 @@ module.exports = {
     getInvoices,
     getInvoiceSummary,
     getInvoiceById,
+    getVisitsStatement,
     updateInvoice,
     collectPayment,
     refundInvoice,

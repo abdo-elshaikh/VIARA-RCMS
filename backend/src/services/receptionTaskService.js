@@ -1,5 +1,6 @@
 const { AppError } = require('../utils/errors');
 const realtimeService = require('./realtimeService');
+const { hasReceptionSupervision } = require('./receptionSupervisorService');
 
 /**
  * receptionTaskService.js
@@ -23,17 +24,43 @@ const broadcastReceptionTaskChange = (payload, event = 'RECEPTION_WORK_ITEM_UPDA
 const claimReceptionTask = async (client, { appointmentId, examId, user, desk, expectedVersion }) => {
     const userId = user.user_id || user.id;
 
+    // Serialize new claims against shift closure. Closing takes FOR UPDATE on
+    // the same session row, so it cannot pass its active-task check while a
+    // claim is being committed to that shift.
+    await client.query(`
+        SELECT session_id
+        FROM reception_shift_sessions
+        WHERE user_id = $1 AND status = 'Open'
+        ORDER BY started_at DESC
+        LIMIT 1
+        FOR SHARE
+    `, [userId]);
+
     const result = await client.query(`
-        SELECT a.appointment_id, a.exam_id, a.modality_id, a.status, a.priority,
-               a.receptionist_id, a.receptionist_assigned_at, a.receptionist_desk,
+        SELECT a.appointment_id,
+               e.exam_id,
+               a.modality_id,
+               a.status,
+               a.priority,
+               a.receptionist_id,
+               a.receptionist_assigned_at,
+               a.receptionist_desk,
                a.receptionist_assignment_version,
                u.full_name AS claimant_name,
-               m.name AS modality_name, m.type AS modality_type, m.room_number, m.room_id,
-               rss.session_id AS shift_session_id, rss.scope AS shift_scope,
-               rss.room_ids AS shift_room_ids, rss.modality_ids AS shift_modality_ids,
+               m.name AS modality_name,
+               m.type AS modality_type,
+               m.room_number,
+               m.room_id,
+               rss.session_id AS shift_session_id,
+               rss.scope AS shift_scope,
+               rss.room_ids AS shift_room_ids,
+               rss.modality_ids AS shift_modality_ids,
                rss.desk_identifier AS shift_desk_identifier,
-               rwi.work_item_id, rwi.lease_expires_at, rwi.status AS work_item_status
+               rwi.work_item_id,
+               rwi.lease_expires_at,
+               rwi.status AS work_item_status
         FROM appointments a
+        LEFT JOIN examinations e ON e.appointment_id = a.appointment_id
         LEFT JOIN users u ON a.receptionist_id = u.user_id
         LEFT JOIN modalities m ON a.modality_id = m.modality_id
         LEFT JOIN LATERAL (
@@ -61,7 +88,7 @@ const claimReceptionTask = async (client, { appointmentId, examId, user, desk, e
     const row = result.rows[0];
 
     if (user.role === 'Receptionist' && row.shift_session_id === null) {
-        throw new AppError('ابدأ وردية الاستقبال وحدد نطاق العمل قبل استلام الحالات', 409, true, 'RECEPTION_SHIFT_REQUIRED');
+        throw new AppError('Start your reception shift and set its scope before claiming cases. | ابدأ وردية الاستقبال وحدد نطاق العمل قبل استلام الحالات.', 409, true, 'RECEPTION_SHIFT_REQUIRED');
     }
 
     if (row.shift_session_id) {
@@ -79,7 +106,7 @@ const claimReceptionTask = async (client, { appointmentId, examId, user, desk, e
         const outsideEmergencyScope = row.shift_scope === 'emergency'
             && !['Emergency', 'Urgent'].includes(row.priority);
         if (outsideRoomScope || outsideModalityScope || outsideEmergencyScope) {
-            throw new AppError('الحالة خارج نطاق الغرف أو الأجهزة المخصصة لورديتك', 403, true, 'OUTSIDE_RECEPTION_SCOPE');
+            throw new AppError('This case is outside the rooms or machines assigned to your shift. | الحالة خارج نطاق الغرف أو الأجهزة المخصصة لورديتك.', 403, true, 'OUTSIDE_RECEPTION_SCOPE');
         }
     }
 
@@ -89,9 +116,10 @@ const claimReceptionTask = async (client, { appointmentId, examId, user, desk, e
     const isClaimedByOther = row.receptionist_id && String(row.receptionist_id) !== String(userId);
 
     if (isClaimedByOther && isLeaseActive) {
-        const claimantInfo = row.claimant_name || 'موظف آخر';
+        const claimantInfo = row.claimant_name || 'another staff member';
+        const claimantInfoAr = row.claimant_name || 'موظف آخر';
         const deskInfo = row.receptionist_desk ? ` (${row.receptionist_desk})` : '';
-        throw new AppError(`الحالة قيد الاستقبال حالياً بواسطة ${claimantInfo}${deskInfo}`, 409, true, 'TASK_ALREADY_CLAIMED', {
+        throw new AppError(`This case is currently being handled by ${claimantInfo}${deskInfo}. | الحالة قيد الاستقبال حالياً بواسطة ${claimantInfoAr}${deskInfo}`, 409, true, 'TASK_ALREADY_CLAIMED', {
             claimedBy: claimantInfo,
             claimantId: row.receptionist_id,
             desk: row.receptionist_desk,
@@ -102,7 +130,7 @@ const claimReceptionTask = async (client, { appointmentId, examId, user, desk, e
 
     // Check version collision
     if (expectedVersion !== undefined && expectedVersion !== null && Number(expectedVersion) !== Number(row.receptionist_assignment_version)) {
-        throw new AppError('تم تحديث بيانات هذه الحالة بواسطة موظف آخر، يرجى التحديث.', 409, true, 'STALE_VERSION', {
+        throw new AppError('This case was updated by another staff member — please refresh. | تم تحديث بيانات هذه الحالة بواسطة موظف آخر، يرجى التحديث.', 409, true, 'STALE_VERSION', {
             currentVersion: row.receptionist_assignment_version
         });
     }
@@ -142,7 +170,7 @@ const claimReceptionTask = async (client, { appointmentId, examId, user, desk, e
         ) VALUES (
             $1, $2, $3, $4,
             $5, $6, 'Claimed',
-            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '15 minutes', $7,
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '7 minutes', $7,
             (SELECT session_id FROM reception_shift_sessions WHERE user_id = $5 AND status = 'Open' LIMIT 1)
         )
         RETURNING work_item_id, appointment_id, exam_id, modality_id, room_number,
@@ -189,7 +217,7 @@ const releaseReceptionTask = async (client, { appointmentId, user, reason }) => 
 
     const row = result.rows[0];
     if (row.receptionist_id && String(row.receptionist_id) !== String(userId) && !isAdmin) {
-        throw new AppError('لا تملك صلاحية تحرير هذه الحالة لأنها مستلمة بواسطة موظف آخر', 403);
+        throw new AppError('You cannot edit this case because it is claimed by another staff member. | لا تملك صلاحية تحرير هذه الحالة لأنها مستلمة بواسطة موظف آخر.', 403);
     }
 
     const newVersion = (row.receptionist_assignment_version || 0) + 1;
@@ -254,7 +282,12 @@ const transferReceptionTask = async (client, { appointmentId, user, targetUserId
 
     const row = result.rows[0];
     if (row.receptionist_id && String(row.receptionist_id) !== String(userId) && !isAdmin) {
-        throw new AppError('لا تملك صلاحية تحويل هذه الحالة لأنها ليست مسندة إليك', 403);
+        const supervisesSource = await hasReceptionSupervision(client, user, row.receptionist_id, 'transfer_tasks');
+        const supervisesTarget = String(targetUserId) === String(userId) ||
+            await hasReceptionSupervision(client, user, targetUserId, 'transfer_tasks');
+        if (!supervisesSource || !supervisesTarget) {
+            throw new AppError('You cannot transfer this case because it is outside your assigned team. | لا يمكنك تحويل الحالة خارج نطاق فريقك.', 403);
+        }
     }
 
     const targetShiftResult = await client.query(`
@@ -266,7 +299,7 @@ const transferReceptionTask = async (client, { appointmentId, user, targetUserId
     `, [targetUserId]);
     const targetShift = targetShiftResult.rows[0] || null;
     if (row.target_role === 'Receptionist' && !targetShift) {
-        throw new AppError('يجب أن يبدأ موظف الاستقبال المستهدف ورديته قبل تحويل الحالة إليه', 409, true, 'TARGET_RECEPTION_SHIFT_REQUIRED');
+        throw new AppError('The target receptionist must start their shift before cases can be transferred to them. | يجب أن يبدأ موظف الاستقبال المستهدف ورديته قبل تحويل الحالة إليه.', 409, true, 'TARGET_RECEPTION_SHIFT_REQUIRED');
     }
     if (targetShift) {
         const normalize = (value) => String(value || '').trim().toLocaleLowerCase('en');
@@ -281,7 +314,7 @@ const transferReceptionTask = async (client, { appointmentId, user, targetUserId
         const emergencyMismatch = targetShift.scope === 'emergency'
             && !['Emergency', 'Urgent'].includes(row.priority);
         if (roomMismatch || modalityMismatch || emergencyMismatch) {
-            throw new AppError('الحالة خارج نطاق الغرف أو الأجهزة المخصصة للموظف المستهدف', 409, true, 'TARGET_OUTSIDE_RECEPTION_SCOPE');
+            throw new AppError('The case is outside the rooms or machines assigned to the target staff member. | الحالة خارج نطاق الغرف أو الأجهزة المخصصة للموظف المستهدف.', 409, true, 'TARGET_OUTSIDE_RECEPTION_SCOPE');
         }
     }
 
@@ -314,7 +347,7 @@ const transferReceptionTask = async (client, { appointmentId, user, targetUserId
         ) VALUES (
             $1, $2, $3, $4,
             $5, $6, 'Claimed',
-            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '15 minutes', $7, $8, $9
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '7 minutes', $7, $8, $9
         )
     `, [
         appointmentId,
@@ -354,22 +387,21 @@ const completeReceptionTask = async (client, { appointmentId, userId }) => {
 
     const appointmentResult = await client.query(`
         UPDATE appointments
-        SET receptionist_id = NULL,
-            receptionist_assigned_at = NULL,
-            receptionist_desk = NULL,
-            receptionist_assignment_version = receptionist_assignment_version + 1
+        SET receptionist_assignment_version = receptionist_assignment_version + 1,
+            receptionist_assigned_at = COALESCE(receptionist_assigned_at, CURRENT_TIMESTAMP)
         WHERE appointment_id = $1
           AND receptionist_id IS NOT NULL
-        RETURNING receptionist_assignment_version
+        RETURNING appointment_id, receptionist_id, receptionist_desk, receptionist_assigned_at, receptionist_assignment_version
     `, [appointmentId]);
 
     const payload = {
         appointment_id: appointmentId,
-        claimed_by: null,
+        claimed_by: appointmentResult.rows[0]?.receptionist_id || null,
         claimant_name: null,
-        desk_identifier: null,
+        receptionist_id: appointmentResult.rows[0]?.receptionist_id || null,
+        desk_identifier: appointmentResult.rows[0]?.receptionist_desk || null,
         status: 'Completed',
-        version: appointmentResult.rows[0]?.receptionist_assignment_version
+        version: appointmentResult.rows[0]?.receptionist_assignment_version || null
     };
 
     return payload;
@@ -405,7 +437,7 @@ const renewReceptionTaskLeases = async (client, { user }) => {
 
     const result = await client.query(`
         UPDATE reception_work_items rwi
-        SET lease_expires_at = CURRENT_TIMESTAMP + INTERVAL '15 minutes',
+        SET lease_expires_at = CURRENT_TIMESTAMP + INTERVAL '7 minutes',
             updated_at = CURRENT_TIMESTAMP,
             status = CASE WHEN rwi.status = 'Claimed' THEN 'In_Progress' ELSE rwi.status END
         FROM appointments a
@@ -423,7 +455,7 @@ const renewReceptionTaskLeases = async (client, { user }) => {
         SET last_heartbeat_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
         WHERE user_id = $1 AND status = 'Open'
-        RETURNING session_id, started_at, last_heartbeat_at
+        RETURNING session_id, started_at, last_heartbeat_at, desk_identifier, scope, room_ids, modality_ids
     `, [userId]);
 
     return {

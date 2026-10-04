@@ -4,6 +4,7 @@ const { authenticateToken, authorizeRole } = require('../middleware/authMiddlewa
 const auditRead = require('../middleware/auditRead');
 const { hasPermission } = require('../middleware/rbacMiddleware');
 const { validateRequest, validateQuery } = require('../middleware/validateRequest');
+const { quotaMiddleware } = require('../services/quotaService');
 const {
     createPatientSchema,
     updatePatientSchema,
@@ -22,6 +23,7 @@ const {
     generatePortalPassword,
     getPatientHistory
 } = require('../controllers/patientController');
+const { getVisitsStatement } = require('../controllers/invoiceController');
 
 module.exports = function patientRoutes(pool, auditService) {
     const router = express.Router();
@@ -41,6 +43,7 @@ module.exports = function patientRoutes(pool, auditService) {
         authenticateToken,
         authorizeRole(['Receptionist', 'Admin']),
         hasPermission(pool, 'CREATE_PATIENTS'),
+        quotaMiddleware(pool, 'patients'),
         validateRequest(createPatientSchema),
         createPatient(pool)
     );
@@ -104,6 +107,17 @@ module.exports = function patientRoutes(pool, auditService) {
         patientDataLimiter,
         authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Nurse']),
         getPatientHistory(pool)
+    );
+
+    // Patient visits consolidated billing statement
+    router.get('/:id/visits-statement',
+        authenticateToken,
+        patientDataLimiter,
+        authorizeRole(['Receptionist', 'Admin', 'Accountant', 'Cashier', 'Radiologist', 'Nurse']),
+        (req, res, next) => {
+            req.query.patientId = req.params.id;
+            return getVisitsStatement(pool)(req, res, next);
+        }
     );
 
     return router;

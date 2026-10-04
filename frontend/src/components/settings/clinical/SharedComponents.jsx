@@ -100,25 +100,29 @@ export const Field = ({ label, value, onChange, required, type = 'text', placeho
     </label>
 );
 
-export const Select = ({ label, value, onChange, options, render = value => value, required }) => (
-    <label className="block">
-        <span className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">
-            {label}
-            {required && <span className="text-rose-500"> *</span>}
-        </span>
-        <select
-            required={required}
-            value={value}
-            onChange={event => onChange(event.target.value)}
-            className="min-h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200"
-        >
-            <option value="" disabled>Select option</option>
-            {options.map(option => (
-                <option key={option} value={option}>{render(option)}</option>
-            ))}
-        </select>
-    </label>
-);
+export const Select = ({ label, value, onChange, options, render = value => value, required }) => {
+    const { t } = useTranslation('settings');
+
+    return (
+        <label className="block">
+            <span className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">
+                {label}
+                {required && <span className="text-rose-500"> *</span>}
+            </span>
+            <select
+                required={required}
+                value={value}
+                onChange={event => onChange(event.target.value)}
+                className="min-h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200"
+            >
+                <option value="" disabled>{t('settings.clinical.selectOption')}</option>
+                {options.map(option => (
+                    <option key={option} value={option}>{render(option)}</option>
+                ))}
+            </select>
+        </label>
+    );
+};
 
 export const Check = ({ label, checked, onChange }) => (
     <label className="flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 p-4 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800/60">

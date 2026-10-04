@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { useSelector, useDispatch } from 'react-redux';
@@ -20,6 +20,13 @@ import {
 import { VIARA_BRAND } from './config/brand';
 import { applyThemePalette, resolveBrandColor } from './utils/themePalette';
 import { getEffectiveSessionTimeout, getSessionTimeoutSchedule } from './utils/sessionTimeout';
+import { checkBackendHealth } from './utils/backendHealth';
+import { isOnboardingComplete } from './utils/onboardingState';
+import { lazyWithRetry } from './utils/lazyWithRetry';
+import AppLayout from './components/dashboard/AppLayout';
+import FeatureLocked from './components/FeatureLocked';
+import { useLicense, featureAllowed } from './hooks/useLicense';
+import Offline from './pages/Offline';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -29,56 +36,55 @@ const getCsrfToken = () => {
     return match ? decodeURIComponent(match[1]) : null;
 };
 
-// Lazy-loaded pages for code splitting
-const Login = lazy(() => import('./pages/Login'));
-const AppLayout = lazy(() => import('./components/dashboard/AppLayout'));
-const Help = lazy(() => import('./pages/Help'));
-const DashboardHome = lazy(() => import('./pages/DashboardHome'));
-const Admin = lazy(() => import('./pages/Admin'));
-const Users = lazy(() => import('./pages/Users'));
-const UserDetailPage = lazy(() => import('./pages/UserDetailPage'));
-const UserActivityTracking = lazy(() => import('./pages/UserActivityTracking'));
-const Financials = lazy(() => import('./pages/Financials'));
-const Payroll = lazy(() => import('./pages/Payroll'));
-const Insurance = lazy(() => import('./pages/Insurance'));
-const Worklist = lazy(() => import('./pages/Worklist'));
-const ReportEditorPage = lazy(() => import('./pages/ReportEditorPage'));
-const PacsViewer = lazy(() => import('./pages/PacsViewer'));
-const PacsReconciliation = lazy(() => import('./pages/PacsReconciliation'));
-const Reception = lazy(() => import('./pages/Reception'));
-const Patients = lazy(() => import('./pages/Patients'));
-const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'));
-const ReferringDoctors = lazy(() => import('./pages/ReferringDoctors'));
-const DoctorDetailPage = lazy(() => import('./pages/DoctorDetailPage'));
-const Appointments = lazy(() => import('./pages/Appointments'));
-const BookAppointment = lazy(() => import('./pages/BookAppointment'));
-const HR = lazy(() => import('./pages/HR'));
-const Marketing = lazy(() => import('./pages/Marketing'));
-const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
-const ReferralAnalytics = lazy(() => import('./pages/ReferralAnalytics'));
+// Lazy-loaded pages for code splitting with retry resilience
+const Login = lazyWithRetry(() => import('./pages/Login'), 'Login');
+const Help = lazyWithRetry(() => import('./pages/Help'), 'Help');
+const DashboardHome = lazyWithRetry(() => import('./pages/DashboardHome'), 'DashboardHome');
+const Admin = lazyWithRetry(() => import('./pages/Admin'), 'Admin');
+const Users = lazyWithRetry(() => import('./pages/Users'), 'Users');
+const UserDetailPage = lazyWithRetry(() => import('./pages/UserDetailPage'), 'UserDetailPage');
+const UserActivityTracking = lazyWithRetry(() => import('./pages/UserActivityTracking'), 'UserActivityTracking');
+const Financials = lazyWithRetry(() => import('./pages/Financials'), 'Financials');
+const Payroll = lazyWithRetry(() => import('./pages/Payroll'), 'Payroll');
+const Insurance = lazyWithRetry(() => import('./pages/Insurance'), 'Insurance');
+const Worklist = lazyWithRetry(() => import('./pages/Worklist'), 'Worklist');
+const ReportEditorPage = lazyWithRetry(() => import('./pages/ReportEditorPage'), 'ReportEditorPage');
+const PacsViewer = lazyWithRetry(() => import('./pages/PacsViewer'), 'PacsViewer');
+const PacsReconciliation = lazyWithRetry(() => import('./pages/PacsReconciliation'), 'PacsReconciliation');
+const Reception = lazyWithRetry(() => import('./pages/Reception'), 'Reception');
+const Patients = lazyWithRetry(() => import('./pages/Patients'), 'Patients');
+const PatientDetailPage = lazyWithRetry(() => import('./pages/PatientDetailPage'), 'PatientDetailPage');
+const ReferringDoctors = lazyWithRetry(() => import('./pages/ReferringDoctors'), 'ReferringDoctors');
+const DoctorDetailPage = lazyWithRetry(() => import('./pages/DoctorDetailPage'), 'DoctorDetailPage');
+const Appointments = lazyWithRetry(() => import('./pages/Appointments'), 'Appointments');
+const BookAppointment = lazyWithRetry(() => import('./pages/BookAppointment'), 'BookAppointment');
+const HR = lazyWithRetry(() => import('./pages/HR'), 'HR');
+const Marketing = lazyWithRetry(() => import('./pages/Marketing'), 'Marketing');
+const AnalyticsDashboard = lazyWithRetry(() => import('./pages/AnalyticsDashboard'), 'AnalyticsDashboard');
+const ReferralAnalytics = lazyWithRetry(() => import('./pages/ReferralAnalytics'), 'ReferralAnalytics');
 
-const Modality = lazy(() => import('./pages/Modality'));
-const Nurse = lazy(() => import('./pages/Nurse'));
-const Inventory = lazy(() => import('./pages/Inventory'));
-const Equipment = lazy(() => import('./pages/Equipment'));
-const Unauthorized = lazy(() => import('./pages/Unauthorized'));
-const NotFound = lazy(() => import('./pages/NotFound'));
-const Settings = lazy(() => import('./pages/Settings'));
-const Profile = lazy(() => import('./pages/Profile'));
-const Notifications = lazy(() => import('./pages/Notifications'));
-const PendingRequests = lazy(() => import('./pages/PendingRequests'));
-const Offline = lazy(() => import('./pages/Offline'));
-const Landing = lazy(() => import('./pages/Landing'));
-const DisplayBoard = lazy(() => import('./pages/DisplayBoard'));
-const DisplayBoardControl = lazy(() => import('./pages/DisplayBoardControl'));
-const CommunicationCenter = lazy(() => import('./components/communications/CommunicationCenter'));
-const CaseReports = lazy(() => import('./pages/CaseReports'));
-const CaseDetailsPage = lazy(() => import('./pages/CaseDetailsPage'));
+const Modality = lazyWithRetry(() => import('./pages/Modality'), 'Modality');
+const Nurse = lazyWithRetry(() => import('./pages/Nurse'), 'Nurse');
+const Inventory = lazyWithRetry(() => import('./pages/Inventory'), 'Inventory');
+const Equipment = lazyWithRetry(() => import('./pages/Equipment'), 'Equipment');
+const Unauthorized = lazyWithRetry(() => import('./pages/Unauthorized'), 'Unauthorized');
+const NotFound = lazyWithRetry(() => import('./pages/NotFound'), 'NotFound');
+const Settings = lazyWithRetry(() => import('./pages/Settings'), 'Settings');
+const Profile = lazyWithRetry(() => import('./pages/Profile'), 'Profile');
+const Notifications = lazyWithRetry(() => import('./pages/Notifications'), 'Notifications');
+const PendingRequests = lazyWithRetry(() => import('./pages/PendingRequests'), 'PendingRequests');
+const Landing = lazyWithRetry(() => import('./pages/Landing'), 'Landing');
+const DisplayBoard = lazyWithRetry(() => import('./pages/DisplayBoard'), 'DisplayBoard');
+const DisplayBoardControl = lazyWithRetry(() => import('./pages/DisplayBoardControl'), 'DisplayBoardControl');
+const CommunicationCenter = lazyWithRetry(() => import('./components/communications/CommunicationCenter'), 'CommunicationCenter');
+const CaseReports = lazyWithRetry(() => import('./pages/CaseReports'), 'CaseReports');
+const CaseDetailsPage = lazyWithRetry(() => import('./pages/CaseDetailsPage'), 'CaseDetailsPage');
+const Onboarding = lazyWithRetry(() => import('./pages/Onboarding'), 'Onboarding');
 
-const PrintSticker = lazy(() => import('./components/print/PrintSticker'));
-const PrintReceipt = lazy(() => import('./components/print/PrintReceipt'));
-const PrintBookingSlip = lazy(() => import('./components/print/PrintBookingSlip'));
-const PrintInvoice = lazy(() => import('./components/print/PrintInvoice'));
+const PrintSticker = lazyWithRetry(() => import('./components/print/PrintSticker'), 'PrintSticker');
+const PrintReceipt = lazyWithRetry(() => import('./components/print/PrintReceipt'), 'PrintReceipt');
+const PrintBookingSlip = lazyWithRetry(() => import('./components/print/PrintBookingSlip'), 'PrintBookingSlip');
+const PrintInvoice = lazyWithRetry(() => import('./components/print/PrintInvoice'), 'PrintInvoice');
 
 // Loading component for Suspense
 const PageLoader = () => {
@@ -161,8 +167,25 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     return children;
 };
 
+const LicenseGate = ({ feature, children }) => {
+    const { allowedModules, loading } = useLicense();
+    if (loading) {
+        return children;
+    }
+    if (feature && !featureAllowed(allowedModules, feature)) {
+        return <FeatureLocked feature={feature} />;
+    }
+    return children;
+};
+
 const RoleAwareDashboard = () => {
     const user = useSelector(selectCurrentUser);
+    // First run on a fresh install: send new operators through the setup
+    // wizard before the empty dashboard. The marker is written by the wizard
+    // on finish (or skip), so this only ever fires once per browser.
+    if (!isOnboardingComplete()) {
+        return <Navigate to="/onboarding" replace />;
+    }
     return user?.role === 'Marketing' ? <Marketing /> : <DashboardHome />;
 };
 
@@ -172,8 +195,11 @@ const RoleAwareAnalytics = () => {
 };
 
 const ConnectivityWatcher = () => {
-    const location = useLocation();
     const navigate = useNavigate();
+    const checkingRef = useRef(false);
+    const navigateRef = useRef(navigate);
+    navigateRef.current = navigate;
+    const location = useLocation();
 
     useEffect(() => {
         if (location.pathname !== '/offline') {
@@ -182,36 +208,61 @@ const ConnectivityWatcher = () => {
     }, [location]);
 
     useEffect(() => {
-        const handleOffline = () => {
+        let mounted = true;
+        const goOffline = (reason) => {
+            const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
             if (window.location.pathname !== '/offline') {
-                navigate('/offline', {
-                    replace: false,
-                    state: {
-                        from: `${window.location.pathname}${window.location.search}${window.location.hash}`
-                    }
+                navigateRef.current(`/offline?reason=${reason}`, {
+                    replace: true,
+                    state: { from: currentPath }
                 });
             }
         };
 
-        const handleOnline = () => {
-            if (window.location.pathname === '/offline') {
-                const returnPath = sessionStorage.getItem('lastOnlinePath') || '/dashboard';
-                navigate(returnPath, { replace: true });
+        const checkAvailability = async () => {
+            if (checkingRef.current || !mounted) return;
+            checkingRef.current = true;
+            try {
+                const result = await checkBackendHealth();
+                if (!mounted) return;
+                if (!result.online) {
+                    goOffline('network');
+                    return;
+                }
+                if (!result.backendAvailable) {
+                    goOffline('backend');
+                    return;
+                }
+                if (window.location.pathname === '/offline') {
+                    const returnPath = window.history.state?.usr?.from
+                        || sessionStorage.getItem('lastOnlinePath')
+                        || '/dashboard';
+                    navigateRef.current(returnPath, { replace: true });
+                }
+            } finally {
+                checkingRef.current = false;
             }
         };
 
+        const handleOffline = () => goOffline('network');
+        const handleOnline = () => { void checkAvailability(); };
+        const initialCheck = window.setTimeout(() => { void checkAvailability(); }, 1200);
+        const healthInterval = window.setInterval(() => {
+            if (!document.hidden) void checkAvailability();
+        }, 20000);
+
         window.addEventListener('offline', handleOffline);
         window.addEventListener('online', handleOnline);
-
-        if (!navigator.onLine) {
-            handleOffline();
-        }
+        if (!navigator.onLine) handleOffline();
 
         return () => {
+            mounted = false;
+            window.clearTimeout(initialCheck);
+            window.clearInterval(healthInterval);
             window.removeEventListener('offline', handleOffline);
             window.removeEventListener('online', handleOnline);
         };
-    }, [navigate]);
+    }, []);
 
     return null;
 };
@@ -449,6 +500,7 @@ const App = () => {
         let isCancelled = false;
         let reconnectTimer;
         let reconnectAttempt = 0;
+        let logoutTimer;
 
         const scheduleReconnect = () => {
             if (isCancelled || reconnectTimer) return;
@@ -498,8 +550,29 @@ const App = () => {
                         const activeUserId = currentUserIdRef.current;
 
                         if (sseEvent === 'FORCE_LOGOUT') {
-                            dispatch(logOut());
-                            toast.error(data?.message || t('auth.forceLogout', 'You have been logged out because your account was accessed from another device.'), { duration: 6000 });
+                            const countdownSeconds = Math.max(0, Number(data?.logoutInSeconds) || 10);
+                            const deadline = Date.now() + countdownSeconds * 1000;
+                            const noticeId = `force-logout-${activeUserId || 'current'}`;
+                            window.dispatchEvent(new CustomEvent('VIARA_FORCE_LOGOUT_WARNING', {
+                                detail: { message: data?.message, deadline }
+                            }));
+                            toast.error(`${data?.message || t('auth.forceLogout', 'This account was opened on another device. You will be signed out in')} ${countdownSeconds} ${t('auth.seconds', 'seconds')}.`, {
+                                id: noticeId,
+                                duration: countdownSeconds * 1000
+                            });
+                            const showCountdown = () => {
+                                if (isCancelled) return;
+                                const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+                                if (remaining <= 0) {
+                                    toast.dismiss(noticeId);
+                                    dispatch(api.util.resetApiState());
+                                    dispatch(logOut());
+                                    toast.error(t('auth.forceLogoutComplete', 'You have been signed out because this account was opened on another device.'), { duration: 7000 });
+                                    return;
+                                }
+                                logoutTimer = window.setTimeout(showCountdown, 1000);
+                            };
+                            showCountdown();
                             return;
                         }
 
@@ -657,6 +730,7 @@ const App = () => {
 
         return () => {
             isCancelled = true;
+            if (logoutTimer) window.clearTimeout(logoutTimer);
             window.dispatchEvent(new CustomEvent('SSE_CONNECTION_STATUS', { detail: { connected: false } }));
             if (reconnectTimer) window.clearTimeout(reconnectTimer);
             if (eventSource) {
@@ -710,6 +784,7 @@ const App = () => {
                         <Route path="/doctor-portal" element={<ExternalRedirect to={getDoctorPortalHomeUrl()} />} />
                         <Route path="/doctor-portal/login" element={<ExternalRedirect to={getDoctorPortalLoginUrl()} />} />
                         <Route path="/unauthorized" element={<Unauthorized />} />
+                        <Route path="/onboarding" element={<Onboarding />} />
                         <Route path="/offline" element={<Offline />} />
                         {/* Public waiting-room display board for external TV screens */}
                         <Route path="/display" element={<DisplayBoard />} />
@@ -754,7 +829,9 @@ const App = () => {
                         <Route path="/admin" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/admin')}>
                                 <AppLayout role="Admin">
-                                    <Admin />
+                                    <LicenseGate feature="analytics">
+                                        <Admin />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -778,7 +855,9 @@ const App = () => {
                         <Route path="/user-activity" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/user-activity')}>
                                 <AppLayout role="Admin">
-                                    <UserActivityTracking />
+                                    <LicenseGate feature="audit">
+                                        <UserActivityTracking />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -786,7 +865,9 @@ const App = () => {
                         <Route path="/referring-doctors" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/referring-doctors')}>
                                 <AppLayout role="Receptionist">
-                                    <ReferringDoctors />
+                                    <LicenseGate feature="crm">
+                                        <ReferringDoctors />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -794,21 +875,27 @@ const App = () => {
                         <Route path="/referring-doctors/:doctorId" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/referring-doctors/:doctorId')}>
                                 <AppLayout role="Receptionist">
-                                    <DoctorDetailPage />
+                                    <LicenseGate feature="crm">
+                                        <DoctorDetailPage />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
 
                         <Route path="/pacs/viewer" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/pacs/viewer')}>
-                                <PacsViewer />
+                                <LicenseGate feature="pacs">
+                                    <PacsViewer />
+                                </LicenseGate>
                             </ProtectedRoute>
                         } />
 
                         <Route path="/pacs/reconciliation" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/pacs/reconciliation')}>
                                 <AppLayout role="Radiologist">
-                                    <PacsReconciliation />
+                                    <LicenseGate feature="pacs">
+                                        <PacsReconciliation />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -848,7 +935,9 @@ const App = () => {
                         <Route path="/approvals" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/approvals')}>
                                 <AppLayout role="Staff">
-                                    <PendingRequests />
+                                    <LicenseGate feature="finance">
+                                        <PendingRequests />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -856,7 +945,9 @@ const App = () => {
                         <Route path="/analytics" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/analytics')}>
                                 <AppLayout role="Admin">
-                                    <RoleAwareAnalytics />
+                                    <LicenseGate feature="analytics">
+                                        <RoleAwareAnalytics />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -939,7 +1030,9 @@ const App = () => {
                         <Route path="/financials" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/financials')}>
                                 <AppLayout role="Accountant">
-                                    <Financials />
+                                    <LicenseGate feature="finance">
+                                        <Financials />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -947,7 +1040,9 @@ const App = () => {
                         <Route path="/payroll" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/payroll')}>
                                 <AppLayout role="HR">
-                                    <Payroll />
+                                    <LicenseGate feature="hr">
+                                        <Payroll />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -955,7 +1050,9 @@ const App = () => {
                         <Route path="/insurance" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/insurance')}>
                                 <AppLayout role="Accountant">
-                                    <Insurance />
+                                    <LicenseGate feature="insurance">
+                                        <Insurance />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -963,7 +1060,9 @@ const App = () => {
                         <Route path="/equipment" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/equipment')}>
                                 <AppLayout role="Admin">
-                                    <Equipment />
+                                    <LicenseGate feature="equipment">
+                                        <Equipment />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -971,7 +1070,9 @@ const App = () => {
                         <Route path="/hr" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/hr')}>
                                 <AppLayout role="HR">
-                                    <HR />
+                                    <LicenseGate feature="hr">
+                                        <HR />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -982,7 +1083,9 @@ const App = () => {
                         <Route path="/marketing" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/marketing')}>
                                 <AppLayout role="Marketing">
-                                    <Marketing />
+                                    <LicenseGate feature="crm">
+                                        <Marketing />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -1008,7 +1111,9 @@ const App = () => {
                         <Route path="/inventory" element={
                             <ProtectedRoute allowedRoles={getRouteRoles('/inventory')}>
                                 <AppLayout role="Admin">
-                                    <Inventory />
+                                    <LicenseGate feature="inventory">
+                                        <Inventory />
+                                    </LicenseGate>
                                 </AppLayout>
                             </ProtectedRoute>
                         } />
@@ -1027,7 +1132,9 @@ const App = () => {
                         {/* Default & Landing Routes */}
                         <Route path="/landing" element={<Landing />} />
                         <Route path="/" element={
-                            isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />
+                            isAuthenticated
+                                ? (localStorage.getItem('viara_onboarding_complete') ? <Navigate to="/dashboard" replace /> : <Navigate to="/onboarding" replace />)
+                                : <Landing />
                         } />
                         <Route path="*" element={<NotFound />} />
                     </Routes>

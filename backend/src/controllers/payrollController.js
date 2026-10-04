@@ -255,7 +255,7 @@ const cancelPayrollPeriod = (db) => async (req, res, next) => {
 
         const updated = await client.query(`
             UPDATE payroll_periods
-            SET status = 'Cancelled', notes = CONCAT_WS(E'\n', NULLIF(notes, ''), $2), updated_at = CURRENT_TIMESTAMP
+            SET status = 'Cancelled', notes = CONCAT_WS(E'\n', NULLIF(notes, ''), $2::text), updated_at = CURRENT_TIMESTAMP
             WHERE period_id = $1::uuid
             RETURNING *
         `, [periodId, req.body.notes]);
@@ -803,6 +803,25 @@ const getPenalties = (db) => async (req, res, next) => {
         params.push(pageLimit);
         query += ` ORDER BY p.created_at DESC LIMIT $${params.length}::int`;
         const result = await db.query(query, params);
+        res.json(result.rows);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getMyPayrollPenalties = (db) => async (req, res, next) => {
+    try {
+        const result = await db.query(`
+            SELECT penalty_id, penalty_type, amount, reason, source, status,
+                   incident_date, created_at, acknowledgement_status,
+                   employee_acknowledged_at, disputed_at, dispute_reason,
+                   dispute_resolution, dispute_resolved_at, remaining_amount,
+                   currency_code
+            FROM employee_penalties
+            WHERE user_id = $1::uuid
+            ORDER BY incident_date DESC, created_at DESC
+            LIMIT 100
+        `, [getUserId(req)]);
         res.json(result.rows);
     } catch (error) {
         next(error);
@@ -1462,7 +1481,7 @@ const calculatePayroll = (db) => async (req, res, next) => {
                 sourceType: 'employee_deductions',
                 sourceId: deduction.deduction_id,
                 description: deduction.name,
-                amount: calculateDeductionAmount(deduction, gross),
+                amount: calculateDeductionAmount(deduction, baseGross),
                 taxable: false
                 })),
                 ...ruleControlLines.filter((line) => line.type === 'Deduction')
@@ -1918,6 +1937,7 @@ module.exports = {
     createDeduction,
     updateDeductionStatus,
     getPenalties,
+    getMyPayrollPenalties,
     createPenalty,
     updatePenaltyStatus,
     acknowledgePenalty,

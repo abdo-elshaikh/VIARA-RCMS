@@ -32,13 +32,13 @@ const Pagination = ({
     };
 
     const btnBase =
-        'inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-bold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40';
+        'inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-bold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--VIARA-accent)]';
     const activeBtn =
-        'bg-teal-600 text-white shadow-sm shadow-teal-600/25 dark:bg-teal-500';
+        'bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)] shadow-xs';
     const idleBtn =
-        'border border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-teal-700 dark:hover:bg-teal-950/30';
+        'border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-ink)] hover:border-[var(--VIARA-accent)] hover:bg-[var(--VIARA-accent-soft)] hover:text-[var(--VIARA-accent-dark)] dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-muted)] dark:text-[var(--VIARA-ink)] dark:hover:border-[var(--VIARA-accent)] dark:hover:bg-[var(--VIARA-accent-soft)] dark:hover:text-[var(--VIARA-accent-text)]';
     const arrowBtn =
-        'border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800';
+        'border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] hover:border-[var(--VIARA-line-strong)] hover:bg-[var(--VIARA-surface-hover)] hover:text-[var(--VIARA-ink)] disabled:opacity-40 disabled:cursor-not-allowed dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-muted)] dark:text-[var(--VIARA-muted)] dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-[var(--VIARA-ink)]';
 
     return (
         <nav
@@ -60,7 +60,7 @@ const Pagination = ({
                 page === '...' ? (
                     <span
                         key={`ellipsis-${i}`}
-                        className="px-1 text-xs text-slate-400 select-none"
+                        className="px-1 text-xs text-[var(--VIARA-muted)] select-none"
                         aria-hidden="true"
                     >
                         …

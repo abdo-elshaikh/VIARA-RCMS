@@ -1,5 +1,12 @@
 import { createSlice } from '@reduxjs/toolkit';
 
+export const STAFF_ROLES = new Set([
+    'Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant',
+    'HR', 'Marketing', 'Technician', 'Nurse', 'Insurance_Staff', 'Developer'
+]);
+
+export const isStaffRole = (role) => STAFF_ROLES.has(role);
+
 const clearLegacyTokenStorage = () => {
     if (typeof localStorage !== 'undefined') localStorage.removeItem('token');
     if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('token');
@@ -70,14 +77,21 @@ const persistUser = (user) => {
 
 const readStoredUser = () => {
     try {
+        let stored = null;
         if (typeof sessionStorage !== 'undefined') {
             const sessionUser = sessionStorage.getItem('user');
-            if (sessionUser) return JSON.parse(sessionUser);
+            if (sessionUser) stored = JSON.parse(sessionUser);
         }
-        if (typeof localStorage !== 'undefined') {
+        if (!stored && typeof localStorage !== 'undefined') {
             const localUser = localStorage.getItem('user');
-            if (localUser) return JSON.parse(localUser);
+            if (localUser) stored = JSON.parse(localUser);
         }
+        if (stored?.role && !isStaffRole(stored.role)) {
+            if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
+            if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
+            return null;
+        }
+        return stored;
     } catch {
         if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
         if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
@@ -99,6 +113,15 @@ const authSlice = createSlice({
     reducers: {
         setCredentials: (state, action) => {
             const { user, token } = action.payload;
+            if (user?.role && !isStaffRole(user.role)) {
+                state.user = null;
+                state.token = null;
+                state.isAuthenticated = false;
+                if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
+                if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
+                clearLegacyTokenStorage();
+                return;
+            }
             state.user = syncEmergencyClaims({
                 ...user,
                 permissions: user.permissions || []
@@ -140,6 +163,15 @@ const authSlice = createSlice({
             clearLegacyTokenStorage();
 
             const resolvedUser = explicitUser || storedUser || decodedUser;
+
+            if (resolvedUser?.role && !isStaffRole(resolvedUser.role)) {
+                state.user = null;
+                state.token = null;
+                state.isAuthenticated = false;
+                if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
+                if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
+                return;
+            }
 
             if (resolvedUser && token) {
                 state.user = syncEmergencyClaims({

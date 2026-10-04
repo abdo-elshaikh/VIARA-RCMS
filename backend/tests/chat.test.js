@@ -1,3 +1,12 @@
+﻿// Prevent validateEnv from calling process.exit(1) when test env vars are absent.
+// server.js imports this as a callable function, so the mock must be one too.
+jest.mock('../src/config/validateEnv', () => jest.fn());
+jest.mock('../src/services/licenseService', () => ({
+    loadLicense: jest.fn(),
+    getLicense: jest.fn(() => null),
+    licenseAllows: jest.fn(() => true)
+}));
+
 process.env.JWT_SECRET = 'test-auth-secret-at-least-32-characters';
 
 const fs = require('fs');
@@ -8,7 +17,29 @@ const queryText = (sql) => String(sql || '').replace(/\s+/g, ' ');
 const mockDefaultQueryResponse = async (sql, params = []) => {
     const text = queryText(sql);
 
+    if (text.includes('SELECT current_session_id,')) {
+        const roles = {
+            '00000000-0000-4000-8000-000000000001': 'Admin',
+            '00000000-0000-4000-8000-000000000002': 'Receptionist',
+            '00000000-0000-4000-8000-000000000004': 'Marketing',
+            '00000000-0000-4000-8000-000000000301': 'Patient'
+        };
+        return { rows: [{ current_session_id: 'chat-test-session', is_active: true, role: roles[params[0]], must_change_password: false }] };
+    }
+
+    // Front-line roles need an open attendance session before write requests
+    // reach a route (see middleware/attendanceWorkGate.js). These tests are
+    // about channel authorisation, so the receptionist is clocked in.
+    if (text.includes('FROM attendance_logs')) {
+        return { rows: [{ '?column?': 1 }], rowCount: 1 };
+    }
+
     if (text.includes('FROM role_permissions rp') && text.includes('p.name = $2')) {
+        if (params?.[1] === 'VIEW_PORTAL_MESSAGES') {
+            return ['Admin', 'Receptionist'].includes(params?.[0])
+                ? { rows: [{ '?column?': 1 }] }
+                : { rows: [] };
+        }
         return params?.[0] === 'Patient' ? { rows: [] } : { rows: [{ '?column?': 1 }] };
     }
 
@@ -210,22 +241,28 @@ describe('Chat API Endpoints', () => {
     let adminToken;
     let patientToken;
     let receptionistToken;
+    let marketingToken;
     let csrfToken = '';
     let cookies = {};
 
     beforeAll(async () => {
         adminToken = jwt.sign(
-            { user_id: '00000000-0000-4000-8000-000000000001', role: 'Admin' },
+            { user_id: '00000000-0000-4000-8000-000000000001', role: 'Admin', session_id: 'chat-test-session' },
             TEST_SECRET,
             { expiresIn: '1h' }
         );
         patientToken = jwt.sign(
-            { userId: '00000000-0000-4000-8000-000000000301', role: 'Patient' },
+            { userId: '00000000-0000-4000-8000-000000000301', role: 'Patient', session_id: 'chat-test-session' },
             TEST_SECRET,
             { expiresIn: '1h' }
         );
         receptionistToken = jwt.sign(
-            { user_id: '00000000-0000-4000-8000-000000000002', role: 'Receptionist' },
+            { user_id: '00000000-0000-4000-8000-000000000002', role: 'Receptionist', session_id: 'chat-test-session' },
+            TEST_SECRET,
+            { expiresIn: '1h' }
+        );
+        marketingToken = jwt.sign(
+            { user_id: '00000000-0000-4000-8000-000000000004', role: 'Marketing', session_id: 'chat-test-session' },
             TEST_SECRET,
             { expiresIn: '1h' }
         );
@@ -278,6 +315,80 @@ describe('Chat API Endpoints', () => {
         expect(res.status).toBe(403);
     });
 
+    test('Marketing cannot access patient portal conversations', async () => {
+        const res = await request(app)
+            .get('/api/messages/patients')
+            .set('Authorization', `Bearer ${marketingToken}`)
+            .set('Cookie', `csrf_token=${csrfToken}`);
+
+        expect(res.status).toBe(403);
+        expect(mockPool.query.mock.calls.some(([sql]) => queryText(sql).includes('FROM patient_portal_messages ppm'))).toBe(false);
+    });
+
+    test('patient message history returns the latest page chronologically and reads only visible inbound messages', async () => {
+        const olderId = '00000000-0000-4000-8000-000000000101';
+        const newerId = '00000000-0000-4000-8000-000000000102';
+        let readParams;
+        mockPool.query.mockImplementation(async (sql, params = []) => {
+            const text = queryText(sql);
+            if (text.includes('FROM patient_portal_messages ppm')) {
+                expect(text).toContain('ORDER BY ppm.created_at DESC, ppm.message_id DESC');
+                return {
+                    rows: [
+                        { message_id: newerId, sender_role: 'Patient', is_read: false, created_at: '2026-10-03T10:00:00Z' },
+                        { message_id: olderId, sender_role: 'Staff', is_read: true, created_at: '2026-10-03T09:00:00Z' }
+                    ]
+                };
+            }
+            if (text.includes('UPDATE patient_portal_messages')) {
+                readParams = params;
+                return { rows: [], rowCount: 1 };
+            }
+            return mockDefaultQueryResponse(sql, params);
+        });
+
+        const res = await request(app)
+            .get('/api/messages/patients/00000000-0000-4000-8000-000000000301')
+            .set('Authorization', `Bearer ${receptionistToken}`)
+            .set('Cookie', `csrf_token=${csrfToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.map(message => message.message_id)).toEqual([olderId, newerId]);
+        expect(readParams).toEqual([[newerId]]);
+    });
+
+    test('staff direct-message history reads only visible incoming messages', async () => {
+        const olderId = '00000000-0000-4000-8000-000000000201';
+        const newerId = '00000000-0000-4000-8000-000000000202';
+        let readParams;
+        mockPool.query.mockImplementation(async (sql, params = []) => {
+            const text = queryText(sql);
+            if (text.includes('FROM staff_messages sm')) {
+                expect(text).toContain('ORDER BY sm.created_at DESC, sm.message_id DESC');
+                return {
+                    rows: [
+                        { message_id: newerId, sender_id: '00000000-0000-4000-8000-000000000002', recipient_id: '00000000-0000-4000-8000-000000000001', is_read: false, created_at: '2026-10-03T10:00:00Z' },
+                        { message_id: olderId, sender_id: '00000000-0000-4000-8000-000000000001', recipient_id: '00000000-0000-4000-8000-000000000002', is_read: false, created_at: '2026-10-03T09:00:00Z' }
+                    ]
+                };
+            }
+            if (text.includes('UPDATE staff_messages')) {
+                readParams = params;
+                return { rows: [{ message_id: newerId }], rowCount: 1 };
+            }
+            return mockDefaultQueryResponse(sql, params);
+        });
+
+        const res = await request(app)
+            .get('/api/chat/messages?recipientId=00000000-0000-4000-8000-000000000002')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .set('Cookie', `csrf_token=${csrfToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.map(message => message.message_id)).toEqual([olderId, newerId]);
+        expect(readParams).toEqual([[newerId]]);
+    });
+
     test('GET /api/chat/messages - rejects inaccessible private channel history', async () => {
         mockPool.query.mockImplementation(async (sql, params) => {
             const text = queryText(sql);
@@ -324,10 +435,10 @@ describe('Chat API Endpoints', () => {
             .set('Authorization', `Bearer ${adminToken}`)
             .set('Cookie', `csrf_token=${csrfToken}`)
             .set('x-csrf-token', csrfToken)
-            .send({ recipientId: '2', body: '✅', messageKind: 'sticker' });
+            .send({ recipientId: '2', body: 'âœ…', messageKind: 'sticker' });
 
         expect(res.status).toBe(201);
-        expect(res.body.body).toBe('✅');
+        expect(res.body.body).toBe('âœ…');
         expect(res.body.message_kind).toBe('sticker');
     });
 

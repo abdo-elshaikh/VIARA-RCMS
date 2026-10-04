@@ -175,6 +175,7 @@ export const usePatientRegistration = ({ navigate, selectedDate }) => {
         submitForm: handleSubmit,
         similarPatients,
         onSelectExistingPatient,
+        fullNameValue: watchedFullName,
         t,
     };
 

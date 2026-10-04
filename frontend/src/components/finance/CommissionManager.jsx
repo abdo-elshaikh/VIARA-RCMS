@@ -15,11 +15,11 @@ import { useGetDoctorCommissionsQuery, usePayCommissionMutation } from '../../st
 import ConfirmDialog from '../ui/ConfirmDialog';
 import { formatFinancialCurrency } from '../../utils/financialFormat';
 
-const CommissionManager = () => {
+const CommissionManager = ({ dateRange }) => {
     const { t, i18n } = useTranslation('workspace');
     const isAr = i18n.language?.startsWith('ar');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
-    const { data: commissions = [], isLoading, isError } = useGetDoctorCommissionsQuery();
+    const { data: commissions = [], isLoading, isError } = useGetDoctorCommissionsQuery(dateRange || undefined);
     const [payCommission, { isLoading: isPaying }] = usePayCommissionMutation();
     
     const [selectedDoctor, setSelectedDoctor] = useState(null);

@@ -174,10 +174,10 @@ export const StaffShiftSchedule = ({ userId: targetUserId, selfService = true })
 
         try {
             await createShiftRequest({
-                request_type: 'Swap',
-                shift_id: Number(swapForm.shift_id),
-                target_user_id: Number(swapForm.target_user_id),
-                target_shift_id: swapForm.target_shift_id ? Number(swapForm.target_shift_id) : undefined,
+                requestType: 'Swap',
+                shiftId: swapForm.shift_id || undefined,
+                targetUserId: swapForm.target_user_id || undefined,
+                targetShiftId: swapForm.target_shift_id || undefined,
                 reason: swapForm.reason.trim()
             }).unwrap();
 
@@ -210,10 +210,10 @@ export const StaffShiftSchedule = ({ userId: targetUserId, selfService = true })
             const proposedEndIso = new Date(`${modForm.proposed_date}T${modForm.proposed_end_time}:00`).toISOString();
 
             await createShiftRequest({
-                request_type: 'Modification',
-                shift_id: Number(modForm.shift_id),
-                proposed_start_time: proposedStartIso,
-                proposed_end_time: proposedEndIso,
+                requestType: 'Modification',
+                shiftId: modForm.shift_id || undefined,
+                requestedStartTime: proposedStartIso,
+                requestedEndTime: proposedEndIso,
                 reason: modForm.reason.trim()
             }).unwrap();
 

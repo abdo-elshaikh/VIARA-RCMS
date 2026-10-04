@@ -43,6 +43,7 @@ import OrderView from "../components/doctor/OrderView";
 import MessagesView from "../components/doctor/MessagesView";
 import PortalChatBubble from "../components/PortalChatBubble";
 import PortalNotificationsView from "../components/PortalNotificationsView";
+import { isFinalizedRecord } from "../utils/recordStatus";
 import { DashboardLayout } from "../components/portal/layout/DashboardLayout";
 import {
   WorkspacePageHeader,
@@ -132,6 +133,25 @@ const DoctorPortal = () => {
   const [createOrder, { isLoading: isOrdering }] = useCreateDoctorOrderMutation();
 
   usePortalRealtime(Boolean(user), ({ event: realtimeEvent, data }) => {
+    if (realtimeEvent === "FORCE_LOGOUT") {
+      const seconds = Math.max(0, Number(data?.logoutInSeconds) || 10);
+      const deadline = Date.now() + seconds * 1000;
+      const finishLogout = () => {
+        const remaining = Math.ceil((deadline - Date.now()) / 1000);
+        if (remaining <= 0) {
+          dispatch(api.util.resetApiState());
+          dispatch(logOut());
+          navigate("/doctor/login", { replace: true });
+          return;
+        }
+        window.dispatchEvent(new CustomEvent("VIARA_FORCE_LOGOUT_WARNING", {
+          detail: { message: data?.message, remainingSeconds: remaining },
+        }));
+        window.setTimeout(finishLogout, 1000);
+      };
+      finishLogout();
+      return;
+    }
     if (realtimeEvent === "NEW_DOCTOR_PORTAL_MESSAGE") {
       dispatch(api.util.invalidateTags(["DoctorMessages"]));
       toast.success(
@@ -178,16 +198,15 @@ const DoctorPortal = () => {
     return sortedCases.find((item: any) => getCaseKey(item) === selectedCaseKey) || sortedCases[0];
   }, [selectedCaseKey, sortedCases]);
   const finalizedCases = useMemo(
-    () => sortedCases.filter((item: any) => item.report_status === "Finalized"),
+    () => sortedCases.filter(isFinalizedRecord),
     [sortedCases],
   );
   const pendingCases = useMemo(
     () =>
       sortedCases.filter(
         (item: any) =>
-          !["Finalized", "Completed", "Cancelled"].includes(
-            item.report_status || item.appointment_status,
-          ),
+          !isFinalizedRecord(item) &&
+          !["Completed", "Cancelled"].includes(item.appointment_status),
       ),
     [sortedCases],
   );

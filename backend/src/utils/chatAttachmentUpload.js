@@ -165,7 +165,7 @@ const serveChatAttachment = (db) => async (req, res, next) => {
         const doctorId = req.user?.doctorId || req.user?.doctor_id || null;
         const role = req.user?.role || '';
         const isSystemAdministrator = ['Admin', 'SuperAdmin', 'Developer'].includes(role);
-        const canAccessExternalInbox = ['Admin', 'Receptionist', 'Marketing', 'Developer'].includes(role);
+        const canAccessExternalInbox = ['Admin', 'Receptionist', 'Developer'].includes(role);
         const attachmentMessages = await db.query(`
             SELECT 'staff' AS source, sender_id, recipient_id, channel_name,
                    NULL::uuid AS patient_id, NULL::uuid AS doctor_id

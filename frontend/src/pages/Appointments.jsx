@@ -9,6 +9,7 @@ import {
     Clock4, Users, Building2, BarChart3
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -23,7 +24,8 @@ import {
     useRescheduleAppointmentMutation,
     useSendReminderMutation,
     useUpdateWaitingListEntryMutation,
-    useDeleteAppointmentMutation
+    useDeleteAppointmentMutation,
+    useGetEquipmentDowntimeQuery
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
 import { getRange, shiftAnchorDate, toDateInput } from '../utils/appointmentDates';
@@ -41,6 +43,7 @@ import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
 import CancelReasonDialog from '../components/clinical/CancelReasonDialog';
 import { inputClass } from '../utils/designTokens';
+import { selectPreferences } from '../store/preferencesSlice';
 
 // ============================================================================
 // DESIGN SYSTEM CONSTANTS
@@ -336,7 +339,9 @@ const subHeadingClass = 'text-[11px] font-medium text-slate-400 dark:text-slate-
 
 const Appointments = () => {
     const { t, i18n } = useTranslation('appointments');
-    const [viewMode, setViewMode] = useState('day');
+    const isRtl = i18n?.language?.startsWith('ar');
+    const preferences = useSelector(selectPreferences);
+    const [viewMode, setViewMode] = useState(() => ['day', 'week', 'month'].includes(preferences.calendarView) ? preferences.calendarView : 'day');
     const [layoutMode, setLayoutMode] = useState('list');
     const [date, setDate] = useState(toDateInput());
     const [selectedMachineId, setSelectedMachineId] = useState('all');
@@ -363,7 +368,11 @@ const Appointments = () => {
     const [showSidePanel, setShowSidePanel] = useState(false);
     const [focusedAppointment, setFocusedAppointment] = useState(null);
 
-    const range = useMemo(() => getRange(date, viewMode), [date, viewMode]);
+    useEffect(() => {
+        if (['day', 'week', 'month'].includes(preferences.calendarView)) setViewMode(preferences.calendarView);
+    }, [preferences.calendarView]);
+
+    const range = useMemo(() => getRange(date, viewMode, preferences.firstDayOfWeek), [date, viewMode, preferences.firstDayOfWeek]);
     const appointmentParams = viewMode === 'day'
         ? { date, modalityId: selectedMachineId === 'all' ? undefined : selectedMachineId }
         : { startDate: range.startDate, endDate: range.endDate, modalityId: selectedMachineId === 'all' ? undefined : selectedMachineId };
@@ -372,6 +381,10 @@ const Appointments = () => {
     const { data: availability, isError: availabilityError, refetch: refetchAvailability } = useGetScheduleAvailabilityQuery(viewMode === 'day' ? { date } : range);
     const { data: waitingList = [], isError: waitingListError, refetch: refetchWaitingList } = useGetWaitingListQuery({ active: 'true', limit: 100 });
     const { data: machines = [], isError: machinesError, refetch: refetchMachines } = useGetMachinesQuery();
+    const { data: downtimeRecords = [] } = useGetEquipmentDowntimeQuery(undefined, { pollingInterval: 30000 });
+    const activeDowntimes = useMemo(() => {
+        return (Array.isArray(downtimeRecords) ? downtimeRecords : []).filter(r => r.status !== 'Resolved');
+    }, [downtimeRecords]);
     const { data: patientsResponse, isError: patientsError } = useGetPatientsQuery({ limit: 100 });
     const { data: examTypes = [], isError: examTypesError } = useGetExamTypesQuery(waitlistForm.modalityId, { skip: !waitlistForm.modalityId });
     const [sendReminder, { isLoading: isSendingReminder }] = useSendReminderMutation();
@@ -747,6 +760,35 @@ const Appointments = () => {
                 }
             />
 
+            {/* Equipment Downtime Operational Alert */}
+            {activeDowntimes.length > 0 && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50/90 p-3 text-xs font-semibold text-amber-950 shadow-2xs dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                    <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                            <AlertCircle size={16} />
+                        </div>
+                        <div>
+                            <p className="font-black text-slate-900 dark:text-white">
+                                {isRtl
+                                    ? `تنبيه صيانة الأجهزة: يوجد (${activeDowntimes.length}) جهاز في حالة توقف أو صيانة حالياً.`
+                                    : `Equipment Alert: (${activeDowntimes.length}) machine(s) currently under maintenance.`}
+                            </p>
+                            <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                                {isRtl
+                                    ? 'يرجى مراجعة المواعيد المجدولة على الأجهزة المتوقفة لتجنب تعارض العمليات السريرية.'
+                                    : 'Review scheduled appointments on halted machines to prevent clinical conflicts.'}
+                            </p>
+                        </div>
+                    </div>
+                    <Link
+                        to="/equipment?tab=downtime"
+                        className="inline-flex items-center justify-center shrink-0 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-black text-white hover:bg-amber-700 transition"
+                    >
+                        {isRtl ? 'عرض سجل الصيانة' : 'View Maintenance'}
+                    </Link>
+                </div>
+            )}
+
             {/* Compact Interactive KPI Command Strip */}
             <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/70 bg-slate-50/60 p-2 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)]/60">
                 {/* Total Booked */}
@@ -987,7 +1029,7 @@ const Appointments = () => {
                         >
                             <option value="all">{t('allRooms', 'كل الغرف/الأجهزة')}</option>
                             {machines.filter(m => m.status === 'Active').map(m => (
-                                <option key={m.modality_id} value={m.modality_id}>{m.name}</option>
+                                <option key={m.modality_id} value={m.modality_id}>{m.name}{activeDowntimes.some(d => String(d.modality_id) === String(m.modality_id)) ? ` ⚠️ (${isRtl ? 'صيانة' : 'Maintenance'})` : ''}</option>
                             ))}
                         </select>
 
@@ -1046,7 +1088,7 @@ const Appointments = () => {
                             ariaLabel={t('viewMode', 'View mode')}
                             items={['day', 'week', 'month'].map(mode => ({
                                 key: mode,
-                                label: mode === 'day' ? 'يوم' : mode === 'week' ? 'أسبوع' : 'شهر'
+                                label: t(`view.${mode}`)
                             }))}
                             value={viewMode}
                             onChange={setViewMode}
@@ -1192,6 +1234,7 @@ const Appointments = () => {
                                     onSelectEvent={appt => { setFocusedAppointment(appt); setShowSidePanel(true); }}
                                     t={t}
                                     locale={i18n.language}
+                                    firstDayOfWeek={preferences.firstDayOfWeek}
                                     integrated={true}
                                 />
                             )}
@@ -2056,7 +2099,11 @@ const RescheduleModal = ({ draft, form, setForm, onCancel, onConfirm, isSaving, 
                         loading={isSaving}
                         onClick={onConfirm}
                     >
-                        {isSaving ? t('reschedule.saving', 'Saving...') : t('reschedule.confirm', 'Confirm Reschedule')}
+                        {isSaving
+                            ? t('reschedule.saving', 'Saving...')
+                            : draft.status === 'Cancelled'
+                                ? t('reschedule.reactivateConfirm', 'Reactivate & reschedule')
+                                : t('reschedule.confirm', 'Reschedule')}
                     </Button>
                 </div>
             }
@@ -2065,6 +2112,12 @@ const RescheduleModal = ({ draft, form, setForm, onCancel, onConfirm, isSaving, 
                 <p className="mb-4 text-xs font-medium text-slate-400">
                     {draft.patient_name} - {draft.mrn}
                 </p>
+            )}
+            {draft.status === 'Cancelled' && (
+                <div className="mb-4 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-800 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900">
+                    <RotateCw size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                    <span>{t('reschedule.reactivateNotice', 'This appointment is cancelled. Rescheduling will reactivate it as a confirmed order.')}</span>
+                </div>
             )}
             <form onSubmit={e => { e.preventDefault(); onConfirm(); }} className="space-y-4">
                 <div>

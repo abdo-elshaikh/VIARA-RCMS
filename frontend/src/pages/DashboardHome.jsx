@@ -160,6 +160,30 @@ const DashboardShell = ({
 
 // ─── Modality Live Occupancy Deck ─────────────────────────────────────
 
+const MODALITY_TYPE_ABBR = {
+    'Ultrasound': 'US',
+    'Mammography': 'MG',
+    'Fluoroscopy': 'FL',
+    'X-Ray': 'XR',
+    'X-ray': 'XR',
+    'Radiography': 'XR',
+    'Bone Densitometry': 'DXA',
+    'Bone Density DEXA': 'DXA',
+    'DEXA': 'DXA',
+    'Nuclear Medicine': 'NM',
+    'PET-CT': 'PET',
+    'Computed Tomography': 'CT',
+    'Magnetic Resonance': 'MRI',
+};
+
+const formatModalityBadge = (type = '') => {
+    if (!type) return 'MOD';
+    if (MODALITY_TYPE_ABBR[type]) return MODALITY_TYPE_ABBR[type];
+    const trimmed = type.trim();
+    if (trimmed.length <= 4) return trimmed.toUpperCase();
+    return trimmed.slice(0, 3).toUpperCase();
+};
+
 const ModalityLiveDeck = ({ modalities = [], language }) => {
     const { t } = useTranslation('dashboard');
 
@@ -189,8 +213,11 @@ const ModalityLiveDeck = ({ modalities = [], language }) => {
                         >
                             <div className="flex items-center justify-between gap-2 min-w-0">
                                 <div className="flex min-w-0 flex-1 items-center gap-2">
-                                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white dark:bg-slate-800 text-xs font-black text-slate-700 dark:text-slate-300 shadow-xs ring-1 ring-slate-200/60 dark:ring-slate-700">
-                                        {m.type}
+                                    <span
+                                        className="inline-flex h-7 min-w-[32px] px-1.5 shrink-0 items-center justify-center rounded-lg bg-white dark:bg-slate-800 text-[11px] font-black uppercase text-slate-700 dark:text-slate-300 shadow-xs ring-1 ring-slate-200/60 dark:ring-slate-700 overflow-hidden"
+                                        title={m.type}
+                                    >
+                                        {formatModalityBadge(m.type)}
                                     </span>
                                     <span className="truncate text-xs font-black text-slate-900 dark:text-white" title={m.name}>
                                         {m.name}
@@ -342,8 +369,8 @@ const ReceptionDashboard = props => {
                             ]}
                             t={t}
                         >
-                            <div className="h-80 w-full">
-                                <ResponsiveContainer width="100%" height="100%">
+                            <div className="h-80 w-full min-w-0">
+                                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                     <AreaChart data={flow} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
                                         <defs>
                                             <linearGradient id="waitingArea" x1="0" y1="0" x2="0" y2="1">
@@ -730,8 +757,8 @@ const ExecutiveDashboard = props => {
                             ]}
                             t={t}
                         >
-                            <div className="h-64 w-full">
-                                <ResponsiveContainer width="100%" height="100%">
+                            <div className="h-64 w-full min-w-0">
+                                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                     <ComposedChart data={performance} margin={{ top: 10, right: 4, left: -18, bottom: 0 }}>
                                         <CartesianGrid strokeDasharray="4 4" stroke="currentColor" className="text-slate-100 dark:text-slate-800" vertical={false} />
                                         <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} />
@@ -860,8 +887,8 @@ const DistributionPanel = ({ data, title, description }) => {
                         ]}
                         t={t}
                     >
-                        <div className="h-56">
-                            <ResponsiveContainer width="100%" height="100%">
+                        <div className="h-56 w-full min-w-0">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                 <PieChart>
                                     <Pie
                                         data={data}

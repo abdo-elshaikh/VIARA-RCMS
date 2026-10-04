@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
     CheckCircle2,
     PauseCircle,
@@ -27,9 +28,11 @@ import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import {
     useClaimQueueTaskMutation,
+    useCompleteAcquisitionMutation,
     useGetQueueQuery,
     useReleaseQueueTaskAssignmentMutation,
     useTransitionQueueMutation,
+    useGetEquipmentDowntimeQuery,
     api
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
@@ -38,6 +41,7 @@ import HoldReasonDialog from '../components/clinical/HoldReasonDialog';
 import EditSafetyDialog from '../components/clinical/EditSafetyDialog';
 import { formatDuration } from '../utils/dateFormat';
 import PageHeader from '../components/ui/PageHeader';
+import Modal from '../components/ui/Modal';
 import { TextPromptDialog } from '../components/ui';
 import ClinicalTaskScope, { AssignmentBadge } from '../components/clinical/ClinicalTaskScope';
 import ClinicalPaymentExceptionNotice from '../components/clinical/ClinicalPaymentExceptionNotice';
@@ -194,9 +198,15 @@ const Modality = () => {
     );
 
     const [transitionQueue, { isLoading: isMoving }] = useTransitionQueueMutation();
+    const [completeAcquisition, { isLoading: isCompleting }] = useCompleteAcquisitionMutation();
     const [claimQueueTask, { isLoading: isClaiming }] = useClaimQueueTaskMutation();
     const [releaseAssignment, { isLoading: isReleasingAssignment }] = useReleaseQueueTaskAssignmentMutation();
     const [getTemplates] = api.endpoints.getSafetyTemplates.useLazyQuery();
+    const { data: downtimeRecords = [] } = useGetEquipmentDowntimeQuery(undefined, { pollingInterval: 30000 });
+
+    const activeDowntimes = useMemo(() => {
+        return (Array.isArray(downtimeRecords) ? downtimeRecords : []).filter(r => r.status !== 'Resolved');
+    }, [downtimeRecords]);
 
     const [safetyExam, setSafetyExam] = useState(null);
     const [safetyTemplate, setSafetyTemplate] = useState(null);
@@ -204,6 +214,7 @@ const Modality = () => {
     const [holdExam, setHoldExam] = useState(null);
     const [taskScope, setTaskScope] = useState('all');
     const [releaseAssignmentExam, setReleaseAssignmentExam] = useState(null);
+    const [completionTarget, setCompletionTarget] = useState(null);
 
     // Advanced Filters State
     const [searchQuery, setSearchQuery] = useState('');
@@ -433,6 +444,23 @@ const Modality = () => {
         }
     };
 
+    const completeExam = async (resultMode) => {
+        if (!completionTarget?.exam_id) return;
+        try {
+            await completeAcquisition({
+                examId: completionTarget.exam_id,
+                resultMode,
+            }).unwrap();
+            toast.success(resultMode === 'ImagesOnly'
+                ? t('modality.imagesOnlyCompleted')
+                : t('modality.reportingRequested'));
+            setCompletionTarget(null);
+            refetch();
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('modality.completionFailed')));
+        }
+    };
+
     return (
         <div className="app-page">
             <div className="mx-auto max-w-screen-2xl pb-0">
@@ -471,6 +499,35 @@ const Modality = () => {
             </div>
 
             <div className="mx-auto max-w-screen-2xl space-y-4">
+                {/* Equipment Downtime Warning Banner */}
+                {activeDowntimes.length > 0 && (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50/90 p-4 text-xs font-semibold text-amber-950 shadow-xs dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                        <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                                <AlertTriangle size={18} />
+                            </div>
+                            <div>
+                                <p className="font-black text-slate-900 dark:text-white">
+                                    {isRtl
+                                        ? `تنبيه صيانة الأجهزة: يوجد (${activeDowntimes.length}) جهاز في حالة توقف أو صيانة حالياً.`
+                                        : `Equipment Maintenance Alert: (${activeDowntimes.length}) machine(s) currently under maintenance.`}
+                                </p>
+                                <p className="mt-0.5 text-[11px] text-amber-800 dark:text-amber-300">
+                                    {isRtl
+                                        ? 'يرجى التنسيق مع فريق الصيانة الطبية وتوزيع الحالات على الأجهزة البديلة الشاغرة.'
+                                        : 'Please coordinate with biomedical engineering and route exams to active rooms.'}
+                                </p>
+                            </div>
+                        </div>
+                        <Link
+                            to="/equipment?tab=downtime"
+                            className="inline-flex items-center justify-center shrink-0 rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-black text-white shadow-xs hover:bg-amber-700 transition"
+                        >
+                            {isRtl ? 'سجل الأعطال والصيانة' : 'View Maintenance'}
+                        </Link>
+                    </div>
+                )}
+
                 {/* Modern Clinical Filter Bar */}
                 <section className={`${cardClass} p-3.5 sm:p-4 space-y-3.5`}>
                     {/* First Row: Date Mode & Quick Search */}
@@ -792,6 +849,11 @@ const Modality = () => {
                                                                 <span className="font-semibold text-[var(--VIARA-ink)]">{t('modality.indication', { defaultValue: 'Indication' })}:</span> {exam.clinical_indication}
                                                             </div>
                                                         )}
+                                                        {exam.report_request_status === 'NotRequested' && (
+                                                            <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-cyan-50 px-2 py-0.5 text-[10px] font-bold text-cyan-800 ring-1 ring-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:ring-cyan-800">
+                                                                <ScanLine size={11} /> {isRtl ? 'مطلوب أفلام فقط (دون تقرير)' : 'Images Only (No Report)'}
+                                                            </div>
+                                                        )}
                                                          {exam.is_on_hold && exam.hold_reason && (
                                                              <div className="mt-1.5 rounded-lg border border-amber-100 bg-amber-50/70 p-2 text-[11px] font-medium text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
                                                                  <span className="font-semibold">{t('common.onHold')}:</span> {exam.hold_reason}
@@ -826,7 +888,7 @@ const Modality = () => {
                                                                         <ActionButton icon={Play} label={t('modality.start')} tone="teal" solid disabled={isMoving || exam.is_on_hold} onClick={() => move(exam, { toStage: 'In Exam' })} />
                                                                     )}
                                                                     {exam.queue_stage === 'In Exam' && (
-                                                                        <ActionButton icon={CheckCircle2} label={t('modality.complete')} tone="blue" solid disabled={isMoving || exam.is_on_hold} onClick={() => move(exam, { toStage: 'Reporting' })} />
+                                                                        <ActionButton icon={CheckCircle2} label={t('modality.complete')} tone="blue" solid disabled={isMoving || isCompleting || exam.is_on_hold} onClick={() => setCompletionTarget(exam)} />
                                                                     )}
                                                                     <ActionButton icon={Inbox} label={t('taskScope.return')} tone="slate" disabled={isReleasingAssignment} onClick={() => setReleaseAssignmentExam(exam)} />
                                                                     <ActionButton
@@ -863,7 +925,7 @@ const Modality = () => {
                                         onRelease={() => move(exam, { action: 'release' })}
                                         onHold={() => setHoldExam(exam)}
                                         onStart={() => move(exam, { toStage: 'In Exam' })}
-                                        onComplete={() => move(exam, { toStage: 'Reporting' })}
+                                        onComplete={() => setCompletionTarget(exam)}
                                         onClaim={() => claim(exam)}
                                         onReturn={() => setReleaseAssignmentExam(exam)}
                                         onRequestPaymentException={() => requestPaymentException(exam)}
@@ -878,6 +940,43 @@ const Modality = () => {
             </div>
 
             {/* Modals & Dialogs */}
+            <Modal
+                isOpen={Boolean(completionTarget)}
+                onClose={() => !isCompleting && setCompletionTarget(null)}
+                title={t('modality.completionTitle')}
+                size="sm"
+            >
+                <div className="space-y-4 p-5">
+                    <p className="text-sm leading-6 text-[var(--VIARA-muted)]">
+                        {t('modality.completionDescription')}
+                    </p>
+                    <button
+                        type="button"
+                        disabled={isCompleting}
+                        onClick={() => completeExam('ReportAndImages')}
+                        className="flex w-full items-start gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-start transition hover:border-violet-400 hover:bg-violet-100 disabled:opacity-50 dark:border-violet-800 dark:bg-violet-950/30"
+                    >
+                        <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-violet-600" />
+                        <span>
+                            <strong className="block text-sm text-violet-900 dark:text-violet-200">{t('modality.sendToReporting')}</strong>
+                            <span className="mt-1 block text-xs leading-5 text-violet-700 dark:text-violet-300">{t('modality.sendToReportingDescription')}</span>
+                        </span>
+                    </button>
+                    <button
+                        type="button"
+                        disabled={isCompleting}
+                        onClick={() => completeExam('ImagesOnly')}
+                        className="flex w-full items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-start transition hover:border-emerald-400 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/30"
+                    >
+                        <ScanLine size={20} className="mt-0.5 shrink-0 text-emerald-600" />
+                        <span>
+                            <strong className="block text-sm text-emerald-900 dark:text-emerald-200">{t('modality.imagesOnly')}</strong>
+                            <span className="mt-1 block text-xs leading-5 text-emerald-700 dark:text-emerald-300">{t('modality.imagesOnlyDescription')}</span>
+                        </span>
+                    </button>
+                </div>
+            </Modal>
+
             <SafetyFormModal
                 isOpen={!!safetyExam}
                 onClose={() => { setSafetyExam(null); setSafetyTemplate(null); }}
@@ -1022,6 +1121,11 @@ const ModalityQueueCard = ({ exam, t, locale, isMoving, isClaiming, onRelease, o
             <div className="mt-2.5 flex flex-wrap gap-1.5 ps-2">
                 <PriorityBadge priority={exam.priority} t={t} />
                 <AssignmentBadge status={exam.assignment_status} t={t} />
+                {exam.report_request_status === 'NotRequested' && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-cyan-50 px-2 py-0.5 text-[10px] font-bold text-cyan-800 ring-1 ring-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:ring-cyan-800">
+                        <ScanLine size={11} /> {isArabic ? 'أفلام فقط (دون تقرير)' : 'Images Only (No Report)'}
+                    </span>
+                )}
                 {exam.is_on_hold && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:ring-amber-900/50">
                         <PauseCircle size={11} /> {t('common.onHold')}

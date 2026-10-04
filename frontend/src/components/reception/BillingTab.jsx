@@ -24,6 +24,7 @@ import {
     Filter,
     Hash,
     History,
+    Landmark,
     Layers,
     PackagePlus,
     Percent,
@@ -37,6 +38,7 @@ import {
     TrendingDown,
     User,
     Wallet,
+    List, LayoutGrid,
     X
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
@@ -105,7 +107,7 @@ const LoadingRows = ({ label }) => (
     </div>
 );
 
-const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
+const BillingTab = ({ selectedDate: propSelectedDate, receptionShift, currentUserId = null, receptionScope = 'all', onOpenPayment }) => {
     const { t, i18n } = useTranslation('reception');
     const [searchParams, setSearchParams] = useSearchParams();
     const user = useSelector(selectCurrentUser);
@@ -132,7 +134,7 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
         date: activeDate,
     }), [activeDate]);
 
-    const { data: invoiceSummary, isError: isSummaryError, refetch: refetchSummary } = useGetInvoiceSummaryQuery(invoiceSummaryParams, { pollingInterval: 30000 });
+    const { data: invoiceSummary, isError: isSummaryError, refetch: refetchSummary } = useGetInvoiceSummaryQuery(invoiceSummaryParams, { pollingInterval: 30000, skipPollingIfUnfocused: true });
     const [refundInvoice, { isLoading: isRefunding }] = useRefundInvoiceMutation();
     const [reviewRefund, { isLoading: isReviewingRefund }] = useReviewRefundMutation();
     const [getPdf, { isFetching: isDownloading }] = useLazyGetInvoicePdfQuery();
@@ -162,7 +164,7 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
         isFetching,
         isError: isInvoicesError,
         refetch,
-    } = useGetInvoicesQuery(invoiceQueryParams, { pollingInterval: 30000 });
+    } = useGetInvoicesQuery(invoiceQueryParams, { pollingInterval: 30000, skipPollingIfUnfocused: true });
     const invoices = invoicePage?.items || EMPTY_INVOICES;
     const filteredInvoiceCount = Number(invoicePage?.meta?.total || 0);
 
@@ -197,15 +199,15 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
 
     const { data: refundsForApproval = [], isFetching: isLoadingApprovals } = useGetRefundsQuery(
         { status: 'Pending', limit: '100' },
-        { skip: !canApproveRefund, pollingInterval: 30000 }
+        { skip: !canApproveRefund, pollingInterval: 30000, skipPollingIfUnfocused: true }
     );
     const { data: refundsForProcessing = [], isFetching: isLoadingProcessing } = useGetRefundsQuery(
         { status: 'Approved', limit: '100' },
-        { skip: !canProcessRefund, pollingInterval: 30000 }
+        { skip: !canProcessRefund, pollingInterval: 30000, skipPollingIfUnfocused: true }
     );
     const { data: failedRefunds = [], isFetching: isLoadingFailed } = useGetRefundsQuery(
         { status: 'Failed', limit: '100' },
-        { skip: !canApproveRefund, pollingInterval: 30000 }
+        { skip: !canApproveRefund, pollingInterval: 30000, skipPollingIfUnfocused: true }
     );
     const pendingRefunds = useMemo(() => [
         ...refundsForApproval,
@@ -225,27 +227,57 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
         { skip: !selectedInvoice?.invoice_id }
     );
 
+    const handleOpenPayment = (invoice) => {
+        if (!invoice || !onOpenPayment) return;
+        setSelectedInvoice(null);
+        onOpenPayment(invoice);
+    };
+
     // Reset pagination to page 1 on filter/search change
     useEffect(() => {
         setCurrentPage(1);
     }, [searchTerm, statusFilter, categoryFilter, pageSize]);
 
     const filteredInvoices = useMemo(() => {
-        if (categoryFilter === 'all') return invoices;
+        let list = invoices;
+
+        if (receptionScope === 'mine') {
+            list = list.filter((inv) => {
+                const assignedTo = inv.receptionist_id ?? inv.assigned_receptionist_id ?? inv.receptionistId ?? inv.assignee_id ?? inv.appointment?.receptionist_id;
+                return assignedTo !== null && assignedTo !== undefined && String(assignedTo) === String(currentUserId);
+            });
+        } else if (receptionScope === 'unclaimed') {
+            list = list.filter((inv) => {
+                const assignedTo = inv.receptionist_id ?? inv.assigned_receptionist_id ?? inv.receptionistId ?? inv.assignee_id ?? inv.appointment?.receptionist_id;
+                return !assignedTo;
+            });
+        }
+
+        if (categoryFilter === 'all') return list;
         if (categoryFilter === 'selfPay') {
-            return invoices.filter((inv) => !inv.insurance_provider && !inv.insurance_policy_number && !inv.claim_status && getInvoiceCoverageCategory(inv) === 'selfPay');
+            return list.filter((inv) => getInvoiceCoverageCategory(inv).type === 'self_pay');
         }
         if (categoryFilter === 'insurance') {
-            return invoices.filter((inv) => Boolean(inv.insurance_provider || inv.insurance_policy_number || inv.claim_status || getInvoiceCoverageCategory(inv) === 'contract'));
+            return list.filter((inv) => {
+                const cat = getInvoiceCoverageCategory(inv);
+                return cat.type === 'insurance' || cat.type === 'contract';
+            });
         }
         if (categoryFilter === 'urgent') {
-            return invoices.filter((inv) => inv.priority === 'Urgent' || inv.priority === 'Emergency');
+            return list.filter((inv) => inv.priority === 'Urgent' || inv.priority === 'Emergency');
         }
-        return invoices;
-    }, [categoryFilter, invoices]);
+        return list;
+    }, [categoryFilter, currentUserId, invoices, receptionScope]);
 
     const insuranceInvoices = useMemo(() => {
-        return invoices.filter((inv) => Boolean(inv.insurance_provider || inv.insurance_policy_number || inv.claim_status || getInvoiceCoverageCategory(inv) === 'contract'));
+        return invoices.filter((inv) => {
+            const cat = getInvoiceCoverageCategory(inv);
+            return cat.type === 'insurance' || cat.type === 'contract';
+        });
+    }, [invoices]);
+
+    const selfPayInvoicesCount = useMemo(() => {
+        return invoices.filter((inv) => getInvoiceCoverageCategory(inv).type === 'self_pay').length;
     }, [invoices]);
 
     const insuranceKpis = useMemo(() => {
@@ -650,418 +682,258 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
     ];
 
     return (
-        <div className="space-y-5">
+        <div className="space-y-3">
             {(isInvoicesError || isSummaryError) && (
                 <div role="alert" className="flex items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm font-bold text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
                     <AlertTriangle size={17} />
                     {t('billing.loadError', { defaultValue: 'Invoice data could not be loaded. Totals are unavailable until refresh succeeds.' })}
                 </div>
             )}
-            {/* KPI Cards */}
-            <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black uppercase tracking-[.18em] text-teal-700 dark:text-teal-400">
-                                {t('billing.workspaceTitle', { defaultValue: 'Billing workspace' })}
+            {/* Finance command deck */}
+            <section className="overflow-hidden rounded-[22px] border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-[0_18px_50px_-36px_rgba(15,23,42,.45)]">
+                <div className="border-b border-[var(--VIARA-line)] bg-gradient-to-br from-teal-500/[0.06] via-[var(--VIARA-surface)] to-cyan-500/[0.03] px-4 py-3.5 sm:px-5">
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-sm shadow-teal-600/20">
+                                <Receipt size={18} />
                             </span>
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        </div>
-                        <h2 className="mt-1 text-xl font-black text-slate-950 dark:text-white sm:text-2xl">
-                            {t('billing.title')}
-                        </h2>
-                        <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-                            {t('billing.subtitle')}
-                        </p>
-
-                        {/* Date Scoping Control & Badges */}
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <div className="inline-flex items-center gap-2 rounded-xl border border-teal-200/90 bg-teal-50/80 px-3 py-1.5 text-xs font-bold text-teal-900 shadow-sm dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200">
-                                <Calendar size={14} className="text-teal-600 dark:text-teal-400" />
-                                <span>{t('billing.selectedDateScope', { defaultValue: 'بيانات يوم:' })}</span>
-                                <span className="font-mono font-black text-teal-950 dark:text-white ltr-embed">{activeDate}</span>
-                                {activeDate === toLocalDateInput() && (
-                                    <span className="rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-black text-white">
-                                        {t('billing.today', { defaultValue: 'اليوم' })}
+                            <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <h2 className="text-base font-black text-[var(--VIARA-ink)] sm:text-lg">{t('billing.title')}</h2>
+                                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9.5px] font-black text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+                                        {isRtl ? 'بيانات مباشرة' : 'Live'}
                                     </span>
-                                )}
+                                    {isFetching && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-teal-500" />}
+                                </div>
+                                <p className="mt-0.5 truncate text-xs font-medium text-[var(--VIARA-muted)]">{t('billing.subtitle')}</p>
                             </div>
+                        </div>
 
-                            <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="inline-flex h-9 items-center rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-0.5">
                                 <button
                                     type="button"
                                     onClick={() => setActiveDate((prev) => shiftLocalDateInput(prev, -1))}
-                                    className="rounded-lg p-1.5 text-slate-600 transition hover:bg-white hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-700"
-                                    title={t('billing.prevDay', { defaultValue: 'اليوم السابق' })}
+                                    className="grid h-8 w-8 place-items-center rounded-lg text-[var(--VIARA-muted)] transition hover:bg-[var(--VIARA-surface)] hover:text-[var(--VIARA-ink)]"
+                                    title={t('billing.prevDay', { defaultValue: isRtl ? 'اليوم السابق' : 'Previous day' })}
                                 >
                                     <ChevronRight size={14} className={isRtl ? '' : 'rotate-180'} />
                                 </button>
-
                                 <input
                                     type="date"
                                     value={activeDate}
                                     onChange={(e) => e.target.value && setActiveDate(e.target.value)}
-                                    className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                                    className="h-8 border-0 bg-transparent px-1.5 text-xs font-black text-[var(--VIARA-ink)] outline-none"
                                 />
-
                                 <button
                                     type="button"
                                     onClick={() => setActiveDate((prev) => shiftLocalDateInput(prev, 1))}
-                                    className="rounded-lg p-1.5 text-slate-600 transition hover:bg-white hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-700"
-                                    title={t('billing.nextDay', { defaultValue: 'اليوم التالي' })}
+                                    className="grid h-8 w-8 place-items-center rounded-lg text-[var(--VIARA-muted)] transition hover:bg-[var(--VIARA-surface)] hover:text-[var(--VIARA-ink)]"
+                                    title={t('billing.nextDay', { defaultValue: isRtl ? 'اليوم التالي' : 'Next day' })}
                                 >
                                     <ChevronLeft size={14} className={isRtl ? '' : 'rotate-180'} />
                                 </button>
-
-                                {activeDate !== toLocalDateInput() && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setActiveDate(toLocalDateInput())}
-                                        className="rounded-lg bg-teal-100 px-2 py-1 text-[11px] font-bold text-teal-800 transition hover:bg-teal-200 dark:bg-teal-900/60 dark:text-teal-200 dark:hover:bg-teal-800/80"
-                                    >
-                                        {t('billing.goToToday', { defaultValue: 'العودة لليوم' })}
-                                    </button>
-                                )}
                             </div>
 
-                            <div className="flex items-center gap-1">
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveDate(toLocalDateInput())}
-                                    className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${
-                                        activeDate === toLocalDateInput()
-                                            ? 'bg-teal-600 text-white shadow-xs'
-                                            : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                                    }`}
-                                >
-                                    {t('billing.periods.today', { defaultValue: 'اليوم' })}
+                            {activeDate !== toLocalDateInput() && (
+                                <button type="button" onClick={() => setActiveDate(toLocalDateInput())} className="h-9 rounded-xl border border-teal-200 bg-teal-50 px-3 text-[11px] font-black text-teal-700 transition hover:bg-teal-100 dark:border-teal-900/50 dark:bg-teal-950/30 dark:text-teal-300">
+                                    {t('billing.goToToday', { defaultValue: isRtl ? 'اليوم' : 'Today' })}
                                 </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveDate(shiftLocalDateInput(toLocalDateInput(), -1))}
-                                    className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${
-                                        activeDate === shiftLocalDateInput(toLocalDateInput(), -1)
-                                            ? 'bg-teal-600 text-white shadow-xs'
-                                            : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                                    }`}
-                                >
-                                    {t('billing.periods.yesterday', { defaultValue: 'أمس' })}
-                                </button>
-                            </div>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={() => Promise.all([refetch(), refetchSummary()])}
+                                disabled={isFetching}
+                                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-3 text-[11px] font-black text-[var(--VIARA-muted)] transition hover:text-teal-700 disabled:opacity-50"
+                            >
+                                <RefreshCw size={13} className={isFetching ? 'animate-spin text-teal-600' : ''} />
+                                <span className="hidden sm:inline">{isRtl ? 'تحديث' : 'Refresh'}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={exportInvoicesCsv}
+                                disabled={isExporting}
+                                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-slate-900 px-3 text-[11px] font-black text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                            >
+                                <Download size={13} />
+                                <span className="hidden sm:inline">{isExporting ? t('billing.exporting', { defaultValue: '...' }) : (isRtl ? 'تصدير' : 'Export')}</span>
+                            </button>
                         </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 self-start">
-                        <button
-                            type="button"
-                            onClick={() => Promise.all([refetch(), refetchSummary()])}
-                            disabled={isFetching}
-                            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                            title={t('common.refresh', { defaultValue: 'Refresh live feed' })}
-                        >
-                            <RefreshCw size={13} className={isFetching ? 'animate-spin text-teal-600' : ''} />
-                            <span>{isFetching ? 'Syncing...' : 'Refresh'}</span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={exportInvoicesCsv}
-                            disabled={isExporting}
-                            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                            title="Export to CSV"
-                        >
-                            <FileSpreadsheet size={14} className="text-emerald-600" />
-                            <span>{isExporting ? t('billing.exporting', { defaultValue: 'Exporting...' }) : 'Export CSV'}</span>
-                        </button>
                     </div>
                 </div>
 
-                {receptionShift || currentShift ? (
-                    <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                        <ShiftMetric
-                            icon={CheckCircle2}
-                            label={t('billing.shiftStatus', { defaultValue: 'Shift Status' })}
-                            value={(receptionShift || currentShift)?.status || 'Active'}
-                            money={false}
-                            tone="emerald"
-                        />
-                        <ShiftMetric
-                            icon={Banknote}
-                            label={t('billing.shiftCollected', { defaultValue: 'Shift Collected' })}
-                            value={Number((receptionShift || currentShift)?.collected_amount || 0)}
-                            sub={t('billing.netReceipts', { defaultValue: 'Net receipts' })}
-                            tone="emerald"
-                        />
-                        <ShiftMetric
-                            icon={Receipt}
-                            label={t('billing.shiftPayments', { defaultValue: 'Shift Payments' })}
-                            value={Number((receptionShift || currentShift)?.payment_count || 0)}
-                            money={false}
-                            sub={t('billing.completedTransactions', { defaultValue: 'Completed transactions' })}
-                            tone="blue"
-                        />
-                        <ShiftMetric
-                            icon={Wallet}
-                            label={t('billing.shiftOpening', { defaultValue: 'Opening Balance' })}
-                            value={Number((receptionShift || currentShift)?.opening_balance || 0)}
-                            sub={t('billing.initialDrawerFloat', { defaultValue: 'Initial drawer float' })}
-                            tone="amber"
-                        />
-                    </div>
-                ) : (
-                    <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                        <BillingMetric
-                            icon={Banknote}
-                            label={t('billing.totalCollected')}
-                            value={kpis.collected}
-                            sub={`${kpis.collectionRate}% collection rate`}
-                            tone="emerald"
-                            onClick={() => setStatusFilter(statusFilter === 'Paid' ? 'All' : 'Paid')}
-                            active={statusFilter === 'Paid'}
-                        />
-                        <BillingMetric
-                            icon={Clock3}
-                            label={t('billing.totalOutstanding')}
-                            value={kpis.outstanding}
-                            sub={t('billing.openInvoices', { count: kpis.open })}
-                            tone="amber"
-                            onClick={() => setStatusFilter(statusFilter === 'Open' ? 'All' : 'Open')}
-                            active={statusFilter === 'Open'}
-                        />
-                        <BillingMetric
-                            icon={TrendingDown}
-                            label={t('billing.totalDiscounts')}
-                            value={kpis.discounts}
-                            tone="violet"
-                        />
-                        <BillingMetric
-                            icon={Receipt}
-                            label={t('billing.invoiceCount')}
-                            value={Number(invoiceSummary?.total_count || filteredInvoiceCount)}
-                            money={false}
-                            sub={`${filteredInvoiceCount} active filter`}
-                            tone="blue"
-                            onClick={() => setStatusFilter('All')}
-                            active={statusFilter === 'All'}
-                        />
-                    </div>
-                )}
-            </section>
-
-            {/* Sub-Navigation Tabs Bar */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200/80 pb-3 dark:border-slate-800">
-                <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-slate-100/90 p-1.5 dark:bg-slate-800/90 shadow-inner">
-                    <button
-                        type="button"
-                        onClick={() => setActiveSubTab('invoices')}
-                        className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
-                            activeSubTab === 'invoices'
-                                ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white'
-                                : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-                        }`}
-                    >
-                        <FileText size={14} className={activeSubTab === 'invoices' ? 'text-teal-600 dark:text-teal-400' : ''} />
-                        <span>{t('billing.subTabs.invoices', { defaultValue: 'سجل واستعراض الفواتير' })}</span>
-                        <span className="rounded-md bg-slate-200/80 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                            {filteredInvoiceCount}
-                        </span>
-                    </button>
-
-                    <button
-                        type="button"
+                {/* Operational finance snapshot */}
+                <div className="grid grid-cols-2 gap-px bg-[var(--VIARA-line)] lg:grid-cols-4">
+                    <FinanceSnapshot
+                        icon={Banknote}
+                        label={t('billing.totalCollected')}
+                        value={kpis.collected}
+                        tone="emerald"
+                        active={statusFilter === 'Paid'}
+                        onClick={() => setStatusFilter(statusFilter === 'Paid' ? 'All' : 'Paid')}
+                    />
+                    <FinanceSnapshot
+                        icon={Clock3}
+                        label={t('billing.totalOutstanding')}
+                        value={kpis.outstanding}
+                        tone="amber"
+                        active={statusFilter === 'Open'}
+                        onClick={() => setStatusFilter(statusFilter === 'Open' ? 'All' : 'Open')}
+                    />
+                    <FinanceSnapshot
+                        icon={Receipt}
+                        label={t('billing.invoiceCount')}
+                        value={Number(invoiceSummary?.total_count || filteredInvoiceCount)}
+                        money={false}
+                        sub={`${kpis.collectionRate}% ${isRtl ? 'تحصيل' : 'collection'}`}
+                        tone="teal"
+                        active={statusFilter === 'All'}
+                        onClick={() => setStatusFilter('All')}
+                    />
+                    <FinanceSnapshot
+                        icon={RotateCcw}
+                        label={isRtl ? 'استردادات تحتاج إجراء' : 'Refunds requiring action'}
+                        value={pendingRefunds.length}
+                        money={false}
+                        sub={(receptionShift || currentShift)?.status ? `${isRtl ? 'الوردية' : 'Shift'}: ${(receptionShift || currentShift).status}` : undefined}
+                        tone={pendingRefunds.length ? 'rose' : 'slate'}
                         onClick={() => setActiveSubTab('refunds')}
-                        className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
-                            activeSubTab === 'refunds'
-                                ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white'
-                                : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-                        }`}
-                    >
-                        <RotateCcw size={14} className={activeSubTab === 'refunds' ? 'text-rose-600 dark:text-rose-400' : ''} />
-                        <span>{t('billing.subTabs.refunds', { defaultValue: 'طلبات واستردادات المدفوعات' })}</span>
-                        {pendingRefunds.length > 0 && (
-                            <span className="rounded-md bg-amber-500/20 px-1.5 py-0.5 font-mono text-[10px] font-black text-amber-700 dark:text-amber-300">
-                                {pendingRefunds.length}
-                            </span>
-                        )}
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setActiveSubTab('insurance')}
-                        className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
-                            activeSubTab === 'insurance'
-                                ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white'
-                                : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-                        }`}
-                    >
-                        <Building2 size={14} className={activeSubTab === 'insurance' ? 'text-indigo-600 dark:text-indigo-400' : ''} />
-                        <span>{t('billing.subTabs.insurance', { defaultValue: 'فواتير ومطالبات التأمين' })}</span>
-                        {insuranceInvoices.length > 0 && (
-                            <span className="rounded-md bg-indigo-500/20 px-1.5 py-0.5 font-mono text-[10px] font-black text-indigo-700 dark:text-indigo-300">
-                                {insuranceInvoices.length}
-                            </span>
-                        )}
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setActiveSubTab('statement')}
-                        className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
-                            activeSubTab === 'statement'
-                                ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white'
-                                : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
-                        }`}
-                    >
-                        <Receipt size={14} className={activeSubTab === 'statement' ? 'text-emerald-600 dark:text-emerald-400' : ''} />
-                        <span>{t('billing.subTabs.statement', { defaultValue: 'كشف الإغلاق والتقرير المالي' })}</span>
-                    </button>
+                        active={activeSubTab === 'refunds'}
+                    />
                 </div>
 
-                {activeSubTab === 'invoices' && (
-                    <div className="flex items-center gap-2">
-                        <div className="inline-flex rounded-xl border border-slate-200/80 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
-                            <button
-                                type="button"
-                                onClick={() => setViewMode('table')}
-                                className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
-                                    viewMode === 'table'
-                                        ? 'bg-white text-slate-950 shadow-xs dark:bg-slate-900 dark:text-white'
-                                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                                }`}
-                                title={t('billing.viewModes.table', { defaultValue: 'عرض الجدول' })}
-                            >
-                                {t('billing.viewModes.table', { defaultValue: 'جدول' })}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setViewMode('cards')}
-                                className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
-                                    viewMode === 'cards'
-                                        ? 'bg-white text-slate-950 shadow-xs dark:bg-slate-900 dark:text-white'
-                                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                                }`}
-                                title={t('billing.viewModes.cards', { defaultValue: 'عرض البطاقات' })}
-                            >
-                                {t('billing.viewModes.cards', { defaultValue: 'بطاقات' })}
-                            </button>
+                {/* Primary billing navigation */}
+                <div className="flex flex-col gap-2 border-t border-[var(--VIARA-line)] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+                    <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-xl bg-[var(--VIARA-surface-muted)] p-0.5" aria-label={isRtl ? 'أقسام الفوترة' : 'Billing sections'}>
+                        {[
+                            { id: 'invoices', icon: FileText, label: t('billing.subTabs.invoices', { defaultValue: isRtl ? 'الفواتير' : 'Invoices' }), count: filteredInvoiceCount },
+                            { id: 'refunds', icon: RotateCcw, label: t('billing.subTabs.refunds', { defaultValue: isRtl ? 'الاستردادات' : 'Refunds' }), count: pendingRefunds.length },
+                            { id: 'insurance', icon: Building2, label: t('billing.subTabs.insurance', { defaultValue: isRtl ? 'التأمين' : 'Insurance' }), count: insuranceInvoices.length },
+                            { id: 'statement', icon: Receipt, label: t('billing.subTabs.statement', { defaultValue: isRtl ? 'كشف الإغلاق' : 'Closing statement' }) },
+                        ].map((tab) => {
+                            const Icon = tab.icon;
+                            const active = activeSubTab === tab.id;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setActiveSubTab(tab.id)}
+                                    className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[11px] font-black transition ${active ? 'bg-[var(--VIARA-surface)] text-teal-700 shadow-sm dark:text-teal-300' : 'text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)]'}`}
+                                >
+                                    <Icon size={13} />
+                                    <span>{tab.label}</span>
+                                    {tab.count !== undefined && (
+                                        <span className={`rounded-md px-1.5 py-0.5 font-mono text-[9px] ${active ? 'bg-teal-500/10 text-teal-700 dark:text-teal-300' : 'bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)]'}`}>{tab.count}</span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </nav>
+
+                    {activeSubTab === 'invoices' && (
+                        <div className="inline-flex shrink-0 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-0.5">
+                            <button type="button" onClick={() => setViewMode('table')} title={isRtl ? 'جدول' : 'Table'} aria-label={isRtl ? 'جدول' : 'Table'} className={`h-8 rounded-lg px-2.5 text-[10.5px] font-black transition ${viewMode === 'table' ? 'bg-[var(--VIARA-surface)] text-teal-700 shadow-sm' : 'text-[var(--VIARA-muted)]'}`}><List size={14} /></button>
+                            <button type="button" onClick={() => setViewMode('cards')} title={isRtl ? 'بطاقات' : 'Cards'} aria-label={isRtl ? 'بطاقات' : 'Cards'} className={`h-8 rounded-lg px-2.5 text-[10.5px] font-black transition ${viewMode === 'cards' ? 'bg-[var(--VIARA-surface)] text-teal-700 shadow-sm' : 'text-[var(--VIARA-muted)]'}`}><LayoutGrid size={14} /></button>
                         </div>
-                    </div>
-                )}
-            </div>
+                    )}
+                </div>
+            </section>
 
             {/* TAB 1: Invoices Explorer */}
             {activeSubTab === 'invoices' && (
-                <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    {/* Category Filter Chips Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/40 p-3.5 dark:border-slate-800 dark:bg-slate-950/20">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                            {[
-                                { id: 'all', label: t('billing.categories.all', { defaultValue: 'جميع الفئات' }), count: invoices.length },
-                                { id: 'selfPay', label: t('billing.categories.selfPay', { defaultValue: 'نقدي وخاص' }), count: invoices.filter((i) => getInvoiceCoverageCategory(i) === 'selfPay').length },
-                                { id: 'insurance', label: t('billing.categories.insurance', { defaultValue: 'شركات وتأمين' }), count: insuranceInvoices.length },
-                                { id: 'urgent', label: t('billing.categories.urgent', { defaultValue: 'طوارئ وعاجل' }), count: invoices.filter((i) => i.priority === 'Urgent' || i.priority === 'Emergency').length },
-                            ].map((cat) => (
-                                <button
-                                    key={cat.id}
-                                    type="button"
-                                    onClick={() => setCategoryFilter(cat.id)}
-                                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-bold transition ${
-                                        categoryFilter === cat.id
-                                            ? 'bg-teal-600 text-white shadow-xs'
-                                            : 'bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
-                                    }`}
-                                >
-                                    <span>{cat.label}</span>
-                                    <span className={`rounded-md px-1.5 py-0.2 font-mono text-[10px] ${categoryFilter === cat.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
-                                        {cat.count}
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Search & Status Filter Toolbar */}
-                    <div className="space-y-3 border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                            <label className="relative w-full lg:max-w-md">
+                <section className="overflow-hidden rounded-[22px] border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-[0_16px_42px_-34px_rgba(15,23,42,.4)]">
+                    {/* One-line invoice command bar */}
+                    <div className="border-b border-[var(--VIARA-line)] p-3 sm:p-4">
+                        <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center">
+                            <label className="relative min-w-0 flex-1 xl:max-w-xl">
                                 <span className="sr-only">{t('billing.searchPlaceholder')}</span>
-                                <Search size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Search size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-teal-600 dark:text-teal-400" />
                                 <input
                                     type="search"
-                                    placeholder={t('billing.searchPlaceholder', { defaultValue: 'Search by invoice #, patient, MRN, order...' })}
+                                    placeholder={t('billing.searchPlaceholder', { defaultValue: isRtl ? 'رقم الفاتورة، اسم المريض، MRN أو الطلب...' : 'Invoice #, patient, MRN or order...' })}
                                     value={searchTerm}
                                     onChange={(event) => setSearchTerm(event.target.value)}
-                                    className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/50 ps-10 pe-10 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                    className="h-10 w-full rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] ps-10 pe-10 text-sm font-bold text-[var(--VIARA-ink)] outline-none transition placeholder:font-medium placeholder:text-[var(--VIARA-muted)] focus:border-teal-500 focus:bg-[var(--VIARA-surface)] focus:ring-4 focus:ring-teal-500/10"
                                 />
                                 {searchTerm && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setSearchTerm('')}
-                                        className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
-                                    >
+                                    <button type="button" onClick={() => setSearchTerm('')} className="absolute end-2.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface)]">
                                         <X size={13} />
                                     </button>
                                 )}
                             </label>
 
-                            <div className="flex items-center gap-2 self-end lg:self-center">
-                                <span className="rounded-xl bg-slate-100 px-3 py-1.5 font-mono text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                    {filteredInvoices.length} of {filteredInvoiceCount}
-                                </span>
-                            </div>
-                        </div>
+                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 xl:justify-end">
+                                {[
+                                    { id: 'all', label: isRtl ? 'الكل' : 'All', count: invoices.length },
+                                    { id: 'selfPay', label: t('billing.categories.selfPay', { defaultValue: isRtl ? 'حساب خاص' : 'Self-Pay' }), count: selfPayInvoicesCount },
+                                    { id: 'insurance', label: t('billing.categories.insurance', { defaultValue: isRtl ? 'تأمين' : 'Insurance' }), count: insuranceInvoices.length },
+                                    { id: 'urgent', label: t('billing.categories.urgent', { defaultValue: isRtl ? 'عاجل' : 'Urgent' }) },
+                                ].map((cat) => {
+                                    const active = categoryFilter === cat.id;
+                                    return (
+                                        <button key={cat.id} type="button" onClick={() => setCategoryFilter(cat.id)} className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[10.5px] font-black transition ${active ? 'border-teal-500 bg-teal-600 text-white shadow-sm' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] hover:border-teal-300 hover:text-[var(--VIARA-ink)]'}`}>
+                                            <span>{cat.label}</span>
+                                            {cat.count !== undefined && <span className={`rounded-md px-1.5 py-0.5 font-mono text-[9px] ${active ? 'bg-white/15' : 'bg-[var(--VIARA-surface-muted)]'}`}>{cat.count}</span>}
+                                        </button>
+                                    );
+                                })}
 
-                        {/* Interactive Status Filter Chips */}
-                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                            {filterChips.map((chip) => {
-                                const isSelected = statusFilter === chip.id;
-                                return (
-                                    <button
-                                        key={chip.id}
-                                        type="button"
-                                        onClick={() => setStatusFilter(chip.id)}
-                                        className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${isSelected
-                                            ? 'bg-teal-600 text-white shadow-sm dark:bg-teal-500'
-                                            : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700'
-                                            }`}
+                                <label className="relative">
+                                    <span className="sr-only">{t('billing.status', { defaultValue: 'Status' })}</span>
+                                    <Filter size={12} className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-[var(--VIARA-muted)]" />
+                                    <select
+                                        value={statusFilter}
+                                        onChange={(e) => setStatusFilter(e.target.value)}
+                                        className="h-9 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] ps-7 pe-7 text-[10.5px] font-black text-[var(--VIARA-ink)] outline-none transition focus:border-teal-500"
                                     >
-                                        <span>{chip.label}</span>
-                                        <span className={`rounded-md px-1.5 py-0.2 font-mono text-[10px] ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'}`}>
-                                            {chip.count}
-                                        </span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
+                                        {filterChips.map((chip) => <option key={chip.id} value={chip.id}>{chip.label}{chip.count !== undefined ? ` (${chip.count})` : ''}</option>)}
+                                    </select>
+                                </label>
 
-                    <div className="overflow-x-auto">
-                        {isLoading ? (
-                            <div className="space-y-2 p-4">
-                                {Array.from({ length: 8 }).map((_, index) => (
-                                    <div key={index} className="h-12 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
-                                ))}
-                            </div>
-                        ) : filteredInvoices.length === 0 ? (
-                            <div className="flex min-h-56 flex-col items-center justify-center text-center p-8">
-                                <Receipt size={32} className="text-slate-300 dark:text-slate-700" />
-                                <p className="mt-3 text-sm font-black text-slate-700 dark:text-slate-200">{t('billing.noInvoices')}</p>
-                                <p className="mt-1 text-xs text-slate-400">Try adjusting your search terms or filter criteria.</p>
                                 {(searchTerm || statusFilter !== 'All' || categoryFilter !== 'all') && (
                                     <button
                                         type="button"
                                         onClick={() => { setSearchTerm(''); setStatusFilter('All'); setCategoryFilter('all'); }}
-                                        className="mt-3 inline-flex items-center gap-1 rounded-xl bg-teal-50 px-3.5 py-1.5 text-xs font-bold text-teal-700 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300"
+                                        className="inline-flex h-9 items-center gap-1 rounded-xl px-2.5 text-[10.5px] font-black text-rose-600 transition hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/20"
                                     >
+                                        <X size={12} />
+                                        {isRtl ? 'مسح' : 'Clear'}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[10.5px] font-bold text-[var(--VIARA-muted)]">
+                            <span>{isRtl ? `عرض ${filteredInvoices.length} من ${filteredInvoiceCount} فاتورة` : `Showing ${filteredInvoices.length} of ${filteredInvoiceCount} invoices`}</span>
+                            {statusFilter !== 'All' && (
+                                <span className="rounded-lg bg-teal-500/10 px-2 py-0.5 text-teal-700 dark:text-teal-300">{filterChips.find((chip) => chip.id === statusFilter)?.label}</span>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="min-h-[340px]">
+                        {isLoading ? (
+                            <div className="p-4"><LoadingRows label={t('billing.loading')} /></div>
+                        ) : paginatedInvoices.length === 0 ? (
+                            <div className="flex min-h-[300px] flex-col items-center justify-center px-6 text-center">
+                                <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)]"><Receipt size={21} /></span>
+                                <p className="mt-3 text-sm font-black text-[var(--VIARA-ink)]">{t('billing.noInvoices')}</p>
+                                <p className="mt-1 text-xs text-[var(--VIARA-muted)]">{isRtl ? 'غيّر البحث أو الفلاتر لعرض نتائج أخرى.' : 'Adjust search or filters to see other results.'}</p>
+                                {(searchTerm || statusFilter !== 'All' || categoryFilter !== 'all') && (
+                                    <button type="button" onClick={() => { setSearchTerm(''); setStatusFilter('All'); setCategoryFilter('all'); }} className="mt-3 inline-flex h-8 items-center gap-1 rounded-xl bg-teal-500/10 px-3 text-[10.5px] font-black text-teal-700 dark:text-teal-300">
                                         <RotateCcw size={12} />
-                                        <span>Reset Filters</span>
+                                        {isRtl ? 'إعادة ضبط الفلاتر' : 'Reset filters'}
                                     </button>
                                 )}
                             </div>
                         ) : viewMode === 'table' ? (
                             <InvoiceTable
                                 invoices={paginatedInvoices}
+                                canCollect={canCollect}
                                 isDownloading={isDownloading}
+                                onCollect={handleOpenPayment}
                                 onPrint={setPrintInvoice}
                                 onSelect={setSelectedInvoice}
                                 onSort={handleSort}
@@ -1072,7 +944,9 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
                         ) : (
                             <InvoiceCardsGrid
                                 invoices={paginatedInvoices}
+                                canCollect={canCollect}
                                 isDownloading={isDownloading}
+                                onCollect={handleOpenPayment}
                                 onPrint={setPrintInvoice}
                                 onSelect={setSelectedInvoice}
                                 t={t}
@@ -1080,39 +954,18 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
                         )}
                     </div>
 
-                    {/* Pagination Footer */}
                     {filteredInvoiceCount > 0 && (
-                        <footer className="flex flex-col items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/30 sm:flex-row sm:px-6">
-                            <div className="flex items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
-                                <span>
-                                    {t('pagination.showing', {
-                                        from: paginationState.startIndex + 1,
-                                        to: paginationState.endIndex,
-                                        total: filteredInvoiceCount,
-                                        defaultValue: `Showing ${paginationState.startIndex + 1}–${paginationState.endIndex} of ${filteredInvoiceCount}`
-                                    })}
-                                </span>
-                                <div className="flex items-center gap-1.5">
-                                    <span className="text-[11px] font-semibold">{t('pagination.perPage', { defaultValue: 'Rows:' })}</span>
-                                    <select
-                                        value={pageSize}
-                                        onChange={(e) => setPageSize(Number(e.target.value))}
-                                        className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                                        aria-label={t('pagination.selectPageSize', { defaultValue: 'Rows per page' })}
-                                    >
-                                        {PAGE_SIZE_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                        ))}
+                        <footer className="flex flex-col items-center justify-between gap-3 border-t border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/40 px-4 py-2.5 sm:flex-row sm:px-5">
+                            <div className="flex flex-wrap items-center gap-3 text-[11px] font-bold text-[var(--VIARA-muted)]">
+                                <span>{t('pagination.showing', { from: paginationState.startIndex + 1, to: paginationState.endIndex, total: filteredInvoiceCount, defaultValue: `${paginationState.startIndex + 1}–${paginationState.endIndex} / ${filteredInvoiceCount}` })}</span>
+                                <label className="inline-flex items-center gap-1.5">
+                                    <span>{t('pagination.perPage', { defaultValue: isRtl ? 'في الصفحة:' : 'Rows:' })}</span>
+                                    <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="h-7 rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2 text-xs font-black text-[var(--VIARA-ink)] outline-none focus:border-teal-500">
+                                        {PAGE_SIZE_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                                     </select>
-                                </div>
+                                </label>
                             </div>
-
-                            <Pagination
-                                currentPage={paginationState.currentPage}
-                                pageCount={paginationState.pageCount}
-                                onPageChange={setCurrentPage}
-                                isRtl={isRtl}
-                            />
+                            <Pagination currentPage={paginationState.currentPage} pageCount={paginationState.pageCount} onPageChange={setCurrentPage} isRtl={isRtl} />
                         </footer>
                     )}
                 </section>
@@ -1393,14 +1246,17 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
                 {selectedInvoice && (
                     <InvoiceDetailsContent
                         canAppendSupplies={canAppendSupplies}
+                        canCollect={canCollect}
                         canRequestRefund={canRequestRefund}
                         invoice={selectedInvoice}
                         invoiceDetail={invoiceDetail}
                         isLoading={isLoadingInvoiceDetail}
                         onClose={() => setSelectedInvoice(null)}
+                        onCollect={() => handleOpenPayment(selectedInvoice)}
                         onOpenRefund={openRefund}
                         onSetSupplyExamId={setSupplyExamId}
                         t={t}
+                        isRtl={isRtl}
                     />
                 )}
             </Modal>
@@ -1543,6 +1399,36 @@ const BillingTab = ({ selectedDate: propSelectedDate, receptionShift }) => {
     );
 };
 
+const FinanceSnapshot = ({ icon: Icon, label, value, money = true, sub, tone = 'slate', onClick, active }) => {
+    const tones = {
+        slate: 'text-[var(--VIARA-ink)]',
+        teal: 'text-teal-700 dark:text-teal-300',
+        emerald: 'text-emerald-700 dark:text-emerald-300',
+        amber: 'text-amber-700 dark:text-amber-300',
+        rose: 'text-rose-700 dark:text-rose-300',
+    };
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={!onClick}
+            className={`min-w-0 bg-[var(--VIARA-surface)] px-3 py-2.5 text-start transition ${onClick ? 'hover:bg-[var(--VIARA-surface-muted)]' : 'cursor-default'} ${active ? 'shadow-[inset_0_-2px_0_rgba(13,148,136,.8)]' : ''}`}
+        >
+            <div className="flex items-center gap-1.5 text-[var(--VIARA-muted)]">
+                <Icon size={12} className={tones[tone] || tones.slate} />
+                <span className="truncate text-[9.5px] font-black uppercase tracking-[.06em]">{label}</span>
+            </div>
+            <div className="mt-1 flex min-w-0 items-baseline gap-1.5">
+                <span className={`truncate font-mono text-base font-black tabular-nums sm:text-lg ${tones[tone] || tones.slate}`} dir="ltr">
+                    {money ? Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : Number(value || 0).toLocaleString()}
+                </span>
+                {money && <span className="text-[9px] font-bold text-[var(--VIARA-muted)]">EGP</span>}
+            </div>
+            {sub && <p className="mt-0.5 truncate text-[9.5px] font-semibold text-[var(--VIARA-muted)]">{sub}</p>}
+        </button>
+    );
+};
+
 const BillingMetric = ({ icon: Icon, label, value, money = true, sub, tone = 'slate', onClick, active }) => {
     const toneClass = {
         slate: 'border-slate-200/80 bg-slate-50/50 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300',
@@ -1680,15 +1566,15 @@ const RefundReviewQueue = ({ canApproveRefund, canProcessRefund, currentShift, i
     </section>
 );
 
-const InvoiceTable = ({ invoices, isDownloading, onPrint, onSelect, onSort, sortField, sortDirection, t }) => {
+const InvoiceTable = ({ invoices, canCollect, isDownloading, onCollect, onPrint, onSelect, onSort, sortField, sortDirection, t }) => {
     const SortableHeader = ({ field, label, width, className = '' }) => {
         const isCurrent = sortField === field;
         return (
-            <th className={`${width} px-3 py-3 text-start ${className}`}>
+            <th className={`${width} px-3 py-2.5 text-start ${className}`}>
                 <button
                     type="button"
                     onClick={() => onSort(field)}
-                    className="group inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:text-slate-900 focus-visible:outline-none dark:text-slate-400 dark:hover:text-white"
+                    className="group inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-[.08em] text-[var(--VIARA-muted)] transition hover:text-[var(--VIARA-ink)] focus-visible:outline-none"
                 >
                     <span>{label}</span>
                     {isCurrent ? (
@@ -1713,7 +1599,9 @@ const InvoiceTable = ({ invoices, isDownloading, onPrint, onSelect, onSort, sort
                     <InvoiceCardMobile
                         key={invoice.invoice_id}
                         invoice={invoice}
+                        canCollect={canCollect}
                         isDownloading={isDownloading}
+                        onCollect={onCollect}
                         onPrint={onPrint}
                         onSelect={onSelect}
                         t={t}
@@ -1722,12 +1610,12 @@ const InvoiceTable = ({ invoices, isDownloading, onPrint, onSelect, onSort, sort
             </div>
 
             {/* Desktop Table View (hidden lg:block) */}
-            <div className="hidden lg:block overflow-x-auto">
-                <table className="w-full table-fixed text-start text-sm">
-                    <thead className="border-b border-slate-100 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40">
+            <div className="hidden max-h-[620px] overflow-auto lg:block">
+                <table className="w-full min-w-[1040px] table-fixed text-start text-sm">
+                    <thead className="sticky top-0 z-10 border-b border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/95 backdrop-blur">
                         <tr>
                             <SortableHeader field="number" label={t('billing.invoiceNo')} width="w-[120px]" className="ps-5" />
-                            <th className="w-[28%] px-3 py-3 text-start text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            <th className="w-[28%] px-3 py-2.5 text-start text-[10px] font-black uppercase tracking-[.08em] text-[var(--VIARA-muted)]">
                                 {t('billing.patient')}
                             </th>
                             <SortableHeader field="date" label={t('billing.date')} width="hidden w-[110px] md:table-cell" />
@@ -1735,17 +1623,19 @@ const InvoiceTable = ({ invoices, isDownloading, onPrint, onSelect, onSort, sort
                             <SortableHeader field="paid" label={t('billing.paid')} width="hidden w-[110px] lg:table-cell" />
                             <SortableHeader field="balance" label={t('billing.balance')} width="w-[110px]" />
                             <SortableHeader field="status" label={t('billing.status')} width="hidden w-[116px] md:table-cell" />
-                            <th className="w-[130px] px-4 py-3 pe-5 text-end text-[10px] font-black uppercase tracking-wider text-slate-400">
+                            <th className="w-[190px] px-4 py-2.5 pe-5 text-end text-[10px] font-black uppercase tracking-[.08em] text-[var(--VIARA-muted)]">
                                 {t('billing.actions')}
                             </th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    <tbody className="divide-y divide-[var(--VIARA-line)]">
                         {invoices.map((invoice) => (
                             <InvoiceRow
                                 key={invoice.invoice_id}
                                 invoice={invoice}
+                                canCollect={canCollect}
                                 isDownloading={isDownloading}
+                                onCollect={onCollect}
                                 onPrint={onPrint}
                                 onSelect={onSelect}
                                 t={t}
@@ -1758,22 +1648,115 @@ const InvoiceTable = ({ invoices, isDownloading, onPrint, onSelect, onSort, sort
     );
 };
 
-const InvoiceCardMobile = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
+const InvoicePaymentBadge = ({ invoice, t }) => {
+    const { i18n } = useTranslation('reception');
+    const isAr = i18n?.language?.startsWith('ar');
+
+    const payments = (invoice.payments || []).filter(
+        (p) => p.payment_status === 'Completed' || !p.payment_status
+    );
+    const actualMethods = [...new Set(payments.map((p) => p.method).filter(Boolean))];
+    const expected = invoice.expected_payment_method;
+
+    const formatMethod = (m) => {
+        if (!m) return '';
+        const sm = String(m).trim();
+        if (sm === 'Insurance') return t('billing.expectedInsurance', { defaultValue: isAr ? 'تأمين' : 'Insurance' });
+        if (/card/i.test(sm)) return t('billing.methods.Card', { defaultValue: isAr ? 'بطاقة بنكية' : 'Card' });
+        if (/wallet/i.test(sm)) return t('billing.methods.Wallet', { defaultValue: isAr ? 'محفظة' : 'Wallet' });
+        if (/bank/i.test(sm)) return t('billing.methods.Bank Transfer', { defaultValue: isAr ? 'تحويل بنكي' : 'Bank Transfer' });
+        if (/cash/i.test(sm)) return t('billing.methods.Cash', { defaultValue: isAr ? 'نقدي' : 'Cash' });
+        return t(`billing.methods.${sm}`, { defaultValue: sm });
+    };
+
+    const getIcon = (method, className = 'shrink-0') => {
+        const m = String(method || '').toLowerCase();
+        if (m === 'cash') return <Banknote size={10} className={`text-emerald-600 dark:text-emerald-400 ${className}`} />;
+        if (m.includes('card')) return <CreditCard size={10} className={`text-sky-600 dark:text-sky-400 ${className}`} />;
+        if (m.includes('wallet')) return <Wallet size={10} className={`text-purple-600 dark:text-purple-400 ${className}`} />;
+        if (m.includes('bank')) return <Landmark size={10} className={`text-indigo-600 dark:text-indigo-400 ${className}`} />;
+        return <Banknote size={10} className={`text-slate-500 ${className}`} />;
+    };
+
+    if (actualMethods.length > 0) {
+        if (actualMethods.length === 1) {
+            const actual = actualMethods[0];
+            const isMatch = !expected || (
+                actual.toLowerCase() === expected.toLowerCase() ||
+                (/card/i.test(actual) && /card/i.test(expected))
+            );
+
+            if (isMatch) {
+                return (
+                    <span
+                        className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50/90 px-1.5 py-0.5 text-[9.5px] font-bold text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-300"
+                        title={isAr ? `وسيلة التحصيل: ${formatMethod(actual)} (مطابقة للحجز)` : `Collected: ${formatMethod(actual)} (matches booking)`}
+                    >
+                        {getIcon(actual)}
+                        <span>{formatMethod(actual)}</span>
+                    </span>
+                );
+            }
+
+            return (
+                <span
+                    className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9.5px] font-bold text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 shadow-2xs"
+                    title={isAr ? `التحصيل الفعلي: ${formatMethod(actual)} · المحدد عند الحجز: ${formatMethod(expected)}` : `Collected: ${formatMethod(actual)} · Booked: ${formatMethod(expected)}`}
+                >
+                    {getIcon(actual)}
+                    <span>{formatMethod(actual)}</span>
+                    <span className="text-[8.5px] font-medium text-amber-700 dark:text-amber-400 opacity-90">
+                        {isAr ? `(الحجز: ${formatMethod(expected)})` : `(booked: ${formatMethod(expected)})`}
+                    </span>
+                </span>
+            );
+        }
+
+        return (
+            <span
+                className="inline-flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[9.5px] font-bold text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300"
+                title={actualMethods.map(formatMethod).join(' + ')}
+            >
+                <Layers size={10} className="text-teal-600" />
+                <span>{isAr ? 'دفع متعدد' : 'Split Payment'}</span>
+                <span className="text-[8.5px] opacity-80">({actualMethods.map(formatMethod).join(' + ')})</span>
+            </span>
+        );
+    }
+
+    if (expected) {
+        return (
+            <span
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200/80 bg-slate-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
+                title={isAr ? `الوسيلة المحددة عند الحجز (لم يُحصّل بعد): ${formatMethod(expected)}` : `Expected method at booking: ${formatMethod(expected)}`}
+            >
+                {getIcon(expected, 'opacity-60')}
+                <span>{isAr ? `متوقع: ${formatMethod(expected)}` : `Expected: ${formatMethod(expected)}`}</span>
+            </span>
+        );
+    }
+
+    return null;
+};
+
+const InvoiceCardMobile = ({ invoice, canCollect, isDownloading, onCollect, onPrint, onSelect, t }) => {
+    const { i18n } = useTranslation();
+    const isAr = i18n?.language?.startsWith('ar');
     const total = Number(invoice.patient_payable_amount ?? invoice.total_amount ?? 0);
     const paid = Number(invoice.paid_amount || 0);
     const balance = Number(invoice.balance_amount || 0);
     const paidPct = total > 0 ? Math.min(100, Math.max(0, (paid / total) * 100)) : 0;
     const hasBalance = balance > 0 && invoice.invoice_status !== 'Voided';
     const dateValue = invoice.generated_at || invoice.created_at;
+    const coverageCategory = getInvoiceCoverageCategory(invoice);
 
     return (
         <article
             onClick={() => onSelect(invoice)}
-            className={`rounded-2xl border p-3.5 shadow-2xs transition-all active:scale-[0.99] ${
-                hasBalance
-                    ? 'border-amber-200 bg-amber-50/30 dark:border-amber-900/40 dark:bg-amber-950/20'
-                    : 'border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-900'
-            }`}
+            className={`rounded-2xl border p-3.5 shadow-2xs transition-all active:scale-[0.99] ${hasBalance
+                ? 'border-amber-200 bg-amber-50/30 dark:border-amber-900/40 dark:bg-amber-950/20'
+                : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)]'
+                }`}
         >
             <div className="flex items-start justify-between gap-2">
                 <div>
@@ -1783,7 +1766,28 @@ const InvoiceCardMobile = ({ invoice, isDownloading, onPrint, onSelect, t }) => 
                     <p className="mt-1 truncate text-sm font-black text-slate-900 dark:text-white">
                         {invoice.patient_name || t('billing.unnamedPatient')}
                     </p>
-                    <p className="font-mono text-[11px] text-slate-400 ltr-embed" dir="ltr">{invoice.mrn || '-'}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-mono text-[11px] text-slate-400 ltr-embed" dir="ltr">{invoice.mrn || '-'}</span>
+                        {coverageCategory.type === 'insurance' && (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-teal-50 px-1.5 py-0.5 text-[9.5px] font-bold text-teal-700 dark:bg-teal-950/50 dark:text-teal-300">
+                                <ShieldCheck size={10} />
+                                <span className="truncate max-w-24">{coverageCategory.providerName || 'Insurance'}</span>
+                            </span>
+                        )}
+                        {coverageCategory.type === 'contract' && (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[9.5px] font-bold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+                                <Building2 size={10} />
+                                <span className="truncate max-w-24">{coverageCategory.providerName || 'Contract'}</span>
+                            </span>
+                        )}
+                        {coverageCategory.type === 'self_pay' && (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                <User size={10} />
+                                <span>{isAr ? 'حساب خاص' : 'Self-Pay'}</span>
+                            </span>
+                        )}
+                        <InvoicePaymentBadge invoice={invoice} t={t} />
+                    </div>
                 </div>
                 <StatusPill status={invoice.invoice_status} />
             </div>
@@ -1820,6 +1824,15 @@ const InvoiceCardMobile = ({ invoice, isDownloading, onPrint, onSelect, t }) => 
                     {dateValue ? new Date(dateValue).toLocaleDateString() : '-'}
                 </span>
                 <div className="flex items-center gap-1.5">
+                    {canCollect && onCollect && hasBalance && <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onCollect(invoice); }}
+                        className="inline-flex h-8 items-center gap-1 rounded-xl bg-emerald-600 px-2.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700"
+                        title={t('billing.collectPayment', { defaultValue: 'Collect payment' })}
+                    >
+                        <Banknote size={13} />
+                        <span>{t('billing.collectPayment', { defaultValue: 'Collect payment' })}</span>
+                    </button>}
                     <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onPrint(invoice, 'receipt'); }}
@@ -1845,7 +1858,9 @@ const InvoiceCardMobile = ({ invoice, isDownloading, onPrint, onSelect, t }) => 
     );
 };
 
-const InvoiceRow = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
+const InvoiceRow = ({ invoice, canCollect, isDownloading, onCollect, onPrint, onSelect, t }) => {
+    const { i18n } = useTranslation();
+    const isAr = i18n?.language?.startsWith('ar');
     const total = Number(invoice.patient_payable_amount ?? invoice.total_amount ?? 0);
     const paid = Number(invoice.paid_amount || 0);
     const balance = Number(invoice.balance_amount || 0);
@@ -1893,9 +1908,11 @@ const InvoiceRow = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
                         )}
                         {coverageCategory.type === 'self_pay' && (
                             <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                                Self-Pay
+                                <User size={10} />
+                                <span>{isAr ? 'حساب خاص' : 'Self-Pay'}</span>
                             </span>
                         )}
+                        <InvoicePaymentBadge invoice={invoice} t={t} />
                         <span className="inline-flex md:hidden">
                             <StatusPill status={invoice.invoice_status} />
                         </span>
@@ -1927,7 +1944,16 @@ const InvoiceRow = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
                 <StatusPill status={invoice.invoice_status} />
             </td>
             <td className="px-4 py-3.5 pe-5 text-end">
-                <div className="flex items-center justify-end gap-1.5">
+                <div className="flex items-center justify-end gap-1">
+                    {canCollect && onCollect && hasBalance && <button
+                        type="button"
+                        onClick={() => onCollect(invoice)}
+                        aria-label={t('billing.collectPayment', { defaultValue: 'Collect payment' })}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700"
+                        title={t('billing.collectPayment', { defaultValue: 'Collect payment' })}
+                    >
+                        <Banknote size={13} />
+                    </button>}
                     <button
                         type="button"
                         onClick={() => onSelect(invoice)}
@@ -1964,14 +1990,17 @@ const InvoiceRow = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
 
 const InvoiceDetailsContent = ({
     canAppendSupplies,
+    canCollect,
     canRequestRefund,
     invoice,
     invoiceDetail,
     isLoading,
     onClose,
+    onCollect,
     onOpenRefund,
     onSetSupplyExamId,
     t,
+    isRtl = false,
 }) => {
     const [activeTab, setActiveTab] = useState('items'); // 'items' | 'payments' | 'clinical'
     const [copied, setCopied] = useState(false);
@@ -2046,7 +2075,7 @@ const InvoiceDetailsContent = ({
                                     {category.type === 'self_pay' && (
                                         <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
                                             <User size={13} className="text-slate-500" />
-                                            <span>{category.labelAr || 'حساب خاص (نقدي)'}</span>
+                                            <span>{category.labelAr || 'حساب خاص (سداد مباشر)'}</span>
                                         </span>
                                     )}
                                 </div>
@@ -2055,6 +2084,40 @@ const InvoiceDetailsContent = ({
                                     <InvoiceMeta icon={Calendar} value={issueDate} />
                                     {activeInv.order_number && <InvoiceMeta icon={Hash} value={`${t('billing.order', { defaultValue: 'Order' })}: ${activeInv.order_number}`} mono />}
                                     {category.policyNumber && <InvoiceMeta icon={ShieldCheck} value={`${t('billing.policyNo', { defaultValue: 'الوثيقة' })}: ${category.policyNumber}`} mono />}
+                                    {activeInv.expected_payment_method && (
+                                        <div className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                            <span className="text-[10px] text-slate-400">وسيلة الحجز:</span>
+                                            <span>{t(`billing.methods.${activeInv.expected_payment_method}`, { defaultValue: activeInv.expected_payment_method })}</span>
+                                        </div>
+                                    )}
+                                    {activeInv.payments && activeInv.payments.length > 0 && (() => {
+                                        const pMethods = [...new Set(activeInv.payments.filter((p) => p.payment_status === 'Completed' || !p.payment_status).map((p) => p.method).filter(Boolean))];
+                                        if (pMethods.length === 0) return null;
+                                        const expected = activeInv.expected_payment_method;
+                                        const isSingle = pMethods.length === 1;
+                                        const actual = pMethods[0];
+                                        const isMatch = !expected || (
+                                            actual.toLowerCase() === expected.toLowerCase() ||
+                                            (/card/i.test(actual) && /card/i.test(expected))
+                                        );
+
+                                        return (
+                                            <div className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-bold border ${isMatch
+                                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                                : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                                                }`}>
+                                                <span className="text-[10px] opacity-75">وسيلة التحصيل:</span>
+                                                <span>{isSingle ? t(`billing.methods.${actual}`, { defaultValue: actual }) : (isRtl ? 'دفع متعدد' : 'Split')}</span>
+                                                {expected && (
+                                                    isMatch ? (
+                                                        <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold">✓ مطابق للحجز</span>
+                                                    ) : (
+                                                        <span className="text-[9px] text-amber-700 dark:text-amber-400 font-semibold">⚠ مختلف عن الحجز</span>
+                                                    )
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </div>
@@ -2070,6 +2133,17 @@ const InvoiceDetailsContent = ({
                                 <Printer size={15} />
                                 <span>{t('billing.print', { defaultValue: 'طباعة الفاتورة' })}</span>
                             </button>
+                            {canCollect && balanceAmount > 0 && invoice.invoice_status !== 'Voided' && onCollect && (
+                                <button
+                                    type="button"
+                                    onClick={onCollect}
+                                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-black text-white shadow-sm transition hover:bg-emerald-700 active:scale-95"
+                                >
+                                    <Banknote size={15} />
+                                    <span>{t('billing.collectPayment', { defaultValue: 'Collect payment' })}</span>
+                                    <span className="font-mono">{balanceAmount.toFixed(2)} EGP</span>
+                                </button>
+                            )}
                             {canAppendSupplies && examId && (
                                 <button
                                     type="button"
@@ -2119,7 +2193,7 @@ const InvoiceDetailsContent = ({
                         />
                     )}
                     <InvoiceMetric
-                        label={t('billing.totalPaid', { defaultValue: 'المدفوع نقداً' })}
+                        label={t('billing.totalPaid', { defaultValue: 'إجمالي المدفوع' })}
                         value={paidAmount}
                         tone="emerald"
                         icon={CheckCircle2}
@@ -2352,102 +2426,137 @@ const InvoiceItemsPanel = ({ invoiceDetail, isLoading, t }) => (
     </section>
 );
 
-const InvoicePaymentsPanel = ({ canRequestRefund, invoice, invoiceDetail, isLoading, onOpenRefund, t }) => (
-    <section className="overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <PanelTitle
-            icon={History}
-            title={t('billing.paymentHistory', { defaultValue: 'سجل الدفعات والإيصالات المسددة' })}
-            count={invoiceDetail?.payments?.length || 0}
-            tone="emerald"
-        />
-        <div className="mt-3.5 max-h-96 overflow-y-auto pe-1">
-            {isLoading ? (
-                <LoadingRows label={t('billing.loadingHistory', { defaultValue: 'جاري تحميل الدفعات...' })} />
-            ) : invoiceDetail?.payments?.length ? (
-                <div className="space-y-2.5">
-                    {invoiceDetail.payments.map((payment) => {
-                        const reserved = (invoiceDetail.refunds || [])
-                            .filter((refund) => refund.payment_id === payment.payment_id && !['Rejected', 'Failed'].includes(refund.status))
-                            .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
-                        const refundable = Math.max(0, Number(payment.amount || 0) - reserved);
-                        const canRefundPayment = canRequestRefund && payment.payment_status === 'Completed' && refundable > 0;
+const InvoicePaymentsPanel = ({ canRequestRefund, invoice, invoiceDetail, isLoading, onOpenRefund, t }) => {
+    const expectedMethod = invoiceDetail?.expected_payment_method || invoice?.expected_payment_method;
 
-                        return (
-                            <div
-                                key={payment.payment_id}
-                                className="flex flex-col gap-3 rounded-xl border border-slate-200/80 bg-slate-50/60 p-3.5 transition hover:border-emerald-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:border-slate-700 sm:flex-row sm:items-center sm:justify-between"
-                            >
-                                <div className="flex items-start gap-3.5">
-                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700">
-                                        {payment.method === 'Cash' ? <Banknote size={18} className="text-emerald-600" /> : <CreditCard size={18} className="text-sky-600" />}
-                                    </span>
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <p className="truncate text-sm font-black text-slate-900 dark:text-white">
-                                                {t(`billing.methods.${payment.method}`, { defaultValue: payment.method === 'Cash' ? 'نقدي' : payment.method })}
-                                            </p>
-                                            <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                                                {payment.payment_status === 'Completed' ? 'مكتمل' : payment.payment_status}
-                                            </span>
-                                        </div>
-                                        <p className="mt-0.5 text-[11px] font-medium text-slate-500 ltr-embed" dir="ltr">
-                                            {new Date(payment.transaction_date || payment.created_at).toLocaleString()}
-                                        </p>
-                                        {payment.payment_reference && (
-                                            <p className="mt-1 font-mono text-[10px] font-semibold text-slate-400 ltr-embed" dir="ltr">
-                                                REF: {payment.payment_reference}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
+    const isTenderMatched = (expected, actual) => {
+        if (!expected) return true;
+        const e = String(expected).trim().toLowerCase();
+        const a = String(actual).trim().toLowerCase();
+        if (e === a) return true;
+        if ((e === 'card' || e === 'credit card') && (a === 'card' || a === 'credit card')) return true;
+        return false;
+    };
 
-                                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/60 pt-2 sm:border-t-0 sm:pt-0">
-                                    <div className="text-right">
-                                        <span className="text-[10px] font-bold uppercase text-slate-400">
-                                            {t('billing.amountPaid', { defaultValue: 'المبلغ المسدد' })}
+    const getPaymentMethodIcon = (method) => {
+        const m = String(method || '').toLowerCase();
+        if (m === 'cash') return <Banknote size={18} className="text-emerald-600" />;
+        if (m.includes('card')) return <CreditCard size={18} className="text-sky-600" />;
+        if (m.includes('wallet')) return <Wallet size={18} className="text-purple-600" />;
+        if (m.includes('bank')) return <Landmark size={18} className="text-indigo-600" />;
+        return <CreditCard size={18} className="text-slate-600" />;
+    };
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <PanelTitle
+                icon={History}
+                title={t('billing.paymentHistory', { defaultValue: 'سجل الدفعات والإيصالات المسددة' })}
+                count={invoiceDetail?.payments?.length || 0}
+                tone="emerald"
+            />
+            <div className="mt-3.5 max-h-96 overflow-y-auto pe-1">
+                {isLoading ? (
+                    <LoadingRows label={t('billing.loadingHistory', { defaultValue: 'جاري تحميل الدفعات...' })} />
+                ) : invoiceDetail?.payments?.length ? (
+                    <div className="space-y-2.5">
+                        {invoiceDetail.payments.map((payment) => {
+                            const reserved = (invoiceDetail.refunds || [])
+                                .filter((refund) => refund.payment_id === payment.payment_id && !['Rejected', 'Failed'].includes(refund.status))
+                                .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+                            const refundable = Math.max(0, Number(payment.amount || 0) - reserved);
+                            const canRefundPayment = canRequestRefund && payment.payment_status === 'Completed' && refundable > 0;
+                            const matched = isTenderMatched(expectedMethod, payment.method);
+
+                            return (
+                                <div
+                                    key={payment.payment_id}
+                                    className="flex flex-col gap-3 rounded-xl border border-slate-200/80 bg-slate-50/60 p-3.5 transition hover:border-emerald-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:border-slate-700 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                    <div className="flex items-start gap-3.5">
+                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700">
+                                            {getPaymentMethodIcon(payment.method)}
                                         </span>
-                                        <p className="font-mono text-base font-black text-emerald-600 dark:text-emerald-400 tabular-nums ltr-embed" dir="ltr">
-                                            +{Number(payment.amount || 0).toFixed(2)} <span className="text-xs font-bold text-slate-400">EGP</span>
-                                        </p>
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                                <p className="truncate text-sm font-black text-slate-900 dark:text-white">
+                                                    {t(`billing.methods.${payment.method}`, { defaultValue: payment.method === 'Cash' ? 'نقدي' : payment.method })}
+                                                </p>
+                                                <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                                    {payment.payment_status === 'Completed' ? 'مكتمل' : payment.payment_status}
+                                                </span>
+                                                {expectedMethod && (
+                                                    matched ? (
+                                                        <span className="rounded-md bg-teal-100/80 px-1.5 py-0.5 text-[9px] font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-300">
+                                                            مطابق لوسيلة الحجز ✓
+                                                        </span>
+                                                    ) : (
+                                                        <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300" title={`وسيلة الحجز المسجلة: ${expectedMethod}`}>
+                                                            مختلف عن الحجز (المحدد بالحجز: {t(`billing.methods.${expectedMethod}`, { defaultValue: expectedMethod })})
+                                                        </span>
+                                                    )
+                                                )}
+                                            </div>
+                                            <p className="mt-0.5 text-[11px] font-medium text-slate-500 ltr-embed" dir="ltr">
+                                                {new Date(payment.transaction_date || payment.created_at).toLocaleString()}
+                                            </p>
+                                            {payment.payment_reference && (
+                                                <p className="mt-1 font-mono text-[10px] font-semibold text-slate-600 dark:text-slate-400 ltr-embed" dir="ltr">
+                                                    {/card/i.test(payment.method) ? 'POS AUTH: ' : /wallet/i.test(payment.method) ? 'WALLET REF: ' : /bank/i.test(payment.method) ? 'BANK REF: ' : 'REF: '}
+                                                    {payment.payment_reference}
+                                                </p>
+                                            )}
+                                        </div>
                                     </div>
 
-                                    <div className="flex items-center gap-1.5">
-                                        <button
-                                            type="button"
-                                            onClick={() => window.open(`/print/receipt/${payment.payment_id}`, '_blank')}
-                                            className="inline-flex min-h-8 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 text-[10.5px] font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-teal-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                                            title={t('billing.printReceipt', { defaultValue: 'طباعة الإيصال' })}
-                                        >
-                                            <Printer size={12} />
-                                            <span>{t('billing.receipt', { defaultValue: 'إيصال' })}</span>
-                                        </button>
+                                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/60 pt-2 sm:border-t-0 sm:pt-0">
+                                        <div className="text-right">
+                                            <span className="text-[10px] font-bold uppercase text-slate-400">
+                                                {t('billing.amountPaid', { defaultValue: 'المبلغ المسدد' })}
+                                            </span>
+                                            <p className="font-mono text-base font-black text-emerald-600 dark:text-emerald-400 tabular-nums ltr-embed" dir="ltr">
+                                                +{Number(payment.amount || 0).toFixed(2)} <span className="text-xs font-bold text-slate-400">EGP</span>
+                                            </p>
+                                        </div>
 
-                                        {canRefundPayment && (
+                                        <div className="flex items-center gap-1.5">
                                             <button
                                                 type="button"
-                                                onClick={() => onOpenRefund(invoice, payment)}
-                                                className="inline-flex min-h-8 items-center justify-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-2.5 text-[10.5px] font-black text-rose-700 transition hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300"
-                                                title={t('billing.requestRefund', { defaultValue: 'طلب استرجاع' })}
+                                                onClick={() => window.open(`/print/receipt/${payment.payment_id}`, '_blank')}
+                                                className="inline-flex min-h-8 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 text-[10.5px] font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-teal-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                                title={t('billing.printReceipt', { defaultValue: 'طباعة الإيصال' })}
                                             >
-                                                <RotateCcw size={12} />
-                                                <span>{t('billing.refund', { defaultValue: 'استرجاع' })}</span>
+                                                <Printer size={12} />
+                                                <span>{t('billing.receipt', { defaultValue: 'إيصال' })}</span>
                                             </button>
-                                        )}
+
+                                            {canRefundPayment && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onOpenRefund(invoice, payment)}
+                                                    className="inline-flex min-h-8 items-center justify-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-2.5 text-[10.5px] font-black text-rose-700 transition hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300"
+                                                    title={t('billing.requestRefund', { defaultValue: 'طلب استرجاع' })}
+                                                >
+                                                    <RotateCcw size={12} />
+                                                    <span>{t('billing.refund', { defaultValue: 'استرجاع' })}</span>
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            ) : (
-                <div className="flex min-h-36 flex-col items-center justify-center text-center text-slate-400">
-                    <AlertCircle size={26} className="mb-2 opacity-30" />
-                    <p className="text-sm font-medium">{t('billing.noPaymentHistory', { defaultValue: 'لا توجد دفعات مسجلة لهذه الفاتورة حتى الآن.' })}</p>
-                </div>
-            )}
-        </div>
-    </section>
-);
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="flex min-h-36 flex-col items-center justify-center text-center text-slate-400">
+                        <AlertCircle size={26} className="mb-2 opacity-30" />
+                        <p className="text-sm font-medium">{t('billing.noPaymentHistory', { defaultValue: 'لا توجد دفعات مسجلة لهذه الفاتورة حتى الآن.' })}</p>
+                    </div>
+                )}
+            </div>
+        </section>
+    );
+};
 
 const InvoiceClinicalAuditPanel = ({ invoice, invoiceDetail, t }) => {
     const activeInv = invoiceDetail?.invoice_id === invoice?.invoice_id ? { ...invoice, ...invoiceDetail } : invoice;
@@ -2483,7 +2592,7 @@ const InvoiceClinicalAuditPanel = ({ invoice, invoiceDetail, t }) => {
                         {category.type === 'self_pay' && (
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-200 px-3 py-0.5 text-xs font-black text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                 <User size={13} />
-                                <span>{category.labelAr || 'حساب خاص (نقدي)'}</span>
+                                <span>{category.labelAr || 'حساب خاص (سداد مباشر)'}</span>
                             </span>
                         )}
                     </div>
@@ -2575,14 +2684,16 @@ const PanelTitle = ({ icon: Icon, title, count, tone = 'teal' }) => {
     );
 };
 
-const InvoiceCardsGrid = ({ invoices, isDownloading, onPrint, onSelect, t }) => {
+const InvoiceCardsGrid = ({ invoices, canCollect, isDownloading, onCollect, onPrint, onSelect, t }) => {
     return (
-        <div className="grid grid-cols-1 gap-3.5 p-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {invoices.map((invoice) => (
                 <InvoiceCard
                     key={invoice.invoice_id}
                     invoice={invoice}
+                    canCollect={canCollect}
                     isDownloading={isDownloading}
+                    onCollect={onCollect}
                     onPrint={onPrint}
                     onSelect={onSelect}
                     t={t}
@@ -2592,7 +2703,7 @@ const InvoiceCardsGrid = ({ invoices, isDownloading, onPrint, onSelect, t }) => 
     );
 };
 
-const InvoiceCard = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
+const InvoiceCard = ({ invoice, canCollect, isDownloading, onCollect, onPrint, onSelect, t }) => {
     const total = Number(invoice.patient_payable_amount ?? invoice.total_amount ?? 0);
     const paid = Number(invoice.paid_amount || 0);
     const balance = Number(invoice.balance_amount || 0);
@@ -2603,11 +2714,10 @@ const InvoiceCard = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
 
     return (
         <article
-            className={`group flex flex-col justify-between rounded-2xl border p-4 shadow-2xs transition-all hover:shadow-md ${
-                hasBalance
-                    ? 'border-amber-200/90 bg-amber-50/20 dark:border-amber-900/40 dark:bg-amber-950/15'
-                    : 'border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-900'
-            }`}
+            className={`group flex flex-col justify-between rounded-2xl border p-4 shadow-2xs transition-all hover:shadow-md ${hasBalance
+                ? 'border-amber-200/90 bg-amber-50/20 dark:border-amber-900/40 dark:bg-amber-950/15'
+                : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)]'
+                }`}
         >
             <div>
                 {/* Card Top: Number, Date, Status */}
@@ -2625,7 +2735,7 @@ const InvoiceCard = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
 
                 {/* Patient Information */}
                 <div className="mt-3 flex items-center gap-2.5">
-                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--VIARA-surface-muted)] font-bold text-teal-700 dark:text-teal-300">
                         <User size={16} />
                     </div>
                     <div className="min-w-0">
@@ -2638,13 +2748,26 @@ const InvoiceCard = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
 
                 {/* Coverage & Contract Pill */}
                 <div className="mt-2.5 flex items-center gap-1.5">
-                    <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-black ${
-                        coverageCategory === 'contract'
-                            ? 'border border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'
+                    <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-black ${coverageCategory.type === 'contract'
+                        ? 'border border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'
+                        : coverageCategory.type === 'insurance'
+                            ? 'border border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300'
                             : 'border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                    }`}>
-                        {coverageCategory === 'contract' ? <Building2 size={11} /> : <Banknote size={11} />}
-                        <span>{coverageCategory === 'contract' ? (invoice.insurance_provider || t('billing.contract', { defaultValue: 'تعاقد جهة' })) : t('billing.selfPay', { defaultValue: 'حساب خاص' })}</span>
+                        }`}>
+                        {coverageCategory.type === 'contract' ? (
+                            <Building2 size={11} />
+                        ) : coverageCategory.type === 'insurance' ? (
+                            <ShieldCheck size={11} />
+                        ) : (
+                            <User size={11} />
+                        )}
+                        <span>
+                            {coverageCategory.type === 'contract'
+                                ? (invoice.insurance_provider || t('billing.contract', { defaultValue: 'تعاقد جهة' }))
+                                : coverageCategory.type === 'insurance'
+                                    ? (invoice.insurance_provider || t('billing.insurance', { defaultValue: 'تأمين صحي' }))
+                                    : (coverageCategory.labelAr || t('billing.selfPay', { defaultValue: 'حساب خاص' }))}
+                        </span>
                     </span>
                     {invoice.insurance_policy_number && (
                         <span className="truncate font-mono text-[10px] text-slate-400">#{invoice.insurance_policy_number}</span>
@@ -2652,7 +2775,7 @@ const InvoiceCard = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
                 </div>
 
                 {/* Financial Summary Box */}
-                <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-slate-50/80 p-2.5 dark:bg-slate-950/60">
+                <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-[var(--VIARA-surface-muted)]/70 p-2.5">
                     <div>
                         <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">{t('billing.total')}</span>
                         <p className="font-mono text-xs font-black text-slate-800 dark:text-slate-200 ltr-embed" dir="ltr">{total.toFixed(2)}</p>
@@ -2679,7 +2802,16 @@ const InvoiceCard = ({ invoice, isDownloading, onPrint, onSelect, t }) => {
             </div>
 
             {/* Action Bar */}
-            <div className="mt-4 flex items-center justify-between gap-1.5 border-t border-slate-100 pt-3 dark:border-slate-800/80">
+            <div className="mt-4 flex items-center justify-between gap-1.5 border-t border-[var(--VIARA-line)] pt-3">
+                {canCollect && onCollect && hasBalance && <button
+                    type="button"
+                    onClick={() => onCollect(invoice)}
+                    className="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white shadow-sm transition hover:bg-emerald-700"
+                    title={t('billing.collectPayment', { defaultValue: 'Collect payment' })}
+                >
+                    <Banknote size={13} />
+                    <span>{t('billing.collectPayment', { defaultValue: 'Collect payment' })}</span>
+                </button>}
                 <button
                     type="button"
                     onClick={() => onSelect(invoice)}

@@ -1,5 +1,6 @@
 const express = require('express');
 const { displayBoardLimiter } = require('../middleware/rateLimiters');
+const { hasPermission } = require('../middleware/rbacMiddleware');
 const { getDisplayBoard, broadcastPatientCall } = require('../controllers/displayBoardController');
 const { getQueueDisplay } = require('../controllers/queueDisplayController');
 const {
@@ -21,7 +22,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     // Live Patient Call broadcast (Staff calling a patient to the exam room)
     router.post('/broadcast-call',
         authenticateToken,
-        authorizeRole(['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse']),
+        authorizeRole(['Admin', 'Receptionist', 'Cashier', 'Radiologist', 'Technician', 'Nurse']),
         broadcastPatientCall(pool)
     );
 
@@ -29,30 +30,35 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     router.get('/config',
         authenticateToken,
         authorizeRole(['Admin', 'Receptionist']),
+        hasPermission(pool, 'MANAGE_DISPLAY_BOARD'),
         getDisplayConfig(pool)
     );
 
     router.put('/config',
         authenticateToken,
         authorizeRole(['Admin', 'Receptionist']),
+        hasPermission(pool, 'MANAGE_DISPLAY_BOARD'),
         updateDisplayConfig(pool)
     );
 
     router.post('/announcements',
         authenticateToken,
         authorizeRole(['Admin', 'Receptionist']),
+        hasPermission(pool, 'MANAGE_DISPLAY_BOARD'),
         createDisplayAnnouncement(pool)
     );
 
     router.put('/announcements/:id',
         authenticateToken,
         authorizeRole(['Admin', 'Receptionist']),
+        hasPermission(pool, 'MANAGE_DISPLAY_BOARD'),
         updateDisplayAnnouncement(pool)
     );
 
     router.delete('/announcements/:id',
         authenticateToken,
         authorizeRole(['Admin', 'Receptionist']),
+        hasPermission(pool, 'MANAGE_DISPLAY_BOARD'),
         deleteDisplayAnnouncement(pool)
     );
 

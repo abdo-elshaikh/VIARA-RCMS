@@ -11,6 +11,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  database-migrations:
+    name: Database (fresh migrations)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: VIARA
+          POSTGRES_PASSWORD: viara_ci_password
+          POSTGRES_DB: VIARA
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U VIARA -d VIARA"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - name: Apply schema and all migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://VIARA:viara_ci_password@127.0.0.1:5432/VIARA
+        run: npm run migrate -- --fresh
+      - name: Verify migration idempotency and checksums
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://VIARA:viara_ci_password@127.0.0.1:5432/VIARA
+        run: npm run migrate
+
   backend:
     name: Backend (tests + audit)
     runs-on: ubuntu-latest
@@ -28,7 +65,7 @@ jobs:
       - name: Dependency audit (fail on high/critical)
         run: npm audit --omit=dev --audit-level=high
       - name: Tests
-        run: npm test
+        run: npm run test:ci
 
   frontend:
     name: Frontend (lint + tests)
@@ -46,8 +83,14 @@ jobs:
       - run: npm ci
       - name: Lint (max-warnings 0)
         run: npm run lint
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Locale contract
+        run: node ../scripts/check-locales.mjs
       - name: Tests
-        run: npm test
+        run: npm run test:ci
+      - name: Production build
+        run: npm run build
 
   portal:
     name: Portal (typecheck + lint + tests)
@@ -65,8 +108,12 @@ jobs:
       - run: npm ci
       - name: Typecheck
         run: npm run typecheck
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=moderate
       - name: Lint
         run: npm run lint
+      - name: Production build
+        run: npm run build
       - name: Tests
         run: npm test
 

@@ -1,6 +1,9 @@
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { getLicense } = require('../services/licenseService');
+
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
+const isPerfTest = process.env.PERF_TEST === 'true';
 const authenticatedKey = (req) => req.user?.user_id || req.user?.userId || ipKeyGenerator(req.ip);
 
 // Patient views are a normal high-frequency clinical workflow. Keep the
@@ -8,7 +11,7 @@ const authenticatedKey = (req) => req.user?.user_id || req.user?.userId || ipKey
 // users so staff behind the same facility NAT do not lock each other out.
 const patientDataLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: isDevelopment ? 1000 : 120,
+    limit: isPerfTest ? 100000 : (isDevelopment ? 1000 : 120),
     keyGenerator: authenticatedKey,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
@@ -18,7 +21,7 @@ const patientDataLimiter = rateLimit({
 // Invoice Limiter: high enough for normal reception, cashier searches, pagination, and live polling
 const invoiceLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: isDevelopment ? 1000 : 240,
+    max: isPerfTest ? 100000 : (isDevelopment ? 1000 : 240),
     keyGenerator: authenticatedKey,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
@@ -28,7 +31,7 @@ const invoiceLimiter = rateLimit({
 // Sensitive Operations Limiter: 5 per day per user/IP
 const sensitiveOpLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000,
-    max: isDevelopment ? 100 : 5,
+    max: isPerfTest ? 100000 : (isDevelopment ? 100 : 5),
     keyGenerator: authenticatedKey,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
@@ -98,7 +101,7 @@ const displayBoardLimiter = rateLimit({
 // Rate limiter for authentication endpoints
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: isDevelopment ? 25 : 5,
+    max: isPerfTest ? 10000 : (isDevelopment ? 25 : 5),
     message: {
         error: 'Too many login attempts from this IP, please try again after 15 minutes'
     },
@@ -110,7 +113,7 @@ const authLimiter = rateLimit({
 // Rate limiter for general API endpoints
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: isDevelopment ? 1000 : 100, // Higher limit for development
+    max: isPerfTest ? 100000 : (isDevelopment ? 1000 : 100), // Higher limit for development
     message: {
         error: 'Too many requests from this IP, please try again later'
     },
@@ -129,6 +132,42 @@ const strictLimiter = rateLimit({
     legacyHeaders: false
 });
 
+// ── Trial edition — tighter limits ────────────────────────────────────────────
+// Trial instances get a stricter API limiter to discourage production misuse.
+const trialApiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: isPerfTest ? 100000 : (isDevelopment ? 1000 : 200),
+    keyGenerator: authenticatedKey,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Trial edition rate limit exceeded. Upgrade for higher limits.' }
+});
+
+const trialAuthLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: isPerfTest ? 10000 : (isDevelopment ? 25 : 5),
+    message: { error: 'Too many login attempts in trial mode. Try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+/**
+ * Returns the appropriate rate limiter based on the active license edition.
+ * Trial edition → stricter limiter; others → standard limiter.
+ *
+ * @param {import('express-rate-limit').RateLimitRequestHandler} standardLimiter
+ * @param {import('express-rate-limit').RateLimitRequestHandler} [trialLimiterOverride]
+ * @returns {import('express').RequestHandler}
+ */
+function trialAwareLimiter(standardLimiter, trialLimiterOverride) {
+    const trialLimit = trialLimiterOverride || trialApiLimiter;
+    return (req, res, next) => {
+        const license = getLicense();
+        const limiter = (license?.edition === 'trial') ? trialLimit : standardLimiter;
+        return limiter(req, res, next);
+    };
+}
+
 module.exports = {
     authLimiter,
     apiLimiter,
@@ -142,6 +181,10 @@ module.exports = {
     publicBookingLimiter,
     displayBoardLimiter,
     pacsWebhookLimiter,
-    authenticatedKey
+    authenticatedKey,
+    // Trial-aware
+    trialApiLimiter,
+    trialAuthLimiter,
+    trialAwareLimiter,
 };
 

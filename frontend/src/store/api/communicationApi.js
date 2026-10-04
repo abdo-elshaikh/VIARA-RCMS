@@ -186,7 +186,10 @@ export const communicationApi = api.injectEndpoints({
             providesTags: ['PatientConversations'],
         }),
         getPatientMessageHistory: builder.query({
-            query: (patientId) => `/messages/patients/${patientId}`,
+            query: (arg) => {
+                const { patientId, before } = typeof arg === 'string' ? { patientId: arg } : arg;
+                return { url: `/messages/patients/${patientId}`, params: before ? { before } : undefined };
+            },
             providesTags: ['PatientConversations'],
         }),
         sendPatientReply: builder.mutation({
@@ -202,7 +205,10 @@ export const communicationApi = api.injectEndpoints({
             providesTags: ['DoctorConversations'],
         }),
         getDoctorMessageHistory: builder.query({
-            query: (doctorId) => `/messages/doctors/${doctorId}`,
+            query: (arg) => {
+                const { doctorId, before } = typeof arg === 'string' ? { doctorId: arg } : arg;
+                return { url: `/messages/doctors/${doctorId}`, params: before ? { before } : undefined };
+            },
             providesTags: ['DoctorConversations'],
         }),
         sendDoctorReply: builder.mutation({
@@ -218,21 +224,37 @@ export const communicationApi = api.injectEndpoints({
         }),
         getDisplayBoard: builder.query({
             query: (params) => ({ url: '/display/board', params }),
+            providesTags: ['DisplayBoard'],
         }),
         getDisplayConfig: builder.query({
             query: () => '/display/config',
+            providesTags: ['DisplayBoard'],
         }),
         updateDisplayConfig: builder.mutation({
             query: (data) => ({ url: '/display/config', method: 'PUT', body: data }),
+            invalidatesTags: ['DisplayBoard'],
+            async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(api.util.updateQueryData('getDisplayConfig', undefined, (draft) => {
+                        draft.config = { ...draft.config, ...data.config };
+                    }));
+                } catch {
+                    // Keep the cached values unchanged when the save fails.
+                }
+            },
         }),
         createDisplayAnnouncement: builder.mutation({
             query: (data) => ({ url: '/display/announcements', method: 'POST', body: data }),
+            invalidatesTags: ['DisplayBoard'],
         }),
         updateDisplayAnnouncement: builder.mutation({
             query: ({ id, ...data }) => ({ url: `/display/announcements/${id}`, method: 'PUT', body: data }),
+            invalidatesTags: ['DisplayBoard'],
         }),
         deleteDisplayAnnouncement: builder.mutation({
             query: (id) => ({ url: `/display/announcements/${id}`, method: 'DELETE' }),
+            invalidatesTags: ['DisplayBoard'],
         }),
         getCrmActivities: builder.query({
             query: (params) => ({ url: '/crm/activities', params }),
@@ -277,6 +299,18 @@ export const communicationApi = api.injectEndpoints({
         submitFeedback: builder.mutation({
             query: (data) => ({ url: '/crm/feedback', method: 'POST', body: data }),
             invalidatesTags: ['Feedback'],
+        }),
+        getLoyaltyHistory: builder.query({
+            query: (patientId) => `/crm/loyalty/${patientId}/history`,
+            providesTags: ['LoyaltyHistory'],
+        }),
+        getDueRecalls: builder.query({
+            query: (params) => ({ url: '/crm/recalls/due', params }),
+            providesTags: ['ClinicalRecalls'],
+        }),
+        createRecallTask: builder.mutation({
+            query: (data) => ({ url: '/crm/recalls/create-task', method: 'POST', body: data }),
+            invalidatesTags: ['ClinicalRecalls', 'CrmActivities'],
         }),
     }),
     overrideExisting: false,

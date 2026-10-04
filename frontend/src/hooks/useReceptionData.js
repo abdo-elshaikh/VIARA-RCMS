@@ -9,6 +9,8 @@ import {
     useUpdateAppointmentMutation,
     useCreateInvoiceMutation,
     useDeliverResultMutation,
+    useRequestDeferredReportMutation,
+    useDeferReportForImagesMutation,
 } from '../store/api';
 import {
     buildScheduleSummary,
@@ -25,7 +27,7 @@ const isValidUuid = (value) => typeof value === 'string' && UUID_PATTERN.test(va
  * Centralizes all reception data fetching, polling, and derived state.
  * Provides a unified `refreshWorkspace()` that refreshes all four data sources.
  *
- * @param {{ selectedDate: string, canAccessCashierReconciliation: boolean }} params
+ * @param {{ selectedDate: string, canViewAppointments?: boolean, canViewQueue?: boolean, canViewInvoices?: boolean }} params
  * @returns {{
  *   appointments: array,
  *   queueItems: array,
@@ -45,7 +47,12 @@ const isValidUuid = (value) => typeof value === 'string' && UUID_PATTERN.test(va
  *   isDeliveringResult: boolean,
  * }}
  */
-export const useReceptionData = ({ selectedDate, canAccessCashierReconciliation }) => {
+export const useReceptionData = ({
+    selectedDate,
+    canViewAppointments = false,
+    canViewQueue = false,
+    canViewInvoices = false,
+}) => {
     const { t } = useTranslation('reception');
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [pickupTarget, setPickupTarget] = useState(null);
@@ -57,7 +64,10 @@ export const useReceptionData = ({ selectedDate, canAccessCashierReconciliation 
         isError: isAppointmentsError,
         error: appointmentsError,
         refetch: refetchAppointments,
-    } = useGetAppointmentsQuery({ date: selectedDate }, { pollingInterval: 30_000 });
+    } = useGetAppointmentsQuery({ date: selectedDate }, {
+        pollingInterval: 30_000,
+        skip: !canViewAppointments,
+    });
 
     const {
         data: queueResponse,
@@ -66,22 +76,33 @@ export const useReceptionData = ({ selectedDate, canAccessCashierReconciliation 
         isError: isQueueError,
         error: queueError,
         refetch: refetchQueue,
-    } = useGetQueueQuery({ date: selectedDate, includeDelivered: 'true', limit: 500 }, { pollingInterval: 15_000 });
+    } = useGetQueueQuery({ date: selectedDate, includeDelivered: 'true', limit: 500 }, {
+        pollingInterval: 15_000,
+        skip: !canViewQueue,
+    });
 
     const {
         data: rawInvoices,
         isLoading: isInvoicesLoading,
+        isFetching: isInvoicesFetching,
         isError: isInvoicesError,
         error: invoicesError,
         refetch: refetchInvoices,
-    } = useGetInvoicesQuery({ appointmentDate: selectedDate, limit: 500 }, { pollingInterval: 30_000 });
+    } = useGetInvoicesQuery({ appointmentDate: selectedDate, limit: 500 }, {
+        pollingInterval: 30_000,
+        skip: !canViewInvoices,
+    });
 
-    const appLoading = isAppointmentsLoading || isQueueLoading || isInvoicesLoading;
+    const appLoading = (canViewAppointments && isAppointmentsLoading)
+        || (canViewQueue && isQueueLoading)
+        || (canViewInvoices && isInvoicesLoading);
     // Mutations
     const [transitionQueue] = useTransitionQueueMutation();
     const [updateAppointment] = useUpdateAppointmentMutation();
     const [createInvoice] = useCreateInvoiceMutation();
     const [deliverResult, { isLoading: isDeliveringResult }] = useDeliverResultMutation();
+    const [requestDeferredReport, { isLoading: isRequestingReport }] = useRequestDeferredReportMutation();
+    const [deferReportForImages, { isLoading: isDeferringReport }] = useDeferReportForImagesMutation();
     // Derived state
     const invoices = useMemo(() => rawInvoices || [], [rawInvoices]);
     const queueItems = useMemo(() => queueResponse?.data || [], [queueResponse?.data]);
@@ -135,29 +156,29 @@ export const useReceptionData = ({ selectedDate, canAccessCashierReconciliation 
         [appointments, queueItems]
     );
     const dataErrors = useMemo(() => [
-        isAppointmentsError && { source: 'appointments', error: appointmentsError },
-        isQueueError && { source: 'queue', error: queueError },
-        isInvoicesError && { source: 'invoices', error: invoicesError },
+        canViewAppointments && isAppointmentsError && { source: 'appointments', error: appointmentsError },
+        canViewQueue && isQueueError && { source: 'queue', error: queueError },
+        canViewInvoices && isInvoicesError && { source: 'invoices', error: invoicesError },
     ].filter(Boolean), [
-        appointmentsError, invoicesError, isAppointmentsError, isInvoicesError,
-        isQueueError, queueError,
+        appointmentsError, canViewAppointments, canViewInvoices, canViewQueue,
+        invoicesError, isAppointmentsError, isInvoicesError, isQueueError, queueError,
     ]);
     // Handlers
     const refreshWorkspace = useCallback(async () => {
         setIsRefreshing(true);
         try {
-            const results = await Promise.all([
-                refetchAppointments(),
-                refetchQueue(),
-                refetchInvoices(),
-            ]);
+            const refreshers = [];
+            if (canViewAppointments) refreshers.push(refetchAppointments());
+            if (canViewQueue) refreshers.push(refetchQueue());
+            if (canViewInvoices) refreshers.push(refetchInvoices());
+            const results = await Promise.all(refreshers);
             const failed = results.some((result) => result.error);
             if (failed) toast.error(t('command.refreshFailed', 'Some reception data could not be refreshed.'));
             else toast.success(t('command.refreshed', 'Reception workspace refreshed.'));
         } finally {
             setIsRefreshing(false);
         }
-    }, [refetchAppointments, refetchInvoices, refetchQueue, t]);
+    }, [canViewAppointments, canViewInvoices, canViewQueue, refetchAppointments, refetchInvoices, refetchQueue, t]);
 
     const moveQueue = useCallback(async (item, toStage, reason) => {
         const examId = item?.exam_id || item?.examId;
@@ -216,22 +237,58 @@ export const useReceptionData = ({ selectedDate, canAccessCashierReconciliation 
 
     const confirmPickup = useCallback(async (recipientName) => {
         if (!pickupTarget) return false;
+        const imagesOnly = pickupTarget.queue_stage === 'Images Ready';
         try {
             await deliverResult({
                 examId: pickupTarget.exam_id,
                 deliveryMethod: 'Physical Pickup',
+                resultType: imagesOnly ? 'Images' : 'Report',
                 deliveryStatus: 'Picked Up',
                 recipientName,
                 acknowledgedByName: recipientName,
-                notes: t('pickup.deliveryNote'),
+                notes: imagesOnly
+                    ? t('pickup.imagesDeliveryNote', { defaultValue: 'Images-only physical pickup at reception; no report requested' })
+                    : t('pickup.deliveryNote'),
             }).unwrap();
-            toast.success(t('toast.pickupRecorded'));
+            toast.success(imagesOnly
+                ? t('toast.imagesPickupRecorded', { defaultValue: 'Image pickup recorded successfully.' })
+                : t('toast.pickupRecorded'));
             return true;
         } catch (error) {
             toast.error(getErrorMessage(error, t('toast.pickupFailed')));
             return false;
         }
     }, [deliverResult, pickupTarget, t]);
+
+    const requestReport = useCallback(async (exam) => {
+        if (!exam?.exam_id) return false;
+        try {
+            await requestDeferredReport({
+                examId: exam.exam_id,
+                source: 'Reception'
+            }).unwrap();
+            toast.success(t('toast.reportRequested', { defaultValue: 'The examination was sent to the reporting queue.' }));
+            return true;
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('toast.reportRequestFailed', { defaultValue: 'Failed to request the report.' })));
+            return false;
+        }
+    }, [requestDeferredReport, t]);
+
+    const deferReport = useCallback(async (exam, reason) => {
+        if (!exam?.exam_id) return false;
+        try {
+            await deferReportForImages({
+                examId: exam.exam_id,
+                reason: reason || 'Patient requested images only'
+            }).unwrap();
+            toast.success(t('toast.reportDeferred', { defaultValue: 'تم تحويل الحالة لاستلام أفلام فقط والصور جاهزة للتسليم.' }));
+            return true;
+        } catch (error) {
+            toast.error(getErrorMessage(error, t('toast.reportDeferFailed', { defaultValue: 'تعذر تحويل الحالة لاستلام أفلام.' })));
+            return false;
+        }
+    }, [deferReportForImages, t]);
 
     return {
         // Data
@@ -245,14 +302,20 @@ export const useReceptionData = ({ selectedDate, canAccessCashierReconciliation 
         hasDataError: dataErrors.length > 0,
         // Loading
         appLoading,
-        isWorkspaceFetching: isAppointmentsFetching || isQueueFetching,
+        isWorkspaceFetching: (canViewAppointments && isAppointmentsFetching)
+            || (canViewQueue && isQueueFetching)
+            || (canViewInvoices && isInvoicesFetching),
         isRefreshing,
         isDeliveringResult,
+        isRequestingReport,
+        isDeferringReport,
     // Handlers
         refreshWorkspace,
         moveQueue,
         createAppointmentInvoice,
         confirmPickup,
+        requestReport,
+        deferReport,
         // Pickup dialog
         pickupTarget,
         setPickupTarget,

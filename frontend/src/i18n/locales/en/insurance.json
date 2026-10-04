@@ -35,7 +35,8 @@
   "forms": {
     "newClaim": "Create a claim",
     "newClaimDescription": "Link the patient and payer before recording invoice or approval references.",
-    "rejectedQueue": "Rejected claims requiring follow-up"
+    "rejectedQueue": "Rejected claims requiring follow-up",
+    "deductionAmount": "Deduction amount"
   },
   "fields": {
     "provider": "Provider",
@@ -72,7 +73,10 @@
     "selectPolicy": "Select Policy",
     "selectApproval": "Select Authorization",
     "claimReference": "External claim reference",
-    "expected": "Expected amount"
+    "expected": "Expected amount",
+    "patient": "Patient",
+    "invoice": "Invoice",
+    "policy": "Policy"
   },
   "actions": {
     "openClaims": "Open claims workbench",
@@ -98,7 +102,12 @@
     "exportPolicies": "Export Policies (CSV)",
     "exporting": "Exporting...",
     "edit": "Edit",
-    "addPolicy": "Add Patient Policy"
+    "addPolicy": "Add Patient Policy",
+    "editProvider": "Edit insurance provider",
+    "editContract": "Edit contract",
+    "editRule": "Edit coverage rule",
+    "editPolicy": "Edit policy",
+    "requestApproval": "Request approval"
   },
   "filters": {
     "search": "Search claim, reference, provider, patient, or MRN...",
@@ -130,7 +139,8 @@
     "rules": "No coverage rules recorded",
     "rulesDescription": "Add a payer rule to make coverage terms visible.",
     "rejectedClaims": "No rejected claims require follow-up.",
-    "noPayerCode": "No payer code"
+    "noPayerCode": "No payer code",
+    "noDataToExport": "No claim or policy data available to export"
   },
   "errors": {
     "load": "Some insurance data could not be loaded. Available sections remain usable.",
@@ -145,22 +155,22 @@
     "received": "Received amount"
   },
   "claimDialog": {
-    "submitTitle": "Submit insurance claim",
-    "submitDescription": "Enter the payer reference before submitting claim {{claim}}.",
-    "resubmitTitle": "Resubmit insurance claim",
-    "resubmitDescription": "Add the corrective action or supporting information for claim {{claim}}.",
-    "rejectTitle": "Reject insurance claim",
-    "rejectDescription": "Record the payer's reason for rejecting claim {{claim}}. This remains visible for follow-up.",
-    "paymentTitle": "Record insurance payment",
-    "paymentDescription": "Record the amount received for claim {{claim}}. Expected recovery: {{amount}}.",
-    "confirmSubmit": "Submit claim",
-    "confirmResubmit": "Resubmit claim",
-    "confirmReject": "Reject claim",
-    "confirmPayment": "Record payment",
+    "submitTitle": "Submit Claim",
+    "submitDescription": "Are you sure you want to submit claim {{claim}} for {{amount}} to payer?",
+    "confirmSubmit": "Confirm Submit",
+    "resubmitTitle": "Resubmit Claim",
+    "resubmitDescription": "Resubmit claim {{claim}} for {{amount}} after updating information.",
+    "confirmResubmit": "Confirm Resubmit",
+    "rejectTitle": "Record Claim Rejection",
+    "rejectDescription": "Record rejection for claim {{claim}} with required reason.",
+    "confirmReject": "Confirm Rejection",
+    "settleTitle": "Settle & Reconcile Claim",
+    "settleDescription": "Record received funds and deductions for claim {{claim}}.",
+    "confirmSettle": "Confirm Settlement",
     "cancel": "Cancel",
-    "required": "Enter a value before continuing.",
-    "amountPositive": "Enter an amount greater than zero.",
-    "amountExceeds": "Received amount cannot exceed the expected claim amount."
+    "required": "This field is required",
+    "amountPositive": "Please enter an amount greater than zero.",
+    "amountExceeds": "Settled amount cannot exceed expected claim amount."
   },
   "messages": {
     "providerAdded": "Provider added.",
@@ -182,10 +192,12 @@
     "policyUpdated": "Insurance policy updated successfully.",
     "ruleUpdated": "Coverage rule updated successfully.",
     "exportSuccess": "Claims exported successfully.",
-    "exportFailed": "Failed to export claims."
+    "exportFailed": "Failed to export claims.",
+    "policyError": "Failed to save insurance policy"
   },
   "tabs": {
     "claims": "Claims Workbench",
+    "reports": "Reports & Statements",
     "providers": "Payers & Contracts",
     "rules": "Coverage & Simulator",
     "approvals": "Pre-Authorizations",

@@ -51,6 +51,7 @@ import { hasDeveloperOrAdminRole } from '../utils/roles';
 import { inputClass, secondaryBtn } from '../utils/designTokens';
 import { getDoctorPortalLoginUrl } from '../utils/portalUrls';
 import CredentialHandoffDialog from '../components/CredentialHandoffDialog';
+import useDebounce from '../hooks/useDebounce';
 
 const emptyDoctorForm = {
     fullName: '',
@@ -78,6 +79,7 @@ const ReferringDoctors = () => {
     const fileInputRef = useRef(null);
 
     const [searchTerm, setSearchTerm] = useState('');
+    const debouncedSearchTerm = useDebounce(searchTerm.trim(), 250);
     const [activeOnly, setActiveOnly] = useState(true);
     const [specialtyFilter, setSpecialtyFilter] = useState('all');
     const [selectedId, setSelectedId] = useState(null);
@@ -88,7 +90,7 @@ const ReferringDoctors = () => {
     const [viewMode, setViewMode] = useState('table'); // 'table' | 'grid'
 
     const { data: doctors = [], isLoading, isError, refetch } = useGetReferringDoctorsQuery({
-        search: searchTerm || undefined,
+        search: debouncedSearchTerm || undefined,
         active: activeOnly ? 'true' : undefined,
         limit: 500
     });
@@ -208,7 +210,7 @@ const ReferringDoctors = () => {
         const file = event.target.files?.[0];
         if (!file) return;
         try {
-            const text = await file.text();
+            const text = (await file.text()).replace(/^\uFEFF/, '');
             const rows = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
             const dataRows = rows[0]?.toLowerCase().includes('fullname') ? rows.slice(1) : rows;
             let imported = 0;
@@ -227,9 +229,11 @@ const ReferringDoctors = () => {
     };
 
     return (
-        <div className="space-y-6 pb-12">
+        <div className="referring-doctors-page space-y-6 pb-12">
             {/* Modernized Executive Page Header */}
             <PageHeader
+                className="referring-doctors-header"
+                compact
                 icon={Stethoscope}
                 eyebrow={t('referringDoctors.eyebrow')}
                 eyebrowIcon={Activity}
@@ -239,15 +243,15 @@ const ReferringDoctors = () => {
                     <div className="flex flex-wrap items-center gap-2">
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-200/80 bg-teal-50/90 px-3 py-1 text-xs font-bold text-teal-800 shadow-sm dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">
                             <ShieldCheck size={13} className="text-teal-600 dark:text-teal-400" />
-                            Network Governed
+                            {t('referringDoctors.badges.governed')}
                         </span>
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-200/80 bg-cyan-50/90 px-3 py-1 text-xs font-bold text-cyan-800 shadow-sm dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-300">
                             <BadgePercent size={13} className="text-cyan-600 dark:text-cyan-400" />
-                            Commission Tracking
+                            {t('referringDoctors.badges.commissions')}
                         </span>
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50/90 px-3 py-1 text-xs font-bold text-emerald-800 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
                             <Zap size={13} className="text-emerald-600 dark:text-emerald-400" />
-                            Portal Sync
+                            {t('referringDoctors.badges.portal')}
                         </span>
                     </div>
                 }
@@ -295,7 +299,7 @@ const ReferringDoctors = () => {
             {/* Executive Network KPI Command Signals */}
 
             {/* Sticky Glassmorphic Search & Filter Toolbar */}
-            <section className="sticky top-4 z-20 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-lg shadow-slate-200/40 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
+            <section className="referring-doctors-toolbar sticky top-4 z-20 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-lg shadow-slate-200/40 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100/80 px-5 py-4 dark:border-white/5">
                     <div className="flex items-center gap-3">
                         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300">
@@ -313,30 +317,32 @@ const ReferringDoctors = () => {
 
                     <div className="flex items-center gap-3">
                         {/* View Mode Switcher */}
-                        <div className="inline-flex rounded-2xl border border-slate-200/80 bg-slate-100/70 p-1 dark:border-white/10 dark:bg-slate-900">
+                        <div role="group" aria-label={t('referringDoctors.viewMode.label')} className="inline-flex rounded-2xl border border-slate-200/80 bg-slate-100/70 p-1 dark:border-white/10 dark:bg-slate-900">
                             <button
                                 type="button"
                                 onClick={() => setViewMode('table')}
+                                aria-pressed={viewMode === 'table'}
                                 className={`flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-bold transition-all ${viewMode === 'table'
                                     ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
                                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
                                     }`}
-                                title="Table View"
+                                title={t('referringDoctors.viewMode.table')}
                             >
                                 <ListFilter size={14} />
-                                <span className="hidden sm:inline">Table</span>
+                                <span className="hidden sm:inline">{t('referringDoctors.viewMode.table')}</span>
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setViewMode('grid')}
+                                aria-pressed={viewMode === 'grid'}
                                 className={`flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-bold transition-all ${viewMode === 'grid'
                                     ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
                                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
                                     }`}
-                                title="Cards View"
+                                title={t('referringDoctors.viewMode.cards')}
                             >
                                 <LayoutGrid size={14} />
-                                <span className="hidden sm:inline">Cards</span>
+                                <span className="hidden sm:inline">{t('referringDoctors.viewMode.cards')}</span>
                             </button>
                         </div>
 
@@ -364,6 +370,7 @@ const ReferringDoctors = () => {
                             <input
                                 value={searchTerm}
                                 onChange={event => setSearchTerm(event.target.value)}
+                                aria-label={t('referringDoctors.filters.searchLabel')}
                                 placeholder={t('referringDoctors.filters.search')}
                                 className="h-10 w-full rounded-2xl border border-slate-200/80 bg-white/80 ps-10 pe-3 text-xs font-bold text-slate-900 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:border-teal-500 dark:focus:ring-teal-500/20"
                             />
@@ -372,7 +379,7 @@ const ReferringDoctors = () => {
                         <select
                             value={specialtyFilter}
                             onChange={event => setSpecialtyFilter(event.target.value)}
-                            aria-label={t('doctors.filters.specialty')}
+                            aria-label={t('referringDoctors.filters.specialty')}
                             className="h-10 rounded-2xl border border-slate-200/80 bg-white/80 px-3.5 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300 dark:focus:border-teal-500 dark:focus:ring-teal-500/20 min-w-[160px]"
                         >
                             <option value="all">{t('referringDoctors.filters.allSpecialties')}</option>
@@ -390,7 +397,7 @@ const ReferringDoctors = () => {
             {/* Main Section: Directory View + Side Profile Drawer */}
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
                 {/* Directory Content Container */}
-                <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
+                <section className="referring-doctors-directory overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
                     {isLoading ? (
                         <div className="space-y-3 p-5">{[1, 2, 3, 4].map(item => <Skeleton key={item} height="88px" className="rounded-2xl" />)}</div>
                     ) : isError ? (
@@ -436,14 +443,14 @@ const ReferringDoctors = () => {
                             </div>
 
                             <div className="hidden overflow-x-auto lg:block">
-                                <table className="w-full min-w-[920px] text-start text-sm border-collapse">
+                                <table className="w-full min-w-[880px] table-fixed border-collapse text-start text-sm">
                                     <thead className="sticky top-0 z-10 border-b border-slate-200/80 bg-slate-50/90 backdrop-blur-md dark:border-white/5 dark:bg-slate-900/90 dark:text-slate-400">
                                         <tr>
-                                            <th className="px-5 py-4 text-start text-[10px] font-black uppercase tracking-wider text-slate-400">{t('referringDoctors.table.doctor')}</th>
-                                            <th className="px-5 py-4 text-start text-[10px] font-black uppercase tracking-wider text-slate-400">{t('referringDoctors.table.contact')}</th>
-                                            <th className="px-5 py-4 text-start text-[10px] font-black uppercase tracking-wider text-slate-400">{t('referringDoctors.table.performance')}</th>
-                                            <th className="px-5 py-4 text-start text-[10px] font-black uppercase tracking-wider text-slate-400">{t('referringDoctors.table.commission')}</th>
-                                            <th className="px-5 py-4 text-end text-[10px] font-black uppercase tracking-wider text-slate-400">{t('referringDoctors.table.actions')}</th>
+                                            <th className="w-[28%] px-4 py-4 text-start text-[10px] font-black uppercase tracking-wider text-slate-400">{t('referringDoctors.table.doctor')}</th>
+                                            <th className="w-[24%] px-4 py-4 text-start text-[10px] font-black uppercase tracking-wider text-slate-400">{t('referringDoctors.table.contact')}</th>
+                                            <th className="w-[18%] px-4 py-4 text-start text-[10px] font-black uppercase tracking-wider text-slate-400">{t('referringDoctors.table.performance')}</th>
+                                            <th className="w-[12%] px-4 py-4 text-start text-[10px] font-black uppercase tracking-wider text-slate-400">{t('referringDoctors.table.commission')}</th>
+                                            <th className="w-[140px] px-3 py-4 text-end text-[10px] font-black uppercase tracking-wider text-slate-400">{t('referringDoctors.table.actions')}</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100/80 dark:divide-white/5">
@@ -555,10 +562,7 @@ const DoctorTableRow = ({ doctor, selected, isZebra, onSelect, onViewDetails, on
                 <DoctorIdentity doctor={doctor} onClick={onViewDetails} t={t} />
             </td>
             <td className="px-5 py-4">
-                <div className="space-y-1 text-xs font-medium text-slate-600 dark:text-slate-400">
-                    <p className="flex items-center gap-2"><Phone size={13} className="text-slate-400" />{doctor.phone || '—'}</p>
-                    <p className="flex items-center gap-2"><Mail size={13} className="text-slate-400" />{doctor.email || '—'}</p>
-                </div>
+                <DoctorContactDetails doctor={doctor} t={t} />
             </td>
             <td className="px-5 py-4">
                 <p className="font-bold text-slate-900 dark:text-white">{t('referringDoctors.values.appointments', { count: Number(doctor.appointment_count || 0) })}</p>
@@ -592,7 +596,7 @@ const DoctorIdentity = ({ doctor, onClick, t }) => (
             {initials(doctor.full_name)}
         </span>
         <div className="min-w-0">
-            <p className="truncate font-black text-slate-900 transition-colors group-hover:text-teal-600 dark:text-white dark:group-hover:text-teal-400 text-sm">
+            <p title={doctor.full_name} className="truncate font-black text-slate-900 transition-colors group-hover:text-teal-600 dark:text-white dark:group-hover:text-teal-400 text-sm">
                 {doctor.full_name}
             </p>
             <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -619,9 +623,8 @@ const DoctorGridCard = ({ doctor, selected, onSelect, onViewDetails, onEdit, onG
             <StatusPill active={doctor.is_active} t={t} />
         </div>
 
-        <div className="mt-4 space-y-1.5 border-t border-b border-slate-100/80 py-3 dark:border-white/5 text-xs text-slate-600 dark:text-slate-400">
-            <p className="flex items-center gap-2"><Phone size={13} className="text-slate-400" />{doctor.phone || '—'}</p>
-            <p className="flex items-center gap-2"><Mail size={13} className="text-slate-400" />{doctor.email || '—'}</p>
+        <div className="mt-4 border-t border-b border-slate-100/80 py-3 dark:border-white/5">
+            <DoctorContactDetails doctor={doctor} t={t} />
         </div>
 
         <dl className="mt-4 grid grid-cols-3 gap-2 text-start">
@@ -637,7 +640,7 @@ const DoctorGridCard = ({ doctor, selected, onSelect, onViewDetails, onEdit, onG
                     onClick={onViewDetails}
                     className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-teal-200/80 bg-teal-50/80 px-3 py-1.5 text-xs font-bold text-teal-800 transition hover:bg-teal-100 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300"
                 >
-                    <Eye size={14} /> View
+                    <Eye size={14} />{t('referringDoctors.actions.viewDetailsShort')}
                 </button>
             )}
             {onGenerateCredentials && (
@@ -647,7 +650,7 @@ const DoctorGridCard = ({ doctor, selected, onSelect, onViewDetails, onEdit, onG
                     disabled={isGeneratingCredentials}
                     className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-cyan-200/80 bg-cyan-50/80 px-3 py-1.5 text-xs font-bold text-cyan-800 transition hover:bg-cyan-100 disabled:opacity-50 dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-300"
                 >
-                    <KeyRound size={14} /> Portal
+                    <KeyRound size={14} />{t('referringDoctors.portal.generateShort')}
                 </button>
             )}
             {onEdit && (
@@ -656,7 +659,7 @@ const DoctorGridCard = ({ doctor, selected, onSelect, onViewDetails, onEdit, onG
                     onClick={onEdit}
                     className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200/80 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                 >
-                    <Edit3 size={14} /> Edit
+                    <Edit3 size={14} />{t('referringDoctors.actions.edit')}
                 </button>
             )}
         </div>
@@ -676,6 +679,9 @@ const DoctorMobileCard = ({ doctor, selected, onSelect, onViewDetails, onEdit, o
                 <CompactValue label={t('referringDoctors.profile.commission')} value={`${Number(doctor.commission_percentage || 0)}%`} />
             </div>
         </button>
+        <div className="mt-3 border-t border-slate-100/80 pt-3 dark:border-white/5">
+            <DoctorContactDetails doctor={doctor} t={t} />
+        </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {onViewDetails && (
                 <button
@@ -707,6 +713,25 @@ const DoctorMobileCard = ({ doctor, selected, onSelect, onViewDetails, onEdit, o
             )}
         </div>
     </article>
+);
+
+const DoctorContactDetails = ({ doctor, t }) => (
+    <div className="space-y-1 text-xs font-medium text-slate-600 dark:text-slate-400">
+        {doctor.phone ? (
+            <a href={`tel:${doctor.phone.replace(/[^+\d]/g, '')}`} onClick={event => event.stopPropagation()} dir="ltr" className="flex min-w-0 items-center gap-2 hover:text-teal-700 dark:hover:text-teal-300">
+                <Phone size={13} className="shrink-0 text-slate-400" />
+                <span className="truncate">{doctor.phone}</span>
+                <span className="sr-only">{t('referringDoctors.form.phone')}</span>
+            </a>
+        ) : null}
+        {doctor.email ? (
+            <a href={`mailto:${doctor.email}`} onClick={event => event.stopPropagation()} dir="ltr" className="flex min-w-0 items-center gap-2 hover:text-teal-700 dark:hover:text-teal-300">
+                <Mail size={13} className="shrink-0 text-slate-400" />
+                <span className="truncate">{doctor.email}</span>
+                <span className="sr-only">{t('referringDoctors.form.email')}</span>
+            </a>
+        ) : !doctor.phone ? <span className="text-slate-500">—</span> : null}
+    </div>
 );
 
 /* Doctor Side Profile Drawer */
@@ -940,8 +965,12 @@ const initials = (name = '') => name.split(/\s+/).filter(Boolean).slice(0, 2).ma
 const toDoctorForm = doctor => ({ fullName: doctor.full_name || '', specialty: doctor.specialty || '', clinicHospital: doctor.clinic_hospital || '', phone: doctor.phone || '', email: doctor.email || '', address: doctor.address || '', taxId: doctor.tax_id || '', contractId: doctor.contract_id || '', referralSourceCategory: doctor.referral_source_category || 'Doctor', commissionPercentage: doctor.commission_percentage || 0, preferredContactMethod: doctor.preferred_contact_method || 'Email', notes: doctor.notes || '', isActive: Boolean(doctor.is_active) });
 const cleanDoctorPayload = form => ({ fullName: form.fullName.trim(), specialty: form.specialty.trim() || undefined, clinicHospital: form.clinicHospital.trim() || undefined, phone: form.phone.trim() || undefined, email: form.email.trim() || undefined, address: form.address.trim() || undefined, taxId: form.taxId.trim() || undefined, contractId: form.contractId.trim() || undefined, referralSourceCategory: form.referralSourceCategory.trim() || undefined, commissionPercentage: Number(form.commissionPercentage || 0), preferredContactMethod: form.preferredContactMethod || undefined, notes: form.notes.trim() || undefined, ...(form.isActive !== undefined ? { isActive: Boolean(form.isActive) } : {}) });
 const formatCurrency = (value, locale) => new Intl.NumberFormat(locale, { style: 'currency', currency: 'EGP', maximumFractionDigits: 0 }).format(Number(value || 0));
-const csvEscape = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+const csvEscape = value => {
+    const text = String(value ?? '');
+    const spreadsheetSafeText = /^[=+\-@]/.test(text.trimStart()) ? `'${text}` : text;
+    return `"${spreadsheetSafeText.replace(/"/g, '""')}"`;
+};
 const parseCsvLine = line => { const values = []; let current = ''; let inQuotes = false; for (let index = 0; index < line.length; index += 1) { const char = line[index]; if (char === '"' && line[index + 1] === '"') { current += '"'; index += 1; } else if (char === '"') inQuotes = !inQuotes; else if (char === ',' && !inQuotes) { values.push(current); current = ''; } else current += char; } values.push(current); return values.map(value => value.trim()); };
-const downloadFile = (filename, content) => { const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url); };
+const downloadFile = (filename, content) => { const blob = new Blob(['\uFEFF', content], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url); };
 
 export default ReferringDoctors;

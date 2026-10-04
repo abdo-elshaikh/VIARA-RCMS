@@ -10,11 +10,20 @@ import {
     AlertCircle,
     AlertTriangle,
     BrainCircuit,
+    Check,
     CheckCircle2,
     ClipboardList,
+    Cloud,
+    Copy,
     Database,
     Edit3,
     Eye,
+    EyeOff,
+    FolderSync,
+    Globe,
+    HardDrive,
+    Key,
+    Layers,
     Lock,
     Monitor,
     Network,
@@ -63,7 +72,25 @@ const DEFAULT_CONFIG = {
     orthanc_username: '',
     orthanc_password: '',
     is_pacs_enabled: false,
-    auto_import_dicom: true
+    auto_import_dicom: true,
+    pacs_storage_mode: 'local',
+    pacs_local_storage_path: '/var/lib/orthanc/db',
+    pacs_cloud_provider: 's3',
+    pacs_s3_bucket: '',
+    pacs_s3_region: 'eu-central-1',
+    pacs_s3_endpoint: '',
+    pacs_s3_access_key: '',
+    pacs_s3_secret_key: '',
+    pacs_s3_storage_class: 'STANDARD',
+    pacs_azure_container: '',
+    pacs_peer_url: '',
+    pacs_peer_aet: '',
+    pacs_peer_username: '',
+    pacs_peer_password: '',
+    pacs_auto_sync_enabled: false,
+    pacs_tiering_days: '90',
+    pacs_cold_prefix: '',
+    pacs_external_viewer_url: ''
 };
 
 const DEFAULT_MACHINE = {
@@ -387,6 +414,7 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
                 orthanc_api_url: configData.orthanc_api_url || '',
                 orthanc_username: configData.orthanc_username || '',
                 orthanc_password: '',
+                pacs_external_viewer_url: configData.pacs_external_viewer_url || '',
                 is_pacs_enabled: Boolean(configData.is_pacs_enabled),
                 auto_import_dicom: configData.auto_import_dicom ?? true
             });
@@ -411,6 +439,7 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
             form.orthanc_api_url !== (configData.orthanc_api_url || '') ||
             form.orthanc_username !== (configData.orthanc_username || '') ||
             Boolean(form.orthanc_password) ||
+            form.pacs_external_viewer_url !== (configData.pacs_external_viewer_url || '') ||
             form.is_pacs_enabled !== Boolean(configData.is_pacs_enabled) ||
             form.auto_import_dicom !== (configData.auto_import_dicom ?? true)
         );
@@ -624,6 +653,30 @@ const PacsConfigPanel = ({ reveal = () => ({}) }) => {
                             <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{copy('admin:pacsSettings.autoImport', 'Auto-import DICOM instances', 'استيراد صور DICOM تلقائيًا')}</p>
                             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{copy('admin:pacsSettings.autoImportHelp', 'Automatically index new instances into VIARA studies and reports.', 'يفهرس الصور الجديدة تلقائيًا داخل دراسات وتقارير VIARA.')}</p>
                         </div>
+                    </label>
+                </div>
+
+                <div className="border-t border-slate-200/60 p-4 dark:border-slate-800/60">
+                    <label className="block">
+                        <div className="flex items-center gap-2 mb-1.5">
+                            <Monitor size={15} className="text-teal-700 dark:text-teal-300" />
+                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                {copy('admin:pacsSettings.externalViewerUrl', 'Custom External Viewer URL Template (Optional)', 'قالب رابط عارض الصور الخارجي المخصص (اختياري)')}
+                            </span>
+                        </div>
+                        <input
+                            value={form.pacs_external_viewer_url || ''}
+                            onChange={updateField('pacs_external_viewer_url')}
+                            className={inputClass}
+                            placeholder="https://viewerhub.example.org/display/auth?viewer=WEASIS&studyUID={studyUid}&archive=viara"
+                        />
+                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                            {copy(
+                                'admin:pacsSettings.externalViewerUrlHelp',
+                                'For Weasis ViewerHub use its authenticated launch endpoint, e.g. /display/auth?viewer=WEASIS&studyUID={studyUid}&archive=viara. Configure its DICOMweb gateway and OIDC separately; never put access tokens in this URL. Supported variables: {studyUid}, {accession}, {patientId}.',
+                                'لتكامل Weasis ViewerHub استخدم نقطة التشغيل الموثّقة، مثل /display/auth?viewer=WEASIS&studyUID={studyUid}&archive=viara. اضبط بوابة DICOMweb وOIDC بشكل منفصل؛ لا تضع رموز الوصول في الرابط. المتغيرات المدعومة: {studyUid} و{accession} و{patientId}.'
+                            )}
+                        </p>
                     </label>
                 </div>
 
@@ -1706,6 +1759,583 @@ const formatStorageDate = (value, locale, withTime = false) => (
         : '-'
 );
 
+const PacsStorageArchitectureConfig = ({ reveal = () => ({}), onSaved = () => {} }) => {
+    const { t, i18n } = useTranslation(['admin', 'common']);
+    const { data: configData = DEFAULT_CONFIG, isLoading, refetch } = useGetPacsConfigQuery();
+    const [updatePacsConfig, { isLoading: isSaving }] = useUpdatePacsConfigMutation();
+
+    const [form, setForm] = useState(DEFAULT_CONFIG);
+    const [showS3Secret, setShowS3Secret] = useState(false);
+    const [showPeerSecret, setShowPeerSecret] = useState(false);
+    const [showSnippet, setShowSnippet] = useState(false);
+    const [copied, setCopied] = useState(false);
+
+    useEffect(() => {
+        if (configData) {
+            setForm((prev) => ({
+                ...prev,
+                pacs_storage_mode: configData.pacs_storage_mode || 'local',
+                pacs_local_storage_path: configData.pacs_local_storage_path || '/var/lib/orthanc/db',
+                pacs_cloud_provider: configData.pacs_cloud_provider || 's3',
+                pacs_s3_bucket: configData.pacs_s3_bucket || '',
+                pacs_s3_region: configData.pacs_s3_region || 'eu-central-1',
+                pacs_s3_endpoint: configData.pacs_s3_endpoint || '',
+                pacs_s3_access_key: configData.pacs_s3_access_key || '',
+                pacs_s3_secret_key: '',
+                pacs_s3_storage_class: configData.pacs_s3_storage_class || 'STANDARD',
+                pacs_azure_container: configData.pacs_azure_container || '',
+                pacs_peer_url: configData.pacs_peer_url || '',
+                pacs_peer_aet: configData.pacs_peer_aet || '',
+                pacs_peer_username: configData.pacs_peer_username || '',
+                pacs_peer_password: '',
+                pacs_auto_sync_enabled: Boolean(configData.pacs_auto_sync_enabled),
+                pacs_tiering_days: configData.pacs_tiering_days ? String(configData.pacs_tiering_days) : '90',
+                pacs_cold_prefix: configData.pacs_cold_prefix || ''
+            }));
+        }
+    }, [configData]);
+
+    const language = i18n.resolvedLanguage || i18n.language;
+    const copy = (key, english, arabic, values = {}) => t(key, {
+        defaultValue: localizedDefault(language, english, arabic),
+        ...values
+    });
+
+    const hasStoredS3Secret = Boolean(configData?.has_s3_secret);
+    const hasStoredPeerPassword = Boolean(configData?.has_peer_password);
+
+    const updateField = (field) => (event) => {
+        const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+        setForm((prev) => ({ ...prev, [field]: value }));
+    };
+
+    const handleSave = async (e) => {
+        e?.preventDefault();
+        try {
+            const payload = {
+                pacs_storage_mode: form.pacs_storage_mode,
+                pacs_local_storage_path: form.pacs_local_storage_path,
+                pacs_cloud_provider: form.pacs_cloud_provider,
+                pacs_s3_bucket: form.pacs_s3_bucket,
+                pacs_s3_region: form.pacs_s3_region,
+                pacs_s3_endpoint: form.pacs_s3_endpoint,
+                pacs_s3_access_key: form.pacs_s3_access_key,
+                pacs_s3_storage_class: form.pacs_s3_storage_class,
+                pacs_azure_container: form.pacs_azure_container,
+                pacs_peer_url: form.pacs_peer_url,
+                pacs_peer_aet: form.pacs_peer_aet,
+                pacs_peer_username: form.pacs_peer_username,
+                pacs_auto_sync_enabled: form.pacs_auto_sync_enabled,
+                pacs_tiering_days: form.pacs_tiering_days,
+                pacs_cold_prefix: form.pacs_cold_prefix
+            };
+            if (form.pacs_s3_secret_key) {
+                payload.pacs_s3_secret_key = form.pacs_s3_secret_key;
+            }
+            if (form.pacs_peer_password) {
+                payload.pacs_peer_password = form.pacs_peer_password;
+            }
+
+            await updatePacsConfig(payload).unwrap();
+            toast.success(copy('admin:pacsSettings.storageArch.saved', 'Storage architecture configuration saved successfully', 'تم حفظ إعدادات معمارية التخزين بنجاح'));
+            refetch();
+            onSaved();
+        } catch (error) {
+            toast.error(error?.data?.message || copy('admin:pacsSettings.storageArch.saveError', 'Failed to save storage configuration', 'تعذر حفظ إعدادات التخزين'));
+        }
+    };
+
+    const generateSnippet = () => {
+        if (form.pacs_storage_mode === 'local') {
+            return JSON.stringify({
+                "StorageDirectory": form.pacs_local_storage_path || "/var/lib/orthanc/db",
+                "IndexDirectory": form.pacs_local_storage_path || "/var/lib/orthanc/db",
+                "ConcurrentJobs": 4
+            }, null, 2);
+        }
+        if (form.pacs_storage_mode === 'cloud') {
+            return JSON.stringify({
+                "StorageDirectory": "/var/lib/orthanc/db",
+                "IndexDirectory": "/var/lib/orthanc/db",
+                "AwsS3Storage": {
+                    "BucketName": form.pacs_s3_bucket || "hospital-pacs-archive",
+                    "Region": form.pacs_s3_region || "eu-central-1",
+                    "Endpoint": form.pacs_s3_endpoint || undefined,
+                    "AccessKey": form.pacs_s3_access_key || "YOUR_ACCESS_KEY",
+                    "SecretKey": form.pacs_s3_secret_key || (hasStoredS3Secret ? "********" : "YOUR_SECRET_KEY"),
+                    "StorageClass": form.pacs_s3_storage_class || "STANDARD",
+                    "VirtualAddressing": form.pacs_cloud_provider === 's3'
+                }
+            }, null, 2);
+        }
+        return JSON.stringify({
+            "StorageDirectory": "/var/lib/orthanc/db",
+            "IndexDirectory": "/var/lib/orthanc/db",
+            "OrthancPeers": form.pacs_peer_url ? {
+                [form.pacs_peer_aet || "central"]: {
+                    "Url": form.pacs_peer_url,
+                    "Username": form.pacs_peer_username || "orthanc",
+                    "Password": form.pacs_peer_password || (hasStoredPeerPassword ? "********" : "password")
+                }
+            } : {}
+        }, null, 2);
+    };
+
+    const copySnippetToClipboard = () => {
+        navigator.clipboard?.writeText(generateSnippet());
+        setCopied(true);
+        toast.success(copy('admin:pacsSettings.storageArch.copied', 'Orthanc configuration snippet copied to clipboard', 'تم نسخ كود إعدادات Orthanc إلى الحافظة'));
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    const modes = [
+        {
+            id: 'local',
+            title: copy('admin:pacsSettings.storageArch.modes.local.title', 'Local Storage', 'تخزين محلي مباشر'),
+            subtitle: copy('admin:pacsSettings.storageArch.modes.local.sub', 'Direct Server NVMe / RAID Storage', 'أقراص الخادم السريعة وRAID المحلية'),
+            description: copy('admin:pacsSettings.storageArch.modes.local.desc', 'Best for ultra-fast hospital LAN speeds, zero bandwidth fees, and instant workstation rendering.', 'الخيار الأفضل للسرعة القصوى على شبكة المستشفى الداخلية، بدون تكاليف تدفق بيانات، وزمن استجابة فوري للأجهزة.'),
+            icon: HardDrive,
+            badge: copy('admin:pacsSettings.storageArch.modes.local.badge', 'On-Premise', 'محلي')
+        },
+        {
+            id: 'cloud',
+            title: copy('admin:pacsSettings.storageArch.modes.cloud.title', 'Cloud Object Storage', 'تخزين سحابي مباشر'),
+            subtitle: copy('admin:pacsSettings.storageArch.modes.cloud.sub', 'S3 / Wasabi / MinIO / Azure Blob', 'سحابة S3 و Wasabi و MinIO و Azure'),
+            description: copy('admin:pacsSettings.storageArch.modes.cloud.desc', 'Stores DICOM instances directly in elastic cloud storage. Perfect for multi-clinic networks and off-site DR.', 'حفظ ملفات DICOM مباشرة في وحدات التخزين السحابي بسعات غير محدودة، ومثالي لربط الفروع والتعافي من الكوارث.'),
+            icon: Cloud,
+            badge: copy('admin:pacsSettings.storageArch.modes.cloud.badge', 'Elastic Cloud', 'سحابي مرن')
+        },
+        {
+            id: 'hybrid',
+            title: copy('admin:pacsSettings.storageArch.modes.hybrid.title', 'Hybrid Sync & Tiering', 'تخزين هجين وتزامن ذكي'),
+            subtitle: copy('admin:pacsSettings.storageArch.modes.hybrid.sub', 'Local Hot Cache + Central/Cold Sync', 'كاش محلي ساخن + أرشفة سحابية باردة'),
+            description: copy('admin:pacsSettings.storageArch.modes.hybrid.desc', 'Instant local reading for recent studies (30-90 days), with automatic background sync and cold tiering.', 'سرعة محلية فائقة للحالات الحديثة، مع ترحيل ومزامنة ذكية للحالات الأقدم إلى الخادم المركزي أو الأرشيف البارد.'),
+            icon: FolderSync,
+            badge: copy('admin:pacsSettings.storageArch.modes.hybrid.badge', 'High Availability', 'تزامن ذكي')
+        }
+    ];
+
+    if (isLoading) {
+        return null;
+    }
+
+    return (
+        <section className={panelClass} {...reveal(180)}>
+            <div className="border-b border-slate-200/60 p-4 sm:p-5 dark:border-slate-800/60">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-teal-500/10 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400">
+                            <Database size={20} />
+                        </div>
+                        <div>
+                            <h2 className="text-base font-bold text-slate-950 dark:text-white">
+                                {copy('admin:pacsSettings.storageArch.title', 'Archive & DICOM Storage Architecture', 'معمارية تخزين الأرشيف وصور DICOM')}
+                            </h2>
+                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                {copy('admin:pacsSettings.storageArch.subtitle', 'Configure where DICOM studies are physically stored: on-premise local disk, direct S3/Azure cloud bucket, or hybrid multi-site sync.', 'حدد مكان حفظ دراسات DICOM فعلياً: محلياً على أقراص الخادم، أو سحابياً على S3/Azure، أو بنظام هجين يجمع السرعة والأرشفة.')}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setShowSnippet(!showSnippet)}
+                            className={buttonClass}
+                        >
+                            <Layers size={14} />
+                            <span>{showSnippet ? copy('admin:pacsSettings.storageArch.hideSnippet', 'Hide Config Code', 'إخفاء كود Orthanc') : copy('admin:pacsSettings.storageArch.viewSnippet', 'Orthanc Config Snippet', 'معاينة كود Orthanc')}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleSave}
+                            disabled={isSaving}
+                            className={primaryButtonClass}
+                        >
+                            {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                            <span>{language.startsWith('ar') ? 'حفظ مسودة إعداد النشر' : 'Save deployment configuration draft'}</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Storage Mode Selector Cards */}
+                <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                    {modes.map((mode) => {
+                        const Icon = mode.icon;
+                        const isSelected = form.pacs_storage_mode === mode.id;
+                        return (
+                            <button
+                                key={mode.id}
+                                type="button"
+                                onClick={() => setForm((prev) => ({ ...prev, pacs_storage_mode: mode.id }))}
+                                className={`relative flex flex-col text-start rounded-2xl p-4 transition-all duration-200 border ${
+                                    isSelected
+                                        ? 'border-teal-500 bg-teal-500/10 shadow-sm ring-2 ring-teal-500/30 dark:border-teal-400 dark:bg-teal-950/30'
+                                        : 'border-slate-200/80 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/60 dark:hover:border-slate-700'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className={`grid h-8 w-8 place-items-center rounded-lg ${isSelected ? 'bg-teal-500 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                                        <Icon size={16} />
+                                    </div>
+                                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                                        isSelected
+                                            ? 'bg-teal-500/20 text-teal-800 dark:text-teal-200'
+                                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                    }`}>
+                                        {mode.badge}
+                                    </span>
+                                </div>
+                                <h3 className="mt-3 text-sm font-black text-slate-950 dark:text-white">
+                                    {mode.title}
+                                </h3>
+                                <p className="text-[11px] font-semibold text-teal-700 dark:text-teal-400">
+                                    {mode.subtitle}
+                                </p>
+                                <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                    {mode.description}
+                                </p>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* Mode-Specific Settings Form */}
+            <div className="p-4 sm:p-5 space-y-5">
+                {form.pacs_storage_mode === 'local' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                            <HardDrive size={15} />
+                            <span>{copy('admin:pacsSettings.storageArch.localTitle', 'Local Filesystem & Disk Mounts', 'إعدادات القرص المحلي والمجلدات')}</span>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.localPath', 'Storage Directory Path', 'مسار مجلد التخزين المحلي')}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={form.pacs_local_storage_path}
+                                    onChange={updateField('pacs_local_storage_path')}
+                                    placeholder="/var/lib/orthanc/db"
+                                    className={inputClass}
+                                />
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {copy('admin:pacsSettings.storageArch.localPathHelp', 'Linux path (e.g. /var/lib/orthanc/db) or Windows drive path (e.g. D:\\VIARA\\orthanc-storage).', 'مسار المجلد على خادم Linux مثل /var/lib/orthanc/db أو مسار القرص في Windows مثل D:\\VIARA\\orthanc-storage.')}
+                                </p>
+                            </div>
+
+                            <div className="rounded-xl border border-teal-200/60 bg-teal-50/50 p-4 text-xs dark:border-teal-900/40 dark:bg-teal-950/20">
+                                <div className="flex items-center gap-2 font-bold text-teal-900 dark:text-teal-200">
+                                    <ShieldCheck size={16} className="shrink-0 text-teal-600 dark:text-teal-400" />
+                                    <span>{copy('admin:pacsSettings.storageArch.localTipsTitle', 'Best Practice for Local Storage', 'إرشادات الأداء للتخزين المحلي')}</span>
+                                </div>
+                                <ul className="mt-2 list-disc space-y-1 ps-4 leading-5 text-teal-800/90 dark:text-teal-300/80">
+                                    <li>{copy('admin:pacsSettings.storageArch.localTip1', 'Mount on high-speed NVMe or SSD RAID-10 for instantaneous study opening.', 'استخدم وحدات NVMe أو SSD بتقنية RAID-10 لفتح الدراسات فوريًا.')}</li>
+                                    <li>{copy('admin:pacsSettings.storageArch.localTip2', 'Ensure regular automated snapshots of the storage partition.', 'احرص على أخذ نسخ احتياطية دورية أو Snapshots لمسار التخزين.')}</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {form.pacs_storage_mode === 'cloud' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">
+                            <Cloud size={15} />
+                            <span>{copy('admin:pacsSettings.storageArch.cloudTitle', 'Cloud Object Store Configuration (S3 / Wasabi / Azure)', 'إعدادات التخزين السحابي (S3 / Wasabi / MinIO / Azure)')}</span>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.cloudProvider', 'Cloud Provider', 'مزود السحابة')}
+                                </label>
+                                <select
+                                    value={form.pacs_cloud_provider}
+                                    onChange={updateField('pacs_cloud_provider')}
+                                    className={inputClass}
+                                >
+                                    <option value="s3">Amazon S3 (AWS)</option>
+                                    <option value="wasabi">Wasabi Hot Cloud Storage</option>
+                                    <option value="minio">MinIO / Ceph (Local Object Storage)</option>
+                                    <option value="r2">Cloudflare R2</option>
+                                    <option value="azure">Microsoft Azure Blob Storage</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.s3Bucket', 'S3 Bucket Name', 'اسم الحاوية (Bucket Name)')}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={form.pacs_s3_bucket}
+                                    onChange={updateField('pacs_s3_bucket')}
+                                    placeholder="hospital-pacs-archive"
+                                    className={inputClass}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.s3Region', 'Region', 'المنطقة (Region)')}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={form.pacs_s3_region}
+                                    onChange={updateField('pacs_s3_region')}
+                                    placeholder="eu-central-1"
+                                    className={inputClass}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.s3Endpoint', 'Custom Endpoint URL', 'عنوان Endpoint مخصص')}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={form.pacs_s3_endpoint}
+                                    onChange={updateField('pacs_s3_endpoint')}
+                                    placeholder="https://s3.wasabisys.com or http://minio:9000"
+                                    className={inputClass}
+                                />
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {copy('admin:pacsSettings.storageArch.s3EndpointHelp', 'Leave empty for standard AWS S3. Required for Wasabi, MinIO, or private S3 stores.', 'اتركه فارغاً لـ AWS S3 القياسي. مطلوب لـ Wasabi و MinIO والتخزين الداخلي.')}
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.s3AccessKey', 'Access Key ID', 'مفتاح الوصول (Access Key)')}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={form.pacs_s3_access_key}
+                                    onChange={updateField('pacs_s3_access_key')}
+                                    placeholder="AKIAIOSFODNN7EXAMPLE"
+                                    className={inputClass}
+                                />
+                            </div>
+
+                            <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                        {copy('admin:pacsSettings.storageArch.s3SecretKey', 'Secret Access Key', 'المفتاح السري (Secret Key)')}
+                                    </label>
+                                    {hasStoredS3Secret && (
+                                        <span className="inline-flex items-center gap-1 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
+                                            <Lock size={10} />
+                                            {copy('admin:pacsSettings.storageArch.secretStored', 'Key stored', 'المفتاح محفوظ')}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="relative">
+                                    <input
+                                        type={showS3Secret ? 'text' : 'password'}
+                                        value={form.pacs_s3_secret_key}
+                                        onChange={updateField('pacs_s3_secret_key')}
+                                        placeholder={hasStoredS3Secret ? '••••••••••••••••' : 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'}
+                                        className={inputClass}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowS3Secret(!showS3Secret)}
+                                        className="absolute end-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                    >
+                                        {showS3Secret ? <EyeOff size={15} /> : <Eye size={15} />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.s3StorageClass', 'S3 Storage Class', 'فئة التخزين (Storage Class)')}
+                                </label>
+                                <select
+                                    value={form.pacs_s3_storage_class}
+                                    onChange={updateField('pacs_s3_storage_class')}
+                                    className={inputClass}
+                                >
+                                    <option value="STANDARD">STANDARD (Hot / Fast Access)</option>
+                                    <option value="INTELLIGENT_TIERING">INTELLIGENT_TIERING (Auto Cost Optimization)</option>
+                                    <option value="STANDARD_IA">STANDARD_IA (Infrequent Access)</option>
+                                    <option value="GLACIER_IR">GLACIER_IR (Instant Retrieval Archive)</option>
+                                </select>
+                            </div>
+
+                            {form.pacs_cloud_provider === 'azure' && (
+                                <div>
+                                    <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                        {copy('admin:pacsSettings.storageArch.azureContainer', 'Azure Blob Container Name', 'اسم حاوية Azure Blob')}
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={form.pacs_azure_container}
+                                        onChange={updateField('pacs_azure_container')}
+                                        placeholder="pacs-blob-container"
+                                        className={inputClass}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {form.pacs_storage_mode === 'hybrid' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300">
+                            <FolderSync size={15} />
+                            <span>{copy('admin:pacsSettings.storageArch.hybridTitle', 'Hybrid Multi-Site Sync & Hot/Cold Tiering', 'التزامن الهجين بين المواقع والأرشفة الذكية')}</span>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+                            <label className="flex cursor-pointer items-start gap-3">
+                                <input
+                                    type="checkbox"
+                                    checked={form.pacs_auto_sync_enabled}
+                                    onChange={updateField('pacs_auto_sync_enabled')}
+                                    className="mt-1 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                />
+                                <div>
+                                    <span className="text-xs font-bold text-slate-900 dark:text-white">
+                                        {copy('admin:pacsSettings.storageArch.autoSync', 'Enable Automatic Peer Synchronization', 'تفعيل التزامن التلقائي مع الخادم المركزي')}
+                                    </span>
+                                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                        {copy('admin:pacsSettings.storageArch.autoSyncHelp', 'Automatically forward incoming DICOM studies to a secondary central PACS or cloud disaster-recovery peer.', 'إرسال أي دراسة DICOM جديدة تصل للأجهزة تلقائيًا إلى خادم PACS مركزي أو موقع بديل للتعافي من الكوارث.')}
+                                    </p>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.peerUrl', 'Remote PACS Peer REST URL', 'رابط الخادم البعيد (Peer REST URL)')}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={form.pacs_peer_url}
+                                    onChange={updateField('pacs_peer_url')}
+                                    placeholder="https://central-pacs.hospital.org:8042"
+                                    className={inputClass}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.peerAet', 'Remote Peer AET', 'عنوان AET للخادم البعيد')}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={form.pacs_peer_aet}
+                                    onChange={updateField('pacs_peer_aet')}
+                                    placeholder="CENTRAL_PACS"
+                                    className={inputClass}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.peerUsername', 'Peer Username', 'اسم مستخدم الخادم البعيد')}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={form.pacs_peer_username}
+                                    onChange={updateField('pacs_peer_username')}
+                                    placeholder="orthanc"
+                                    className={inputClass}
+                                />
+                            </div>
+
+                            <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                        {copy('admin:pacsSettings.storageArch.peerPassword', 'Peer Password', 'كلمة سر الخادم البعيد')}
+                                    </label>
+                                    {hasStoredPeerPassword && (
+                                        <span className="inline-flex items-center gap-1 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
+                                            <Lock size={10} />
+                                            {copy('admin:pacsSettings.storageArch.secretStored', 'Key stored', 'محفوظة')}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="relative">
+                                    <input
+                                        type={showPeerSecret ? 'text' : 'password'}
+                                        value={form.pacs_peer_password}
+                                        onChange={updateField('pacs_peer_password')}
+                                        placeholder={hasStoredPeerPassword ? '••••••••••••••••' : 'password'}
+                                        className={inputClass}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPeerSecret(!showPeerSecret)}
+                                        className="absolute end-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                    >
+                                        {showPeerSecret ? <EyeOff size={15} /> : <Eye size={15} />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.tieringDays', 'Hot Retention Window (Days)', 'فترة البقاء في التخزين السريع (أيام)')}
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="3650"
+                                    value={form.pacs_tiering_days}
+                                    onChange={updateField('pacs_tiering_days')}
+                                    placeholder="90"
+                                    className={inputClass}
+                                />
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {copy('admin:pacsSettings.storageArch.tieringDaysHelp', 'Studies older than this number of days will be flagged for cold archive tiering.', 'الدراسات الأقدم من هذه الأيام تصبح مؤهلة للأرشفة الباردة.')}
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                    {copy('admin:pacsSettings.storageArch.coldPrefix', 'Cold Archive Destination URI', 'مسار الأرشيف البارد (Cold URI)')}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={form.pacs_cold_prefix}
+                                    onChange={updateField('pacs_cold_prefix')}
+                                    placeholder="s3://viara-cold-archive/studies"
+                                    className={inputClass}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Configuration Code Preview Snippet Drawer */}
+                {showSnippet && (
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-xs font-mono shadow-inner space-y-3">
+                        <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-2">
+                            <span className="font-bold text-teal-400">orthanc.json / config snippet</span>
+                            <button
+                                type="button"
+                                onClick={copySnippetToClipboard}
+                                className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-700 transition"
+                            >
+                                {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                                <span>{copied ? copy('common:actions.copied', 'Copied', 'تم النسخ') : copy('common:actions.copy', 'Copy', 'نسخ')}</span>
+                            </button>
+                        </div>
+                        <pre className="overflow-x-auto text-teal-300 leading-5">
+                            {generateSnippet()}
+                        </pre>
+                    </div>
+                )}
+            </div>
+        </section>
+    );
+};
+
 const PacsStoragePanel = ({ reveal = () => ({}) }) => {
     const { t, i18n } = useTranslation(['admin', 'common']);
     const { data, isLoading, isFetching, refetch } = useGetPacsStorageSummaryQuery();
@@ -1721,7 +2351,7 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
     const eligibleInstances = Number(tiering.eligible_instances || 0);
     const instanceGap = Number(totals.instance_gap || 0);
     const storageTone = data?.status === 'ok' ? 'emerald' : data?.status === 'attention' ? 'amber' : data?.status ? 'rose' : 'slate';
-    const canRunTiering = Boolean(tiering.enabled) && eligibleInstances > 0 && !isTiering;
+    const canRunTiering = Boolean(tiering.enabled && tiering.physical_archiver) && eligibleInstances > 0 && !isTiering;
 
     const tierSweep = async () => {
         try {
@@ -1735,6 +2365,13 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
 
     return (
         <div className="space-y-5">
+            <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                {i18n.language.startsWith('ar')
+                    ? 'إعدادات المعمارية التالية مسودة للنشر. حفظها لا ينقل الصور ولا يفعّل S3 أو المزامنة بين المواقع. حالة التشغيل الفعلية تظهر أدناه؛ الأرشفة الحالية تنشئ نسخة محلية مشفّرة ومتحققًا منها وتحتفظ بالأصل.'
+                    : 'The architecture settings below are deployment drafts. Saving does not move images or activate S3 or site synchronization. The live status appears below; archiving creates verified encrypted local copies and keeps the originals.'}
+            </p>
+            <PacsStorageArchitectureConfig reveal={reveal} onSaved={() => refetch()} />
+
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" {...reveal(200)}>
                 <SummaryMetric icon={ShieldCheck} label={t('admin:pacsSettings.storage.status', { defaultValue: 'Storage status' })} value={(data?.status || 'Loading').toUpperCase()} tone={storageTone} />
                 <SummaryMetric icon={Database} label={t('admin:pacsSettings.storage.orthancDisk', { defaultValue: 'Orthanc disk' })} value={orthanc.totalDiskSizeMB != null ? `${orthanc.totalDiskSizeMB} MB` : '-'} tone={data?.orthanc_error ? 'amber' : 'teal'} />
@@ -1768,7 +2405,7 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
                     <PageState icon={Activity} spin title={t('admin:pacsSettings.storage.loading', { defaultValue: 'Loading PACS storage state' })} />
                 ) : (
                     <div className="space-y-6 p-4">
-                        {instanceGap > 0 && (
+                        {instanceGap !== 0 && (
                             <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
                                 <div className="flex items-center gap-2 font-bold">
                                     <AlertTriangle size={15} className="shrink-0" />
@@ -1777,7 +2414,7 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
                                 <p className="mt-1 leading-5">
                                     {t('admin:pacsSettings.storage.gapHelp', {
                                         defaultValue: 'Orthanc reports {{orthanc}} DICOM instances, but VIARA archive index tracks {{indexed}}. New arrivals might still be indexing.',
-                                        orthanc: orthanc.countInstances || 0,
+                                        orthanc: orthanc.instances || 0,
                                         indexed: indexedInstances
                                     })}
                                 </p>
@@ -1788,8 +2425,9 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
                             <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                                 {t('admin:pacsSettings.storage.retentionTiers', { defaultValue: 'Retention tiers' })}
                             </h3>
-                            <div className="grid gap-4 md:grid-cols-2">
+                            <div className="grid gap-4 md:grid-cols-3">
                                 <StorageTierCard tier="hot" data={tiers.hot || {}} locale={i18n.language} totalBytes={totalIndexedBytes} totalInstances={indexedInstances} />
+                                <StorageTierCard tier="warm" data={tiers.warm || {}} locale={i18n.language} totalBytes={totalIndexedBytes} totalInstances={indexedInstances} />
                                 <StorageTierCard tier="cold" data={tiers.cold || {}} locale={i18n.language} totalBytes={totalIndexedBytes} totalInstances={indexedInstances} />
                             </div>
                         </div>
@@ -1805,9 +2443,9 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
                                     tone={data?.orthanc_error ? 'rose' : 'teal'}
                                     rows={[
                                         [t('admin:pacsSettings.storage.diskMb', { defaultValue: 'Total disk MB' }), formatNumber(orthanc.totalDiskSizeMB)],
-                                        [t('admin:pacsSettings.storage.studiesCount', { defaultValue: 'Studies' }), formatNumber(orthanc.countStudies)],
-                                        [t('admin:pacsSettings.storage.seriesCount', { defaultValue: 'Series' }), formatNumber(orthanc.countSeries)],
-                                        [t('admin:pacsSettings.storage.instancesCount', { defaultValue: 'Instances' }), formatNumber(orthanc.countInstances)]
+                                        [t('admin:pacsSettings.storage.studiesCount', { defaultValue: 'Studies' }), formatNumber(orthanc.studies)],
+                                        [t('admin:pacsSettings.storage.seriesCount', { defaultValue: 'Series' }), formatNumber(orthanc.series)],
+                                        [t('admin:pacsSettings.storage.instancesCount', { defaultValue: 'Instances' }), formatNumber(orthanc.instances)]
                                     ]}
                                 />
                                 <StorageInfoCard
@@ -1827,7 +2465,7 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
                                     tone={tiering.enabled ? 'amber' : 'slate'}
                                     rows={[
                                         [t('admin:pacsSettings.storage.policyState', { defaultValue: 'Policy state' }), tiering.enabled ? t('common:status.enabled', { defaultValue: 'Enabled' }) : t('common:status.disabled', { defaultValue: 'Disabled' })],
-                                        [t('admin:pacsSettings.storage.thresholdDays', { defaultValue: 'Cold threshold' }), `${tiering.hot_threshold_days || 90} days`],
+                                        [t('admin:pacsSettings.storage.thresholdDays', { defaultValue: 'Cold threshold' }), `${tiering.threshold_days ?? 90} days`],
                                         [t('admin:pacsSettings.storage.eligibleInstances', { defaultValue: 'Eligible instances' }), formatNumber(eligibleInstances)],
                                         [t('admin:pacsSettings.storage.eligibleVolume', { defaultValue: 'Eligible volume' }), formatBytes(tiering.eligible_bytes)]
                                     ]}
@@ -1844,7 +2482,7 @@ const PacsStoragePanel = ({ reveal = () => ({}) }) => {
                 onConfirm={tierSweep}
                 title={t('admin:pacsSettings.storage.tiering.title', { defaultValue: 'Run data tiering' })}
                 message={t('admin:pacsSettings.storage.confirmTiering', {
-                    defaultValue: 'Run a tiering sweep for eligible hot instances? This updates VIARA storage bookkeeping; it does not delete Orthanc files unless a deployment archiver is configured.'
+                    defaultValue: 'Create verified encrypted copies of eligible images? The originals remain in Orthanc.'
                 })}
                 confirmText={t('admin:pacsSettings.storage.runTiering', { defaultValue: 'Run tiering' })}
                 variant="warning"
@@ -1880,7 +2518,9 @@ const StorageTierCard = ({ tier, data, locale, totalBytes = 0, totalInstances = 
     const bytePercent = totalBytes > 0 ? Math.round((bytes / totalBytes) * 100) : 0;
     const instancePercent = totalInstances > 0 ? Math.round((instances / totalInstances) * 100) : 0;
     const tone = tier === 'hot' ? 'teal' : tier === 'cold' ? 'cyan' : 'slate';
-    const tierLabel = t(`admin:pacsSettings.storage.tiers.${tier}`, { defaultValue: tier });
+    const tierLabel = tier === 'warm'
+        ? (locale.startsWith('ar') ? 'نسخة أرشيف مشفّرة ومتحقق منها' : 'Verified encrypted archive mirror')
+        : t(`admin:pacsSettings.storage.tiers.${tier}`, { defaultValue: tier });
 
     return (
         <div className="rounded-xl border border-slate-200/60 bg-white/70 p-4 dark:border-slate-800/60 dark:bg-slate-900/40">
@@ -1889,6 +2529,7 @@ const StorageTierCard = ({ tier, data, locale, totalBytes = 0, totalInstances = 
                 <StatusBadge tone={tone}>{instances} / {instancePercent}%</StatusBadge>
             </div>
             <p className="mt-3 font-mono text-xl font-black text-slate-900 dark:text-slate-100">{formatBytes(bytes)}</p>
+            {Number(data.unknown_size_instances || 0) > 0 && <p className="mt-1 text-xs text-amber-600">{locale.startsWith('ar') ? 'الحجم جزئي؛ صور بلا حجم مفهرس:' : 'Partial size; images without indexed size:'} {data.unknown_size_instances}</p>}
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                 <div
                     className={`h-full rounded-full ${tier === 'hot' ? 'bg-teal-500' : tier === 'cold' ? 'bg-cyan-500' : 'bg-slate-400'}`}

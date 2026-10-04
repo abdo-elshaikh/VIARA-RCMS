@@ -78,6 +78,19 @@ const randomElement = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const randomDate = (start, end) => new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
 const randomPhone = () => `01${randomElement(['0', '1', '2', '5'])}${String(randomInt(10000000, 99999999))}`;
+
+async function getTableColumns(tableName) {
+    const result = await pool.query(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = $1
+         ORDER BY ordinal_position`,
+        [tableName]
+    );
+    return new Set(result.rows.map(row => row.column_name));
+}
+
 const randomNationalId = (gender, birthYear) => {
     const century = birthYear >= 2000 ? '3' : '2';
     const yy = String(birthYear).slice(2);
@@ -122,6 +135,7 @@ async function clearDatabase() {
         'audit_alerts', 'system_logs', 'security_events', 'patient_portal_messages', 'staff_messages',
         'crm_activities', 'marketing_campaign_recipients', 'marketing_campaigns', 'patient_segment_members', 'patient_segments', 'patient_feedback',
         'waiting_list_events', 'waiting_list', 'report_ai_drafts', 'pacs_ai_analysis_jobs', 'pacs_instances', 'pacs_series',
+        'reception_work_items', 'reception_shift_sessions', 'display_call_events',
         'payroll_line_items', 'payroll_employee_items', 'payroll_runs', 'payroll_periods', 'employee_compensation_profiles',
         'leave_requests', 'attendance_logs', 'staff_shifts', 'employee_profiles',
         'claim_receipts', 'credit_notes', 'insurance_claims', 'insurance_approvals', 'patient_insurance_policies',
@@ -164,6 +178,13 @@ async function seedBranchesAndSettings() {
         ['center_phone', '+20 2 2795 8000'],
         ['center_email', 'info@VIARA.health'],
         ['center_address', '45 Tahrir Square, Downtown, Cairo, Egypt'],
+        ['center.name', 'VIARA Advanced Radiology & Imaging Systems'],
+        ['center.name_ar', 'فيارا للأشعة التشخيصية المتقدمة والتصوير الطبي'],
+        ['center.phone', '+20 2 2795 8000'],
+        ['center.email', 'info@VIARA.health'],
+        ['center.support_email', 'support@VIARA.health'],
+        ['center.address', '45 Tahrir Square, Downtown, Cairo, Egypt'],
+        ['center.address_ar', '45 ميدان التحرير، وسط البلد، القاهرة'],
         ['center_tax_id', 'EG-984-219-874'],
         ['pacs_server_aet', 'MiPACS2'],
         ['pacs_server_ip', '127.0.0.1'],
@@ -619,15 +640,15 @@ async function seedAppointmentsExamsAndPACS(patientIds, modalityIds, examTypes, 
                 const workflow = isFuture
                     ? { examStatus: 'Scheduled', queueStage: 'Scheduled', station: 'Reception' }
                     : d < -2
-                        ? { examStatus: 'Finalized', queueStage: 'Delivered', station: 'Radiologist' }
+                        ? { examStatus: 'Finalized', queueStage: 'Delivered', station: 'Delivery' }
                         : randomElement([
-                            { examStatus: 'Checked-in', queueStage: 'Arrived', station: 'Nurse' },
-                            { examStatus: 'Checked-in', queueStage: 'Payment Pending', station: 'Nurse' },
+                            { examStatus: 'Checked-in', queueStage: 'Arrived', station: 'Reception' },
+                            { examStatus: 'Checked-in', queueStage: 'Payment Pending', station: 'Cashier' },
                             { examStatus: 'Checked-in', queueStage: 'Prep Pending', station: 'Nurse' },
                             { examStatus: 'Checked-in', queueStage: 'Ready for Exam', station: 'Modality' },
                             { examStatus: 'Scanning', queueStage: 'In Exam', station: 'Modality' },
                             { examStatus: 'Reporting', queueStage: 'Reporting', station: 'Radiologist' },
-                            { examStatus: 'Finalized', queueStage: 'Finalized', station: 'Radiologist' }
+                            { examStatus: 'Finalized', queueStage: 'Finalized', station: 'Delivery' }
                         ]);
                 const leaveCurrentTaskUnassigned = !isFuture
                     && !['Finalized', 'Delivered'].includes(workflow.queueStage)
@@ -926,17 +947,28 @@ async function seedHRAndPayroll(userIds) {
     console.log('\n👔 Seeding HR Shift Rosters, Biometric Attendance, Leaves & Payroll...');
 
     const staffUsers = userIds.filter(u => ['Radiologist', 'Technician', 'Nurse', 'Receptionist', 'Cashier', 'Accountant'].includes(u.role));
+    const employeeProfileColumns = await getTableColumns('employee_profiles');
 
     // 1. Employee Profiles & Compensation
     const compensationProfiles = new Map();
     for (const u of userIds) {
         const salary = u.role === 'Radiologist' ? 32000 : (u.role === 'Admin' ? 28000 : (['Technician', 'Accountant'].includes(u.role) ? 14000 : 9500));
-        await pool.query(
-            `INSERT INTO employee_profiles (user_id, employee_id, department, job_title, hire_date, employment_status, salary)
-             VALUES ($1, $2, $3, $4, '2023-01-15', 'Full-Time', $5)
-             ON CONFLICT (user_id) DO UPDATE SET salary = EXCLUDED.salary`,
-            [u.id, `EMP-${u.role.slice(0, 3).toUpperCase()}-${randomInt(100, 999)}`, u.role, u.role, salary]
-        );
+        const profileInsertFields = ['user_id', 'employee_id', 'department', 'job_title', 'hire_date', 'employment_status'];
+        const profileInsertValues = [u.id, `EMP-${u.role.slice(0, 3).toUpperCase()}-${randomInt(100, 999)}`, u.role, u.role, '2023-01-15', 'Full-Time'];
+
+        if (employeeProfileColumns.has('salary')) {
+            profileInsertFields.push('salary');
+            profileInsertValues.push(salary);
+        }
+
+        const profileQuery = `
+            INSERT INTO employee_profiles (${profileInsertFields.join(', ')})
+            VALUES (${profileInsertFields.map((_, index) => `$${index + 1}`).join(', ')})
+            ON CONFLICT (user_id) DO UPDATE SET ${employeeProfileColumns.has('salary') ? 'salary = EXCLUDED.salary' : 'updated_at = CURRENT_TIMESTAMP'}
+        `;
+
+        await pool.query(profileQuery, profileInsertValues);
+
         const profile = await pool.query(
             `INSERT INTO employee_compensation_profiles (
                 user_id, salary_type, base_salary, effective_from, is_active, notes, created_by
@@ -1224,10 +1256,11 @@ async function seedInventorySupplies(userIds, modalityIds, branches) {
 
     const itemIds = [];
     for (const item of items) {
+        const isContrast = /contrast/i.test(item.category || '') || /صبغة|contrast/i.test(item.name || '');
         const result = await pool.query(
-            `INSERT INTO inventory_items (name, category, quantity, unit, min_level)
-             VALUES ($1, $2, $3, $4, $5) RETURNING item_id`,
-            [item.name, item.category, item.qty, item.unit, item.reorder]
+            `INSERT INTO inventory_items (name, category, quantity, unit, min_level, is_contrast_agent)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING item_id`,
+            [item.name, item.category, item.qty, item.unit, item.reorder, isContrast]
         );
         itemIds.push({ id: result.rows[0].item_id, ...item });
     }

@@ -23,11 +23,46 @@ const FALLBACK_CHAINS = {
 
 const PRIORITY_RANK = { Normal: 0, Action: 1, Warning: 2, Critical: 3 };
 
+const normalizeNotificationLanguage = language => {
+    const value = String(language || '').trim().toLowerCase();
+    if (value === 'arabic' || value === 'العربية' || value.startsWith('ar-') || value === 'ar') return 'ar';
+    if (value === 'english' || value.startsWith('en-') || value === 'en') return 'en';
+    return 'en';
+};
+
+// Deliberately excludes patient, exam and entity details. Those belong in
+// reviewed templates, never in an automatic fallback message.
+const SAFE_INAPP_FALLBACK = {
+    ar: { subject: 'تحديث جديد', body: 'يوجد تحديث جديد يتطلب المراجعة داخل النظام.' },
+    en: { subject: 'New update', body: 'There is a new update to review in the system.' }
+};
+
+const getSafeInAppFallback = (eventType, channel, language, recipientType) => {
+    if (channel !== 'InApp' || eventType === 'MarketingCampaign' || recipientType !== 'Staff') return null;
+    return SAFE_INAPP_FALLBACK[normalizeNotificationLanguage(language)];
+};
+
+const sanitizeNotificationVariables = (eventType, variables = {}) => {
+    if (!variables || typeof variables !== 'object') return variables;
+    const sanitized = { ...variables };
+
+    if (eventType === 'MarketingCampaign' && typeof sanitized.patient_name === 'string') {
+        sanitized.patient_name = sanitized.patient_name.trim() ? 'Patient' : sanitized.patient_name;
+    }
+
+    return sanitized;
+};
+
 const buildIdempotencyKey = (opts) => {
     if (opts.idempotencyKey) return opts.idempotencyKey;
-    if (!opts.entityType || !opts.entityId || !opts.eventType || !opts.channel || !opts.recipientType) return null;
+    if (!opts.eventType || !opts.channel || !opts.recipientType) return null;
     const recipient = opts.recipientId || opts.recipientContact || 'custom';
     const occurrence = opts.occurrenceKey || opts.variables?.occurrence_key || null;
+    // Some notifications represent a dated operational occurrence rather than
+    // a UUID-backed database row (for example, the daily end-of-day sweep).
+    // Require at least one stable identity source while keeping entity_id null
+    // when no UUID exists.
+    if (!opts.entityId && !occurrence) return null;
     return [opts.eventType, opts.channel, opts.recipientType, recipient, opts.entityType, opts.entityId, occurrence]
         .filter(value => value !== null && value !== undefined && value !== '')
         .join(':');
@@ -105,6 +140,7 @@ const scheduleAppointmentReminder = async (db, appointment, options = {}) => {
 const scheduleJob = async (db, opts) => {
     try {
         const idempotencyKey = buildIdempotencyKey(opts);
+        const safeVariables = sanitizeNotificationVariables(opts.eventType, opts.variables || {});
         const result = await db.query(`
             INSERT INTO notification_jobs (
                 event_type, channel, recipient_type, recipient_id,
@@ -135,7 +171,7 @@ const scheduleJob = async (db, opts) => {
             opts.recipientContact ? encrypt(opts.recipientContact) : null,
             opts.entityType || null,
             opts.entityId || null,
-            opts.variables || {},
+            safeVariables,
             opts.scheduledFor || new Date(),
             idempotencyKey,
             opts.priority || 'Normal'
@@ -157,7 +193,16 @@ const resolveContact = async (db, job, channel = job.channel) => {
 
     // In-app delivery uses the recipient identity as an internal address and
     // does not require an email address or phone number.
-    if (channel === 'InApp' && job.recipient_id) return String(job.recipient_id);
+    if (channel === 'InApp' && job.recipient_id) {
+        if (job.recipient_type === 'Staff') {
+            const result = await db.query(
+                'SELECT user_id FROM users WHERE user_id = $1 AND is_active = TRUE LIMIT 1',
+                [job.recipient_id]
+            );
+            return result.rows[0]?.user_id ? String(result.rows[0].user_id) : null;
+        }
+        return String(job.recipient_id);
+    }
 
     if (job.recipient_type === 'Patient' && job.recipient_id) {
         const result = await db.query(
@@ -214,6 +259,16 @@ const CHANNEL_PREF_COLUMN = {
     InApp:    'inapp_enabled',
 };
 
+const getCanonicalMarketingConsent = (consent = {}) => {
+    if (consent.consent_marketing !== undefined && consent.consent_marketing !== null) {
+        return Boolean(consent.consent_marketing);
+    }
+    if (consent.opt_in_marketing !== undefined && consent.opt_in_marketing !== null) {
+        return Boolean(consent.opt_in_marketing);
+    }
+    return false;
+};
+
 const isOptedIn = async (db, job) => {
     const eventCol = EVENT_PREF_COLUMN[job.event_type];
     const channelCol = CHANNEL_PREF_COLUMN[job.channel];
@@ -234,7 +289,7 @@ const isOptedIn = async (db, job) => {
 
     if (patientId) {
         const consentResult = await db.query(`
-            SELECT consent_email, consent_sms, consent_whatsapp, consent_marketing
+            SELECT consent_email, consent_sms, consent_whatsapp, consent_marketing, opt_in_marketing
             FROM patients
             WHERE patient_id = $1
         `, [patientId]);
@@ -249,7 +304,7 @@ const isOptedIn = async (db, job) => {
             }[job.channel];
             if (!channelConsent) return false;
         }
-        if (job.event_type === 'MarketingCampaign' && !consent.consent_marketing) return false;
+        if (job.event_type === 'MarketingCampaign' && !getCanonicalMarketingConsent(consent)) return false;
     }
 
     const preferenceColumns = eventCol
@@ -327,8 +382,17 @@ const isStaffOptedIn = async (db, job) => {
     if (result.rows.length === 0) return true;
 
     const prefs = result.rows[0];
+    const channelPreferenceKey = {
+        Email: 'email_enabled',
+        SMS: 'sms_enabled',
+        WhatsApp: 'whatsapp_enabled',
+        InApp: 'inapp_enabled'
+    }[job.channel];
+    if (channelPreferenceKey && prefs[channelPreferenceKey] === false) return false;
 
-    // 1. Check specific event preference first if matched
+    // A category toggle controls whether this event is wanted at all. Channel
+    // toggles are evaluated separately in dispatchWithFallback so a denied
+    // channel can fall back to another policy-approved channel.
     const specificPrefKey = EVENT_SPECIFIC_PREF[job.event_type];
     if (specificPrefKey && prefs[specificPrefKey] === false) {
         return false;
@@ -352,8 +416,6 @@ const isStaffOptedIn = async (db, job) => {
 
     if (prefKey && prefs[prefKey] === false) return false;
 
-    const channelPreference = CHANNEL_PREF_COLUMN[job.channel];
-    if (channelPreference && prefs[channelPreference] === false) return false;
     return true;
 };
 
@@ -456,6 +518,24 @@ const dispatchWithFallback = async (db, job, policies = []) => {
             .filter(channel => channel === job.channel || !independentlyScheduledChannels.has(channel));
     let lastError = null;
     let eligibleChannelFound = false;
+    let requestedLanguage = job.variables?.language;
+    if (!requestedLanguage && job.recipient_type === 'Staff' && job.recipient_id) {
+        const preferenceResult = await db.query(`
+            SELECT preferences->>'language' AS language
+            FROM users
+            WHERE user_id = $1 AND is_active = TRUE
+            LIMIT 1
+        `, [job.recipient_id]);
+        requestedLanguage = preferenceResult.rows[0]?.language;
+    } else if (!requestedLanguage && job.recipient_type === 'Patient' && job.recipient_id) {
+        const preferenceResult = await db.query(`
+            SELECT preferred_language
+            FROM patients
+            WHERE patient_id = $1
+            LIMIT 1
+        `, [job.recipient_id]);
+        requestedLanguage = preferenceResult.rows[0]?.preferred_language;
+    }
 
     const policyFlagByChannel = {
         InApp: 'inapp_enabled',
@@ -468,7 +548,7 @@ const dispatchWithFallback = async (db, job, policies = []) => {
         if (job.recipient_type === 'Staff') {
             const policyFlag = policyFlagByChannel[channel];
             const allowed = policies.length === 0
-                ? channel === 'InApp'
+                ? false
                 : policies.some(policy => (
                     policy.allowed_channels?.includes(channel)
                     && (!policyFlag || policy[policyFlag] !== false)
@@ -478,6 +558,7 @@ const dispatchWithFallback = async (db, job, policies = []) => {
         }
 
         const attemptedJob = { ...job, channel };
+        const channelPreference = policyFlagByChannel[channel];
         // Mandatory staff/doctor alerts may bypass a user preference, but a
         // patient contact-consent decision is a legal boundary and is never
         // bypassed by an event payload flag.
@@ -500,14 +581,23 @@ const dispatchWithFallback = async (db, job, policies = []) => {
             continue;
         }
 
-        const language = job.variables?.language || 'en';
-        const template = job.variables?.notification_body
+        const language = normalizeNotificationLanguage(requestedLanguage);
+        let template = job.variables?.notification_body
             ? {
                 subject: job.variables.notification_subject || '',
                 body: job.variables.notification_body,
                 language
             }
             : await resolveTemplate(db, job.event_type, channel, language);
+        if (!template && channel === 'InApp') {
+            const catalog = await db.query(`
+                SELECT 1 FROM notification_event_catalog
+                WHERE event_type = $1 LIMIT 1
+            `, [job.event_type]);
+            if (catalog.rows.length > 0) {
+                template = getSafeInAppFallback(job.event_type, channel, language, job.recipient_type);
+            }
+        }
         if (!template) {
             lastError = `No active template for ${job.event_type}/${channel}`;
             continue;
@@ -570,6 +660,30 @@ const updateCampaignRecipient = async (db, job, status, updates = {}) => {
     ]);
 };
 
+const markPatientCampaignConversion = async (db, patientId) => {
+    if (!patientId) return [];
+
+    const result = await db.query(`
+        UPDATE marketing_campaign_recipients mcr
+        SET status = 'Converted',
+            converted_at = NOW(),
+            updated_at = NOW()
+        WHERE mcr.patient_id = $1
+          AND mcr.status IN ('Queued', 'Sent', 'Skipped')
+          AND EXISTS (
+              SELECT 1
+              FROM marketing_campaigns mc
+              WHERE mc.campaign_id = mcr.campaign_id
+                AND mc.status IN ('Active', 'Draft')
+                AND (mc.start_date IS NULL OR mc.start_date <= CURRENT_DATE)
+                AND (mc.end_date IS NULL OR mc.end_date >= CURRENT_DATE)
+          )
+        RETURNING mcr.campaign_recipient_id, mcr.campaign_id, mcr.patient_id, mcr.channel, mcr.converted_at
+    `, [patientId]);
+
+    return result.rows;
+};
+
 // ─── Resolve template ─────────────────────────────────────────────────────────
 
 const resolveTemplate = async (db, eventType, channel, language = 'en') => {
@@ -607,12 +721,203 @@ const validateRequiredVariables = async (db, eventType, variables = {}) => {
 const validateTemplatePlaceholders = (templateText, requiredVariables = []) => {
     if (!templateText || requiredVariables.length === 0) return [];
     const found = new Set();
-    const regex = /\{\{([\w.-]+)\}\}/g;
-    let match;
-    while ((match = regex.exec(templateText)) !== null) {
-        found.add(match[1]);
+    const patterns = [
+        /\{\{\s*([\w.-]+)\s*\}\}/g,
+        /\{\{\s*#if\s+([\w.-]+)\s*\}\}/g,
+        /\{\{\s*([\w.-]+)\s*\|\|/g
+    ];
+    for (const regex of patterns) {
+        let match;
+        while ((match = regex.exec(templateText)) !== null) found.add(match[1]);
     }
     return requiredVariables.filter(v => !found.has(v));
+};
+
+const getRepairableNotificationJobs = async (db, options = {}) => {
+    const { dryRun = true, limit = 50, jobIds = null } = options;
+    if (jobIds !== null && (!Array.isArray(jobIds)
+        || jobIds.some(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))) {
+        throw new Error('jobIds must be an array of UUIDs');
+    }
+    const rows = await db.query(`
+        SELECT job_id, event_type, channel, recipient_type, recipient_id,
+               recipient_contact, recipient_contact_enc, entity_type, entity_id,
+               status, retry_count, max_retries, error_message, variables
+        FROM notification_jobs
+        WHERE status IN ('Failed', 'DeadLetter')
+          AND ($2::uuid[] IS NULL OR job_id = ANY($2::uuid[]))
+        ORDER BY processed_at DESC NULLS LAST, job_id ASC
+        LIMIT $1
+    `, [limit, jobIds]);
+
+    const eligible = [];
+    const blocked = [];
+
+    for (const job of rows.rows) {
+        const catalog = await db.query(`
+            SELECT 1
+            FROM notification_event_catalog
+            WHERE event_type = $1
+            LIMIT 1
+        `, [job.event_type]);
+
+        if (catalog.rows.length === 0) {
+            blocked.push({ job_id: job.job_id, reason: 'Unknown event in catalog', event_type: job.event_type });
+            continue;
+        }
+
+        const template = await db.query(`
+            SELECT subject, body, language
+            FROM notification_templates
+            WHERE event_type = $1 AND channel = $2 AND is_active = TRUE
+            LIMIT 1
+        `, [job.event_type, job.channel]);
+
+        const hasExplicitBody = Boolean(job.variables?.notification_body);
+        const safeFallback = getSafeInAppFallback(job.event_type, job.channel, job.variables?.language, job.recipient_type);
+        if (template.rows.length === 0 && !hasExplicitBody && !safeFallback) {
+            blocked.push({ job_id: job.job_id, reason: 'No active template for channel', event_type: job.event_type, channel: job.channel });
+            continue;
+        }
+
+        const missingVars = await validateRequiredVariables(db, job.event_type, job.variables || {});
+        if (missingVars.length > 0) {
+            blocked.push({ job_id: job.job_id, reason: `Missing required variables: ${missingVars.join(', ')}`, event_type: job.event_type, channel: job.channel });
+            continue;
+        }
+
+        // A historical reminder must still point at the current occurrence.
+        // Requeueing an old appointment message is not a harmless repair.
+        if (job.event_type === 'AppointmentReminder' && job.entity_type === 'Appointment') {
+            const appointmentResult = await db.query(
+                'SELECT status, start_time FROM appointments WHERE appointment_id = $1',
+                [job.entity_id]
+            );
+            const appointment = appointmentResult.rows[0];
+            const startTime = appointment?.start_time ? new Date(appointment.start_time) : null;
+            if (!appointment
+                || !['Scheduled', 'Confirmed'].includes(appointment.status)
+                || !startTime
+                || startTime <= new Date()
+                || startTime > new Date(Date.now() + 25 * 60 * 60 * 1000)
+                || getAppointmentOccurrenceKey(startTime) !== job.variables?.occurrence_key) {
+                blocked.push({ job_id: job.job_id, reason: 'Appointment reminder is stale or not due', event_type: job.event_type, channel: job.channel });
+                continue;
+            }
+        }
+
+        if (job.recipient_type === 'Patient' || job.recipient_type === 'Doctor') {
+            if (!await isOptedIn(db, job)) {
+                blocked.push({ job_id: job.job_id, reason: 'Recipient consent or preference does not allow this channel', event_type: job.event_type, channel: job.channel });
+                continue;
+            }
+            if (!await resolveContact(db, job, job.channel)) {
+                blocked.push({ job_id: job.job_id, reason: 'Recipient contact is unavailable', event_type: job.event_type, channel: job.channel });
+                continue;
+            }
+        }
+
+        const routingOnly = new Set(['role', 'requested_channels', 'language', 'force_delivery', 'occurrence_key']);
+        const hasEventDetails = Object.entries(job.variables || {}).some(([key, value]) =>
+            !routingOnly.has(key) && value !== null && value !== undefined && value !== ''
+        );
+        if (job.recipient_type === 'Staff' && !job.entity_id && !hasEventDetails) {
+            blocked.push({ job_id: job.job_id, reason: 'Notification has no event context for replay', event_type: job.event_type, channel: job.channel });
+            continue;
+        }
+
+        if (job.entity_id && job.entity_type === 'Exam'
+            && ['ExamCreated', 'ExamScheduled', 'ExamStatusChanged'].includes(job.event_type)) {
+            const examResult = await db.query(
+                'SELECT status, queue_stage FROM examinations WHERE exam_id = $1',
+                [job.entity_id]
+            );
+            const exam = examResult.rows[0];
+            const creationNotice = ['ExamCreated', 'ExamScheduled'].includes(job.event_type);
+            if (!exam || (creationNotice && exam.status !== 'Scheduled')
+                || (job.event_type === 'ExamStatusChanged' && job.variables?.to_stage
+                    && exam.queue_stage !== job.variables.to_stage)) {
+                blocked.push({ job_id: job.job_id, reason: 'Exam has moved beyond the notified state', event_type: job.event_type, channel: job.channel });
+                continue;
+            }
+        }
+        if (job.entity_id && job.entity_type === 'Appointment' && job.event_type === 'OrderCreated') {
+            const appointmentResult = await db.query(
+                'SELECT status FROM appointments WHERE appointment_id = $1',
+                [job.entity_id]
+            );
+            if (!['Scheduled', 'Confirmed'].includes(appointmentResult.rows[0]?.status)) {
+                blocked.push({ job_id: job.job_id, reason: 'Order has moved beyond the new-order state', event_type: job.event_type, channel: job.channel });
+                continue;
+            }
+        }
+        if (job.entity_id && job.entity_type === 'CashierClosure'
+            && job.event_type === 'CASHIER_VARIANCE_REQUIRES_REVIEW') {
+            const closureResult = await db.query(
+                'SELECT review_status FROM cashier_closures WHERE closure_id = $1',
+                [job.entity_id]
+            );
+            if (closureResult.rows[0]?.review_status !== 'Requires Review') {
+                blocked.push({ job_id: job.job_id, reason: 'Cashier variance no longer requires review', event_type: job.event_type, channel: job.channel });
+                continue;
+            }
+        }
+
+        eligible.push({
+            job_id: job.job_id,
+            event_type: job.event_type,
+            channel: job.channel,
+            status: job.status,
+            retry_count: job.retry_count,
+            max_retries: job.max_retries,
+            error_message: job.error_message,
+            template: template.rows[0] || (hasExplicitBody
+                ? { subject: job.variables.notification_subject || '', body: job.variables.notification_body }
+                : safeFallback)
+        });
+    }
+
+    const eligibleIds = eligible.map(job => job.job_id);
+    return { dryRun, eligibleIds, eligible, blocked, total: rows.rows.length, canRepair: eligibleIds.length > 0 };
+};
+
+const repairRetryableNotificationJobs = async (db, options = {}) => {
+    const { dryRun = true, limit = 50, jobIds = null } = options;
+    if (!dryRun && (!Array.isArray(jobIds) || jobIds.length === 0 || jobIds.length > 20)) {
+        throw new Error('Select 1 to 20 jobIds before requeueing notifications');
+    }
+    const preview = await getRepairableNotificationJobs(db, { dryRun, limit, jobIds });
+
+    if (dryRun || preview.eligible.length === 0) {
+        return {
+            dryRun,
+            requeued: preview.eligible.length,
+            skipped: preview.blocked.length,
+            total: preview.total,
+            eligibleIds: preview.eligibleIds,
+            blocked: preview.blocked
+        };
+    }
+
+    let requeued = 0;
+    for (const job of preview.eligible) {
+        await db.query(`
+            UPDATE notification_jobs
+            SET status = 'Pending',
+                retry_count = 0,
+                scheduled_for = NOW(),
+                next_retry_at = NULL,
+                locked_at = NULL,
+                locked_by = NULL,
+                error_message = NULL,
+                processed_at = NULL
+            WHERE job_id = $1
+              AND status IN ('Failed', 'DeadLetter')
+        `, [job.job_id]);
+        requeued += 1;
+    }
+
+    return { dryRun, requeued, skipped: preview.blocked.length, total: preview.total, eligibleIds: preview.eligibleIds, blocked: preview.blocked };
 };
 
 // ─── Process pending jobs ─────────────────────────────────────────────────────
@@ -725,7 +1030,7 @@ const processJobs = async (db) => {
             const result = await dispatchWithFallback(db, job, policies);
 
             const canRetry = !result.success && !result.skipped && job.retry_count < job.max_retries;
-            const finalStatus = result.success ? 'Sent' : result.skipped ? 'Skipped' : canRetry ? 'Pending' : 'Failed';
+            const finalStatus = result.success ? 'Sent' : result.skipped ? 'Skipped' : canRetry ? 'Pending' : 'DeadLetter';
             const retryDelayMinutes = Math.min(60, 5 * Math.pow(2, job.retry_count || 0));
             await db.query(`
                 UPDATE notification_jobs
@@ -733,7 +1038,7 @@ const processJobs = async (db) => {
                     processed_at = CASE WHEN $1::varchar = 'Pending' THEN NULL ELSE NOW() END,
                     notification_id = $2,
                     error_message = $3,
-                    retry_count = retry_count + CASE WHEN $1::varchar IN ('Pending', 'Failed') THEN 1 ELSE 0 END,
+                    retry_count = retry_count + CASE WHEN $1::varchar IN ('Pending', 'DeadLetter') THEN 1 ELSE 0 END,
                     next_retry_at = CASE WHEN $1::varchar = 'Pending' THEN NOW() + ($5::int * INTERVAL '1 minute') ELSE NULL END,
                     locked_at = NULL,
                     locked_by = NULL
@@ -742,7 +1047,7 @@ const processJobs = async (db) => {
 
             await updateCampaignRecipient(db, job, finalStatus === 'Pending' ? 'Queued' : finalStatus, {
                 notificationId: result.notificationId,
-                failureReason: ['Failed', 'Skipped'].includes(finalStatus) ? result.error : null
+                failureReason: ['DeadLetter', 'Skipped'].includes(finalStatus) ? result.error : null
             });
 
             processed++;
@@ -758,8 +1063,8 @@ const processJobs = async (db) => {
                     locked_at = NULL,
                     locked_by = NULL
                 WHERE job_id = $3
-            `, [canRetry ? 'Pending' : 'Failed', err.message, job.job_id, Math.min(60, 5 * Math.pow(2, job.retry_count || 0))]);
-            await updateCampaignRecipient(db, job, canRetry ? 'Queued' : 'Failed', { failureReason: err.message });
+            `, [canRetry ? 'Pending' : 'DeadLetter', err.message, job.job_id, Math.min(60, 5 * Math.pow(2, job.retry_count || 0))]);
+            await updateCampaignRecipient(db, job, canRetry ? 'Queued' : 'DeadLetter', { failureReason: err.message });
             processed++;
         }
     }
@@ -1141,12 +1446,18 @@ module.exports = {
     scheduleAppointmentReminder,
     cancelPendingAppointmentReminders,
     getAppointmentOccurrenceKey,
+    normalizeNotificationLanguage,
     validateRequiredVariables,
     validateTemplatePlaceholders,
+    getRepairableNotificationJobs,
+    repairRetryableNotificationJobs,
+    markPatientCampaignConversion,
     buildIdempotencyKey,
     isQuietHours,
     resolveDeliveryTime,
     dispatchWithFallback,
     reconcileCriticalResultNotifications,
     processCriticalResultEscalations,
+    isOptedIn,
+    getCanonicalMarketingConsent,
 };

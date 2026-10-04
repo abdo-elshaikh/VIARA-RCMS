@@ -16,6 +16,7 @@ jest.mock('../src/services/financialPostingService', () => ({
 const { triggerEvent, triggerEventForRole } = require('../src/services/notificationJobService');
 const {
     createPenalty,
+    getMyPayrollPenalties,
     updatePenaltyStatus,
     acknowledgePenalty,
     resolvePenaltyDispute,
@@ -24,7 +25,12 @@ const {
     calculatePayroll,
     _private
 } = require('../src/controllers/payrollController');
-const { updatePenaltyStatusSchema, resolvePenaltyDisputeSchema } = require('../src/schemas/payrollSchema');
+const {
+    createDeductionSchema,
+    createPenaltySchema,
+    updatePenaltyStatusSchema,
+    resolvePenaltyDisputeSchema
+} = require('../src/schemas/payrollSchema');
 
 const USER_ID = '00000000-0000-4000-8000-000000000a01';
 const CREATOR_ID = '00000000-0000-4000-8000-000000000a02';
@@ -33,6 +39,50 @@ const PENALTY_ID = '00000000-0000-4000-8000-000000000a04';
 const PERIOD_ID = '00000000-0000-4000-8000-000000000a05';
 const BRANCH_ID = '00000000-0000-4000-8000-000000000001';
 const OTHER_BRANCH_ID = '00000000-0000-4000-8000-000000000002';
+
+describe('payroll adjustment payload contracts', () => {
+    test('installment deductions require an explicit installment recurrence', () => {
+        const payload = {
+            userId: EMPLOYEE_ID,
+            name: 'Staff advance',
+            deductionType: 'Advance',
+            amount: 100,
+            totalAmount: 1000,
+            startDate: '2026-09-01'
+        };
+
+        expect(createDeductionSchema.safeParse(payload).success).toBe(false);
+        expect(createDeductionSchema.safeParse({ ...payload, recurrenceType: 'Installment' }).success).toBe(true);
+    });
+
+    test('penalty sources match the supported server enum', () => {
+        const payload = {
+            userId: EMPLOYEE_ID,
+            amount: 100,
+            incidentDate: '2026-09-01',
+            reason: 'Documented incident'
+        };
+
+        expect(createPenaltySchema.safeParse({ ...payload, source: 'Audit' }).success).toBe(false);
+        expect(createPenaltySchema.safeParse({ ...payload, source: 'Policy' }).success).toBe(true);
+        expect(createPenaltySchema.safeParse({ ...payload, source: 'Import' }).success).toBe(true);
+    });
+});
+
+describe('employee payroll penalty self-service', () => {
+    test('returns only penalties belonging to the authenticated employee', async () => {
+        const rows = [{ penalty_id: PENALTY_ID, user_id: USER_ID, status: 'Approved' }];
+        const db = { query: jest.fn(async () => ok(rows)) };
+        const res = createResponse();
+        const next = jest.fn();
+
+        await getMyPayrollPenalties(db)(makeReq(), res, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(db.query).toHaveBeenCalledWith(expect.stringContaining('WHERE user_id = $1::uuid'), [USER_ID]);
+        expect(res.json).toHaveBeenCalledWith(rows);
+    });
+});
 
 const createResponse = () => ({
     status: jest.fn().mockReturnThis(),

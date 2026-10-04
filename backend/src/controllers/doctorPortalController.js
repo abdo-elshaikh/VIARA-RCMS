@@ -67,6 +67,7 @@ const setPortalPassword = (db) => async (req, res, next) => {
         await db.query(`
             UPDATE referring_doctors
              SET portal_password_hash = $1,
+                 current_session_id = NULL,
                  portal_is_active = TRUE,
                  portal_failed_login_attempts = 0,
                  portal_locked_until = NULL,
@@ -136,7 +137,7 @@ const doctorLogin = (db) => async (req, res, next) => {
 
         const { token, refreshToken } = await generateTokens(db, payload, doctor.doctor_id, 'doctor');
 
-        res.cookie('refreshToken', refreshToken, {
+        res.cookie('portalRefreshToken', refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
@@ -209,6 +210,7 @@ const getDoctorCases = (db) => async (req, res, next) => {
                 e.exam_id,
                 e.status           AS exam_status,
                 e.report_status,
+                e.report_locked,
                 e.report_finalized_at AS finalized_at
             FROM appointments a
             JOIN patients p ON a.patient_id = p.patient_id
@@ -276,7 +278,9 @@ const getDoctorReport = (db) => async (req, res, next) => {
             LEFT JOIN modalities m ON a.modality_id = m.modality_id
             WHERE e.exam_id = $1
               AND a.referring_doctor_id = $2
-              AND e.report_status = 'Finalized'
+              AND e.report_status IN ('Finalized', 'Amended')
+              AND e.report_locked = TRUE
+              AND e.report_finalized_at IS NOT NULL
         `, [examId, doctorId]);
 
         if (result.rows.length === 0) {
@@ -314,12 +318,14 @@ const getDoctorReportPdf = (db) => async (req, res, next) => {
 
         // Verify ownership
         const examResult = await db.query(`
-            SELECT e.exam_id, e.report_status, a.referring_doctor_id
+            SELECT e.exam_id, e.report_status, e.report_locked, e.report_finalized_at, a.referring_doctor_id
             FROM examinations e
             JOIN appointments a ON e.appointment_id = a.appointment_id
             WHERE e.exam_id = $1
               AND a.referring_doctor_id = $2
-              AND e.report_status = 'Finalized'
+              AND e.report_status IN ('Finalized', 'Amended')
+              AND e.report_locked = TRUE
+              AND e.report_finalized_at IS NOT NULL
         `, [examId, doctorId]);
 
         if (examResult.rows.length === 0) {
@@ -654,7 +660,7 @@ const acknowledgeCriticalResult = (db) => async (req, res, next) => {
                 locked_at = NULL, locked_by = NULL,
                 error_message = 'Critical result was acknowledged'
             WHERE entity_type = 'Exam' AND entity_id = $1
-              AND event_type = 'CriticalResultEscalated'
+                            AND event_type IN ('CriticalResultFinalized', 'CriticalResultEscalated')
               AND status IN ('Pending', 'Processing')
         `, [req.params.id]);
 

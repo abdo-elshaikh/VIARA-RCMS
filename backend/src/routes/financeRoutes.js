@@ -4,6 +4,13 @@ const { authenticateToken, authorizeRole } = require('../middleware/authMiddlewa
 const auditRead = require('../middleware/auditRead');
 const { hasPermission, hasAnyPermission } = require('../middleware/rbacMiddleware');
 const { validateRequest, validateQuery } = require('../middleware/validateRequest');
+const checkFeature = require('../middleware/checkFeature');
+
+/** Every path prefix owned by this router; see the gate note below. */
+const FINANCE_PATHS = [
+    '/reports', '/invoices', '/invoice-summary', '/cashier', '/refunds',
+    '/partial-payment-exceptions', '/finance',
+];
 
 const {
     createExpenseCategorySchema,
@@ -77,6 +84,7 @@ const {
     getInvoices,
     getInvoiceSummary,
     getInvoiceById,
+    getVisitsStatement,
     updateInvoice,
     collectPayment,
     refundInvoice,
@@ -101,6 +109,17 @@ const {
 
 module.exports = function financeRoutes(pool, auditService) {
     const router = express.Router();
+
+    // The gate covers exactly the path prefixes this router owns. It used to be
+    // `app.use('/api', checkFeature('finance'), financeRoutes(...))` in
+    // server.js, which ran for every route registered after it; and simply
+    // moving it to a bare `router.use(...)` did not help either, because the
+    // router is itself mounted at '/api' and so sees all of /api/*.
+    //
+    // Every route declared below must start with one of these. That invariant is
+    // enforced by tests/feature-gate-mounting.test.js, so a route added under a
+    // new prefix fails the build rather than silently escaping the gate.
+    router.use(FINANCE_PATHS, checkFeature('finance'));
 
     // ─── Financial Reports ──────────────────────────────────────────────────
     router.get('/reports/revenue', authenticateToken, authorizeRole(['Admin', 'Accountant']), validateQuery(financialReportQuerySchema), getRevenueReport(pool));
@@ -135,8 +154,8 @@ module.exports = function financeRoutes(pool, auditService) {
 
     // ─── Billing & Invoicing ────────────────────────────────────────────────
     router.post('/invoices',
-        invoiceLimiter,
         authenticateToken,
+        invoiceLimiter,
         authorizeRole(['Admin', 'Accountant', 'Receptionist']),
         hasPermission(pool, 'CREATE_INVOICES'),
         validateRequest(createInvoiceSchema),
@@ -144,25 +163,32 @@ module.exports = function financeRoutes(pool, auditService) {
     );
 
     router.get('/invoices',
-        invoiceLimiter,
         authenticateToken,
+        invoiceLimiter,
         auditRead(auditService, { resourceTable: 'invoices' }),
-        authorizeRole(['Admin', 'Accountant', 'Receptionist', 'Cashier']),
+        hasPermission(pool, 'VIEW_INVOICES'),
         validateQuery(getInvoicesQuerySchema),
         getInvoices(pool)
     );
 
     router.get('/invoice-summary',
-        invoiceLimiter,
         authenticateToken,
-        authorizeRole(['Admin', 'Accountant', 'Receptionist', 'Cashier']),
+        invoiceLimiter,
+        hasPermission(pool, 'VIEW_INVOICES'),
         getInvoiceSummary(pool)
+    );
+
+    router.get('/invoices/statement',
+        authenticateToken,
+        auditRead(auditService, { resourceTable: 'invoices' }),
+        hasPermission(pool, 'VIEW_INVOICES'),
+        getVisitsStatement(pool)
     );
 
     router.get('/invoices/:id',
         authenticateToken,
         auditRead(auditService, { resourceTable: 'invoices' }),
-        authorizeRole(['Admin', 'Accountant', 'Receptionist', 'Cashier']),
+        hasPermission(pool, 'VIEW_INVOICES'),
         getInvoiceById(pool)
     );
 
@@ -226,7 +252,7 @@ module.exports = function financeRoutes(pool, auditService) {
     router.get('/invoices/:id/pdf',
         authenticateToken,
         auditRead(auditService, { resourceTable: 'invoices' }),
-        authorizeRole(['Admin', 'Accountant', 'Receptionist', 'Cashier']),
+        hasPermission(pool, 'VIEW_INVOICES'),
         getInvoicePdf(pool)
     );
 

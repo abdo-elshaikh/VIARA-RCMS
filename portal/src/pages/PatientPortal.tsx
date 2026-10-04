@@ -154,7 +154,26 @@ const PatientPortal = () => {
   const [requestForm, setRequestForm] = useState(emptyRequestForm);
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
 
-  usePortalRealtime(Boolean(user), ({ event: realtimeEvent }) => {
+  usePortalRealtime(Boolean(user), ({ event: realtimeEvent, data }) => {
+    if (realtimeEvent === "FORCE_LOGOUT") {
+      const seconds = Math.max(0, Number(data?.logoutInSeconds) || 10);
+      const deadline = Date.now() + seconds * 1000;
+      const finishLogout = () => {
+        const remaining = Math.ceil((deadline - Date.now()) / 1000);
+        if (remaining <= 0) {
+          dispatch(api.util.resetApiState());
+          dispatch(logOut());
+          navigate("/patient/login", { replace: true });
+          return;
+        }
+        window.dispatchEvent(new CustomEvent("VIARA_FORCE_LOGOUT_WARNING", {
+          detail: { message: data?.message, remainingSeconds: remaining },
+        }));
+        window.setTimeout(finishLogout, 1000);
+      };
+      finishLogout();
+      return;
+    }
     if (realtimeEvent === "NEW_NOTIFICATION") {
       dispatch(api.util.invalidateTags(["PortalNotifications"]));
     } else if (realtimeEvent === "NEW_PORTAL_MESSAGE") {

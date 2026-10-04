@@ -149,8 +149,14 @@ const submitSafetyResponse = (db) => async (req, res, next) => {
                 const { triggerEventForRole } = require('../services/notificationJobService');
                 triggerEventForRole(db, 'ExamStatusChanged', 'Radiologist', {
                     priority: 'Critical',
-                    exam_id: examId,
-                    reason: contraindication.holdReason
+                    entityType: 'Exam',
+                    entityId: examId,
+                    channels: ['InApp'],
+                    variables: {
+                        exam_id: examId,
+                        safety_hold: true,
+                        reason: contraindication.holdReason || 'Clinical contraindication detected in safety questionnaire'
+                    }
                 }).catch(() => {});
             } catch (e) {
                 // Ignore notification delivery errors

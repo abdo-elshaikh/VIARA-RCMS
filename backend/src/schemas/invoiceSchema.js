@@ -1,6 +1,10 @@
 const { z } = require('zod');
 
 const paymentMethodSchema = z.enum(['Cash', 'Card', 'Credit Card', 'Wallet', 'Bank Transfer', 'Installment', 'Insurance', 'Corporate']);
+// Insurance and corporate coverage are payer/claim categories, not patient payment tenders.
+// Keep paymentMethodSchema for historical refunds; new collections must use an actual tender.
+// Installment plans defer payment and are not receipts for funds received now.
+const collectionMethodSchema = z.enum(['Cash', 'Card', 'Credit Card', 'Wallet', 'Bank Transfer']);
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const validateDateRange = (schema) => schema.superRefine((data, context) => {
     if (data.startDate && data.endDate && data.startDate > data.endDate) {
@@ -95,7 +99,7 @@ const getInvoiceSummaryQuerySchema = validateDateRange(z.object({
 
 const collectPaymentSchema = z.object({
     amount: z.coerce.number().min(0),
-    method: paymentMethodSchema.optional(),
+    method: collectionMethodSchema.optional(),
     paymentReference: z.string().trim().max(150).optional(),
     discountAmount: z.coerce.number().min(0).optional().default(0),
     discountReason: z.string().trim().max(1000).optional(),

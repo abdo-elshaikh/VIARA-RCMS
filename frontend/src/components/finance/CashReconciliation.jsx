@@ -14,12 +14,13 @@ import TextPromptDialog from '../ui/TextPromptDialog';
 import { useGetCashierReconciliationQuery, useReviewCashierClosureMutation } from '../../store/api';
 import { formatFinancialCurrency, formatFinancialDate } from '../../utils/financialFormat';
 
-const CashReconciliation = () => {
+const CashReconciliation = ({ dateRange: externalDateRange }) => {
     const { t, i18n } = useTranslation('workspace');
     const isAr = i18n.language?.startsWith('ar');
     const [reviewTarget, setReviewTarget] = useState(null);
     const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'open' | 'review' | 'closed'
-    const { data, isLoading, isError, isFetching, refetch } = useGetCashierReconciliationQuery({});
+    const queryArgs = useMemo(() => (externalDateRange ? { startDate: externalDateRange.startDate, endDate: externalDateRange.endDate } : {}), [externalDateRange]);
+    const { data, isLoading, isError, isFetching, refetch } = useGetCashierReconciliationQuery(queryArgs);
     const [reviewClosure, { isLoading: reviewing }] = useReviewCashierClosureMutation();
 
     const shifts = useMemo(() => data?.data || [], [data?.data]);

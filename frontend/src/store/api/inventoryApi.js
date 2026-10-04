@@ -80,7 +80,7 @@ export const inventoryApi = api.injectEndpoints({
         }),
         createMachine: builder.mutation({
             query: (data) => ({ url: '/machines', method: 'POST', body: data }),
-            invalidatesTags: ['Machines', 'ExamTypes', 'ScheduleAvailability', 'PacsAudit'],
+            invalidatesTags: ['Machines', 'Rooms', 'ExamTypes', 'ScheduleAvailability', 'PacsAudit'],
         }),
         getMachineById: builder.query({
             query: (id) => `/machines/${id}`,
@@ -88,11 +88,11 @@ export const inventoryApi = api.injectEndpoints({
         }),
         updateMachine: builder.mutation({
             query: ({ id, ...data }) => ({ url: `/machines/${id}`, method: 'PUT', body: data }),
-            invalidatesTags: ['Machines', 'ExamTypes', 'ScheduleAvailability'],
+            invalidatesTags: ['Machines', 'Rooms', 'ExamTypes', 'ScheduleAvailability'],
         }),
         deleteMachine: builder.mutation({
             query: (id) => ({ url: `/machines/${id}`, method: 'DELETE' }),
-            invalidatesTags: ['Machines', 'ExamTypes', 'ScheduleAvailability'],
+            invalidatesTags: ['Machines', 'Rooms', 'ExamTypes', 'ScheduleAvailability'],
         }),
         getModalities: builder.query({
             query: () => '/machines',
@@ -138,7 +138,7 @@ export const inventoryApi = api.injectEndpoints({
             invalidatesTags: ['EquipmentDowntime', 'Machines'],
         }),
         getEquipmentUtilization: builder.query({
-            query: (params) => ({ url: '/v1/analytics/equipment-utilization', params }),
+            query: (params) => ({ url: '/analytics/equipment-utilization', params }),
             providesTags: ['Analytics'],
         }),
     }),

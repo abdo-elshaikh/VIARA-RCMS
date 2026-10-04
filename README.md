@@ -59,6 +59,12 @@
 
 ---
 
+## 📘 دليل تشغيل العميل
+
+لخطوات تجهيز الخادم وتفعيل الترخيص والتشغيل على Linux أو عبر Linux VM على Windows Server، وتأمين الشبكة والنسخ الاحتياطي وتحديث الإصدارات، راجع [دليل إعداد وتشغيل VIARA للعميل](docs/CLIENT_DEPLOYMENT_OPERATIONS_AR.md). هذا الدليل موجّه لبيئات العملاء؛ أما هذا المستودع وملفات التطوير فلا تُعد وحدها حزمة إنتاج معتمدة.
+
+---
+
 ## 🌟 Executive Overview
 
 **VIARA** is an all-in-one healthcare software solution engineered specifically for modern diagnostic imaging centers, hospital radiology departments, and outpatient imaging networks. It bridges the gap between administrative operations, high-throughput DICOM modalities (MRI, CT, X-Ray, Ultrasound, Mammography, PET-CT), diagnostic image review, artificial intelligence analysis, cashier workflows, and referring doctor engagement.
@@ -980,10 +986,21 @@ We take security and healthcare patient privacy with the utmost seriousness. If 
 
 ---
 
+### 5. 🧪 Trial Edition & Evaluation Licensing
+
+Prospective clients and radiology centers evaluating VIARA prior to commercial contract execution operate under the **Trial Evaluation License**.
+- **Time Limitation:** 14 to 30-day cryptographically signed token (`ECDSA P-256`).
+- **Trial Guard & Quotas:** Enforced via `trialGuard` middleware and `quotaService` (50 patients, 100 appointments/month, 3 users, 10 reports/day).
+- **Watermarked Output:** Printed invoices, receipts, and diagnostic reports carry an indelible evaluation watermark.
+- **First-Run Onboarding:** Interactive 5-step wizard (`/onboarding`) guides new centers through initial setup.
+- **Seamless Upgrade:** Upgrade to Standard or Enterprise license requires only updating `LICENSE_KEY` with zero downtime or data loss.
+- **Full Documentation:** See [Licensing Guide](docs/licensing.md) and [Trial Setup Guide](docs/trial-setup.md).
+
+---
+
 <div align="center">
   <sub>Copyright © 2026 VIARA Healthcare Systems. All Global Rights Reserved.</sub><br>
   <sub>VIARA™ and the VIARA logo are registered trademarks. Unauthorized use is prohibited.</sub>
 </div>
-
 
 

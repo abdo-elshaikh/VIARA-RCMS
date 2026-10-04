@@ -146,6 +146,7 @@ const updateReferringDoctor = (db) => async (req, res, next) => {
                 commission_percentage = $10,
                 preferred_contact_method = $11,
                 is_active = $12,
+                current_session_id = CASE WHEN $12 THEN current_session_id ELSE NULL END,
                 notes = $13,
                 updated_at = NOW()
             WHERE doctor_id = $14
@@ -179,6 +180,7 @@ const deleteReferringDoctor = (db) => async (req, res, next) => {
         const result = await db.query(`
             UPDATE referring_doctors
             SET is_active = false,
+                current_session_id = NULL,
                 updated_at = NOW()
             WHERE doctor_id = $1
             RETURNING doctor_id
@@ -261,10 +263,90 @@ const getReferringDoctorStats = (db) => async (req, res, next) => {
     }
 };
 
+let interactionsTableInitialized = false;
+
+const ensureDoctorInteractionsTable = async (db) => {
+    if (interactionsTableInitialized) return;
+    try {
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS referring_doctor_interactions (
+                interaction_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                doctor_id UUID NOT NULL REFERENCES referring_doctors(doctor_id) ON DELETE CASCADE,
+                user_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
+                interaction_type VARCHAR(50) NOT NULL DEFAULT 'Visit',
+                purpose VARCHAR(100),
+                interaction_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                materials_delivered TEXT,
+                notes TEXT,
+                next_follow_up_date DATE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_doctor_interactions_doc ON referring_doctor_interactions(doctor_id);
+            CREATE INDEX IF NOT EXISTS idx_doctor_interactions_date ON referring_doctor_interactions(interaction_date DESC);
+        `);
+        interactionsTableInitialized = true;
+    } catch (err) {
+        console.error('Failed to ensure referring_doctor_interactions table:', err);
+    }
+};
+
+const getDoctorInteractions = (db) => async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        await ensureDoctorInteractionsTable(db);
+        const result = await db.query(`
+            SELECT rdi.*, u.full_name AS user_name
+            FROM referring_doctor_interactions rdi
+            LEFT JOIN users u ON rdi.user_id = u.user_id
+            WHERE rdi.doctor_id = $1
+            ORDER BY rdi.interaction_date DESC
+        `, [id]);
+        res.json(result.rows);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const createDoctorInteraction = (db) => async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const data = req.body;
+        await ensureDoctorInteractionsTable(db);
+
+        const result = await db.query(`
+            INSERT INTO referring_doctor_interactions (
+                doctor_id, user_id, interaction_type, purpose,
+                interaction_date, materials_delivered, notes, next_follow_up_date
+            )
+            VALUES ($1, $2, $3, $4, COALESCE($5, CURRENT_TIMESTAMP), $6, $7, $8)
+            RETURNING *
+        `, [
+            id,
+            req.user.user_id,
+            data.interactionType || 'Visit',
+            data.purpose || 'Routine Liaison',
+            data.interactionDate ? new Date(data.interactionDate) : null,
+            data.materialsDelivered || null,
+            data.notes || null,
+            data.nextFollowUpDate || null
+        ]);
+
+        const inserted = result.rows[0];
+        const userRes = await db.query('SELECT full_name FROM users WHERE user_id = $1', [req.user.user_id]);
+        inserted.user_name = userRes.rows[0]?.full_name || 'Staff';
+
+        res.status(201).json(inserted);
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getReferringDoctors,
     createReferringDoctor,
     updateReferringDoctor,
     deleteReferringDoctor,
-    getReferringDoctorStats
+    getReferringDoctorStats,
+    getDoctorInteractions,
+    createDoctorInteraction
 };

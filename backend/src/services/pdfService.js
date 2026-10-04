@@ -1,4 +1,5 @@
 const { resolveDocumentIdentity } = require('./documentIdentityService');
+const { getLicense } = require('./licenseService');
 
 const escapeHtml = (value = '') => String(value)
     .replace(/&/g, '&amp;')
@@ -6,6 +7,22 @@ const escapeHtml = (value = '') => String(value)
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+
+/**
+ * Returns true when the currently loaded license is a trial edition.
+ * Used to inject a non-removable "TRIAL" overlay on every printed report so
+ * trial output can never be mistaken for a production clinical document.
+ *
+ * @returns {boolean}
+ */
+const isTrialEdition = () => {
+    try {
+        const lic = getLicense();
+        return !!(lic && lic.edition === 'trial');
+    } catch {
+        return false;
+    }
+};
 
 const parseJSONSafe = (value) => {
     if (!value) return null;
@@ -31,11 +48,30 @@ const normalizeCenterSettings = (settings = {}, entity = {}) => {
     if (typeof visibleSections === 'string') {
         visibleSections = visibleSections.split(',').map(s => s.trim()).filter(Boolean);
     }
-    const identity = resolveDocumentIdentity(settings, entity);
+    const hasArabicText = (text = '') => /[\u0600-\u06FF]/.test(String(text));
+    const isArabic = Boolean(
+        String(settings.language || settings.lang || print.language || '').toLowerCase().startsWith('ar')
+        || (settings['center.default_language'] === 'ar')
+        || (settings.center_name_ar && hasArabicText(entity.patient_name || ''))
+        || hasArabicText(entity.patient_name || '')
+        || hasArabicText(entity.first_name || '')
+        || hasArabicText(entity.patient_name_enc || '')
+    );
+    const language = isArabic ? 'ar' : (settings.language || 'en');
+    const identity = resolveDocumentIdentity(settings, entity, { language });
     return {
         ...settings,
+        isArabic,
+        language,
         center_name: identity.centerName,
+        center_name_ar: identity.centerNameAr,
+        center_name_en: identity.centerNameEn,
         branch_name: identity.branchName,
+        branch_name_ar: identity.branchNameAr,
+        branch_name_en: identity.branchNameEn,
+        display_name: identity.displayName,
+        display_name_ar: identity.displayNameAr,
+        display_name_en: identity.displayNameEn,
         logo_url: identity.logoUrl,
         phone: identity.phone,
         email: identity.email,
@@ -48,9 +84,9 @@ const normalizeCenterSettings = (settings = {}, entity = {}) => {
         report_header: settings.report_header || settings['center.report_header'] || '',
         report_footer: settings.report_footer || settings['center.report_footer'] || '',
         themeColor: settings.themeColor || print.themeColor || identity.primaryColor,
-        fontFamily: settings.fontFamily || print.fontFamily || 'Inter',
+        fontFamily: settings.fontFamily || print.fontFamily || (isArabic ? 'Cairo, Tajawal, Inter' : 'Inter'),
         templateStyle: settings.templateStyle || print.templateStyle || 'modern',
-        enabledFields: safeArray(enabled, ['patient_name', 'mrn', 'study_date', 'referring_doctor']),
+        enabledFields: safeArray(enabled, ['patient_name', 'mrn', 'dob', 'gender', 'study_date', 'accession', 'modality', 'referring_doctor']),
         customFields: safeObject(settings.customFields || print.customFields, {}),
         customLabels: safeObject(settings.customLabels || print.customLabels, {}),
         visibleSections: safeArray(visibleSections, [
@@ -92,7 +128,11 @@ const renderCenterTemplate = (template, center) => {
 
 const stripHeaderIdentity = (value, center) => {
     const names = [
+        center.display_name_ar,
+        center.display_name_en,
+        center.display_name,
         [center.center_name, center.branch_name].filter(Boolean).join(' - '),
+        center.center_name_ar,
         center.center_name,
     ].filter(Boolean).sort((a, b) => b.length - a.length);
 
@@ -106,6 +146,7 @@ const stripHeaderIdentity = (value, center) => {
 const defaultHeaderText = (center) => [
     center.address,
     center.phone && `Tel: ${center.phone}`,
+    center.hotline && `Hotline: ${center.hotline}`,
     center.email && `Email: ${center.email}`
 ].filter(Boolean).join('\n');
 
@@ -115,8 +156,8 @@ const reportHeaderText = (center) => {
 };
 
 const reportFooterText = (center) => renderCenterTemplate(center.report_footer, center)
-    || [center.website, center.address].filter(Boolean).join(' | ')
-    || `${center.center_name} | Confidential diagnostic imaging report`;
+    || [center.website, center.phone && `Tel: ${center.phone}`, center.address].filter(Boolean).join(' | ')
+    || `${center.display_name || center.center_name} | Confidential diagnostic imaging report`;
 
 const reportSections = (report) => {
     const sections = report.report_sections || {};
@@ -195,21 +236,40 @@ const formatDateOnly = (value) => {
     });
 };
 
+const calculateAge = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const ageDiffMs = Date.now() - date.getTime();
+    const ageDate = new Date(ageDiffMs);
+    const years = Math.abs(ageDate.getUTCFullYear() - 1970);
+    return years > 0 ? `${years} Y` : '< 1 Y';
+};
+
 const METADATA_CATALOG = [
-    { id: 'patient_name', defaultLabel: 'Patient Name', group: 'patient', getValue: r => r.patient_name },
-    { id: 'mrn', defaultLabel: 'MRN', group: 'patient', getValue: r => r.mrn },
-    { id: 'patient_id', defaultLabel: 'Patient ID', group: 'patient', getValue: r => r.patient_id },
-    { id: 'dob', defaultLabel: 'Date of Birth', group: 'patient', getValue: r => formatDateOnly(r.date_of_birth) },
-    { id: 'gender', defaultLabel: 'Sex', group: 'patient', getValue: r => r.gender },
-    { id: 'study_date', defaultLabel: 'Study Date', group: 'exam', getValue: r => formatDate(r.start_time || r.created_at) },
-    { id: 'referring_doctor', defaultLabel: 'Referring Physician', group: 'exam', getValue: r => r.referring_doctor_name },
-    { id: 'modality', defaultLabel: 'Modality', group: 'exam', getValue: r => r.modality_type || r.modality_name },
-    { id: 'body_part', defaultLabel: 'Body Part / Region', group: 'exam', getValue: r => r.body_part || r.body_region },
-    { id: 'priority', defaultLabel: 'Priority', group: 'exam', getValue: r => r.priority },
-    { id: 'accession', defaultLabel: 'Order / Accession #', group: 'exam', getValue: r => r.order_number || r.accession_number },
-    { id: 'exam_id', defaultLabel: 'Exam ID', group: 'exam', getValue: r => r.exam_id },
-    { id: 'room', defaultLabel: 'Room / Suite', group: 'exam', getValue: r => r.room_number },
-    { id: 'radiologist', defaultLabel: 'Reporting Radiologist', group: 'exam', getValue: r => r.radiologist_name || r.digital_signature_name }
+    { id: 'patient_name', defaultLabel: 'Patient Name', arLabel: 'اسم المريض', group: 'patient', getValue: r => r.patient_name },
+    { id: 'mrn', defaultLabel: 'MRN', arLabel: 'الرقم الطبي', group: 'patient', getValue: r => r.mrn },
+    { id: 'patient_id', defaultLabel: 'Patient ID', arLabel: 'معرّف المريض', group: 'patient', getValue: r => r.patient_id },
+    { id: 'dob', defaultLabel: 'Date of Birth', arLabel: 'تاريخ الميلاد والعمر', group: 'patient', getValue: r => {
+        const d = formatDateOnly(r.date_of_birth);
+        const age = calculateAge(r.date_of_birth);
+        return d ? (age ? `${d} (${age})` : d) : '';
+    }},
+    { id: 'gender', defaultLabel: 'Sex', arLabel: 'النوع', group: 'patient', getValue: r => {
+        const g = String(r.gender || '').trim();
+        if (/^m(ale)?$/i.test(g)) return 'Male · ذكر';
+        if (/^f(emale)?$/i.test(g)) return 'Female · أنثى';
+        return g;
+    }},
+    { id: 'study_date', defaultLabel: 'Study Date', arLabel: 'تاريخ الفحص', group: 'exam', getValue: r => formatDate(r.start_time || r.created_at) },
+    { id: 'referring_doctor', defaultLabel: 'Referring Physician', arLabel: 'الطبيب المحول', group: 'exam', getValue: r => r.referring_doctor_name },
+    { id: 'modality', defaultLabel: 'Modality', arLabel: 'التقنية / الجهاز', group: 'exam', getValue: r => r.modality_type || r.modality_name },
+    { id: 'body_part', defaultLabel: 'Body Part / Region', arLabel: 'المنطقة المراد فحصها', group: 'exam', getValue: r => r.body_part || r.body_region },
+    { id: 'priority', defaultLabel: 'Priority', arLabel: 'درجة الأولوية', group: 'exam', getValue: r => r.priority },
+    { id: 'accession', defaultLabel: 'Order / Accession #', arLabel: 'رقم الطلب والفحص', group: 'exam', getValue: r => r.order_number || r.accession_number },
+    { id: 'exam_id', defaultLabel: 'Exam ID', arLabel: 'معرف الفحص', group: 'exam', getValue: r => r.exam_id },
+    { id: 'room', defaultLabel: 'Room / Suite', arLabel: 'غرفة الفحص', group: 'exam', getValue: r => r.room_number },
+    { id: 'radiologist', defaultLabel: 'Reporting Radiologist', arLabel: 'طبيب الأشعة', group: 'exam', getValue: r => r.radiologist_name || r.digital_signature_name }
 ];
 
 const SECTION_CATALOG = [
@@ -487,11 +547,18 @@ const buildReportHtml = (report, centerSettings = {}) => {
     const styleKey = (center.templateStyle || report.template_style || 'modern').toLowerCase();
     const theme = THEMES[styleKey] || THEMES.modern;
     const primaryColor = /^#[0-9a-f]{6}$/i.test(center.themeColor) ? center.themeColor : theme.primary;
-    const facilityName = [center.center_name, center.branch_name].filter(Boolean).join(' - ');
-    const logoText = String(center.center_name || 'Center').trim().slice(0, 4).toUpperCase();
-    const finalized = ['Finalized', 'Amended', 'Signed'].includes(report.report_status)
-        || report.report_locked
-        || report.status === 'Finalized';
+    const facilityNameAr = center.display_name_ar || [center.center_name_ar, center.branch_name_ar].filter(Boolean).join(' - ');
+    const facilityNameEn = center.display_name_en || [center.center_name_en || center.center_name, center.branch_name_en || center.branch_name].filter(Boolean).join(' - ');
+
+    const primaryFacility = center.isArabic && facilityNameAr ? facilityNameAr : (facilityNameEn || facilityNameAr);
+    const secondaryFacility = (center.isArabic && facilityNameAr && facilityNameEn && facilityNameEn !== facilityNameAr)
+        ? facilityNameEn
+        : (!center.isArabic && facilityNameAr && facilityNameAr !== facilityNameEn ? facilityNameAr : '');
+    const facilityName = facilityNameEn || primaryFacility;
+    const logoText = String(center.center_name_en || center.center_name || 'Center').trim().slice(0, 4).toUpperCase();
+    const finalized = ['Finalized', 'Amended'].includes(report.report_status)
+        && Boolean(report.report_locked)
+        && Boolean(report.report_finalized_at);
     const verificationHash = report.digital_signature_hash || (finalized
         ? `VIARA-VERIFIED-${String(report.exam_id || report.order_number || '').slice(0, 10).toUpperCase()}`
         : 'Pending Signature');
@@ -508,7 +575,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
     const rawCatalog = METADATA_CATALOG.map(f => ({
         id: f.id,
-        label: center.customLabels[f.id] || f.defaultLabel,
+        label: center.customLabels[f.id] || (center.isArabic && f.arLabel ? `${f.arLabel} · ${f.defaultLabel}` : f.defaultLabel),
         value: f.getValue(report) || '—',
         group: f.group || 'exam'
     }));
@@ -529,11 +596,11 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
     const visibleSet = new Set(center.visibleSections);
     const sectionDefs = [
-        { id: 'clinicalHistory', title: 'Clinical History', value: sections.clinicalHistory, important: false },
-        { id: 'technique', title: 'Technique & Protocol', value: sections.technique, important: false },
-        { id: 'findings', title: 'Findings', value: sections.findings, important: false },
-        { id: 'impression', title: 'Impression & Conclusion', value: sections.impression, important: true },
-        { id: 'recommendations', title: 'Recommendations', value: sections.recommendations, important: false },
+        { id: 'clinicalHistory', title: center.isArabic ? 'التاريخ المرضي والسريري · Clinical History' : 'Clinical History', value: sections.clinicalHistory, important: false },
+        { id: 'technique', title: center.isArabic ? 'التقنية والبروتوكول · Technique & Protocol' : 'Technique & Protocol', value: sections.technique, important: false },
+        { id: 'findings', title: center.isArabic ? 'النتائج والملاحظات الشعاعية · Findings' : 'Findings', value: sections.findings, important: false },
+        { id: 'impression', title: center.isArabic ? 'الخلاصة والتشخيص · Impression & Conclusion' : 'Impression & Conclusion', value: sections.impression, important: true },
+        { id: 'recommendations', title: center.isArabic ? 'التوصيات والمتابعة · Recommendations' : 'Recommendations', value: sections.recommendations, important: false },
         ...customSections.map(s => ({
             id: s.key,
             title: s.title,
@@ -818,6 +885,26 @@ const buildReportHtml = (report, centerSettings = {}) => {
             white-space: nowrap; user-select: none; z-index: 0;
         }
 
+        /* Trial edition overlay — printed on every page, cannot be removed by
+           the client customization panel, and never shown for paid editions.
+           position: fixed repeats the element on every printed page. */
+        .trial-watermark {
+            display: ${isTrialEdition() ? 'block' : 'none'};
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%) rotate(-30deg);
+            color: #b91c1c;
+            font-size: 18px; font-weight: 900;
+            letter-spacing: 0.35em; pointer-events: none;
+            text-transform: uppercase;
+            white-space: nowrap; user-select: none; z-index: 3;
+            opacity: 0.55;
+            border: 2px solid #b91c1c;
+            border-radius: 6px;
+            padding: 4px 10px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
         /* Zone 1: Identity */
         .zone-identity {
             display: grid; grid-template-columns: 1fr auto;
@@ -840,8 +927,12 @@ const buildReportHtml = (report, centerSettings = {}) => {
         }
         .brand-details { min-width: 0; }
         .brand-details h1 {
-            margin: 0; color: var(--text); font-size: clamp(15px, 1.4vw + 10px, 18px); font-weight: 800;
+            margin: 0; color: var(--text); font-size: clamp(15.5px, 1.4vw + 10px, 19px); font-weight: 800;
             letter-spacing: -0.025em; line-height: 1.25;
+        }
+        .brand-subname {
+            margin: 2px 0 0; color: var(--text-muted); font-size: 11px;
+            font-weight: 700; line-height: 1.35; letter-spacing: 0.01em;
         }
         .brand-details p {
             margin: 4px 0 0; color: var(--text-muted); font-size: 10.5px;
@@ -1505,6 +1596,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
             <div class="sheet-accent" aria-hidden="true"></div>
             <div class="sheet-body">
                 <div class="watermark" id="siteWatermark" aria-hidden="true">${escapeHtml(logoText)}</div>
+                ${isTrialEdition() ? '<div class="trial-watermark" id="trialWatermark" aria-hidden="true">TRIAL</div>' : ''}
 
                 ${center.includeHeader ? `
                 <header class="zone-identity" id="zoneIdentity">
@@ -1514,7 +1606,8 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 : `<div class="logo-avatar" id="brandLogoAvatar" aria-hidden="true">${escapeHtml(logoText)}</div>`
             }
                         <div class="brand-details">
-                            <h1 id="brandTitle" dir="auto">${escapeHtml(facilityName)}</h1>
+                            <h1 id="brandTitle" dir="auto">${escapeHtml(primaryFacility)}</h1>
+                            ${secondaryFacility ? `<div class="brand-subname" id="brandSubname" dir="auto">${escapeHtml(secondaryFacility)}</div>` : ''}
                             ${headerText ? `<p id="brandSubtitle" dir="auto">${lineBreaks(headerText)}</p>` : ''}
                         </div>
                     </div>

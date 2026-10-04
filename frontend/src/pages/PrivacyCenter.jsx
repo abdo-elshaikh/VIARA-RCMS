@@ -141,7 +141,7 @@ const PrivacyCenter = ({ embedded = false }) => {
                         <div className="min-w-0">
                             <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
                                 <UserRound size={11} />
-                                <span>Patient Data Rights & Governance</span>
+                                <span>{t('privacyCenter.eyebrow')}</span>
                             </span>
                             <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
                                 {t('privacyCenter.title', { defaultValue: 'Patient Privacy & Data Rights Center' })}

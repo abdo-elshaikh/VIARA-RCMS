@@ -48,7 +48,7 @@ describe('Dashboard operational snapshot hardening (BUG-M03 & BUG-M04)', () => {
         // Verify modality query includes the 12-hour active limit and status filters
         const modalitySql = queryCalls.find(sql => sql.includes('FROM modalities m'));
         expect(modalitySql).toBeDefined();
-        expect(modalitySql).toContain("e.status NOT IN ('Finalized', 'Cancelled')");
+        expect(modalitySql).toContain("e.status::text NOT IN ('Finalized', 'Cancelled')");
         expect(modalitySql).toContain("e.exam_started_at >= NOW() - INTERVAL '12 hours'");
 
         // Verify turnaround stages query bounds multi-day outliers

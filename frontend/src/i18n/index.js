@@ -56,7 +56,7 @@ await i18n
         lng: getInitialLanguage(),
         supportedLngs: SUPPORTED_LANGUAGES.map((l) => l.code),
         load: 'languageOnly',
-        ns: ['common', 'navigation', 'auth', 'dashboard', 'patients', 'reception', 'appointments', 'landing', 'display', 'system', 'workspace', 'insurance', 'payroll', 'worklist', 'patientDetail', 'integrations', 'admin', 'facilitySettings', 'clinicalQueues', 'governance', 'settings', 'help', 'approvals'],
+        ns: ['common', 'navigation', 'auth', 'dashboard', 'patients', 'reception', 'appointments', 'landing', 'display', 'system', 'workspace', 'insurance', 'payroll', 'worklist', 'pacsReconciliation', 'patientDetail', 'integrations', 'admin', 'facilitySettings', 'clinicalQueues', 'governance', 'settings', 'help', 'approvals'],
         defaultNS: 'common',
         interpolation: {
             escapeValue: false, // React already escapes

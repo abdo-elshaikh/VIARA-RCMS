@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { machineTypes } from './MachineManagement';
+import { MACHINE_TYPES } from '../../../types/equipment';
 
 const ClinicalImportModal = ({
     isOpen,
@@ -193,9 +193,9 @@ const ClinicalImportModal = ({
                 const status = raw.status || 'Active';
 
                 if (!name.trim()) errors.push(t('settings.clinical.importModal.missingMachineName', { defaultValue: 'Missing required Machine Name' }));
-                if (type && !machineTypes.map(tStr => tStr.toLowerCase()).includes(type.toLowerCase())) {
+                if (type && !MACHINE_TYPES.map(tStr => tStr.toLowerCase()).includes(type.toLowerCase())) {
                     errors.push(t('settings.clinical.importModal.unrecognizedClass', {
-                        defaultValue: `Unrecognized Modality Class "${type}". Standard: ${machineTypes.join(', ')}`,
+                        defaultValue: `Unrecognized Modality Class "${type}". Standard: ${MACHINE_TYPES.join(', ')}`,
                         type
                     }));
                 }

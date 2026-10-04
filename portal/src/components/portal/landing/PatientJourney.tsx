@@ -63,9 +63,11 @@ const STEPS = [
 interface PatientJourneyProps {
   onBook?: () => void;
   onCheckResults?: () => void;
+  heading?: string;
+  subheading?: string;
 }
 
-export const PatientJourney = ({ onBook, onCheckResults }: PatientJourneyProps) => {
+export const PatientJourney = ({ onBook, onCheckResults, heading, subheading }: PatientJourneyProps) => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith("ar");
   const reduceMotion = useReducedMotion();
@@ -93,14 +95,16 @@ export const PatientJourney = ({ onBook, onCheckResults }: PatientJourneyProps) 
             {isRtl ? "رحلتك معنا" : "Your patient journey"}
           </span>
           <h2 className="mt-2 text-3xl font-bold leading-tight text-[#0B2348] dark:text-white sm:text-4xl">
-            {isRtl
-              ? "كل خطوة واضحة، من الحجز إلى النتيجة"
-              : "Every step is clear, from booking to results"}
+            {heading ||
+              (isRtl
+                ? "كل خطوة واضحة، من الحجز إلى النتيجة"
+                : "Every step is clear, from booking to results")}
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
-            {isRtl
-              ? "مسار واحد منظم يساعدك على معرفة ما يحدث الآن، وما الذي يأتي بعده."
-              : "One organized journey that shows what is happening now and what comes next."}
+            {subheading ||
+              (isRtl
+                ? "مسار واحد منظم يساعدك على معرفة ما يحدث الآن، وما الذي يأتي بعده."
+                : "One organized journey that shows what is happening now and what comes next.")}
           </p>
         </div>
 

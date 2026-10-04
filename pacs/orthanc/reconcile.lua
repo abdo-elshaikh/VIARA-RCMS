@@ -85,7 +85,7 @@ function OnStableStudy(studyId, tags, metadata)
     AccessionNumber = mainTags['AccessionNumber'] or (tags and tags['AccessionNumber']),
     StudyInstanceUID = mainTags['StudyInstanceUID'] or (tags and tags['StudyInstanceUID']),
     StudyDescription = mainTags['StudyDescription'] or (tags and tags['StudyDescription']),
-    Modality = (tags and tags['Modality']) or 'CT'
+    Modality = tags and tags['Modality'] or nil
   }
 
   local body = DumpJson(payload, false)

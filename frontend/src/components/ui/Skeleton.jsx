@@ -10,7 +10,7 @@ const Skeleton = ({
     variant = 'text', // 'text', 'circular', 'rectangular'
     animation = 'pulse', // 'pulse', 'wave', 'none'
 }) => {
-    const baseStyles = 'bg-slate-200 dark:bg-[var(--VIARA-surface-muted)]';
+    const baseStyles = 'bg-[var(--VIARA-surface-muted)] dark:bg-[var(--VIARA-surface-muted)]';
 
     const animations = {
         pulse: 'animate-pulse',
@@ -52,7 +52,7 @@ Skeleton.Text = ({ lines = 3, className = '' }) => (
 );
 
 Skeleton.Card = ({ className = '' }) => (
-    <div className={`bg-white dark:bg-[var(--VIARA-surface-raised)] rounded-2xl shadow-card border border-slate-100 dark:border-[var(--VIARA-line)] p-6 ${className}`}>
+    <div className={`bg-[var(--VIARA-surface)] dark:bg-[var(--VIARA-surface-raised)] rounded-2xl shadow-card border border-[var(--VIARA-line)] p-6 ${className}`}>
         <div className="flex items-start gap-4 mb-4">
             <Skeleton variant="circular" width="48px" height="48px" />
             <div className="flex-1">
@@ -65,9 +65,9 @@ Skeleton.Card = ({ className = '' }) => (
 );
 
 Skeleton.Table = ({ rows = 5, columns = 4, className = '' }) => (
-    <div className={`bg-white dark:bg-[var(--VIARA-surface-raised)] rounded-2xl shadow-card border border-slate-100 dark:border-[var(--VIARA-line)] overflow-hidden ${className}`}>
+    <div className={`bg-[var(--VIARA-surface)] dark:bg-[var(--VIARA-surface-raised)] rounded-2xl shadow-card border border-[var(--VIARA-line)] overflow-hidden ${className}`}>
         {/* Header */}
-        <div className="flex gap-4 p-4 border-b border-slate-100 bg-slate-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-muted)]">
+        <div className="flex gap-4 p-4 border-b border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]">
             {[...Array(columns)].map((_, i) => (
                 <Skeleton key={`header-${i}`} height="20px" width="100%" />
             ))}
@@ -75,7 +75,7 @@ Skeleton.Table = ({ rows = 5, columns = 4, className = '' }) => (
 
         {/* Rows */}
         {[...Array(rows)].map((_, rowIndex) => (
-            <div key={`row-${rowIndex}`} className="flex gap-4 p-4 border-b border-slate-100 dark:border-[var(--VIARA-line)]">
+            <div key={`row-${rowIndex}`} className="flex gap-4 p-4 border-b border-[var(--VIARA-line)]">
                 {[...Array(columns)].map((_, colIndex) => (
                     <Skeleton key={`cell-${rowIndex}-${colIndex}`} height="16px" width="100%" />
                 ))}

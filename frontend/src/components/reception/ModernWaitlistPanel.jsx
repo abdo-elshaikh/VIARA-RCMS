@@ -153,9 +153,9 @@ const ModernWaitlistPanel = ({ selectedDate, t, canManage = false, canCreateAppo
     };
 
     return (
-        <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#070e1a]">
             {/* ── Header ── */}
-            <div className="border-b border-slate-100 bg-gradient-to-b from-slate-50/60 to-white px-4 pb-3 pt-4 dark:border-slate-800 dark:from-slate-900 dark:to-slate-900">
+            <div className="border-b border-slate-200 bg-slate-50 px-4 pb-3 pt-4 dark:border-slate-800 dark:bg-[#091222]">
                 {/* Title row */}
                 <div className="flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2.5">
@@ -230,7 +230,7 @@ const ModernWaitlistPanel = ({ selectedDate, t, canManage = false, canCreateAppo
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder={t('appointments:waitlist.filterPlaceholder', { defaultValue: 'بحث بالاسم أو الرقم الطبي أو الفحص...' })}
-                        className="h-8 w-full rounded-xl border border-slate-200 bg-slate-50/60 ps-8 pe-7 text-[11px] font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200"
+                        className="h-8 w-full rounded-xl border border-slate-200 bg-white ps-8 pe-7 text-[11px] font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-[#0b1426] dark:text-slate-200"
                     />
                     {searchQuery && (
                         <button
@@ -426,8 +426,8 @@ const ModernWaitlistPanel = ({ selectedDate, t, canManage = false, canCreateAppo
 
             {/* ── Compact Pagination ── */}
             {waitingList.length > PAGE_SIZE && (
-                <footer className="flex items-center justify-between border-t border-slate-100 bg-slate-50/40 px-3.5 py-2 dark:border-slate-800 dark:bg-slate-950/20">
-                    <span className="text-[10px] font-bold text-slate-400">
+                <footer className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-3.5 py-2 dark:border-slate-800 dark:bg-[#070e1a]">
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
                         {paginationState.startIndex + 1}–{paginationState.endIndex} / {waitingList.length}
                     </span>
                     <Pagination
@@ -452,10 +452,10 @@ const WaitlistEntry = ({ entry, index, onUpdateStatus, selectedDate, t, canManag
     return (
         <div className={`group rounded-2xl border-2 p-3.5 transition-all shadow-2xs hover:shadow-sm ${
             isEmergency
-                ? 'border-rose-300 border-s-4 border-s-rose-500 bg-rose-50/40 dark:border-rose-800 dark:border-s-rose-500 dark:bg-rose-950/20'
+                ? 'border-rose-300 border-s-4 border-s-rose-500 bg-rose-50 dark:border-rose-800 dark:border-s-rose-500 dark:bg-[#200a0e]'
                 : isUrgent
-                    ? 'border-amber-300 border-s-4 border-s-amber-500 bg-amber-50/40 dark:border-amber-800 dark:border-s-amber-500 dark:bg-amber-950/20'
-                    : 'border-slate-200 border-s-4 border-s-teal-500 bg-white hover:border-teal-300 dark:border-slate-750 dark:border-s-teal-500 dark:bg-slate-900'
+                    ? 'border-amber-300 border-s-4 border-s-amber-500 bg-amber-50 dark:border-amber-800 dark:border-s-amber-500 dark:bg-[#281c0b]'
+                    : 'border-slate-200 border-s-4 border-s-teal-500 bg-white hover:border-teal-300 dark:border-slate-800 dark:border-s-teal-500 dark:bg-[#0b1426]'
         }`}>
 
             {/* Row 1: Number + Name + Status badge */}

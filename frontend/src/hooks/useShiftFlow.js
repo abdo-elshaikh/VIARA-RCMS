@@ -21,6 +21,12 @@ const INITIAL_STATE = {
 
 const SHIFT_LIFECYCLE_STAGES = ['Open', 'Active', 'PendingReview', 'Reconciled', 'Closed'];
 
+const getExpectedDrawerCash = (shift) => {
+    const openingBalance = Number(shift?.opening_balance || 0);
+    const cashTransactions = Number(shift?.payment_totals?.Cash || 0);
+    return openingBalance + cashTransactions;
+};
+
 export const useShiftFlow = ({ skip = false, includeAllForReview = false } = {}) => {
     const { t } = useTranslation('reception');
     const user = useSelector(selectCurrentUser);
@@ -90,6 +96,12 @@ export const useShiftFlow = ({ skip = false, includeAllForReview = false } = {})
                 }).unwrap();
                 toast.success(t('billing.shiftOpened', { defaultValue: 'Shift opened successfully' }));
             } else if (shiftAction === 'close' && currentShift) {
+                const expectedCash = getExpectedDrawerCash(currentShift);
+                const diff = Math.abs(Number(countedCash || 0) - expectedCash);
+                if (diff > 0.01 && (!shiftNotes || shiftNotes.trim().length < 3)) {
+                    toast.error(t('billing.varianceReasonRequired', { defaultValue: 'A variance reason (at least 3 characters) is required when counted cash differs from the expected balance' }));
+                    return;
+                }
                 await closeCashierShift({
                     id: currentShift.shift_id,
                     countedCash: Number(countedCash),
@@ -106,6 +118,13 @@ export const useShiftFlow = ({ skip = false, includeAllForReview = false } = {})
 
     const handleReconciliation = useCallback(async ({ countedCash, notes }) => {
         if (!currentShift) return false;
+
+        const expectedCash = getExpectedDrawerCash(currentShift);
+        const diff = Math.abs(Number(countedCash || 0) - expectedCash);
+        if (diff > 0.01 && (!notes || notes.trim().length < 3)) {
+            toast.error(t('billing.varianceReasonRequired', { defaultValue: 'A variance reason (at least 3 characters) is required when counted cash differs from the expected balance' }));
+            return false;
+        }
 
         try {
             await closeCashierShift({

@@ -1,0 +1,11 @@
+# Host Backend + Docker PACS. Do not use this override for an all-Docker stack.
+services:
+  ohif:
+    environment:
+      VIARA_API_UPSTREAM: host.docker.internal:3000
+      VIARA_APP_ORIGIN: ${FRONTEND_PUBLIC_URL:-${CLIENT_URL:-http://localhost:5173}}
+  orthanc:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      VIARA_WEBHOOK_URL: http://host.docker.internal:3000/api/pacs/webhook

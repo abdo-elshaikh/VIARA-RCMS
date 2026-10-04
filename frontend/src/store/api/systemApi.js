@@ -47,7 +47,7 @@ export const systemApi = api.injectEndpoints({
             invalidatesTags: ['Integrations'],
         }),
         getIntegrationLogs: builder.query({
-            query: () => '/integrations/logs',
+            query: (params) => ({ url: '/integrations/logs', params }),
             providesTags: ['Integrations'],
         }),
         retryIntegrationEvent: builder.mutation({
@@ -286,6 +286,10 @@ export const systemApi = api.injectEndpoints({
             query: (params = {}) => ({ url: '/v1/audit', params }),
             providesTags: ['Audit'],
         }),
+        getStaffActivityLogs: builder.query({
+            query: (params = {}) => ({ url: '/v1/audit/activity', params }),
+            providesTags: ['Audit'],
+        }),
         getAuditAlerts: builder.query({
             query: (params = {}) => ({ url: '/v1/audit/alerts', params }),
             providesTags: ['Audit'],
@@ -374,6 +378,29 @@ export const systemApi = api.injectEndpoints({
                 body: { reason },
             }),
             invalidatesTags: ['RBAC'],
+        }),
+        getLicenseInfo: builder.query({
+            query: () => '/license/info',
+            providesTags: ['License'],
+        }),
+        getLicenseQuota: builder.query({
+            query: () => '/license/quota',
+            providesTags: ['License'],
+        }),
+        inspectLicense: builder.mutation({
+            query: (body) => ({
+                url: '/license/inspect',
+                method: 'POST',
+                body,
+            }),
+        }),
+        activateLicense: builder.mutation({
+            query: (body) => ({
+                url: '/license/activate',
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['License', 'Dashboard', 'Settings'],
         }),
     }),
     overrideExisting: false,

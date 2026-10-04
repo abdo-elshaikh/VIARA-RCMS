@@ -12,7 +12,8 @@ const EXEMPT_PATHS = new Set([
     '/api/webhooks/stripe',
     '/api/webhooks/twilio',
     '/api/notifications/webhook/twilio',
-    '/api/notifications/unsubscribe'
+    '/api/notifications/unsubscribe',
+    '/api/realtime/session'
 ]);
 
 /**

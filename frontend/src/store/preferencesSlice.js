@@ -113,6 +113,14 @@ export const normalizePreferences = (value = {}) => {
     };
 };
 
+// Organization-wide policy is merged into client state for effective behavior,
+// but it is owned by system settings and must never be stored as a user choice.
+export const getPersistablePreferences = (value = {}) => {
+    const personalPreferences = normalizePreferences(value);
+    delete personalPreferences.organizationSessionTimeout;
+    return personalPreferences;
+};
+
 // Load initial state from localStorage if available
 const loadInitialState = () => {
     try {

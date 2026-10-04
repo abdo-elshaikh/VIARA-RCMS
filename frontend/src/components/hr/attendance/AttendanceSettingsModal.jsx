@@ -51,7 +51,9 @@ export const AttendanceSettingsModal = ({ isOpen, onClose }) => {
                 loginBufferAfterMinutes: serverConfig.loginBufferAfterMinutes ?? 30,
                 exemptRolesFromLoginRestriction: Array.isArray(serverConfig.exemptRolesFromLoginRestriction)
                     ? serverConfig.exemptRolesFromLoginRestriction
-                    : ['Admin', 'HR', 'Developer']
+                    : (typeof serverConfig.exemptRolesFromLoginRestriction === 'string'
+                        ? serverConfig.exemptRolesFromLoginRestriction.split(',').map((r) => r.trim()).filter(Boolean)
+                        : ['Admin', 'HR', 'Developer'])
             });
         }
     }, [serverConfig]);
@@ -69,7 +71,10 @@ export const AttendanceSettingsModal = ({ isOpen, onClose }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            await updateSettings(form).unwrap();
+            await updateSettings({
+                ...form,
+                exemptRolesFromLoginRestriction: form.exemptRolesFromLoginRestriction.join(',')
+            }).unwrap();
             toast.success(
                 isArabic
                     ? 'تم تحديث إعدادات وسياسات الانضباط بنجاح'

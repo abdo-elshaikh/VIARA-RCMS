@@ -7,3 +7,9 @@ dist
 build
 logs
 *.log
+keys/
+.viara-license
+.viara-activation
+test_license.txt
+scratch/
+*.pem

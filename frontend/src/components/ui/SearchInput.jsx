@@ -46,7 +46,7 @@ const SearchInput = ({
     return (
         <div className={`relative ${className}`}>
             {/* Search Icon */}
-            <Search className="pointer-events-none absolute start-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute start-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--VIARA-muted)]" />
 
             {/* Input */}
             <input
@@ -54,7 +54,7 @@ const SearchInput = ({
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={placeholder}
-                className="w-full rounded-xl border border-slate-200 bg-white py-3 pe-12 ps-12 text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-[var(--VIARA-accent)] focus:ring-4 focus:ring-[rgba(var(--VIARA-accent-rgb),0.12)] dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-[var(--VIARA-ink)] dark:placeholder:text-slate-500"
+                className="w-full rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-field)] py-3 pe-12 ps-12 text-[var(--VIARA-ink)] outline-none transition-all placeholder:text-[var(--VIARA-muted)] focus:border-[var(--VIARA-accent)] focus:ring-4 focus:ring-[rgba(var(--VIARA-accent-rgb),0.14)]"
                 aria-label={ariaLabel || placeholder || t('actions.search')}
                 aria-busy={isSearching || undefined}
             />
@@ -66,10 +66,10 @@ const SearchInput = ({
                 ) : searchTerm ? (
                     <button
                         onClick={handleClear}
-                        className="p-1 hover:bg-slate-100 dark:hover:bg-[var(--VIARA-surface-hover)] rounded-full transition-colors"
+                        className="p-1 hover:bg-[var(--VIARA-surface-hover)] rounded-full transition-colors text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)]"
                         aria-label={clearLabel || t('topbar.search.clear')}
                     >
-                        <X className="w-4 h-4 text-slate-400" />
+                        <X className="w-4 h-4" />
                     </button>
                 ) : null}
             </div>

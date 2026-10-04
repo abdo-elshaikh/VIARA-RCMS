@@ -4,9 +4,9 @@ import Button from './Button';
 
 const variantIcons = { default: Inbox, search: FileSearch, error: AlertCircle };
 const variantColors = {
-    default: 'bg-slate-100 text-slate-400 dark:bg-[var(--VIARA-surface-muted)] dark:text-[var(--VIARA-muted)]',
+    default: 'bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)] dark:bg-[var(--VIARA-surface-muted)] dark:text-[var(--VIARA-muted)]',
     search: 'bg-[var(--VIARA-accent-soft)] text-[var(--VIARA-accent)] dark:bg-[rgba(var(--VIARA-accent-rgb),0.14)] dark:text-[var(--VIARA-accent-text)]',
-    error: 'bg-red-50 text-red-500 dark:bg-red-400/10 dark:text-red-300',
+    error: 'bg-[var(--VIARA-danger-soft)] text-[var(--VIARA-danger)] dark:bg-[var(--VIARA-danger-soft)] dark:text-[var(--VIARA-danger)]',
 };
 
 const EmptyState = ({
@@ -27,11 +27,11 @@ const EmptyState = ({
 
     return (
         <div className={`flex flex-col items-center justify-center px-4 text-center ${compact ? 'py-7' : 'py-12'} ${className}`}>
-            <div className={`${compact ? 'mb-3 h-12 w-12' : 'mb-5 h-16 w-16'} flex items-center justify-center rounded-2xl ring-8 ring-slate-50 dark:ring-[var(--VIARA-surface)] ${variantColors[variant] || variantColors.default}`}>
+            <div className={`${compact ? 'mb-3 h-12 w-12' : 'mb-5 h-16 w-16'} flex items-center justify-center rounded-2xl ring-8 ring-[var(--VIARA-canvas)] dark:ring-[var(--VIARA-surface)] ${variantColors[variant] || variantColors.default}`}>
                 <DisplayIcon className={compact ? 'h-5 w-5' : 'h-7 w-7'} aria-hidden="true" />
             </div>
-            <h3 className={`${compact ? 'text-sm' : 'text-lg'} font-semibold text-slate-900 dark:text-[var(--VIARA-ink)]`}>{title || t('empty.defaultTitle')}</h3>
-            {supportingText && <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500 dark:text-[var(--VIARA-muted)]">{supportingText}</p>}
+            <h3 className={`${compact ? 'text-sm' : 'text-lg'} font-semibold text-[var(--VIARA-ink)]`}>{title || t('empty.defaultTitle')}</h3>
+            {supportingText && <p className="mt-2 max-w-sm text-sm leading-6 text-[var(--VIARA-muted)]">{supportingText}</p>}
             {action || (onAction && <Button onClick={onAction} variant="primary" size="md" className="mt-6"><Plus className="h-4 w-4" />{actionLabel || t('empty.create')}</Button>)}
         </div>
     );

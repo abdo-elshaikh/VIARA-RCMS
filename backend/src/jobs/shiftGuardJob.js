@@ -9,6 +9,7 @@ const { AUDIT_EVENT_CODES, AUDIT_OUTCOME } = require('../services/auditTaxonomy'
 const { triggerEvent } = require('../services/notificationJobService');
 const { cleanupExpiredReceptionTasks } = require('../services/receptionTaskService');
 const { buildShiftMetrics } = require('../controllers/receptionShiftController');
+const { onShiftClose } = require('../services/endOfDayService');
 
 const INTERVAL_MS = Number(process.env.SHIFT_GUARD_INTERVAL_MS || 15 * 60 * 1000);
 const ATTENDANCE_STALE_HOURS = Math.max(Number(process.env.ATTENDANCE_STALE_HOURS || 24), 1);
@@ -110,8 +111,8 @@ const settleUnattendedShifts = async (db) => {
               SELECT 1 FROM leave_requests l
               WHERE l.user_id = s.user_id
                 AND l.status = 'Approved'
-                AND l.start_date <= s.start_time::date
-                AND l.end_date >= s.start_time::date
+                AND l.start_date <= (s.end_time AT TIME ZONE 'Africa/Cairo')::date
+                AND l.end_date >= (s.start_time AT TIME ZONE 'Africa/Cairo')::date
           )
         ORDER BY s.end_time ASC
         LIMIT 50
@@ -126,6 +127,19 @@ const settleUnattendedShifts = async (db) => {
 
             const check = await client.query('SELECT log_id FROM attendance_logs WHERE shift_id = $1 LIMIT 1', [shift.shift_id]);
             if (check.rows.length > 0) {
+                await client.query('ROLLBACK');
+                continue;
+            }
+
+            const overlap = await client.query(`
+                SELECT log_id
+                FROM attendance_logs
+                WHERE user_id = $1
+                  AND tstzrange(clock_in, COALESCE(clock_out, 'infinity'::timestamptz), '[)')
+                      && tstzrange($2::timestamptz, $3::timestamptz, '[)')
+                LIMIT 1
+            `, [shift.user_id, shift.start_time, shift.end_time]);
+            if (overlap.rows.length > 0) {
                 await client.query('ROLLBACK');
                 continue;
             }
@@ -186,6 +200,17 @@ const settleUnattendedShifts = async (db) => {
             }).catch(() => {});
 
         } catch (err) {
+            const isOverlap = String(err?.message || '').includes('overlaps another session');
+            if (isOverlap) {
+                await client.query('ROLLBACK').catch(() => {});
+                logger.info('Shift guard skipped unattended shift with overlapping attendance session', {
+                    shiftId: shift.shift_id,
+                    userId: shift.user_id,
+                    message: err.message,
+                });
+                continue;
+            }
+
             await client.query('ROLLBACK').catch(() => {});
             logger.error('Shift guard failed to mark unattended shift as absent', {
                 shiftId: shift.shift_id,
@@ -250,7 +275,7 @@ const closeAbandonedReceptionShifts = async (db) => {
                 SET status = 'Closed',
                     ended_at = CURRENT_TIMESTAMP,
                     closing_notes = CONCAT_WS(E'\n', NULLIF(closing_notes, ''),
-                        $2),
+                        $2::text),
                     metrics = $3::jsonb,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE session_id = $1
@@ -285,6 +310,13 @@ const closeAbandonedReceptionShifts = async (db) => {
                     desk_identifier: shift.desk_identifier,
                     abandoned_minutes: RECEPTION_ABANDONED_MINUTES,
                 }
+            }).catch(() => {});
+
+            // Check for pending (unexamined) cases and notify admins.
+            onShiftClose(db, {
+                sessionId : shift.session_id,
+                userId    : shift.user_id,
+                userName  : '[shift-guard auto-close]',
             }).catch(() => {});
         } catch (error) {
             await client.query('ROLLBACK').catch(() => {});
@@ -342,11 +374,17 @@ const runOnce = async (pool) => {
     if (inFlight) return { skipped: true, reason: 'already_running' };
     inFlight = true;
     try {
+        const staleTasksResult = await cleanupExpiredReceptionTasks(pool)
+            .catch((error) => {
+                logger.warn('Shift guard stale task cleanup skipped', { error: error.message });
+                return { rows: [], rowCount: 0 };
+            });
+        const staleTasks = { cleaned: staleTasksResult?.rowCount ?? (Array.isArray(staleTasksResult?.rows) ? staleTasksResult.rows.length : 0) };
         const attendance = await settleStaleAttendanceSessions(pool);
         const unattended = await settleUnattendedShifts(pool);
         const reception = await closeAbandonedReceptionShifts(pool);
         const cashier = await flagAbandonedCashierShifts(pool);
-        const result = { attendance, unattended, reception, cashier };
+        const result = { attendance, unattended, reception, cashier, staleTasks };
 
         if (attendance.settled > 0 || unattended.marked > 0 || reception.closed > 0 || reception.skipped.length > 0 || cashier.flagged > 0) {
             logger.warn('Shift guard settled abandoned operational records', result);

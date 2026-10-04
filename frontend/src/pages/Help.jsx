@@ -1168,23 +1168,29 @@ const ShortcutRow = ({ keys, label }) => {
     const [active, setActive] = useState(false);
     const press = () => {
         setActive(true);
-        setTimeout(() => setActive(false), 200);
+        setTimeout(() => setActive(false), 180);
     };
     return (
         <button
             type="button"
             onClick={press}
-            className="group flex w-full items-center justify-between rounded-2xl p-2.5 text-start transition hover:bg-slate-100/70 dark:hover:bg-slate-800/40"
+            className="group flex w-full items-center justify-between rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-2.5 text-start transition-all duration-150 hover:border-[var(--VIARA-accent)]/40 hover:bg-[var(--VIARA-surface-hover)] hover:shadow-sm"
         >
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 pe-3">{label}</span>
-            <div className="flex shrink-0 gap-1">
-                {keys.map((k) => (
-                    <kbd
-                        key={k}
-                        className={`rounded-lg border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10.5px] font-black text-slate-700 shadow-2xs transition-all dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 ${active ? 'translate-y-0.5 shadow-none' : ''}`}
-                    >
-                        {k}
-                    </kbd>
+            <span className="text-xs font-semibold text-[var(--VIARA-ink)] pe-3 leading-snug group-hover:text-[var(--VIARA-accent)] transition-colors">{label}</span>
+            <div className="flex shrink-0 items-center gap-1">
+                {keys.map((k, i) => (
+                    <React.Fragment key={k}>
+                        {i > 0 && <span className="text-[9px] font-black text-[var(--VIARA-muted)] px-0.5">+</span>}
+                        <kbd
+                            className={`inline-flex items-center justify-center min-w-[26px] h-[22px] px-1.5 rounded-md font-mono text-[10px] font-black select-none transition-all duration-100
+                                bg-[var(--VIARA-surface)] text-[var(--VIARA-ink)]
+                                border border-[var(--VIARA-line)] border-b-[3px]
+                                shadow-[0_2px_0_0_var(--VIARA-line)]
+                                ${active ? 'translate-y-[2px] border-b-[1px] shadow-none' : 'group-hover:border-[var(--VIARA-accent)]/50 group-hover:text-[var(--VIARA-accent)]'}`}
+                        >
+                            {k}
+                        </kbd>
+                    </React.Fragment>
                 ))}
             </div>
         </button>
@@ -1199,21 +1205,25 @@ const QuickCard = ({ article, isArabic }) => {
     return (
         <Link
             to={article.route}
-            className="group relative flex items-center gap-3.5 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-teal-500/40 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/90"
+            className="group relative flex items-center gap-3.5 overflow-hidden rounded-3xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-4 shadow-xs backdrop-blur-xl transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:border-[var(--VIARA-accent)]/40"
         >
-            <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${tone.bg} border ${tone.badge.split(' ')[2] || 'border-teal-500/30'} transition-transform duration-200 group-hover:scale-105`}>
+            {/* Subtle gradient shimmer on hover */}
+            <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-[var(--VIARA-accent)]/5 to-transparent rounded-3xl" />
+            {/* Color accent bar on start edge */}
+            <div className={`absolute start-0 top-3 bottom-3 w-1 rounded-full ${tone.dot} opacity-0 group-hover:opacity-100 transition-all duration-200`} />
+            <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${tone.bg} border ${tone.badge.split(' ')[2] || 'border-teal-500/30'} transition-all duration-200 group-hover:scale-110 group-hover:shadow-md`}>
                 <Icon size={19} className={tone.text} />
             </div>
             <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-black text-slate-900 transition group-hover:text-teal-600 dark:text-white dark:group-hover:text-teal-400">
+                <p className="truncate text-xs font-black text-[var(--VIARA-ink)] transition-colors duration-200 group-hover:text-[var(--VIARA-accent)]">
                     {label}
                 </p>
-                <p className="mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold text-slate-400">
+                <p className="mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold text-[var(--VIARA-muted)] group-hover:text-[var(--VIARA-accent)]/70 transition-colors duration-200">
                     <ExternalLink size={10} />
                     <span>{t('openWorkspace')}</span>
                 </p>
             </div>
-            <ChevronRight size={15} className="shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-teal-600 dark:text-slate-600 rtl:rotate-180" />
+            <ChevronRight size={15} className="shrink-0 text-[var(--VIARA-muted)] transition-all duration-200 group-hover:translate-x-1 group-hover:text-[var(--VIARA-accent)] rtl:rotate-180 rtl:group-hover:-translate-x-1 rtl:group-hover:translate-x-0" />
         </Link>
     );
 };
@@ -1239,29 +1249,37 @@ const ArticleCard = ({ article, isArabic, canOpenRoute = true }) => {
         saveHelpFeedback(article.id, value);
     };
 
+    const riskColor = governance.riskLevel === 'clinical' || governance.riskLevel === 'high'
+        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30'
+        : governance.riskLevel === 'low'
+        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+        : 'bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)] border-[var(--VIARA-line)]';
+
     return (
         <div
-            className={`overflow-hidden rounded-3xl border transition-all ${
+            className={`group/card overflow-hidden rounded-3xl border transition-all duration-200 ${
                 open
-                    ? 'border-teal-500/40 bg-white shadow-md dark:border-teal-500/30 dark:bg-slate-900'
-                    : 'border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-slate-700'
+                    ? 'border-[var(--VIARA-accent)]/50 bg-[var(--VIARA-surface)] shadow-lg shadow-[var(--VIARA-accent)]/5'
+                    : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-xs backdrop-blur-xl hover:border-[var(--VIARA-accent)]/30 hover:shadow-md'
             }`}
         >
+            {/* Colored left accent bar */}
+            <div className={`absolute start-0 top-0 bottom-0 w-1 ${tone.dot} rounded-s-3xl transition-all duration-200 ${open ? 'opacity-100' : 'opacity-0 group-hover/card:opacity-60'}`} />
             <button
                 type="button"
                 onClick={toggle}
                 aria-expanded={open}
                 aria-controls={contentId}
                 aria-label={title}
-                className="flex w-full items-start gap-4 p-5 text-start transition hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
+                className="flex w-full items-start gap-4 p-5 ps-6 text-start transition-colors duration-200 hover:bg-[var(--VIARA-surface-hover)]"
             >
-                <div className={`mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${tone.bg} border ${tone.badge.split(' ')[2] || 'border-teal-500/30'} transition-transform duration-200 group-hover:scale-105`}>
+                <div className={`mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${tone.bg} border ${tone.badge.split(' ')[2] || 'border-teal-500/30'} transition-all duration-200 group-hover/card:scale-105 group-hover/card:shadow-md ${open ? 'scale-105' : ''}`}>
                     <Icon size={19} className={tone.text} />
                 </div>
 
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                        <h3 className={`text-sm font-black transition-colors duration-200 ${open ? 'text-[var(--VIARA-accent)]' : 'text-[var(--VIARA-ink)] group-hover/card:text-[var(--VIARA-accent)]'}`}>
                             {title}
                         </h3>
                         <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[9.5px] font-black uppercase tracking-wider ${tone.badge}`}>
@@ -1269,52 +1287,90 @@ const ArticleCard = ({ article, isArabic, canOpenRoute = true }) => {
                             <span>{article.category}</span>
                         </span>
                     </div>
-                    <p className="mt-1 text-xs leading-relaxed font-semibold text-slate-500 dark:text-slate-400">
+                    <p className="mt-1 text-xs leading-relaxed font-medium text-[var(--VIARA-muted)]">
                         {desc}
                     </p>
-                    <div className="mt-2.5 flex items-center gap-2">
-                        <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-                        <span className="text-[11px] font-bold text-slate-400">{steps.length} {t('actionableSteps')}</span>
+                    <div className="mt-2.5 flex items-center gap-3">
+                        <div className="flex items-center gap-1.5">
+                            {steps.map((_, si) => (
+                                <span key={si} className={`h-1 rounded-full transition-all duration-300 ${open ? `w-4 ${tone.dot}` : `w-1.5 bg-[var(--VIARA-line)]`}`} />
+                            ))}
+                        </div>
+                        <span className="text-[11px] font-bold text-[var(--VIARA-muted)]">{steps.length} {t('actionableSteps')}</span>
                     </div>
                 </div>
 
-                <ChevronDown
-                    size={18}
-                    className={`mt-1 shrink-0 text-slate-400 transition-transform duration-200 ${open ? 'rotate-180 text-teal-600 dark:text-teal-400' : ''}`}
-                />
+                <div className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-all duration-200 ${
+                    open
+                        ? 'bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)] rotate-180'
+                        : 'bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)] group-hover/card:bg-[var(--VIARA-accent)]/10 group-hover/card:text-[var(--VIARA-accent)]'
+                }`}>
+                    <ChevronDown size={15} />
+                </div>
             </button>
 
             {open && (
-                <div id={contentId} role="region" aria-label={title} className="border-t border-slate-100 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-950/40 animate-in fade-in-50 duration-200">
-                    <ol className="space-y-3">
+                <div
+                    id={contentId}
+                    role="region"
+                    aria-label={title}
+                    className="border-t border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-5 ps-6 animate-in slide-in-from-top-1 fade-in-50 duration-200"
+                >
+                    {/* Step list with connecting line */}
+                    <ol className="relative space-y-0">
                         {steps.map((stepText, i) => (
-                            <li key={i} className="flex items-start gap-3 text-xs leading-relaxed font-bold text-slate-700 dark:text-slate-300">
-                                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white ${tone.dot}`}>
+                            <li key={i} className="relative flex items-start gap-4 pb-4 last:pb-0">
+                                {/* Vertical connector line */}
+                                {i < steps.length - 1 && (
+                                    <div className={`absolute start-[14px] top-6 w-0.5 bottom-0 ${tone.dot} opacity-20`} />
+                                )}
+                                <span className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${tone.bg} ${tone.text} border ${tone.badge.split(' ')[2] || 'border-emerald-500/30'} shadow-sm`}>
                                     {i + 1}
                                 </span>
-                                <span className="pt-0.5">{stepText}</span>
+                                <p className="pt-1 text-xs leading-relaxed font-semibold text-[var(--VIARA-ink)]">{stepText}</p>
                             </li>
                         ))}
                     </ol>
 
-                    <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4 text-[10px] font-bold text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                        <span className="rounded-full bg-slate-200/70 px-2.5 py-1 dark:bg-slate-800">{isArabic ? `المالك: ${governance.owner}` : `Owner: ${governance.owner}`}</span>
-                        <span className="rounded-full bg-slate-200/70 px-2.5 py-1 dark:bg-slate-800">{isArabic ? `الإصدار ${governance.version}` : `Version ${governance.version}`}</span>
-                        <span className={`rounded-full px-2.5 py-1 ${governance.riskLevel === 'clinical' || governance.riskLevel === 'high' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>
+                    {/* Governance footer */}
+                    <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-[var(--VIARA-line)] pt-4">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 py-1 text-[10px] font-bold text-[var(--VIARA-muted)]">
+                            <ShieldCheck size={9} className="shrink-0" />
+                            {isArabic ? `المالك: ${governance.owner}` : `Owner: ${governance.owner}`}
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 py-1 text-[10px] font-bold text-[var(--VIARA-muted)]">
+                            {isArabic ? `v${governance.version}` : `v${governance.version}`}
+                        </span>
+                        <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold ${riskColor}`}>
+                            <Clock size={9} className="shrink-0" />
                             {isArabic ? `مراجعة: ${governance.reviewedAt}` : `Reviewed: ${governance.reviewedAt}`}
                         </span>
+                        {governance.riskLevel && (
+                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold ${riskColor}`}>
+                                {governance.riskLevel}
+                            </span>
+                        )}
                     </div>
 
                     {article.route && canOpenRoute && (
-                        <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800">
+                        <div className="mt-4 pt-4 border-t border-[var(--VIARA-line)] flex items-center justify-between gap-3">
                             <Link
                                 to={article.route}
-                                className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95"
+                                className={`inline-flex items-center gap-2 rounded-xl ${tone.bg} border ${tone.badge.split(' ')[2] || 'border-teal-500/30'} px-4 py-2 text-xs font-black ${tone.text} transition-all hover:scale-[1.02] hover:shadow-md active:scale-[0.98]`}
                             >
                                 <Zap size={13} />
                                 <span>{t('openInteractiveWorkspace')}</span>
                                 <ExternalLink size={11} />
                             </Link>
+                            <div className="flex items-center gap-2 text-[11px] font-bold text-[var(--VIARA-muted)]">
+                                <span>{t('wasThisGuideHelpful')}</span>
+                                <button type="button" aria-pressed={feedback === 'yes'} onClick={() => submitFeedback('yes')} className={`rounded-lg px-2.5 py-1 text-xs transition-all hover:scale-105 active:scale-95 ${feedback === 'yes' ? `${tone.bg} ${tone.text} border ${tone.badge.split(' ')[2] || ''}` : 'bg-[var(--VIARA-surface)] border border-[var(--VIARA-line)] hover:bg-[var(--VIARA-surface-hover)]'}`}>
+                                    👍
+                                </button>
+                                <button type="button" aria-pressed={feedback === 'no'} onClick={() => submitFeedback('no')} className={`rounded-lg px-2.5 py-1 text-xs transition-all hover:scale-105 active:scale-95 ${feedback === 'no' ? 'bg-rose-500/10 text-rose-600 border border-rose-500/30' : 'bg-[var(--VIARA-surface)] border border-[var(--VIARA-line)] hover:bg-[var(--VIARA-surface-hover)]'}`}>
+                                    👎
+                                </button>
+                            </div>
                         </div>
                     )}
 
@@ -1324,43 +1380,94 @@ const ArticleCard = ({ article, isArabic, canOpenRoute = true }) => {
                         </p>
                     )}
 
-                    <div className="mt-4 flex items-center gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                        <span>{t('wasThisGuideHelpful')}</span>
-                        <button type="button" aria-pressed={feedback === 'yes'} onClick={() => submitFeedback('yes')} className={`rounded-lg px-2.5 py-1 transition ${feedback === 'yes' ? 'bg-emerald-500 text-white' : 'bg-slate-200/70 hover:bg-emerald-500/20 dark:bg-slate-800'}`}>
-                            {t('yes')}
-                        </button>
-                        <button type="button" aria-pressed={feedback === 'no'} onClick={() => submitFeedback('no')} className={`rounded-lg px-2.5 py-1 transition ${feedback === 'no' ? 'bg-rose-500 text-white' : 'bg-slate-200/70 hover:bg-rose-500/20 dark:bg-slate-800'}`}>
-                            {t('no')}
-                        </button>
-                    </div>
+                    {!article.route && (
+                        <div className="mt-4 flex items-center gap-2 text-[11px] font-bold text-[var(--VIARA-muted)]">
+                            <span>{t('wasThisGuideHelpful')}</span>
+                            <button type="button" aria-pressed={feedback === 'yes'} onClick={() => submitFeedback('yes')} className={`rounded-lg px-2.5 py-1 text-xs transition-all hover:scale-105 active:scale-95 ${feedback === 'yes' ? `${tone.bg} ${tone.text} border ${tone.badge.split(' ')[2] || ''}` : 'bg-[var(--VIARA-surface)] border border-[var(--VIARA-line)] hover:bg-[var(--VIARA-surface-hover)]'}`}>
+                                👍
+                            </button>
+                            <button type="button" aria-pressed={feedback === 'no'} onClick={() => submitFeedback('no')} className={`rounded-lg px-2.5 py-1 text-xs transition-all hover:scale-105 active:scale-95 ${feedback === 'no' ? 'bg-rose-500/10 text-rose-600 border border-rose-500/30' : 'bg-[var(--VIARA-surface)] border border-[var(--VIARA-line)] hover:bg-[var(--VIARA-surface-hover)]'}`}>
+                                👎
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
     );
 };
 
+const TYPE_TONE = {
+    task: { bg: 'bg-teal-500/10', text: 'text-teal-700 dark:text-teal-300', border: 'border-teal-500/30' },
+    troubleshooting: { bg: 'bg-rose-500/10', text: 'text-rose-700 dark:text-rose-300', border: 'border-rose-500/30' },
+    shortcut: { bg: 'bg-violet-500/10', text: 'text-violet-700 dark:text-violet-300', border: 'border-violet-500/30' },
+    workflow: { bg: 'bg-sky-500/10', text: 'text-sky-700 dark:text-sky-300', border: 'border-sky-500/30' },
+    protocol: { bg: 'bg-amber-500/10', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-500/30' },
+    guide: { bg: 'bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-500/30' },
+};
+
 const CatalogResultCard = ({ item, isArabic, user }) => {
     const { t } = useTranslation('help');
+    const [expanded, setExpanded] = useState(false);
     const localized = getLocalizedHelpItem(item, isArabic ? 'ar' : 'en');
     const canOpen = itemCanOpen(item, user);
     const typeLabel = HELP_TYPE_LABELS[item.type]?.[isArabic ? 'ar' : 'en'] || item.type;
+    const typeTone = TYPE_TONE[item.type] || TYPE_TONE.guide;
     const steps = localized.steps || [];
 
     return (
-        <article className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 dark:bg-sky-500/10">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-black text-slate-900 dark:text-white">{localized.title}</h3>
-                        <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-black text-sky-700 dark:text-sky-300">{typeLabel}</span>
+        <article className={`overflow-hidden rounded-2xl border ${typeTone.border} ${typeTone.bg} transition-all duration-200 hover:shadow-md`}>
+            <div className="p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${typeTone.bg} ${typeTone.text} ${typeTone.border}`}>
+                                {typeLabel}
+                            </span>
+                            {item.state && <span className="rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)]/80 px-2 py-0.5 text-[9px] font-bold text-[var(--VIARA-muted)]">{item.state}</span>}
+                        </div>
+                        <h3 className="mt-1.5 text-sm font-black text-[var(--VIARA-ink)] leading-snug">{localized.title}</h3>
+                        <p className="mt-0.5 text-xs font-medium leading-relaxed text-[var(--VIARA-muted)]">{localized.summary || localized.description}</p>
                     </div>
-                    <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-300">{localized.summary || localized.description}</p>
+                    {item.route && canOpen && (
+                        <Link
+                            to={item.route}
+                            onClick={() => recordHelpEvent('help_route_opened', { itemId: item.id })}
+                            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-black transition-all hover:scale-105 active:scale-95 ${typeTone.bg} ${typeTone.text} ${typeTone.border} hover:shadow-sm`}
+                        >
+                            <Zap size={11} />
+                            {t('open')}
+                        </Link>
+                    )}
                 </div>
-                {item.route && canOpen && <Link to={item.route} onClick={() => recordHelpEvent('help_route_opened', { itemId: item.id })} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-2 text-[11px] font-black text-white hover:bg-sky-500"><Zap size={12} />{t('open')}</Link>}
+
+                {steps.length > 0 && (
+                    <div className="mt-3">
+                        <button
+                            type="button"
+                            onClick={() => setExpanded(v => !v)}
+                            className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-colors ${typeTone.text} hover:opacity-80`}
+                        >
+                            <ChevronDown size={11} className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+                            {expanded
+                                ? (isArabic ? 'إخفاء الخطوات' : 'Hide steps')
+                                : (isArabic ? `${steps.length} خطوات — اضغط للعرض` : `${steps.length} steps — expand`)}
+                        </button>
+                        {expanded && (
+                            <ol className="mt-2.5 space-y-2 animate-in fade-in-50 duration-200">
+                                {steps.map((step, index) => (
+                                    <li key={index} className="flex gap-2.5 text-xs font-medium text-[var(--VIARA-ink)]">
+                                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-black mt-px ${typeTone.bg} ${typeTone.text}`}>{index + 1}</span>
+                                        <span className="leading-relaxed">{step}</span>
+                                    </li>
+                                ))}
+                            </ol>
+                        )}
+                    </div>
+                )}
+
+                {item.route && !canOpen && <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] font-bold text-amber-700 dark:text-amber-300">{t('readOnlyGuidanceTheLinkedWorkspace')}</p>}
             </div>
-            {item.state && <p className="mt-2 text-[10px] font-black text-sky-700 dark:text-sky-300">{isArabic ? `الحالة: ${item.state}` : `Stage: ${item.state}`}</p>}
-            {steps.length > 0 && <ol className="mt-3 space-y-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">{steps.slice(0, 3).map((step, index) => <li key={index} className="flex gap-2"><span className="font-black text-sky-600">{index + 1}.</span><span>{step}</span></li>)}</ol>}
-            {item.route && !canOpen && <p className="mt-3 text-[11px] font-bold text-amber-700 dark:text-amber-300">{t('readOnlyGuidanceTheLinkedWorkspace')}</p>}
         </article>
     );
 };
@@ -1451,9 +1558,7 @@ const Help = () => {
         if (!requestedRole) setSelectedRolePlaybook(ROLE_PLAYBOOKS.find((playbook) => playbook.role === role));
     }, [requestedRole, role]);
 
-    /* Ctrl+K focuses the on-page help search.
-       Capture phase + stopPropagation ensures the page-level affordance (the "Ctrl K" badge
-       next to this search field) wins over the global search overlay registered in Topbar. */
+    /* Ctrl+K focuses the on-page help search */
     useEffect(() => {
         const handler = (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -1566,127 +1671,125 @@ const Help = () => {
 
     return (
         <main className="mx-auto max-w-[1600px] space-y-6 pb-14">
-            <PageHeader
-                icon={HelpCircle}
-                eyebrowIcon={Sparkles}
-                eyebrow={t('eyebrow', 'Knowledge Base & Operations Manual')}
-                title={t('comprehensiveKnowledgeOperationsCenter')}
-                description={isArabic ? `أدلة التشغيل والبروتوكولات المتاحة لدور ${t(`roles.${role}`, { defaultValue: role })}` : `Workflow manuals, clinical protocols, and troubleshooting guidance for ${role}`}
-                metrics={[
-                    { key: 'guides', icon: BookOpen, label: t('availableGuides'), value: roleArticleCount, tone: 'teal' },
-                    { key: 'results', icon: Search, label: t('searchResults'), value: visibleArticles.length, tone: 'blue' },
-                    { key: 'categories', icon: Layers, label: t('categories'), value: Math.max(0, availableCategories.length - 1), tone: 'violet' },
-                    { key: 'network', icon: isOnline ? Wifi : WifiOff, label: t('knowledgeStatus'), value: isOnline ? (t('online')) : (t('offline')), tone: isOnline ? 'emerald' : 'amber' }
-                ]}
-                metricsLabel={t('helpRecordIndicators')}
-            />
-            {/* Top Knowledge Hero Command Deck */}
-            <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:p-8">
-                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
-                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
+            {/* ── Knowledge Hero Command Deck ─────────────────────── */}
+            <div className="relative overflow-hidden rounded-3xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-sm backdrop-blur-xl">
+                {/* Animated gradient blobs */}
+                <div className="pointer-events-none absolute -end-24 -top-24 h-96 w-96 rounded-full bg-[var(--VIARA-accent)]/15 blur-3xl animate-pulse" style={{ animationDuration: '4s' }} />
+                <div className="pointer-events-none absolute -bottom-24 -start-24 h-80 w-80 rounded-full bg-violet-500/10 blur-3xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '1s' }} />
+                <div className="pointer-events-none absolute top-1/2 start-1/2 -translate-x-1/2 -translate-y-1/2 h-48 w-48 rounded-full bg-sky-500/5 blur-2xl" />
 
-                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="hidden">
-                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-teal-600/30 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
-                            <HelpCircle size={26} />
-                        </div>
-                        <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
-                                    <Sparkles size={11} />
-                                    <span>{t('eyebrow', 'Knowledge Base & Operations Manual')}</span>
-                                </span>
-                                <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-black ${
-                                    isOnline
-                                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                                        : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                }`}>
-                                    {isOnline ? <Wifi size={10} /> : <WifiOff size={10} />}
-                                    <span>{isOnline ? (t('onlineSync')) : (t('offlineMode'))}</span>
-                                </span>
-                            </div>
-                            <h1 className="mt-1 truncate text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
-                                {t('comprehensiveKnowledgeOperationsCenter')}
-                            </h1>
-                            <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400 sm:text-sm">
-                                {isArabic ? `تغطية تشغيلية كاملة لجميع الأقسام والبروتوكولات السريرية لدور: ${t(`roles.${role}`, { defaultValue: role })}` : `Complete ${ARTICLES.length}-guide workflow manuals, clinical protocols, and troubleshooting diagnostics for ${role}`}
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3 py-1.5 text-xs font-black text-teal-700 dark:text-teal-300">
-                            <ShieldCheck size={14} />
-                            <span>{t(`roles.${role}`, { defaultValue: role })}</span>
+                <div className="relative p-6 sm:p-8">
+                    {/* Top row: badges */}
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--VIARA-accent)]/30 bg-[var(--VIARA-accent-soft)] px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-accent)]">
+                            <Sparkles size={11} />
+                            <span>{t('eyebrow', 'Knowledge Base & Operations Manual')}</span>
                         </span>
-                        <span className="inline-flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs font-black text-sky-700 dark:text-sky-300">
-                            <BookOpen size={14} />
-                            <span>{roleArticleCount} {t('guides')}</span>
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-black ${
+                            isOnline
+                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                        }`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                            {isOnline ? t('onlineSync') : t('offlineMode')}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1 text-[10px] font-black text-[var(--VIARA-ink)]">
+                            <ShieldCheck size={11} className="text-[var(--VIARA-accent)]" />
+                            {t(`roles.${role}`, { defaultValue: role })}
                         </span>
                     </div>
-                </div>
 
-                {/* Search Bar in Hero */}
-                <div className="relative mt-6 max-w-2xl">
-                    <Search size={17} className="pointer-events-none absolute start-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                        ref={searchRef}
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        placeholder={t('searchWorkflowsExamProtocolsShortcutsOr')}
-                        aria-label={t('searchHelpGuides')}
-                        className="h-12 w-full rounded-2xl border border-slate-200/80 bg-slate-50/50 ps-11 pe-24 text-xs font-bold text-slate-800 outline-hidden transition focus:border-teal-500 focus:bg-white dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-200"
+                    <PageHeader
+                        icon={BookOpen}
+                        title={isArabic ? 'مركز المعرفة والعمليات' : 'Knowledge & Operations Center'}
+                        subtitle={isArabic
+                            ? `تغطية تشغيلية كاملة لجميع الأقسام والبروتوكولات السريرية — دور: ${t(`roles.${role}`, { defaultValue: role })}`
+                            : `Complete ${ARTICLES.length}-guide workflow manuals, clinical protocols, and troubleshooting for ${role}`}
+                        metricsLabel={isArabic ? 'مؤشرات مركز المعرفة' : 'Knowledge center indicators'}
+                        metrics={[
+                            { icon: BookOpen, label: isArabic ? 'الأدلة المتاحة' : 'Guides', value: roleArticleCount, tone: 'teal' },
+                            { icon: Layers, label: isArabic ? 'الأقسام' : 'Categories', value: Math.max(0, availableCategories.length - 1), tone: 'violet' },
+                            { icon: GitBranch, label: isArabic ? 'مراحل المسار' : 'Workflow Stages', value: WORKFLOW_STAGES.length, tone: 'sky' },
+                            { icon: Keyboard, label: isArabic ? 'اختصار لوحة مفاتيح' : 'Shortcuts', value: KEYBOARD_SHORTCUTS.reduce((acc, g) => acc + g.shortcuts.length, 0), tone: 'amber' },
+                        ]}
                     />
-                    <div className="absolute end-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                        {search && (
-                            <button
-                                type="button"
-                                onClick={clearSearch}
-                                aria-label={t('clearSearch')}
-                                className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition"
-                            >
-                                <X size={14} />
-                            </button>
-                        )}
-                        <kbd className="hidden sm:inline-flex items-center rounded-lg border border-slate-200/80 bg-white px-2 py-0.5 font-mono text-[10px] font-black text-slate-400 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
-                            Ctrl K
-                        </kbd>
-                    </div>
-                </div>
 
-                {/* Sub-Tabs Strip */}
-                <div role="tablist" aria-label={t('helpCenterSections')} className="mt-6 flex gap-1.5 overflow-x-auto border-t border-slate-100 pt-4 dark:border-slate-800 scrollbar-none">
-                    {[
-                        { id: 'guides', label: isArabic ? `أدلة مسارات العمل الشاملة (${ARTICLES.length} دليلاً)` : `Workflow Manuals (${ARTICLES.length} Guides)`, icon: BookOpen },
-                        { id: 'playbooks', label: t('roleDailyPlaybooks'), icon: CheckSquare },
-                        { id: 'workflows', label: t('studyJourneyEscalation'), icon: GitBranch },
-                        { id: 'protocols', label: t('clinicalExamProtocolsPrep'), icon: HeartPulse },
-                        { id: 'troubleshooting', label: t('troubleshootingMatrix'), icon: AlertTriangle },
-                        { id: 'shortcuts', label: t('keyboardPacsShortcuts'), icon: Keyboard },
-                    ].map(tab => {
-                        const Icon = tab.icon;
-                        const isActive = mainTab === tab.id;
-                        return (
-                            <button
-                                key={tab.id}
-                                type="button"
-                                onClick={() => setMainTab(tab.id)}
-                                role="tab"
-                                id={`help-tab-${tab.id}`}
-                                aria-selected={isActive}
-                                aria-controls={`help-panel-${tab.id}`}
-                                tabIndex={isActive ? 0 : -1}
-                                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition whitespace-nowrap ${
-                                    isActive
-                                        ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20'
-                                        : 'border border-slate-200/80 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                                <Icon size={14} />
-                                <span>{tab.label}</span>
-                            </button>
-                        );
-                    })}
+                    {/* Search Bar */}
+                    <div className="relative mt-5 max-w-2xl">
+                        <Search size={17} className="pointer-events-none absolute start-4 top-1/2 -translate-y-1/2 text-[var(--VIARA-muted)]" />
+                        <input
+                            ref={searchRef}
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder={t('searchWorkflowsExamProtocolsShortcutsOr')}
+                            aria-label={t('searchHelpGuides')}
+                            className="h-14 w-full rounded-2xl border-2 border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] ps-12 pe-28 text-sm font-semibold text-[var(--VIARA-ink)] outline-none transition-all duration-200 placeholder:text-[var(--VIARA-muted)] placeholder:font-normal focus:border-[var(--VIARA-accent)] focus:bg-[var(--VIARA-surface)] focus:shadow-[0_0_0_4px_var(--VIARA-accent)]/10"
+                        />
+                        <div className="absolute end-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                            {search && (
+                                <>
+                                    {catalogResults.length > 0 && (
+                                        <span className="rounded-full border border-[var(--VIARA-accent)]/30 bg-[var(--VIARA-accent-soft)] px-2 py-0.5 text-[10px] font-black text-[var(--VIARA-accent)]">
+                                            {catalogResults.length}
+                                        </span>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={clearSearch}
+                                        aria-label={t('clearSearch')}
+                                        className="grid h-7 w-7 place-items-center rounded-lg text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface-hover)] hover:text-[var(--VIARA-ink)] transition"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </>
+                            )}
+                            {!search && (
+                                <kbd className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-[var(--VIARA-line)] border-b-2 bg-[var(--VIARA-surface)] px-2 py-1 font-mono text-[10px] font-black text-[var(--VIARA-muted)] shadow-sm">
+                                    Ctrl<span className="opacity-50">+</span>K
+                                </kbd>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Sub-Tabs Strip */}
+                    <div role="tablist" aria-label={t('helpCenterSections')} className="mt-5 flex gap-1.5 overflow-x-auto border-t border-[var(--VIARA-line)] pt-4 scrollbar-none">
+                        {[
+                            { id: 'guides', label: isArabic ? `الأدلة` : `Guides`, count: ARTICLES.length, icon: BookOpen },
+                            { id: 'playbooks', label: isArabic ? 'دليل الدور' : 'Playbooks', count: null, icon: CheckSquare },
+                            { id: 'workflows', label: isArabic ? 'المسار' : 'Workflow', count: WORKFLOW_STAGES.length, icon: GitBranch },
+                            { id: 'protocols', label: isArabic ? 'البروتوكولات' : 'Protocols', count: CLINICAL_PROTOCOLS.length, icon: HeartPulse },
+                            { id: 'troubleshooting', label: isArabic ? 'استكشاف الأخطاء' : 'Troubleshoot', count: TROUBLESHOOTING_GUIDES.length + visibleTroubleshooting.length, icon: AlertTriangle },
+                            { id: 'shortcuts', label: isArabic ? 'الاختصارات' : 'Shortcuts', count: KEYBOARD_SHORTCUTS.reduce((a, g) => a + g.shortcuts.length, 0), icon: Keyboard },
+                        ].map(tab => {
+                            const Icon = tab.icon;
+                            const isActive = mainTab === tab.id;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setMainTab(tab.id)}
+                                    role="tab"
+                                    id={`help-tab-${tab.id}`}
+                                    aria-selected={isActive}
+                                    aria-controls={`help-panel-${tab.id}`}
+                                    tabIndex={isActive ? 0 : -1}
+                                    className={`relative inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black transition-all duration-200 whitespace-nowrap ${
+                                        isActive
+                                            ? 'bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)] shadow-md shadow-[var(--VIARA-accent)]/30'
+                                            : 'border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface-hover)] hover:text-[var(--VIARA-ink)] hover:border-[var(--VIARA-accent)]/30'
+                                    }`}
+                                >
+                                    <Icon size={13} />
+                                    <span>{tab.label}</span>
+                                    {tab.count != null && (
+                                        <span className={`rounded-full px-1.5 py-px text-[9px] font-black ${
+                                            isActive ? 'bg-white/25 text-white' : 'bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)]'
+                                        }`}>{tab.count}</span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
 
@@ -1694,54 +1797,69 @@ const Help = () => {
             {mainTab === 'guides' && (
                 <div id="help-panel-guides" role="tabpanel" aria-labelledby="help-tab-guides" className="space-y-6">
                     {search.trim() && (
-                        <section aria-live="polite" className="rounded-3xl border border-sky-500/20 bg-white/90 p-5 shadow-sm dark:bg-slate-900/90">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div>
-                                    <h2 className="text-sm font-black text-slate-900 dark:text-white">{t('resultsAcrossTheEntireHelpCenter')}</h2>
-                                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{isArabic ? `${catalogResults.length} نتيجة في المهام والأدلة والبروتوكولات والأخطاء والاختصارات` : `${catalogResults.length} results across tasks, guides, protocols, errors, and shortcuts`}</p>
+                        <section aria-live="polite" className="overflow-hidden rounded-3xl border border-[var(--VIARA-accent)]/30 bg-[var(--VIARA-surface)] shadow-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--VIARA-line)] bg-[var(--VIARA-accent-soft)] px-5 py-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="grid h-8 w-8 place-items-center rounded-xl bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)]">
+                                        <Search size={14} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-sm font-black text-[var(--VIARA-ink)]">{t('resultsAcrossTheEntireHelpCenter')}</h2>
+                                        <p className="text-xs font-medium text-[var(--VIARA-muted)]">{isArabic ? `${catalogResults.length} نتيجة في المهام والأدلة والبروتوكولات` : `${catalogResults.length} results across tasks, guides, protocols, errors, and shortcuts`}</p>
+                                    </div>
                                 </div>
-                                <span className="rounded-full bg-sky-500/10 px-3 py-1 text-xs font-black text-sky-700 dark:text-sky-300">{catalogResults.length}</span>
+                                <span className="rounded-full border border-[var(--VIARA-accent)]/30 bg-[var(--VIARA-surface)] px-3 py-1 text-sm font-black text-[var(--VIARA-accent)]">{catalogResults.length}</span>
                             </div>
-                            {catalogResults.length > 0 ? (
-                                <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                                    {catalogResults.slice(0, 12).map((item) => <CatalogResultCard key={item.id} item={item} isArabic={isArabic} user={user} />)}
-                                </div>
-                            ) : (
-                                <p className="mt-4 rounded-2xl bg-slate-100 p-4 text-xs font-bold text-slate-600 dark:bg-slate-950 dark:text-slate-300">{t('noMatchingResultTryAWorkflow')}</p>
-                            )}
+                            <div className="p-5">
+                                {catalogResults.length > 0 ? (
+                                    <div className="grid gap-3 lg:grid-cols-2">
+                                        {catalogResults.slice(0, 12).map((item) => <CatalogResultCard key={item.id} item={item} isArabic={isArabic} user={user} />)}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center gap-2 py-6 text-center">
+                                        <Search size={28} className="text-[var(--VIARA-muted)] opacity-40" />
+                                        <p className="text-xs font-bold text-[var(--VIARA-muted)]">{t('noMatchingResultTryAWorkflow')}</p>
+                                    </div>
+                                )}
+                            </div>
                         </section>
                     )}
+
                     {/* Quick Access Workspaces Strip */}
-                    <section className="space-y-3" aria-labelledby="quick-heading">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h2 id="quick-heading" className="text-sm font-black text-slate-900 dark:text-white">
-                                    {t('frequentRoleWorkspaces')}
-                                </h2>
-                                <p className="text-xs font-semibold text-slate-400">{t('directShortcutsToCriticalWorkflows')}</p>
+                    {!search.trim() && (
+                        <section className="space-y-3" aria-labelledby="quick-heading">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 id="quick-heading" className="text-sm font-black text-[var(--VIARA-ink)]">
+                                        {t('frequentRoleWorkspaces')}
+                                    </h2>
+                                    <p className="text-xs font-medium text-[var(--VIARA-muted)]">{t('directShortcutsToCriticalWorkflows')}</p>
+                                </div>
+                                <span className="rounded-full border border-[var(--VIARA-accent)]/30 bg-[var(--VIARA-accent-soft)] px-3 py-0.5 text-[11px] font-black text-[var(--VIARA-accent)]">
+                                    {quickLinks.length}
+                                </span>
                             </div>
-                            <span className="rounded-full bg-teal-500/10 px-3 py-0.5 text-[11px] font-black text-teal-700 dark:text-teal-300">
-                                {quickLinks.length}
-                            </span>
-                        </div>
-                        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-                            {quickLinks.map((a) => (
-                                <QuickCard key={a.id} article={a} isArabic={isArabic} />
-                            ))}
-                        </div>
-                    </section>
+                            <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+                                {quickLinks.map((a) => (
+                                    <QuickCard key={a.id} article={a} isArabic={isArabic} />
+                                ))}
+                            </div>
+                        </section>
+                    )}
 
                     {/* Main Articles Grid & Support Sidebar */}
-                    <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+                    <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
                         {/* Article Directory */}
                         <div className="space-y-4 min-w-0">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
+                            {/* Section header */}
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-4 py-3">
                                 <div>
-                                    <h2 className="text-sm font-black text-slate-900 dark:text-white">{isArabic ? `فهرس الأدلة التشغيلية السريرية والإدارية (${ARTICLES.length} دليلاً)` : `Full ${ARTICLES.length}-Guide Clinical & Operational Index`}</h2>
-                                    <p className="text-xs font-semibold text-slate-400">
-                                        {isArabic ? `${visibleArticles.length} دليلاً متاحاً لدورك الحالي مع خطوات واضحة ومباشرة` : `${visibleArticles.length} guides available for your role with actionable steps`}
+                                    <h2 className="text-sm font-black text-[var(--VIARA-ink)]">{isArabic ? `فهرس الأدلة التشغيلية (${ARTICLES.length} دليلاً)` : `Full ${ARTICLES.length}-Guide Operational Index`}</h2>
+                                    <p className="text-xs font-medium text-[var(--VIARA-muted)]">
+                                        {isArabic ? `${visibleArticles.length} متاح لدورك` : `${visibleArticles.length} available for your role`}
                                     </p>
                                 </div>
+                                <span className="text-2xl font-black tabular-nums text-[var(--VIARA-accent)]">{visibleArticles.length}</span>
                             </div>
 
                             {/* Category Filter Pills */}
@@ -1751,29 +1869,32 @@ const Help = () => {
                                     const active = category === c;
                                     const count = c === 'all' ? roleArticleCount : categoryCounts[c];
                                     const catName = isArabic ? {
-                                        all: 'جميع الأقسام',
-                                        gettingStarted: 'البدء السريع',
-                                        clinical: 'العيادة والتصوير الطبي',
-                                        operations: 'الاستقبال والعمليات',
-                                        administration: 'الإدارة والماليات',
-                                        account: 'الحساب والإعدادات'
-                                    }[c] || c : c;
+                                        all: 'الكل',
+                                        gettingStarted: 'البداية',
+                                        clinical: 'السريري',
+                                        operations: 'العمليات',
+                                        administration: 'الإدارة',
+                                        account: 'الحساب'
+                                    }[c] || c : {
+                                        all: 'All', gettingStarted: 'Getting Started', clinical: 'Clinical',
+                                        operations: 'Operations', administration: 'Admin', account: 'Account'
+                                    }[c] || c;
 
                                     return (
                                         <button
                                             key={c}
                                             type="button"
                                             onClick={() => setCategory(c)}
-                                            className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-black transition ${
+                                            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition-all duration-200 ${
                                                 active
-                                                    ? 'bg-teal-600 text-white shadow-xs'
-                                                    : 'border border-slate-200/80 bg-white/90 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                                                    ? 'bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)] shadow-sm shadow-[var(--VIARA-accent)]/30'
+                                                    : 'border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] hover:border-[var(--VIARA-accent)]/30 hover:text-[var(--VIARA-ink)]'
                                             }`}
                                         >
-                                            <Icon size={13} />
+                                            <Icon size={12} />
                                             <span>{catName}</span>
                                             {count != null && (
-                                                <span className={`ms-0.5 rounded-full px-1.5 py-0.2 text-[9px] font-black ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                                <span className={`rounded-full px-1.5 text-[9px] font-black ${active ? 'bg-white/25 text-white' : 'bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)]'}`}>
                                                     {count}
                                                 </span>
                                             )}
@@ -1784,14 +1905,14 @@ const Help = () => {
 
                             {/* Articles List */}
                             {visibleArticles.length === 0 ? (
-                                <div className="flex min-h-64 flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50/50 p-8 text-center dark:border-slate-800 dark:bg-slate-950/30">
-                                    <Search size={30} className="text-slate-300 dark:text-slate-600" />
-                                    <p className="mt-3 text-sm font-black text-slate-800 dark:text-slate-200">{t('noMatchingGuidesFound')}</p>
-                                    <p className="mt-1 text-xs font-semibold text-slate-400">{t('tryRefiningYourSearchKeywordOr')}</p>
+                                <div className="flex min-h-64 flex-col items-center justify-center rounded-3xl border border-dashed border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-8 text-center">
+                                    <Search size={30} className="text-[var(--VIARA-muted)] opacity-60" />
+                                    <p className="mt-3 text-sm font-black text-[var(--VIARA-ink)]">{t('noMatchingGuidesFound')}</p>
+                                    <p className="mt-1 text-xs font-medium text-[var(--VIARA-muted)]">{t('tryRefiningYourSearchKeywordOr')}</p>
                                     <button
                                         type="button"
                                         onClick={() => { clearSearch(); setCategory('all'); }}
-                                        className="mt-4 rounded-xl bg-teal-50 px-4 py-2 text-xs font-bold text-teal-700 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300"
+                                        className="mt-4 rounded-xl border border-[var(--VIARA-accent)]/30 bg-[var(--VIARA-accent-soft)] px-4 py-2 text-xs font-bold text-[var(--VIARA-accent)] hover:brightness-110 transition"
                                     >
                                         {t('resetSearchFilters')}
                                     </button>
@@ -1806,40 +1927,67 @@ const Help = () => {
                         </div>
 
                         {/* Sidebar Cards */}
-                        <aside className="space-y-5">
+                        <aside className="space-y-4">
                             {/* Support & Diagnostics Card */}
-                            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 space-y-3">
-                                <div className="flex items-center gap-3 border-b border-slate-100 pb-3.5 dark:border-slate-800">
-                                    <div className="grid h-10 w-10 place-items-center rounded-2xl bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30">
-                                        <LifeBuoy size={18} />
+                            <div className="overflow-hidden rounded-3xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-xs">
+                                <div className="flex items-center gap-3 border-b border-[var(--VIARA-line)] bg-amber-500/5 p-4">
+                                    <div className="grid h-9 w-9 place-items-center rounded-2xl bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                                        <LifeBuoy size={17} />
                                     </div>
                                     <div>
-                                        <h3 className="text-sm font-black text-slate-900 dark:text-white">{t('technicalSupport')}</h3>
-                                        <p className="text-[11px] font-semibold text-slate-400">{t('diagnosticLogsEscalation')}</p>
+                                        <h3 className="text-sm font-black text-[var(--VIARA-ink)]">{t('technicalSupport')}</h3>
+                                        <p className="text-[11px] font-medium text-[var(--VIARA-muted)]">{t('diagnosticLogsEscalation')}</p>
                                     </div>
                                 </div>
-                                <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-bold text-amber-900 dark:text-amber-300 leading-relaxed">
-                                    {t('contactTheRadiologyCenterSystemAdministrator')}
-                                </p>
-                                <button
-                                    type="button"
-                                    onClick={copyDiagnostics}
-                                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white py-2 text-xs font-black text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
-                                >
-                                    {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                                    <span>{copied ? (t('copied')) : (t('copySystemDiagnostics'))}</span>
-                                </button>
+                                <div className="p-4 space-y-3">
+                                    <p className="rounded-xl border border-amber-500/20 bg-amber-500/8 p-3 text-xs font-medium leading-relaxed text-amber-900 dark:text-amber-200">
+                                        {t('contactTheRadiologyCenterSystemAdministrator')}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={copyDiagnostics}
+                                        className={`inline-flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black transition-all hover:scale-[1.02] active:scale-[0.98] ${
+                                            copied
+                                                ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                                                : 'border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-ink)] hover:border-[var(--VIARA-accent)]/30 hover:text-[var(--VIARA-accent)]'
+                                        }`}
+                                    >
+                                        {copied ? <Check size={14} /> : <Copy size={14} />}
+                                        <span>{copied ? t('copied') : t('copySystemDiagnostics')}</span>
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Clinical Safety Compliance Card */}
-                            <div className="rounded-3xl border border-teal-500/30 bg-gradient-to-br from-teal-500/10 to-sky-500/10 p-5">
-                                <div className="flex items-center gap-2 text-xs font-black text-teal-900 dark:text-teal-300">
-                                    <CheckCircle2 size={16} />
-                                    <span>{t('clinicalGovernanceSafety')}</span>
+                            <div className="relative overflow-hidden rounded-3xl border border-[var(--VIARA-accent)]/30 p-5">
+                                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[var(--VIARA-accent)]/10 via-[var(--VIARA-accent)]/5 to-transparent" />
+                                <div className="relative">
+                                    <div className="flex items-center gap-2 text-xs font-black text-[var(--VIARA-accent)]">
+                                        <div className="grid h-7 w-7 place-items-center rounded-xl bg-[var(--VIARA-accent)]/10">
+                                            <CheckCircle2 size={14} />
+                                        </div>
+                                        <span>{t('clinicalGovernanceSafety')}</span>
+                                    </div>
+                                    <p className="mt-2.5 text-xs font-medium text-[var(--VIARA-muted)] leading-relaxed">
+                                        {t('reportAccessEditsAndApprovalsAre')}
+                                    </p>
+                                    <div className="mt-3 grid grid-cols-2 gap-2">
+                                        {[
+                                            { icon: Eye, label: isArabic ? 'مراقبة الوصول' : 'Access Logged' },
+                                            { icon: ShieldCheck, label: isArabic ? 'مراجعة التدقيق' : 'Audit Trails' },
+                                            { icon: Lock, label: isArabic ? 'تشفير البيانات' : 'Encrypted' },
+                                            { icon: Award, label: isArabic ? 'الإصدار 1.0' : 'Version 1.0' },
+                                        ].map(feat => {
+                                            const FeatIcon = feat.icon;
+                                            return (
+                                                <div key={feat.label} className="flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-accent)]/20 bg-[var(--VIARA-surface)]/60 px-2.5 py-1.5">
+                                                    <FeatIcon size={11} className="text-[var(--VIARA-accent)] shrink-0" />
+                                                    <span className="text-[10px] font-bold text-[var(--VIARA-ink)] truncate">{feat.label}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                                <p className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-400 leading-relaxed">
-                                {t('reportAccessEditsAndApprovalsAre')}
-                                </p>
                             </div>
                         </aside>
                     </section>
@@ -1848,125 +1996,208 @@ const Help = () => {
 
             {/* TAB 2: ROLE PLAYBOOKS */}
             {mainTab === 'playbooks' && (
-                <section id="help-panel-playbooks" role="tabpanel" aria-labelledby="help-tab-playbooks" className="space-y-6">
+                <section id="help-panel-playbooks" role="tabpanel" aria-labelledby="help-tab-playbooks" className="space-y-5">
                     {/* Role Selector Pills */}
                     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
                         {accessiblePlaybooks.map((pb) => {
                             const Icon = pb.icon;
                             const isActive = selectedRolePlaybook.role === pb.role;
+                            const tone = COLOR_MAP[pb.color] ?? COLOR_MAP.emerald;
                             return (
                                 <button
                                     key={pb.role}
                                     type="button"
-                                onClick={() => selectPlaybook(pb)}
-                                    className={`inline-flex shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black transition ${
+                                    onClick={() => selectPlaybook(pb)}
+                                    className={`inline-flex shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black transition-all duration-200 ${
                                         isActive
-                                            ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20'
-                                            : 'border border-slate-200/80 bg-white/90 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                                            ? `${tone.bg} ${tone.text} border ${tone.badge.split(' ')[2] || ''} shadow-sm`
+                                            : 'border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface-hover)] hover:text-[var(--VIARA-ink)]'
                                     }`}
                                 >
-                                    <Icon size={16} />
-                                    <span>{isArabic ? pb.titleAr : pb.title}</span>
+                                    <Icon size={15} />
+                                    <span>{isArabic ? pb.titleAr.split(' ')[0] : pb.title.split(' ')[0]}</span>
                                 </button>
                             );
                         })}
                     </div>
 
                     {/* Selected Role Playbook Detail Card */}
-                    <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 space-y-6">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5 dark:border-slate-800">
-                            <div className="flex items-center gap-4">
-                                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/30">
-                                    <selectedRolePlaybook.icon size={24} />
-                                </div>
-                                <div>
-                                    <h2 className="text-base font-black text-slate-900 dark:text-white">
-                                        {isArabic ? selectedRolePlaybook.titleAr : selectedRolePlaybook.title}
-                                    </h2>
-                                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
-                                        {isArabic ? selectedRolePlaybook.summaryAr : selectedRolePlaybook.summary}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Checklist Section */}
-                        <div className="space-y-3">
-                            <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-teal-800 dark:text-teal-300">
-                                <CheckSquare size={15} />
-                                <span>{t('dailyCoreWorkflowChecklist')}</span>
-                            </h3>
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                {selectedRolePlaybook.checklist.map((it, idx) => (
-                                    <div key={idx} className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-950/40">
-                                        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-teal-600 text-[10px] font-black text-white">
-                                            {idx + 1}
-                                        </span>
-                                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-relaxed">
-                                            {isArabic ? it.ar : it.en}
-                                        </p>
+                    {(() => {
+                        const pb = selectedRolePlaybook;
+                        const tone = COLOR_MAP[pb.color] ?? COLOR_MAP.emerald;
+                        const PlaybookIcon = pb.icon;
+                        return (
+                            <div className="overflow-hidden rounded-3xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-xs">
+                                {/* Gradient header */}
+                                <div className={`relative overflow-hidden p-6 ${tone.bg} border-b ${tone.badge.split(' ')[2] || 'border-emerald-500/20'}`}>
+                                    <div className="pointer-events-none absolute -end-8 -top-8 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
+                                    <div className="relative flex items-center gap-4">
+                                        <div className={`grid h-14 w-14 place-items-center rounded-2xl bg-[var(--VIARA-surface)] ${tone.text} shadow-sm`}>
+                                            <PlaybookIcon size={26} />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <h2 className={`text-base font-black ${tone.text}`}>
+                                                {isArabic ? pb.titleAr : pb.title}
+                                            </h2>
+                                            <p className="mt-0.5 text-xs font-medium text-[var(--VIARA-ink)] opacity-70 leading-relaxed max-w-lg">
+                                                {isArabic ? pb.summaryAr : pb.summary}
+                                            </p>
+                                        </div>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
+                                </div>
 
-                        {/* Primary Workspaces Section */}
-                        <div className="space-y-3 border-t border-slate-100 pt-5 dark:border-slate-800">
-                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
-                                {t('primaryWorkspacesLinkedToThisRole')}
-                            </h3>
-                            <div className="flex flex-wrap gap-2.5">
-                                {selectedRolePlaybook.primaryRoutes.filter(rt => canAccessRouteTarget(rt.path, user)).map(rt => (
-                                    <Link
-                                        key={rt.path}
-                                        to={rt.path}
-                                        className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-black text-white shadow-xs hover:bg-teal-500 transition"
-                                    >
-                                        <ExternalLink size={13} />
-                                        <span>{isArabic ? rt.nameAr : rt.name}</span>
-                                    </Link>
-                                ))}
+                                <div className="p-6 space-y-6">
+                                    {/* Checklist Section */}
+                                    <div className="space-y-3">
+                                        <h3 className={`flex items-center gap-2 text-xs font-black uppercase tracking-wider ${tone.text}`}>
+                                            <CheckSquare size={14} />
+                                            <span>{t('dailyCoreWorkflowChecklist')}</span>
+                                        </h3>
+                                        <div className="grid gap-3 sm:grid-cols-2">
+                                            {pb.checklist.map((it, idx) => (
+                                                <label
+                                                    key={idx}
+                                                    className={`group flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 transition-all duration-200 hover:border-[var(--VIARA-accent)]/30 hover:shadow-sm ${tone.badge.split(' ')[2] ? `border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]` : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]'}`}
+                                                >
+                                                    <div className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black ${tone.bg} ${tone.text} border ${tone.badge.split(' ')[2] || ''}`}>
+                                                        {idx + 1}
+                                                    </div>
+                                                    <p className="text-xs font-semibold text-[var(--VIARA-ink)] leading-relaxed pt-0.5">
+                                                        {isArabic ? it.ar : it.en}
+                                                    </p>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Primary Workspaces Section */}
+                                    <div className="space-y-3 border-t border-[var(--VIARA-line)] pt-5">
+                                        <h3 className="text-xs font-black uppercase tracking-wider text-[var(--VIARA-muted)]">
+                                            {t('primaryWorkspacesLinkedToThisRole')}
+                                        </h3>
+                                        <div className="grid gap-3 sm:grid-cols-3">
+                                            {pb.primaryRoutes.filter(rt => canAccessRouteTarget(rt.path, user)).map(rt => (
+                                                <Link
+                                                    key={rt.path}
+                                                    to={rt.path}
+                                                    className={`group flex items-center gap-3 rounded-2xl border p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${tone.bg} ${tone.badge.split(' ')[2] ? `border-${tone.badge.split(' ')[2].replace('border-', '')}` : 'border-emerald-500/20'}`}
+                                                >
+                                                    <div className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[var(--VIARA-surface)] ${tone.text}`}>
+                                                        <ExternalLink size={14} />
+                                                    </div>
+                                                    <span className={`text-xs font-black ${tone.text}`}>{isArabic ? rt.nameAr : rt.name}</span>
+                                                    <ChevronRight size={13} className={`ms-auto shrink-0 ${tone.text} transition-transform group-hover:translate-x-0.5 rtl:rotate-180`} />
+                                                </Link>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
+                        );
+                    })()}
                 </section>
             )}
 
+            {/* TAB 3: WORKFLOW JOURNEY */}
             {mainTab === 'workflows' && (
                 <section id="help-panel-workflows" role="tabpanel" aria-labelledby="help-tab-workflows" className="space-y-5">
-                    <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="rounded-3xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-6 shadow-xs">
+                        <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
                             <div>
-                                <h2 className="text-base font-black text-slate-900 dark:text-white">{t('studyJourneyFromRegistrationToDelivery')}</h2>
-                                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{t('showsEachStationStateOwnerNext')}</p>
+                                <h2 className="text-base font-black text-[var(--VIARA-ink)]">{t('studyJourneyFromRegistrationToDelivery')}</h2>
+                                <p className="mt-1 text-xs font-medium text-[var(--VIARA-muted)]">{t('showsEachStationStateOwnerNext')}</p>
                             </div>
-                            <span className="rounded-full bg-teal-500/10 px-3 py-1 text-xs font-black text-teal-700 dark:text-teal-300">{WORKFLOW_STAGES.length} {t('stages')}</span>
+                            <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--VIARA-accent)]/30 bg-[var(--VIARA-accent-soft)] px-3 py-1 text-xs font-black text-[var(--VIARA-accent)]">
+                                    <GitBranch size={12} />
+                                    {WORKFLOW_STAGES.length} {t('stages')}
+                                </span>
+                                {roleStages.length > 0 && (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-700 dark:text-emerald-300">
+                                        <CheckCircle2 size={12} />
+                                        {isArabic ? `${roleStages.length} مرحلة لدورك` : `${roleStages.length} your stages`}
+                                    </span>
+                                )}
+                            </div>
                         </div>
-                        <div className="mt-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-                            {WORKFLOW_STAGES.map((stage, index) => {
-                                const availableForRole = roleStages.some((candidate) => candidate.id === stage.id);
-                                const canOpen = canAccessRouteTarget(stage.route, user);
-                                return (
-                                    <article key={stage.id} className={`rounded-2xl border p-4 ${availableForRole ? 'border-teal-500/30 bg-teal-500/5' : 'border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40'}`}>
-                                        <div className="flex items-start gap-3">
-                                            <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-black ${availableForRole ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-800'}`}>{index + 1}</span>
-                                            <div>
-                                                <h3 className="text-sm font-black text-slate-900 dark:text-white">{isArabic ? stage.ar : stage.en}</h3>
-                                                <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">{stage.state} → {stage.next}</p>
+
+                        {/* Vertical stepper timeline */}
+                        <div className="relative">
+                            {/* Connecting backbone line */}
+                            <div className="absolute start-[19px] top-5 bottom-5 w-0.5 bg-gradient-to-b from-[var(--VIARA-accent)]/40 via-[var(--VIARA-line)] to-[var(--VIARA-line)] rounded-full" />
+
+                            <div className="space-y-3">
+                                {WORKFLOW_STAGES.map((stage, index) => {
+                                    const availableForRole = roleStages.some((candidate) => candidate.id === stage.id);
+                                    const canOpen = canAccessRouteTarget(stage.route, user);
+                                    return (
+                                        <article
+                                            key={stage.id}
+                                            className={`relative flex gap-4 rounded-2xl border p-4 transition-all duration-200 ${
+                                                availableForRole
+                                                    ? 'border-[var(--VIARA-accent)]/40 bg-[var(--VIARA-accent-soft)] shadow-sm'
+                                                    : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]'
+                                            }`}
+                                        >
+                                            {/* Step bullet */}
+                                            <span className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-black transition-all ${
+                                                availableForRole
+                                                    ? 'bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)] shadow-md shadow-[var(--VIARA-accent)]/30'
+                                                    : 'border-2 border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)]'
+                                            }`}>{index + 1}</span>
+
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                                    <div>
+                                                        <h3 className={`text-sm font-black ${availableForRole ? 'text-[var(--VIARA-accent)]' : 'text-[var(--VIARA-ink)]'}`}>
+                                                            {isArabic ? stage.ar : stage.en}
+                                                        </h3>
+                                                        <div className="mt-0.5 flex items-center gap-2 text-[10px] font-bold text-[var(--VIARA-muted)]">
+                                                            <span className="rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2 py-0.5">{stage.state}</span>
+                                                            <ChevronRight size={9} />
+                                                            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-2 py-0.5">{stage.next}</span>
+                                                        </div>
+                                                    </div>
+                                                    {canOpen && (
+                                                        <Link
+                                                            to={stage.route}
+                                                            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[var(--VIARA-accent)]/30 bg-[var(--VIARA-accent-soft)] px-3 py-1.5 text-[11px] font-black text-[var(--VIARA-accent)] transition hover:bg-[var(--VIARA-accent)] hover:text-[var(--VIARA-accent-contrast)]"
+                                                        >
+                                                            <ExternalLink size={11} />
+                                                            {t('openStation')}
+                                                        </Link>
+                                                    )}
+                                                </div>
+
+                                                <p className="mt-2 text-xs font-medium leading-relaxed text-[var(--VIARA-muted)]">
+                                                    {isArabic ? stage.escalationAr : stage.escalationEn}
+                                                </p>
+
+                                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                                    {stage.roles.map((stageRole) => (
+                                                        <span
+                                                            key={stageRole}
+                                                            className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${
+                                                                availableForRole && stageRole === role
+                                                                    ? 'border-[var(--VIARA-accent)]/40 bg-[var(--VIARA-accent)]/10 text-[var(--VIARA-accent)]'
+                                                                    : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)]'
+                                                            }`}
+                                                        >
+                                                            {t(`roles.${stageRole}`, { defaultValue: stageRole })}
+                                                        </span>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
-                                        <p className="mt-3 text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-300">{isArabic ? stage.escalationAr : stage.escalationEn}</p>
-                                        <div className="mt-3 flex flex-wrap gap-1.5">{stage.roles.map((stageRole) => <span key={stageRole} className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black text-slate-500 shadow-sm dark:bg-slate-900">{t(`roles.${stageRole}`, { defaultValue: stageRole })}</span>)}</div>
-                                        {canOpen && <Link to={stage.route} className="mt-4 inline-flex items-center gap-1.5 text-xs font-black text-teal-700 hover:text-teal-500 dark:text-teal-300"><ExternalLink size={12} />{t('openStation')}</Link>}
-                                    </article>
-                                );
-                            })}
+                                        </article>
+                                    );
+                                })}
+                            </div>
                         </div>
                     </div>
                 </section>
             )}
 
-            {/* TAB 3: CLINICAL EXAM PROTOCOLS & PATIENT PREPARATION */}
+            {/* TAB 4: CLINICAL EXAM PROTOCOLS & PATIENT PREPARATION */}
             {mainTab === 'protocols' && (
                 <section id="help-panel-protocols" role="tabpanel" aria-labelledby="help-tab-protocols" className="space-y-6">
                     <div role="note" className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-bold leading-relaxed text-amber-900 dark:text-amber-200">
@@ -1975,10 +2206,10 @@ const Help = () => {
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
-                            <h2 className="text-base font-black text-slate-900 dark:text-white">
+                            <h2 className="text-base font-black text-[var(--VIARA-ink)]">
                                 {t('clinicalModalityProtocolsPatientPrepDirectory')}
                             </h2>
-                            <p className="text-xs font-semibold text-slate-400 mt-0.5">
+                            <p className="text-xs font-semibold text-[var(--VIARA-muted)] mt-0.5">
                                 {t('standardFastingInstructionsContrastSafetyAnd')}
                             </p>
                         </div>
@@ -1996,8 +2227,8 @@ const Help = () => {
                                     onClick={() => setSelectedProtocolModality(p)}
                                     className={`inline-flex shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black transition ${
                                         isActive
-                                            ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20'
-                                            : 'border border-slate-200/80 bg-white/90 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                                            ? 'bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)] shadow-sm'
+                                            : 'border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] hover:bg-[var(--VIARA-surface-hover)] hover:text-[var(--VIARA-ink)]'
                                     }`}
                                 >
                                     <Icon size={16} />
@@ -2012,13 +2243,13 @@ const Help = () => {
                         {selectedProtocolModality.exams.map((ex, idx) => (
                             <div
                                 key={idx}
-                                className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 space-y-3.5"
+                                className="rounded-3xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-5 shadow-xs backdrop-blur-xl space-y-3.5"
                             >
-                                <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3 dark:border-slate-800">
-                                    <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                                <div className="flex items-start justify-between gap-3 border-b border-[var(--VIARA-line)] pb-3">
+                                    <h3 className="text-sm font-black text-[var(--VIARA-ink)]">
                                         {isArabic ? ex.nameAr : ex.name}
                                     </h3>
-                                    <span className="shrink-0 rounded-full bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black text-teal-700 dark:text-teal-300">
+                                    <span className="shrink-0 rounded-full border border-[var(--VIARA-accent)]/30 bg-[var(--VIARA-accent-soft)] px-2.5 py-0.5 text-[10px] font-black text-[var(--VIARA-accent)]">
                                         {selectedProtocolModality.id.toUpperCase()}
                                     </span>
                                 </div>
@@ -2033,11 +2264,11 @@ const Help = () => {
                                         </p>
                                     </div>
 
-                                    <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                    <div className="rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-3">
+                                        <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">
                                             {t('clinicalSafetyPreExamPrep')}
                                         </p>
-                                        <p className="mt-1 font-semibold text-slate-700 dark:text-slate-300 leading-relaxed">
+                                        <p className="mt-1 font-semibold text-[var(--VIARA-ink)] leading-relaxed">
                                             {isArabic ? ex.prepAr : ex.prep}
                                         </p>
                                     </div>
@@ -2057,14 +2288,14 @@ const Help = () => {
                 </section>
             )}
 
-            {/* TAB 4: TROUBLESHOOTING MATRIX */}
+            {/* TAB 5: TROUBLESHOOTING MATRIX */}
             {mainTab === 'troubleshooting' && (
                 <section id="help-panel-troubleshooting" role="tabpanel" aria-labelledby="help-tab-troubleshooting" className="space-y-4">
                     <div className="mb-2">
-                        <h2 className="text-base font-black text-slate-900 dark:text-white">
+                        <h2 className="text-base font-black text-[var(--VIARA-ink)]">
                             {t('operationalTechnicalIncidentResolver')}
                         </h2>
-                        <p className="text-xs font-semibold text-slate-400">
+                        <p className="text-xs font-semibold text-[var(--VIARA-muted)]">
                             {t('instantTroubleshootingStepsForCommonRadiology')}
                         </p>
                     </div>
@@ -2073,37 +2304,38 @@ const Help = () => {
                         {visibleTroubleshooting.map((item) => <CatalogResultCard key={item.id} item={item} isArabic={isArabic} user={user} />)}
                         {TROUBLESHOOTING_GUIDES.map(item => {
                             const Icon = item.icon;
+                            const tone = COLOR_MAP[item.color] ?? COLOR_MAP.rose;
                             return (
                                 <article
                                     key={item.id}
-                                    className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 space-y-3.5"
+                                    className="rounded-3xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-5 shadow-xs backdrop-blur-xl space-y-3.5"
                                 >
                                     <div className="flex items-start gap-3">
-                                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/30">
+                                        <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-2xl ${tone.bg} ${tone.text} border ${tone.badge.split(' ')[2] || 'border-rose-500/30'}`}>
                                             <Icon size={20} />
                                         </div>
                                         <div>
-                                            <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                                            <h3 className="text-sm font-black text-[var(--VIARA-ink)]">
                                                 {isArabic ? item.titleAr : item.title}
                                             </h3>
-                                            <p className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 mt-0.5">
+                                            <p className={`text-[11px] font-semibold mt-0.5 ${tone.text}`}>
                                                 {isArabic ? item.causeAr : item.cause}
                                             </p>
                                         </div>
                                     </div>
 
-                                    <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40 space-y-2">
-                                        <p className="text-[10px] font-black uppercase tracking-wider text-teal-800 dark:text-teal-300">
+                                    <div className="rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-4 space-y-2">
+                                        <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-accent)]">
                                             {t('recommendedResolutionSteps')}
                                         </p>
-                                        <ul className="space-y-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                        <ol className="space-y-1.5 text-xs font-bold text-[var(--VIARA-ink)]">
                                             {item.solutions.map((sol, idx) => (
                                                 <li key={idx} className="flex items-start gap-2">
-                                                    <span className="text-teal-600 font-black">•</span>
-                                                    <span>{isArabic ? sol.ar : sol.en}</span>
+                                                    <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-black ${tone.bg} ${tone.text}`}>{idx + 1}</span>
+                                                    <span className="pt-px">{isArabic ? sol.ar : sol.en}</span>
                                                 </li>
                                             ))}
-                                        </ul>
+                                        </ol>
                                     </div>
                                 </article>
                             );
@@ -2112,14 +2344,14 @@ const Help = () => {
                 </section>
             )}
 
-            {/* TAB 5: KEYBOARD SHORTCUTS & PACS */}
+            {/* TAB 6: KEYBOARD SHORTCUTS & PACS */}
             {mainTab === 'shortcuts' && (
                 <section id="help-panel-shortcuts" role="tabpanel" aria-labelledby="help-tab-shortcuts" className="space-y-6">
                     <div className="mb-2">
-                        <h2 className="text-base font-black text-slate-900 dark:text-white">
+                        <h2 className="text-base font-black text-[var(--VIARA-ink)]">
                             {t('completeKeyboardDicomViewerShortcuts')}
                         </h2>
-                        <p className="text-xs font-semibold text-slate-400">
+                        <p className="text-xs font-semibold text-[var(--VIARA-muted)]">
                             {t('powerUserKeyboardKeysForRapid')}
                         </p>
                     </div>
@@ -2128,9 +2360,9 @@ const Help = () => {
                         {KEYBOARD_SHORTCUTS.map(group => (
                             <div
                                 key={group.category}
-                                className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 space-y-3"
+                                className="rounded-3xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-5 shadow-xs backdrop-blur-xl space-y-3"
                             >
-                                <h3 className="border-b border-slate-100 pb-3 text-xs font-black uppercase tracking-wider text-teal-800 dark:text-teal-300">
+                                <h3 className="border-b border-[var(--VIARA-line)] pb-3 text-xs font-black uppercase tracking-wider text-[var(--VIARA-accent)]">
                                     {isArabic ? group.categoryAr : group.category}
                                 </h3>
                                 <div className="space-y-1">
@@ -2140,12 +2372,24 @@ const Help = () => {
                                 </div>
                             </div>
                         ))}
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        {HELP_SHORTCUTS.filter((shortcut) => itemCanBeRead(shortcut, user || {})).map((shortcut) => {
-                            const localized = getLocalizedHelpItem(shortcut, isArabic ? 'ar' : 'en');
-                            return <ShortcutRow key={shortcut.id} keys={shortcut.keys} label={localized.title} />;
-                        })}
+                        {/* Role-filtered catalog shortcuts as a dedicated group */}
+                        {(() => {
+                            const roleShortcuts = HELP_SHORTCUTS.filter((shortcut) => itemCanBeRead(shortcut, user || {}));
+                            if (!roleShortcuts.length) return null;
+                            return (
+                                <div className="rounded-3xl border border-[var(--VIARA-accent)]/30 bg-[var(--VIARA-accent-soft)] p-5 shadow-xs backdrop-blur-xl space-y-3">
+                                    <h3 className="border-b border-[var(--VIARA-accent)]/20 pb-3 text-xs font-black uppercase tracking-wider text-[var(--VIARA-accent)]">
+                                        {isArabic ? 'مفاتيح دورك الوظيفي' : 'Your Role Shortcuts'}
+                                    </h3>
+                                    <div className="space-y-1">
+                                        {roleShortcuts.map((shortcut) => {
+                                            const localized = getLocalizedHelpItem(shortcut, isArabic ? 'ar' : 'en');
+                                            return <ShortcutRow key={shortcut.id} keys={shortcut.keys} label={localized.title} />;
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </section>
             )}

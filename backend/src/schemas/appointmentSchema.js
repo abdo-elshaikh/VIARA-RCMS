@@ -92,11 +92,15 @@ const createAppointmentSchema = z.object({
     technicianId: optionalNullableUuid('technician'),
     nurseId: optionalNullableUuid('nurse'),
     radiologistId: optionalNullableUuid('radiologist'),
+    receptionistId: optionalNullableUuid('receptionist'),
+    receptionistDesk: optionalNullableTrimmedText(50, 'Reception desk'),
     assignmentReason: z.string().trim().min(3).max(1000).optional(),
 
     paymentMethod: z.enum(['Cash', 'Credit Card', 'Insurance', 'Card', 'Wallet', 'Bank Transfer', 'Installment', 'Corporate']).optional(),
     paymentAmount: z.coerce.number().min(0, 'Payment amount cannot be negative').nullable().optional(),
     arrived: strictBooleanSchema.optional(),
+    reportRequestStatus: z.enum(['Requested', 'NotRequested']).optional(),
+    imagesOnly: strictBooleanSchema.optional(),
     waitlistId: optionalNullableUuid('waiting list'),
     idempotencyKey: z.string().optional(),
 }).refine((data) => {
@@ -149,7 +153,11 @@ const updateAppointmentSchema = z.object({
     technicianId: optionalNullableUuid('technician'),
     nurseId: optionalNullableUuid('nurse'),
     radiologistId: optionalNullableUuid('radiologist'),
+    receptionistId: optionalNullableUuid('receptionist'),
+    receptionistDesk: optionalNullableTrimmedText(50, 'Reception desk'),
     assignmentReason: z.string().trim().min(3).max(1000).optional(),
+    reportRequestStatus: z.enum(['Requested', 'NotRequested']).optional(),
+    imagesOnly: strictBooleanSchema.optional(),
     paymentMethod: z.enum(['Cash', 'Credit Card', 'Insurance', 'Card', 'Wallet', 'Bank Transfer', 'Installment', 'Corporate']).optional(),
     paymentAmount: z.coerce.number().min(0, 'Payment amount cannot be negative').nullable().optional()
 }).refine((data) => Object.keys(data).length > 0, {

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
     BadgeAlert,
@@ -10,7 +11,9 @@ import {
     Shield,
     UserPlus,
     Users,
-    X
+    X,
+    Briefcase,
+    ShieldCheck
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -47,8 +50,14 @@ const initials = name => (name || '?')
 const roleLabel = role => String(role || '').replace(/_/g, ' ');
 
 const TeamSettings = ({ embedded = false }) => {
-    const { t } = useTranslation(['settings', 'common']);
+    const { t, i18n } = useTranslation(['settings', 'common']);
+    const isAr = i18n.language?.startsWith('ar');
+    const navigate = useNavigate();
     const currentUser = useSelector(selectCurrentUser);
+    const permissions = Array.isArray(currentUser?.permissions) ? currentUser.permissions : [];
+    const isSuperUser = ['Developer', 'Admin'].includes(currentUser?.role);
+    const canManageUsers = isSuperUser || permissions.includes('MANAGE_USERS');
+    const canViewStaff = isSuperUser || permissions.includes('VIEW_STAFF') || currentUser?.role === 'HR';
     const availableRoles = currentUser?.role === 'Developer'
         ? ROLES
         : ROLES.filter(role => !['Developer', 'Admin'].includes(role));
@@ -130,11 +139,11 @@ const TeamSettings = ({ embedded = false }) => {
                             <div className="flex flex-wrap items-center gap-2">
                                 <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
                                     <Shield size={11} />
-                                    <span>Staff Governance & Access Administration</span>
+                                    <span>{t('settings.team.eyebrow')}</span>
                                 </span>
                                 <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
                                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                    {activeCount} Active / {staffList.length} Total
+                                    {t('settings.team.activeTotal', { active: activeCount, total: staffList.length })}
                                 </span>
                             </div>
                             <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
@@ -146,16 +155,18 @@ const TeamSettings = ({ embedded = false }) => {
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        <button
-                            type="button"
-                            onClick={() => setShowModal(true)}
-                            className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-teal-500"
-                        >
-                            <UserPlus size={14} />
-                            <span>{t('settings.team.addMember', 'Add Team Member')}</span>
-                        </button>
-                    </div>
+                    {canManageUsers && (
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setShowModal(true)}
+                                className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-teal-500"
+                            >
+                                <UserPlus size={14} />
+                                <span>{t('settings.team.addMember', 'Add Team Member')}</span>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Telemetry Facts HUD */}
@@ -165,7 +176,7 @@ const TeamSettings = ({ embedded = false }) => {
                             <Users size={16} className="text-teal-600 dark:text-teal-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Accounts</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('settings.team.totalAccounts')}</p>
                             <p className="font-mono text-base font-black text-slate-900 dark:text-white">{staffList.length}</p>
                         </div>
                     </div>
@@ -175,7 +186,7 @@ const TeamSettings = ({ embedded = false }) => {
                             <BadgeCheck size={16} className="text-emerald-600 dark:text-emerald-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">Active Staff</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">{t('settings.team.activeStaff')}</p>
                             <p className="font-mono text-base font-black text-emerald-900 dark:text-white">{activeCount}</p>
                         </div>
                     </div>
@@ -185,8 +196,8 @@ const TeamSettings = ({ embedded = false }) => {
                             <Shield size={16} className="text-sky-600 dark:text-sky-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">Active Roles</p>
-                            <p className="font-mono text-base font-black text-sky-900 dark:text-white">{roleCount} Roles</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">{t('settings.team.rolesInUse')}</p>
+                            <p className="font-mono text-base font-black text-sky-900 dark:text-white">{t('settings.team.activeRolesCount', { number: roleCount })}</p>
                         </div>
                     </div>
 
@@ -195,8 +206,8 @@ const TeamSettings = ({ embedded = false }) => {
                             <BadgeAlert size={16} className="text-amber-600 dark:text-amber-400" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">Superadmins</p>
-                            <p className="font-mono text-base font-black text-amber-900 dark:text-white">{adminCount} Protected</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">{t('settings.team.superadmins')}</p>
+                            <p className="font-mono text-base font-black text-amber-900 dark:text-white">{t('settings.team.protectedCount', { number: adminCount })}</p>
                         </div>
                     </div>
                 </div>
@@ -258,6 +269,7 @@ const TeamSettings = ({ embedded = false }) => {
                                     <Th>{t('settings.role', 'Role')}</Th>
                                     <Th>{t('settings.status', 'Account')}</Th>
                                     <Th>{t('settings.team.joined', 'Joined')}</Th>
+                                    <Th className="text-end">{t('common.actions', 'Actions')}</Th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -285,6 +297,32 @@ const TeamSettings = ({ embedded = false }) => {
                                                 <CalendarDays size={13} aria-hidden="true" />
                                                 {formatShortDate(member.created_at)}
                                             </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-end">
+                                            <div className="flex items-center justify-end gap-1.5">
+                                                {canManageUsers && member.user_id && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => navigate(`/users/${member.user_id}`)}
+                                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-teal-300"
+                                                        title={isAr ? 'إدارة حساب الدخول والأمان (IAM)' : 'Manage IAM Account & Security'}
+                                                    >
+                                                        <ShieldCheck size={13} className="text-teal-600 dark:text-teal-400" />
+                                                        <span>{isAr ? 'حساب الدخول' : 'IAM'}</span>
+                                                    </button>
+                                                )}
+                                                {canViewStaff && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => navigate('/hr?tab=directory')}
+                                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-cyan-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-cyan-300"
+                                                        title={isAr ? 'الملف الوظيفي بالموارد البشرية (HR)' : 'View HR Employment Profile'}
+                                                    >
+                                                        <Briefcase size={13} className="text-cyan-600 dark:text-cyan-400" />
+                                                        <span>{isAr ? 'الموارد البشرية' : 'HR'}</span>
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -354,8 +392,8 @@ const TeamSettings = ({ embedded = false }) => {
     );
 };
 
-const Th = ({ children }) => (
-    <th className="px-6 py-3.5 text-start text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+const Th = ({ children, className = '' }) => (
+    <th className={`px-6 py-3.5 text-start text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 ${className}`}>
         {children}
     </th>
 );

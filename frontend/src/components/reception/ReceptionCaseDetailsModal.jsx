@@ -32,7 +32,12 @@ import {
     Hash,
     BadgePercent,
     SlidersHorizontal,
-    BadgeCheck
+    BadgeCheck,
+    Copy,
+    Check,
+    Layers,
+    Printer,
+    ArrowRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PriorityBadge from '../ui/PriorityBadge';
@@ -56,6 +61,8 @@ const STAGE_ORDER = [
     'Prep Pending',
     'Ready for Exam',
     'In Exam',
+    'Images Ready',
+    'Images Delivered',
     'Reporting',
     'Finalized',
     'Delivered'
@@ -73,6 +80,7 @@ const ReceptionCaseDetailsModal = ({
     i18n,
     createAppointmentInvoice,
     canCreateInvoices,
+    canViewInvoices = false,
     onOpenPayment,
     onMove,
     print,
@@ -98,6 +106,8 @@ const ReceptionCaseDetailsModal = ({
 
     const [isEditing, setIsEditing] = useState(canEditBooking && initialEditMode);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [activeTab, setActiveTab] = useState('exam'); // 'exam' | 'team' | 'billing' | 'notes'
+    const [copiedMrn, setCopiedMrn] = useState(false);
 
     const currentUser = useSelector(selectCurrentUser);
 
@@ -170,6 +180,7 @@ const ReceptionCaseDetailsModal = ({
         technicianId: '',
         radiologistId: '',
         contrastRequired: false,
+        imagesOnly: false,
         clinicalIndication: '',
         notes: '',
         assignmentReason: 'تعديل جدول وتوزيع المهام السريرية'
@@ -214,6 +225,7 @@ const ReceptionCaseDetailsModal = ({
                 technicianId: appointment?.technician_id || queue?.technician_id || '',
                 radiologistId: appointment?.radiologist_id || appointment?.performing_radiologist_id || queue?.radiologist_id || '',
                 contrastRequired: Boolean(appointment?.contrast_required ?? queue?.contrast_required),
+                imagesOnly: Boolean(appointment?.images_only || appointment?.report_request_status === 'NotRequested' || queue?.images_only),
                 clinicalIndication: appointment?.clinical_indication || queue?.clinical_indication || '',
                 notes: appointment?.notes || queue?.notes || '',
                 assignmentReason: 'تعديل جدول وتوزيع المهام السريرية'
@@ -359,12 +371,10 @@ const ReceptionCaseDetailsModal = ({
 
     const selTechnicianDuty = useMemo(() => getStaffDutyInfo(editForm.technicianId), [editForm.technicianId, getStaffDutyInfo]);
     const selNurseDuty = useMemo(() => getStaffDutyInfo(editForm.nurseId), [editForm.nurseId, getStaffDutyInfo]);
-    const currentAssignedTechDuty = useMemo(() => getStaffDutyInfo(appointment?.technician_id || queue?.technician_id), [appointment?.technician_id, queue?.technician_id, getStaffDutyInfo]);
-    const currentAssignedNurseDuty = useMemo(() => getStaffDutyInfo(appointment?.nurse_id || queue?.nurse_id), [appointment?.nurse_id, queue?.nurse_id, getStaffDutyInfo]);
 
     if (!isOpen || !activeCase) return null;
 
-    // Rich patient details
+    // Patient details
     const patientName = appointment?.patient_name || queue?.patient_name || t('table.patientFallback', { defaultValue: 'مريض' });
     const mrn = appointment?.mrn || queue?.mrn || '-';
     const phone = appointment?.patient_phone || appointment?.phone || queue?.patient_phone || queue?.phone;
@@ -373,18 +383,22 @@ const ReceptionCaseDetailsModal = ({
     const priority = appointment?.priority || queue?.priority || 'Routine';
     const orderNumber = appointment?.order_number || queue?.order_number;
 
-    // Rich Exam & Modality details
+    // Exam & Modality details
     const examName = appointment?.exam_type_name || queue?.exam_type_name || t('table.noExamType', { defaultValue: 'فحص' });
     const machineName = appointment?.machine_name || queue?.machine_name || queue?.modality_name || '-';
     const modalityType = appointment?.modality_type || queue?.modality_type || '';
     const roomName = appointment?.room_name || queue?.room_name || (appointment?.room_number ? `غرفة ${appointment.room_number}` : '-');
     const roomNumber = appointment?.room_number || queue?.room_number;
-    const roomStatus = appointment?.room_status || 'Active';
-    const machineStatus = appointment?.machine_status || 'Active';
     const bodyPart = appointment?.exam_type_body_part || appointment?.body_part;
     const contrastRequired = Boolean(appointment?.contrast_required || queue?.contrast_required || invoice?.contrast_required);
     const fastingRequired = Boolean(appointment?.fasting_required ?? queue?.fasting_required);
     const fastingHours = appointment?.fasting_hours || 6;
+    const isImagesOnly = Boolean(
+        appointment?.images_only ||
+        appointment?.report_request_status === 'NotRequested' ||
+        queue?.images_only ||
+        ['Images Ready', 'Images Delivered'].includes(stage)
+    );
     const prepInstructions = appointment?.preparation_instructions || queue?.preparation_instructions;
 
     // Timing & Origin
@@ -417,6 +431,15 @@ const ReceptionCaseDetailsModal = ({
     const stageLabel = (s) => t(`queue.stages.${s}`, { defaultValue: s });
     const canCreate = canCreateInvoices !== undefined ? canCreateInvoices : Boolean(createAppointmentInvoice);
 
+    const handleCopyMrn = () => {
+        if (mrn && mrn !== '-') {
+            navigator.clipboard?.writeText(mrn);
+            setCopiedMrn(true);
+            toast.success(isRtl ? 'تم نسخ الرقم الطبي (MRN)' : 'MRN copied to clipboard');
+            setTimeout(() => setCopiedMrn(false), 2000);
+        }
+    };
+
     const handlePrint = (type) => {
         if (print) {
             print(activeCase, type);
@@ -436,7 +459,6 @@ const ReceptionCaseDetailsModal = ({
     const handleSaveEdit = async (e) => {
         e?.preventDefault();
 
-        // Enforce the rule: cannot edit after transfer to nursing
         if (!canEditBooking) {
             toast.error(t('details.cannotEditAfterNursing', { defaultValue: 'لا يمكن تعديل بيانات الحجز بعد تحويل الحالة للتمريض أو بدء التجهيز السريري' }));
             setIsEditing(false);
@@ -464,6 +486,8 @@ const ReceptionCaseDetailsModal = ({
                 modalityId: editForm.modalityId || undefined,
                 examTypeId: editForm.examTypeId || undefined,
                 contrastRequired: Boolean(editForm.contrastRequired),
+                imagesOnly: Boolean(editForm.imagesOnly),
+                reportRequestStatus: editForm.imagesOnly ? 'NotRequested' : 'Requested',
                 clinicalIndication: editForm.clinicalIndication || undefined,
                 notes: editForm.notes || undefined,
                 nurseId: editForm.nurseId || null,
@@ -500,49 +524,91 @@ const ReceptionCaseDetailsModal = ({
     const currentStageIndex = STAGE_ORDER.indexOf(stage);
     const isSaving = isSubmitting || isMutating;
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-            {/* Backdrop */}
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
+    // Staff assigned count
+    const assignedStaffCount = [nurseName, technicianName, radiologistName].filter(Boolean).length;
 
-            {/* Modal Dialog */}
-            <div className="relative flex max-h-[92vh] w-full max-w-4xl flex-col rounded-3xl border border-slate-200/80 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-slate-800">
-                    <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
-                            {isEditing ? <CalendarClock size={22} /> : <Activity size={22} />}
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 md:p-6" role="dialog" aria-modal="true">
+            {/* Backdrop */}
+            <div
+                className="fixed inset-0 bg-slate-950/70 backdrop-blur-md transition-opacity animate-in fade-in duration-200"
+                onClick={onClose}
+            />
+
+            {/* Modal Dialog Container */}
+            <div className="relative flex max-h-[92vh] w-full max-w-4xl flex-col rounded-3xl border border-slate-200/90 bg-white shadow-2xl overflow-hidden transition-all dark:border-slate-800 dark:bg-slate-900 animate-in zoom-in-95 duration-200">
+                
+                {/* 1. TOP HEADER: Patient Identity & Primary Actions */}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-4 dark:border-slate-800/80 dark:bg-slate-900/90">
+                    {/* Patient identity card */}
+                    <div className="flex items-center gap-3.5 min-w-0">
+                        {/* Avatar initials with gradient */}
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-600 to-emerald-600 text-white font-black text-lg shadow-sm shadow-teal-500/20">
+                            {patientName ? patientName.trim().charAt(0) : 'م'}
                         </div>
-                        <div>
+
+                        <div className="min-w-0">
+                            {/* Line 1: Name, Badges, Stage */}
                             <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                                <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white truncate">
                                     {patientName}
-                                </h3>
+                                </h2>
+                                
+                                {gender && (
+                                    <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                        {gender === 'Male' || gender === 'ذكر' ? 'ذكر' : 'أنثى'}{age ? ` • ${age} سنة` : ''}
+                                    </span>
+                                )}
+
                                 {!isEditing && <PriorityBadge priority={priority} />}
+
                                 {orderNumber && (
-                                    <span className="inline-flex items-center gap-1 rounded-md bg-teal-50 border border-teal-200 px-2 py-0.5 text-[10.5px] font-mono font-bold text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800">
-                                        <Hash size={10} />
+                                    <span className="inline-flex items-center gap-1 rounded-lg bg-teal-50 border border-teal-200 px-2 py-0.5 text-[11px] font-mono font-bold text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800/80">
+                                        <Hash size={11} className="text-teal-600 dark:text-teal-400" />
                                         <span>{orderNumber}</span>
                                     </span>
                                 )}
+
+                                {!isEditing && (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 px-2.5 py-0.5 text-[11px] font-bold text-teal-700 dark:bg-teal-950/60 dark:text-teal-300 ring-1 ring-teal-500/20">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-pulse" />
+                                        <span>{stageLabel(stage)}</span>
+                                    </span>
+                                )}
+
                                 {isEditing && (
-                                    <span className="rounded-lg bg-teal-50 px-2 py-0.5 text-xs font-bold text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
-                                        {t('details.editModalTitle', { defaultValue: 'تعديل بيانات الحجز والموعد' })}
+                                    <span className="rounded-lg bg-teal-600 px-2.5 py-0.5 text-[11px] font-black text-white">
+                                        {t('details.editModalTitle', { defaultValue: 'وضع التعديل' })}
                                     </span>
                                 )}
                             </div>
-                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                                <span className="font-mono font-bold">{mrn}</span>
+
+                            {/* Line 2: MRN with copy action, Date & Time, Room */}
+                            <div className="mt-1 flex flex-wrap items-center gap-2.5 text-xs text-slate-500 dark:text-slate-400">
+                                <button
+                                    type="button"
+                                    onClick={handleCopyMrn}
+                                    title={isRtl ? 'انقر لنسخ الرقم الطبي' : 'Click to copy MRN'}
+                                    className="group inline-flex items-center gap-1 font-mono font-bold text-slate-700 hover:text-teal-600 dark:text-slate-300 dark:hover:text-teal-400 transition"
+                                >
+                                    <span>MRN: {mrn}</span>
+                                    {copiedMrn ? <Check size={12} className="text-emerald-500" /> : <Copy size={11} className="opacity-60 group-hover:opacity-100" />}
+                                </button>
                                 <span>•</span>
-                                <span>{appointmentDate} - {appointmentTime}</span>
+                                <span className="flex items-center gap-1">
+                                    <Clock size={12} className="text-slate-400" />
+                                    <span>{appointmentDate} - {appointmentTime}</span>
+                                </span>
                                 <span>•</span>
-                                <span>{durationMinutes} {t('details.minutes', { defaultValue: 'دقيقة' })}</span>
+                                <span className="text-slate-600 dark:text-slate-400 font-medium">
+                                    {durationMinutes} {t('details.minutes', { defaultValue: 'دقيقة' })}
+                                </span>
                                 {roomName && roomName !== '-' && (
                                     <>
                                         <span>•</span>
-                                        <span className="flex items-center gap-0.5 text-teal-600 dark:text-teal-400 font-semibold">
-                                            <DoorOpen size={11} />
-                                            {roomName}
+                                        <span className="flex items-center gap-1 text-teal-700 dark:text-teal-400 font-bold">
+                                            <DoorOpen size={12} />
+                                            <span>{roomName}</span>
                                         </span>
                                     </>
                                 )}
@@ -550,61 +616,202 @@ const ReceptionCaseDetailsModal = ({
                         </div>
                     </div>
 
+                    {/* Top action icons */}
                     <div className="flex items-center gap-2">
-                        {/* Edit button vs Locked badge */}
                         {!isEditing && canEditBooking && (
                             <button
                                 type="button"
                                 onClick={() => setIsEditing(true)}
-                                className="inline-flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-700 transition hover:border-teal-300 hover:bg-teal-100 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300"
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-teal-200 bg-white px-3 py-1.5 text-xs font-bold text-teal-700 shadow-2xs hover:bg-teal-50 hover:border-teal-300 dark:border-teal-900/60 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-750 transition"
                                 title={t('details.editBooking', { defaultValue: 'تعديل الحجز' })}
                             >
                                 <Edit3 size={13} />
                                 <span className="hidden sm:inline">{t('details.editBooking', { defaultValue: 'تعديل الحجز' })}</span>
                             </button>
                         )}
+
                         {!isEditing && !canEditBooking && (
                             <div
                                 title={t('details.cannotEditAfterNursing', { defaultValue: 'لا يمكن تعديل بيانات الحجز بعد تحويل الحالة للتمريض أو بدء التجهيز السريري' })}
-                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-400"
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100/90 px-2.5 py-1.5 text-xs font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400"
                             >
-                                <Lock size={13} className="text-slate-400 dark:text-slate-500" />
-                                <span className="hidden sm:inline">{t('details.lockedAfterNursing', { defaultValue: 'الحجز مقفل (تم التحويل للتمريض)' })}</span>
+                                <Lock size={12} className="text-slate-400" />
+                                <span className="hidden sm:inline">{t('details.lockedAfterNursing', { defaultValue: 'الحجز مقفل' })}</span>
                             </div>
                         )}
+
                         <button
                             type="button"
                             onClick={onClose}
                             aria-label={t('details.close', { defaultValue: 'إغلاق' })}
-                            className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white"
+                            className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white transition"
                         >
-                            <X size={18} />
+                            <X size={20} />
                         </button>
                     </div>
                 </div>
 
-                {/* Body Content */}
-                <div className="flex-1 space-y-5 overflow-y-auto p-6 scrollbar-thin">
-                    {/* EDIT MODE VIEW */}
+                {/* 2. SLIM STEPPER TIMELINE (View Mode Only) */}
+                {!isEditing && (
+                    <div className="border-b border-slate-100 bg-slate-50/40 px-5 py-3 dark:border-slate-800/80 dark:bg-slate-900/40">
+                        <div className="flex items-center justify-between gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+                            {STAGE_ORDER.slice(0, 8).map((st, idx) => {
+                                const isPassed = idx < currentStageIndex;
+                                const isCurrent = idx === currentStageIndex;
+
+                                return (
+                                    <div key={st} className="flex flex-1 items-center min-w-[70px] sm:min-w-0">
+                                        <div className="flex flex-col items-center w-full">
+                                            <div className="relative flex items-center justify-center w-full">
+                                                {/* Connecting line on left/right */}
+                                                {idx > 0 && (
+                                                    <div className={`absolute start-0 w-1/2 h-[2px] -z-0 ${
+                                                        idx <= currentStageIndex
+                                                            ? 'bg-teal-500'
+                                                            : 'bg-slate-200 dark:bg-slate-800'
+                                                    }`} />
+                                                )}
+                                                {idx < 7 && (
+                                                    <div className={`absolute end-0 w-1/2 h-[2px] -z-0 ${
+                                                        idx < currentStageIndex
+                                                            ? 'bg-teal-500'
+                                                            : 'bg-slate-200 dark:bg-slate-800'
+                                                    }`} />
+                                                )}
+                                                {/* Step Circle */}
+                                                <div className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black transition-all ${
+                                                    isCurrent
+                                                        ? 'bg-teal-600 text-white ring-4 ring-teal-500/20 shadow-xs'
+                                                        : isPassed
+                                                            ? 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300'
+                                                            : 'bg-slate-100 text-slate-400 dark:bg-slate-800'
+                                                }`}>
+                                                    {isPassed ? <Check size={11} strokeWidth={3} /> : idx + 1}
+                                                </div>
+                                            </div>
+                                            <span className={`mt-1 truncate text-[9.5px] font-bold text-center leading-tight ${
+                                                isCurrent
+                                                    ? 'text-teal-700 dark:text-teal-300 font-black'
+                                                    : isPassed
+                                                        ? 'text-slate-600 dark:text-slate-400'
+                                                        : 'text-slate-400 dark:text-slate-500'
+                                            }`}>
+                                                {stageLabel(st)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* 3. SEGMENTED NAVIGATION TABS (View Mode Only) */}
+                {!isEditing && (
+                    <div className="flex items-center gap-1.5 border-b border-slate-100 bg-white px-5 pt-3 pb-2 dark:border-slate-800 dark:bg-slate-900 overflow-x-auto scrollbar-none">
+                        {/* Tab 1: Exam & Prep */}
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('exam')}
+                            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition cursor-pointer shrink-0 ${
+                                activeTab === 'exam'
+                                    ? 'bg-teal-600 text-white shadow-xs dark:bg-teal-500 dark:text-slate-950 font-black'
+                                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
+                            }`}
+                        >
+                            <ScanLine size={14} />
+                            <span>{t('details.examAndPrep', { defaultValue: 'الفحص والتحضير' })}</span>
+                            {contrastRequired && (
+                                <span className={`h-2 w-2 rounded-full ${activeTab === 'exam' ? 'bg-amber-300' : 'bg-amber-500'}`} />
+                            )}
+                        </button>
+
+                        {/* Tab 2: Care Team */}
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('team')}
+                            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition cursor-pointer shrink-0 ${
+                                activeTab === 'team'
+                                    ? 'bg-teal-600 text-white shadow-xs dark:bg-teal-500 dark:text-slate-950 font-black'
+                                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
+                            }`}
+                        >
+                            <UsersRound size={14} />
+                            <span>{t('details.careTeam', { defaultValue: 'الفريق الطبي والإسناد' })}</span>
+                            <span className={`rounded-md px-1.5 py-0.2 text-[10px] font-bold ${
+                                activeTab === 'team'
+                                    ? 'bg-teal-700/60 text-white dark:bg-slate-900 dark:text-teal-300'
+                                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                            }`}>
+                                {assignedStaffCount}/3
+                            </span>
+                        </button>
+
+                        {/* Tab 3: Billing (Conditional on canViewInvoices) */}
+                        {canViewInvoices && (
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('billing')}
+                                className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition cursor-pointer shrink-0 ${
+                                    activeTab === 'billing'
+                                        ? 'bg-teal-600 text-white shadow-xs dark:bg-teal-500 dark:text-slate-950 font-black'
+                                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
+                                }`}
+                            >
+                                <CreditCard size={14} />
+                                <span>{t('details.financialTitle', { defaultValue: 'المالية والفاتورة' })}</span>
+                                {hasInvoice && balanceAmount > 0 && (
+                                    <span className={`rounded-md px-1.5 py-0.2 text-[10px] font-bold ${
+                                        activeTab === 'billing' ? 'bg-amber-400 text-slate-900' : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                    }`}>
+                                        {balanceAmount.toLocaleString()} ج.م
+                                    </span>
+                                )}
+                            </button>
+                        )}
+
+                        {/* Tab 4: Indication & Notes */}
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('notes')}
+                            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition cursor-pointer shrink-0 ${
+                                activeTab === 'notes'
+                                    ? 'bg-teal-600 text-white shadow-xs dark:bg-teal-500 dark:text-slate-950 font-black'
+                                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
+                            }`}
+                        >
+                            <FileText size={14} />
+                            <span>{t('details.notesAndIndication', { defaultValue: 'التشخيص والملاحظات' })}</span>
+                            {(clinicalIndication || notes) && (
+                                <span className={`h-1.5 w-1.5 rounded-full ${activeTab === 'notes' ? 'bg-teal-200' : 'bg-teal-500'}`} />
+                            )}
+                        </button>
+                    </div>
+                )}
+
+                {/* 4. MAIN MODAL BODY */}
+                <div className="flex-1 overflow-y-auto p-5 sm:p-6 scrollbar-thin">
+                    
+                    {/* ========== EDIT MODE VIEW ========== */}
                     {isEditing ? (
                         <form id="edit-booking-form" onSubmit={handleSaveEdit} className="space-y-4">
                             {/* Notice regarding nursing lock */}
-                            <div className="flex items-center gap-2 rounded-xl bg-teal-50/80 border border-teal-200/80 p-3 text-xs text-teal-800 dark:bg-teal-950/40 dark:border-teal-900/60 dark:text-teal-300">
-                                <Info size={15} className="shrink-0 text-teal-600" />
-                                <span className="font-semibold">
+                            <div className="flex items-center gap-2.5 rounded-2xl bg-teal-50 border border-teal-200/80 p-3.5 text-xs text-teal-800 dark:bg-teal-950/40 dark:border-teal-900/60 dark:text-teal-200">
+                                <Info size={16} className="shrink-0 text-teal-600 dark:text-teal-400" />
+                                <span className="font-semibold leading-relaxed">
                                     {t('details.canOnlyEditBeforeNursing', { defaultValue: 'تعديل بيانات الحجز متاح فقط قبل مرحلة التحضير والتمريض. بعد النقل للتمريض سيتم قفل الحجز للحفاظ على سلامة الفحص.' })}
                                 </span>
                             </div>
 
-                            {/* 1. Date & Time Row */}
+                            {/* Section 1: Date & Time */}
                             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                                <span className="mb-2.5 flex items-center gap-1.5 text-xs font-black text-slate-700 dark:text-slate-300">
-                                    <Calendar size={14} className="text-teal-600" />
-                                    {t('details.appointmentDate', { defaultValue: 'تاريخ ووقت الموعد' })}
-                                </span>
+                                <div className="mb-3 flex items-center gap-2 text-xs font-black text-slate-800 dark:text-slate-200">
+                                    <Calendar size={15} className="text-teal-600" />
+                                    <span>{t('details.appointmentDate', { defaultValue: 'تاريخ ووقت الموعد' })}</span>
+                                </div>
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                     <div>
-                                        <label className="mb-1 block text-[11px] font-bold text-slate-500">
+                                        <label className="mb-1 block text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                             {t('details.appointmentDate', { defaultValue: 'تاريخ الموعد' })}
                                         </label>
                                         <input
@@ -616,7 +823,7 @@ const ReceptionCaseDetailsModal = ({
                                         />
                                     </div>
                                     <div>
-                                        <label className="mb-1 block text-[11px] font-bold text-slate-500">
+                                        <label className="mb-1 block text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                             {t('details.appointmentTime', { defaultValue: 'وقت الموعد' })}
                                         </label>
                                         <input
@@ -630,40 +837,36 @@ const ReceptionCaseDetailsModal = ({
                                 </div>
                             </div>
 
-                            {/* 2. Modality, Exam & Priority */}
+                            {/* Section 2: Modality, Exam & Options */}
                             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                                <span className="mb-2.5 flex items-center gap-1.5 text-xs font-black text-slate-700 dark:text-slate-300">
-                                    <ScanLine size={14} className="text-teal-600" />
-                                    {t('details.examInfo', { defaultValue: 'بيانات الفحص والجهاز والأولوية' })}
-                                </span>
-                                {hasWorkstationFilter && (
-                                    <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-200/80 bg-violet-50/70 px-3 py-2 text-[11px] font-bold text-violet-800 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-300">
-                                        <div className="flex items-center gap-2">
-                                            <SlidersHorizontal size={13} className="text-violet-600 dark:text-violet-400 shrink-0" />
-                                            <span>
-                                                {isRtl
-                                                    ? `تصفية نشطة حسب مكتب الاستقبال: ${workstationConfig.desk || 'المكتب النشط'}`
-                                                    : `Active Reception Scope: ${workstationConfig.desk || 'Active Desk'}`}
-                                            </span>
-                                        </div>
+                                <div className="mb-3 flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-xs font-black text-slate-800 dark:text-slate-200">
+                                        <ScanLine size={15} className="text-teal-600" />
+                                        <span>{t('details.examInfo', { defaultValue: 'بيانات الفحص والجهاز والأولوية' })}</span>
+                                    </div>
+
+                                    {hasWorkstationFilter && (
                                         <button
                                             type="button"
                                             onClick={() => setApplyWorkstationScope((prev) => !prev)}
-                                            className="inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-white px-2 py-0.5 text-[10px] font-black text-violet-700 hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-900 dark:text-violet-200"
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-black text-violet-700 hover:bg-violet-100 dark:border-violet-800/60 dark:bg-violet-950/40 dark:text-violet-300"
                                         >
-                                            {applyWorkstationScope
-                                                ? (isRtl ? 'عرض جميع غرف وأجهزة المركز' : 'Show All Rooms & Devices')
-                                                : (isRtl ? 'تطبيق نطاق المكتب' : 'Apply Desk Scope')}
+                                            <SlidersHorizontal size={11} />
+                                            <span>
+                                                {applyWorkstationScope
+                                                    ? (isRtl ? 'عرض كل الغرف والأجهزة' : 'Show All Rooms')
+                                                    : (isRtl ? 'تطبيق نطاق المكتب' : 'Apply Desk Scope')}
+                                            </span>
                                         </button>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
 
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                     {/* Clinical Room */}
                                     <div>
-                                        <label className="mb-1 flex items-center gap-1 text-[11px] font-bold text-slate-500">
-                                            <DoorOpen size={11} className="text-violet-600" />
-                                            {isRtl ? 'الغرفة / الجناح' : 'Clinical Room'}
+                                        <label className="mb-1 flex items-center gap-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                            <DoorOpen size={12} className="text-violet-600" />
+                                            <span>{isRtl ? 'الغرفة / الجناح' : 'Clinical Room'}</span>
                                         </label>
                                         <select
                                             value={editForm.roomId}
@@ -684,7 +887,7 @@ const ReceptionCaseDetailsModal = ({
                                             }}
                                             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                                         >
-                                            <option value="">{isRtl ? 'جميع الغرف / تلقائي حسب الجهاز' : 'All Rooms / Auto from Device'}</option>
+                                            <option value="">{isRtl ? 'جميع الغرف / تلقائي حسب الجهاز' : 'All Rooms / Auto'}</option>
                                             {displayedRooms.map((r) => (
                                                 <option key={r.room_id || r.id} value={r.room_id || r.id}>
                                                     {r.room_number ? `${isRtl ? 'غرفة' : 'Room'} ${r.room_number}` : ''} {r.name ? `— ${r.name}` : ''}
@@ -695,7 +898,7 @@ const ReceptionCaseDetailsModal = ({
 
                                     {/* Modality */}
                                     <div>
-                                        <label className="mb-1 block text-[11px] font-bold text-slate-500">
+                                        <label className="mb-1 block text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                             {t('details.machine', { defaultValue: 'الجهاز / الغرفة' })}
                                         </label>
                                         <select
@@ -722,7 +925,7 @@ const ReceptionCaseDetailsModal = ({
 
                                     {/* Exam Type */}
                                     <div>
-                                        <label className="mb-1 block text-[11px] font-bold text-slate-500">
+                                        <label className="mb-1 block text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                             {t('details.exam', { defaultValue: 'نوع الفحص' })}
                                         </label>
                                         <select
@@ -741,7 +944,7 @@ const ReceptionCaseDetailsModal = ({
 
                                     {/* Priority */}
                                     <div>
-                                        <label className="mb-1 block text-[11px] font-bold text-slate-500">
+                                        <label className="mb-1 block text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                             {t('details.priority', { defaultValue: 'الأولوية' })}
                                         </label>
                                         <select
@@ -756,48 +959,61 @@ const ReceptionCaseDetailsModal = ({
                                     </div>
                                 </div>
 
-                                {/* Contrast requirement checkbox */}
-                                <div className="mt-3 flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        id="contrast-required"
-                                        checked={editForm.contrastRequired}
-                                        onChange={(e) => setEditForm((prev) => ({ ...prev, contrastRequired: e.target.checked }))}
-                                        className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                                    />
-                                    <label htmlFor="contrast-required" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
-                                        {t('details.contrastRequired', { defaultValue: 'الفحص يتطلب حقن صبغة (Contrast Required)' })}
+                                {/* Options: Contrast & Images Only Toggles */}
+                                <div className="mt-3.5 flex flex-wrap items-center gap-4 pt-3 border-t border-slate-200/60 dark:border-slate-800/60">
+                                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={editForm.contrastRequired}
+                                            onChange={(e) => setEditForm((prev) => ({ ...prev, contrastRequired: e.target.checked }))}
+                                            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 dark:border-slate-600"
+                                        />
+                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            {t('details.contrastRequired', { defaultValue: 'الفحص يتطلب حقن صبغة (Contrast Required)' })}
+                                        </span>
+                                    </label>
+
+                                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={editForm.imagesOnly}
+                                            onChange={(e) => setEditForm((prev) => ({ ...prev, imagesOnly: e.target.checked }))}
+                                            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 dark:border-slate-600"
+                                        />
+                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                            {isRtl ? 'تسليم أفلام فقط / دون تقرير حالياً (إرجاء التقرير)' : 'Images only (Deferred report)'}
+                                        </span>
                                     </label>
                                 </div>
                             </div>
 
-                            {/* 3. Clinical Staff Assignment */}
+                            {/* Section 3: Clinical Staff Assignment */}
                             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                                <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-                                    <span className="flex items-center gap-1.5 text-xs font-black text-slate-700 dark:text-slate-300">
-                                        <UsersRound size={14} className="text-teal-600" />
-                                        {t('details.assignedTeam', { defaultValue: 'إسناد الطاقم الطبي للفحص' })}
-                                    </span>
+                                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 text-xs font-black text-slate-800 dark:text-slate-200">
+                                        <UsersRound size={15} className="text-teal-600" />
+                                        <span>{t('details.assignedTeam', { defaultValue: 'إسناد الطاقم الطبي للفحص' })}</span>
+                                    </div>
                                     <button
                                         type="button"
-                                        aria-label={isRtl ? 'المناوبون والحاضرون فقط' : 'On-Duty & Present Only'}
                                         onClick={() => setDutyStaffOnly((prev) => !prev)}
-                                        className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-black transition ${
+                                        className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition ${
                                             dutyStaffOnly
                                                 ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 ring-1 ring-emerald-500/20'
                                                 : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
                                         }`}
                                     >
                                         <span>🟢</span>
-                                        <span>{isRtl ? 'المناوبون والحاضرون فقط' : 'On-Duty & Present Only'}</span>
+                                        <span>{isRtl ? 'المناوبون والحاضرون فقط' : 'On-Duty Only'}</span>
                                     </button>
                                 </div>
+
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                     {/* Nurse */}
                                     <div>
-                                        <label className="mb-1 flex items-center gap-1 text-[11px] font-bold text-slate-500">
-                                            <Stethoscope size={11} className="text-teal-600" />
-                                            {t('details.nurse', { defaultValue: 'التمريض' })}
+                                        <label className="mb-1 flex items-center gap-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                            <Stethoscope size={12} className="text-teal-600" />
+                                            <span>{t('details.nurse', { defaultValue: 'التمريض' })}</span>
                                         </label>
                                         <select
                                             value={editForm.nurseId}
@@ -805,35 +1021,24 @@ const ReceptionCaseDetailsModal = ({
                                             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                                         >
                                             <option value="">{t('details.unassigned', { defaultValue: 'غير مسند / اختياري' })}</option>
-                                            {displayedNurses.map((n) => {
-                                                const duty = n.duty;
-                                                return (
-                                                    <option key={n.user_id || n.id} value={n.user_id || n.id}>
-                                                        {duty?.dot || '⚪'} {n.full_name || n.name} {duty?.badgeText ? `— ${duty.badgeText}` : ''}
-                                                    </option>
-                                                );
-                                            })}
+                                            {displayedNurses.map((n) => (
+                                                <option key={n.user_id || n.id} value={n.user_id || n.id}>
+                                                    {n.duty?.dot || '⚪'} {n.full_name || n.name} {n.duty?.badgeText ? `— ${n.duty.badgeText}` : ''}
+                                                </option>
+                                            ))}
                                         </select>
                                         {selNurseDuty && (
                                             <div className={`mt-1.5 flex items-center justify-between gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${selNurseDuty.statusClass}`}>
-                                                <span className="flex items-center gap-1 truncate">
-                                                    <span>{selNurseDuty.dot}</span>
-                                                    <span>{selNurseDuty.badgeText}</span>
-                                                </span>
-                                                {selNurseDuty.shift?.start_time && selNurseDuty.shift?.end_time && (
-                                                    <span className="shrink-0 text-[9px] opacity-85">
-                                                        {new Date(selNurseDuty.shift.start_time).toTimeString().slice(0, 5)} - {new Date(selNurseDuty.shift.end_time).toTimeString().slice(0, 5)}
-                                                    </span>
-                                                )}
+                                                <span className="truncate">{selNurseDuty.dot} {selNurseDuty.badgeText}</span>
                                             </div>
                                         )}
                                     </div>
 
                                     {/* Technician */}
                                     <div>
-                                        <label className="mb-1 flex items-center gap-1 text-[11px] font-bold text-slate-500">
-                                            <ScanLine size={11} className="text-blue-600" />
-                                            {t('details.technician', { defaultValue: 'فني الأشعة' })}
+                                        <label className="mb-1 flex items-center gap-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                            <ScanLine size={12} className="text-blue-600" />
+                                            <span>{t('details.technician', { defaultValue: 'فني الأشعة' })}</span>
                                         </label>
                                         <select
                                             value={editForm.technicianId}
@@ -841,35 +1046,24 @@ const ReceptionCaseDetailsModal = ({
                                             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                                         >
                                             <option value="">{t('details.unassigned', { defaultValue: 'غير مسند / اختياري' })}</option>
-                                            {displayedTechnicians.map((tc) => {
-                                                const duty = tc.duty;
-                                                return (
-                                                    <option key={tc.user_id || tc.id} value={tc.user_id || tc.id}>
-                                                        {duty?.dot || '⚪'} {tc.full_name || tc.name} {duty?.badgeText ? `— ${duty.badgeText}` : ''}
-                                                    </option>
-                                                );
-                                            })}
+                                            {displayedTechnicians.map((tc) => (
+                                                <option key={tc.user_id || tc.id} value={tc.user_id || tc.id}>
+                                                    {tc.duty?.dot || '⚪'} {tc.full_name || tc.name} {tc.duty?.badgeText ? `— ${tc.duty.badgeText}` : ''}
+                                                </option>
+                                            ))}
                                         </select>
                                         {selTechnicianDuty && (
                                             <div className={`mt-1.5 flex items-center justify-between gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${selTechnicianDuty.statusClass}`}>
-                                                <span className="flex items-center gap-1 truncate">
-                                                    <span>{selTechnicianDuty.dot}</span>
-                                                    <span>{selTechnicianDuty.badgeText}</span>
-                                                </span>
-                                                {selTechnicianDuty.shift?.start_time && selTechnicianDuty.shift?.end_time && (
-                                                    <span className="shrink-0 text-[9px] opacity-85">
-                                                        {new Date(selTechnicianDuty.shift.start_time).toTimeString().slice(0, 5)} - {new Date(selTechnicianDuty.shift.end_time).toTimeString().slice(0, 5)}
-                                                    </span>
-                                                )}
+                                                <span className="truncate">{selTechnicianDuty.dot} {selTechnicianDuty.badgeText}</span>
                                             </div>
                                         )}
                                     </div>
 
                                     {/* Radiologist */}
                                     <div>
-                                        <label className="mb-1 flex items-center gap-1 text-[11px] font-bold text-slate-500">
-                                            <UserCheck size={11} className="text-purple-600" />
-                                            {t('details.radiologist', { defaultValue: 'طبيب الأشعة' })}
+                                        <label className="mb-1 flex items-center gap-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                            <UserCheck size={12} className="text-purple-600" />
+                                            <span>{t('details.radiologist', { defaultValue: 'طبيب الأشعة' })}</span>
                                         </label>
                                         <select
                                             value={editForm.radiologistId}
@@ -886,9 +1080,8 @@ const ReceptionCaseDetailsModal = ({
                                     </div>
                                 </div>
 
-                                {/* Reassignment reason */}
                                 <div className="mt-3">
-                                    <label className="mb-1 block text-[11px] font-bold text-slate-500">
+                                    <label className="mb-1 block text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                         {t('details.assignmentReason', { defaultValue: 'سبب التعديل / إعادة التعيين (مطلوب عند نقل المهام)' })}
                                     </label>
                                     <input
@@ -901,15 +1094,15 @@ const ReceptionCaseDetailsModal = ({
                                 </div>
                             </div>
 
-                            {/* 4. Indication & Notes */}
+                            {/* Section 4: Clinical Indication & Notes */}
                             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                                <span className="mb-2.5 flex items-center gap-1.5 text-xs font-black text-slate-700 dark:text-slate-300">
-                                    <FileText size={14} className="text-teal-600" />
-                                    {t('details.clinicalIndication', { defaultValue: 'الداعي السريري والملاحظات' })}
-                                </span>
+                                <div className="mb-3 flex items-center gap-2 text-xs font-black text-slate-800 dark:text-slate-200">
+                                    <FileText size={15} className="text-teal-600" />
+                                    <span>{t('details.clinicalIndication', { defaultValue: 'الداعي السريري والملاحظات' })}</span>
+                                </div>
                                 <div className="space-y-3">
                                     <div>
-                                        <label className="mb-1 block text-[11px] font-bold text-slate-500">
+                                        <label className="mb-1 block text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                             {t('details.clinicalIndication', { defaultValue: 'الداعي السريري (Clinical Indication)' })}
                                         </label>
                                         <input
@@ -921,7 +1114,7 @@ const ReceptionCaseDetailsModal = ({
                                         />
                                     </div>
                                     <div>
-                                        <label className="mb-1 block text-[11px] font-bold text-slate-500">
+                                        <label className="mb-1 block text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                             {t('details.notes', { defaultValue: 'ملاحظات وتوجيهات الحالة' })}
                                         </label>
                                         <textarea
@@ -936,390 +1129,429 @@ const ReceptionCaseDetailsModal = ({
                             </div>
                         </form>
                     ) : (
-                        /* VIEW MODE */
-                        <>
-                            {/* Stage Timeline Banner & Nursing Lock Status Indicator */}
-                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                                <div className="mb-3 flex items-center justify-between">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                        {t('details.workflowStage', { defaultValue: 'مرحلة الفحص الحالية' })}
-                                    </span>
-                                    <span className="rounded-lg bg-teal-50 px-2.5 py-0.5 text-xs font-black text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
-                                        {stageLabel(stage)}
-                                    </span>
-                                </div>
+                        /* ========== VIEW MODE TABS ========== */
+                        <div className="space-y-4">
+                            
+                            {/* TAB 1: EXAM & PREPARATION */}
+                            {activeTab === 'exam' && (
+                                <div className="space-y-4">
+                                    {/* Exam Details Card */}
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+                                        <div className="mb-3 flex items-center justify-between">
+                                            <div className="flex items-center gap-2 text-xs font-black text-slate-800 dark:text-slate-200">
+                                                <ScanLine size={15} className="text-teal-600" />
+                                                <span>{t('details.examDetails', { defaultValue: 'بيانات الفحص والخدمة' })}</span>
+                                            </div>
+                                            {bodyPart && (
+                                                <span className="rounded-lg bg-teal-50 border border-teal-200/80 px-2 py-0.5 text-[11px] font-bold text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800">
+                                                    {bodyPart}
+                                                </span>
+                                            )}
+                                        </div>
 
-                                {/* Progress Stepper Bar */}
-                                <div className="relative flex items-center justify-between">
-                                    {STAGE_ORDER.slice(0, 8).map((st, idx) => {
-                                        const isPassed = idx < currentStageIndex;
-                                        const isCurrent = idx === currentStageIndex;
-                                        return (
-                                            <div key={st} className="flex flex-col items-center">
-                                                <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black transition-colors ${
-                                                    isCurrent
-                                                        ? 'bg-teal-600 text-white ring-4 ring-teal-500/20'
-                                                        : isPassed
-                                                            ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300'
-                                                            : 'bg-slate-100 text-slate-400 dark:bg-slate-800'
-                                                }`}>
-                                                    {isPassed ? '✓' : idx + 1}
-                                                </div>
-                                                <span className={`mt-1 hidden text-[9px] font-bold sm:block ${
-                                                    isCurrent ? 'text-teal-600 dark:text-teal-400' : 'text-slate-400'
-                                                }`}>
-                                                    {stageLabel(st)}
+                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs">
+                                            <div className="rounded-xl border border-slate-200/60 bg-white p-3 dark:border-slate-800 dark:bg-slate-850">
+                                                <span className="text-[11px] font-bold text-slate-400 block mb-0.5">
+                                                    {t('details.exam', { defaultValue: 'اسم الفحص' })}
+                                                </span>
+                                                <span className="font-black text-sm text-slate-900 dark:text-white">
+                                                    {examName}
                                                 </span>
                                             </div>
-                                        );
-                                    })}
-                                </div>
 
-                                {/* Nursing Lock State Banner */}
-                                {canEditBooking ? (
-                                    <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-teal-50/80 border border-teal-200/70 px-3 py-1.5 text-xs text-teal-900 dark:bg-teal-950/30 dark:border-teal-900/50 dark:text-teal-200">
-                                        <div className="flex items-center gap-1.5 font-bold">
-                                            <Sparkles size={13} className="text-teal-600 shrink-0" />
-                                            <span>{t('details.canOnlyEditBeforeNursing', { defaultValue: 'تعديل بيانات الحجز متاح فقط قبل مرحلة التحضير والتمريض' })}</span>
-                                        </div>
-                                        <span className="rounded bg-teal-100/90 px-2 py-0.5 text-[10px] font-black text-teal-800 dark:bg-teal-900/60 dark:text-teal-200">
-                                            متاح للتعديل السريري
-                                        </span>
-                                    </div>
-                                ) : (
-                                    <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50/80 border border-amber-200/80 px-3 py-1.5 text-xs text-amber-900 dark:bg-amber-950/30 dark:border-amber-900/50 dark:text-amber-200">
-                                        <div className="flex items-center gap-1.5 font-bold">
-                                            <Lock size={13} className="text-amber-600 shrink-0" />
-                                            <span>{t('details.cannotEditAfterNursing', { defaultValue: 'تم تحويل الحالة للتمريض / الإجراء السريري - تعديل الحجز مقفل للحفاظ على سلامة المسار الطبي' })}</span>
-                                        </div>
-                                        <span className="inline-flex items-center gap-1 rounded bg-amber-100/90 px-2 py-0.5 text-[10px] font-black text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
-                                            <Lock size={10} />
-                                            مقفل سريرياً
-                                        </span>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Patient & Exam Grid */}
-                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                {/* Patient info card */}
-                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                                    <div className="mb-2.5 flex items-center justify-between">
-                                        <div className="flex items-center gap-2 text-xs font-black text-slate-700 dark:text-slate-300">
-                                            <User size={14} className="text-teal-600" />
-                                            <span>{t('details.patientInfo', { defaultValue: 'بيانات المريض' })}</span>
-                                        </div>
-                                        {orderNumber && (
-                                            <span className="text-[10.5px] font-mono font-bold text-slate-400">
-                                                {t('details.orderNumber', { defaultValue: 'الدور' })}: #{orderNumber}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="space-y-1.5 text-xs">
-                                        <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                                            <span>{t('details.phone', { defaultValue: 'الهاتف' })}:</span>
-                                            <span className="font-mono text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                                                <Phone size={11} className="text-slate-400" />
-                                                {phone || '-'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                                            <span>{t('details.genderAge', { defaultValue: 'النوع / العمر' })}:</span>
-                                            <span className="text-slate-800 dark:text-slate-200 font-semibold">
-                                                {gender ? (gender === 'Male' || gender === 'ذكر' ? 'ذكر' : 'أنثى') : '-'} / {age ? `${age} سنة` : '-'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                                            <span>{t('details.waitingTime', { defaultValue: 'مدة الانتظار' })}:</span>
-                                            <span className={`font-mono font-bold ${isOverdue ? 'text-rose-600' : 'text-slate-800 dark:text-slate-200'}`}>
-                                                {formatDuration(waitingMinutes, locale)}
-                                            </span>
-                                        </div>
-                                        {createdByName && (
-                                            <div className="flex justify-between text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800/60 text-[11px]">
-                                                <span>{t('details.createdBy', { defaultValue: 'أُنشئ بواسطة' })}:</span>
-                                                <span className="text-slate-700 dark:text-slate-300 font-medium">
-                                                    {createdByName} {appointmentSource ? `(${appointmentSource})` : ''}
+                                            <div className="rounded-xl border border-slate-200/60 bg-white p-3 dark:border-slate-800 dark:bg-slate-850">
+                                                <span className="text-[11px] font-bold text-slate-400 block mb-0.5">
+                                                    {t('details.machine', { defaultValue: 'الجهاز / الغرفة السريرية' })}
+                                                </span>
+                                                <span className="font-black text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                                                    <span>{machineName}</span>
+                                                    {roomNumber && (
+                                                        <span className="text-xs font-bold text-teal-600 dark:text-teal-400">
+                                                            (غرفة {roomNumber})
+                                                        </span>
+                                                    )}
                                                 </span>
                                             </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Exam info card */}
-                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                                    <div className="mb-2.5 flex items-center justify-between">
-                                        <div className="flex items-center gap-2 text-xs font-black text-slate-700 dark:text-slate-300">
-                                            <Calendar size={14} className="text-teal-600" />
-                                            <span>{t('details.examInfo', { defaultValue: 'بيانات الفحص والخدمة' })}</span>
                                         </div>
-                                        {bodyPart && (
-                                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                                {bodyPart}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="space-y-1.5 text-xs">
-                                        <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                                            <span>{t('details.exam', { defaultValue: 'الفحص' })}:</span>
-                                            <span className="font-bold text-slate-800 dark:text-slate-200">{examName}</span>
-                                        </div>
-                                        <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                                            <span>{t('details.machine', { defaultValue: 'الجهاز / الغرفة' })}:</span>
-                                            <span className="text-slate-800 dark:text-slate-200 font-medium flex items-center gap-1">
-                                                {machineName}
-                                                {roomNumber && <span className="text-[10px] text-teal-600 font-bold">({roomNumber})</span>}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                                            <span>{t('details.contrast', { defaultValue: 'صبغة' })}:</span>
-                                            <span className={contrastRequired ? 'font-bold text-amber-600 flex items-center gap-1' : 'text-slate-400'}>
-                                                {contrastRequired ? (
-                                                    <>
-                                                        <AlertTriangle size={11} className="text-amber-500" />
-                                                        <span>مطلوبة (حقن وريدي)</span>
-                                                    </>
-                                                ) : 'غير مطلوبة'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800/60 text-[11px]">
-                                            <span>{t('details.fasting', { defaultValue: 'الصيام' })}:</span>
-                                            <span className={fastingRequired ? 'font-bold text-amber-600' : 'text-slate-600 dark:text-slate-400'}>
-                                                {fastingRequired ? t('details.fastingRequired', { hours: fastingHours, defaultValue: `مطلوب صيام (${fastingHours} ساعات)` }) : t('details.fastingNotRequired', { defaultValue: 'غير مطلوب' })}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* ASSIGNED CLINICAL TEAM CARD */}
-                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                                <div className="mb-2.5 flex items-center justify-between">
-                                    <div className="flex items-center gap-2 text-xs font-black text-slate-700 dark:text-slate-300">
-                                        <UsersRound size={14} className="text-teal-600" />
-                                        <span>{t('details.assignedTeam', { defaultValue: 'الطاقم المسند إليه' })}</span>
                                     </div>
 
-                                    {/* Edit assignment button only allowed before transfer to nursing */}
-                                    {canEditBooking ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsEditing(true)}
-                                            className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-600 hover:text-teal-700 dark:text-teal-400 transition"
-                                        >
-                                            <Edit3 size={11} />
-                                            <span>{t('details.editBooking', { defaultValue: 'تعديل الإسناد' })}</span>
-                                        </button>
-                                    ) : (
-                                        <span
-                                            className="inline-flex items-center gap-1 text-[10.5px] font-bold text-slate-400"
-                                            title={t('details.cannotEditAfterNursing', { defaultValue: 'لا يمكن تعديل الإسناد بعد تحويل الحالة للتمريض' })}
-                                        >
-                                            <Lock size={10} />
-                                            <span>{t('details.lockedAfterNursing', { defaultValue: 'إسناد مقفل' })}</span>
-                                        </span>
+                                    {/* Report Track & Modality Path */}
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+                                        <div className="flex items-center justify-between mb-2.5">
+                                            <span className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                                <Layers size={15} className="text-teal-600" />
+                                                <span>{isRtl ? 'مسار الفحص والتقرير' : 'Report & Imaging Track'}</span>
+                                            </span>
+                                            <span className={`rounded-lg px-2.5 py-0.5 text-xs font-black ${
+                                                isImagesOnly
+                                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                            }`}>
+                                                {isImagesOnly
+                                                    ? (isRtl ? 'أفلام فقط (إرجاء التقرير)' : 'Images Only')
+                                                    : (isRtl ? 'تقرير تشخيصي كامل' : 'Full Diagnostic Report')}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+                                            {isImagesOnly
+                                                ? (isRtl
+                                                    ? 'تم تحديد هذا الفحص كمسار «أفلام فقط» بناء على رغبة المريض، ويصبح الفحص منجزاً عند تسليم الصور مع إمكانية طلب تقرير تشخيصي لاحقاً.'
+                                                    : 'This case is marked as Images Only track. Patient will receive films directly and can request a report later.')
+                                                : (isRtl
+                                                    ? 'المسار القياسي: يتطلب كتابة واعتماد تقرير تشخيصي كامل من طبيب الأشعة المختص قبل إغلاق الحالة وتسليمها.'
+                                                    : 'Standard workflow: requires diagnostic reading and report finalization before release.')}
+                                        </p>
+                                    </div>
+
+                                    {/* Clinical alerts: Contrast & Fasting */}
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                        {/* Fasting Card */}
+                                        <div className={`rounded-2xl border p-4 ${
+                                            fastingRequired
+                                                ? 'border-amber-200 bg-amber-50/60 dark:border-amber-900/50 dark:bg-amber-950/20'
+                                                : 'border-slate-200/80 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/60'
+                                        }`}>
+                                            <div className="flex items-center gap-2 mb-1.5">
+                                                <Clock size={15} className={fastingRequired ? 'text-amber-600' : 'text-slate-400'} />
+                                                <span className="text-xs font-black text-slate-800 dark:text-slate-200">
+                                                    {t('details.fasting', { defaultValue: 'تعليمات الصيام' })}
+                                                </span>
+                                            </div>
+                                            <p className={`text-xs font-bold ${fastingRequired ? 'text-amber-800 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                                                {fastingRequired
+                                                    ? t('details.fastingRequired', { hours: fastingHours, defaultValue: `مطلوب صيام ${fastingHours} ساعات قبل موعد الفحص` })
+                                                    : t('details.fastingNotRequired', { defaultValue: 'لا يتطلب هذا الفحص صياماً مسبقاً' })}
+                                            </p>
+                                        </div>
+
+                                        {/* Contrast Alert Card */}
+                                        <div className={`rounded-2xl border p-4 ${
+                                            contrastRequired
+                                                ? 'border-rose-200 bg-rose-50/60 dark:border-rose-900/50 dark:bg-rose-950/20'
+                                                : 'border-slate-200/80 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/60'
+                                        }`}>
+                                            <div className="flex items-center gap-2 mb-1.5">
+                                                <AlertTriangle size={15} className={contrastRequired ? 'text-rose-600' : 'text-slate-400'} />
+                                                <span className="text-xs font-black text-slate-800 dark:text-slate-200">
+                                                    {t('details.contrast', { defaultValue: 'حقن الصبغة الوريدية' })}
+                                                </span>
+                                            </div>
+                                            <p className={`text-xs font-bold ${contrastRequired ? 'text-rose-800 dark:text-rose-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                                                {contrastRequired
+                                                    ? 'يتطلب صبغة - يلزم التأكد من وظائف الكلى (Creatinine) والكانيولا'
+                                                    : 'فحص عادي بدون حقن صبغة'}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Preparation Instructions if present */}
+                                    {prepInstructions && (
+                                        <div className="rounded-2xl border border-teal-200/80 bg-teal-50/50 p-4 dark:border-teal-900/60 dark:bg-teal-950/20">
+                                            <div className="flex items-center gap-2 mb-1.5 text-xs font-black text-teal-900 dark:text-teal-200">
+                                                <Info size={15} className="text-teal-600" />
+                                                <span>{t('details.prepInstructions', { defaultValue: 'تعليمات التحضير الخاصة' })}:</span>
+                                            </div>
+                                            <p className="text-xs font-medium text-teal-800 dark:text-teal-300 leading-relaxed">
+                                                {prepInstructions}
+                                            </p>
+                                        </div>
                                     )}
                                 </div>
+                            )}
 
-                                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                                    {/* Nurse */}
-                                    <div className="flex items-center gap-2.5 rounded-xl border border-slate-200/70 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-850">
-                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 ring-1 ring-teal-200/50 dark:bg-teal-950/40 dark:text-teal-300 dark:ring-teal-900/40">
-                                            <Stethoscope size={14} />
-                                        </span>
-                                        <div className="min-w-0 flex-1">
-                                            <span className="block text-[10px] font-bold text-slate-400">
-                                                {t('details.nurse', { defaultValue: 'التمريض' })}
+                            {/* TAB 2: CARE TEAM & ASSIGNMENTS */}
+                            {activeTab === 'team' && (
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                            {t('details.teamDesc', { defaultValue: 'أعضاء الطاقم السريري ومسؤولو المتابعة للحالة' })}
+                                        </p>
+                                        {canEditBooking ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsEditing(true)}
+                                                className="inline-flex items-center gap-1 text-xs font-bold text-teal-600 hover:text-teal-700 dark:text-teal-400"
+                                            >
+                                                <Edit3 size={12} />
+                                                <span>{t('details.editTeam', { defaultValue: 'تعديل الإسناد' })}</span>
+                                            </button>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400">
+                                                <Lock size={11} />
+                                                <span>{t('details.lockedAfterNursing', { defaultValue: 'الإسناد مقفل' })}</span>
                                             </span>
-                                            <span className="block truncate text-xs font-bold text-slate-800 dark:text-slate-200">
-                                                {nurseName || <span className="italic font-normal text-slate-400">{t('details.unassigned', { defaultValue: 'غير مسند' })}</span>}
-                                            </span>
-                                        </div>
+                                        )}
                                     </div>
 
-                                    {/* Technician */}
-                                    <div className="flex items-center gap-2.5 rounded-xl border border-slate-200/70 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-850">
-                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700 ring-1 ring-blue-200/50 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900/40">
-                                            <ScanLine size={14} />
-                                        </span>
-                                        <div className="min-w-0 flex-1">
-                                            <span className="block text-[10px] font-bold text-slate-400">
-                                                {t('details.technician', { defaultValue: 'فني الأشعة' })}
-                                            </span>
-                                            <span className="block truncate text-xs font-bold text-slate-800 dark:text-slate-200">
-                                                {technicianName || <span className="italic font-normal text-slate-400">{t('details.unassigned', { defaultValue: 'غير مسند' })}</span>}
-                                            </span>
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                        {/* Nurse Card */}
+                                        <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800 dark:bg-slate-850 flex items-start gap-3">
+                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300">
+                                                <Stethoscope size={18} />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <span className="text-[11px] font-bold text-slate-400 block">
+                                                    {t('details.nurse', { defaultValue: 'التمريض' })}
+                                                </span>
+                                                <span className="text-xs font-black text-slate-900 dark:text-white block truncate">
+                                                    {nurseName || <span className="font-normal italic text-slate-400">{t('details.unassigned', { defaultValue: 'غير مسند' })}</span>}
+                                                </span>
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    {/* Radiologist */}
-                                    <div className="flex items-center gap-2.5 rounded-xl border border-slate-200/70 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-850">
-                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-700 ring-1 ring-purple-200/50 dark:bg-purple-950/40 dark:text-purple-300 dark:ring-purple-900/40">
-                                            <UserCheck size={14} />
-                                        </span>
-                                        <div className="min-w-0 flex-1">
-                                            <span className="block text-[10px] font-bold text-slate-400">
-                                                {t('details.radiologist', { defaultValue: 'طبيب الأشعة' })}
-                                            </span>
-                                            <span className="block truncate text-xs font-bold text-slate-800 dark:text-slate-200">
-                                                {radiologistName || <span className="italic font-normal text-slate-400">{t('details.unassigned', { defaultValue: 'غير مسند' })}</span>}
-                                            </span>
+                                        {/* Technician Card */}
+                                        <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800 dark:bg-slate-850 flex items-start gap-3">
+                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                                                <ScanLine size={18} />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <span className="text-[11px] font-bold text-slate-400 block">
+                                                    {t('details.technician', { defaultValue: 'فني الأشعة' })}
+                                                </span>
+                                                <span className="text-xs font-black text-slate-900 dark:text-white block truncate">
+                                                    {technicianName || <span className="font-normal italic text-slate-400">{t('details.unassigned', { defaultValue: 'غير مسند' })}</span>}
+                                                </span>
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    {/* Receptionist / Referring Doctor */}
-                                    <div className="flex items-center gap-2.5 rounded-xl border border-slate-200/70 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-850">
-                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/50 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900/40">
-                                            <User size={14} />
-                                        </span>
-                                        <div className="min-w-0 flex-1">
-                                            <span className="block text-[10px] font-bold text-slate-400">
-                                                {referringDoctorName ? t('details.referringDoctor', { defaultValue: 'المحول' }) : t('details.receptionist', { defaultValue: 'الاستقبال' })}
-                                            </span>
-                                            <span className="block truncate text-xs font-bold text-slate-800 dark:text-slate-200">
-                                                {referringDoctorName || receptionistName || <span className="italic font-normal text-slate-400">-</span>}
-                                            </span>
+                                        {/* Radiologist Card */}
+                                        <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800 dark:bg-slate-850 flex items-start gap-3">
+                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
+                                                <UserCheck size={18} />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <span className="text-[11px] font-bold text-slate-400 block">
+                                                    {t('details.radiologist', { defaultValue: 'طبيب الأشعة' })}
+                                                </span>
+                                                <span className="text-xs font-black text-slate-900 dark:text-white block truncate">
+                                                    {radiologistName || <span className="font-normal italic text-slate-400">{t('details.unassigned', { defaultValue: 'غير مسند' })}</span>}
+                                                </span>
+                                            </div>
                                         </div>
+
+                                        {/* Receptionist Card */}
+                                        <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800 dark:bg-slate-850 flex items-start gap-3">
+                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                                <User size={18} />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <span className="text-[11px] font-bold text-slate-400 block">
+                                                    {t('details.receptionist', { defaultValue: 'موظف الاستقبال' })}
+                                                </span>
+                                                <span className="text-xs font-black text-slate-900 dark:text-white block truncate">
+                                                    {receptionistName || <span className="font-normal italic text-slate-400">{t('details.unassigned', { defaultValue: 'غير مسند' })}</span>}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Referring Doctor (if available) */}
+                                        {referringDoctorName && (
+                                            <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-2xs dark:border-slate-800 dark:bg-slate-850 flex items-start gap-3 sm:col-span-2">
+                                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300">
+                                                    <Building2 size={18} />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <span className="text-[11px] font-bold text-slate-400 block">
+                                                        {t('details.referringDoctor', { defaultValue: 'الطبيب المحول / الجهة الخارجية' })}
+                                                    </span>
+                                                    <span className="text-xs font-black text-slate-900 dark:text-white block truncate">
+                                                        {referringDoctorName}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                            </div>
+                            )}
 
-                            {/* Financial & Coverage Details */}
-                            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                                <div className="mb-2.5 flex items-center justify-between">
-                                    <div className="flex items-center gap-2 text-xs font-black text-slate-700 dark:text-slate-300">
-                                        <CreditCard size={14} className="text-teal-600" />
-                                        <span>{t('details.financialTitle', { defaultValue: 'الموقف المالي والفاتورة' })}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                            {isRtl ? coverage.labelAr : coverage.labelEn}
-                                        </span>
-                                        <span className={`rounded-lg px-2 py-0.5 text-[10.5px] font-black ${
+                            {/* TAB 3: BILLING & FINANCIALS */}
+                            {activeTab === 'billing' && canViewInvoices && (
+                                <div className="space-y-4">
+                                    {/* Insurance & Coverage Banner */}
+                                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <CreditCard size={16} className="text-teal-600" />
+                                                <span className="text-xs font-black text-slate-900 dark:text-white">
+                                                    {isRtl ? coverage.labelAr : coverage.labelEn}
+                                                </span>
+                                                {coverage.providerName && (
+                                                    <span className="rounded-lg bg-teal-50 px-2 py-0.5 text-[11px] font-bold text-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
+                                                        {coverage.providerName}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {coverage.policyNumber && (
+                                                <div className="mt-1 text-[11px] text-slate-400 font-mono">
+                                                    {t('details.policyNumber', { defaultValue: 'رقم البوليصة' })}: {coverage.policyNumber}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <span className={`rounded-xl px-3 py-1 text-xs font-black ${
                                             !hasInvoice
                                                 ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                                                 : balanceAmount <= 0
-                                                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                                                    : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
+                                                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
                                         }`}>
-                                            {!hasInvoice ? 'بدون فاتورة' : balanceAmount <= 0 ? 'مسدد بالكامل' : 'يوجد متبقي'}
+                                            {!hasInvoice ? 'بدون فاتورة' : balanceAmount <= 0 ? 'مسدد بالكامل ✓' : 'يوجد متبقي للتحصيل'}
                                         </span>
                                     </div>
-                                </div>
 
-                                {hasInvoice ? (
-                                    <div className="space-y-2 border-t border-slate-100 pt-2.5 text-xs dark:border-slate-800">
-                                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-                                            {invoice?.invoice_number && (
-                                                <div>
-                                                    <span>{t('details.invoiceNumber', { defaultValue: 'رقم الفاتورة' })}: </span>
-                                                    <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{invoice.invoice_number}</span>
+                                    {/* Key Financial Metric Cards */}
+                                    {hasInvoice ? (
+                                        <>
+                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                                <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs dark:border-slate-800 dark:bg-slate-850">
+                                                    <span className="text-[11px] font-bold text-slate-400 block mb-1">
+                                                        {t('details.total', { defaultValue: 'إجمالي الفاتورة' })}
+                                                    </span>
+                                                    <span className="font-mono text-base font-black text-slate-900 dark:text-white">
+                                                        {totalAmount.toLocaleString()} ج.م
+                                                    </span>
+                                                    {invoice?.invoice_number && (
+                                                        <span className="text-[10px] text-slate-400 block mt-1 font-mono">
+                                                            #{invoice.invoice_number}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs dark:border-slate-800 dark:bg-slate-850">
+                                                    <span className="text-[11px] font-bold text-slate-400 block mb-1">
+                                                        {t('details.paid', { defaultValue: 'المبلغ المدفوع' })}
+                                                    </span>
+                                                    <span className="font-mono text-base font-black text-emerald-600 dark:text-emerald-400">
+                                                        {paidAmount.toLocaleString()} ج.م
+                                                    </span>
+                                                </div>
+
+                                                <div className={`rounded-2xl border p-4 shadow-2xs ${
+                                                    balanceAmount > 0
+                                                        ? 'border-amber-200 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20'
+                                                        : 'border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-850'
+                                                }`}>
+                                                    <span className="text-[11px] font-bold text-slate-400 block mb-1">
+                                                        {t('details.balance', { defaultValue: 'المتبقي للتحصيل' })}
+                                                    </span>
+                                                    <span className={`font-mono text-base font-black ${
+                                                        balanceAmount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'
+                                                    }`}>
+                                                        {balanceAmount.toLocaleString()} ج.م
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {balanceAmount > 0 && onOpenPayment && (
+                                                <div className="flex justify-end pt-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            onOpenPayment(invoice);
+                                                            onClose();
+                                                        }}
+                                                        className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white shadow-sm hover:bg-emerald-700 transition cursor-pointer"
+                                                    >
+                                                        <CreditCard size={14} />
+                                                        <span>{t('billing.collectPayment', { defaultValue: 'تحصيل الرصيد المتبقي' })}</span>
+                                                    </button>
                                                 </div>
                                             )}
-                                            {coverage.providerName && (
-                                                <div>
-                                                    <span>{t('details.insuranceProvider', { defaultValue: 'الجهة' })}: </span>
-                                                    <span className="font-bold text-teal-700 dark:text-teal-300">{coverage.providerName}</span>
-                                                </div>
+                                        </>
+                                    ) : (
+                                        <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center dark:border-slate-800">
+                                            <CreditCard size={32} className="mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+                                            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                                                {t('table.noInvoice', { defaultValue: 'لم يتم إصدار فاتورة لهذا الموعد بعد' })}
+                                            </p>
+                                            {canCreate && appointment && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        createAppointmentInvoice(appointment);
+                                                        onClose();
+                                                    }}
+                                                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-800 transition dark:bg-slate-800 dark:hover:bg-slate-700 cursor-pointer"
+                                                >
+                                                    <CreditCard size={13} />
+                                                    <span>{t('table.createInvoice', { defaultValue: 'إصدار فاتورة الآن' })}</span>
+                                                </button>
                                             )}
-                                            {coverage.policyNumber && (
-                                                <div>
-                                                    <span>{t('details.policyNumber', { defaultValue: 'رقم البوليصة' })}: </span>
-                                                    <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{coverage.policyNumber}</span>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="grid grid-cols-3 gap-3 pt-1">
-                                            <div>
-                                                <span className="block text-[10px] text-slate-400">{t('details.total', { defaultValue: 'الإجمالي' })}</span>
-                                                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{totalAmount.toLocaleString()} ج.م</span>
-                                            </div>
-                                            <div>
-                                                <span className="block text-[10px] text-slate-400">{t('details.paid', { defaultValue: 'المدفوع' })}</span>
-                                                <span className="font-mono font-bold text-emerald-600">{paidAmount.toLocaleString()} ج.م</span>
-                                            </div>
-                                            <div>
-                                                <span className="block text-[10px] text-slate-400">{t('details.balance', { defaultValue: 'المتبقي' })}</span>
-                                                <span className={`font-mono font-bold ${balanceAmount > 0 ? 'text-amber-600' : 'text-slate-500'}`}>{balanceAmount.toLocaleString()} ج.م</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="mt-2 text-center text-xs text-slate-400">
-                                        {t('table.noInvoice', { defaultValue: 'لم تصدر فاتورة حتى الآن لهذا الموعد.' })}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Contrast Clinical Alert Warning Banner */}
-                            {contrastRequired && (
-                                <div className="flex items-start gap-2.5 rounded-2xl border border-amber-300/80 bg-amber-50/70 p-3.5 dark:border-amber-800/80 dark:bg-amber-950/30">
-                                    <AlertTriangle size={18} className="shrink-0 text-amber-600 mt-0.5" />
-                                    <div className="text-xs">
-                                        <span className="block font-black text-amber-800 dark:text-amber-200">
-                                            {t('details.medicalAlerts', { defaultValue: 'تنبيهات ومحاذير طبية' })}:
-                                        </span>
-                                        <p className="mt-0.5 text-amber-700 dark:text-amber-300 font-medium leading-relaxed">
-                                            {t('details.allergyAlert', { defaultValue: 'تنبيه سريري: الفحص يتطلب حقن صبغة وريدية - يلزم التأكد من فحص وظائف الكلى (Creatinine) وتركيب الكانيولا المناسبة' })}
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Preparation Instructions if present */}
-                            {prepInstructions && (
-                                <div className="flex items-start gap-2.5 rounded-2xl border border-teal-200/80 bg-teal-50/50 p-3.5 dark:border-teal-900/60 dark:bg-teal-950/20">
-                                    <Info size={17} className="shrink-0 text-teal-600 mt-0.5" />
-                                    <div className="text-xs">
-                                        <span className="block font-black text-teal-800 dark:text-teal-200">
-                                            {t('details.prepInstructions', { defaultValue: 'تعليمات التحضير الخاصة' })}:
-                                        </span>
-                                        <p className="mt-0.5 text-teal-700 dark:text-teal-300 font-medium leading-relaxed">
-                                            {prepInstructions}
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Clinical Indication & Notes */}
-                            {(clinicalIndication || notes) && (
-                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60 space-y-2">
-                                    {clinicalIndication && (
-                                        <div>
-                                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                                {t('details.clinicalIndication', { defaultValue: 'الداعي السريري' })}
-                                            </span>
-                                            <p className="mt-0.5 text-xs font-medium text-slate-700 dark:text-slate-300">{clinicalIndication}</p>
-                                        </div>
-                                    )}
-                                    {notes && (
-                                        <div>
-                                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                                {t('details.notes', { defaultValue: 'ملاحظات وتوجيهات الحالة' })}
-                                            </span>
-                                            <p className="mt-0.5 text-xs font-medium text-slate-700 dark:text-slate-300">{notes}</p>
                                         </div>
                                     )}
                                 </div>
                             )}
-                        </>
+
+                            {/* TAB 4: CLINICAL NOTES & AUDIT */}
+                            {activeTab === 'notes' && (
+                                <div className="space-y-4">
+                                    {/* Clinical Indication */}
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+                                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                                            {t('details.clinicalIndication', { defaultValue: 'الداعي السريري (Clinical Indication)' })}
+                                        </span>
+                                        <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                                            {clinicalIndication || <span className="italic text-slate-400 font-normal">لم يتم تدوين داعٍ سريري</span>}
+                                        </p>
+                                    </div>
+
+                                    {/* Case Notes */}
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+                                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                                            {t('details.notes', { defaultValue: 'ملاحظات وتوجيهات الحالة' })}
+                                        </span>
+                                        <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                                            {notes || <span className="italic text-slate-400 font-normal">لا توجد ملاحظات إضافية</span>}
+                                        </p>
+                                    </div>
+
+                                    {/* Audit & Origin metadata */}
+                                    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 dark:border-slate-800 dark:bg-slate-850">
+                                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-2">
+                                            {t('details.bookingInfo', { defaultValue: 'بيانات التسجيل والانتظار' })}
+                                        </span>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                                            <div>
+                                                <span className="text-slate-400 block text-[10px]">{t('details.createdBy', { defaultValue: 'أُنشئ بواسطة' })}</span>
+                                                <span className="font-bold text-slate-700 dark:text-slate-300">
+                                                    {createdByName || '-'} {appointmentSource ? `(${appointmentSource})` : ''}
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <span className="text-slate-400 block text-[10px]">{t('details.waitingTime', { defaultValue: 'مدة الانتظار الحالية' })}</span>
+                                                <span className={`font-mono font-bold ${isOverdue ? 'text-rose-600' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                    {formatDuration(waitingMinutes, locale)}
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <span className="text-slate-400 block text-[10px]">{t('details.phone', { defaultValue: 'رقم الهاتف' })}</span>
+                                                <span className="font-mono font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                                                    <Phone size={11} className="text-slate-400" />
+                                                    {phone || '-'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
                     )}
                 </div>
 
-                {/* Footer Action Controls */}
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/60 px-6 py-3.5 dark:border-slate-800 dark:bg-slate-950/40">
+                {/* 5. BOTTOM ACTION FOOTER */}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/80 px-5 py-3.5 dark:border-slate-800 dark:bg-slate-950/60">
                     {isEditing ? (
                         <>
-                            <div className="text-xs text-slate-400">
+                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                                 {t('details.editModalTitle', { defaultValue: 'تعديل بيانات الحجز والموعد' })}
-                            </div>
+                            </span>
                             <div className="flex items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setIsEditing(false)}
                                     disabled={isSaving}
-                                    className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                    className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 cursor-pointer"
                                 >
                                     {t('details.cancelEdit', { defaultValue: 'إلغاء' })}
                                 </button>
@@ -1327,7 +1559,7 @@ const ReceptionCaseDetailsModal = ({
                                     type="button"
                                     onClick={handleSaveEdit}
                                     disabled={isSaving}
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-600 px-5 text-xs font-black text-white shadow-sm transition hover:bg-teal-700 active:scale-95 disabled:opacity-50 cursor-pointer"
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-600 px-5 text-xs font-black text-white shadow-xs hover:bg-teal-700 active:scale-95 disabled:opacity-50 cursor-pointer"
                                 >
                                     <Save size={14} />
                                     <span>{isSaving ? t('details.saving', { defaultValue: 'جارٍ الحفظ...' }) : t('details.saveChanges', { defaultValue: 'حفظ التعديلات' })}</span>
@@ -1336,12 +1568,12 @@ const ReceptionCaseDetailsModal = ({
                         </>
                     ) : (
                         <>
-                            {/* Print buttons & Edit shortcut */}
+                            {/* Left Print & Edit Toolbar */}
                             <div className="flex flex-wrap items-center gap-1.5">
                                 <button
                                     type="button"
                                     onClick={() => handlePrint('sticker')}
-                                    className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition"
+                                    className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition cursor-pointer"
                                 >
                                     <Tag size={13} className="text-teal-600" />
                                     <span>{t('queue.sticker', { defaultValue: 'ملصق' })}</span>
@@ -1349,7 +1581,7 @@ const ReceptionCaseDetailsModal = ({
                                 <button
                                     type="button"
                                     onClick={() => handlePrint('slip')}
-                                    className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition"
+                                    className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition cursor-pointer"
                                 >
                                     <ClipboardList size={13} className="text-emerald-600" />
                                     <span>{t('queue.bookingSlip', { defaultValue: 'شيت الفحص' })}</span>
@@ -1358,35 +1590,15 @@ const ReceptionCaseDetailsModal = ({
                                     <button
                                         type="button"
                                         onClick={() => handlePrint('receipt')}
-                                        className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition"
+                                        className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition cursor-pointer"
                                     >
                                         <FileText size={13} className="text-cyan-600" />
                                         <span>{t('queue.receipt', { defaultValue: 'الإيصال' })}</span>
                                     </button>
                                 )}
-
-                                {/* Edit Booking in footer if allowed */}
-                                {canEditBooking ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsEditing(true)}
-                                        className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-2.5 text-xs font-bold text-teal-700 shadow-2xs hover:bg-teal-100 dark:border-teal-900/40 dark:bg-teal-950/40 dark:text-teal-300 transition"
-                                    >
-                                        <CalendarClock size={13} className="text-teal-600" />
-                                        <span>{t('details.editBooking', { defaultValue: 'تعديل الحجز' })}</span>
-                                    </button>
-                                ) : (
-                                    <div
-                                        title={t('details.cannotEditAfterNursing', { defaultValue: 'لا يمكن تعديل الحجز بعد تحويل الحالة للتمريض أو بدء التجهيز السريري' })}
-                                        className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200/80 bg-slate-100/90 px-2.5 text-xs font-bold text-slate-400 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-500 cursor-not-allowed"
-                                    >
-                                        <Lock size={12} />
-                                        <span>{t('details.lockedAfterNursing', { defaultValue: 'الحجز مقفل' })}</span>
-                                    </div>
-                                )}
                             </div>
 
-                            {/* Operational action buttons */}
+                            {/* Right Operational Stage Actions */}
                             <div className="flex items-center gap-2">
                                 {stage === 'Scheduled' && onMove && (
                                     <button
@@ -1395,9 +1607,9 @@ const ReceptionCaseDetailsModal = ({
                                             onMove({ exam_id: queue?.exam_id || appointment?.exam_id, appointment_id: appointment?.appointment_id || queue?.appointment_id, queue_stage: 'Scheduled' }, 'Arrived');
                                             onClose();
                                         }}
-                                        className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-600 px-4 text-xs font-black text-white shadow-sm transition hover:bg-teal-700 active:scale-95"
+                                        className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-600 px-4 text-xs font-black text-white shadow-xs hover:bg-teal-700 active:scale-95 transition cursor-pointer"
                                     >
-                                        <CheckCircle2 size={13} />
+                                        <CheckCircle2 size={14} />
                                         <span>{t('queue.arrived', { defaultValue: 'تسجيل وصول' })}</span>
                                     </button>
                                 )}
@@ -1409,9 +1621,9 @@ const ReceptionCaseDetailsModal = ({
                                             createAppointmentInvoice(appointment);
                                             onClose();
                                         }}
-                                        className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-slate-900 px-4 text-xs font-black text-white shadow-sm transition hover:bg-slate-800 active:scale-95 dark:bg-slate-700 dark:hover:bg-slate-600"
+                                        className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-slate-900 px-4 text-xs font-black text-white shadow-xs hover:bg-slate-800 active:scale-95 dark:bg-slate-700 dark:hover:bg-slate-600 transition cursor-pointer"
                                     >
-                                        <CreditCard size={13} />
+                                        <CreditCard size={14} />
                                         <span>{t('table.createInvoice', { defaultValue: 'إنشاء فاتورة' })}</span>
                                     </button>
                                 )}
@@ -1423,9 +1635,9 @@ const ReceptionCaseDetailsModal = ({
                                             onOpenPayment(invoice);
                                             onClose();
                                         }}
-                                        className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-xs font-black text-white shadow-sm transition hover:bg-emerald-700 active:scale-95"
+                                        className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-xs font-black text-white shadow-xs hover:bg-emerald-700 active:scale-95 transition cursor-pointer"
                                     >
-                                        <CreditCard size={13} />
+                                        <CreditCard size={14} />
                                         <span>{t('billing.collectPayment', { defaultValue: 'تحصيل الرصيد' })}</span>
                                     </button>
                                 )}
@@ -1433,7 +1645,7 @@ const ReceptionCaseDetailsModal = ({
                                 <button
                                     type="button"
                                     onClick={onClose}
-                                    className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                    className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition cursor-pointer"
                                 >
                                     {t('details.close', { defaultValue: 'إغلاق' })}
                                 </button>
@@ -1441,6 +1653,7 @@ const ReceptionCaseDetailsModal = ({
                         </>
                     )}
                 </div>
+
             </div>
         </div>
     );

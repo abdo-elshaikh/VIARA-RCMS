@@ -5,15 +5,15 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self' ${VITE_OHIF_URL}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+    add_header Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=()" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
 
-    # DICOM/attachment uploads: matches the backend's PACS upload budget
-    # (25 MB/file x 20 files) plus multipart overhead; nginx default is 1 MB
+    # DICOM/attachment uploads: allows the backend's 200 MiB aggregate PACS
+    # budget plus multipart overhead; nginx default is 1 MB
     # which breaks multi-instance DICOM uploads with 413.
     client_max_body_size 250m;
 
@@ -27,6 +27,40 @@ server {
         # Long-running uploads (ClamAV scans) and exports need room.
         proxy_read_timeout 10m;
         proxy_send_timeout 10m;
+    }
+
+    # The pinned OHIF image was built for /. Rewrite its public asset base
+    # while keeping application APIs on this origin's existing /api/ proxy.
+    location /pacs-viewer/ {
+        resolver 127.0.0.11 ipv6=off valid=30s;
+        set $viara_ohif ohif:80;
+        rewrite ^/pacs-viewer/(.*)$ /$1 break;
+        proxy_pass http://$viara_ohif$uri$is_args$args;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Accept-Encoding "";
+        proxy_read_timeout 300s;
+        proxy_buffering off;
+        add_header Content-Security-Policy "frame-ancestors 'self'" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        sub_filter_once off;
+        sub_filter_types application/javascript text/javascript;
+        sub_filter 'src="/' 'src="/pacs-viewer/';
+        sub_filter 'href="/' 'href="/pacs-viewer/';
+        sub_filter "window.PUBLIC_URL = '/';" "window.PUBLIC_URL = '/pacs-viewer/';";
+        sub_filter '__webpack_require__.p = "/";' '__webpack_require__.p = "/pacs-viewer/";';
+        # CSS rewriting must stay separate: sub_filter is case-insensitive,
+        # and applying url(/ to JS would corrupt new URL(/* worker ... */).
+        location ~ \.css$ {
+            set $viara_ohif ohif:80;
+            rewrite ^/pacs-viewer/(.*)$ /$1 break;
+            proxy_pass http://$viara_ohif$uri$is_args$args;
+            sub_filter_types text/css;
+            sub_filter_once off;
+            sub_filter 'url(/' 'url(/pacs-viewer/';
+            sub_filter 'url("/' 'url("/pacs-viewer/';
+        }
     }
 
     location / {

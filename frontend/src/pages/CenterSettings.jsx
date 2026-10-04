@@ -38,14 +38,37 @@ import {
     Search,
     Plus,
     Trash2,
-    HelpCircle
+    HelpCircle,
+    Crown,
+    Layers,
+    SlidersHorizontal,
+    MoreVertical,
+    Edit3,
+    CopyPlus,
+    Wrench,
+    CheckCircle,
+    Radio,
+    Shield,
+    Activity,
+    Stethoscope,
+    LayoutGrid,
+    ListFilter,
+    Table
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { useGetCenterSettingsQuery, useUpdateCenterSettingsMutation } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
-import { normalizeCenterSettings, resolveDocumentIdentity } from '../utils/centerSettings';
+import {
+    normalizeCenterSettings,
+    resolveDocumentIdentity,
+    BRANCH_TYPES,
+    BRANCH_STATUSES,
+    AVAILABLE_MODALITIES,
+    normalizeBranch
+} from '../utils/centerSettings';
 import PageHeader from '../components/ui/PageHeader';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 
 const DEFAULT_HOURS = { start: 6, end: 22, workingDays: [0, 1, 2, 3, 4, 5, 6], holidays: [] };
 const IMAGE_LIMIT_BYTES = 800000;
@@ -62,17 +85,17 @@ const DAYS_OF_WEEK = [
 ];
 
 const COLOR_PRESETS = [
-    { name: 'Emerald Clinical', primary: '#087F5B', secondary: '#327C92', accent: '#F4B942' },
-    { name: 'Cyan Healthcare', primary: '#0284C7', secondary: '#0F766E', accent: '#F59E0B' },
-    { name: 'Indigo Modern', primary: '#4F46E5', secondary: '#0284C7', accent: '#EC4899' },
-    { name: 'Slate Professional', primary: '#334155', secondary: '#0F172A', accent: '#10B981' }
+    { key: 'emerald', primary: '#087F5B', secondary: '#327C92', accent: '#F4B942' },
+    { key: 'cyan', primary: '#0284C7', secondary: '#0F766E', accent: '#F59E0B' },
+    { key: 'indigo', primary: '#4F46E5', secondary: '#0284C7', accent: '#EC4899' },
+    { key: 'slate', primary: '#334155', secondary: '#0F172A', accent: '#10B981' }
 ];
 
 const SHIFT_PRESETS = [
-    { label: 'Standard Day (08:00 - 17:00)', start: 8, end: 17 },
-    { label: 'Clinical Extended (07:00 - 22:00)', start: 7, end: 22 },
-    { label: 'Early Shift (06:00 - 18:00)', start: 6, end: 18 },
-    { label: '24/7 Continuous (00:00 - 24:00)', start: 0, end: 24 }
+    { key: 'standard', start: 8, end: 17 },
+    { key: 'extended', start: 7, end: 22 },
+    { key: 'early', start: 6, end: 18 },
+    { key: 'continuous', start: 0, end: 24 }
 ];
 
 const TAG_CHIPS = [
@@ -105,6 +128,7 @@ const normalizeSettings = (settings = {}) => {
     return {
         ...TEXT_FIELDS.reduce((acc, field) => ({ ...acc, [field]: normalized[field] || '' }), {}),
         center_id: normalized.center_id || 'default',
+        branches: Array.isArray(normalized.branches) ? normalized.branches : [],
         primary_color: normalized.primary_color || normalized.print_settings?.themeColor || '#087F5B',
         secondary_color: normalized.secondary_color || '#327C92',
         accent_color: normalized.accent_color || normalized.homepage_settings?.accentColor || '#F4B942',
@@ -113,6 +137,8 @@ const normalizeSettings = (settings = {}) => {
         currency: normalized.currency || 'EGP',
         vat_enabled: normalized.vat_enabled === true,
         vat_rate: Number(normalized.vat_rate || 0),
+        urgent_priority_fee: Number(normalized.urgent_priority_fee || 0),
+        emergency_priority_fee: Number(normalized.emergency_priority_fee || 0),
         showPoweredByViara: normalized.showPoweredByViara !== false,
         working_hours: {
             start: hours.start ?? DEFAULT_HOURS.start,
@@ -153,11 +179,35 @@ const CenterSettings = ({ embedded = false }) => {
     const [mounted, setMounted] = useState(false);
     const [activeSection, setActiveSection] = useState('organization');
     const [previewTab, setPreviewTab] = useState('all');
+    const [selectedPreviewBranchId, setSelectedPreviewBranchId] = useState('master');
     const [fullModalOpen, setFullModalOpen] = useState(false);
+    const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+    const [branchDeleteId, setBranchDeleteId] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [holidayInput, setHolidayInput] = useState('');
 
+    // Multi-branch state
+    const [branchModalOpen, setBranchModalOpen] = useState(false);
+    const [editingBranch, setEditingBranch] = useState(null);
+    const [branchSearch, setBranchSearch] = useState('');
+    const [branchFilter, setBranchFilter] = useState('all');
+    const [branchViewMode, setBranchViewMode] = useState('grid');
+
     useEffect(() => { setMounted(true); }, []);
+
+    useEffect(() => {
+        if (!fullModalOpen) return undefined;
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') setFullModalOpen(false);
+        };
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [fullModalOpen]);
 
     // IntersectionObserver scroll spy to keep top "Jump to Section" active tab in sync
     useEffect(() => {
@@ -194,9 +244,43 @@ const CenterSettings = ({ embedded = false }) => {
         setSavedForm(next);
     }, [settingsQuery.data]);
 
+    // Construct identity for previews based on selected branch context
+    const effectiveIdentitySettings = useMemo(() => {
+        if (!selectedPreviewBranchId || selectedPreviewBranchId === 'master') {
+            return form;
+        }
+        const branch = (form.branches || []).find((b) => b.id === selectedPreviewBranchId);
+        if (!branch) return form;
+        return {
+            ...form,
+            branch_id: branch.id,
+            branch_code: branch.code,
+            branch_name: branch.name,
+            branch_name_ar: branch.nameAr,
+            branch_display_name: branch.displayName || branch.name,
+            branch_display_name_ar: branch.displayNameAr || branch.nameAr,
+            phone: branch.phone || form.phone,
+            alternative_phone: branch.alternativePhone || form.alternative_phone,
+            hotline: branch.hotline || form.hotline,
+            whatsapp: branch.whatsapp || form.whatsapp,
+            email: branch.email || form.email,
+            address: branch.address || form.address,
+            address_ar: branch.addressAr || form.address_ar,
+            city: branch.city || form.city,
+            governorate: branch.governorate || form.governorate,
+            postal_code: branch.postalCode || form.postal_code,
+            medical_license: branch.medicalLicense || form.medical_license,
+            commercial_registration: branch.commercialRegistration || form.commercial_registration,
+            tax_number: branch.taxNumber || form.tax_number,
+            invoice_prefix: branch.invoicePrefix || form.invoice_prefix,
+            report_header: branch.reportHeaderOverride || form.report_header,
+            report_footer: branch.reportFooterOverride || form.report_footer
+        };
+    }, [form, selectedPreviewBranchId]);
+
     const identity = useMemo(
-        () => resolveDocumentIdentity(form, {}, { language: i18n.language, kind: 'settings-preview' }),
-        [form, i18n.language]
+        () => resolveDocumentIdentity(effectiveIdentitySettings, {}, { language: i18n.language, kind: 'settings-preview' }),
+        [effectiveIdentitySettings, i18n.language]
     );
 
     const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(savedForm), [form, savedForm]);
@@ -225,6 +309,8 @@ const CenterSettings = ({ embedded = false }) => {
                     heroTitle: form.homepage_settings?.heroTitle || form.portal_welcome_message || ''
                 }
             };
+            // Public content is staged and published exclusively in Portal Builder.
+            delete payload.homepage_settings;
             const updated = await updateSettings(payload).unwrap();
             const next = normalizeSettings(updated || payload);
             setForm(next);
@@ -274,10 +360,6 @@ const CenterSettings = ({ embedded = false }) => {
         ...current,
         print_settings: { ...current.print_settings, [field]: value }
     }));
-    const setHomepageField = (field, value) => setForm((current) => ({
-        ...current,
-        homepage_settings: { ...current.homepage_settings, [field]: value }
-    }));
 
     const applyColorPreset = (preset) => {
         setForm((current) => ({
@@ -286,7 +368,7 @@ const CenterSettings = ({ embedded = false }) => {
             secondary_color: preset.secondary,
             accent_color: preset.accent
         }));
-        toast.success(t('messages.paletteApplied', { defaultValue: `Applied ${preset.name} palette` }));
+        toast.success(t('messages.paletteApplied', { preset: t(`branding.presets.${preset.key}`) }));
     };
 
     const applyShiftPreset = (preset) => {
@@ -294,7 +376,7 @@ const CenterSettings = ({ embedded = false }) => {
             ...current,
             working_hours: { ...current.working_hours, start: preset.start, end: preset.end }
         }));
-        toast.success(t('messages.shiftApplied', { defaultValue: `Shift set to ${preset.label}` }));
+        toast.success(t('messages.shiftApplied', { preset: t(`hours.presets.${preset.key}`) }));
     };
 
     const addHoliday = () => {
@@ -353,6 +435,170 @@ const CenterSettings = ({ embedded = false }) => {
         }
     };
 
+    // ── Branch Management Handlers ──────────────────────────────────────────
+
+    const handleOpenAddBranch = () => {
+        const nextIndex = (form.branches?.length || 0) + 1;
+        const newBranch = normalizeBranch({
+            id: `branch-${Date.now()}`,
+            code: `BR-${String(nextIndex).padStart(2, '0')}`,
+            name: '',
+            nameAr: '',
+            displayName: '',
+            displayNameAr: '',
+            type: nextIndex === 1 ? 'main' : 'branch',
+            status: 'active',
+            isMain: nextIndex === 1,
+            phone: form.phone || '',
+            alternativePhone: '',
+            hotline: form.hotline || '',
+            whatsapp: form.whatsapp || '',
+            email: form.email || '',
+            address: form.address || '',
+            addressAr: form.address_ar || '',
+            governorate: form.governorate || '',
+            city: form.city || '',
+            postalCode: form.postal_code || '',
+            medicalLicense: form.medical_license || '',
+            commercialRegistration: form.commercial_registration || '',
+            taxNumber: form.tax_number || '',
+            invoicePrefix: `BR${nextIndex}-INV-`,
+            modalities: ['MRI', 'CT', 'X-RAY', 'ULTRASOUND']
+        }, nextIndex);
+        setEditingBranch(newBranch);
+        setBranchModalOpen(true);
+    };
+
+    const handleOpenEditBranch = (branch) => {
+        setEditingBranch({ ...branch });
+        setBranchModalOpen(true);
+    };
+
+    const handleDuplicateBranch = (branch) => {
+        const count = (form.branches?.length || 0) + 1;
+        const duplicated = normalizeBranch({
+            ...branch,
+            id: `branch-${Date.now()}`,
+            code: `${branch.code || 'BR'}-COPY`,
+            name: `${branch.name} (Copy)`,
+            nameAr: `${branch.nameAr || branch.name} (نسخة)`,
+            displayName: `${branch.displayName || branch.name} (Copy)`,
+            displayNameAr: `${branch.displayNameAr || branch.nameAr || branch.name} (نسخة)`,
+            isMain: false
+        }, count);
+
+        setForm((current) => ({
+            ...current,
+            branches: [...(current.branches || []), duplicated]
+        }));
+        toast.success(t('branches.duplicateBranch'));
+    };
+
+    const handleSaveBranchModal = (updatedBranch) => {
+        if (!updatedBranch.name?.trim()) {
+            toast.error(t('fields.branchNameHint'));
+            return;
+        }
+
+        setForm((current) => {
+            const currentBranches = current.branches || [];
+            const isExisting = currentBranches.some((b) => b.id === updatedBranch.id);
+
+            let nextBranches;
+            if (isExisting) {
+                nextBranches = currentBranches.map((b) => {
+                    if (b.id === updatedBranch.id) {
+                        return { ...updatedBranch };
+                    }
+                    if (updatedBranch.isMain) {
+                        return { ...b, isMain: false };
+                    }
+                    return b;
+                });
+            } else {
+                nextBranches = updatedBranch.isMain
+                    ? [...currentBranches.map((b) => ({ ...b, isMain: false })), updatedBranch]
+                    : [...currentBranches, updatedBranch];
+            }
+
+            // Sync with primary branch if this is main or if it's the only branch
+            const main = nextBranches.find((b) => b.isMain) || nextBranches[0];
+            return {
+                ...current,
+                branches: nextBranches,
+                branch_id: main?.id || current.branch_id,
+                branch_code: main?.code || current.branch_code,
+                branch_name: main?.name || current.branch_name,
+                branch_name_ar: main?.nameAr || current.branch_name_ar,
+                branch_display_name: main?.displayName || current.branch_display_name,
+                branch_display_name_ar: main?.displayNameAr || current.branch_display_name_ar
+            };
+        });
+
+        setBranchModalOpen(false);
+        setEditingBranch(null);
+        toast.success(t('branches.title'));
+    };
+
+    const handleSetPrimaryHQ = (branchId) => {
+        setForm((current) => {
+            const nextBranches = (current.branches || []).map((b) => ({
+                ...b,
+                isMain: b.id === branchId
+            }));
+            const main = nextBranches.find((b) => b.id === branchId);
+            return {
+                ...current,
+                branches: nextBranches,
+                branch_id: main?.id || current.branch_id,
+                branch_code: main?.code || current.branch_code,
+                branch_name: main?.name || current.branch_name,
+                branch_name_ar: main?.nameAr || current.branch_name_ar,
+                branch_display_name: main?.displayName || current.branch_display_name,
+                branch_display_name_ar: main?.displayNameAr || current.branch_display_name_ar
+            };
+        });
+        toast.success(t('branches.setAsMain'));
+    };
+
+    const handleDeleteBranch = (branchId) => {
+        const branchToDelete = (form.branches || []).find((b) => b.id === branchId);
+        if (branchToDelete?.isMain) {
+            toast.error(t('branches.cannotDeleteMain'));
+            return;
+        }
+        if ((form.branches || []).length <= 1) {
+            toast.error(t('branches.cannotDeleteMain'));
+            return;
+        }
+
+        setBranchDeleteId(branchId);
+    };
+
+    const confirmDeleteBranch = () => {
+        setForm((current) => ({
+            ...current,
+            branches: (current.branches || []).filter((b) => b.id !== branchDeleteId)
+        }));
+        setBranchDeleteId(null);
+        toast.success(t('branches.deleteBranch'));
+    };
+
+    const handleToggleBranchStatus = (branchId) => {
+        setForm((current) => ({
+            ...current,
+            branches: (current.branches || []).map((b) => {
+                if (b.id !== branchId) return b;
+                const nextStatus = b.status === 'active'
+                    ? 'maintenance'
+                    : b.status === 'maintenance'
+                        ? 'inactive'
+                        : 'active';
+                return { ...b, status: nextStatus };
+            })
+        }));
+    };
+
     const reset = () => {
         setForm(savedForm);
         toast(t('messages.discarded', { defaultValue: 'Changes discarded' }), { icon: '↩️' });
@@ -368,7 +614,7 @@ const CenterSettings = ({ embedded = false }) => {
         { id: 'branding', icon: Palette, label: t('navigation.branding', { defaultValue: 'Branding' }) },
         { id: 'contact', icon: Phone, label: t('navigation.contact', { defaultValue: 'Contact' }) },
         { id: 'legal', icon: Landmark, label: t('navigation.legal', { defaultValue: 'Legal & Billing' }) },
-        { id: 'branch', icon: Building, label: t('navigation.branches', { defaultValue: 'Branches' }) },
+        { id: 'branch', icon: Building, label: t('navigation.branches', { defaultValue: 'Branches & Medical Chains' }) },
         { id: 'documents', icon: FileText, label: t('navigation.documents', { defaultValue: 'Documents' }) },
         { id: 'portal', icon: Globe2, label: t('navigation.portal', { defaultValue: 'Portal' }) },
         { id: 'hours', icon: Clock3, label: t('navigation.hours', { defaultValue: 'Hours' }) }
@@ -377,6 +623,37 @@ const CenterSettings = ({ embedded = false }) => {
     const filteredSections = searchQuery
         ? navSections.filter((sec) => sec.label.toLowerCase().includes(searchQuery.toLowerCase()) || sec.id.toLowerCase().includes(searchQuery.toLowerCase()))
         : navSections;
+
+    // Filter branches list
+    const filteredBranches = (form.branches || []).filter((b) => {
+        const matchesSearch = !branchSearch
+            || b.name?.toLowerCase().includes(branchSearch.toLowerCase())
+            || b.nameAr?.toLowerCase().includes(branchSearch.toLowerCase())
+            || b.code?.toLowerCase().includes(branchSearch.toLowerCase())
+            || b.city?.toLowerCase().includes(branchSearch.toLowerCase())
+            || b.governorate?.toLowerCase().includes(branchSearch.toLowerCase())
+            || b.managerName?.toLowerCase().includes(branchSearch.toLowerCase());
+
+        if (!matchesSearch) return false;
+
+        if (branchFilter === 'all') return true;
+        if (branchFilter === 'active') return b.status === 'active';
+        if (branchFilter === 'maintenance') return b.status === 'maintenance';
+        if (branchFilter === 'inactive') return b.status === 'inactive';
+        if (branchFilter === 'main') return b.isMain;
+        if (branchFilter === 'satellite') return b.type === 'satellite';
+        if (branchFilter === 'mobile') return b.type === 'mobile';
+        if (branchFilter === 'lab') return b.type === 'lab';
+        return true;
+    });
+
+    const branchStats = {
+        total: form.branches?.length || 0,
+        active: form.branches?.filter((b) => b.status === 'active').length || 0,
+        maintenance: form.branches?.filter((b) => b.status === 'maintenance').length || 0,
+        inactive: form.branches?.filter((b) => b.status === 'inactive').length || 0,
+        mainBranch: form.branches?.find((b) => b.isMain) || form.branches?.[0]
+    };
 
     return (
         <div className={embedded ? 'space-y-5 pb-0' : 'mx-auto max-w-7xl space-y-6 pb-28'}>
@@ -394,7 +671,7 @@ const CenterSettings = ({ embedded = false }) => {
                             <div className="flex flex-wrap items-center gap-2">
                                 <span className="cs-hero-badge">
                                     <BadgeCheck size={11} />
-                                    <span>Facility & Clinical Brand Identity</span>
+                                    <span>{t('header.identityEyebrow')}</span>
                                 </span>
                                 {dirty ? (
                                     <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-300">
@@ -421,7 +698,7 @@ const CenterSettings = ({ embedded = false }) => {
                         {dirty && (
                             <button
                                 type="button"
-                                onClick={reset}
+                                onClick={() => setDiscardConfirmOpen(true)}
                                 className="ds-btn-secondary"
                             >
                                 <RotateCcw size={14} />
@@ -444,7 +721,7 @@ const CenterSettings = ({ embedded = false }) => {
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="cs-hero-stat">
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">Primary Entity</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('summary.primaryEntity')}</p>
                             <p className="font-mono text-sm font-black text-[var(--VIARA-ink)] truncate">{form.center_name || form.legal_name || 'VIARA Radiology'}</p>
                         </div>
                         <div className="cs-hero-stat-icon">
@@ -454,8 +731,18 @@ const CenterSettings = ({ embedded = false }) => {
 
                     <div className="cs-hero-stat">
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">Active Branch</p>
-                            <p className="font-mono text-sm font-black text-[var(--VIARA-ink)] truncate">{form.branch_code || form.center_id || 'MAIN'}</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('branches.stats.mainBranch', { defaultValue: 'Main HQ' })}</p>
+                            <p className="font-mono text-sm font-black text-[var(--VIARA-ink)] truncate">{branchStats.mainBranch?.name || form.branch_name || 'Main HQ'}</p>
+                        </div>
+                        <div className="cs-hero-stat-icon">
+                            <Crown size={16} className="text-amber-500" />
+                        </div>
+                    </div>
+
+                    <div className="cs-hero-stat">
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('branches.stats.active', { defaultValue: 'Active Locations' })}</p>
+                            <p className="font-mono text-sm font-black text-[var(--VIARA-ink)] truncate">{`${branchStats.active} / ${branchStats.total} Branches`}</p>
                         </div>
                         <div className="cs-hero-stat-icon">
                             <Building size={16} className="text-[var(--VIARA-accent-text)]" />
@@ -464,17 +751,7 @@ const CenterSettings = ({ embedded = false }) => {
 
                     <div className="cs-hero-stat">
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">Direct Hotline</p>
-                            <p className="font-mono text-sm font-black text-[var(--VIARA-ink)] truncate">{form.hotline || form.phone || '+20 (0)2-2345678'}</p>
-                        </div>
-                        <div className="cs-hero-stat-icon">
-                            <Phone size={16} className="text-[var(--VIARA-info)]" />
-                        </div>
-                    </div>
-
-                    <div className="cs-hero-stat">
-                        <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">Clinical Hours</p>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-[var(--VIARA-muted)]">{t('summary.clinicalHours')}</p>
                             <p className="font-mono text-sm font-black text-[var(--VIARA-ink)] truncate">{`${form.working_hours?.start ?? 8}:00 - ${form.working_hours?.end ?? 22}:00`}</p>
                         </div>
                         <div className="cs-hero-stat-icon">
@@ -576,11 +853,10 @@ const CenterSettings = ({ embedded = false }) => {
                                                     window.scrollTo({ top: y, behavior: 'smooth' });
                                                 }
                                             }}
-                                            className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
-                                                active
-                                                    ? 'bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)] shadow-md ring-1 ring-[rgba(var(--VIARA-accent-rgb),.5)]'
-                                                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
-                                            }`}
+                                            className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${active
+                                                ? 'bg-[var(--VIARA-accent)] text-[var(--VIARA-accent-contrast)] shadow-md ring-1 ring-[rgba(var(--VIARA-accent-rgb),.5)]'
+                                                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
+                                                }`}
                                         >
                                             <Icon size={14} />
                                             <span>{sec.label}</span>
@@ -603,7 +879,7 @@ const CenterSettings = ({ embedded = false }) => {
                 </div>
             </div>
 
-            <form onSubmit={handleSave} style={reveal(40).style} className={`grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px] ${reveal(40).className}`}>
+            <form onSubmit={handleSave} style={reveal(40).style} className={`grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px] ${reveal(40).className}`}>
 
                 {/* Main Content Form Sections */}
                 <main className="min-w-0 space-y-6">
@@ -647,22 +923,22 @@ const CenterSettings = ({ embedded = false }) => {
                         description={t('branding.description', { defaultValue: 'Logo variants and colors used by print templates, digital report headers, and patient portals.' })}
                     >
                         <div className="grid gap-4 md:grid-cols-3">
-                            <LogoField field="logo_url" label={t('fields.logoUrl')} hint={t('fields.logoUrlHint')} value={form.logo_url} onChange={setField} onUpload={handleLogoUpload} />
-                            <LogoField field="logo_light_url" label={t('fields.logoLightUrl', { defaultValue: 'Light Logo' })} hint={t('fields.logoLightHint', { defaultValue: 'Preferred on dark document headers.' })} value={form.logo_light_url} onChange={setField} onUpload={handleLogoUpload} />
-                            <LogoField field="logo_dark_url" label={t('fields.logoDarkUrl', { defaultValue: 'Dark Logo' })} hint={t('fields.logoDarkHint', { defaultValue: 'Preferred on light document headers.' })} value={form.logo_dark_url} onChange={setField} onUpload={handleLogoUpload} />
+                            <LogoField t={t} field="logo_url" label={t('fields.logoUrl')} hint={t('fields.logoUrlHint')} value={form.logo_url} onChange={setField} onUpload={handleLogoUpload} />
+                            <LogoField t={t} field="logo_light_url" label={t('fields.logoLightUrl', { defaultValue: 'Light Logo' })} hint={t('fields.logoLightHint', { defaultValue: 'Preferred on dark document headers.' })} value={form.logo_light_url} onChange={setField} onUpload={handleLogoUpload} />
+                            <LogoField t={t} field="logo_dark_url" label={t('fields.logoDarkUrl', { defaultValue: 'Dark Logo' })} hint={t('fields.logoDarkHint', { defaultValue: 'Preferred on light document headers.' })} value={form.logo_dark_url} onChange={setField} onUpload={handleLogoUpload} />
                         </div>
 
                         {/* Preset Palette Selector */}
                         <div className="mt-5 rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800/80 dark:bg-slate-950/40">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
-                                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Color Palette Presets</p>
-                                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Quickly apply cohesive clinical brand colors across all surfaces.</p>
+                                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{t('branding.presetsTitle')}</p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('branding.presetsDescription')}</p>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
                                     {COLOR_PRESETS.map((preset) => (
                                         <button
-                                            key={preset.name}
+                                            key={preset.key}
                                             type="button"
                                             onClick={() => applyColorPreset(preset)}
                                             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50/50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -672,7 +948,7 @@ const CenterSettings = ({ embedded = false }) => {
                                                 <span className="h-full w-1/3" style={{ backgroundColor: preset.secondary }} />
                                                 <span className="h-full w-1/3" style={{ backgroundColor: preset.accent }} />
                                             </span>
-                                            <span>{preset.name}</span>
+                                            <span>{t(`branding.presets.${preset.key}`)}</span>
                                         </button>
                                     ))}
                                 </div>
@@ -769,40 +1045,41 @@ const CenterSettings = ({ embedded = false }) => {
                             <Field label={t('fields.vatRate', { defaultValue: 'VAT / Tax Rate (%)' })} icon={Receipt}>
                                 <input id="vat-rate" type="number" min={0} max={100} step="0.01" value={form.vat_rate} onChange={(event) => setField('vat_rate', Number(event.target.value))} className="input-field w-full font-mono font-bold" />
                             </Field>
+                            <Field label={t('fields.urgentPriorityFee', { defaultValue: i18n.language?.startsWith('ar') ? 'رسم أولوية عاجلة (ج.م)' : 'Urgent priority surcharge (EGP)' })} icon={Receipt}>
+                                <input id="urgent-priority-fee" type="number" min={0} max={1000000} step="0.01" value={form.urgent_priority_fee} onChange={(event) => setField('urgent_priority_fee', Number(event.target.value))} className="input-field w-full font-mono font-bold" />
+                            </Field>
+                            <Field label={t('fields.emergencyPriorityFee', { defaultValue: i18n.language?.startsWith('ar') ? 'رسم أولوية طوارئ (ج.م)' : 'Emergency priority surcharge (EGP)' })} icon={Receipt}>
+                                <input id="emergency-priority-fee" type="number" min={0} max={1000000} step="0.01" value={form.emergency_priority_fee} onChange={(event) => setField('emergency_priority_fee', Number(event.target.value))} className="input-field w-full font-mono font-bold" />
+                            </Field>
                             <ToggleField className="md:col-span-2" checked={form.vat_enabled} onChange={(checked) => setField('vat_enabled', checked)} label={t('fields.vatEnabled', { defaultValue: 'Enable VAT / tax settings on financial documents and billing' })} />
                         </div>
                     </SettingsSection>
 
-                    {/* Primary Branch Override */}
+                    {/* Multi-Branch & Medical Chains Management Hub */}
                     <SettingsSection
                         id="branch"
                         icon={Building}
-                        title={t('branches.title', { defaultValue: 'Primary Branch Override' })}
-                        description={t('branches.description', { defaultValue: 'This branch identity overrides organization values where documents originate from this location.' })}
+                        title={t('branches.title', { defaultValue: 'Multi-Branch & Medical Chains Management' })}
+                        description={t('branches.description', { defaultValue: 'Comprehensive management of radiology branch network, primary headquarters, satellite clinics, independent licenses, equipment modalities, and operating hours.' })}
                     >
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <Field label={t('fields.branchId', { defaultValue: 'Branch ID' })} icon={Hash}>
-                                <input id="branch-id" type="text" maxLength={80} value={form.branch_id} onChange={(event) => setField('branch_id', event.target.value)} className="input-field w-full font-mono" />
-                            </Field>
-                            <Field label={t('fields.branchCode', { defaultValue: 'Branch Code' })} icon={Hash}>
-                                <input id="branch-code" type="text" maxLength={50} value={form.branch_code} onChange={(event) => setField('branch_code', event.target.value)} className="input-field w-full font-mono" />
-                            </Field>
-                            <Field label={t('fields.branchName')} hint={t('fields.branchNameHint')} icon={Building}>
-                                <input id="branch-name" type="text" maxLength={200} value={form.branch_name} onChange={(event) => setField('branch_name', event.target.value)} className="input-field w-full font-semibold" />
-                            </Field>
-                            <Field label={t('fields.branchNameAr', { defaultValue: 'Branch Name (Arabic)' })} icon={Building}>
-                                <input id="branch-name-ar" type="text" maxLength={200} value={form.branch_name_ar} onChange={(event) => setField('branch_name_ar', event.target.value)} className="input-field w-full font-semibold" dir="rtl" />
-                            </Field>
-                            <Field label={t('fields.branchDisplayName', { defaultValue: 'Branch Display Name' })} icon={Building}>
-                                <input id="branch-display-name" type="text" maxLength={200} value={form.branch_display_name} onChange={(event) => setField('branch_display_name', event.target.value)} className="input-field w-full" />
-                            </Field>
-                            <Field label={t('fields.branchDisplayNameAr', { defaultValue: 'Branch Display Name (Arabic)' })} icon={Building}>
-                                <input id="branch-display-name-ar" type="text" maxLength={200} value={form.branch_display_name_ar} onChange={(event) => setField('branch_display_name_ar', event.target.value)} className="input-field w-full" dir="rtl" />
-                            </Field>
-                            <Field className="md:col-span-2" label={t('fields.otherDetails')} hint={t('fields.otherDetailsHint')} icon={FileText}>
-                                <textarea id="other-details" value={form.other_details} onChange={(event) => setField('other_details', event.target.value)} className="input-field min-h-20 w-full resize-y" rows={3} />
-                            </Field>
-                        </div>
+                        <BranchManager
+                            t={t}
+                            branches={form.branches || []}
+                            branchSearch={branchSearch}
+                            setBranchSearch={setBranchSearch}
+                            branchFilter={branchFilter}
+                            setBranchFilter={setBranchFilter}
+                            branchViewMode={branchViewMode}
+                            setBranchViewMode={setBranchViewMode}
+                            filteredBranches={filteredBranches}
+                            stats={branchStats}
+                            onAddBranch={handleOpenAddBranch}
+                            onEditBranch={handleOpenEditBranch}
+                            onDuplicateBranch={handleDuplicateBranch}
+                            onSetPrimaryHQ={handleSetPrimaryHQ}
+                            onDeleteBranch={handleDeleteBranch}
+                            onToggleStatus={handleToggleBranchStatus}
+                        />
                     </SettingsSection>
 
                     {/* Document Print & Header Defaults */}
@@ -816,7 +1093,7 @@ const CenterSettings = ({ embedded = false }) => {
                         <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
                             <div className="flex items-center gap-2 mb-2">
                                 <Sparkles size={13} className="text-emerald-600 dark:text-emerald-400" />
-                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Click placeholder chip to insert tag:</span>
+                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{t('documents.tagHint')}</span>
                             </div>
                             <div className="flex flex-wrap items-center gap-1.5">
                                 {TAG_CHIPS.map((chip) => (
@@ -874,13 +1151,7 @@ const CenterSettings = ({ embedded = false }) => {
                             <Field label={t('portal.welcomeMessageAr', { defaultValue: 'Portal Welcome Message (Arabic)' })} icon={Globe2}>
                                 <textarea id="portal-welcome-message-ar" maxLength={700} value={form.portal_welcome_message_ar} onChange={(event) => setField('portal_welcome_message_ar', event.target.value)} className="input-field min-h-20 w-full resize-y text-xs" rows={3} dir="rtl" />
                             </Field>
-                            <Field label={t('homepage.heroTitle', { defaultValue: 'Homepage Hero Title' })} icon={Globe2}>
-                                <input id="homepage-hero-title" type="text" maxLength={220} value={form.homepage_settings?.heroTitle || ''} onChange={(event) => setHomepageField('heroTitle', event.target.value)} className="input-field w-full" />
-                            </Field>
-                            <Field label={t('homepage.heroSubtitle', { defaultValue: 'Homepage Hero Subtitle' })} icon={Globe2}>
-                                <input id="homepage-hero-subtitle" type="text" maxLength={700} value={form.homepage_settings?.heroSubtitle || ''} onChange={(event) => setHomepageField('heroSubtitle', event.target.value)} className="input-field w-full" />
-                            </Field>
-                            <ToggleField checked={form.homepage_settings?.enabled !== false} onChange={(checked) => setHomepageField('enabled', checked)} label={t('homepage.publish', { defaultValue: 'Publish homepage content' })} />
+                            <a className="text-sm font-semibold text-primary underline md:col-span-2" href="/settings?tab=portalBuilder">{t('portal.openBuilder')}</a>
                             <ToggleField checked={form.showPoweredByViara} onChange={(checked) => setField('showPoweredByViara', checked)} label={t('fields.showPoweredByViara', { defaultValue: 'Show Powered by VIARA badge' })} />
                         </div>
                     </SettingsSection>
@@ -894,16 +1165,16 @@ const CenterSettings = ({ embedded = false }) => {
                     >
                         {/* 1-Click Shift Presets */}
                         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Quick Shift Presets:</span>
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{t('hours.presetsTitle')}</span>
                             <div className="flex flex-wrap items-center gap-2">
                                 {SHIFT_PRESETS.map((preset) => (
                                     <button
-                                        key={preset.label}
+                                        key={preset.key}
                                         type="button"
                                         onClick={() => applyShiftPreset(preset)}
                                         className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                                     >
-                                        {preset.label}
+                                        {t(`hours.presets.${preset.key}`)}
                                     </button>
                                 ))}
                             </div>
@@ -960,8 +1231,8 @@ const CenterSettings = ({ embedded = false }) => {
 
                         {/* Interactive Working Days Selector */}
                         <div className="mt-5 rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800/80 dark:bg-slate-950/40">
-                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Operating Days of the Week</p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">Select active days for patient scheduling and appointment booking availability.</p>
+                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{t('hours.workingDays')}</p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('hours.workingDaysDescription')}</p>
                             <div className="mt-3 flex flex-wrap gap-2">
                                 {DAYS_OF_WEEK.map((day) => {
                                     const active = (form.working_hours?.workingDays || [0, 1, 2, 3, 4, 5, 6]).includes(day.value);
@@ -979,13 +1250,12 @@ const CenterSettings = ({ embedded = false }) => {
                                                     workingDays: nextDays
                                                 });
                                             }}
-                                            className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition shadow-xs ${
-                                                active
-                                                    ? 'bg-teal-600 text-white shadow-teal-500/20'
-                                                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
-                                            }`}
+                                            className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition shadow-xs ${active
+                                                ? 'bg-teal-600 text-white shadow-teal-500/20'
+                                                : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                                                }`}
                                         >
-                                            {day.fullLabel}
+                                            {t(`hours.days.${day.value}`)}
                                         </button>
                                     );
                                 })}
@@ -994,8 +1264,8 @@ const CenterSettings = ({ embedded = false }) => {
 
                         {/* Official Holidays & Exception Days Tag Manager */}
                         <div className="mt-5 rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800/80 dark:bg-slate-950/40">
-                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Official Facility Holidays & Closed Dates</p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">Configure recurring holiday exceptions recognized by booking schedules.</p>
+                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{t('hours.holidaysTitle')}</p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('hours.holidaysDescription')}</p>
 
                             <div className="mt-3 flex items-center gap-2">
                                 <input
@@ -1003,7 +1273,7 @@ const CenterSettings = ({ embedded = false }) => {
                                     value={holidayInput}
                                     onChange={(e) => setHolidayInput(e.target.value)}
                                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addHoliday(); } }}
-                                    placeholder="Add holiday e.g. Friday, Eid Al-Fitr..."
+                                    placeholder={t('hours.holidayPlaceholder')}
                                     className="input-field text-xs font-semibold"
                                 />
                                 <button
@@ -1012,7 +1282,7 @@ const CenterSettings = ({ embedded = false }) => {
                                     className="inline-flex h-9 items-center justify-center gap-1 rounded-xl bg-slate-900 px-3.5 text-xs font-bold text-white transition hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900"
                                 >
                                     <Plus size={14} />
-                                    <span>Add</span>
+                                    <span>{t('actions.add')}</span>
                                 </button>
                             </div>
 
@@ -1033,17 +1303,26 @@ const CenterSettings = ({ embedded = false }) => {
                                     </span>
                                 ))}
                                 {(!form.working_hours.holidays || form.working_hours.holidays.length === 0) && (
-                                    <span className="text-xs text-slate-400 italic">No custom holiday dates added yet.</span>
+                                    <span className="text-xs text-slate-400 italic">{t('hours.noHolidays')}</span>
                                 )}
                             </div>
                         </div>
                     </SettingsSection>
                 </main>
 
-                {/* Right Sidebar: Live Identity & Previews Stack */}
+                {/* Right Sidebar: Live Identity & Previews Stack with Branch Context Switcher */}
                 <aside className="space-y-4 xl:sticky xl:top-6">
-                    <IdentitySummary identity={identity} form={form} />
-                    <PreviewStack identity={identity} form={form} previewTab={previewTab} setPreviewTab={setPreviewTab} onExpandModal={() => setFullModalOpen(true)} />
+                    <IdentitySummary t={t} identity={identity} form={form} />
+                    <PreviewStack
+                        t={t}
+                        identity={identity}
+                        form={form}
+                        previewTab={previewTab}
+                        setPreviewTab={setPreviewTab}
+                        selectedPreviewBranchId={selectedPreviewBranchId}
+                        setSelectedPreviewBranchId={setSelectedPreviewBranchId}
+                        onExpandModal={() => setFullModalOpen(true)}
+                    />
                 </aside>
 
                 {/* Bottom Floating Glass Action Bar */}
@@ -1080,18 +1359,31 @@ const CenterSettings = ({ embedded = false }) => {
                 </div>
             </form>
 
+            {/* Branch Creation & Edit Modal */}
+            {branchModalOpen && (
+                <BranchEditModal
+                    t={t}
+                    branch={editingBranch}
+                    isOpen={branchModalOpen}
+                    onClose={() => { setBranchModalOpen(false); setEditingBranch(null); }}
+                    onSave={handleSaveBranchModal}
+                    formDefaultHours={form.working_hours}
+                />
+            )}
+
             {/* Full High-Fidelity Preview Modal */}
             {fullModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-md">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="center-preview-title">
                     <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
                         <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
                             <div>
-                                <h3 className="text-lg font-black text-slate-900 dark:text-white">High-Fidelity Document Preview</h3>
-                                <p className="text-xs text-slate-500">Live rendering of configured logo, colors, tax IDs, and document disclaimers.</p>
+                                <h3 id="center-preview-title" className="text-lg font-black text-slate-900 dark:text-white">{t('documents.previewTitle')}</h3>
+                                <p className="text-xs text-slate-500">{t('documents.previewDescription')}</p>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setFullModalOpen(false)}
+                                aria-label={t('actions.close')}
                                 className="rounded-xl border border-slate-200 bg-slate-100 p-2 text-slate-600 hover:bg-slate-200 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
                             >
                                 <X size={18} />
@@ -1113,19 +1405,19 @@ const CenterSettings = ({ embedded = false }) => {
                                         </div>
                                     </div>
                                     <div className="text-end text-xs text-slate-500">
-                                        <p className="font-bold text-slate-900 dark:text-white">OFFICIAL REPORT</p>
-                                        <p>Tax ID: {identity.taxId || 'N/A'}</p>
+                                        <p className="font-bold text-slate-900 dark:text-white">{t('documents.officialReport')}</p>
+                                        <p>{t('fields.taxId')}: {identity.taxId || 'N/A'}</p>
                                     </div>
                                 </div>
                                 <div className="py-6 space-y-3">
-                                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">PATIENT DEMOGRAPHICS & FINDINGS PREVIEW</p>
+                                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{t('documents.patientPreview')}</p>
                                     <div className="h-20 rounded-xl bg-slate-50 border border-dashed border-slate-200 p-3 text-xs text-slate-400 dark:bg-slate-900 dark:border-slate-800">
                                         [Diagnostic radiology impression and findings placeholder text...]
                                     </div>
                                 </div>
                                 <div className="border-t border-slate-200 pt-3 text-[11px] text-slate-500 dark:border-slate-800">
-                                    <p className="font-bold">Disclaimer:</p>
-                                    <p>{form.report_disclaimer || 'No custom disclaimer entered. Inheriting system default.'}</p>
+                                    <p className="font-bold">{t('documents.disclaimer')}:</p>
+                                    <p>{form.report_disclaimer || t('documents.defaultDisclaimer')}</p>
                                 </div>
                             </div>
                         </div>
@@ -1136,12 +1428,841 @@ const CenterSettings = ({ embedded = false }) => {
                                 onClick={() => setFullModalOpen(false)}
                                 className="rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-bold text-white dark:bg-slate-100 dark:text-slate-900"
                             >
-                                Close Preview
+                                {t('actions.close')}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={discardConfirmOpen}
+                onClose={() => setDiscardConfirmOpen(false)}
+                onConfirm={reset}
+                title={t('actions.discard')}
+                message={t('messages.discardConfirm', { defaultValue: 'Discard all unsaved center settings changes?' })}
+                confirmText={t('actions.discard')}
+                cancelLabel={t('actions.cancel', { defaultValue: 'Cancel' })}
+                variant="warning"
+            />
+            <ConfirmDialog
+                isOpen={Boolean(branchDeleteId)}
+                onClose={() => setBranchDeleteId(null)}
+                onConfirm={confirmDeleteBranch}
+                title={t('branches.deleteBranch')}
+                message={t('branches.deleteConfirm')}
+                confirmText={t('branches.deleteBranch')}
+                cancelLabel={t('actions.cancel', { defaultValue: 'Cancel' })}
+            />
+        </div>
+    );
+};
+
+// ─── Multi-Branch Chains Manager Component ──────────────────────────────────
+
+const BranchManager = ({
+    t,
+    branches,
+    branchSearch,
+    setBranchSearch,
+    branchFilter,
+    setBranchFilter,
+    branchViewMode,
+    setBranchViewMode,
+    filteredBranches,
+    stats,
+    onAddBranch,
+    onEditBranch,
+    onDuplicateBranch,
+    onSetPrimaryHQ,
+    onDeleteBranch,
+    onToggleStatus
+}) => {
+    const filterOptions = [
+        { key: 'all', label: t('branches.filterAll', { defaultValue: 'All Branches' }), count: stats.total },
+        { key: 'active', label: t('branches.statuses.active', { defaultValue: 'Active' }), count: stats.active },
+        { key: 'maintenance', label: t('branches.statuses.maintenance', { defaultValue: 'Maintenance' }), count: stats.maintenance },
+        { key: 'inactive', label: t('branches.statuses.inactive', { defaultValue: 'Inactive' }), count: stats.inactive }
+    ];
+
+    return (
+        <div className="space-y-4">
+            {/* Header & Metric Counter Pills */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                        <Building size={14} className="text-emerald-600 dark:text-emerald-400" />
+                        <span>{t('branches.stats.total')}: {stats.total}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/50 dark:text-emerald-300">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>{t('branches.stats.active')}: {stats.active}</span>
+                    </span>
+                    {stats.maintenance > 0 && (
+                        <span className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-300">
+                            <Wrench size={13} />
+                            <span>{t('branches.stats.maintenance')}: {stats.maintenance}</span>
+                        </span>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                    {/* View Mode Toggle */}
+                    <div className="flex rounded-xl border border-slate-200 bg-slate-100 p-0.5 dark:border-slate-800 dark:bg-slate-900">
+                        <button
+                            type="button"
+                            onClick={() => setBranchViewMode('grid')}
+                            className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${branchViewMode === 'grid' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                            title="Grid View"
+                        >
+                            <LayoutGrid size={15} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setBranchViewMode('table')}
+                            className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${branchViewMode === 'table' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                            title="Table View"
+                        >
+                            <Table size={15} />
+                        </button>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={onAddBranch}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] dark:bg-emerald-500 dark:text-slate-950 dark:hover:bg-emerald-400"
+                    >
+                        <Plus size={15} />
+                        <span>{t('branches.addBranch', { defaultValue: 'Add Branch' })}</span>
+                    </button>
+                </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-2.5 dark:border-slate-800/80 dark:bg-slate-950/40">
+                <div className="flex flex-wrap items-center gap-1.5">
+                    {filterOptions.map((opt) => (
+                        <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() => setBranchFilter(opt.key)}
+                            className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${branchFilter === opt.key
+                                ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
+                                : 'text-slate-600 hover:bg-slate-200/50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800'
+                                }`}
+                        >
+                            {opt.label} <span className="opacity-60 text-[10px]">({opt.count})</span>
+                        </button>
+                    ))}
+                </div>
+
+                <div className="relative min-w-[200px] sm:w-64">
+                    <Search size={13} className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                        type="text"
+                        value={branchSearch}
+                        onChange={(e) => setBranchSearch(e.target.value)}
+                        placeholder={t('branches.searchPlaceholder', { defaultValue: 'Search branches...' })}
+                        className="h-8 w-full rounded-lg border border-slate-200 bg-white pe-2.5 ps-8 text-xs font-semibold text-slate-800 outline-none focus:border-emerald-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                    />
+                    {branchSearch ? (
+                        <button type="button" onClick={() => setBranchSearch('')} className="absolute end-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
+                            <X size={12} />
+                        </button>
+                    ) : null}
+                </div>
+            </div>
+
+            {/* Branches Card Grid or Dense Table View */}
+            {filteredBranches.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700">
+                    <Building size={36} className="text-slate-300 dark:text-slate-600" />
+                    <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-300">{t('branches.noBranchesFound', { defaultValue: 'No branches found' })}</p>
+                    <p className="mt-0.5 text-xs text-slate-400">{t('branches.emptyStateDesc')}</p>
+                    <button
+                        type="button"
+                        onClick={onAddBranch}
+                        className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    >
+                        <Plus size={14} />
+                        <span>{t('branches.addBranch')}</span>
+                    </button>
+                </div>
+            ) : branchViewMode === 'grid' ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                    {filteredBranches.map((branch) => (
+                        <BranchCard
+                            key={branch.id}
+                            t={t}
+                            branch={branch}
+                            onEdit={() => onEditBranch(branch)}
+                            onDuplicate={() => onDuplicateBranch(branch)}
+                            onSetMain={() => onSetPrimaryHQ(branch.id)}
+                            onDelete={() => onDeleteBranch(branch.id)}
+                            onToggleStatus={() => onToggleStatus(branch.id)}
+                        />
+                    ))}
+                </div>
+            ) : (
+                <BranchTableView
+                    t={t}
+                    branches={filteredBranches}
+                    onEdit={onEditBranch}
+                    onDuplicate={onDuplicateBranch}
+                    onSetMain={onSetPrimaryHQ}
+                    onDelete={onDeleteBranch}
+                    onToggleStatus={onToggleStatus}
+                />
+            )}
+        </div>
+    );
+};
+
+const BranchCard = ({ t, branch, onEdit, onDuplicate, onSetMain, onDelete, onToggleStatus }) => {
+    const isMain = branch.isMain;
+    const statusObj = BRANCH_STATUSES.find((s) => s.value === branch.status) || BRANCH_STATUSES[0];
+    const typeObj = BRANCH_TYPES.find((type) => type.value === branch.type) || BRANCH_TYPES[1];
+
+    return (
+        <div className={`relative flex flex-col justify-between rounded-2xl border transition-all duration-200 p-4.5 bg-white shadow-xs dark:bg-slate-900/90 ${isMain
+            ? 'border-amber-400/70 ring-2 ring-amber-400/20 bg-gradient-to-br from-amber-500/5 via-white to-transparent dark:from-amber-950/20 dark:to-slate-900'
+            : 'border-slate-200/90 hover:border-slate-300 dark:border-slate-800 dark:hover:border-slate-700'
+            }`}>
+            {/* Top Bar: Badges & Actions */}
+            <div>
+                <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3 dark:border-slate-800">
+                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                        {/* Status Toggle Button */}
+                        <button
+                            type="button"
+                            onClick={onToggleStatus}
+                            title="Click to toggle status"
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider transition ${branch.status === 'active'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                : branch.status === 'maintenance'
+                                    ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800'
+                                    : 'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                                }`}
+                        >
+                            <span className={`h-1.5 w-1.5 rounded-full ${branch.status === 'active' ? 'bg-emerald-500 animate-pulse' : branch.status === 'maintenance' ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                            <span>{t(statusObj.labelKey, { defaultValue: statusObj.defaultLabel })}</span>
+                        </button>
+
+                        {/* Branch Type Tag */}
+                        <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {t(typeObj.labelKey, { defaultValue: typeObj.defaultLabel })}
+                        </span>
+
+                        {/* Primary HQ Crown Badge */}
+                        {isMain ? (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-black text-amber-800 dark:text-amber-300">
+                                <Crown size={12} className="text-amber-500 fill-amber-500" />
+                                <span>{t('branches.isMainBadge', { defaultValue: 'Primary HQ' })}</span>
+                            </span>
+                        ) : null}
+                    </div>
+
+                    {/* Quick Card Actions */}
+                    <div className="flex items-center gap-1 shrink-0">
+                        {!isMain && (
+                            <button
+                                type="button"
+                                onClick={onSetMain}
+                                title={t('branches.setAsMain', { defaultValue: 'Set as Primary HQ' })}
+                                className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-600 dark:border-slate-800 dark:bg-slate-950 dark:hover:text-amber-400"
+                            >
+                                <Crown size={13} />
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={onEdit}
+                            title={t('branches.editBranch', { defaultValue: 'Edit Branch' })}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                            <Edit3 size={13} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onDuplicate}
+                            title={t('branches.duplicateBranch', { defaultValue: 'Duplicate' })}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
+                        >
+                            <CopyPlus size={13} />
+                        </button>
+                        {!isMain && (
+                            <button
+                                type="button"
+                                onClick={onDelete}
+                                title={t('branches.deleteBranch', { defaultValue: 'Delete' })}
+                                className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-rose-950/40"
+                            >
+                                <Trash2 size={13} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {/* Identity & Core Details */}
+                <div className="mt-3 space-y-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white truncate">
+                            {branch.displayName || branch.name || 'Branch Location'}
+                        </h4>
+                        <span className="font-mono text-[10px] font-bold text-slate-400 shrink-0">
+                            [{branch.code || 'NO-CODE'}]
+                        </span>
+                    </div>
+                    {branch.nameAr ? (
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400" dir="rtl">
+                            {branch.displayNameAr || branch.nameAr}
+                        </p>
+                    ) : null}
+                </div>
+
+                {/* Address & Operational Line */}
+                <div className="mt-3 space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        <MapPin size={13} className="shrink-0 text-slate-400" />
+                        <span className="truncate text-[11px] font-medium">
+                            {branch.address || branch.city || branch.governorate || t('summary.noAddress')}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        <Phone size={13} className="shrink-0 text-slate-400" />
+                        <span className="truncate text-[11px] font-mono font-bold">
+                            {branch.hotline || branch.phone || t('summary.noPhone')}
+                        </span>
+                        {branch.whatsapp ? (
+                            <span className="inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1 py-0.2 text-[9px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
+                                WA
+                            </span>
+                        ) : null}
+                    </div>
+                    {branch.managerName ? (
+                        <div className="flex items-center gap-1.5 min-w-0">
+                            <Stethoscope size={13} className="shrink-0 text-slate-400" />
+                            <span className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                {branch.managerName}
+                            </span>
+                        </div>
+                    ) : null}
+                </div>
+
+                {/* Modalities Chips */}
+                {Array.isArray(branch.modalities) && branch.modalities.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                        {branch.modalities.map((mod) => (
+                            <span
+                                key={mod}
+                                className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[9px] font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                            >
+                                {mod}
+                            </span>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Card Footer: Invoice Prefix & License Badge */}
+            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5 text-[10px] text-slate-400 dark:border-slate-800">
+                <span className="font-mono font-semibold">
+                    Prefix: <strong className="text-slate-700 dark:text-slate-200">{branch.invoicePrefix || 'INV-'}</strong>
+                </span>
+                {branch.medicalLicense ? (
+                    <span className="truncate max-w-[140px]" title={branch.medicalLicense}>
+                        Lic: {branch.medicalLicense}
+                    </span>
+                ) : (
+                    <span>Standard Unit</span>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const BranchTableView = ({ t, branches, onEdit, onDuplicate, onSetMain, onDelete, onToggleStatus }) => (
+    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <table className="w-full text-start text-xs">
+            <thead className="border-b border-slate-200 bg-slate-50/80 font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
+                <tr>
+                    <th className="px-3 py-2.5 text-start">{t('fields.branchCode')}</th>
+                    <th className="px-3 py-2.5 text-start">{t('fields.branchName')}</th>
+                    <th className="px-3 py-2.5 text-start">{t('branches.modal.typeLabel')}</th>
+                    <th className="px-3 py-2.5 text-start">{t('branches.modal.statusLabel')}</th>
+                    <th className="px-3 py-2.5 text-start">{t('fields.city')}</th>
+                    <th className="px-3 py-2.5 text-start">{t('fields.phone')}</th>
+                    <th className="px-3 py-2.5 text-end">{t('previews.tabs.all')}</th>
+                </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                {branches.map((b) => (
+                    <tr key={b.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                        <td className="px-3 py-2 font-mono font-bold text-slate-800 dark:text-slate-200">
+                            {b.code}
+                            {b.isMain ? <Crown size={11} className="inline ms-1 text-amber-500" /> : null}
+                        </td>
+                        <td className="px-3 py-2">
+                            <p className="font-bold text-slate-900 dark:text-white">{b.displayName || b.name}</p>
+                            {b.nameAr ? <p className="text-[10px] text-slate-400" dir="rtl">{b.nameAr}</p> : null}
+                        </td>
+                        <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{b.type}</td>
+                        <td className="px-3 py-2">
+                            <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${b.status === 'active' ? 'bg-emerald-50 text-emerald-700' : b.status === 'maintenance' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                {b.status}
+                            </span>
+                        </td>
+                        <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{b.city || b.governorate || '-'}</td>
+                        <td className="px-3 py-2 font-mono text-[11px]">{b.hotline || b.phone || '-'}</td>
+                        <td className="px-3 py-2 text-end">
+                            <div className="inline-flex items-center gap-1">
+                                <button type="button" onClick={() => onEdit(b)} className="p-1 text-slate-500 hover:text-emerald-600"><Edit3 size={13} /></button>
+                                <button type="button" onClick={() => onDuplicate(b)} className="p-1 text-slate-500 hover:text-slate-800"><CopyPlus size={13} /></button>
+                                {!b.isMain && <button type="button" onClick={() => onDelete(b.id)} className="p-1 text-slate-400 hover:text-rose-600"><Trash2 size={13} /></button>}
+                            </div>
+                        </td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    </div>
+);
+
+// ─── Modal for Adding & Editing Branches ────────────────────────────────────
+
+const BranchEditModal = ({ t, branch, isOpen, onClose, onSave, formDefaultHours }) => {
+    const [draft, setDraft] = useState(() => ({ ...branch }));
+    const [modalTab, setModalTab] = useState('general');
+
+    if (!isOpen || !branch) return null;
+
+    const setDraftField = (field, value) => setDraft((curr) => ({ ...curr, [field]: value }));
+
+    const toggleModality = (mod) => {
+        const list = draft.modalities || [];
+        const next = list.includes(mod) ? list.filter((m) => m !== mod) : [...list, mod];
+        setDraftField('modalities', next);
+    };
+
+    const tabs = [
+        { id: 'general', label: t('branches.modal.tabs.general', { defaultValue: 'General & Info' }) },
+        { id: 'contact', label: t('branches.modal.tabs.contact', { defaultValue: 'Location & Contact' }) },
+        { id: 'legal', label: t('branches.modal.tabs.legal', { defaultValue: 'Licensing & Billing' }) },
+        { id: 'modalities', label: t('branches.modal.tabs.modalities', { defaultValue: 'Modalities & Hours' }) },
+        { id: 'documents', label: t('branches.modal.tabs.documents', { defaultValue: 'Letterheads' }) }
+    ];
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-md">
+            <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+                {/* Modal Header */}
+                <div className="flex items-center justify-between border-b border-slate-200 p-5 dark:border-slate-800 shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                            <Building size={20} />
+                        </div>
+                        <div>
+                            <h3 className="text-base font-black text-slate-900 dark:text-white">
+                                {draft.name ? draft.name : t('branches.modal.addTitle', { defaultValue: 'Add New Branch Location' })}
+                            </h3>
+                            <p className="text-xs text-slate-500">
+                                {draft.code ? `Code: ${draft.code}` : t('branches.modal.codeHint')}
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-xl border border-slate-200 bg-slate-100 p-2 text-slate-500 hover:bg-slate-200 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+
+                {/* Sub Tab Navigation */}
+                <div className="flex overflow-x-auto border-b border-slate-200 bg-slate-50/70 px-4 py-2 dark:border-slate-800 dark:bg-slate-950/40 shrink-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        {tabs.map((tab) => (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setModalTab(tab.id)}
+                                className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold transition ${modalTab === tab.id
+                                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
+                                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'}`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Modal Body */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                    {modalTab === 'general' && (
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <Field label={t('fields.branchName')} required icon={Building}>
+                                <input
+                                    type="text"
+                                    required
+                                    value={draft.name}
+                                    onChange={(e) => setDraftField('name', e.target.value)}
+                                    placeholder="e.g. Maadi Radiology Center"
+                                    className="input-field w-full font-bold"
+                                />
+                            </Field>
+                            <Field label={t('fields.branchNameAr')} icon={Building}>
+                                <input
+                                    type="text"
+                                    value={draft.nameAr}
+                                    onChange={(e) => setDraftField('nameAr', e.target.value)}
+                                    placeholder="مثال: مركز المعادي للأشعة"
+                                    className="input-field w-full font-semibold"
+                                    dir="rtl"
+                                />
+                            </Field>
+                            <Field label={t('fields.branchDisplayName')} icon={Building}>
+                                <input
+                                    type="text"
+                                    value={draft.displayName}
+                                    onChange={(e) => setDraftField('displayName', e.target.value)}
+                                    className="input-field w-full"
+                                />
+                            </Field>
+                            <Field label={t('fields.branchDisplayNameAr')} icon={Building}>
+                                <input
+                                    type="text"
+                                    value={draft.displayNameAr}
+                                    onChange={(e) => setDraftField('displayNameAr', e.target.value)}
+                                    className="input-field w-full"
+                                    dir="rtl"
+                                />
+                            </Field>
+                            <Field label={t('fields.branchCode')} hint={t('branches.modal.codeHint')} required icon={Hash}>
+                                <input
+                                    type="text"
+                                    required
+                                    value={draft.code}
+                                    onChange={(e) => setDraftField('code', e.target.value.toUpperCase())}
+                                    className="input-field w-full font-mono font-bold"
+                                />
+                            </Field>
+                            <Field label={t('branches.modal.typeLabel')} icon={Layers}>
+                                <select
+                                    value={draft.type}
+                                    onChange={(e) => setDraftField('type', e.target.value)}
+                                    className="input-field w-full font-semibold"
+                                >
+                                    {BRANCH_TYPES.map((type) => (
+                                        <option key={type.value} value={type.value}>
+                                            {t(type.labelKey, { defaultValue: type.defaultLabel })}
+                                        </option>
+                                    ))}
+                                </select>
+                            </Field>
+                            <Field label={t('branches.modal.statusLabel')} icon={Activity}>
+                                <select
+                                    value={draft.status}
+                                    onChange={(e) => setDraftField('status', e.target.value)}
+                                    className="input-field w-full font-semibold"
+                                >
+                                    {BRANCH_STATUSES.map((status) => (
+                                        <option key={status.value} value={status.value}>
+                                            {t(status.labelKey, { defaultValue: status.defaultLabel })}
+                                        </option>
+                                    ))}
+                                </select>
+                            </Field>
+                            <Field label={t('branches.modal.managerName')} hint={t('branches.modal.managerHint')} icon={Stethoscope}>
+                                <input
+                                    type="text"
+                                    value={draft.managerName}
+                                    onChange={(e) => setDraftField('managerName', e.target.value)}
+                                    placeholder="Dr. Ahmed Mansour"
+                                    className="input-field w-full"
+                                />
+                            </Field>
+
+                            <div className="sm:col-span-2 mt-2 rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 dark:border-amber-900/40 dark:bg-amber-950/20">
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={draft.isMain === true}
+                                        onChange={(e) => setDraftField('isMain', e.target.checked)}
+                                        className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                                    />
+                                    <div>
+                                        <p className="text-xs font-bold text-amber-950 dark:text-amber-200">
+                                            {t('branches.modal.isMainLabel')}
+                                        </p>
+                                        <p className="text-[11px] text-amber-800/80 dark:text-amber-400">
+                                            {t('branches.modal.isMainHint')}
+                                        </p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    )}
+
+                    {modalTab === 'contact' && (
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <Field label={t('fields.phone')} icon={Phone}>
+                                <input
+                                    type="tel"
+                                    value={draft.phone}
+                                    onChange={(e) => setDraftField('phone', e.target.value)}
+                                    className="input-field w-full font-mono"
+                                />
+                            </Field>
+                            <Field label={t('fields.alternativePhone')} icon={Phone}>
+                                <input
+                                    type="tel"
+                                    value={draft.alternativePhone}
+                                    onChange={(e) => setDraftField('alternativePhone', e.target.value)}
+                                    className="input-field w-full font-mono"
+                                />
+                            </Field>
+                            <Field label={t('fields.hotline')} icon={Phone}>
+                                <input
+                                    type="tel"
+                                    value={draft.hotline}
+                                    onChange={(e) => setDraftField('hotline', e.target.value)}
+                                    className="input-field w-full font-mono"
+                                />
+                            </Field>
+                            <Field label={t('fields.whatsapp')} icon={Smartphone}>
+                                <input
+                                    type="tel"
+                                    value={draft.whatsapp}
+                                    onChange={(e) => setDraftField('whatsapp', e.target.value)}
+                                    className="input-field w-full font-mono"
+                                />
+                            </Field>
+                            <Field label={t('fields.email')} icon={Mail} className="sm:col-span-2">
+                                <input
+                                    type="email"
+                                    value={draft.email}
+                                    onChange={(e) => setDraftField('email', e.target.value)}
+                                    className="input-field w-full"
+                                />
+                            </Field>
+                            <Field label={t('fields.address')} icon={MapPin} className="sm:col-span-2">
+                                <textarea
+                                    value={draft.address}
+                                    onChange={(e) => setDraftField('address', e.target.value)}
+                                    rows={2}
+                                    className="input-field w-full resize-y"
+                                />
+                            </Field>
+                            <Field label={t('fields.addressAr')} icon={MapPin} className="sm:col-span-2">
+                                <textarea
+                                    value={draft.addressAr}
+                                    onChange={(e) => setDraftField('addressAr', e.target.value)}
+                                    rows={2}
+                                    className="input-field w-full resize-y"
+                                    dir="rtl"
+                                />
+                            </Field>
+                            <Field label={t('fields.governorate')} icon={MapPin}>
+                                <input
+                                    type="text"
+                                    value={draft.governorate}
+                                    onChange={(e) => setDraftField('governorate', e.target.value)}
+                                    className="input-field w-full"
+                                />
+                            </Field>
+                            <Field label={t('fields.city')} icon={MapPin}>
+                                <input
+                                    type="text"
+                                    value={draft.city}
+                                    onChange={(e) => setDraftField('city', e.target.value)}
+                                    className="input-field w-full"
+                                />
+                            </Field>
+                            <Field label={t('fields.postalCode')} icon={Hash}>
+                                <input
+                                    type="text"
+                                    value={draft.postalCode}
+                                    onChange={(e) => setDraftField('postalCode', e.target.value)}
+                                    className="input-field w-full font-mono"
+                                />
+                            </Field>
+                        </div>
+                    )}
+
+                    {modalTab === 'legal' && (
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <Field label={t('fields.medicalLicense')} icon={Stamp}>
+                                <input
+                                    type="text"
+                                    value={draft.medicalLicense}
+                                    onChange={(e) => setDraftField('medicalLicense', e.target.value)}
+                                    className="input-field w-full font-mono"
+                                />
+                            </Field>
+                            <Field label={t('fields.commercialRegistration')} icon={FileBadge2}>
+                                <input
+                                    type="text"
+                                    value={draft.commercialRegistration}
+                                    onChange={(e) => setDraftField('commercialRegistration', e.target.value)}
+                                    className="input-field w-full font-mono"
+                                />
+                            </Field>
+                            <Field label={t('fields.taxNumber')} icon={Hash}>
+                                <input
+                                    type="text"
+                                    value={draft.taxNumber}
+                                    onChange={(e) => setDraftField('taxNumber', e.target.value)}
+                                    className="input-field w-full font-mono"
+                                />
+                            </Field>
+                            <Field label={t('fields.invoicePrefix')} hint={t('fields.invoicePrefixHint')} icon={Receipt}>
+                                <input
+                                    type="text"
+                                    value={draft.invoicePrefix}
+                                    onChange={(e) => setDraftField('invoicePrefix', e.target.value.toUpperCase())}
+                                    placeholder="e.g. MDI-INV-"
+                                    className="input-field w-full font-mono font-bold"
+                                />
+                            </Field>
+                        </div>
+                    )}
+
+                    {modalTab === 'modalities' && (
+                        <div className="space-y-5">
+                            <div>
+                                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                    {t('branches.modal.modalitiesTitle')}
+                                </p>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    {t('branches.modal.modalitiesHint')}
+                                </p>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {AVAILABLE_MODALITIES.map((mod) => {
+                                        const active = (draft.modalities || []).includes(mod);
+                                        return (
+                                            <button
+                                                key={mod}
+                                                type="button"
+                                                onClick={() => toggleModality(mod)}
+                                                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-xs ${active
+                                                    ? 'bg-emerald-600 text-white shadow-emerald-500/20'
+                                                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                                                    }`}
+                                            >
+                                                {active ? <Check size={12} className="inline me-1" /> : null}
+                                                {mod}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800/80 dark:bg-slate-950/40">
+                                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                    {t('branches.modal.hoursTitle')}
+                                </p>
+                                <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                    <input
+                                        type="checkbox"
+                                        checked={Boolean(draft.workingHoursOverride)}
+                                        onChange={(e) => {
+                                            setDraftField(
+                                                'workingHoursOverride',
+                                                e.target.checked
+                                                    ? { start: formDefaultHours?.start || 8, end: formDefaultHours?.end || 20, workingDays: [0, 1, 2, 3, 4, 5, 6], holidays: [] }
+                                                    : null
+                                            );
+                                        }}
+                                        className="h-4 w-4 rounded border-slate-300 text-emerald-600"
+                                    />
+                                    <span>{t('branches.modal.hoursOverride')}</span>
+                                </label>
+
+                                {draft.workingHoursOverride ? (
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                        <Field label={t('hours.open')}>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={24}
+                                                value={draft.workingHoursOverride.start}
+                                                onChange={(e) => setDraftField('workingHoursOverride', { ...draft.workingHoursOverride, start: Number(e.target.value) })}
+                                                className="input-field w-full font-mono text-sm"
+                                            />
+                                        </Field>
+                                        <Field label={t('hours.close')}>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={24}
+                                                value={draft.workingHoursOverride.end}
+                                                onChange={(e) => setDraftField('workingHoursOverride', { ...draft.workingHoursOverride, end: Number(e.target.value) })}
+                                                className="input-field w-full font-mono text-sm"
+                                            />
+                                        </Field>
+                                    </div>
+                                ) : (
+                                    <p className="mt-1.5 text-[11px] text-slate-400 italic">
+                                        {t('branches.modal.inheritHours')}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {modalTab === 'documents' && (
+                        <div className="space-y-4">
+                            <Field label={t('branches.modal.reportHeaderOverride')} hint={t('branches.modal.reportHeaderHint')}>
+                                <textarea
+                                    value={draft.reportHeaderOverride}
+                                    onChange={(e) => setDraftField('reportHeaderOverride', e.target.value)}
+                                    rows={3}
+                                    className="input-field w-full font-mono text-xs resize-y"
+                                    placeholder="Optional: Branch specific header text or HTML markup"
+                                />
+                            </Field>
+                            <Field label={t('branches.modal.reportFooterOverride')}>
+                                <textarea
+                                    value={draft.reportFooterOverride}
+                                    onChange={(e) => setDraftField('reportFooterOverride', e.target.value)}
+                                    rows={3}
+                                    className="input-field w-full font-mono text-xs resize-y"
+                                    placeholder="Optional: Branch specific footer text or HTML markup"
+                                />
+                            </Field>
+                            <Field label={t('branches.modal.notesLabel')}>
+                                <textarea
+                                    value={draft.notes}
+                                    onChange={(e) => setDraftField('notes', e.target.value)}
+                                    rows={2}
+                                    className="input-field w-full resize-y text-xs"
+                                    placeholder="Internal operational notes for this branch..."
+                                />
+                            </Field>
+                        </div>
+                    )}
+                </div>
+
+                {/* Modal Footer */}
+                <div className="flex items-center justify-end gap-2.5 border-t border-slate-200 p-4 dark:border-slate-800 shrink-0">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                    >
+                        {t('branches.modal.cancel', { defaultValue: 'Cancel' })}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onSave(draft)}
+                        className="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 active:scale-[0.98] dark:bg-emerald-500 dark:text-slate-950 dark:hover:bg-emerald-400"
+                    >
+                        {t('branches.modal.saveBranch', { defaultValue: 'Save Branch' })}
+                    </button>
+                </div>
+            </div>
         </div>
     );
 };
@@ -1198,27 +2319,27 @@ const ToggleField = ({ label, checked, onChange, className = '' }) => (
     </label>
 );
 
-const LogoField = ({ field, label, hint, value, onChange, onUpload }) => {
+const LogoField = ({ t, field, label, hint, value, onChange, onUpload }) => {
     const [bgMode, setBgMode] = useState('light');
     return (
         <Field label={label} hint={hint} icon={Image}>
             <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-slate-800/80 dark:bg-slate-950/40">
                 <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Preview Mode</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('branding.previewMode')}</span>
                     <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 dark:border-slate-800 dark:bg-slate-900">
                         <button
                             type="button"
                             onClick={() => setBgMode('light')}
                             className={`px-2 py-0.5 text-[10px] font-bold rounded ${bgMode === 'light' ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white' : 'text-slate-400'}`}
                         >
-                            Light
+                            {t('branding.light')}
                         </button>
                         <button
                             type="button"
                             onClick={() => setBgMode('dark')}
                             className={`px-2 py-0.5 text-[10px] font-bold rounded ${bgMode === 'dark' ? 'bg-slate-900 text-white dark:bg-slate-700' : 'text-slate-400'}`}
                         >
-                            Dark
+                            {t('branding.dark')}
                         </button>
                     </div>
                 </div>
@@ -1235,13 +2356,13 @@ const LogoField = ({ field, label, hint, value, onChange, onUpload }) => {
                 <div className="mt-2 flex items-center justify-between gap-2">
                     <label className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
                         <Upload size={13} />
-                        <span>Upload</span>
+                        <span>{t('actions.upload')}</span>
                         <input type="file" accept={IMAGE_TYPES.join(',')} onChange={(event) => onUpload(field, event)} className="sr-only" />
                     </label>
                     {value ? (
                         <button type="button" onClick={() => onChange(field, '')} className="inline-flex h-8 items-center justify-center gap-1 rounded-lg px-2.5 text-xs font-bold text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30 dark:hover:text-rose-400">
                             <X size={13} />
-                            <span>Remove</span>
+                            <span>{t('actions.remove')}</span>
                         </button>
                     ) : null}
                 </div>
@@ -1265,11 +2386,11 @@ const ColorField = ({ label, value, onChange }) => (
     </Field>
 );
 
-const IdentitySummary = ({ identity, form }) => {
+const IdentitySummary = ({ t, identity, form }) => {
     const copyIdentity = () => {
-        const text = `${identity.centerName}\nAddress: ${identity.address || 'N/A'}\nPhone: ${identity.phone || 'N/A'}\nTax ID: ${identity.taxId || 'N/A'}\nLicense: ${form.medical_license || 'N/A'}`;
+        const text = `${identity.centerName}\n${t('fields.address')}: ${identity.address || 'N/A'}\n${t('fields.phone')}: ${identity.phone || 'N/A'}\n${t('fields.taxId')}: ${identity.taxId || 'N/A'}\n${t('fields.medicalLicense')}: ${form.medical_license || 'N/A'}`;
         navigator.clipboard.writeText(text);
-        toast.success('Copied facility identity details to clipboard');
+        toast.success(t('messages.identityCopied'));
     };
 
     return (
@@ -1281,25 +2402,25 @@ const IdentitySummary = ({ identity, form }) => {
                     </div>
                     <div className="min-w-0">
                         <p className="truncate text-sm font-black text-slate-900 dark:text-white">{identity.centerName}</p>
-                        <p className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{identity.branchName || 'Organization Default'}</p>
+                        <p className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{identity.branchName || t('summary.organizationDefault')}</p>
                     </div>
                 </div>
                 <button
                     type="button"
                     onClick={copyIdentity}
-                    title="Copy details to clipboard"
+                    title={t('summary.copyDetails')}
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
                 >
                     <Copy size={14} />
                 </button>
             </div>
             <div className="mt-4 grid gap-2 text-xs text-slate-600 dark:text-slate-300">
-                <SummaryLine icon={MapPin} value={identity.address || 'No address configured'} />
-                <SummaryLine icon={Phone} value={identity.hotline || identity.phone || 'No phone configured'} />
-                <SummaryLine icon={Mail} value={identity.email || 'No email configured'} />
-                <SummaryLine icon={Hash} value={identity.taxNumber || 'No tax number configured'} />
+                <SummaryLine icon={MapPin} value={identity.address || t('summary.noAddress')} />
+                <SummaryLine icon={Phone} value={identity.hotline || identity.phone || t('summary.noPhone')} />
+                <SummaryLine icon={Mail} value={identity.email || t('summary.noEmail')} />
+                <SummaryLine icon={Hash} value={identity.taxNumber || t('summary.noTaxNumber')} />
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-2" aria-label="Brand colors">
+            <div className="mt-4 grid grid-cols-3 gap-2" aria-label={t('summary.brandColors')}>
                 {[form.primary_color, form.secondary_color, form.accent_color].map((color, idx) => (
                     <span key={idx} className="h-6 rounded-lg border border-slate-200 shadow-inner dark:border-slate-700" style={{ backgroundColor: normalizeColor(color) }} />
                 ))}
@@ -1315,27 +2436,36 @@ const SummaryLine = ({ icon: Icon, value }) => (
     </div>
 );
 
-const PreviewStack = ({ identity, form, previewTab, setPreviewTab, onExpandModal }) => {
+const PreviewStack = ({
+    t,
+    identity,
+    form,
+    previewTab,
+    setPreviewTab,
+    selectedPreviewBranchId,
+    setSelectedPreviewBranchId,
+    onExpandModal
+}) => {
     const tabs = [
-        { id: 'all', label: 'All' },
-        { id: 'report', label: 'Report' },
-        { id: 'invoice', label: 'Invoice' },
-        { id: 'sticker', label: 'Sticker' },
-        { id: 'portal', label: 'Portal' }
+        { id: 'all', label: t('previews.tabs.all') },
+        { id: 'report', label: t('previews.tabs.report') },
+        { id: 'invoice', label: t('previews.tabs.invoice') },
+        { id: 'sticker', label: t('previews.tabs.sticker') },
+        { id: 'portal', label: t('previews.tabs.portal') }
     ];
 
     return (
         <section id="previews" className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
             <div className="flex items-center justify-between gap-3">
                 <div>
-                    <p className="text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Live Branding Previews</p>
-                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Real-time document output rendering</p>
+                    <p className="text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">{t('previews.title')}</p>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t('previews.description')}</p>
                 </div>
                 <div className="flex items-center gap-1">
                     <button
                         type="button"
                         onClick={onExpandModal}
-                        title="Expand full preview"
+                        title={t('previews.expand')}
                         className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400 dark:hover:bg-slate-800"
                     >
                         <Maximize2 size={13} />
@@ -1344,6 +2474,27 @@ const PreviewStack = ({ identity, form, previewTab, setPreviewTab, onExpandModal
                 </div>
             </div>
 
+            {/* Branch Preview Context Switcher */}
+            {Array.isArray(form.branches) && form.branches.length > 0 && (
+                <div className="mt-3 rounded-xl border border-slate-200/90 bg-slate-50/80 p-2 dark:border-slate-800 dark:bg-slate-950/60">
+                    <label className="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                        <span>{t('branches.previews.contextLabel', { defaultValue: 'Branch Preview Context:' })}</span>
+                    </label>
+                    <select
+                        value={selectedPreviewBranchId}
+                        onChange={(e) => setSelectedPreviewBranchId(e.target.value)}
+                        className="h-7 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-800 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    >
+                        <option value="master">{t('branches.previews.masterOrg', { defaultValue: 'Organization Master (Default)' })}</option>
+                        {form.branches.map((b) => (
+                            <option key={b.id} value={b.id}>
+                                {b.displayName || b.name} {b.isMain ? '★ (HQ)' : ''} [{b.code}]
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
             {/* Filter Tabs */}
             <div className="mt-3 flex items-center gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-slate-800 dark:bg-slate-950">
                 {tabs.map((tab) => (
@@ -1351,11 +2502,10 @@ const PreviewStack = ({ identity, form, previewTab, setPreviewTab, onExpandModal
                         key={tab.id}
                         type="button"
                         onClick={() => setPreviewTab(tab.id)}
-                        className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${
-                            previewTab === tab.id
-                                ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
-                                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                        }`}
+                        className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${previewTab === tab.id
+                            ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
+                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                            }`}
                     >
                         {tab.label}
                     </button>
@@ -1364,66 +2514,66 @@ const PreviewStack = ({ identity, form, previewTab, setPreviewTab, onExpandModal
 
             <div className="mt-3 space-y-3">
                 {(previewTab === 'all' || previewTab === 'report') && (
-                    <DocumentPreview title="Medical Report" identity={identity} color={form.primary_color} detail={form.report_disclaimer || 'Medical disclaimer inherits from organization configuration.'} />
+                    <DocumentPreview t={t} title={t('previews.medicalReport')} identity={identity} color={form.primary_color} detail={form.report_disclaimer || t('previews.inheritedDisclaimer')} />
                 )}
                 {(previewTab === 'all' || previewTab === 'invoice') && (
-                    <DocumentPreview title="Billing Invoice" identity={identity} color={form.secondary_color} detail={form.invoice_footer || form.print_settings?.invoiceTerms || 'Billing terms and tax breakdown resolve here.'} />
+                    <DocumentPreview t={t} title={t('previews.billingInvoice')} identity={identity} color={form.secondary_color} detail={form.invoice_footer || form.print_settings?.invoiceTerms || t('previews.billingTerms')} />
                 )}
                 {(previewTab === 'all' || previewTab === 'invoice') && (
-                    <DocumentPreview title="Receipt Slip" identity={identity} color={form.accent_color} compact detail={form.receipt_footer || form.print_settings?.receiptFooter || 'Thermal receipt footer block.'} />
+                    <DocumentPreview t={t} title={t('previews.receiptSlip')} identity={identity} color={form.accent_color} compact detail={form.receipt_footer || form.print_settings?.receiptFooter || t('previews.receiptFooter')} />
                 )}
                 {(previewTab === 'all' || previewTab === 'sticker') && (
-                    <StickerPreview identity={identity} />
+                    <StickerPreview t={t} identity={identity} />
                 )}
                 {(previewTab === 'all' || previewTab === 'portal') && (
-                    <PortalPreview identity={identity} message={form.portal_welcome_message || form.homepage_settings?.heroTitle} color={form.primary_color} />
+                    <PortalPreview t={t} identity={identity} message={form.portal_welcome_message || form.homepage_settings?.heroTitle} color={form.primary_color} />
                 )}
             </div>
         </section>
     );
 };
 
-const DocumentPreview = ({ title, identity, color, detail, compact = false }) => (
+const DocumentPreview = ({ t, title, identity, color, detail, compact = false }) => (
     <div className="rounded-xl border border-slate-200/80 bg-white p-3 text-slate-800 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 dark:border-slate-800">
             <div className="min-w-0">
                 <p className="truncate text-[10px] font-black uppercase tracking-wider" style={{ color: normalizeColor(color) }}>{title}</p>
                 <p className="truncate text-xs font-bold">{identity.centerName}</p>
-                {identity.branchName ? <p className="truncate text-[10px] text-slate-500">{identity.branchName}</p> : null}
+                {identity.branchName ? <p className="truncate text-[10px] text-slate-500 font-semibold">{identity.branchName}</p> : null}
             </div>
             <div className="h-6 w-6 rounded-md shrink-0 border border-slate-200/60 dark:border-slate-800" style={{ backgroundColor: normalizeColor(color) }} />
         </div>
         <div className={`${compact ? 'mt-2 space-y-1 text-[9px]' : 'mt-2.5 space-y-1 text-[10px]'} text-slate-500 dark:text-slate-400`}>
-            <p className="truncate">{identity.address || 'Address inherited from settings'}</p>
-            <p className="truncate">{identity.hotline || identity.phone || 'Phone / hotline'}</p>
+            <p className="truncate">{identity.address || t('previews.addressInherited')}</p>
+            <p className="truncate">{identity.hotline || identity.phone || t('previews.phoneHotline')}</p>
             <p className="line-clamp-2 text-[9px] opacity-85">{detail}</p>
         </div>
     </div>
 );
 
-const StickerPreview = ({ identity }) => (
+const StickerPreview = ({ t, identity }) => (
     <div className="rounded-xl border border-slate-200/80 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
         <div className="flex h-20 flex-col justify-between rounded-lg border border-dashed border-slate-300 p-2 dark:border-slate-700">
             <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                     <p className="truncate text-[10px] font-black text-slate-900 dark:text-white">{identity.centerName}</p>
-                    <p className="truncate text-[8px] font-semibold text-slate-500">{identity.branchName || 'Branch Identity'}</p>
+                    <p className="truncate text-[8px] font-semibold text-slate-500">{identity.branchName || t('summary.branchIdentity')}</p>
                 </div>
                 <div className="h-6 w-6 rounded bg-slate-900 dark:bg-slate-100 shrink-0" />
             </div>
             <div className="space-y-0.5 text-[9px] font-bold text-slate-700 dark:text-slate-200">
-                <p>PATIENT: DOE, JOHN [M/45]</p>
-                <p className="text-[8px] font-mono text-slate-400">MRN-98412 · CT CHEST · ACC-7741</p>
+                <p>{t('previews.samplePatient')}</p>
+                <p className="text-[8px] font-mono text-slate-400">MRN-00000 · CT · ACC-0000</p>
             </div>
         </div>
     </div>
 );
 
-const PortalPreview = ({ identity, message, color }) => (
+const PortalPreview = ({ t, identity, message, color }) => (
     <div className="rounded-xl border border-slate-200/80 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
         <div className="rounded-lg p-3 text-white shadow-md" style={{ backgroundColor: normalizeColor(color) }}>
             <p className="text-xs font-black">{identity.centerName}</p>
-            <p className="mt-1 line-clamp-2 text-[10px] opacity-90">{message || 'Welcome to the Radiology Patient Portal'}</p>
+            <p className="mt-1 line-clamp-2 text-[10px] opacity-90">{message || t('previews.portalWelcome')}</p>
         </div>
     </div>
 );

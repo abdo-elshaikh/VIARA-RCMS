@@ -4,7 +4,9 @@ const express = require('express');
 const auditRoutes = require('../auditRoutes');
 const rbacRoutes = require('../rbacRoutes');
 const privacyRoutes = require('../privacyRoutes');
-const analyticsRoutes = require('../analyticsRoutes');
+// analyticsRoutes is intentionally NOT imported here.
+// It is mounted directly on /api/analytics in server.js to avoid
+// double-registration at both /api/analytics and /api/v1/analytics.
 const documentRoutes = require('../documentRoutes');
 const integrationRoutes = require('../integrationRoutes');
 const settingsRoutes = require('../settingsRoutes');
@@ -22,7 +24,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     router.use('/audit', auditRoutes(pool, authenticateToken, authorizeRole));
     router.use('/rbac', rbacRoutes(pool, authenticateToken, authorizeRole));
     router.use('/privacy', privacyRoutes(pool, authenticateToken, authorizeRole));
-    router.use('/analytics', analyticsRoutes(pool, authenticateToken, authorizeRole));
+    // analytics NOT mounted here — see /api/analytics in server.js
     router.use('/documents', documentRoutes(pool, authenticateToken, authorizeRole));
     router.use('/integrations', integrationRoutes(pool, authenticateToken, authorizeRole));
     router.use('/settings', settingsRoutes(pool, authenticateToken, authorizeRole));

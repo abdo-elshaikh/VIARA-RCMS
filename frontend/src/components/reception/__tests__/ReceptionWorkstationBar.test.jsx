@@ -3,6 +3,39 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import ReceptionWorkstationBar from '../ReceptionWorkstationBar';
 
+vi.mock('react-i18next', () => ({
+    useTranslation: () => ({
+        t: (key, opts) => {
+            const map = {
+                'workstation.all': 'All Cases',
+                'workstation.attention': 'Needs Attention',
+                'workstation.attentionShort': 'Attention',
+                'workstation.mine': 'My Tasks',
+                'workstation.unclaimed': 'Unclaimed',
+                'workstation.exam': 'In Exam',
+                'workstation.filters': 'Filters',
+                'workstation.rooms': 'Rooms',
+                'workstation.devices': 'Devices',
+                'workstation.filterRooms': 'Filter by Rooms',
+                'workstation.filterDevices': 'Filter By Device',
+                'workstation.searchRooms': 'Search rooms...',
+                'workstation.searchDevices': 'Search devices...',
+                'workstation.waitingDisplay': 'TV Display Board',
+                'workstation.openWaitingDisplay': 'Open TV Display Board',
+                'workstation.startShift': 'Start shift',
+                'workstation.closeShift': 'Close shift',
+                'workstation.activeFilters': 'Active Filters',
+                'workstation.clear': 'Clear',
+                'workstation.clearClinicalFilters': 'Reset All Filters',
+                'workstation.warningRooms': 'Rooms scope is selected',
+                'workstation.controlsLabel': 'Reception operations controls'
+            };
+            return map[key] || opts?.defaultValue || key;
+        },
+        i18n: { language: 'en', dir: () => 'ltr' }
+    }),
+}));
+
 describe('ReceptionWorkstationBar', () => {
     const mockRooms = [
         { room: 'Suite 101 (Main)', label: 'جناح فحص Suite 101', type: 'Imaging', machines: ['MRI-01 Siemens 3T'] },
@@ -67,6 +100,7 @@ describe('ReceptionWorkstationBar', () => {
             />
         );
 
+        fireEvent.click(screen.getByRole('button', { name: /Clinical filters|Filters|الفلاتر/ }));
         const modalityFilterBtn = screen.getByRole('button', { name: /By Device/ });
         fireEvent.click(modalityFilterBtn);
 
@@ -89,6 +123,7 @@ describe('ReceptionWorkstationBar', () => {
             />
         );
 
+        fireEvent.click(screen.getByRole('button', { name: /Clinical filters|Filters|الفلاتر/ }));
         const roomFilterBtn = screen.getByRole('button', { name: /Rooms/ });
         fireEvent.click(roomFilterBtn);
 
@@ -112,12 +147,26 @@ describe('ReceptionWorkstationBar', () => {
         );
 
         expect(screen.getByText(/الفلاتر النشطة|Active Filters/)).toBeInTheDocument();
-        expect(screen.getByText('Suite 101 (Main)')).toBeInTheDocument();
+        expect(screen.getByText('جناح فحص Suite 101')).toBeInTheDocument();
         expect(screen.getByText('MRI-01 Siemens Magnetom Skyra 3T')).toBeInTheDocument();
 
         const resetBtn = screen.getByRole('button', { name: /مسح كافة الفلاتر السريرية|Reset All Filters/ });
         fireEvent.click(resetBtn);
         expect(onClearAll).toHaveBeenCalled();
+    });
+
+    it('shows a warning when a scope is selected without matching active filters', () => {
+        render(
+            <ReceptionWorkstationBar
+                availableRooms={mockRooms}
+                availableModalities={mockModalities}
+                selectedScope="rooms"
+                selectedRooms={[]}
+                selectedModalities={[]}
+            />
+        );
+
+        expect(screen.getByText(/Rooms scope is selected|تم اختيار نطاق الغرف/)).toBeInTheDocument();
     });
 
     it('triggers TV display board modal on click', () => {
@@ -131,6 +180,31 @@ describe('ReceptionWorkstationBar', () => {
         const tvBtn = screen.getByRole('button', { name: /شاشة الانتظار|TV Display Board/ });
         fireEvent.click(tvBtn);
         expect(onOpenDisplayBoard).toHaveBeenCalled();
+    });
+
+    it('shows localized preset descriptions in the desk menu', () => {
+        render(
+            <ReceptionWorkstationBar
+                activeDesk="شباك 2 - رنين ومقطعية"
+                availableRooms={mockRooms}
+                availableModalities={mockModalities}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /شباك 2 - رنين ومقطعية/ }));
+        expect(screen.getByText('Direct link to MRI & CT modalities')).toBeInTheDocument();
+    });
+
+    it('shows a lock indicator while a reception shift is active', () => {
+        render(
+            <ReceptionWorkstationBar
+                activeDesk="شباك 1 - الاستقبال العام"
+                workstationLocked
+                receptionShift={{ session_id: 's1', started_at: new Date().toISOString() }}
+            />
+        );
+
+        expect(screen.getByLabelText(/Locked while a reception shift is open/)).toBeInTheDocument();
     });
 
     it('shows the active reception shift and exposes the close action', () => {

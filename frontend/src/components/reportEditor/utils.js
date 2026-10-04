@@ -3,6 +3,23 @@ import { getInMemoryAccessToken } from '../../utils/accessToken';
 import { generateUUID } from '../../utils/uuid';
 
 const IMAGE_UPLOAD_BATCH_SIZE = 10;
+const IMAGE_UPLOAD_MAX_FILE_BYTES = 25 * 1024 * 1024;
+const IMAGE_UPLOAD_BATCH_BYTES = 190 * 1024 * 1024;
+
+export const buildImageUploadBatches = (files) => {
+    const batches = [];
+    let batch = [];
+    let bytes = 0;
+    for (const file of files) {
+        if (file.size > IMAGE_UPLOAD_MAX_FILE_BYTES) throw new Error(`File exceeds the 25 MiB upload limit: ${file.name}`);
+        if (batch.length && (batch.length >= IMAGE_UPLOAD_BATCH_SIZE || bytes + file.size > IMAGE_UPLOAD_BATCH_BYTES)) {
+            batches.push(batch); batch = []; bytes = 0;
+        }
+        batch.push(file); bytes += Number(file.size || 0);
+    }
+    if (batch.length) batches.push(batch);
+    return batches;
+};
 const IMAGE_UPLOAD_TIMEOUT_MS = 12 * 60 * 1000;
 const UPLOAD_PROGRESS_POLL_MS = 450;
 const UPLOAD_PROGRESS_WEIGHT = 0.7;
@@ -97,9 +114,29 @@ export const templateToSections = (tpl) => {
     };
 };
 
-const uploadImageBatch = ({ examId, uploadSessionId, formData, onProgress }) =>
-    new Promise((resolve, reject) => {
-        const baseUrl = import.meta.env.VITE_API_URL || '/api';
+const getCsrfToken = () => {
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+};
+
+const ensureCsrfToken = async (baseUrl) => {
+    let token = getCsrfToken();
+    if (token) return token;
+    try {
+        await fetch(`${baseUrl}/csrf-token`, { credentials: 'include' });
+        token = getCsrfToken();
+    } catch {
+        // Fall back gracefully
+    }
+    return token;
+};
+
+const uploadImageBatch = async ({ examId, uploadSessionId, formData, onProgress }) => {
+    const baseUrl = import.meta.env.VITE_API_URL || '/api';
+    const csrfToken = await ensureCsrfToken(baseUrl);
+
+    return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', `${baseUrl}/pacs/exams/${examId}/images`);
         xhr.withCredentials = true;
@@ -107,6 +144,7 @@ const uploadImageBatch = ({ examId, uploadSessionId, formData, onProgress }) =>
 
         const token = getInMemoryAccessToken();
         if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        if (csrfToken) xhr.setRequestHeader('x-csrf-token', csrfToken);
 
         let pollInterval = null;
         let lastEvent = null;
@@ -231,12 +269,14 @@ const uploadImageBatch = ({ examId, uploadSessionId, formData, onProgress }) =>
                 return;
             }
 
-            reject(payload || new Error(`Upload failed (${xhr.status})`));
+            const errorMsg = payload?.error || payload?.message || `Upload failed (${xhr.status})`;
+            reject(new Error(errorMsg));
         };
 
         xhr.onerror = () => {
             stopPolling();
-            reject(new Error('Network error during image upload'));
+            const statusMsg = xhr.status ? ` (HTTP ${xhr.status})` : '';
+            reject(new Error(`Image upload connection was interrupted${statusMsg}. Check the server connection and review upload progress before retrying.`));
         };
         xhr.ontimeout = () => {
             stopPolling();
@@ -251,6 +291,7 @@ const uploadImageBatch = ({ examId, uploadSessionId, formData, onProgress }) =>
         xhr.send(formData);
         startPolling();
     });
+};
 
 export const uploadExamImagesWithProgress = async ({
     examId,
@@ -258,10 +299,7 @@ export const uploadExamImagesWithProgress = async ({
     orderNumber,
     onProgress
 }) => {
-    const batches = [];
-    for (let index = 0; index < files.length; index += IMAGE_UPLOAD_BATCH_SIZE) {
-        batches.push(files.slice(index, index + IMAGE_UPLOAD_BATCH_SIZE));
-    }
+    const batches = buildImageUploadBatches(files);
 
     const totalBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
     const uploadSessionId = generateUUID();

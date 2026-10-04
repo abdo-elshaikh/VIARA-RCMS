@@ -2,7 +2,11 @@ const { deliverResultSchema } = require('../src/schemas/resultDeliverySchema');
 const { deliverResult } = require('../src/controllers/resultDeliveryController');
 
 jest.mock('../src/services/notificationJobService', () => ({
-    triggerEvent: jest.fn()
+    triggerEvent: jest.fn().mockResolvedValue({})
+}));
+
+jest.mock('../src/services/loyaltyRewardService', () => ({
+    handleVisitCompletionReward: jest.fn().mockResolvedValue({})
 }));
 
 jest.mock('../src/services/partialPaymentExceptionService', () => ({
@@ -24,7 +28,7 @@ const makeRequest = (body = { deliveryMethod: 'Email' }) => ({
     get: jest.fn().mockReturnValue('jest')
 });
 
-const makeClient = ({ failOn } = {}) => {
+const makeClient = ({ failOn, exam: examOverride } = {}) => {
     const client = {
         query: jest.fn(async (sql) => {
             const text = String(sql);
@@ -35,8 +39,10 @@ const makeClient = ({ failOn } = {}) => {
                     rows: [{
                         exam_id: 'exam-1', appointment_id: 'appointment-1', patient_id: 'patient-1',
                         external_referring_doctor_id: null, order_number: 'ORD-1', status: 'Finalized',
-                        report_status: 'Finalized', queue_stage: 'Finalized', current_station: 'Reporting',
-                        phone_enc: null
+                        report_status: 'Finalized', report_locked: true, report_finalized_at: new Date().toISOString(),
+                        queue_stage: 'Finalized', current_station: 'Reporting',
+                        phone_enc: null,
+                        ...examOverride
                     }]
                 };
             }
@@ -64,6 +70,70 @@ describe('result delivery', () => {
         expect(deliverResultSchema.safeParse({
             deliveryMethod: 'Printed', deliveryStatus: 'Picked Up', acknowledgedByName: 'Staff'
         }).success).toBe(true);
+    });
+
+    test('accepts an explicit images-only delivery type', () => {
+        const parsed = deliverResultSchema.safeParse({
+            deliveryMethod: 'Physical Pickup',
+            resultType: 'Images',
+            recipientName: 'Patient',
+            acknowledgedByName: 'Patient'
+        });
+        expect(parsed.success).toBe(true);
+        expect(parsed.data.resultType).toBe('Images');
+    });
+
+    test('records images-only pickup without marking a report delivered', async () => {
+        const client = makeClient({
+            exam: {
+                status: 'Completed',
+                report_status: 'Draft',
+                report_locked: false,
+                report_request_status: 'NotRequested',
+                exam_completed_at: new Date().toISOString(),
+                queue_stage: 'Images Ready',
+                current_station: 'Delivery'
+            }
+        });
+        const db = { connect: jest.fn().mockResolvedValue(client) };
+        const res = makeResponse();
+        const next = jest.fn();
+
+        await deliverResult(db)(makeRequest({
+            deliveryMethod: 'Physical Pickup',
+            resultType: 'Images',
+            deliveryStatus: 'Picked Up',
+            recipientName: 'Patient',
+            acknowledgedByName: 'Patient'
+        }), res, next);
+
+        const deliveryInsert = client.query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO result_deliveries'));
+        const examUpdate = client.query.mock.calls.find(([sql]) => String(sql).includes('UPDATE examinations'));
+        expect(deliveryInsert[1]).toContain('Images');
+        expect(examUpdate[1]).toEqual(expect.arrayContaining([false, true, 'Images Delivered']));
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    test('rejects duplicate final-result delivery', async () => {
+        const client = makeClient({
+            exam: {
+                delivered_at: new Date().toISOString()
+            }
+        });
+        const next = jest.fn();
+
+        await deliverResult({ connect: jest.fn().mockResolvedValue(client) })(
+            makeRequest({ deliveryMethod: 'Email', deliveryStatus: 'Delivered' }),
+            makeResponse(),
+            next
+        );
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            statusCode: 409,
+            message: 'This result has already been delivered'
+        }));
+        expect(client.query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO result_deliveries'));
     });
 
     test('commits all delivery writes before notifying', async () => {

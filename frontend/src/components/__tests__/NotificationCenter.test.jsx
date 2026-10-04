@@ -6,7 +6,6 @@ import NotificationCenter from '../NotificationCenter';
 const mockPersonalQuery = vi.fn();
 const mockMarkAll = vi.fn();
 const mockMarkOne = vi.fn();
-const mockNavigate = vi.fn();
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
@@ -22,10 +21,11 @@ vi.mock('../../store/api', () => ({
 }));
 
 vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('../../utils/audioChime', () => ({ playHospitalChime: vi.fn() }));
 
-const renderDrawer = () => render(
+const renderCenter = (props = {}) => render(
     <MemoryRouter>
-        <NotificationCenter isOpen onClose={vi.fn()} unreadCount={1} />
+        <NotificationCenter isOpen onClose={vi.fn()} unreadCount={1} {...props} />
     </MemoryRouter>
 );
 
@@ -50,7 +50,7 @@ describe('NotificationCenter personal inbox', () => {
             refetch: vi.fn(),
         });
 
-        renderDrawer();
+        renderCenter();
 
         expect(mockPersonalQuery).toHaveBeenCalledWith(
             { limit: 120 },
@@ -71,10 +71,81 @@ describe('NotificationCenter personal inbox', () => {
             refetch,
         });
 
-        renderDrawer();
+        renderCenter();
 
         expect(screen.getByRole('alert')).toHaveTextContent('Inbox unavailable');
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
         expect(refetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders category chips, critical alerts banner, and filters items', () => {
+        mockPersonalQuery.mockReturnValue({
+            data: {
+                items: [
+                    {
+                        notification_id: 'n-critical',
+                        subject: 'STAT Panic Finding',
+                        content: 'Immediate intervention required',
+                        channel: 'InApp',
+                        priority: 'Critical',
+                        category: 'clinical',
+                        patient_mrn: 'MRN-7788',
+                        is_read: false,
+                        created_at: new Date().toISOString(),
+                    },
+                    {
+                        notification_id: 'n-appt',
+                        subject: 'Appointment Confirmed',
+                        content: 'Scheduled for 10:00 AM',
+                        channel: 'WhatsApp',
+                        priority: 'Normal',
+                        category: 'appointments',
+                        is_read: true,
+                        created_at: new Date(Date.now() - 3600000).toISOString(),
+                    }
+                ],
+                counts: { all: 2, unread: 1, critical: 1 },
+            },
+            isLoading: false,
+            isFetching: false,
+            isError: false,
+            refetch: vi.fn(),
+        });
+
+        renderCenter();
+
+        // Critical alert banner visible
+        expect(screen.getByText(/critical \/ STAT alert/i)).toBeInTheDocument();
+        expect(screen.getByText('STAT Panic Finding')).toBeInTheDocument();
+        expect(screen.getByText('Appointment Confirmed')).toBeInTheDocument();
+
+        // Filter by Appointments category
+        fireEvent.click(screen.getByTestId('category-chip-appointments'));
+        expect(screen.getByText('Appointment Confirmed')).toBeInTheDocument();
+        expect(screen.queryByText('STAT Panic Finding')).not.toBeInTheDocument();
+
+        // Switch back to All
+        fireEvent.click(screen.getByTestId('category-chip-all'));
+        expect(screen.getByText('STAT Panic Finding')).toBeInTheDocument();
+    });
+
+    it('toggles audio chime preference when sound button is clicked', () => {
+        const onUpdatePreference = vi.fn();
+        mockPersonalQuery.mockReturnValue({
+            data: { items: [], counts: { all: 0, unread: 0 } },
+            isLoading: false,
+            isFetching: false,
+            isError: false,
+            refetch: vi.fn(),
+        });
+
+        renderCenter({
+            preferences: { notificationSound: false },
+            onUpdatePreference,
+        });
+
+        const soundButton = screen.getByRole('button', { name: /enable notification chime/i });
+        fireEvent.click(soundButton);
+        expect(onUpdatePreference).toHaveBeenCalledWith({ notificationSound: true });
     });
 });

@@ -122,6 +122,18 @@ export const appointmentApi = api.injectEndpoints({
             query: (id) => `/referring-doctors/${id}/stats`,
             providesTags: (result, error, id) => [{ type: 'ReferringDoctors', id }],
         }),
+        getDoctorInteractions: builder.query({
+            query: (doctorId) => `/referring-doctors/${doctorId}/interactions`,
+            providesTags: (result, error, id) => [{ type: 'DoctorInteractions', id }],
+        }),
+        createDoctorInteraction: builder.mutation({
+            query: ({ doctorId, ...data }) => ({
+                url: `/referring-doctors/${doctorId}/interactions`,
+                method: 'POST',
+                body: data,
+            }),
+            invalidatesTags: (result, error, { doctorId }) => [{ type: 'DoctorInteractions', id: doctorId }, 'ReferringDoctors'],
+        }),
         setDoctorPortalPassword: builder.mutation({
             query: ({ id, ...data }) => ({
                 url: `/referring-doctors/${id}/set-portal-password`,
@@ -132,7 +144,7 @@ export const appointmentApi = api.injectEndpoints({
         }),
         getRooms: builder.query({
             query: (params) => ({ url: '/rooms', params }),
-            providesTags: ['Rooms'],
+            providesTags: ['Rooms', 'Machines', 'ExamTypes'],
         }),
         getRoomById: builder.query({
             query: (id) => `/rooms/${id}`,

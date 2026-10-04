@@ -77,6 +77,13 @@ const SEND_CHANNELS = ['Email', 'SMS', 'WhatsApp'];
 const MANUAL_ROLES = new Set(['Developer', 'Admin', 'Receptionist', 'Marketing']);
 const OUTBOUND_LOG_ROLES = new Set(['Developer', 'Admin', 'Receptionist', 'HR', 'Marketing']);
 
+const formatEventType = (eventType) => String(eventType || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, letter => letter.toUpperCase());
+
 const channelIcons = {
     Email: Mail,
     SMS: Smartphone,
@@ -111,13 +118,13 @@ const categoryDefinitions = [
 const fieldClass = 'h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-800 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
 
 export default function Notifications() {
-    const { t, i18n } = useTranslation(['system', 'common', 'workspace']);
+    const { t, i18n } = useTranslation(['common', 'system', 'workspace']);
     const navigate = useNavigate();
     const currentUser = useSelector(selectCurrentUser);
     const effectivePermissions = getEffectivePermissions(currentUser);
     const canSendManual = MANUAL_ROLES.has(currentUser?.role)
         && (currentUser?.role === 'Developer' || effectivePermissions.has('MANAGE_NOTIFICATIONS'));
-    const canViewOutbound = OUTBOUND_ROLES_CHECK(currentUser?.role);
+    const canViewOutbound = OUTBOUND_LOG_ROLES.has(currentUser?.role);
     const isAr = i18n.language?.startsWith('ar');
     const isRtl = i18n.dir() === 'rtl';
     const language = i18n.language;
@@ -900,9 +907,9 @@ export default function Notifications() {
 // ─── Notification Card Component ──────────────────────────────────────────
 
 export const NotificationCard = ({ item, expanded, onToggle, onMarkRead, onCopy, onNavigate, onAcknowledge, marking, acknowledging, language, isAr }) => {
-    const { t } = useTranslation(['system', 'common', 'workspace']);
+    const { t } = useTranslation(['common', 'system', 'workspace']);
     const ChannelIcon = channelIcons[item.channel] || Bell;
-    const title = item.subject || item.event_type || item.channel || (t('systemAlert'));
+    const title = item.subject || formatEventType(item.event_type) || item.channel || (t('systemAlert'));
     const priority = normalizePriority(item.priority, item.event_type);
     const priStyle = priorityStyles[priority] || priorityStyles.Normal;
     const badgeStyle = channelStyles[item.channel] || channelStyles.InApp;

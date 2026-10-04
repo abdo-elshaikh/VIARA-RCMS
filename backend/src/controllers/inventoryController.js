@@ -44,9 +44,10 @@ const addItem = (db) => async (req, res, next) => {
         const data = createInventoryItemSchema.parse(req.body);
         client = await db.connect();
         await client.query('BEGIN');
+        const isContrast = data.isContrastAgent ?? (/contrast/i.test(data.category || '') || /صبغة|contrast/i.test(data.name || ''));
         const result = await client.query(
             "INSERT INTO inventory_items (name, category, quantity, unit, min_level, unit_price, is_contrast_agent) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
-            [data.name, data.category || null, data.quantity, data.unit || null, data.minLevel, data.unitPrice ?? 0, data.isContrastAgent]
+            [data.name, data.category || null, data.quantity, data.unit || null, data.minLevel, data.unitPrice ?? 0, isContrast]
         );
 
         if (data.quantity > 0) {
@@ -422,9 +423,14 @@ const getStockMovements = (db) => async (req, res, next) => {
         const mappedRows = result.rows.map(row => {
             const mapped = { ...row };
             if (row.patient_first_name_enc || row.patient_last_name_enc) {
-                mapped.patient_name = [decrypt(row.patient_first_name_enc), decrypt(row.patient_last_name_enc)]
-                    .filter(Boolean)
-                    .join(' ');
+                try {
+                    mapped.patient_name = [
+                        row.patient_first_name_enc ? decrypt(row.patient_first_name_enc) : null,
+                        row.patient_last_name_enc ? decrypt(row.patient_last_name_enc) : null
+                    ].filter(Boolean).join(' ');
+                } catch {
+                    mapped.patient_name = '—';
+                }
             }
             delete mapped.patient_first_name_enc;
             delete mapped.patient_last_name_enc;

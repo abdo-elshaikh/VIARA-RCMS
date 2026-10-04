@@ -1,4 +1,4 @@
-const {
+﻿const {
     EMERGENCY_ACCESS_PERMISSIONS,
     EMERGENCY_ACCESS_ROLES,
     getActiveEmergencyGrant,
@@ -139,7 +139,16 @@ describe('break-glass governance', () => {
     });
 
     test('a fresh staff login expires orphaned emergency grants from prior sessions', async () => {
-        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+        const db = {
+            query: jest.fn(async (sql) => {
+                const text = String(sql);
+                // Account existence check in generateTokens requires the row to exist
+                if (text.includes('FROM users') && text.includes('FOR UPDATE')) {
+                    return { rows: [{ user_id: USER_ID }] };
+                }
+                return { rows: [] };
+            })
+        };
 
         const { token } = await AuthService.generateTokens(
             db,

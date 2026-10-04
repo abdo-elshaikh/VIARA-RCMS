@@ -98,7 +98,7 @@ const requestFingerprint = (payload) => crypto
 
 const lockFinancialBusinessDate = async (
     client,
-    { businessDate = null, branchId = DEFAULT_BRANCH_ID } = {}
+    { businessDate = null, branchId = DEFAULT_BRANCH_ID, exclusive = false } = {}
 ) => {
     const normalizedBusinessDate = normalizeBusinessDate(businessDate);
     const dateResult = await client.query(
@@ -109,8 +109,9 @@ const lockFinancialBusinessDate = async (
         [normalizedBusinessDate]
     );
     const resolvedDate = dateResult.rows[0].business_date;
+    const lockFn = exclusive ? 'pg_advisory_xact_lock' : 'pg_advisory_xact_lock_shared';
     await client.query(
-        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        `SELECT ${lockFn}(hashtextextended($1, 0))`,
         [`financial-period:${branchId}:${resolvedDate}`]
     );
 

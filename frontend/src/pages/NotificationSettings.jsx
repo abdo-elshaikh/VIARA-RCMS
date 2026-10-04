@@ -373,7 +373,7 @@ export const NotificationTemplates = () => {
 
 export const NotificationJobs = () => {
     const { t, i18n } = useTranslation(['settings', 'common']);
-    const [statusFilter, setStatusFilter] = useState('Failed');
+    const [statusFilter, setStatusFilter] = useState('DeadLetter');
     const [page, setPage] = useState(1);
     const pageSize = 25;
     const { data: jobsData, isLoading, isFetching, refetch } = useGetNotificationJobsQuery(
@@ -387,7 +387,7 @@ export const NotificationJobs = () => {
     const [processJobs, { isLoading: isProcessing }] = useProcessNotificationJobsMutation();
 
     const deadLetterIds = new Set(
-        jobs.filter(j => j.status === 'Failed' && j.retry_count >= j.max_retries).map(j => j.job_id)
+        jobs.filter(j => ['Failed', 'DeadLetter'].includes(j.status) && j.retry_count >= j.max_retries).map(j => j.job_id)
     );
 
     const handleRetry = async (id) => {
@@ -408,7 +408,7 @@ export const NotificationJobs = () => {
         }
     };
 
-    const STATUS_FILTERS = ['', 'Pending', 'Processing', 'Sent', 'Failed', 'Cancelled', 'Skipped'];
+    const STATUS_FILTERS = ['', 'Pending', 'Processing', 'Sent', 'Failed', 'DeadLetter', 'Cancelled', 'Skipped'];
 
     return (
         <div className="space-y-4 p-4 sm:p-5">
@@ -486,7 +486,7 @@ export const NotificationJobs = () => {
                                             <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{job.retry_count}/{job.max_retries}</td>
                                             <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">{new Date(job.scheduled_for).toLocaleString()}</td>
                                             <td className="px-4 py-3 text-end">
-                                                {job.status === 'Failed' && (
+                                                {['Failed', 'DeadLetter'].includes(job.status) && (
                                                     <button type="button" onClick={() => handleRetry(job.job_id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
                                                         <RotateCcw size={13} />
                                                         {t('common.retry', 'Retry')}

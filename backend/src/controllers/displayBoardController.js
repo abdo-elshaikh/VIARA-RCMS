@@ -28,6 +28,8 @@ const STAGE_PHASE = {
     'Prep Pending': 'preparation',
     'Ready for Exam': 'preparation',
     'In Exam': 'imaging',
+    'Images Ready': 'completed',
+    'Images Delivered': 'delivered',
     Reporting: 'reporting',
     Finalized: 'completed',
     Delivered: 'delivered',
@@ -51,6 +53,7 @@ const CENTER_SETTING_KEYS = [
     'center.address_ar',
     'center.working_hours',
     'display.patient_display_mode',
+    'display.call_announcement_mode',
     'display.show_ticker',
     'display.board_title'
 ];
@@ -121,21 +124,32 @@ const getDisplayBoard = (db) => async (req, res, next) => {
                         (date_trunc('day', (NOW() AT TIME ZONE tz)) AT TIME ZONE tz) AS day_start,
                         (date_trunc('day', (NOW() AT TIME ZONE tz) + INTERVAL '1 day') AT TIME ZONE tz) AS day_end
                     FROM center_tz
+                ),
+                numbered_cases AS (
+                    SELECT e.modality_id, e.order_number, e.priority, e.queue_stage, e.is_on_hold,
+                           e.arrived_at, e.exam_started_at, e.report_finalized_at, e.delivered_at, e.created_at,
+                           a.start_time,
+                           p.first_name_enc, p.last_name_enc, p.gender,
+                           CASE WHEN e.arrived_at IS NOT NULL THEN
+                               (ROW_NUMBER() OVER (
+                                   ORDER BY e.arrived_at ASC NULLS LAST, e.exam_id ASC
+                               ))::integer
+                           ELSE NULL END AS queue_number
+                    FROM examinations e
+                    JOIN appointments a ON e.appointment_id = a.appointment_id
+                    JOIN patients p ON e.patient_id = p.patient_id
+                    CROSS JOIN day_bounds
+                    WHERE COALESCE(p.is_confidential, FALSE) = FALSE
+                      AND (
+                          (a.start_time >= day_bounds.day_start AND a.start_time < day_bounds.day_end)
+                          OR e.arrived_at >= day_bounds.day_start
+                      )
                 )
-                SELECT e.modality_id, e.order_number, e.priority, e.queue_stage, e.is_on_hold,
-                       e.arrived_at, e.exam_started_at, e.report_finalized_at, e.delivered_at, e.created_at,
-                       a.start_time,
-                       p.first_name_enc, p.last_name_enc
-                FROM examinations e
-                JOIN appointments a ON e.appointment_id = a.appointment_id
-                JOIN patients p ON e.patient_id = p.patient_id
-                CROSS JOIN day_bounds
-                WHERE e.queue_stage NOT IN ('Cancelled', 'Delivered')
-                  AND COALESCE(p.is_confidential, FALSE) = FALSE
-                  AND (
-                      (a.start_time >= day_bounds.day_start AND a.start_time < day_bounds.day_end)
-                      OR e.arrived_at >= day_bounds.day_start
-                  )
+                SELECT modality_id, order_number, priority, queue_stage, is_on_hold,
+                       arrived_at, exam_started_at, report_finalized_at, delivered_at, created_at,
+                       start_time, first_name_enc, last_name_enc, gender, queue_number
+                FROM numbered_cases
+                WHERE queue_stage NOT IN ('Cancelled', 'Images Delivered', 'Delivered')
             `),
             db.query(`
                 WITH center_tz AS (
@@ -153,9 +167,9 @@ const getDisplayBoard = (db) => async (req, res, next) => {
                 SELECT
                     COUNT(*) FILTER (WHERE e.queue_stage IN ('Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam'))::int AS waiting,
                     COUNT(*) FILTER (WHERE e.queue_stage = 'In Exam')::int AS in_exam,
-                    COUNT(*) FILTER (WHERE e.report_finalized_at >= day_bounds.day_start)::int AS completed_today,
+                    COUNT(*) FILTER (WHERE e.exam_completed_at >= day_bounds.day_start)::int AS completed_today,
                     COUNT(*) FILTER (WHERE e.delivered_at >= day_bounds.day_start)::int AS delivered_today,
-                    COALESCE(ROUND(AVG(EXTRACT(EPOCH FROM (NOW() - COALESCE(e.arrived_at, e.created_at))) / 60)
+                    COALESCE(ROUND(AVG(GREATEST(0, EXTRACT(EPOCH FROM (NOW() - COALESCE(e.arrived_at, a.start_time, e.created_at))) / 60))
                         FILTER (WHERE e.queue_stage IN ('Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam'))::numeric, 0), 0)::int AS average_waiting_minutes
                 FROM examinations e
                                 JOIN appointments a ON e.appointment_id = a.appointment_id
@@ -181,11 +195,16 @@ const getDisplayBoard = (db) => async (req, res, next) => {
                 LIMIT 10
             `).catch(() => ({ rows: [] })),
             db.query(`
-                SELECT call_id, order_number, room_name, modality_id, call_by_name, called_at,
-                       EXTRACT(EPOCH FROM called_at) * 1000 AS timestamp
-                FROM display_call_events
-                WHERE expires_at > CURRENT_TIMESTAMP
-                ORDER BY called_at DESC
+                SELECT d.call_id, d.order_number, d.room_name, d.modality_id, d.call_by_name, d.called_at,
+                       p.first_name_enc, p.last_name_enc, p.gender,
+                       EXTRACT(EPOCH FROM d.called_at) * 1000 AS timestamp
+                FROM display_call_events d
+                LEFT JOIN examinations e ON e.order_number = d.order_number
+                LEFT JOIN invoices i ON i.invoice_number = d.order_number
+                LEFT JOIN patients p ON p.patient_id = COALESCE(e.patient_id, i.patient_id)
+                    AND COALESCE(p.is_confidential, FALSE) = FALSE
+                WHERE d.expires_at > CURRENT_TIMESTAMP
+                ORDER BY d.called_at DESC
                 LIMIT 10
             `).catch(() => ({ rows: activeBroadcastCalls.filter((call) => Date.now() - call.timestamp < 45000) }))
         ]);
@@ -198,6 +217,9 @@ const getDisplayBoard = (db) => async (req, res, next) => {
             : 'order_only';
         const showNames = patientDisplayMode !== 'order_only';
         const showOrderNumbers = patientDisplayMode !== 'name';
+        const callAnnouncementMode = ['token_only', 'name_only', 'token_and_name'].includes(settings['display.call_announcement_mode'])
+            ? settings['display.call_announcement_mode']
+            : 'token_only';
         const showTicker = settings['display.show_ticker'] !== 'false';
         const boardTitle = (settings['display.board_title'] || '').trim() || null;
 
@@ -211,7 +233,9 @@ const getDisplayBoard = (db) => async (req, res, next) => {
 
         const projectCase = (row) => ({
             order_number: showOrderNumbers ? row.order_number : null,
+            queue_number: numberOrNull(row.queue_number),
             patient_name: showNames ? (row.patient_name || null) : null,
+            gender: showNames ? (row.gender || null) : null,
             priority: row.priority,
             queue_stage: row.queue_stage,
             phase: STAGE_PHASE[row.queue_stage] || 'imaging',
@@ -289,6 +313,7 @@ const getDisplayBoard = (db) => async (req, res, next) => {
             },
             config: {
                 patientDisplayMode,
+                callAnnouncementMode,
                 showTicker,
                 boardTitle
             },
@@ -305,16 +330,29 @@ const getDisplayBoard = (db) => async (req, res, next) => {
                 deliveredToday: numberOrNull(summary.delivered_today) || 0,
                 averageWaitingMinutes: numberOrNull(summary.average_waiting_minutes) || 0
             },
-            broadcastCalls: callsResult.rows.map((call) => ({
-                id: call.call_id || call.id,
-                orderNumber: call.order_number || call.orderNumber,
-                patientName: null,
-                roomName: call.room_name || call.roomName || null,
-                modalityId: call.modality_id || call.modalityId || null,
-                callByName: false,
-                calledAt: call.called_at || call.calledAt,
-                timestamp: Number(call.timestamp) || Date.now(),
-            })),
+            broadcastCalls: callsResult.rows.map((call) => {
+                const orderNum = call.order_number || call.orderNumber;
+                const activeMatch = activeBroadcastCalls.find(c => c.orderNumber === orderNum || c.id === (call.call_id || call.id));
+                const queueMatch = queueResult.rows.find(q => q.order_number === orderNum);
+                const resolvedName = showNames
+                    ? (activeMatch?.patientName || decryptPatientName(call) || (queueMatch ? decryptPatientName(queueMatch) : null))
+                    : null;
+                const resolvedQueue = activeMatch?.queueNumber ?? (queueMatch?.queue_number ? Number(queueMatch.queue_number) : null);
+                return {
+                    id: call.call_id || call.id,
+                    orderNumber: orderNum,
+                    patientName: resolvedName,
+                    gender: showNames ? (call.gender || activeMatch?.gender || queueMatch?.gender || null) : null,
+                    queueNumber: resolvedQueue,
+                    roomName: call.room_name || call.roomName || null,
+                    deskIdentifier: activeMatch?.deskIdentifier || null,
+                    modalityId: call.modality_id || call.modalityId || null,
+                    callByName: showNames && callAnnouncementMode !== 'token_only' && Boolean(call.call_by_name ?? call.callByName),
+                    announcementMode: showNames ? callAnnouncementMode : 'token_only',
+                    calledAt: call.called_at || call.calledAt,
+                    timestamp: Number(call.timestamp) || Date.now(),
+                };
+            }),
             rooms: Array.from(roomsMap.values())
         });
     } catch (error) {
@@ -326,18 +364,83 @@ const getDisplayBoard = (db) => async (req, res, next) => {
 // In-memory active broadcast calls for real-time TV synchronized voice call-outs
 
 const broadcastPatientCall = (db) => async (req, res, next) => {
-    const { orderNumber, roomName, modalityId } = req.body || {};
+    const { orderNumber, roomName, modalityId, queueNumber, callByName, deskIdentifier } = req.body || {};
     const normalizedOrder = String(orderNumber || '').trim();
     if (!normalizedOrder || normalizedOrder.length > 80) {
         return next(new AppError('A valid order number is required for the display call', 400));
     }
+
+    let resolvedDesk = deskIdentifier ? String(deskIdentifier).trim().slice(0, 100) : null;
+    if (req.user?.role === 'Receptionist') {
+        const shiftCheck = await db.query(`
+            SELECT session_id, desk_identifier FROM reception_shift_sessions
+            WHERE user_id = $1 AND status = 'Open'
+            LIMIT 1
+        `, [req.user.user_id]);
+        if (!shiftCheck.rows.length) {
+            return next(new AppError(
+                'Start your reception shift before broadcasting patient calls. | يجب بدء وردية الاستقبال لتتمكن من نداء المرضى على شاشات الصالة.',
+                409,
+                true,
+                'RECEPTION_SHIFT_REQUIRED'
+            ));
+        }
+        if (!resolvedDesk && shiftCheck.rows[0]?.desk_identifier) {
+            resolvedDesk = shiftCheck.rows[0].desk_identifier;
+        }
+    }
+
+    let resolvedPatientName = null;
+    let resolvedPatientGender = null;
+    const candidateQueueNumber = queueNumber == null ? null : Number(queueNumber);
+    const resolvedQueueNumber = Number.isSafeInteger(candidateQueueNumber) && candidateQueueNumber >= 0
+        ? candidateQueueNumber
+        : null;
+
+    // Resolve names only from trusted patient records. Never expose client-supplied
+    // names or fall back to them when a record cannot be verified.
+    try {
+        const examLookup = await db.query(`
+            SELECT patient_id, first_name_enc, last_name_enc, gender, is_confidential
+            FROM (
+                SELECT p.patient_id, p.first_name_enc, p.last_name_enc, p.gender, COALESCE(p.is_confidential, FALSE) AS is_confidential,
+                       e.created_at AS source_created_at
+                FROM examinations e
+                JOIN patients p ON e.patient_id = p.patient_id
+                WHERE e.order_number = $1
+                UNION ALL
+                SELECT p.patient_id, p.first_name_enc, p.last_name_enc, p.gender, COALESCE(p.is_confidential, FALSE) AS is_confidential,
+                       i.generated_at AS source_created_at
+                FROM invoices i
+                JOIN patients p ON i.patient_id = p.patient_id
+                WHERE i.invoice_number = $1
+            ) verified_patient
+            ORDER BY source_created_at DESC
+            LIMIT 1
+        `, [normalizedOrder]);
+        if (examLookup.rows.length > 0) {
+            const row = examLookup.rows[0];
+            if (!row.is_confidential) {
+                resolvedPatientName = decryptPatientName(row) || null;
+                resolvedPatientGender = row.gender || null;
+            }
+        }
+    } catch (lookupErr) {
+        logger.debug('Failed to lookup patient details for call', { error: lookupErr.message });
+    }
+
+    const resolvedCallByName = callByName === true && Boolean(resolvedPatientName);
+
     const newCall = {
         id: `${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
         orderNumber: normalizedOrder,
-        patientName: null,
+        patientName: resolvedPatientName,
+        gender: resolvedPatientGender,
+        queueNumber: resolvedQueueNumber,
         roomName: roomName ? String(roomName).trim().slice(0, 150) : null,
+        deskIdentifier: resolvedDesk || null,
         modalityId: modalityId || null,
-        callByName: false,
+        callByName: resolvedCallByName,
         calledAt: new Date().toISOString(),
         timestamp: Date.now()
     };
@@ -349,11 +452,11 @@ const broadcastPatientCall = (db) => async (req, res, next) => {
             ), created AS (
                 INSERT INTO display_call_events (
                     order_number, room_name, modality_id, called_by, call_by_name
-                ) VALUES ($1, $2, $3, $4, FALSE)
+                ) VALUES ($1, $2, $3, $4, $5)
                 RETURNING call_id, called_at
             )
             SELECT call_id, called_at FROM created
-        `, [newCall.orderNumber, newCall.roomName, newCall.modalityId, req.user.user_id]);
+        `, [newCall.orderNumber, newCall.roomName, newCall.modalityId, req.user.user_id, resolvedCallByName]);
         newCall.id = result.rows[0]?.call_id || newCall.id;
         newCall.calledAt = result.rows[0]?.called_at || newCall.calledAt;
         activeBroadcastCalls = [newCall, ...activeBroadcastCalls.filter(c => Date.now() - c.timestamp < 60000)].slice(0, 10);

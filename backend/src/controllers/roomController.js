@@ -14,6 +14,10 @@ const roomSchema = z.object({
 
 const updateRoomSchema = roomSchema.partial();
 
+const MATRIX_CACHE_TTL_MS = 10000;
+let matrixCache = null;
+let matrixCacheTime = 0;
+
 const getRooms = (db) => async (req, res, next) => {
     try {
         const { status, type } = req.query;
@@ -185,6 +189,7 @@ const createRoom = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+        matrixCache = null;
         res.status(201).json(result.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -250,6 +255,7 @@ const updateRoom = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+        matrixCache = null;
         res.json(result.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -310,6 +316,7 @@ const deleteRoom = (db) => async (req, res, next) => {
         });
 
         await client.query('COMMIT');
+        matrixCache = null;
         res.status(204).end();
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -321,6 +328,11 @@ const deleteRoom = (db) => async (req, res, next) => {
 
 const getClinicalHierarchyMatrix = (db) => async (req, res, next) => {
     try {
+        const now = Date.now();
+        if (matrixCache && (now - matrixCacheTime < MATRIX_CACHE_TTL_MS)) {
+            return res.json(matrixCache);
+        }
+
         const roomsResult = await db.query(`
             SELECT r.room_id, r.name, r.room_number, r.type, r.floor, r.status, r.notes,
                    r.created_at, r.updated_at
@@ -400,11 +412,15 @@ const getClinicalHierarchyMatrix = (db) => async (req, res, next) => {
             contrastProcedures: proceduresResult.rows.filter(p => p.contrast_required).length
         };
 
-        res.json({
+        const responsePayload = {
             kpis,
             rooms,
             unassignedMachines
-        });
+        };
+        matrixCache = responsePayload;
+        matrixCacheTime = Date.now();
+
+        res.json(responsePayload);
     } catch (error) {
         next(error);
     }

@@ -27,6 +27,60 @@ describe('security and financial invariants', () => {
         expect(() => decrypt(`${iv.toString('hex')}:${legacy.toString('hex')}`)).toThrow('legacy AES-CBC format is no longer supported');
     });
 
+    test('decrypt succeeds for values encrypted with an alternate or rotated key', () => {
+        const oldKey = 'd70863ca9ae765b863f9396382374bbb83596c94a222e81644923f823cbcdd5b';
+        const currentKey = '0694707566e23e72bd27bd79daf2ef76751c8f70c35045f3da3c4fe5262c5aee';
+        jest.resetModules();
+        process.env.ENCRYPTION_KEY = currentKey;
+        process.env.ENCRYPTION_KEYS = JSON.stringify({ default: oldKey, rotated: currentKey });
+        process.env.ENCRYPTION_KEY_ID = 'rotated';
+
+        const { encrypt, decrypt } = require('../src/utils/crypto');
+        const key = Buffer.from(oldKey, 'hex');
+        const iv = crypto.randomBytes(12);
+        const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+        const value = 'Rotated-state patient name';
+        const payload = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+        const tag = cipher.getAuthTag();
+        const oldEncrypted = `v2:default:${iv.toString('hex')}:${tag.toString('hex')}:${payload.toString('hex')}`;
+
+        expect(decrypt(oldEncrypted)).toBe(value);
+        expect(encrypt('Fresh value')).toMatch(/^v2:/);
+    });
+
+    test('decrypt continues to the next candidate when crypto raises a generic auth error', () => {
+        const oldKey = 'd70863ca9ae765b863f9396382374bbb83596c94a222e81644923f823cbcdd5b';
+        const currentKey = '0694707566e23e72bd27bd79daf2ef76751c8f70c35045f3da3c4fe5262c5aee';
+        jest.resetModules();
+        process.env.ENCRYPTION_KEY = currentKey;
+        process.env.ENCRYPTION_KEYS = JSON.stringify({ default: currentKey, rotated: oldKey });
+        process.env.ENCRYPTION_KEY_ID = 'default';
+
+        const actualCreateDecipheriv = crypto.createDecipheriv;
+        const original = crypto.createDecipheriv;
+        const { decrypt } = require('../src/utils/crypto');
+        const key = Buffer.from(oldKey, 'hex');
+        const iv = crypto.randomBytes(12);
+        const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+        const payload = Buffer.concat([cipher.update('Fallback patient name', 'utf8'), cipher.final()]);
+        const tag = cipher.getAuthTag();
+        const encrypted = `v2:default:${iv.toString('hex')}:${tag.toString('hex')}:${payload.toString('hex')}`;
+
+        crypto.createDecipheriv = jest.fn((algorithm, keyBuffer, ivBuffer) => {
+            if (String(keyBuffer.toString('hex')) === currentKey) {
+                return {
+                    setAuthTag: () => {},
+                    update: () => Buffer.alloc(0),
+                    final: () => { throw new Error('Unsupported state or unable to authenticate data'); }
+                };
+            }
+            return actualCreateDecipheriv.call(crypto, algorithm, keyBuffer, ivBuffer);
+        });
+
+        expect(decrypt(encrypted)).toBe('Fallback patient name');
+        crypto.createDecipheriv = original;
+    });
+
     test('unknown roles cannot inherit admin dashboard data', async () => {
         const { getDashboardStats } = require('../src/controllers/dashboardController');
         const next = jest.fn();

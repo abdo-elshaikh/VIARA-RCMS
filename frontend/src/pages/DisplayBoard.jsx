@@ -1,1424 +1,2652 @@
-import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+/**
+ * DisplayBoard.jsx
+ * VIARA — Waiting-room clinical signage (16:9 landscape / portrait)
+ *
+ * Production calling board for the radiology waiting hall:
+ *  • Live broadcast calls — SSE hook + 6s polling fallback, replay-guarded
+ *  • Multi-modality suite focus (MRI / CT / US / X-Ray) with rotation
+ *  • Waiting queue, notices & guidance, patient portal QR, now-serving ticker
+ *  • Full RTL/LTR via CSS logical properties + direction-aware motion
+ *  • Light/Dark themes driven by data-theme tokens
+ *  • Speech announcements with presets, repeat, tuning & autoplay unlock
+ *  • Safe demo mode with reference data only
+ *  • On-site control drawer (Shift+D); every preference persisted locally
+ */
+import React, {
+    memo,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, MotionConfig, useReducedMotion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import {
-    Activity,
-    Clock3,
+    AlertTriangle,
+    ArrowLeft,
+    ArrowRight,
+    Ban,
+    BarChart3,
+    Bell,
+    Check,
+    CheckCircle2,
+    ChevronDown,
+    ChevronUp,
     DoorOpen,
+    ExternalLink,
+    FileText,
+    Filter,
+    Footprints,
+    Hash,
+    Languages,
+    Layers,
+    MapPin,
     Maximize,
     Megaphone,
     Minimize,
-    MonitorPlay,
-    Phone,
+    Monitor,
+    Moon,
+    Pause,
+    Play,
+    QrCode,
     Radio,
+    Settings2,
+    ShieldCheck,
+    SlidersHorizontal,
+    Smartphone,
+    Sparkles,
+    Stethoscope,
+    Sun,
+    User,
     Users,
     Volume2,
     VolumeX,
-    Shield,
-    Sparkles,
-    Filter,
-    QrCode,
-    Check,
-    Bell,
-    PhoneCall,
-    ChevronLeft,
-    ChevronRight,
-    Play,
-    UserCheck,
-    Hash,
-    ShieldAlert,
-    Droplets,
-    Magnet,
-    Zap,
-    Timer,
-    CheckCircle2,
-    Stethoscope,
-    Settings2,
+    WifiOff,
+    X,
 } from 'lucide-react';
-import { useGetDisplayBoardQuery, useBroadcastPatientCallMutation } from '../store/api';
-import { announcePatientCall, testHospitalAnnouncement, getSpokenToken } from '../utils/speechAnnouncement';
-import { playHospitalChime } from '../utils/audioChime';
+import './DisplayBoard.css';
+import './DisplayBoardDesign.css';
+import { useGetDisplayBoardQuery } from '../store/api';
+import {
+    ANNOUNCEMENT_PRESETS,
+    announcePatientCall,
+    cancelAnnouncement,
+    getSpokenToken,
+    resolveHonorific,
+} from '../utils/speechAnnouncement';
+import { playHospitalChime, isAudioSuspended, unlockAudio } from '../utils/audioChime';
 import { getPatientPortalHomeUrl } from '../utils/portalUrls';
 import { VIARA_BRAND } from '../config/brand';
 
+/* ═══════════════════════════════════════════════════════════════════════
+   CONSTANTS
+   ═══════════════════════════════════════════════════════════════════════ */
 const POLL_INTERVAL_MS = 6000;
 const CLOCK_TICK_MS = 1000;
-const ANNOUNCEMENT_ROTATE_MS = 10000;
-const TICKER_ROTATE_MS = 7000;
-const ROOM_PAGE_ROTATE_MS = 15000;
-const ROOMS_PER_PAGE = 3;
-const EASE = [0.16, 1, 0.3, 1];
+const CALL_BANNER_DURATION_MS = 25000;
+const CALL_MIN_VISIBLE_MS = 7500;
+const STALE_AFTER_MS = 35000;
+const ROOM_PAGE_INTERVAL_MS = 9000;
+const WAITING_ROWS = 4;
+const WAITING_PAGE_INTERVAL_MS = 8000;
+const EARLIER_CALLS_SHOWN = 3;
+const GUIDANCE_INTERVAL_MS = 9000;
+const TICKER_INTERVAL_MS = 8500;
+const ROTATION_RESUME_MS = 20000;
+const BROADCAST_REPLAY_WINDOW_MS = 30000;
+const HANDLED_CALLS_MAX = 250;
+const HANDLED_CALLS_KEEP = 150;
+const ROOMS_PER_VIEW = 4;
+const FALLBACK_LOGO = '/center-logo.png';
 
-const formatTimeOfDay = (date, locale) =>
-    date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-const formatFullDate = (date, locale) =>
-    date.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' });
-const getCallIdentity = (item) => item?.order_number || item?.patient_name || item?.queue_number;
+const ROTATION_SPEEDS = [6000, 9000, 12000];
+const ANNOUNCEMENT_RATES = [0.85, 1, 1.1];
+const ANNOUNCEMENT_REPEATS = [1, 2, 3];
+const ANNOUNCEMENT_DELAYS = [1000, 1500, 2200];
+const ANNOUNCEMENT_VOLUMES = [0.65, 0.85, 1];
+const ANNOUNCEMENT_PITCHES = [0.9, 1, 1.1];
+const ANNOUNCEMENT_LANGUAGES = ['ar', 'en', 'ar_then_en', 'en_then_ar'];
+const TOKEN_PRONUNCIATIONS = ['auto', 'natural', 'digits'];
+const ANNOUNCEMENT_STYLES = ['formal', 'calm', 'short'];
+const CALL_MODES = ['token_only', 'name_only', 'token_and_name'];
 
-const CLINICAL_PREP_TIPS = [
-    {
-        categoryAr: 'بروتوكول الرنين المغناطيسي',
-        categoryEn: 'MRI Safety Protocol',
-        titleAr: 'تعليمات هامة قبل فحص الرنين المغناطيسي',
-        titleEn: 'Important MRI Instructions',
-        messageAr: 'يرجى إزالة كافة المتعلقات المعدنية، الساعات، المجوهرات، والبطاقات البنكية. أبلغ الفني فوراً بأي منظم لضربات القلب أو دعامات جراحية أو شرائح معدنية.',
-        messageEn: 'Remove all metal items, jewelry, and bank cards. Immediately notify the technologist of any pacemakers, surgical implants, or metal clips.',
-        icon: Magnet,
-        gradient: 'from-teal-600/20 via-teal-500/5 to-transparent',
-        accent: 'teal',
-    },
-    {
-        categoryAr: 'الأشعة المقطعية بالصبغة',
-        categoryEn: 'Contrast CT Protocol',
-        titleAr: 'تعليمات الصيام لفحص CT بالصبغة الوريدية',
-        titleEn: 'CT Contrast Preparation',
-        messageAr: 'الصيام التام 4 إلى 6 ساعات قبل الفحص. أحضر نتيجة تحليل وظائف الكلى (Creatinine) حديثة. اشرب كميات وفيرة من الماء بعد الفحص.',
-        messageEn: 'Strict fasting for 4-6 hours before the scan. Bring a recent serum creatinine test. Hydrate generously after the procedure.',
-        icon: ShieldAlert,
-        gradient: 'from-amber-600/20 via-amber-500/5 to-transparent',
-        accent: 'amber',
-    },
-    {
-        categoryAr: 'إرشادات السونار',
-        categoryEn: 'Ultrasound Guidance',
-        titleAr: 'التحضير لفحص الموجات فوق الصوتية',
-        titleEn: 'Ultrasound Preparation',
-        messageAr: 'فحص البطن: صيام 6 ساعات عن الأطعمة الدسمة. فحص الحوض والمثانة: اشرب 4 إلى 6 أكواب ماء قبل الفحص بساعة وامتنع عن التبول.',
-        messageEn: 'Abdominal: fast 6 hrs. Pelvic/bladder: drink 4-6 glasses of water 1 hour before and do not void.',
-        icon: Droplets,
-        gradient: 'from-cyan-600/20 via-cyan-500/5 to-transparent',
-        accent: 'cyan',
-    },
-    {
-        categoryAr: 'بوابة نتائجك الرقمية',
-        categoryEn: 'Digital Results Portal',
-        titleAr: 'استلام تقريرك وصور الأشعة فوراً عبر هاتفك',
-        titleEn: 'Access Reports Instantly on Your Phone',
-        messageAr: 'امسح رمز QR بهاتفك لتحميل صور DICOM والتقرير الطبي المعتمد فور توقيعه، دون أي انتظار إضافي.',
-        messageEn: 'Scan the QR code to instantly download DICOM images and your certified diagnostic report without waiting.',
-        icon: QrCode,
-        gradient: 'from-emerald-600/20 via-emerald-500/5 to-transparent',
-        accent: 'emerald',
-    },
-];
-
-const PUBLIC_NOTICES = [
-    {
-        ar: 'يرجى تجهيز بطاقة الرقم القومي أو رقم الحجز قبل التوجه إلى الاستقبال.',
-        en: 'Please have your national ID or booking number ready before visiting reception.',
-        labelAr: 'الاستقبال',
-        labelEn: 'Reception',
-        accent: 'cyan',
-    },
-    {
-        ar: 'أبلغ فني الأشعة قبل الفحص عن أي دعامات معدنية أو حساسية معروفة للصبغة.',
-        en: 'Tell the technologist about metal implants or known contrast allergies before your scan.',
-        labelAr: 'سلامتك أولاً',
-        labelEn: 'Safety first',
-        accent: 'amber',
-    },
-    {
-        ar: 'يرجى متابعة رقم الدور على الشاشة والاستعداد عند ظهور اسم الغرفة أو الجهاز.',
-        en: 'Follow your token on screen and be ready when your room or machine appears.',
-        labelAr: 'متابعة الدور',
-        labelEn: 'Queue update',
-        accent: 'teal',
-    },
-    {
-        ar: 'نرجو المحافظة على الهدوء وترك ممرات الحركة متاحة داخل صالة الانتظار.',
-        en: 'Please keep the waiting area quiet and leave its walkways clear.',
-        labelAr: 'راحة الجميع',
-        labelEn: 'Patient comfort',
-        accent: 'violet',
-    },
-];
-
-const splitGuidanceMessage = (message = '') => message
-    .split(/[.!؟]+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-// Animated audio wave bars
-const AudioWaveEqualizer = ({ isPlaying }) => (
-    <div className="flex items-end gap-[2px] h-4">
-        {[0.5, 1, 0.7, 0.9, 0.4].map((scale, i) => (
-            <motion.span
-                key={i}
-                animate={isPlaying
-                    ? { height: ['2px', `${scale * 14}px`, '2px'] }
-                    : { height: '2px' }
-                }
-                transition={{ repeat: Infinity, duration: 0.5 + i * 0.08, ease: 'easeInOut' }}
-                className="w-[2px] rounded-full bg-cyan-400"
-            />
-        ))}
-    </div>
-);
-
-// Particle dot for decorative radial background
-const GlowDot = ({ className }) => (
-    <div className={`pointer-events-none absolute rounded-full blur-3xl opacity-60 ${className}`} />
-);
-
-// Scan line animation for premium TV feel
-const ScanLine = () => (
-    <motion.div
-        className="pointer-events-none absolute inset-x-0 z-50 h-[1px] bg-gradient-to-r from-transparent via-teal-400/20 to-transparent"
-        animate={{ top: ['0%', '100%'] }}
-        transition={{ repeat: Infinity, duration: 6, ease: 'linear' }}
-    />
-);
-
-// Real, scannable high-contrast QR code for the patient portal.
-const HospitalPortalQr = () => (
-    <div className="flex items-center justify-center rounded-2xl bg-white p-2 shadow-lg shadow-black/30">
-        <QRCodeSVG
-            value={getPatientPortalHomeUrl()}
-            size={84}
-            level="M"
-            bgColor="#ffffff"
-            fgColor="#0f172a"
-            title="Patient portal"
-        />
-    </div>
-);
-
-// Single KPI tile for sidebar
-const KpiTile = ({ label, value, suffix = '', color = 'text-white', icon: Icon }) => (
-    <div className="group relative min-h-[104px] overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950/90 p-3.5 shadow-lg shadow-black/10">
-        <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-slate-600/70 to-transparent" />
-        {Icon && (
-            <span className={`mb-3 flex h-8 w-8 items-center justify-center rounded-xl bg-slate-800/80 ring-1 ring-white/5 ${color}`}>
-                <Icon size={16} />
-            </span>
-        )}
-        <p className="truncate text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
-        <p className={`mt-1 font-mono text-[26px] font-black leading-none tabular-nums ${color}`}>
-            {value}<span className="ms-1 text-[10px] font-bold text-slate-500">{suffix}</span>
-        </p>
-    </div>
-);
-
-const DisplayBoard = () => {
-    const { t, i18n } = useTranslation('display');
-    const [searchParams] = useSearchParams();
-    const isArabic = i18n.language?.startsWith('ar');
-    const locale = isArabic ? 'ar-EG' : 'en-US';
-
-    const [now, setNow] = useState(() => new Date());
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    const [soundEnabled, setSoundEnabled] = useState(true);
-    const [voiceEnabled, setVoiceEnabled] = useState(true);
-    const [callByName, setCallByName] = useState(true);
-    const [operationMode, setOperationMode] = useState(() => localStorage.getItem('viara_tv_op_mode') || 'auto');
-    const [isSpeaking, setIsSpeaking] = useState(false);
-    const [privacyMode, setPrivacyMode] = useState('full');
-    const [lastCalledCase, setLastCalledCase] = useState(null);
-
-    // Auto-dismiss the floating call overlay after 20 seconds
-    useEffect(() => {
-        if (!lastCalledCase) return;
-        const timer = setTimeout(() => {
-            setLastCalledCase(null);
-        }, 20000);
-        return () => clearTimeout(timer);
-    }, [lastCalledCase]);
-
-    const [isRoomFilterOpen, setIsRoomFilterOpen] = useState(false);
-    const [roomPageIndex, setRoomPageIndex] = useState(0);
-    const [announcementIndex, setAnnouncementIndex] = useState(0);
-    const [tickerIndex, setTickerIndex] = useState(0);
-
-    const announcedKeysRef = useRef(new Set());
-    const handledBroadcastIdsRef = useRef(new Set());
-    const isInitialLoadRef = useRef(true);
-
-    const [broadcastCallMutation] = useBroadcastPatientCallMutation();
-
-    useEffect(() => {
-        const requestedLanguage = searchParams.get('lang');
-        if (requestedLanguage && ['ar', 'en'].includes(requestedLanguage) && !i18n.language?.startsWith(requestedLanguage)) {
-            i18n.changeLanguage(requestedLanguage);
-        }
-    }, [i18n, searchParams]);
-
-    const [selectedRooms, setSelectedRooms] = useState(() => {
-        const urlRooms = searchParams.get('rooms');
-        if (urlRooms) return urlRooms.split(',').map(r => r.trim()).filter(Boolean);
+/* ═══════════════════════════════════════════════════════════════════════
+   UTILITIES
+   ═══════════════════════════════════════════════════════════════════════ */
+const storage = {
+    get(key, fallback = null) {
         try {
-            const saved = localStorage.getItem('viara_tv_selected_rooms');
-            return saved ? JSON.parse(saved) : [];
-        } catch { return []; }
+            const v = localStorage.getItem(key);
+            return v === null ? fallback : v;
+        } catch { return fallback; }
+    },
+    set(key, value) {
+        try { localStorage.setItem(key, value); } catch { /* quota / private mode */ }
+    },
+    remove(key) {
+        try { localStorage.removeItem(key); } catch { /* noop */ }
+    },
+};
+
+/**
+ * useState mirrored into localStorage. `revive` converts the raw string,
+ * `validate` guards against stale or corrupt values, `serialize` writes back.
+ */
+function usePersistentState(key, fallback, { revive = (v) => v, validate = () => true } = {}) {
+    const [value, setValue] = useState(() => {
+        const raw = storage.get(key);
+        if (raw === null) return fallback;
+        const parsed = revive(raw);
+        return validate(parsed) ? parsed : fallback;
     });
+    const ref = useRef(value);
+    ref.current = value;
+    const set = useCallback((next) => {
+        const resolved = typeof next === 'function' ? next(ref.current) : next;
+        ref.current = resolved;
+        storage.set(key, String(resolved));
+        setValue(resolved);
+    }, [key]);
+    return [value, set];
+}
 
-    const saveRooms = (rooms) => {
-        try { localStorage.setItem('viara_tv_selected_rooms', JSON.stringify(rooms)); } catch { /* TV storage can be unavailable in kiosk mode. */ }
+const numberIn = (list, fallback) => (raw) => {
+    const parsed = Number(raw);
+    return list.includes(parsed) ? parsed : fallback;
+};
+
+const enumOf = (list, fallback) => (raw) => (list.includes(raw) ? raw : fallback);
+
+const handleLogoError = (event) => {
+    const img = event.currentTarget;
+    if (img.dataset.fallbackApplied) return;
+    img.dataset.fallbackApplied = '1';
+    img.src = FALLBACK_LOGO;
+};
+
+const formatTime = (date, isArabic) => {
+    let h = date.getHours();
+    const m = String(date.getMinutes()).padStart(2, '0');
+    const isPM = h >= 12;
+    h = h % 12 || 12;
+    return {
+        time: `${String(h).padStart(2, '0')}:${m}`,
+        period: isArabic ? (isPM ? 'م' : 'ص') : (isPM ? 'PM' : 'AM'),
     };
+};
 
-    const handleToggleRoom = (code) => {
-        setSelectedRooms(prev => {
-            const next = prev.includes(code) ? prev.filter(r => r !== code) : [...prev, code];
-            saveRooms(next);
-            return next;
-        });
-        setRoomPageIndex(0);
-    };
+const formatDate = (date, isArabic) =>
+    new Intl.DateTimeFormat(isArabic ? 'ar-EG' : 'en-GB', {
+        weekday: 'long', day: 'numeric', month: 'long',
+    }).format(date);
 
-    const handleClearRoomFilter = () => {
-        setSelectedRooms([]);
-        try { localStorage.removeItem('viara_tv_selected_rooms'); } catch { /* TV storage can be unavailable in kiosk mode. */ }
-        setRoomPageIndex(0);
-    };
+const getCallIdentity = (item) =>
+    item?.order_number || item?.patient_name || item?.queue_number;
 
-    const handleToggleOperationMode = () => {
-        const next = operationMode === 'auto' ? 'manual' : 'auto';
-        setOperationMode(next);
-        try { localStorage.setItem('viara_tv_op_mode', next); } catch { /* TV storage can be unavailable in kiosk mode. */ }
-    };
+const stripRoomLabel = (value) =>
+    String(value || '').replace(/^Room\s+/i, '').replace(/^جناح\s+/i, '').trim();
 
-    useEffect(() => {
-        const t = setInterval(() => setNow(new Date()), CLOCK_TICK_MS);
-        return () => clearInterval(t);
-    }, []);
+const parseTicket = (orderNumber, queueNumber) => {
+    const primary = queueNumber != null && queueNumber !== ''
+        ? String(queueNumber)
+        : getSpokenToken(orderNumber);
+    if (!primary || primary === '—') return { short: '—', number: '' };
+    const cleanNum = String(primary).replace(/^#/, '').trim();
+    return { short: `#${cleanNum}`, number: cleanNum };
+};
 
-    useEffect(() => {
-        const onFs = () => setIsFullscreen(Boolean(document.fullscreenElement));
-        document.addEventListener('fullscreenchange', onFs);
-        return () => document.removeEventListener('fullscreenchange', onFs);
-    }, []);
+const roomMatchesCall = (room, call) => {
+    if (!room || !call) return false;
+    const code = stripRoomLabel(room.room_number);
+    return (
+        room.room_name === call.roomName ||
+        stripRoomLabel(room.room_name) === stripRoomLabel(call.roomName) ||
+        code === stripRoomLabel(call.roomName) ||
+        `جناح ${room.room_number}` === call.roomName ||
+        `Suite ${room.room_number}` === call.roomName
+    );
+};
 
-    const toggleFullscreen = useCallback(() => {
-        document.fullscreenElement
-            ? document.exitFullscreen().catch(() => {})
-            : document.documentElement.requestFullscreen().catch(() => {});
-    }, []);
+const getBroadcastIdentity = (call) =>
+    call?.id || [call?.orderNumber, call?.queueNumber, call?.roomName, call?.timestamp || call?.calledAt]
+        .filter(Boolean).join('|');
 
-    const { data: board, isLoading, isFetching, isError, refetch } = useGetDisplayBoardQuery(undefined, {
-        pollingInterval: POLL_INTERVAL_MS,
-        refetchOnFocus: true,
-        refetchOnReconnect: true,
-    });
+const parsePronunciationDictionary = (value) =>
+    Object.fromEntries(
+        String(value || '')
+            .split(/\r?\n/)
+            .map((line) => line.split('=').map((p) => p.trim()))
+            .filter(([from, to]) => from && to)
+    );
 
-    const center = board?.center || {};
-    const centerLogo = center.logoLightUrl || center.logoUrl || VIARA_BRAND.centerLogoUrl || '/center-logo.png';
-    const centerName = board?.config?.boardTitle || center.nameAr || center.name || (t('tibaScanCenter'));
-    const centerAddress = center.addressAr || center.address || (t('diagnosticImagingWaitingArea'));
-    const summary = board?.summary || {};
-    const allRooms = useMemo(() => {
-        const rooms = [...(board?.rooms || [])];
-        const roomLoad = (room) => (room.machines || []).reduce((total, machine) => (
-            total + (machine.current ? 4 : 0) + (machine.up_next ? 2 : 0) + Number(machine.queue?.count || 0)
-        ), 0);
-        return rooms.sort((left, right) => {
-            const loadDifference = roomLoad(right) - roomLoad(left);
-            if (loadDifference !== 0) return loadDifference;
-            return String(left.room_number || '').localeCompare(String(right.room_number || ''), undefined, { numeric: true });
-        });
-    }, [board?.rooms]);
+/* ═══════════════════════════════════════════════════════════════════════
+   MODALITY VISUALS
+   ═══════════════════════════════════════════════════════════════════════ */
+const svgProps = (className) => ({
+    viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2,
+    strokeLinecap: 'round', strokeLinejoin: 'round', className, 'aria-hidden': true,
+});
 
-    const displayedRooms = useMemo(() => {
-        if (!selectedRooms.length) return allRooms;
-        return allRooms.filter(room => {
-            const code = String(room.room_number || '').replace(/^Room\s*/i, '').trim();
-            return selectedRooms.includes(code) || selectedRooms.includes(room.room_number) || selectedRooms.includes(room.room_id);
-        });
-    }, [allRooms, selectedRooms]);
+const MriIcon = ({ size = '1em', className = '' }) => (
+    <svg width={size} height={size} {...svgProps(className)}>
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="12" cy="12" r="4.5" />
+        <rect x="7.5" y="10.5" width="9" height="3" rx="1" fill="currentColor" fillOpacity="0.2" />
+        <path d="M12 3v1.5M12 19.5v1.5M3 12h1.5M19.5 12h1.5" />
+    </svg>
+);
 
-    const totalRoomPages = Math.max(1, Math.ceil(displayedRooms.length / ROOMS_PER_PAGE));
-    const currentRoomsSlice = useMemo(() => {
-        const start = roomPageIndex * ROOMS_PER_PAGE;
-        return displayedRooms.slice(start, start + ROOMS_PER_PAGE);
-    }, [displayedRooms, roomPageIndex]);
+const CtIcon = ({ size = '1em', className = '' }) => (
+    <svg width={size} height={size} {...svgProps(className)}>
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="12" cy="12" r="5" strokeDasharray="3 2" />
+        <path d="M12 7a5 5 0 0 1 5 5" strokeWidth="2.5" />
+        <rect x="6.5" y="11" width="11" height="2" rx="0.75" fill="currentColor" />
+        <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+    </svg>
+);
 
-    useEffect(() => {
-        if (totalRoomPages <= 1) { setRoomPageIndex(0); return; }
-        const t = setInterval(() => setRoomPageIndex(c => (c + 1) % totalRoomPages), ROOM_PAGE_ROTATE_MS);
-        return () => clearInterval(t);
-    }, [totalRoomPages]);
+const UltrasoundIcon = ({ size = '1em', className = '' }) => (
+    <svg width={size} height={size} {...svgProps(className)}>
+        <path d="M10 2h4a1 1 0 0 1 1 1v4.5a2.5 2.5 0 0 1-2.5 2.5h-1a2.5 2.5 0 0 1-2.5-2.5V3a1 1 0 0 1 1-1z" fill="currentColor" fillOpacity="0.18" />
+        <path d="M9 10h6" strokeWidth="2.5" />
+        <path d="M7 13.5c2.8 2 7.2 2 10 0" />
+        <path d="M5 16.5c4 2.8 10 2.8 14 0" />
+        <path d="M3.5 19.5c5.2 3.2 11.8 3.2 17 0" opacity="0.65" />
+    </svg>
+);
 
-    useEffect(() => {
-        if (roomPageIndex >= totalRoomPages) setRoomPageIndex(0);
-    }, [roomPageIndex, totalRoomPages]);
+const XrayIcon = ({ size = '1em', className = '' }) => (
+    <svg width={size} height={size} {...svgProps(className)}>
+        <rect x="3" y="3" width="18" height="18" rx="2.5" />
+        <path d="M12 5v14M5 12h14" strokeDasharray="2 2" opacity="0.55" />
+        <circle cx="12" cy="12" r="2.2" fill="currentColor" fillOpacity="0.25" />
+        <path d="M8 8l8 8M16 8l-8 8" strokeWidth="1.5" />
+    </svg>
+);
 
-    const formattedAverageWait = useMemo(() => {
-        const raw = Number(summary.averageWaitingMinutes);
-        if (!Number.isFinite(raw) || raw <= 0) return '0';
-        return `${Math.round(raw)}`;
-    }, [summary.averageWaitingMinutes]);
+const getSuiteModality = (room = {}, t) => {
+    const code = stripRoomLabel(room.room_number);
+    const machine = room.machines?.[0] || {};
+    const text = `${room.modality || ''} ${machine.machine_name || ''} ${machine.machine_type || ''} ${machine.modality_name || ''}`.toLowerCase();
+    const isUs = /(^|\s)us(\s|$)/.test(text) || /sonar|ultrasound|سونار|موجات|صوتية/i.test(text);
+    const known = /mri|ct|sonar|ultrasound|x-?ray|رنين|مقطعية|سونار|موجات|صوتية|سينية|أشعة عادية/i.test(text) || isUs;
 
-    useEffect(() => {
-        const mode = board?.config?.patientDisplayMode;
-        if (mode === 'order_only') {
-            setPrivacyMode('token_only');
-            setCallByName(false);
-        } else if (mode === 'name') {
-            setPrivacyMode('full');
-            setCallByName(true);
-        }
-    }, [board?.config?.patientDisplayMode]);
+    if (text.includes('mri') || text.includes('رنين') || (!known && code === '01'))
+        return { type: 'mri', icon: MriIcon, tag: 'MRI', label: t('رنين مغناطيسي • MRI', 'Magnetic Resonance • MRI') };
+    if (text.includes('ct') || text.includes('مقطعية') || (!known && code === '02'))
+        return { type: 'ct', icon: CtIcon, tag: 'CT', label: t('أشعة مقطعية • CT', 'Computed Tomography • CT') };
+    if (isUs || (!known && code === '03'))
+        return { type: 'us', icon: UltrasoundIcon, tag: 'US', label: t('موجات صوتية • Ultrasound', 'Ultrasound • US') };
+    if (text.includes('x-ray') || text.includes('xray') || text.includes('سينية') || text.includes('أشعة عادية') || (!known && code === '04'))
+        return { type: 'xray', icon: XrayIcon, tag: 'XRAY', label: t('أشعة سينية • X-Ray', 'Digital Radiography • X-Ray') };
+    return { type: 'general', icon: Stethoscope, tag: 'CLINICAL', label: t('فحص إكلينيكي • Clinical', 'Clinical Diagnostic Suite') };
+};
 
-    useEffect(() => {
-        const onKeyDown = (event) => {
-            if (event.ctrlKey || event.metaKey || event.altKey) return;
-            if (event.key.toLowerCase() === 'f') toggleFullscreen();
-            if (event.key.toLowerCase() === 'm') setVoiceEnabled((enabled) => !enabled);
-            if (event.key === 'ArrowLeft' && totalRoomPages > 1) {
-                setRoomPageIndex((current) => (current + 1) % totalRoomPages);
-            }
-            if (event.key === 'ArrowRight' && totalRoomPages > 1) {
-                setRoomPageIndex((current) => (current - 1 + totalRoomPages) % totalRoomPages);
-            }
-        };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [toggleFullscreen, totalRoomPages]);
+const MODALITY_DETAILS = {
+    mri: { top: ['الرنين المغناطيسي', 'Magnetic resonance'], title: ['رؤية أوضح', 'A clearer view'], description: ['فريقنا معك في كل خطوة', 'Our team is with you at every step'], image: '/images/suite-mri.jpg' },
+    ct: { top: ['الأشعة المقطعية', 'Computed tomography'], title: ['اهتمام بكل تفصيل', 'Every detail matters'], description: ['تابع رقم دورك واستعد عند النداء', 'Watch your ticket and be ready when called'], image: '/images/suite-ct.jpg' },
+    us: { top: ['الموجات الصوتية', 'Ultrasound'], title: ['رعاية واهتمام', 'Care and attention'], description: ['فريقنا معك في كل خطوة', 'Our team is with you at every step'], image: '/images/ultrasound-suite.jpg' },
+    xray: { top: ['الأشعة الرقمية', 'Digital radiography'], title: ['لصحة أوضح', 'For clearer health'], description: ['تابع رقم دورك واستعد عند النداء', 'Watch your ticket and be ready when called'], image: '/images/suite-xray.png' },
+    general: { top: ['خدمات المركز', 'Center services'], title: ['أهلًا بك', 'Welcome'], description: ['فريقنا معك في كل خطوة', 'Our team is with you at every step'], image: '' },
+};
 
-    const activeAnnouncements = useMemo(() => {
-        const server = (board?.announcements || []).map(a => ({
-            categoryAr: 'إعلان إداري', categoryEn: 'Notice',
-            titleAr: a.title, titleEn: a.title,
-            messageAr: a.message, messageEn: a.message,
-            icon: Megaphone,
-            gradient: 'from-violet-600/20 via-violet-500/5 to-transparent',
-            accent: 'violet',
-        }));
-        return [...CLINICAL_PREP_TIPS, ...server];
-    }, [board?.announcements]);
+/* ═══════════════════════════════════════════════════════════════════════
+   DEMO DATA — reference suites only; never shown outside preview mode
+   ═══════════════════════════════════════════════════════════════════════ */
+const PREVIEW_LAST_CALL = {
+    id: 'preview-last-call',
+    tokenNumber: '105',
+    roomCode: '03',
+    roomName: 'جناح 03',
+    patientName: 'محمد أحمد',
+    gender: 'male',
+    calledWithName: true,
+    announcementMode: 'token_and_name',
+    time: new Date(),
+};
 
-    const tickerNotices = useMemo(() => {
-        const serverNotices = (board?.announcements || []).map((announcement) => ({
-            ar: [announcement.title, announcement.message].filter(Boolean).join(' — '),
-            en: [announcement.title, announcement.message].filter(Boolean).join(' — '),
-            labelAr: 'إعلان المركز',
-            labelEn: 'Center notice',
-            accent: 'violet',
-        })).filter((notice) => notice.ar);
-        return [...serverNotices, ...PUBLIC_NOTICES];
-    }, [board?.announcements]);
+const DEMO_WAITING_LIST = [
+    { token: '105', suite: 'جناح 03', status: 'استعد', isReady: true, patientName: 'محمد أحمد', gender: 'male', caseItem: { queue_stage: 'Ready for Exam', priority: 'Routine' } },
+    { token: '108', suite: 'جناح 02', status: 'انتظار', isReady: false, patientName: 'سارة محمود', gender: 'female', caseItem: { queue_stage: 'Arrived', priority: 'Urgent' } },
+    { token: '110', suite: 'جناح 04', status: 'انتظار', isReady: false, patientName: 'عبد الله خالد', gender: 'male', caseItem: { queue_stage: 'Arrived', priority: 'Routine' } },
+    { token: '112', suite: 'جناح 03', status: 'انتظار', isReady: false, patientName: 'فاطمة إبراهيم', gender: 'female', caseItem: { queue_stage: 'Arrived', priority: 'Routine' } },
+    { token: '115', suite: 'جناح 01', status: 'انتظار', isReady: false, patientName: 'يوسف عمر', gender: 'male', caseItem: { queue_stage: 'Arrived', priority: 'Emergency' } },
+    { token: '118', suite: 'جناح 02', status: 'انتظار', isReady: false, patientName: 'نادية مصطفى', gender: 'female', caseItem: { queue_stage: 'Arrived', priority: 'Routine' } },
+    { token: '120', suite: 'جناح 04', status: 'انتظار', isReady: false, patientName: 'طارق حسام', gender: 'male', caseItem: { queue_stage: 'Arrived', priority: 'Routine' } },
+    { token: '122', suite: 'جناح 01', status: 'انتظار', isReady: false, patientName: 'مريم عادل', gender: 'female', caseItem: { queue_stage: 'Arrived', priority: 'Routine' } },
+];
 
-    useEffect(() => {
-        if (activeAnnouncements.length <= 1) return;
-        const t = setInterval(() => setAnnouncementIndex(c => (c + 1) % activeAnnouncements.length), ANNOUNCEMENT_ROTATE_MS);
-        return () => clearInterval(t);
-    }, [activeAnnouncements.length]);
+const previewMachine = (current, upNext, extra = []) => ({
+    current,
+    up_next: upNext,
+    queue: { next: [upNext, ...extra].filter(Boolean) },
+});
 
-    useEffect(() => {
-        if (tickerNotices.length <= 1) return;
-        const timer = setInterval(() => setTickerIndex((current) => (current + 1) % tickerNotices.length), TICKER_ROTATE_MS);
-        return () => clearInterval(timer);
-    }, [tickerNotices.length]);
+const DEMO_ROOMS = [
+    {
+        room_id: 'preview-01', room_number: '01', room_name: 'جناح 01', room_status: 'Active', modality: 'mri',
+        machines: [{
+            machine_name: 'MRI', machine_type: 'MRI', machine_status: 'Active',
+            ...previewMachine(
+                { order_number: '115', queue_number: 115, patient_name: 'يوسف عمر', gender: 'male' },
+                { order_number: '122', queue_number: 122, queue_stage: 'Arrived', patient_name: 'مريم عادل', gender: 'female', priority: 'Routine' }
+            ),
+        }],
+    },
+    {
+        room_id: 'preview-02', room_number: '02', room_name: 'جناح 02', room_status: 'Active', modality: 'ct',
+        machines: [{
+            machine_name: 'CT', machine_type: 'CT', machine_status: 'Active',
+            ...previewMachine(
+                { order_number: '108', queue_number: 108, patient_name: 'سارة محمود', gender: 'female' },
+                { order_number: '118', queue_number: 118, queue_stage: 'Arrived', patient_name: 'نادية مصطفى', gender: 'female', priority: 'Routine' }
+            ),
+        }],
+    },
+    {
+        room_id: 'preview-03', room_number: '03', room_name: 'جناح 03', room_status: 'Active', modality: 'us',
+        machines: [{
+            machine_name: 'Ultrasound', machine_type: 'US', machine_status: 'Active',
+            ...previewMachine(
+                { order_number: '098', queue_number: 98, queue_stage: 'In Exam', patient_name: 'فاطمة إبراهيم', gender: 'female' },
+                { order_number: '105', queue_number: 105, queue_stage: 'Ready for Exam', patient_name: 'محمد أحمد', gender: 'male', priority: 'Routine' },
+                [{ order_number: '112', queue_number: 112, queue_stage: 'Arrived', patient_name: 'فاطمة إبراهيم', gender: 'female', priority: 'Routine' }]
+            ),
+        }],
+    },
+    {
+        room_id: 'preview-04', room_number: '04', room_name: 'جناح 04', room_status: 'Active', modality: 'xray',
+        machines: [{
+            machine_name: 'Digital X-Ray', machine_type: 'XRAY', machine_status: 'Active',
+            ...previewMachine(
+                { order_number: '095', queue_number: 95, patient_name: 'طارق حسام', gender: 'male' },
+                { order_number: '110', queue_number: 110, queue_stage: 'Arrived', patient_name: 'عبد الله خالد', gender: 'male', priority: 'Routine' },
+                [{ order_number: '120', queue_number: 120, queue_stage: 'Arrived', patient_name: 'طارق حسام', gender: 'male' }]
+            ),
+        }],
+    },
+];
 
-    const parseTicketDisplay = (orderNumber) => {
-        if (!orderNumber) return { short: '---', full: '' };
-        const spoken = getSpokenToken(orderNumber);
-        return { short: spoken ? `#${spoken}` : `#${orderNumber}`, full: String(orderNumber).replace(/^#/, '') };
-    };
+const PREVIEW_BOARD = {
+    generatedAt: new Date().toISOString(),
+    center: {
+        name: 'VIARA Diagnostic Center',
+        nameAr: 'مركز فيارا للأشعة التشخيصية',
+        address: 'Main Waiting Hall',
+        addressAr: 'صالة الانتظار الرئيسية',
+        logoUrl: '/center-logo.png',
+    },
+    config: { patientDisplayMode: 'name_and_order', callAnnouncementMode: 'token_and_name', showTicker: true },
+    summary: { waiting: 12, inExam: 4, completedToday: 38, averageWaitingMinutes: 14 },
+    announcements: [
+        { id: 'ann-1', title: 'تنبيه الفحص', message: 'يرجى متابعة رقم الدور على الشاشة والتوجه إلى الجناح فور سماع النداء', tone: 'info' },
+        { id: 'ann-2', title: 'إرشادات السلامة', message: 'يرجى إزالة كافة الساعات والمعادن والأجهزة الإلكترونية قبل الدخول لغرف الفحص', tone: 'warning' },
+        { id: 'ann-3', title: 'خدمة البوابة الرقمية', message: 'يمكنكم استلام صور الأشعة والتقرير الفوري عبر مسح رمز الاستجابة السريعة بهاتفكم', tone: 'success' },
+    ],
+    broadcastCalls: [],
+    rooms: DEMO_ROOMS,
+};
 
-    const triggerPatientCall = useCallback((item, room, forceNameCall = true, broadcast = true) => {
-        const tokenNumber = item?.order_number || item?.queue_number || '---';
-        const rawName = item?.patient_name || '';
-        const shouldCallWithName = forceNameCall && callByName && Boolean(rawName);
-        const roomName = (room?.room_name || `جناح ${room?.room_number}`).replace(/Room\s+/gi, '');
+/* ═══════════════════════════════════════════════════════════════════════
+   FLOATING CALL OVERLAY
+   ═══════════════════════════════════════════════════════════════════════ */
+const FloatingCallOverlay = memo(({ call, isArabic, formatName, onDismiss }) => {
+    const t = (ar, en) => (isArabic ? ar : en);
+    if (!call) return null;
 
-        setIsSpeaking(true);
-        if (voiceEnabled) {
-            announcePatientCall({ tokenNumber, patientName: shouldCallWithName ? rawName : '', roomName, callByName: shouldCallWithName, isArabic, withChime: soundEnabled });
-        } else if (soundEnabled) {
-            playHospitalChime();
-        }
-        setTimeout(() => setIsSpeaking(false), 4800);
-        setLastCalledCase({ tokenNumber, patientName: rawName, calledWithName: shouldCallWithName, roomName, time: new Date() });
-        if (broadcast) {
-            broadcastCallMutation({ orderNumber: tokenNumber, patientName: rawName, roomName, callByName: shouldCallWithName }).catch(() => {});
-        }
-    }, [broadcastCallMutation, callByName, isArabic, soundEnabled, voiceEnabled]);
-
-    // Auto mode: detect new Up Next entries
-    useEffect(() => {
-        if (!board?.rooms || operationMode !== 'auto') return;
-        if (isInitialLoadRef.current) {
-            allRooms.forEach(room => {
-                (room.machines || []).forEach(machine => {
-                    const callIdentity = getCallIdentity(machine.up_next);
-                    if (callIdentity) {
-                        announcedKeysRef.current.add(`${room.room_id || room.room_number}_${callIdentity}`);
-                    }
-                });
-            });
-            isInitialLoadRef.current = false;
-            return;
-        }
-        displayedRooms.forEach(room => {
-            (room.machines || []).forEach(machine => {
-                const next = machine.up_next;
-                const callIdentity = getCallIdentity(next);
-                if (!callIdentity) return;
-                const key = `${room.room_id || room.room_number}_${callIdentity}`;
-                if (!announcedKeysRef.current.has(key)) {
-                    announcedKeysRef.current.add(key);
-                    triggerPatientCall(next, room, callByName, false);
-                }
-            });
-        });
-    }, [allRooms, board?.rooms, callByName, displayedRooms, operationMode, triggerPatientCall]);
-
-    // Broadcast sync: calls from Reception desk
-    useEffect(() => {
-        if (!board?.broadcastCalls?.length) return;
-        board.broadcastCalls.forEach(call => {
-            if (!call?.id || handledBroadcastIdsRef.current.has(call.id)) return;
-            handledBroadcastIdsRef.current.add(call.id);
-            setIsSpeaking(true);
-            if (voiceEnabled) {
-                announcePatientCall({ tokenNumber: call.orderNumber, patientName: call.patientName, roomName: call.roomName, callByName: call.callByName && Boolean(call.patientName), isArabic, withChime: soundEnabled });
-            } else if (soundEnabled) {
-                playHospitalChime();
-            }
-            setTimeout(() => setIsSpeaking(false), 4800);
-            setLastCalledCase({ tokenNumber: call.orderNumber, patientName: call.patientName, calledWithName: call.callByName && Boolean(call.patientName), roomName: call.roomName, time: new Date(call.calledAt || Date.now()) });
-        });
-    }, [board?.broadcastCalls, isArabic, soundEnabled, voiceEnabled]);
-
-    const formatPatientName = (name, orderNumber) => {
-        if (!name && !orderNumber) return t('patient');
-        if (privacyMode === 'token_only') return parseTicketDisplay(orderNumber).short;
-        if (privacyMode === 'masked' && name) {
-            const parts = name.trim().split(/\s+/);
-            return parts.length === 1 ? parts[0] : `${parts[0]} ${parts[parts.length - 1][0]}.`;
-        }
-        return name || parseTicketDisplay(orderNumber).short;
-    };
-
-    if (isLoading) {
-        return (
-            <div className="grid h-screen place-items-center bg-[#060a10] text-white">
-                <div className="flex flex-col items-center gap-6">
-                    <div className="relative">
-                        <div className="h-20 w-20 rounded-3xl bg-white p-2.5 flex items-center justify-center shadow-2xl shadow-emerald-500/30 ring-2 ring-emerald-400/60">
-                            <img
-                                src={centerLogo}
-                                alt=""
-                                className="h-full w-full object-contain"
-                                onError={(e) => {
-                                    e.currentTarget.onerror = null;
-                                    e.currentTarget.src = '/center-logo.png';
-                                }}
-                            />
-                        </div>
-                        <span className="absolute -bottom-1 -end-1 h-4 w-4 rounded-full bg-emerald-400 ring-2 ring-slate-900 animate-ping" />
-                    </div>
-                    <div className="text-center">
-                        <p className="text-lg font-black text-white">{t('synchronizingDisplayBoard')}</p>
-                        <p className="text-sm text-slate-500 mt-1">{t('pleaseWait')}</p>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    if (isError && !board) {
-        return (
-            <div className="grid h-screen place-items-center bg-[#060a10] px-6 text-white" dir={isArabic ? 'rtl' : 'ltr'}>
-                <div className="max-w-lg rounded-3xl border border-rose-500/30 bg-rose-950/20 p-8 text-center shadow-2xl">
-                    <ShieldAlert size={42} className="mx-auto text-rose-400" />
-                    <h1 className="mt-4 text-xl font-black">{t('states.error')}</h1>
-                    <button type="button" onClick={refetch} className="mt-5 rounded-xl bg-teal-500 px-5 py-2 text-sm font-black text-slate-950">
-                        {t('tryAgain')}
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    const currentTip = activeAnnouncements[announcementIndex] || activeAnnouncements[0];
-    const TipIcon = currentTip?.icon || Megaphone;
-    const guidancePoints = splitGuidanceMessage(isArabic ? currentTip?.messageAr : currentTip?.messageEn);
-    const currentTickerNotice = tickerNotices[tickerIndex] || tickerNotices[0];
-    const accentColors = {
-        teal: 'text-teal-300 border-teal-500/40 bg-teal-500/15',
-        amber: 'text-amber-300 border-amber-500/40 bg-amber-500/15',
-        cyan: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/15',
-        emerald: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/15',
-        violet: 'text-violet-300 border-violet-500/40 bg-violet-500/15',
-    };
-    const tipAccentCls = accentColors[currentTip?.accent] || accentColors.teal;
+    const showToken = call.announcementMode !== 'name_only';
+    const tokenText = `#${String(call.tokenNumber || '—').replace(/^#/, '')}`;
+    const honorific = resolveHonorific(call.gender, isArabic);
+    const formatted = call.patientName ? formatName(call.patientName) : null;
+    const patientName = formatted ? `${honorific} ${formatted}` : null;
+    const roomLabel = call.roomCode ? `${t('جناح', 'Suite')} ${call.roomCode}` : call.roomName;
+    const hasDistinctRoom = call.roomName && stripRoomLabel(call.roomName) !== stripRoomLabel(roomLabel);
+    const RouteArrow = isArabic ? ArrowLeft : ArrowRight;
 
     return (
-        <div className="relative flex h-screen min-h-[640px] flex-col overflow-hidden bg-[#050a12] text-white select-none" dir={isArabic ? 'rtl' : 'ltr'}>
-            {/* ─── Ambient Background ─── */}
-            <GlowDot className="h-[700px] w-[700px] bg-teal-500/[0.06] -top-60 -start-60" />
-            <GlowDot className="h-[500px] w-[500px] bg-cyan-500/[0.05] -bottom-40 -end-40" />
-            <GlowDot className="h-[400px] w-[400px] bg-indigo-500/[0.04] top-1/2 start-1/3 -translate-y-1/2" />
-            <ScanLine />
-
-            {/* ─── TOP HEADER BAR ─── */}
-            <header className="relative z-20 flex min-h-[76px] items-center justify-between border-b border-cyan-950/80 bg-[#06101e]/95 px-6 py-2.5 shadow-xl shadow-black/20 backdrop-blur-xl">
-                {/* Center Logo & Brand Identity (واضح ومميز جداً) */}
-                <div className="flex items-center gap-3.5 sm:gap-4.5 min-w-0">
-                    <div className="relative shrink-0">
-                        {/* High-contrast crisp white badge for the green center logo */}
-                        <div className="relative flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white p-2 shadow-2xl shadow-emerald-950/60 ring-2 ring-emerald-400/60 transition-transform duration-300 hover:scale-105">
-                            <img
-                                src={centerLogo}
-                                alt={centerName}
-                                className="h-full w-full object-contain"
-                                onError={(e) => {
-                                    e.currentTarget.onerror = null;
-                                    e.currentTarget.src = '/center-logo.png';
-                                }}
-                            />
-                            <span className="absolute -top-1 -end-1 flex h-3.5 w-3.5">
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-80" />
-                                <span className="relative inline-flex h-3.5 w-3.5 rounded-full border-2 border-slate-950 bg-emerald-400" />
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                            <h1 className="text-lg sm:text-xl 2xl:text-2xl font-black tracking-tight text-white leading-tight drop-shadow-sm">
-                                {centerName}
-                            </h1>
-                            <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black ${isFetching ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400'}`}>
-                                <span className={`me-1 inline-block h-1.5 w-1.5 rounded-full ${isFetching ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
-                                {isFetching ? (t('sync')) : (t('live'))}
-                            </span>
-                        </div>
-                        <p className="mt-1 text-xs font-semibold text-teal-300/80 truncate max-w-md">
-                            {centerAddress}
-                        </p>
-                    </div>
+        <div className="vb-call-layer">
+            <motion.div
+                className="vb-call-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                aria-hidden="true"
+            />
+            <motion.aside
+                className="vb-call-card"
+                role="alert"
+                aria-live="assertive"
+                initial={{ opacity: 0, y: -32, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -24, scale: 0.98 }}
+                transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+            >
+                <div className="vb-call-head">
+                    <span className="vb-call-head__live-dot" aria-hidden="true" />
+                    <Megaphone size="1.15em" aria-hidden="true" />
+                    <strong>{t('يتم النداء الآن', 'Now calling')}</strong>
+                    <button
+                        type="button"
+                        className="vb-call-head__close"
+                        onClick={onDismiss}
+                        aria-label={t('إغلاق النداء', 'Dismiss call')}
+                    >
+                        <X size="1.15em" />
+                    </button>
                 </div>
 
-                {/* Controls */}
-                <div className="flex items-center gap-1.5">
-                    {/* Clock */}
-                    <div className="hidden min-w-[154px] flex-col items-end rounded-xl border border-cyan-900/50 bg-slate-900/80 px-3.5 py-1.5 md:flex">
-                        <span className="font-mono text-base font-black leading-tight text-teal-300 tabular-nums">
-                            {formatTimeOfDay(now, locale)}
+                <div className="vb-call-body">
+                    <div className="vb-call-ticket">
+                        <span className="vb-call-eyebrow">
+                            {showToken ? t('رقم الدور', 'Ticket number') : honorific}
                         </span>
-                        <span className="text-[9px] font-bold text-slate-400">{formatFullDate(now, locale)}</span>
+                        {showToken && <strong className="vb-call-token" dir="ltr">{tokenText}</strong>}
+                        {patientName && <span className="vb-call-name">{patientName}</span>}
                     </div>
 
-                    {/* Operation Mode */}
-                    <button
-                        type="button"
-                        onClick={handleToggleOperationMode}
-                        title={t('toggleAutomaticCalling')}
-                        aria-pressed={operationMode === 'auto'}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition ${
-                            operationMode === 'auto'
-                                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
-                                : 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300'
-                        }`}
-                    >
-                        {operationMode === 'auto' ? <Zap size={12} className="animate-pulse" /> : <Users size={12} />}
-                        <span className="hidden sm:inline">{operationMode === 'auto' ? (t('auto')) : (t('manual'))}</span>
-                    </button>
-
-                    {/* Room Filter */}
-                    <div className="relative">
-                        <button
-                            type="button"
-                            onClick={() => setIsRoomFilterOpen(!isRoomFilterOpen)}
-                            aria-expanded={isRoomFilterOpen}
-                            aria-label={t('filterDisplayedRooms')}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition ${
-                                selectedRooms.length ? 'border-teal-500/40 bg-teal-500/10 text-teal-300' : 'border-slate-800 bg-slate-900 text-slate-400'
-                            }`}
-                        >
-                            <Filter size={12} />
-                            {t('rooms')}
-                            {selectedRooms.length > 0 && (
-                                <span className="rounded-full bg-teal-500 text-slate-950 px-1.5 text-[9px] font-black">{selectedRooms.length}</span>
-                            )}
-                        </button>
-                        {isRoomFilterOpen && (
-                            <>
-                                <div className="fixed inset-0 z-30" onClick={() => setIsRoomFilterOpen(false)} />
-                                <div className="absolute end-0 top-full z-40 mt-2 w-64 rounded-2xl border border-slate-800 bg-slate-900/98 p-3 shadow-2xl backdrop-blur-xl">
-                                    <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
-                                        <span className="text-xs font-black text-white">{t('roomsOnThisScreen')}</span>
-                                        {selectedRooms.length > 0 && (
-                                            <button type="button" onClick={handleClearRoomFilter} className="text-[10px] font-bold text-rose-400 hover:underline">
-                                                {t('showAll')}
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="max-h-56 overflow-y-auto space-y-0.5">
-                                        {allRooms.map(room => {
-                                            const code = String(room.room_number || '').replace(/^Room\s*/i, '').trim();
-                                            const isChecked = selectedRooms.includes(code) || selectedRooms.includes(room.room_number);
-                                            return (
-                                                <button
-                                                    key={room.room_id || room.room_number}
-                                                    type="button"
-                                                    onClick={() => handleToggleRoom(code)}
-                                                    className={`flex w-full items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold transition ${isChecked ? 'bg-teal-500/15 text-teal-300 border border-teal-500/30' : 'text-slate-300 hover:bg-slate-800'}`}
-                                                >
-                                                    <span className="truncate">{room.room_name || `جناح ${room.room_number}`}</span>
-                                                    {isChecked && <Check size={13} className="text-teal-400 shrink-0" />}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            </>
-                        )}
+                    <div className="vb-call-route" aria-hidden="true">
+                        <RouteArrow size="2.3em" />
                     </div>
 
-                    {/* Call by name */}
-                    <button
-                        type="button"
-                        onClick={() => setCallByName(!callByName)}
-                        aria-pressed={callByName}
-                        title={t('switchBetweenNameAndTokenCalling')}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition ${
-                            callByName ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-slate-800 bg-slate-900 text-slate-500'
-                        }`}
-                    >
-                        <UserCheck size={12} />
-                        <span className="hidden lg:inline">{callByName ? (t('byName')) : (t('tokenOnly'))}</span>
-                    </button>
-
-                    {/* Voice toggle */}
-                    <button
-                        type="button"
-                        onClick={() => setVoiceEnabled(!voiceEnabled)}
-                        aria-pressed={voiceEnabled}
-                        title={t('enableOrMuteAnnouncementsM')}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition ${
-                            voiceEnabled ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300' : 'border-slate-800 bg-slate-900 text-slate-500'
-                        }`}
-                    >
-                        {voiceEnabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
-                        {voiceEnabled && <AudioWaveEqualizer isPlaying={isSpeaking} />}
-                    </button>
-
-                    {/* Speaker test */}
-                    <button
-                        type="button"
-                        onClick={() => testHospitalAnnouncement(isArabic, callByName)}
-                        className="hidden xl:flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition text-[11px] font-bold"
-                    >
-                        <Play size={10} className="text-teal-400" />
-                        {t('test')}
-                    </button>
-
-                    {/* Privacy */}
-                    <button
-                        type="button"
-                        onClick={() => setPrivacyMode(p => p === 'full' ? 'masked' : p === 'masked' ? 'token_only' : 'full')}
-                        title={isArabic ? `وضع الخصوصية: ${privacyMode === 'full' ? 'الاسم الكامل' : privacyMode === 'masked' ? 'اسم مختصر' : 'رقم الدور فقط'}` : `Privacy: ${privacyMode.replace('_', ' ')}`}
-                        className="px-2.5 py-1.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition text-[11px] font-bold flex items-center gap-1"
-                    >
-                        <Shield size={12} className="text-cyan-400" />
-                    </button>
-
-                    {/* Fullscreen */}
-                    <button
-                        type="button"
-                        onClick={toggleFullscreen}
-                        title={t('fullscreenF')}
-                        aria-label={t('fullscreen')}
-                        className="p-2 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition"
-                    >
-                        {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />}
-                    </button>
+                    <div className="vb-call-destination">
+                        <span className="vb-call-eyebrow">{t('توجه الآن إلى', 'Proceed now to')}</span>
+                        {roomLabel && <strong className="vb-call-room-code">{roomLabel}</strong>}
+                        {hasDistinctRoom && <span className="vb-call-room-name">{call.roomName}</span>}
+                    </div>
                 </div>
-            </header>
 
-            {/* ─── FLOATING LIVE CALL OVERLAY (عائم فوق الصفحة وبأعلى درجات التميز والجاذبية) ─── */}
-            <AnimatePresence>
-                {lastCalledCase && (
-                    <>
-                        {/* Ambient Soft Spotlight behind floating call */}
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 0.3 }}
-                            className="pointer-events-none fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[2px]"
-                        />
+                <div className="vb-call-instruction">
+                    <DoorOpen size="1.1em" aria-hidden="true" />
+                    <span>{t('يرجى التوجه مباشرة إلى الجناح عند سماع النداء', 'Please proceed directly to the suite')}</span>
+                </div>
 
-                        {/* Floating Container (Fixed & Centered Over Page Header and Grid) */}
-                        <div className="pointer-events-none fixed inset-x-0 top-3 sm:top-5 z-50 flex justify-center px-3 sm:px-6">
-                            <motion.div
-                                initial={{ opacity: 0, y: -70, scale: 0.92 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: -60, scale: 0.94 }}
-                                transition={{ type: 'spring', stiffness: 320, damping: 26 }}
-                                className="pointer-events-auto relative w-full max-w-5xl 2xl:max-w-6xl overflow-hidden rounded-3xl border-2 border-amber-400/90 bg-[#070c17]/95 p-1 shadow-[0_25px_80px_-15px_rgba(0,0,0,0.9),0_0_60px_rgba(245,158,11,0.35)] backdrop-blur-2xl"
-                                role="alert"
-                                aria-live="assertive"
-                            >
-                                {/* Multi-color ambient background flare */}
-                                <div className="pointer-events-none absolute -inset-1 rounded-3xl bg-gradient-to-r from-amber-500/25 via-yellow-400/15 to-emerald-400/25 blur-xl -z-10" />
-                                
-                                {/* Shimmer sweep line across top border */}
-                                <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-amber-300 to-transparent" />
-
-                                {/* Moving glass light sweep */}
-                                <motion.div
-                                    className="pointer-events-none absolute inset-y-0 w-44 -skew-x-12 bg-gradient-to-r from-transparent via-white/10 to-transparent"
-                                    initial={{ x: isArabic ? 1400 : -200 }}
-                                    animate={{ x: isArabic ? -200 : 1400 }}
-                                    transition={{ duration: 2.5, ease: 'easeInOut', repeat: Infinity, repeatDelay: 3.5 }}
-                                />
-
-                                <div className="relative flex flex-wrap items-center justify-between gap-3 sm:gap-5 rounded-[22px] bg-gradient-to-r from-amber-500/[0.08] via-slate-900/90 to-emerald-500/[0.06] p-3 sm:p-4 2xl:p-5">
-                                    
-                                    {/* ── SECTION 1: Beacon & Patient Info ── */}
-                                    <div className="flex min-w-0 items-center gap-3.5 2xl:gap-4.5">
-                                        {/* Animated Multi-ring Beacon */}
-                                        <div className="relative shrink-0">
-                                            <div className="absolute -inset-2 rounded-2xl bg-amber-400/30 blur-md animate-ping" />
-                                            <motion.div
-                                                animate={{ scale: [1, 1.08, 1], rotate: [-4, 4, -4, 4, 0] }}
-                                                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-                                                className="relative grid h-14 w-14 sm:h-16 sm:w-16 place-items-center rounded-2xl bg-gradient-to-br from-yellow-300 via-amber-400 to-orange-500 text-slate-950 shadow-2xl shadow-amber-500/50 ring-2 ring-yellow-200/90"
-                                            >
-                                                <Bell size={28} strokeWidth={2.7} className="sm:hidden" />
-                                                <Bell size={32} strokeWidth={2.7} className="hidden sm:block" />
-                                            </motion.div>
-                                            <span className="absolute -top-1 -end-1 flex h-4 w-4">
-                                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-90" />
-                                                <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-[#070c17] bg-rose-500" />
-                                            </span>
-                                        </div>
-
-                                        {/* Patient Identity & Live Status */}
-                                        <div className="min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/15 px-2.5 py-0.5 text-[9.5px] font-black uppercase tracking-[0.14em] text-amber-300 shadow-sm">
-                                                    <Radio size={11} className={isSpeaking ? 'animate-pulse text-rose-400' : ''} />
-                                                    <span>{t('livePatientCall')}</span>
-                                                </span>
-                                                {isSpeaking && <AudioWaveEqualizer isPlaying />}
-                                            </div>
-
-                                            {lastCalledCase.calledWithName && lastCalledCase.patientName ? (
-                                                <h3 className="mt-1 truncate text-xl sm:text-2xl 2xl:text-3xl font-black tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
-                                                    {lastCalledCase.patientName}
-                                                </h3>
-                                            ) : (
-                                                <p className="mt-1 text-sm sm:text-base font-extrabold text-amber-200/90">
-                                                    {t('pleaseCheckYourTokenAndProceed')}
-                                                </p>
-                                            )}
-
-                                            <p className="hidden sm:block text-[11px] font-medium text-slate-400">
-                                                {t('voiceBroadcastActiveInWaitingHall')}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    {/* ── SECTION 2: Token / Queue Number Box ── */}
-                                    <div className="flex shrink-0 items-center gap-4 sm:gap-6">
-                                        <div className="h-14 w-px bg-gradient-to-b from-transparent via-amber-400/40 to-transparent hidden md:block" />
-
-                                        {/* Massive Golden Token Capsule */}
-                                        <div className="relative flex flex-col items-center justify-center rounded-2xl border border-amber-400/50 bg-black/60 px-4 py-1.5 sm:px-6 sm:py-2 shadow-inner shadow-amber-500/10" dir="ltr">
-                                            <p className="mb-0.5 flex items-center justify-center gap-1 text-[8.5px] sm:text-[9.5px] font-black uppercase tracking-[0.18em] text-amber-300/80">
-                                                <Hash size={11} className="text-amber-400" />
-                                                <span>{t('token')}</span>
-                                            </p>
-                                            <p className="bg-gradient-to-b from-yellow-100 via-amber-300 to-amber-500 bg-clip-text font-mono text-3xl sm:text-4xl 2xl:text-5xl font-black leading-none text-transparent drop-shadow-[0_0_20px_rgba(245,158,11,0.5)]">
-                                                #{getSpokenToken(lastCalledCase.tokenNumber)}
-                                            </p>
-                                        </div>
-
-                                        <div className="h-14 w-px bg-gradient-to-b from-transparent via-slate-700/80 to-transparent hidden lg:block" />
-
-                                        {/* ── SECTION 3: Destination Suite Capsule ── */}
-                                        <div className="hidden min-w-[200px] items-center gap-3.5 rounded-2xl border border-teal-400/40 bg-gradient-to-r from-teal-500/15 via-emerald-500/10 to-teal-500/15 px-4 py-2.5 md:flex shadow-lg shadow-teal-950/40">
-                                            <motion.span
-                                                animate={{ x: isArabic ? [0, -6, 0] : [0, 6, 0] }}
-                                                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-                                                className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-teal-400/40 bg-teal-400/20 text-teal-300 shadow-md shadow-teal-500/20"
-                                            >
-                                                <DoorOpen size={22} strokeWidth={2.4} />
-                                            </motion.span>
-                                            <div className="min-w-0">
-                                                <p className="text-[9px] font-black uppercase tracking-[0.16em] text-teal-300/90">
-                                                    {t('proceedImmediatelyTo')}
-                                                </p>
-                                                <p className="mt-0.5 truncate text-base sm:text-lg 2xl:text-xl font-black text-white drop-shadow-[0_0_12px_rgba(45,212,191,0.4)]">
-                                                    {lastCalledCase.roomName}
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        {/* Center Brand Stamp in Floating Call Card */}
-                                        <div className="hidden xl:flex items-center gap-2.5 rounded-2xl bg-white/95 px-3 py-1.5 border border-emerald-400/50 shadow-md backdrop-blur-md">
-                                            <img
-                                                src={centerLogo}
-                                                alt={centerName}
-                                                className="h-9 w-9 object-contain"
-                                                onError={(e) => {
-                                                    e.currentTarget.onerror = null;
-                                                    e.currentTarget.src = '/center-logo.png';
-                                                }}
-                                            />
-                                            <div className="flex flex-col text-start">
-                                                <span className="text-xs font-black text-slate-900 leading-tight">{centerName}</span>
-                                                <span className="text-[9px] font-bold text-emerald-700">{t('diagnosticImaging')}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* ── SECTION 4: Controls ── */}
-                                    <div className="ms-auto flex shrink-0 items-center gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => triggerPatientCall({ order_number: lastCalledCase.tokenNumber, patient_name: lastCalledCase.patientName }, { room_name: lastCalledCase.roomName }, true, true)}
-                                            className="inline-flex h-10 sm:h-11 items-center gap-2 rounded-xl bg-gradient-to-b from-amber-300 via-amber-400 to-amber-500 px-3.5 sm:px-4 text-xs font-black text-slate-950 shadow-xl shadow-amber-500/30 transition hover:brightness-110 hover:shadow-amber-500/50 active:scale-95"
-                                        >
-                                            <PhoneCall size={15} />
-                                            <span className="hidden sm:inline">{t('repeatCall')}</span>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setLastCalledCase(null)}
-                                            aria-label={t('dismissCall')}
-                                            className="grid h-10 w-10 sm:h-11 sm:w-11 place-items-center rounded-xl border border-slate-700/80 bg-slate-900/90 text-sm font-black text-slate-400 shadow-md transition hover:border-rose-500/50 hover:bg-rose-500/20 hover:text-rose-200 active:scale-95"
-                                        >
-                                            ✕
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Dynamic Elapsed Progress Bar */}
-                                <motion.div
-                                    key={lastCalledCase.time ? new Date(lastCalledCase.time).getTime() : 'call-bar'}
-                                    className="absolute bottom-0 inset-x-0 h-1 bg-gradient-to-r from-amber-400 via-yellow-300 to-emerald-400"
-                                    initial={{ width: '100%' }}
-                                    animate={{ width: '0%' }}
-                                    transition={{ duration: 20, ease: 'linear' }}
-                                />
-                            </motion.div>
-                        </div>
-                    </>
-                )}
-            </AnimatePresence>
-
-            {/* ─── MAIN TWO-COLUMN LAYOUT ─── */}
-            <main className="relative z-10 grid min-h-0 flex-1 grid-cols-12 gap-4 overflow-hidden p-4 2xl:p-5">
-
-                {/* ═══ SECTION 1: ROOMS & QUEUE (8 cols) ═══ */}
-                <section className="col-span-12 flex min-h-0 flex-col overflow-hidden rounded-3xl border border-cyan-950/80 bg-slate-900/35 p-4 shadow-2xl shadow-black/20 backdrop-blur-sm lg:col-span-8 2xl:p-5">
-                    {/* Section header */}
-                    <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-800/80">
-                        <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-lg bg-teal-500/20 border border-teal-500/30 flex items-center justify-center">
-                                <DoorOpen size={14} className="text-teal-400" />
-                            </div>
-                            <h2 className="text-sm font-black tracking-wide text-slate-200 2xl:text-base">
-                                {t('roomQueueStatus')}
-                            </h2>
-                            <span className="rounded-full bg-teal-500/10 border border-teal-500/20 px-2 py-px text-[9.5px] font-black text-teal-400">
-                                {displayedRooms.length} {t('suites')}
-                            </span>
-                        </div>
-                        {totalRoomPages > 1 && (
-                            <div className="flex items-center gap-2">
-                                <div className="flex gap-1">
-                                    {Array.from({ length: totalRoomPages }, (_, i) => (
-                                        <button
-                                            key={i}
-                                            type="button"
-                                            onClick={() => setRoomPageIndex(i)}
-                                            className={`h-1.5 rounded-full transition-all duration-300 ${i === roomPageIndex ? 'w-5 bg-teal-400' : 'w-1.5 bg-slate-700 hover:bg-slate-600'}`}
-                                        />
-                                    ))}
-                                </div>
-                                <div className="flex gap-1">
-                                    <button type="button" onClick={() => setRoomPageIndex(c => (c - 1 + totalRoomPages) % totalRoomPages)} className="h-6 w-6 rounded-lg bg-slate-800 text-slate-400 hover:text-white grid place-items-center transition">
-                                        <ChevronRight size={13} className="rtl:rotate-180" />
-                                    </button>
-                                    <button type="button" onClick={() => setRoomPageIndex(c => (c + 1) % totalRoomPages)} className="h-6 w-6 rounded-lg bg-slate-800 text-slate-400 hover:text-white grid place-items-center transition">
-                                        <ChevronLeft size={13} className="rtl:rotate-180" />
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Room cards grid */}
-                    <div className="flex-1 min-h-0 overflow-hidden">
-                        {displayedRooms.length === 0 ? (
-                            <div className="h-full flex items-center justify-center">
-                                <div className="text-center p-10 rounded-2xl border border-dashed border-slate-800">
-                                    <DoorOpen size={40} className="mx-auto mb-3 text-slate-700" />
-                                    <p className="text-sm font-bold text-slate-600">{t('noRoomsFound')}</p>
-                                    <button type="button" onClick={handleClearRoomFilter} className="mt-2 text-xs text-teal-400 hover:underline font-bold">
-                                        {t('showAllX')}
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <AnimatePresence mode="wait">
-                                <motion.div
-                                    key={roomPageIndex}
-                                    initial={{ opacity: 0, x: isArabic ? -16 : 16 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    exit={{ opacity: 0, x: isArabic ? 16 : -16 }}
-                                    transition={{ duration: 0.3, ease: EASE }}
-                                    className="grid h-full auto-rows-fr gap-3 sm:grid-cols-2 sm:grid-rows-2 2xl:gap-4"
-                                >
-                                    {currentRoomsSlice.map((room, roomIndex) => {
-                                        const machines = room.machines || [];
-                                        const isActive = room.room_status === 'Active';
-                                        const isWide = currentRoomsSlice.length === 1 || (currentRoomsSlice.length === 3 && roomIndex === 2);
-                                        const roomSpan = currentRoomsSlice.length === 1
-                                            ? 'sm:col-span-2 sm:row-span-2'
-                                            : currentRoomsSlice.length === 2
-                                                ? 'sm:row-span-2'
-                                                : roomIndex === 2
-                                                    ? 'sm:col-span-2'
-                                                    : '';
-                                        const cleanCode = String(room.room_number || 'RM').replace(/^Room\s*/i, '').trim();
-                                        const roomName = (room.room_name || `جناح ${room.room_number}`).replace(/Room\s+/gi, '');
-
-                                        return (
-                                            <div
-                                                key={room.room_id || room.room_number}
-                                                className={`relative flex min-h-0 flex-col overflow-hidden rounded-2xl border shadow-xl shadow-black/15 transition-all ${roomSpan} ${
-                                                    isActive
-                                                        ? 'border-slate-700/60 bg-slate-950/80'
-                                                        : 'border-amber-900/30 bg-amber-950/15'
-                                                }`}
-                                            >
-                                                {/* Room header strip */}
-                                                <div className={`flex min-h-[58px] items-center justify-between border-b px-4 py-2.5 ${isActive ? 'border-slate-800/80 bg-slate-900/60' : 'border-amber-900/30 bg-amber-950/20'}`}>
-                                                    <div className="flex items-center gap-2.5 min-w-0">
-                                                        <div className={`flex h-8 min-w-[2rem] px-1.5 items-center justify-center rounded-lg font-mono text-xs font-black shrink-0 ${
-                                                            isActive
-                                                                ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
-                                                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                                        }`}>
-                                                            {cleanCode}
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <h3 className="truncate text-sm font-black leading-tight text-white 2xl:text-base">{roomName}</h3>
-                                                            <p className="mt-0.5 truncate text-[10px] font-medium text-slate-400 2xl:text-[11px]">
-                                                                {machines.map(m => m.machine_name).join(' • ') || (t('examSuite'))}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    <div className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[9.5px] font-black border ${isActive ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-amber-500/30 bg-amber-500/10 text-amber-400'}`}>
-                                                        <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                                                        {isActive ? (t('active')) : (t('standby'))}
-                                                    </div>
-                                                </div>
-
-                                                {/* Machine queue body */}
-                                                <div className="flex min-h-0 flex-1 flex-col gap-2.5 p-3">
-                                                    {machines.map(machine => {
-                                                        const currentCase = machine.current;
-                                                        const nextCase = machine.up_next || machine.queue?.next?.[0];
-                                                        const queueList = machine.queue?.next || [];
-                                                        const waitingCount = machine.queue?.count || 0;
-                                                        const currentTicket = parseTicketDisplay(currentCase?.order_number);
-                                                        const nextTicket = parseTicketDisplay(nextCase?.order_number);
-
-                                                        return (
-                                                            <div key={machine.machine_id} className={`grid min-h-0 flex-1 gap-2.5 ${isWide ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
-                                                                {/* NOW IN EXAM */}
-                                                                <div className="relative min-h-[104px] overflow-hidden rounded-xl border border-teal-500/30 bg-gradient-to-br from-teal-500/10 via-cyan-500/[0.03] to-transparent p-3">
-                                                                    <div className="pointer-events-none absolute -end-8 -top-10 h-28 w-28 rounded-full bg-teal-400/[0.06] blur-2xl" />
-                                                                    <div className="flex items-center justify-between mb-1.5">
-                                                                        <span className="flex items-center gap-1.5 text-[9.5px] font-black uppercase tracking-widest text-teal-400">
-                                                                            <span className="h-1.5 w-1.5 rounded-full bg-teal-400 animate-ping" />
-                                                                            {t('inExam')}
-                                                                        </span>
-                                                                        {currentCase?.elapsed_minutes != null && (
-                                                                            <span className="flex items-center gap-1 text-[9px] text-teal-300/70">
-                                                                                <Timer size={10} />
-                                                                                {currentCase.elapsed_minutes} {t('m')}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    {currentCase ? (
-                                                                        <div className="flex items-end justify-between">
-                                                                            <div className="min-w-0">
-                                                                                {currentTicket.full && (
-                                                                                    <span className="font-mono text-3xl font-black leading-none tracking-tight text-white 2xl:text-4xl">
-                                                                                        {currentTicket.short}
-                                                                                    </span>
-                                                                                )}
-                                                                                <bdi className="block text-xs font-bold text-teal-100/80 mt-0.5 truncate max-w-[120px]">
-                                                                                    {formatPatientName(currentCase.patient_name, currentCase.order_number)}
-                                                                                </bdi>
-                                                                            </div>
-                                                                            {currentCase.priority === 'Emergency' && (
-                                                                                <span className="rounded-lg bg-rose-500/20 border border-rose-500/30 px-2 py-0.5 text-[9px] font-black text-rose-400">
-                                                                                    {t('stat')}
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-                                                                    ) : (
-                                                                        <p className="text-xs text-slate-600 italic py-0.5">{t('suiteReady')}</p>
-                                                                    )}
-                                                                </div>
-
-                                                                {/* UP NEXT */}
-                                                                <div className="relative min-h-[104px] overflow-hidden rounded-xl border border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-amber-500/[0.03] to-transparent p-3">
-                                                                    <div className="pointer-events-none absolute -end-8 -bottom-10 h-28 w-28 rounded-full bg-amber-400/[0.06] blur-2xl" />
-                                                                    <div className="flex items-center justify-between mb-1.5">
-                                                                        <span className="text-[9.5px] font-black uppercase tracking-widest text-amber-400">
-                                                                            {t('upNext')}
-                                                                        </span>
-                                                                        {nextCase && (
-                                                                            <div className="flex items-center gap-1">
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => triggerPatientCall(nextCase, room, true, true)}
-                                                                                    className="flex items-center gap-0.5 rounded-lg bg-amber-500/20 border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-black text-amber-300 hover:bg-amber-500/30 transition active:scale-95"
-                                                                                >
-                                                                                    <UserCheck size={9} />
-                                                                                    {t('call')}
-                                                                                </button>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => triggerPatientCall(nextCase, room, false, true)}
-                                                                                    className="flex items-center gap-0.5 rounded-lg bg-slate-800 border border-slate-700 px-1.5 py-0.5 text-[9px] font-bold text-slate-400 hover:text-white transition active:scale-95"
-                                                                                >
-                                                                                    <Hash size={8} />
-                                                                                </button>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                    {nextCase ? (
-                                                                        <div className="flex items-end justify-between">
-                                                                            <div className="min-w-0">
-                                                                                {nextTicket.full && (
-                                                                                    <span className="font-mono text-2xl font-black leading-none text-amber-200 2xl:text-3xl">
-                                                                                        {nextTicket.short}
-                                                                                    </span>
-                                                                                )}
-                                                                                <bdi className="block text-xs font-bold text-amber-100/70 mt-0.5 truncate max-w-[120px]">
-                                                                                    {formatPatientName(nextCase.patient_name, nextCase.order_number)}
-                                                                                </bdi>
-                                                                            </div>
-                                                                            <span className="text-[9px] font-black text-amber-400 bg-amber-400/10 border border-amber-400/20 px-1.5 py-0.5 rounded-lg">
-                                                                                {t('ready')}
-                                                                            </span>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <p className="text-xs text-slate-600 italic py-0.5">{t('noUpcomingCase')}</p>
-                                                                    )}
-                                                                </div>
-
-                                                                {/* WAITING QUEUE CHIPS */}
-                                                                {queueList.length > 0 && (
-                                                                    <div className={isWide ? 'sm:col-span-2' : ''}>
-                                                                        <p className="text-[9px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                                                                            {t('queue')} ({waitingCount})
-                                                                        </p>
-                                                                        <div className="flex flex-wrap gap-1">
-                                                                            {queueList.slice(0, 5).map((item, idx) => {
-                                                                                const tkt = parseTicketDisplay(item.order_number);
-                                                                                return (
-                                                                                    <span
-                                                                                        key={idx}
-                                                                                        className="inline-flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/80 px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-300"
-                                                                                    >
-                                                                                        <span className="text-[8px] text-slate-500">#{idx + 1}</span>
-                                                                                        {tkt.short}
-                                                                                    </span>
-                                                                                );
-                                                                            })}
-                                                                            {queueList.length > 5 && (
-                                                                                <span className="text-[10px] text-slate-600 font-bold self-center">+{queueList.length - 5}</span>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </motion.div>
-                            </AnimatePresence>
-                        )}
-                    </div>
-                </section>
-
-                {/* ═══ SECTION 2: SIDEBAR (4 cols) ═══ */}
-                <aside className="col-span-12 flex min-h-0 flex-col gap-3 overflow-hidden lg:col-span-4 2xl:gap-4">
-
-                    {/* KPI Stats */}
-                    <div className="grid grid-cols-4 gap-2">
-                        <KpiTile
-                            label={t('avgWait')}
-                            value={`~${formattedAverageWait}`}
-                            suffix={t('min')}
-                            color="text-amber-400"
-                            icon={Clock3}
-                        />
-                        <KpiTile
-                            label={t('doneToday')}
-                            value={summary.completedToday ?? 0}
-                            color="text-emerald-400"
-                            icon={CheckCircle2}
-                        />
-                        <KpiTile
-                            label={t('inExamX')}
-                            value={summary.inExam ?? 0}
-                            color="text-teal-400"
-                            icon={Stethoscope}
-                        />
-                        <KpiTile
-                            label={t('waiting')}
-                            value={summary.waiting ?? 0}
-                            color="text-cyan-400"
-                            icon={Users}
-                        />
-                    </div>
-
-                    {/* Clinical guidance carousel */}
-                    <section className={`relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-cyan-900/60 bg-gradient-to-br ${currentTip?.gradient || 'from-teal-600/20 via-teal-500/5 to-transparent'} shadow-2xl shadow-black/20 backdrop-blur-sm`}>
-                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_10%,rgba(45,212,191,0.08),transparent_34%)]" />
-                        <TipIcon className="pointer-events-none absolute -bottom-10 -start-8 h-52 w-52 text-slate-500/[0.08]" strokeWidth={0.65} />
-
-                        <div className="relative flex items-center justify-between border-b border-white/[0.06] bg-slate-950/25 px-4 py-3">
-                            <div className="flex min-w-0 items-center gap-3">
-                                <motion.span
-                                    key={`tip-icon-${announcementIndex}`}
-                                    initial={{ scale: 0.82, rotate: -8 }}
-                                    animate={{ scale: 1, rotate: 0 }}
-                                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border shadow-lg ${tipAccentCls}`}
-                                >
-                                    <TipIcon size={19} strokeWidth={2.2} />
-                                </motion.span>
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <p className="text-[9.5px] font-black uppercase tracking-[0.18em] text-slate-500">
-                                            {t('examPreparationGuide')}
-                                        </p>
-                                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[8.5px] font-black text-emerald-300">
-                                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                                            {t('important')}
-                                        </span>
-                                    </div>
-                                    <p className="mt-0.5 truncate text-[11px] font-bold text-slate-200">
-                                        {isArabic ? currentTip?.categoryAr : currentTip?.categoryEn}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="flex shrink-0 items-center gap-1.5">
-                                <button
-                                    type="button"
-                                    onClick={() => setAnnouncementIndex((current) => (current - 1 + activeAnnouncements.length) % activeAnnouncements.length)}
-                                    aria-label={t('previousGuidance')}
-                                    className="grid h-7 w-7 place-items-center rounded-lg border border-slate-700/80 bg-slate-900/70 text-slate-400 transition hover:border-teal-500/40 hover:text-teal-300"
-                                >
-                                    <ChevronRight size={13} />
-                                </button>
-                                <span className="min-w-[48px] rounded-lg border border-slate-700/70 bg-slate-950/60 px-2 py-1 text-center font-mono text-[9.5px] font-black text-teal-300" dir="ltr">
-                                    {String(announcementIndex + 1).padStart(2, '0')} / {String(activeAnnouncements.length).padStart(2, '0')}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setAnnouncementIndex((current) => (current + 1) % activeAnnouncements.length)}
-                                    aria-label={t('nextGuidance')}
-                                    className="grid h-7 w-7 place-items-center rounded-lg border border-slate-700/80 bg-slate-900/70 text-slate-400 transition hover:border-teal-500/40 hover:text-teal-300"
-                                >
-                                    <ChevronLeft size={13} />
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="relative flex min-h-[180px] flex-1 items-center overflow-hidden px-5 py-4 2xl:min-h-[220px]">
-                            <AnimatePresence mode="wait">
-                                <motion.div
-                                    key={announcementIndex}
-                                    initial={{ opacity: 0, x: isArabic ? 18 : -18 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    exit={{ opacity: 0, x: isArabic ? -12 : 12 }}
-                                    transition={{ duration: 0.35, ease: EASE }}
-                                    className="w-full"
-                                >
-                                    <h4 className="max-w-md text-[17px] font-black leading-snug text-white 2xl:text-xl">
-                                        {isArabic ? currentTip?.titleAr : currentTip?.titleEn}
-                                    </h4>
-                                    <div className="mt-4 space-y-2.5">
-                                        {guidancePoints.map((point, pointIndex) => (
-                                            <div key={`${announcementIndex}-${pointIndex}`} className="flex items-start gap-2.5 rounded-xl border border-white/[0.05] bg-slate-950/25 px-3 py-2.5">
-                                                <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${tipAccentCls}`}>
-                                                    <Check size={11} strokeWidth={3} />
-                                                </span>
-                                                <p className="text-[11.5px] font-semibold leading-relaxed text-slate-200 2xl:text-[13px]">{point}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </motion.div>
-                            </AnimatePresence>
-                        </div>
-
-                        <div className="relative flex items-center gap-3 border-t border-white/[0.05] bg-slate-950/25 px-4 py-3">
-                            <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-800/90">
-                                <motion.div
-                                    key={`tip-progress-${announcementIndex}`}
-                                    initial={{ width: '0%' }}
-                                    animate={{ width: '100%' }}
-                                    transition={{ duration: ANNOUNCEMENT_ROTATE_MS / 1000, ease: 'linear' }}
-                                    className={`h-full rounded-full ${
-                                        currentTip?.accent === 'amber' ? 'bg-gradient-to-r from-amber-500 to-yellow-300' :
-                                        currentTip?.accent === 'cyan' ? 'bg-gradient-to-r from-cyan-500 to-sky-300' :
-                                        currentTip?.accent === 'emerald' ? 'bg-gradient-to-r from-emerald-500 to-teal-300' :
-                                        currentTip?.accent === 'violet' ? 'bg-gradient-to-r from-violet-500 to-fuchsia-300' :
-                                        'bg-gradient-to-r from-teal-500 to-cyan-300'
-                                    }`}
-                                />
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                {activeAnnouncements.map((_, index) => (
-                                    <button
-                                        key={index}
-                                        type="button"
-                                        onClick={() => setAnnouncementIndex(index)}
-                                        aria-label={`${t('guidance')} ${index + 1}`}
-                                        className={`h-1.5 rounded-full transition-all duration-300 ${index === announcementIndex ? 'w-5 bg-teal-300' : 'w-1.5 bg-slate-700 hover:bg-slate-500'}`}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    </section>
-
-                    {/* QR Portal Card */}
-                    <div className="min-h-[132px] rounded-2xl border border-teal-500/25 bg-gradient-to-br from-teal-950/50 via-cyan-950/20 to-slate-950/90 p-4 shadow-xl shadow-black/20">
-                        <div className="flex items-center gap-3">
-                            <HospitalPortalQr />
-                            <div className="min-w-0 flex-1">
-                                <div className="flex items-center justify-between gap-2 mb-1">
-                                    <span className="inline-flex rounded-lg bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 text-[9.5px] font-black text-teal-400">
-                                        {t('patientPortal')}
-                                    </span>
-                                    <div className="h-6 w-6 rounded-md bg-white p-0.5 flex items-center justify-center shadow-2xs">
-                                        <img
-                                            src={centerLogo}
-                                            alt=""
-                                            className="h-full w-full object-contain"
-                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                        />
-                                    </div>
-                                </div>
-                                <h4 className="text-sm font-black leading-snug text-white 2xl:text-base">
-                                    {t('onlineResultsReports')}
-                                </h4>
-                                <p className="mt-1 text-[11px] font-medium leading-relaxed text-slate-400">
-                                    {t('scanToDownloadDicomImagesReports')}
-                                </p>
-                            </div>
-                        </div>
-                        {(center.hotline || center.phone) && (
-                            <div className="mt-2.5 pt-2 border-t border-slate-800/60 flex items-center gap-2 text-[10px] font-bold text-slate-500">
-                                <Phone size={10} className="text-teal-400 shrink-0" />
-                                <span dir="ltr" className="text-slate-400">{center.hotline || center.phone}</span>
-                                <span className="ms-auto text-slate-600">{t('247Support')}</span>
-                            </div>
-                        )}
-                    </div>
-                </aside>
-            </main>
-
-            {/* ─── SMART NOTICE BAR ─── */}
-            <footer className="relative z-20 overflow-hidden border-t border-cyan-900/70 bg-[#050b15]/95 px-4 py-2.5 shadow-[0_-10px_30px_rgba(0,0,0,0.22)] backdrop-blur-xl">
-                {board?.config?.showTicker !== false && (
-                    <motion.div
-                        key={`ticker-progress-${tickerIndex}`}
-                        initial={{ width: '0%' }}
-                        animate={{ width: '100%' }}
-                        transition={{ duration: TICKER_ROTATE_MS / 1000, ease: 'linear' }}
-                        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-teal-300 to-cyan-400"
+                <div className="vb-call-progress" aria-hidden="true">
+                    <motion.span
+                        className="vb-call-progress__bar"
+                        style={{ originX: isArabic ? 1 : 0 }}
+                        initial={{ scaleX: 1 }}
+                        animate={{ scaleX: 0 }}
+                        transition={{ duration: CALL_BANNER_DURATION_MS / 1000, ease: 'linear' }}
                     />
+                </div>
+            </motion.aside>
+        </div>
+    );
+});
+FloatingCallOverlay.displayName = 'FloatingCallOverlay';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LAST CALL BANNER
+   ═══════════════════════════════════════════════════════════════════════ */
+const LastCallBanner = memo(({ call, isArabic, isLiveCall }) => {
+    const t = (ar, en) => (isArabic ? ar : en);
+    const token = call?.tokenNumber ? String(call.tokenNumber).replace(/^#/, '') : '';
+    if (!token || token === '—' || !call) return null;
+
+    const roomName = call?.roomName || (call?.roomCode ? `${t('جناح', 'Suite')} ${call.roomCode}` : '');
+
+    return (
+        <div
+            className={`vb-last-call ${isLiveCall ? 'vb-last-call--calling' : ''}`}
+            role="status"
+            aria-label={t('آخر نداء', 'Last call')}
+        >
+            <div className="vb-last-call__label">
+                <span className="vb-last-call__bar" aria-hidden="true" />
+                <span>{t('آخر نداء', 'Last call')}</span>
+            </div>
+
+            <div className="vb-last-call__content" dir={isArabic ? 'rtl' : 'ltr'}>
+                <strong className="vb-last-call__token">#{token}</strong>
+                <span className="vb-last-call__arrow" aria-hidden="true">{isArabic ? '←' : '→'}</span>
+                <span className="vb-last-call__room">{roomName}</span>
+            </div>
+
+            <div className="vb-last-call__icon">
+                <Megaphone size="1.85em" aria-hidden="true" />
+                {isLiveCall && (
+                    <div className="vb-soundwave" aria-hidden="true">
+                        <span /><span /><span /><span />
+                    </div>
                 )}
-                <div className="flex min-h-[30px] items-center gap-3 overflow-hidden">
-                    <div className="flex shrink-0 items-center gap-2 rounded-xl border border-teal-500/25 bg-teal-500/10 px-3 py-1.5 text-teal-300 shadow-lg shadow-teal-950/20">
-                        <span className="relative grid h-5 w-5 place-items-center rounded-lg bg-teal-400/15">
-                            <Bell size={12} />
-                            <span className="absolute -end-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-300 ring-2 ring-[#07101b] animate-pulse" />
-                        </span>
-                        <div className="leading-none">
-                            <span className="block text-[9.5px] font-black uppercase tracking-[0.14em]">
-                                {t('centerNotices')}
-                            </span>
-                            <span className="mt-1 block text-[7.5px] font-bold text-teal-200/50">
-                                {t('liveInformation')}
-                            </span>
-                        </div>
+            </div>
+        </div>
+    );
+});
+LastCallBanner.displayName = 'LastCallBanner';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SUITE FOCUS CARD
+   ═══════════════════════════════════════════════════════════════════════ */
+const WaitingCouch = memo(() => (
+    <div className="vb-waiting-couch" aria-hidden="true">
+        <svg width="180" height="95" viewBox="0 0 180 95" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="90" cy="48" r="38" fill="#e0f7f6" fillOpacity="0.75" />
+            <g transform="translate(74, 6)">
+                <circle cx="16" cy="16" r="16" fill="#0d9488" />
+                <path d="M10 16.5L14.5 21L22 12.5" stroke="#ffffff" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />
+                <line x1="16" y1="-3" x2="16" y2="1" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+                <line x1="3" y1="4" x2="6" y2="7" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+                <line x1="29" y1="4" x2="26" y2="7" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+                <line x1="-3" y1="16" x2="1" y2="16" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+                <line x1="31" y1="16" x2="35" y2="16" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+            </g>
+            <g transform="translate(22, 36)">
+                <path d="M10 24L8 38H18L16 24H10Z" fill="#a7d8d6" />
+                <path d="M13 24C8 18 4 11 13 4C22 11 18 18 13 24Z" fill="#5eead4" opacity="0.8" />
+                <path d="M13 24C18 16 23 11 27 6C25 15 20 20 13 24Z" fill="#2dd4bf" />
+                <path d="M13 24C8 16 3 11 0 6C2 15 7 20 13 24Z" fill="#14b8a6" />
+            </g>
+            <g transform="translate(42, 42)">
+                <rect x="8" y="6" width="24" height="20" rx="4" fill="#99d5d3" />
+                <rect x="36" y="6" width="24" height="20" rx="4" fill="#88cbca" />
+                <rect x="64" y="6" width="24" height="20" rx="4" fill="#99d5d3" />
+                <rect x="4" y="26" width="88" height="11" rx="4" fill="#72bfbd" />
+                <rect x="11" y="37" width="3.5" height="12" rx="1.5" fill="#4f8f8e" />
+                <rect x="81" y="37" width="3.5" height="12" rx="1.5" fill="#4f8f8e" />
+                <rect x="46" y="37" width="3.5" height="12" rx="1.5" fill="#4f8f8e" />
+            </g>
+        </svg>
+    </div>
+));
+WaitingCouch.displayName = 'WaitingCouch';
+
+const SuiteFocusCard = memo(({ suite, isArabic, formatName, isCalling, showPatientNames }) => {
+    const t = (ar, en) => (isArabic ? ar : en);
+    const [imageFailed, setImageFailed] = useState(false);
+
+    if (!suite) {
+        return (
+            <section className="vb-suite-focus vb-suite-focus--empty" aria-live="polite">
+                <Stethoscope size="3rem" aria-hidden="true" />
+                <h2>{t('لا توجد أجنحة متاحة للعرض', 'No suites are available')}</h2>
+                <p>{t('تحقق من إعدادات الغرف أو الاتصال بالخادم', 'Check room configuration or the server connection')}</p>
+            </section>
+        );
+    }
+
+    const machine = suite.machines?.find((m) => m?.current || m?.up_next || m?.queue?.next?.length)
+        || suite.machines?.[0] || {};
+    const current = machine.current;
+    const next = machine.up_next || machine.queue?.next?.[0];
+    const queueNext = machine.queue?.next || [];
+    const afterNext = queueNext
+        .filter((item) => item && item !== next && getCallIdentity(item) !== getCallIdentity(next))
+        .slice(0, 2);
+
+    const roomCode = stripRoomLabel(suite.room_number) || '—';
+    const rawName = suite.room_name || `${t('جناح', 'Suite')} ${roomCode}`;
+    const strippedName = rawName
+        .replace(new RegExp(`^(?:جناح|Suite)\\s*${roomCode}\\s*[-–:]*\\s*`, 'i'), '')
+        .replace(/^(?:جناح|Suite)\s+/i, '')
+        .trim();
+    const roomName = strippedName || rawName;
+
+    const modality = getSuiteModality(suite, t);
+    const ModalityIcon = modality.icon;
+    const detail = MODALITY_DETAILS[modality.type] || MODALITY_DETAILS.general;
+
+    const nextTicket = parseTicket(next?.order_number, next?.queue_number);
+    const hasValidNext = Boolean(next && nextTicket.number && nextTicket.number !== '—');
+    const nextName = hasValidNext && showPatientNames && next?.patient_name ? formatName(next.patient_name) : null;
+
+    const currentTicket = parseTicket(current?.order_number, current?.queue_number);
+    const hasValidCurrent = Boolean(current && currentTicket.number && currentTicket.number !== '—');
+
+    const after1 = afterNext[0] ? parseTicket(afterNext[0].order_number, afterNext[0].queue_number) : { number: '' };
+    const hasAfter1 = Boolean(after1.number && after1.number !== '—');
+    const after2 = afterNext[1] ? parseTicket(afterNext[1].order_number, afterNext[1].queue_number) : { number: '' };
+    const hasAfter2 = Boolean(after2.number && after2.number !== '—');
+    const queueSteps = [
+        hasValidCurrent && { id: 'current', label: t('الحالي', 'Current'), number: currentTicket.number },
+        hasAfter1 && { id: 'after-next', label: t('بعد التالي', 'After next'), number: after1.number },
+        hasAfter2 && { id: 'following', label: t('يليه', 'Following'), number: after2.number },
+    ].filter(Boolean);
+
+    const operational = new Set(['active', 'available', 'operational', 'ready', 'in use', 'busy']);
+    const statusValues = [suite.room_status, machine.machine_status].filter(Boolean).map((v) => String(v).trim().toLowerCase());
+    const isUnavailable = statusValues.some((v) => !operational.has(v));
+    const statusText = isUnavailable
+        ? t('خارج الخدمة', 'Unavailable')
+        : current ? t('قيد الفحص', 'In exam')
+            : t('متاح', 'Available');
+
+    return (
+        <section
+            className={`vb-suite-focus vb-suite-focus--${modality.type} ${isCalling ? 'vb-suite-focus--calling' : ''}`}
+            aria-label={`${roomName} ${modality.tag}`}
+        >
+            <div className="vb-suite-focus__content">
+                <div className="vb-suite-header">
+                    <div className="vb-suite-badge">
+                        <ModalityIcon size="1.75em" />
+                        <span className="vb-suite-badge__code">{t('جناح', 'Suite')} {roomCode}</span>
                     </div>
 
-                    {board?.config?.showTicker !== false && currentTickerNotice ? (
-                        <div className="relative min-w-0 flex-1 overflow-hidden">
-                            <AnimatePresence mode="wait">
-                                <motion.div
-                                    key={tickerIndex}
-                                    initial={{ opacity: 0, y: 9 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -9 }}
-                                    transition={{ duration: 0.32, ease: EASE }}
-                                    className="flex min-w-0 items-center gap-3"
-                                >
-                                    <span className={`shrink-0 rounded-lg border px-2 py-1 text-[8.5px] font-black ${
-                                        currentTickerNotice.accent === 'amber' ? 'border-amber-500/25 bg-amber-500/10 text-amber-300' :
-                                        currentTickerNotice.accent === 'violet' ? 'border-violet-500/25 bg-violet-500/10 text-violet-300' :
-                                        currentTickerNotice.accent === 'cyan' ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-300' :
-                                        'border-teal-500/25 bg-teal-500/10 text-teal-300'
-                                    }`}>
-                                        {isArabic ? currentTickerNotice.labelAr : currentTickerNotice.labelEn}
-                                    </span>
-                                    <p className="truncate text-[11px] font-bold text-slate-200 2xl:text-xs">
-                                        {isArabic ? currentTickerNotice.ar : currentTickerNotice.en}
-                                    </p>
-                                </motion.div>
-                            </AnimatePresence>
-                        </div>
-                    ) : <div className="flex-1" />}
+                    <div className="vb-suite-title">
+                        <motion.h2 initial={{ opacity: 0, x: isArabic ? 12 : -12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4 }}>{roomName}</motion.h2>
+                    </div>
 
-                    {board?.config?.showTicker !== false && (
-                        <div className="hidden shrink-0 items-center gap-1.5 lg:flex">
-                            {tickerNotices.map((_, index) => (
-                                <button
-                                    key={index}
-                                    type="button"
-                                    onClick={() => setTickerIndex(index)}
-                                    aria-label={`${t('notice')} ${index + 1}`}
-                                    className={`h-1.5 rounded-full transition-all ${index === tickerIndex ? 'w-4 bg-teal-300' : 'w-1.5 bg-slate-700 hover:bg-slate-500'}`}
-                                />
-                            ))}
+                    <div className="vb-suite-pills">
+                        <span className={`vb-suite-pill vb-suite-pill--status ${isUnavailable ? 'vb-suite-pill--offline' : (!current ? 'vb-suite-pill--available' : '')}`}>
+                            <span className="vb-suite-pill__dot" aria-hidden="true" />
+                            <span>{statusText}</span>
+                        </span>
+                        <span className="vb-suite-pill vb-suite-pill--mod">
+                            <ModalityIcon size="1.1em" />
+                            <span>{modality.tag}</span>
+                        </span>
+                    </div>
+                </div>
+
+                <div className={`vb-hero-call ${isCalling ? 'vb-hero-call--calling' : ''} ${!hasValidNext ? 'vb-hero-call--empty' : ''}`}>
+                    {hasValidNext ? (
+                        <>
+                            <span className="vb-hero-call__tag"><Users size="1em" aria-hidden="true" />{t('الدور التالي', 'Next ticket')}</span>
+                            <motion.strong
+                                className="vb-hero-call__number"
+                                dir="ltr"
+                                key={nextTicket.number}
+                                initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                            >
+                                {nextTicket.number}
+                            </motion.strong>
+                            {nextName && <span className="vb-hero-call__name">{nextName}</span>}
+                            <div className="vb-hero-call__instruction">
+                                <span>{t('يرجى الاستعداد أمام الجناح', 'Please be ready in front of the suite')}</span>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="vb-hero-empty">
+                            <WaitingCouch />
+                            <h3 className="vb-hero-empty__title">{t('لا يوجد منتظرون حالياً', 'No patients currently waiting')}</h3>
+                        </div>
+                    )}
+                </div>
+
+                {queueSteps.length > 0 && (
+                    <div className="vb-queue-steps" dir={isArabic ? 'rtl' : 'ltr'}>
+                        {queueSteps.map((step, index) => (
+                            <React.Fragment key={step.id}>
+                                {index > 0 && <span className="vb-queue-step__arrow" aria-hidden="true">{isArabic ? '«' : '»'}</span>}
+                                <div className="vb-queue-step">
+                                    <span className="vb-queue-step__label">{step.label}</span>
+                                    <strong className="vb-queue-step__num" dir="ltr">#{step.number}</strong>
+                                </div>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <div className={`vb-suite-image vb-suite-image--${modality.type}`}>
+                {detail.image && !imageFailed ? (
+                    <img src={detail.image} alt="" className="vb-suite-image__bg" onError={() => setImageFailed(true)} />
+                ) : (
+                    <ModalityIcon className="vb-suite-image__icon" />
+                )}
+                <div className="vb-suite-image__overlay">
+                    <div className="vb-suite-image__caption">
+                        <span className="vb-suite-image__caption-pre">{t(...detail.top)}</span>
+                        <h3 className="vb-suite-image__caption-hero">{t(...detail.title)}</h3>
+                        <div className="vb-suite-image__caption-line" aria-hidden="true" />
+                        <p className="vb-suite-image__caption-sub">{t(...detail.description)}</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    );
+});
+SuiteFocusCard.displayName = 'SuiteFocusCard';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   WAITING LIST CARD
+   ═══════════════════════════════════════════════════════════════════════ */
+const WaitingListCard = memo(({ items, total, isArabic, liveCall, showPatientNames, formatName }) => {
+    const t = (ar, en) => (isArabic ? ar : en);
+    const [page, setPage] = useState(0);
+    const pageCount = Math.max(1, Math.ceil(items.length / WAITING_ROWS));
+
+    useEffect(() => {
+        setPage((curr) => Math.min(curr, pageCount - 1));
+    }, [pageCount]);
+
+    useEffect(() => {
+        if (pageCount <= 1 || liveCall) return undefined;
+        const timer = setInterval(() => setPage((curr) => (curr + 1) % pageCount), WAITING_PAGE_INTERVAL_MS);
+        return () => clearInterval(timer);
+    }, [pageCount, liveCall]);
+
+    const pageItems = items.slice(page * WAITING_ROWS, page * WAITING_ROWS + WAITING_ROWS);
+
+    return (
+        <section className="vb-card vb-card--waiting" aria-label={t('قائمة الانتظار', 'Waiting queue')}>
+            <div className="vb-card__head">
+                <div className="vb-card__title">
+                    <div className="vb-card__icon-badge">
+                        <Users size="1.15em" aria-hidden="true" />
+                    </div>
+                    <div>
+                        <h3>{t('الانتظار', 'Waiting')}</h3>
+                    </div>
+                </div>
+                <div className="vb-waiting-count">
+                    <span className="vb-waiting-count__num">{total ?? items.length}</span>
+                    <span className="vb-waiting-count__label">{t('منتظر', 'Waiting')}</span>
+                </div>
+            </div>
+
+            {items.length > 0 && (
+                <div className="vb-waiting-header">
+                    <span>{t('رقم الدور', 'Ticket')}</span>
+                    <span>{t('الجناح / الفحص', 'Suite / Exam')}</span>
+                    <span>{t('الحالة والأولوية', 'Status & Priority')}</span>
+                </div>
+            )}
+
+            <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                    key={`wait-page-${page}`}
+                    className="vb-waiting-rows"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.25 }}
+                >
+                    {pageItems.length === 0 && (
+                        <div className="vb-waiting-empty">
+                            <strong>{t('لا توجد أدوار منتظرة حالياً', 'No patients currently waiting')}</strong>
                         </div>
                     )}
 
-                    <div className="hidden shrink-0 items-center gap-1.5 border-s border-slate-800 ps-3 xl:flex">
-                        <span className={`h-1.5 w-1.5 rounded-full ${isFetching ? 'bg-amber-300 animate-pulse' : 'bg-emerald-400'}`} />
-                        <span className="text-[8.5px] font-bold text-slate-500">
-                            {isFetching ? (t('syncing')) : (t('updated'))}
-                        </span>
-                        <span className="font-mono text-[9px] font-black text-slate-400" dir="ltr">
-                            {board?.generatedAt ? new Date(board.generatedAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-                        </span>
+                    {pageItems.map((row, idx) => {
+                        const token = row.token || parseTicket(row.caseItem?.order_number, row.caseItem?.queue_number).number;
+                        const roomCode = stripRoomLabel(row.room?.room_number) || stripRoomLabel(row.suite) || '—';
+                        const mod = getSuiteModality(row.room || { room_number: roomCode, modality: row.caseItem?.modality || row.suite }, t);
+                        const isReady = row.isReady ?? row.caseItem?.queue_stage === 'Ready for Exam';
+                        const isOnHold = Boolean(row.caseItem?.is_on_hold);
+                        const priority = String(row.caseItem?.priority || '').toLowerCase();
+                        const isCalling = Boolean(liveCall) && (
+                            String(token).replace(/^#/, '') === String(liveCall.tokenNumber || '').replace(/^#/, '')
+                        );
+                        const rawName = row.patientName || row.caseItem?.patient_name;
+                        const patientName = showPatientNames && rawName ? formatName(rawName) : null;
+
+                        const statusText = isCalling
+                            ? t('يتم النداء الآن', 'Calling now')
+                            : isOnHold ? t('مؤجل مؤقتاً', 'On hold')
+                                : (row.status || (isReady ? t('استعد للدخول', 'Get ready') : t('في الانتظار', 'Waiting')));
+
+                        const statusModifier = priority === 'emergency' ? 'emergency'
+                            : priority === 'urgent' ? 'urgent'
+                                : isCalling ? 'calling'
+                                    : isReady ? 'ready'
+                                        : 'waiting';
+
+                        return (
+                            <div
+                                key={`wait-row-${page}-${idx}-${token}`}
+                                className={`vb-waiting-row${isCalling ? ' vb-waiting-row--calling' : isReady ? ' vb-waiting-row--ready' : ''}`}
+                            >
+                                <div>
+                                    <strong className="vb-waiting-row__token" dir="ltr">#{token}</strong>
+                                    {patientName && <div className="vb-waiting-row__name">{patientName}</div>}
+                                </div>
+
+                                <div className="vb-waiting-row__suite">
+                                    <span className="vb-waiting-row__suite-badge">
+                                        <span>{t('جناح', 'Suite')}</span>
+                                        <strong className="vb-waiting-row__suite-code">{roomCode}</strong>
+                                    </span>
+                                    {mod?.tag && <span className="vb-waiting-row__suite-mod">{mod.tag}</span>}
+                                </div>
+
+                                <div className="vb-waiting-row__status-wrap">
+                                    <span className={`vb-waiting-row__status vb-waiting-row__status--${statusModifier}`}>
+                                        <span className="vb-waiting-row__status-dot" aria-hidden="true" />
+                                        <span>{statusText}</span>
+                                    </span>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </motion.div>
+            </AnimatePresence>
+
+            {pageCount > 1 && (
+                <div className="vb-waiting-pager">
+                    <span className="vb-waiting-pager__info" dir="ltr">
+                        {t('صفحة', 'Page')} {page + 1} {t('من', 'of')} {pageCount}
+                    </span>
+                    <div className="vb-waiting-pager__dots">
+                        {Array.from({ length: pageCount }).map((_, pIdx) => (
+                            <button
+                                key={`dot-${pIdx}`}
+                                type="button"
+                                onClick={() => setPage(pIdx)}
+                                className={`vb-pager-dot${pIdx === page ? ' vb-pager-dot--active' : ''}`}
+                                aria-label={`Page ${pIdx + 1}`}
+                            />
+                        ))}
                     </div>
+                </div>
+            )}
+        </section>
+    );
+});
+WaitingListCard.displayName = 'WaitingListCard';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GUIDANCE / ANNOUNCEMENTS CARD
+   ═══════════════════════════════════════════════════════════════════════ */
+const GuidanceCard = memo(({ announcements = [], isArabic }) => {
+    const t = useCallback((ar, en) => (isArabic ? ar : en), [isArabic]);
+    const hasAnnouncements = Array.isArray(announcements) && announcements.length > 0;
+    const [activeTab, setActiveTab] = useState('all');
+    const [slideIndex, setSlideIndex] = useState(0);
+
+    const instructions = useMemo(() => [
+        {
+            id: 'inst-1', icon: Ban, tone: 'warning',
+            category: t('إرشادات السلامة', 'Safety Prep'),
+            title: t('إزالة المعادن والإلكترونيات', 'Remove Metals & Devices'),
+            desc: t('يرجى نزع الساعات، الحلي، والمفاتيح والبطاقات الممغنطة قبل دخول غرفة الفحص.',
+                'Please remove watches, jewelry, coins, and magnetic cards prior to examination.'),
+        },
+        {
+            id: 'inst-2', icon: ShieldCheck, tone: 'info',
+            category: t('تحضيرات الفحص', 'Exam Preparation'),
+            title: t('فحوصات الصبغة والمعدة', 'Contrast & Ultrasound'),
+            desc: t('يرجى التأكد من الالتزام بساعات الصيام المحددة وشرب كميات كافية من الماء بعد الفحص.',
+                'Ensure adherence to fasting requirements and drink plenty of water after contrast exams.'),
+        },
+        {
+            id: 'inst-3', icon: Footprints, tone: 'success',
+            category: t('تنظيم الصالة', 'Hall Etiquette'),
+            title: t('التواجد عند سماع النداء', 'Prompt Suite Arrival'),
+            desc: t('يرجى التوجه فوراً إلى الجناح الموضح على الشاشة بمجرد سماع النداء الصوتي لتجنب التأخير.',
+                'Please proceed immediately to the designated suite upon voice announcement.'),
+        },
+        {
+            id: 'inst-4', icon: Smartphone, tone: 'info',
+            category: t('الهدوء والراحة', 'Quiet Environment'),
+            title: t('ضبط الهاتف على الصامت', 'Silent Mobile Phones'),
+            desc: t('حرصاً على راحة المرضى وتركيز الطاقم الطبي، يرجى ضبط الهواتف على الوضع الصامت.',
+                'For patient comfort and clinical focus, please keep mobile phones on silent mode.'),
+        },
+    ], [t]);
+
+    const combined = useMemo(() => {
+        const formatted = announcements.map((ann, i) => ({
+            id: ann.id || `ann-${i}`,
+            icon: Megaphone,
+            category: t('إعلان المركز', 'Center Notice'),
+            tone: ann.tone || 'info',
+            title: ann.title || t('تنبيه هام للمرضى', 'Important Notice'),
+            desc: ann.message,
+        }));
+        if (activeTab === 'announcements' && formatted.length > 0) return formatted;
+        if (activeTab === 'instructions') return instructions;
+        return [...formatted, ...instructions];
+    }, [announcements, activeTab, instructions, t]);
+
+    useEffect(() => {
+        if (combined.length <= 1) return undefined;
+        const timer = setInterval(() => setSlideIndex((curr) => (curr + 1) % combined.length), GUIDANCE_INTERVAL_MS);
+        return () => clearInterval(timer);
+    }, [combined.length]);
+
+    const current = combined[slideIndex] || combined[0] || instructions[0];
+    const Icon = current.icon || Megaphone;
+
+    const tabs = [
+        { id: 'all', label: t('الكل', 'All') },
+        ...(hasAnnouncements ? [{ id: 'announcements', label: t('الإعلانات', 'Notices') }] : []),
+        { id: 'instructions', label: t('التعليمات', 'Guidance') },
+    ];
+
+    return (
+        <section className="vb-card vb-card--guidance" aria-label={t('الإعلانات والإرشادات', 'Announcements and guidance')}>
+            <div className="vb-card__head">
+                <div className="vb-card__title">
+                    <div className="vb-card__icon-badge vb-card__icon-badge--amber">
+                        <Megaphone size="1.15em" aria-hidden="true" />
+                    </div>
+                    <div>
+                        <h3>{t('الإعلانات', 'Notices')}</h3>
+                    </div>
+                </div>
+
+                <div className="vb-subtabs">
+                    {tabs.map((tab) => (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => { setActiveTab(tab.id); setSlideIndex(0); }}
+                            className={`vb-subtab${activeTab === tab.id ? ' vb-subtab--active' : ''}`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="vb-guidance-wrap">
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={`guide-${current.id}-${slideIndex}`}
+                        className={`vb-guidance vb-guidance--${current.tone}`}
+                        initial={{ opacity: 0, x: isArabic ? -8 : 8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: isArabic ? 8 : -8 }}
+                        transition={{ duration: 0.26 }}
+                    >
+                        <div className="vb-guidance__top">
+                            <span className="vb-guidance__category">
+                                <Icon size="0.95em" aria-hidden="true" />
+                                <span>{current.category}</span>
+                            </span>
+                            <span className="vb-guidance__timer" dir="ltr">{slideIndex + 1} / {combined.length}</span>
+                        </div>
+
+                        <h4 className="vb-guidance__title">{current.title}</h4>
+                        <p className="vb-guidance__desc">{current.desc}</p>
+
+                        <div className="vb-guidance__progress" aria-hidden="true">
+                            <motion.div
+                                key={`prog-${slideIndex}`}
+                                className={`vb-guidance__progress-fill vb-guidance__progress-fill--${current.tone}`}
+                                initial={{ width: '0%' }}
+                                animate={{ width: '100%' }}
+                                transition={{ duration: GUIDANCE_INTERVAL_MS / 1000, ease: 'linear' }}
+                            />
+                        </div>
+                    </motion.div>
+                </AnimatePresence>
+            </div>
+        </section>
+    );
+});
+GuidanceCard.displayName = 'GuidanceCard';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DIGITAL PORTAL CARD
+   ═══════════════════════════════════════════════════════════════════════ */
+const PortalCard = memo(({ isArabic }) => {
+    const t = (ar, en) => (isArabic ? ar : en);
+
+    return (
+        <section className="vb-card vb-card--portal" aria-label={t('بوابة النتائج الرقمية', 'Digital results portal')}>
+            <div className="vb-card__head">
+                <div className="vb-card__title">
+                    <div className="vb-card__icon-badge">
+                        <QrCode size="1.15em" aria-hidden="true" />
+                    </div>
+                    <div>
+                        <h3>{t('بوابة المريض', 'Patient portal')}</h3>
+                    </div>
+                </div>
+                <span className="vb-portal-badge">
+                    <span className="vb-portal-badge__dot" aria-hidden="true" />
+                    <span>{t('على هاتفك', 'On your phone')}</span>
+                </span>
+            </div>
+
+            <div className="vb-portal-body">
+                <div className="vb-portal-qr">
+                    <span className="vb-portal-qr__bracket vb-portal-qr__bracket--tl" aria-hidden="true" />
+                    <span className="vb-portal-qr__bracket vb-portal-qr__bracket--tr" aria-hidden="true" />
+                    <span className="vb-portal-qr__bracket vb-portal-qr__bracket--bl" aria-hidden="true" />
+                    <span className="vb-portal-qr__bracket vb-portal-qr__bracket--br" aria-hidden="true" />
+                    <QRCodeSVG
+                        value={getPatientPortalHomeUrl()}
+                        size={58}
+                        level="M"
+                        bgColor="#ffffff"
+                        fgColor="#084c53"
+                        title="VIARA Digital Portal"
+                    />
+                    <span className="vb-portal-qr__label">{t('امسح بالكاميرا', 'Scan with camera')}</span>
+                </div>
+
+                <div className="vb-portal-features">
+                    <div className="vb-portal-feature">
+                        <Smartphone size="1.1em" className="vb-portal-feature__icon vb-portal-feature__icon--brand" aria-hidden="true" />
+                        <div>
+                            <strong className="vb-portal-feature__title">{t('متابعة دورك مباشرة', 'Live Queue Tracking')}</strong>
+                            <p className="vb-portal-feature__desc">{t('اعرف ترتيبك بدقة من هاتفك', 'Check your queue position')}</p>
+                        </div>
+                    </div>
+                    <div className="vb-portal-feature">
+                        <FileText size="1.1em" className="vb-portal-feature__icon vb-portal-feature__icon--info" aria-hidden="true" />
+                        <div>
+                            <strong className="vb-portal-feature__title">{t('التقرير وصور الأشعة', 'Reports & DICOM')}</strong>
+                            <p className="vb-portal-feature__desc">{t('استلام فوري فور اعتماد الطبيب', 'Instant access upon sign-off')}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    );
+});
+PortalCard.displayName = 'PortalCard';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TICKER FOOTER
+   ═══════════════════════════════════════════════════════════════════════ */
+const TickerFooter = memo(({
+    displayBoard, isArabic, isStale, isDemoMode, onExitDemo,
+}) => {
+    const t = useCallback((ar, en) => (isArabic ? ar : en), [isArabic]);
+
+    const announcements = displayBoard?.announcements || [];
+    const defaults = useMemo(() => [
+        { id: 'def-1', tone: 'info', message: t('يرجى متابعة رقم الدور على الشاشة والتوجه إلى الجناح فور سماع النداء', 'Please follow your ticket on screen and proceed to the suite upon announcement') },
+        { id: 'def-2', tone: 'warning', message: t('يرجى إزالة كافة الساعات والمعادن والأجهزة الإلكترونية قبل الدخول لغرفة الفحص', 'Please remove all metals and electronic devices prior to entering the exam suite') },
+        { id: 'def-3', tone: 'success', message: t('يمكنكم استلام صور الأشعة والتقرير الفوري عبر مسح رمز الاستجابة السريعة بهاتفكم', 'Scan the QR code to receive your radiology report and images directly on your phone') },
+    ], [t]);
+
+    const active = announcements.length > 0 ? announcements : defaults;
+    const [idx, setIdx] = useState(0);
+
+    useEffect(() => {
+        if (active.length <= 1) return undefined;
+        const timer = setInterval(() => setIdx((c) => (c + 1) % active.length), TICKER_INTERVAL_MS);
+        return () => clearInterval(timer);
+    }, [active.length]);
+
+    const current = active[idx] || active[0];
+    const tone = current?.tone || 'info';
+    const ToneIcon = tone === 'urgent' ? Megaphone
+        : tone === 'warning' ? AlertTriangle
+            : tone === 'success' ? CheckCircle2
+                : Bell;
+    const toneLabel = tone === 'urgent' ? t('عاجل', 'Urgent')
+        : tone === 'warning' ? t('تنبيه هام', 'Notice')
+            : tone === 'success' ? t('خدمة رقمية', 'Service')
+                : t('إعلان', 'Notice');
+
+    return (
+        <footer className="vb-ticker" dir={isArabic ? 'rtl' : 'ltr'} role="contentinfo">
+            <div className="vb-ticker__msg-container" aria-live="polite">
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={`ticker-${idx}-${current?.id || ''}`}
+                        className="vb-ticker__msg"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.35, ease: 'easeInOut' }}
+                    >
+                        <span className={`vb-ticker__tone-badge vb-ticker__tone-badge--${tone}`}>
+                            <ToneIcon size="1.05em" aria-hidden="true" />
+                            <span>{toneLabel}</span>
+                        </span>
+                        <span className="vb-ticker__msg-text">
+                            {current?.message || current?.title || ''}
+                        </span>
+                    </motion.div>
+                </AnimatePresence>
+            </div>
+
+            <div className="vb-ticker__sync-wrap">
+                {isDemoMode ? (
                     <button
                         type="button"
-                        onClick={() => window.open('/display/control', '_blank', 'noopener,noreferrer')}
-                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-slate-800 bg-slate-900/80 text-slate-500 transition hover:border-teal-500/30 hover:text-teal-300"
-                        title={t('displaySettings')}
-                        aria-label={t('displaySettings')}
+                        onClick={onExitDemo}
+                        className="vb-ticker__demo-pill"
+                        title={t('انقر لإنهاء المعاينة والعودة للبيانات الحية', 'Click to exit demo')}
                     >
-                        <Settings2 size={13} />
+                        <span className="vb-ticker__demo-dot" aria-hidden="true" />
+                        <span>{t('معاينة آمنة (Demo)', 'Safe Demo')}</span>
                     </button>
-                </div>
-            </footer>
+                ) : (
+                    <div className="vb-ticker__sync">
+                        <span className={`vb-sync-dot${isStale ? ' vb-sync-dot--offline' : ''}`} aria-hidden="true" />
+                        <span>{isStale ? t('بيانات غير محدثة', 'Updates paused') : t('مزامنة مباشرة', 'Live sync')}</span>
+                    </div>
+                )}
+            </div>
+        </footer>
+    );
+});
+TickerFooter.displayName = 'TickerFooter';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CONTROL DRAWER — atoms
+   ═══════════════════════════════════════════════════════════════════════ */
+const CompactGroup = ({ label, icon: Icon, children }) => (
+    <div className="vb-dgroup">
+        <div className="vb-dgroup__label">
+            {Icon && <Icon size="0.95em" aria-hidden="true" />}
+            <span>{label}</span>
         </div>
+        <div className="vb-dgroup__body">
+            {children}
+        </div>
+    </div>
+);
+
+const Chip = ({ active, icon: Icon, label, onClick }) => (
+    <button type="button" onClick={onClick} aria-pressed={active} className={`vb-chip${active ? ' vb-chip--active' : ''}`}>
+        {Icon && <Icon size="0.95em" aria-hidden="true" />}
+        <span>{label}</span>
+    </button>
+);
+
+const TestCallButton = ({ tone, icon: Icon, label, onClick }) => (
+    <button type="button" onClick={onClick} className={`vb-test-call vb-test-call--${tone}`}>
+        <Icon size="1em" aria-hidden="true" />
+        <span>{label}</span>
+    </button>
+);
+
+const TuneItem = ({ title, options, current, onSelect, format = (v) => v }) => (
+    <div className="vb-tune">
+        <span className="vb-tune__label">{title}</span>
+        <div className="vb-tune__opts" role="group" aria-label={title}>
+            {options.map((opt) => (
+                <button
+                    key={opt}
+                    type="button"
+                    onClick={() => onSelect(opt)}
+                    aria-pressed={current === opt}
+                    className={`vb-tune__opt${current === opt ? ' vb-tune__opt--active' : ''}`}
+                >
+                    {format(opt)}
+                </button>
+            ))}
+        </div>
+    </div>
+);
+
+const TogglePill = ({ active, icon: Icon, label, onClick }) => (
+    <button type="button" onClick={onClick} aria-pressed={active} className={`vb-toggle${active ? ' vb-toggle--active' : ''}`}>
+        <Icon size="0.9em" aria-hidden="true" />
+        <span>{label}</span>
+    </button>
+);
+
+const ActionCard = ({ icon: Icon, label, onClick, active }) => (
+    <button type="button" onClick={onClick} aria-pressed={active} className={`vb-action${active ? ' vb-action--active' : ''}`}>
+        <Icon size="1.1em" aria-hidden="true" />
+        <span>{label}</span>
+    </button>
+);
+
+const Field = ({ label, value, onChange, children }) => (
+    <label className="vb-field">
+        <span className="vb-field__label">{label}</span>
+        <select className="vb-field__control" value={value} onChange={(e) => onChange(e.target.value)}>
+            {children}
+        </select>
+    </label>
+);
+
+const NavLink = ({ icon: Icon, title, sub, onClick }) => (
+    <button type="button" onClick={onClick} className="vb-navlink">
+        <Icon size="1.05em" aria-hidden="true" />
+        <span className="vb-navlink__text">
+            <span className="vb-navlink__title">{title}</span>
+            <span className="vb-navlink__sub">{sub}</span>
+        </span>
+        <ExternalLink size="0.85em" className="vb-navlink__cue" aria-hidden="true" />
+    </button>
+);
+
+const PRESET_LABELS = {
+    standard: ['قياسي', 'Standard'],
+    quiet: ['هادئ', 'Quiet'],
+    concise: ['مختصر', 'Concise'],
+    clarity: ['وضوح', 'Clarity'],
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CONTROL DRAWER
+   ═══════════════════════════════════════════════════════════════════════ */
+const ControlDrawer = memo(({
+    open, onClose, isArabic, theme, displayLanguage,
+    onSetLanguage, onSetTheme, onToggleSound, muteAll,
+    quietMode, onToggleQuiet, isFullscreen, onToggleFullscreen,
+    isRotationPaused, onTogglePause, showSummaryStats, onToggleStats,
+    rotationSpeed, onSetSpeed, selectedRooms, allRooms, onToggleRoom, onClearRooms,
+    isDemoMode, onToggleDemoMode,
+    callAnnouncementMode, onSetCallAnnouncementMode,
+    announcementPreset, onApplyPreset,
+    announcementRate, onSetRate, announcementRepeatCount, onSetRepeats,
+    announcementRepeatDelay, onSetDelay, announcementVolume, onSetVolume,
+    repeatChime, onToggleRepeatChime,
+    announcementLanguage, onSetLanguageMode, tokenPronunciation, onSetDigits,
+    announcementStyle, onSetStyle,
+    customTemplate, onSetTemplate, pronunciationDictionary, onSetDictionary,
+    arabicVoiceURI, englishVoiceURI, availableVoices, onSetArabicVoice, onSetEnglishVoice,
+    onTestCall, onTestChime,
+}) => {
+    const t = (ar, en) => (isArabic ? ar : en);
+    const slideFrom = isArabic ? '100%' : '-100%';
+    const drawerRef = useRef(null);
+    const closeRef = useRef(null);
+    const [activeTab, setActiveTab] = useState('audio');
+    const [showTemplate, setShowTemplate] = useState(false);
+
+    // Focus trap + initial focus + focus restore while the drawer is open.
+    useEffect(() => {
+        if (!open) return undefined;
+        const previouslyFocused = document.activeElement;
+        const frame = requestAnimationFrame(() => closeRef.current?.focus());
+        const trap = (event) => {
+            if (event.key !== 'Tab' || !drawerRef.current) return;
+            const focusable = Array.from(drawerRef.current.querySelectorAll(
+                'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            ));
+            if (focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        };
+        document.addEventListener('keydown', trap);
+        return () => {
+            cancelAnimationFrame(frame);
+            document.removeEventListener('keydown', trap);
+            previouslyFocused?.focus?.();
+        };
+    }, [open]);
+
+    const tabs = [
+        { id: 'audio', icon: Volume2, label: t('الصوت والنداء', 'Voice & Call') },
+        { id: 'display', icon: Monitor, label: t('الشاشة والغرف', 'Display & Suites') },
+        { id: 'advanced', icon: Settings2, label: t('متقدم وروابط', 'Advanced') },
+    ];
+
+    const callModes = [
+        { value: 'token_and_name', icon: Layers, label: t('الدور + الاسم', 'Token + Name') },
+        { value: 'token_only', icon: Hash, label: t('رقم الدور فقط', 'Token only') },
+        { value: 'name_only', icon: User, label: t('الاسم فقط', 'Name only') },
+    ];
+
+    return (
+        <AnimatePresence>
+            {open && (
+                <>
+                    <motion.div
+                        key="backdrop"
+                        className="vb-drawer-backdrop"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.22 }}
+                        onClick={onClose}
+                        aria-hidden="true"
+                    />
+                    <motion.aside
+                        ref={drawerRef}
+                        key="drawer"
+                        className="vb-drawer"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={t('لوحة تحكم شاشة العرض', 'Display controls')}
+                        dir={isArabic ? 'rtl' : 'ltr'}
+                        initial={{ x: slideFrom }}
+                        animate={{ x: 0 }}
+                        exit={{ x: slideFrom }}
+                        transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+                    >
+                        <div className="vb-drawer__head">
+                            <div className="vb-drawer__headings">
+                                <SlidersHorizontal size="1.15em" aria-hidden="true" />
+                                <div>
+                                    <h2>{t('تحكم الشاشة', 'Display Controls')}</h2>
+                                    <span>{t('إعدادات الصوت، العرض، والأجنحة', 'Audio, display & suites')}</span>
+                                </div>
+                            </div>
+                            <div className="vb-drawer__quick">
+                                <button type="button" className="vb-drawer__icon-btn" onClick={() => onSetLanguage(displayLanguage === 'ar' ? 'en' : 'ar')}>
+                                    {displayLanguage === 'ar' ? 'EN' : 'ع'}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="vb-drawer__icon-btn"
+                                    onClick={() => onSetTheme(theme === 'dark' ? 'light' : 'dark')}
+                                    aria-label={theme === 'dark' ? t('الوضع الفاتح', 'Light mode') : t('الوضع الداكن', 'Dark mode')}
+                                >
+                                    {theme === 'dark' ? <Sun size="1.05em" /> : <Moon size="1.05em" />}
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`vb-drawer__icon-btn${muteAll ? ' vb-drawer__icon-btn--muted' : ''}`}
+                                    onClick={onToggleSound}
+                                    aria-label={muteAll ? t('إلغاء الكتم', 'Unmute') : t('كتم الصوت', 'Mute')}
+                                >
+                                    {muteAll ? <VolumeX size="1.05em" /> : <Volume2 size="1.05em" />}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="vb-drawer__icon-btn"
+                                    onClick={onToggleFullscreen}
+                                    aria-label={isFullscreen ? t('إنهاء ملء الشاشة', 'Exit fullscreen') : t('ملء الشاشة', 'Fullscreen')}
+                                >
+                                    {isFullscreen ? <Minimize size="1.05em" /> : <Maximize size="1.05em" />}
+                                </button>
+                                <button ref={closeRef} type="button" className="vb-drawer__icon-btn" onClick={onClose} aria-label={t('إغلاق', 'Close')}>
+                                    <X size="1.15em" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="vb-drawer__tabs" role="tablist">
+                            {tabs.map(({ id, icon: Icon, label }) => (
+                                <button
+                                    key={id}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={activeTab === id}
+                                    onClick={() => setActiveTab(id)}
+                                    className={`vb-drawer__tab${activeTab === id ? ' vb-drawer__tab--active' : ''}`}
+                                >
+                                    <Icon size="1em" aria-hidden="true" />
+                                    <span>{label}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="vb-drawer__body">
+                            {activeTab === 'audio' && (
+                                <>
+                                    <CompactGroup label={t('نمط النداء الآلي', 'Announcement mode')} icon={Megaphone}>
+                                        <div className="vb-drow vb-drow--3">
+                                            {callModes.map(({ value, icon, label }) => (
+                                                <Chip
+                                                    key={value}
+                                                    active={callAnnouncementMode === value}
+                                                    icon={icon}
+                                                    label={label}
+                                                    onClick={() => onSetCallAnnouncementMode(value)}
+                                                />
+                                            ))}
+                                        </div>
+                                    </CompactGroup>
+
+                                    <CompactGroup label={t('القوالب الجاهزة', 'Presets')} icon={Sparkles}>
+                                        <div className="vb-drow vb-drow--4">
+                                            {Object.keys(ANNOUNCEMENT_PRESETS).map((preset) => (
+                                                <Chip
+                                                    key={preset}
+                                                    active={announcementPreset === preset}
+                                                    label={t(...(PRESET_LABELS[preset] || [preset, preset]))}
+                                                    onClick={() => onApplyPreset(preset)}
+                                                />
+                                            ))}
+                                        </div>
+                                    </CompactGroup>
+
+                                    <CompactGroup label={t('تجارب النداء الفورية', 'Live test calls')} icon={Bell}>
+                                        <div className="vb-drow vb-drow--test">
+                                            <TestCallButton
+                                                tone="male"
+                                                icon={Megaphone}
+                                                label={t('نداء: السيد', 'Call: Mr.')}
+                                                onClick={() => onTestCall('105', t('محمد أحمد', 'Mohamed Ahmed'), t('جناح 03', 'Suite 03'), 'male')}
+                                            />
+                                            <TestCallButton
+                                                tone="female"
+                                                icon={Megaphone}
+                                                label={t('نداء: السيدة', 'Call: Ms.')}
+                                                onClick={() => onTestCall('108', t('سارة محمود', 'Sarah Mahmoud'), t('جناح 02', 'Suite 02'), 'female')}
+                                            />
+                                            <TestCallButton tone="chime" icon={Bell} label={t('النغمة', 'Chime')} onClick={onTestChime} />
+                                        </div>
+                                    </CompactGroup>
+
+                                    <CompactGroup label={t('ضبط الصوت والتكرار', 'Voice tuning')} icon={SlidersHorizontal}>
+                                        <div className="vb-dgrid vb-dgrid--2">
+                                            <TuneItem title={t('السرعة', 'Speed')} options={ANNOUNCEMENT_RATES} current={announcementRate} onSelect={onSetRate} format={(v) => `${v}x`} />
+                                            <TuneItem title={t('التكرار', 'Repeats')} options={ANNOUNCEMENT_REPEATS} current={announcementRepeatCount} onSelect={onSetRepeats} format={(v) => `${v}x`} />
+                                            <TuneItem title={t('الفاصل', 'Delay')} options={ANNOUNCEMENT_DELAYS} current={announcementRepeatDelay} onSelect={onSetDelay} format={(v) => `${v / 1000}s`} />
+                                            <TuneItem title={t('المستوى', 'Volume')} options={ANNOUNCEMENT_VOLUMES} current={announcementVolume} onSelect={onSetVolume} format={(v) => `${Math.round(v * 100)}%`} />
+                                        </div>
+                                        <div className="vb-dgrid vb-dgrid--2">
+                                            <TogglePill
+                                                active={quietMode}
+                                                icon={Moon}
+                                                onClick={onToggleQuiet}
+                                                label={quietMode ? t('الوضع الهادئ: مفعل', 'Quiet: On') : t('الوضع الهادئ', 'Quiet: Off')}
+                                            />
+                                            <TogglePill
+                                                active={repeatChime}
+                                                icon={Bell}
+                                                onClick={onToggleRepeatChime}
+                                                label={repeatChime ? t('نغمة مع التكرار', 'Chime repeats') : t('نغمة أولى فقط', '1st chime only')}
+                                            />
+                                        </div>
+                                    </CompactGroup>
+                                </>
+                            )}
+
+                            {activeTab === 'display' && (
+                                <>
+                                    <CompactGroup label={t('تدوير الشاشة والإحصائيات', 'Rotation & stats')} icon={Monitor}>
+                                        <div className="vb-dgrid vb-dgrid--2">
+                                            <ActionCard
+                                                icon={isRotationPaused ? Play : Pause}
+                                                label={isRotationPaused ? t('استئناف التدوير', 'Resume') : t('إيقاف التدوير', 'Pause')}
+                                                onClick={onTogglePause}
+                                            />
+                                            <ActionCard
+                                                icon={BarChart3}
+                                                label={showSummaryStats ? t('إخفاء الإحصائيات', 'Hide stats') : t('إظهار الإحصائيات', 'Show stats')}
+                                                active={showSummaryStats}
+                                                onClick={onToggleStats}
+                                            />
+                                        </div>
+                                        <TuneItem title={t('سرعة تدوير الأجنحة', 'Rotation interval')} options={ROTATION_SPEEDS} current={rotationSpeed} onSelect={onSetSpeed} format={(v) => `${v / 1000}s`} />
+                                    </CompactGroup>
+
+                                    <CompactGroup label={t('تصفية الأجنحة المعروضة', 'Filter suites')} icon={Filter}>
+                                        {selectedRooms.length > 0 && (
+                                            <button type="button" className="vb-dlink" onClick={onClearRooms}>
+                                                {t('عرض الكل', 'Show all')}
+                                            </button>
+                                        )}
+                                        <div className="vb-drooms">
+                                            {allRooms.map((room) => {
+                                                const code = stripRoomLabel(room.room_number);
+                                                const isSelected = selectedRooms.includes(code) || selectedRooms.includes(String(room.room_number));
+                                                const checked = selectedRooms.length > 0 && isSelected;
+                                                return (
+                                                    <button
+                                                        key={room.room_id || room.room_number}
+                                                        type="button"
+                                                        onClick={() => onToggleRoom(code)}
+                                                        aria-pressed={checked}
+                                                        className={`vb-droom${checked ? ' vb-droom--checked' : ''}`}
+                                                    >
+                                                        <span className="vb-droom__code">{code}</span>
+                                                        <span className="vb-droom__name">
+                                                            {room.room_name || `${t('جناح', 'Suite')} ${room.room_number}`}
+                                                        </span>
+                                                        {checked && <Check size="0.9em" aria-hidden="true" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </CompactGroup>
+
+                                    <CompactGroup label={t('وضع المعاينة الآمنة', 'Safe Demo Mode')} icon={Radio}>
+                                        <div className="vb-ddemo">
+                                            <p>{t('يعرض كافة الأجنحة المرجعية دون المساس بالبيانات الحية.', 'Shows reference suites without touching live patient data.')}</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => onToggleDemoMode()}
+                                                className={`vb-ddemo__btn${isDemoMode ? ' vb-ddemo__btn--on' : ''}`}
+                                            >
+                                                {isDemoMode ? t('إنهاء المعاينة', 'Exit') : t('تفعيل', 'Enable')}
+                                            </button>
+                                        </div>
+                                    </CompactGroup>
+                                </>
+                            )}
+
+                            {activeTab === 'advanced' && (
+                                <>
+                                    <CompactGroup label={t('خيارات لغة وصيغة النداء', 'Speech options')} icon={Sparkles}>
+                                        <div className="vb-dgrid vb-dgrid--3">
+                                            <Field label={t('اللغة', 'Language')} value={announcementLanguage} onChange={onSetLanguageMode}>
+                                                <option value="ar">{t('العربية', 'Arabic')}</option>
+                                                <option value="en">English</option>
+                                                <option value="ar_then_en">{t('عربي ثم إنجليزي', 'Ar then En')}</option>
+                                                <option value="en_then_ar">{t('إنجليزي ثم عربي', 'En then Ar')}</option>
+                                            </Field>
+                                            <Field label={t('نطق الرقم', 'Digits')} value={tokenPronunciation} onChange={onSetDigits}>
+                                                <option value="auto">{t('تلقائي', 'Auto')}</option>
+                                                <option value="natural">{t('طبيعي', 'Natural')}</option>
+                                                <option value="digits">{t('رقمًا رقمًا', 'Digits')}</option>
+                                            </Field>
+                                            <Field label={t('الصيغة', 'Style')} value={announcementStyle} onChange={onSetStyle}>
+                                                <option value="formal">{t('رسمي', 'Formal')}</option>
+                                                <option value="calm">{t('هادئ', 'Calm')}</option>
+                                                <option value="short">{t('مختصر', 'Short')}</option>
+                                            </Field>
+                                        </div>
+                                    </CompactGroup>
+
+                                    {availableVoices.length > 0 && (
+                                        <CompactGroup label={t('أصوات النظام', 'System voices')} icon={Languages}>
+                                            <div className="vb-dgrid vb-dgrid--2">
+                                                <Field label={t('الصوت العربي', 'Arabic Voice')} value={arabicVoiceURI} onChange={onSetArabicVoice}>
+                                                    <option value="">{t('تلقائي (الأفضل)', 'Auto')}</option>
+                                                    {availableVoices.filter((v) => v.lang.toLowerCase().startsWith('ar')).map((v) => (
+                                                        <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>
+                                                    ))}
+                                                </Field>
+                                                <Field label={t('الصوت الإنجليزي', 'English Voice')} value={englishVoiceURI} onChange={onSetEnglishVoice}>
+                                                    <option value="">{t('تلقائي (الأفضل)', 'Auto')}</option>
+                                                    {availableVoices.filter((v) => v.lang.toLowerCase().startsWith('en')).map((v) => (
+                                                        <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>
+                                                    ))}
+                                                </Field>
+                                            </div>
+                                        </CompactGroup>
+                                    )}
+
+                                    <CompactGroup label={t('القالب المخصص وقاموس النطق', 'Custom template & dictionary')} icon={Settings2}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowTemplate((s) => !s)}
+                                            className="vb-dcollapse"
+                                            aria-expanded={showTemplate}
+                                        >
+                                            <span>{showTemplate ? t('إخفاء المحرر', 'Hide editor') : t('إظهار المحرر', 'Show editor')}</span>
+                                            {showTemplate ? <ChevronUp size="1em" aria-hidden="true" /> : <ChevronDown size="1em" aria-hidden="true" />}
+                                        </button>
+
+                                        <AnimatePresence initial={false}>
+                                            {showTemplate && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, height: 0 }}
+                                                    animate={{ opacity: 1, height: 'auto' }}
+                                                    exit={{ opacity: 0, height: 0 }}
+                                                    transition={{ duration: 0.2 }}
+                                                    style={{ overflow: 'hidden' }}
+                                                >
+                                                    <div className="vb-dtemplate">
+                                                        <label className="vb-field">
+                                                            <span className="vb-field__label">{t('قالب النداء', 'Template')}</span>
+                                                            <input
+                                                                className="vb-field__input"
+                                                                type="text"
+                                                                value={customTemplate}
+                                                                onChange={(e) => onSetTemplate(e.target.value)}
+                                                                placeholder="{title} {patient}، الدور {token}، جناح {room}"
+                                                            />
+                                                        </label>
+                                                        <label className="vb-field">
+                                                            <span className="vb-field__label">{t('قاموس النطق (كلمة=نطق)', 'Dictionary')}</span>
+                                                            <input
+                                                                className="vb-field__input"
+                                                                type="text"
+                                                                value={pronunciationDictionary}
+                                                                onChange={(e) => onSetDictionary(e.target.value)}
+                                                                placeholder="VIARA=فيارا"
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </CompactGroup>
+
+                                    <CompactGroup label={t('روابط الإدارة والإعدادات', 'Management links')} icon={ExternalLink}>
+                                        <NavLink
+                                            icon={SlidersHorizontal}
+                                            title={t('تحكم الشاشات والإعلانات', 'Display & Notices')}
+                                            sub="/display/control"
+                                            onClick={() => window.open('/display/control', '_blank', 'noopener,noreferrer')}
+                                        />
+                                        <NavLink
+                                            icon={Settings2}
+                                            title={t('إعدادات النظام العامة', 'System Settings')}
+                                            sub="/settings"
+                                            onClick={() => window.open('/settings', '_blank', 'noopener,noreferrer')}
+                                        />
+                                    </CompactGroup>
+                                </>
+                            )}
+                        </div>
+
+                        <div className="vb-drawer__foot">
+                            <span className="vb-drawer__hint">
+                                <kbd>Shift</kbd> + <kbd>D</kbd> {t('للتبديل السريع', 'toggle')}
+                            </span>
+                            <button type="button" className="vb-drawer__done" onClick={onClose}>
+                                {t('تم وإغلاق', 'Done')}
+                            </button>
+                        </div>
+                    </motion.aside>
+                </>
+            )}
+        </AnimatePresence>
+    );
+});
+ControlDrawer.displayName = 'ControlDrawer';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MAIN COMPONENT
+   ═══════════════════════════════════════════════════════════════════════ */
+const DisplayBoard = () => {
+    const systemReducedMotion = useReducedMotion();
+    const [motionMode, setMotionMode] = usePersistentState('viara_tv_motion', 'full', {
+        revive: enumOf(['full', 'reduced'], 'full'),
+    });
+    const reduceMotion = systemReducedMotion || motionMode === 'reduced';
+    const { i18n } = useTranslation('display');
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    /* ── Safe demo mode ─────────────────────────────────────────────────── */
+    const [isDemoMode, setIsDemoMode] = useState(() =>
+        ['1', 'true'].includes(searchParams.get('preview')) ||
+        ['1', 'true'].includes(searchParams.get('demo')) ||
+        storage.get('viara_tv_demo_mode') === 'true'
+    );
+    const isPreview = isDemoMode;
+
+    const toggleDemoMode = useCallback((val) => {
+        setIsDemoMode((prev) => {
+            const next = typeof val === 'boolean' ? val : !prev;
+            storage.set('viara_tv_demo_mode', String(next));
+            setSearchParams((sp) => {
+                const n = new URLSearchParams(sp);
+                if (next) n.set('demo', '1');
+                else { n.delete('demo'); n.delete('preview'); }
+                return n;
+            }, { replace: true });
+            return next;
+        });
+    }, [setSearchParams]);
+
+    /* ── Language ───────────────────────────────────────────────────────── */
+    const systemLanguage = i18n.language?.startsWith('ar') ? 'ar' : 'en';
+    const [displayLanguage, handleSetLanguage] = usePersistentState('viara_tv_language', systemLanguage, {
+        revive: enumOf(['ar', 'en'], systemLanguage),
+    });
+    useEffect(() => {
+        const requested = searchParams.get('lang');
+        if (requested === 'ar' || requested === 'en') handleSetLanguage(requested);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const isArabic = displayLanguage === 'ar';
+    const t = useCallback((ar, en) => (isArabic ? ar : en), [isArabic]);
+
+    useEffect(() => {
+        const previousLanguage = document.documentElement.lang;
+        document.documentElement.lang = displayLanguage;
+        return () => { document.documentElement.lang = previousLanguage; };
+    }, [displayLanguage]);
+
+    /* ── Theme (data-theme + tailwind .dark for coexisting components) ──── */
+    const [theme, handleSetTheme] = usePersistentState('viara_tv_theme', 'light', {
+        revive: enumOf(['dark', 'light'], 'light'),
+    });
+    useEffect(() => {
+        const urlTheme = searchParams.get('theme');
+        if (urlTheme === 'dark' || urlTheme === 'light') handleSetTheme(urlTheme);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        const root = document.documentElement;
+        root.classList.add('vb-lock');
+        return () => root.classList.remove('vb-lock');
+    }, []);
+
+    useEffect(() => {
+        const root = document.documentElement;
+        const prevTheme = root.getAttribute('data-theme');
+        const prevDark = root.classList.contains('dark');
+        const prevBg = document.body.style.backgroundColor;
+
+        root.setAttribute('data-theme', theme);
+        // Keep Tailwind's class-based dark mode in sync so components rendered
+        // alongside the board pick up the right palette.
+        root.classList.toggle('dark', theme === 'dark');
+        document.body.style.backgroundColor = theme === 'dark' ? '#051210' : '#eef7f6';
+
+        return () => {
+            if (prevTheme === null) root.removeAttribute('data-theme');
+            else root.setAttribute('data-theme', prevTheme);
+            root.classList.toggle('dark', prevDark);
+            document.body.style.backgroundColor = prevBg;
+        };
+    }, [theme]);
+
+    /* ── Clock / connectivity / fullscreen ──────────────────────────────── */
+    const [now, setNow] = useState(() => new Date());
+    useEffect(() => {
+        const timer = setInterval(() => setNow(new Date()), CLOCK_TICK_MS);
+        return () => clearInterval(timer);
+    }, []);
+
+    const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+    useEffect(() => {
+        const update = () => setIsOnline(navigator.onLine);
+        window.addEventListener('online', update);
+        window.addEventListener('offline', update);
+        return () => {
+            window.removeEventListener('online', update);
+            window.removeEventListener('offline', update);
+        };
+    }, []);
+
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    useEffect(() => {
+        const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+        document.addEventListener('fullscreenchange', onChange);
+        return () => document.removeEventListener('fullscreenchange', onChange);
+    }, []);
+
+    const toggleFullscreen = useCallback(async () => {
+        try {
+            if (document.fullscreenElement) await document.exitFullscreen();
+            else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+        } catch { /* denied or unsupported */ }
+    }, []);
+
+    /* ── Sound settings (persisted) ─────────────────────────────────────── */
+    const [muteAll, setMuteAll] = usePersistentState('viara_tv_mute', false, { revive: (v) => v === 'true' });
+    const [quietMode, setQuietMode] = usePersistentState('viara_tv_quiet', false, { revive: (v) => v === 'true' });
+    const [repeatChime, setRepeatChime] = usePersistentState('viara_tv_repeat_chime', true, { revive: (v) => v !== 'false' });
+    const [announcementRate, setAnnouncementRate] = usePersistentState('viara_tv_announcement_rate', 1, { revive: numberIn(ANNOUNCEMENT_RATES, 1) });
+    const [announcementRepeatCount, setAnnouncementRepeatCount] = usePersistentState('viara_tv_announcement_repeats', 2, { revive: numberIn(ANNOUNCEMENT_REPEATS, 2) });
+    const [announcementRepeatDelay, setAnnouncementRepeatDelay] = usePersistentState('viara_tv_announcement_delay', 1500, { revive: numberIn(ANNOUNCEMENT_DELAYS, 1500) });
+    const [announcementVolume, setAnnouncementVolume] = usePersistentState('viara_tv_announcement_volume', 1, { revive: numberIn(ANNOUNCEMENT_VOLUMES, 1) });
+    const [announcementPitch] = usePersistentState('viara_tv_announcement_pitch', 1, { revive: numberIn(ANNOUNCEMENT_PITCHES, 1) });
+    const [announcementModeOverride, setAnnouncementModeOverride] = usePersistentState('viara_tv_announcement_mode', null, { revive: enumOf(CALL_MODES, null) });
+    const [announcementPreset, setAnnouncementPreset] = usePersistentState('viara_tv_announcement_preset', 'standard');
+    const [announcementLanguage, setAnnouncementLanguage] = usePersistentState('viara_tv_announcement_language', 'ar', { revive: enumOf(ANNOUNCEMENT_LANGUAGES, 'ar') });
+    const [tokenPronunciation, setTokenPronunciation] = usePersistentState('viara_tv_token_pronunciation', 'auto', { revive: enumOf(TOKEN_PRONUNCIATIONS, 'auto') });
+    const [announcementStyle, setAnnouncementStyle] = usePersistentState('viara_tv_announcement_style', 'formal', { revive: enumOf(ANNOUNCEMENT_STYLES, 'formal') });
+    const [customTemplate, setCustomTemplate] = usePersistentState('viara_tv_custom_template', '');
+    const [pronunciationDictionary, setPronunciationDictionary] = usePersistentState('viara_tv_pronunciation_dictionary', '');
+    const [arabicVoiceURI, setArabicVoiceURI] = usePersistentState('viara_tv_arabic_voice', '');
+    const [englishVoiceURI, setEnglishVoiceURI] = usePersistentState('viara_tv_english_voice', '');
+
+    const soundEnabled = !muteAll;
+    const voiceEnabled = !muteAll && !quietMode;
+
+    /* ── System TTS voices ──────────────────────────────────────────────── */
+    const [availableVoices, setAvailableVoices] = useState([]);
+    useEffect(() => {
+        if (!('speechSynthesis' in window)) return undefined;
+        const updateVoices = () => setAvailableVoices(window.speechSynthesis.getVoices());
+        updateVoices();
+        window.speechSynthesis.addEventListener('voiceschanged', updateVoices);
+        return () => window.speechSynthesis.removeEventListener('voiceschanged', updateVoices);
+    }, []);
+
+    /* ── Display settings / UI state ────────────────────────────────────── */
+    const [rotationSpeed, handleSetRotationSpeed] = usePersistentState('viara_tv_rotation_speed', ROOM_PAGE_INTERVAL_MS, { revive: numberIn(ROTATION_SPEEDS, ROOM_PAGE_INTERVAL_MS) });
+    const [isRotationPaused, setIsRotationPaused] = useState(false);
+    const [showSummaryStats, setShowSummaryStats] = useState(false);
+    const [showControlDrawer, setShowControlDrawer] = useState(false);
+    const [headerControlsVisible, setHeaderControlsVisible] = useState(false);
+    const headerToolsRef = useRef(null);
+    const headerToolsTimerRef = useRef(null);
+    const headerKeyboardFocusRef = useRef(false);
+    const revealHeaderControls = useCallback((event) => {
+        if (event?.type?.startsWith('pointer')) headerKeyboardFocusRef.current = false;
+        setHeaderControlsVisible(true);
+        clearTimeout(headerToolsTimerRef.current);
+        const hideWhenIdle = () => {
+            const focused = document.activeElement;
+            const keyboardFocus = headerKeyboardFocusRef.current && (headerToolsRef.current?.contains(focused) || focused?.classList.contains('vb-header-access'));
+            if (keyboardFocus || focused?.closest('[role="dialog"]')) {
+                headerToolsTimerRef.current = setTimeout(hideWhenIdle, 5000);
+                return;
+            }
+            setHeaderControlsVisible(false);
+        };
+        headerToolsTimerRef.current = setTimeout(hideWhenIdle, 5000);
+    }, []);
+    useEffect(() => () => clearTimeout(headerToolsTimerRef.current), []);
+
+    const toggleSound = useCallback(() => {
+        setMuteAll((prev) => !prev);
+        cancelAnnouncement();
+    }, [setMuteAll]);
+
+    const toggleQuietMode = useCallback(() => {
+        setQuietMode((prev) => {
+            if (!prev) cancelAnnouncement();
+            return !prev;
+        });
+    }, [setQuietMode]);
+
+    const toggleRepeatChime = useCallback(() => setRepeatChime((prev) => !prev), [setRepeatChime]);
+
+    /* Preset-aware tuners: touching a value drops the preset label to custom */
+    const tuner = useCallback((setter) => (value) => {
+        setAnnouncementPreset('custom');
+        setter(value);
+    }, [setAnnouncementPreset]);
+
+    const handleSetAnnouncementRate = useMemo(() => tuner(setAnnouncementRate), [tuner, setAnnouncementRate]);
+    const handleSetAnnouncementRepeats = useMemo(() => tuner(setAnnouncementRepeatCount), [tuner, setAnnouncementRepeatCount]);
+    const handleSetAnnouncementDelay = useMemo(() => tuner(setAnnouncementRepeatDelay), [tuner, setAnnouncementRepeatDelay]);
+    const handleSetAnnouncementVolume = useMemo(() => tuner(setAnnouncementVolume), [tuner, setAnnouncementVolume]);
+
+    const handleApplyPreset = useCallback((name) => {
+        const preset = ANNOUNCEMENT_PRESETS[name];
+        if (!preset) return;
+        setAnnouncementPreset(name);
+        setAnnouncementRate(preset.speechRate);
+        setAnnouncementRepeatCount(preset.repeatCount);
+        setAnnouncementRepeatDelay(preset.repeatDelayMs);
+        setAnnouncementVolume(preset.speechVolume);
+        if (preset.tokenPronunciation) setTokenPronunciation(preset.tokenPronunciation);
+    }, [
+        setAnnouncementPreset, setAnnouncementRate, setAnnouncementRepeatCount,
+        setAnnouncementRepeatDelay, setAnnouncementVolume, setTokenPronunciation,
+    ]);
+
+    const handleSetCallMode = useCallback((mode) => {
+        if (!CALL_MODES.includes(mode)) return;
+        setAnnouncementModeOverride(mode);
+    }, [setAnnouncementModeOverride]);
+
+    /* ── Keyboard shortcuts ─────────────────────────────────────────────── */
+    useEffect(() => {
+        const onKey = (event) => {
+            if (event.key === 'Tab') headerKeyboardFocusRef.current = true;
+            if (event.key === 'Escape') setShowControlDrawer(false);
+            if (event.shiftKey && event.key.toLowerCase() === 'd') {
+                event.preventDefault();
+                setShowControlDrawer((open) => !open);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
+    /* ── Browser autoplay policy: unlock audio on first gesture ─────────── */
+    const [audioBlocked, setAudioBlocked] = useState(false);
+    useEffect(() => {
+        const check = () => setAudioBlocked(!muteAll && isAudioSuspended());
+        check();
+        const gesture = async () => {
+            await unlockAudio();
+            setAudioBlocked(false);
+        };
+        window.addEventListener('click', gesture);
+        window.addEventListener('keydown', gesture);
+        window.addEventListener('touchstart', gesture);
+        return () => {
+            window.removeEventListener('click', gesture);
+            window.removeEventListener('keydown', gesture);
+            window.removeEventListener('touchstart', gesture);
+        };
+    }, [muteAll]);
+
+    /* ── Live data (skipped in preview) ─────────────────────────────────── */
+    const { data: board, isLoading, isError, fulfilledTimeStamp } = useGetDisplayBoardQuery(undefined, {
+        pollingInterval: POLL_INTERVAL_MS,
+        refetchOnFocus: true,
+        refetchOnReconnect: true,
+        skip: isPreview,
+    });
+    const displayBoard = isPreview ? PREVIEW_BOARD : board;
+
+    const lastUpdatedAt = fulfilledTimeStamp
+        || (displayBoard?.generatedAt ? new Date(displayBoard.generatedAt).getTime() : 0);
+    const isStale = isPreview
+        ? false
+        : (!isOnline || isError || (lastUpdatedAt > 0 && now.getTime() - lastUpdatedAt > STALE_AFTER_MS));
+
+    /* ── Room filter (URL wins, then persisted) ─────────────────────────── */
+    const [selectedRooms, setSelectedRooms] = useState(() => {
+        const urlRooms = searchParams.get('rooms');
+        if (urlRooms) return urlRooms.split(',').map((r) => r.trim()).filter(Boolean);
+        try {
+            const parsed = JSON.parse(storage.get('viara_tv_selected_rooms', '[]'));
+            return Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'string') : [];
+        } catch { return []; }
+    });
+
+    const handleToggleRoom = useCallback((code) => {
+        setSelectedRooms((prev) => {
+            const next = prev.includes(code) ? prev.filter((r) => r !== code) : [...prev, code];
+            storage.set('viara_tv_selected_rooms', JSON.stringify(next));
+            return next;
+        });
+    }, []);
+
+    const handleClearRoomFilter = useCallback(() => {
+        setSelectedRooms([]);
+        storage.remove('viara_tv_selected_rooms');
+    }, []);
+
+    /* ── Calls state ────────────────────────────────────────────────────── */
+    const [activeCall, setActiveCall] = useState(() => (isDemoMode ? PREVIEW_LAST_CALL : null));
+    const [recentCalls, setRecentCalls] = useState(() => (isDemoMode ? [PREVIEW_LAST_CALL] : []));
+    const [suiteIndex, setSuiteIndex] = useState(2);
+
+    useEffect(() => {
+        if (isDemoMode) {
+            setActiveCall(PREVIEW_LAST_CALL);
+            setRecentCalls([PREVIEW_LAST_CALL]);
+            setSuiteIndex(2);
+        } else {
+            setActiveCall(null);
+            setRecentCalls([]);
+        }
+    }, [isDemoMode]);
+
+    /* ── Call queue plumbing ────────────────────────────────────────────── */
+    const handledBroadcastIdsRef = useRef(new Set());
+    const callQueueRef = useRef([]);
+    const isProcessingQueueRef = useRef(false);
+    const activeCallTimeoutRef = useRef(null);
+    const callMinTimeoutRef = useRef(null);
+    const resumeTimeoutRef = useRef(null);
+    const isMountedRef = useRef(true);
+
+    useEffect(() => {
+        isMountedRef.current = true;
+        return () => {
+            isMountedRef.current = false;
+            callQueueRef.current = [];
+            isProcessingQueueRef.current = false;
+            clearTimeout(activeCallTimeoutRef.current);
+            clearTimeout(callMinTimeoutRef.current);
+            clearTimeout(resumeTimeoutRef.current);
+            cancelAnnouncement();
+        };
+    }, []);
+
+    /* ── Privacy / naming derived ───────────────────────────────────────── */
+    const namesAllowed = Boolean(displayBoard?.config?.patientDisplayMode && displayBoard.config.patientDisplayMode !== 'order_only');
+    const privacyMode = displayBoard?.config?.privacyMode || 'full';
+    const showPatientNames = namesAllowed && privacyMode !== 'token_only';
+    const configuredCallMode = displayBoard?.config?.callAnnouncementMode || 'token_only';
+    // Local override only applies while names are allowed: token-only display
+    // can never name patients, whatever the on-site drawer says.
+    const callAnnouncementMode = showPatientNames ? (announcementModeOverride || configuredCallMode) : 'token_only';
+
+    const formatPatientName = useCallback((name) => {
+        if (!name) return '';
+        const parts = name.trim().split(/\s+/);
+        return parts.length === 1 ? parts[0] : `${parts[0]} ${parts[parts.length - 1][0]}.`;
+    }, []);
+
+    /* ── Branding ───────────────────────────────────────────────────────── */
+    const center = displayBoard?.center || {};
+    const centerLogo = (theme === 'dark' ? center.logoDarkUrl : center.logoLightUrl)
+        || center.logoUrl
+        || VIARA_BRAND.centerLogoUrl
+        || FALLBACK_LOGO;
+    const centerName = displayBoard?.config?.boardTitle
+        || (isArabic ? center.nameAr : center.name)
+        || t('مركز فيارا للأشعة التشخيصية', 'VIARA Diagnostic Center');
+    const centerSubtitle = (isArabic ? center.addressAr : center.address)
+        || t('صالة الانتظار الرئيسية', 'Main Waiting Hall');
+    const summary = displayBoard?.summary || {};
+
+    /* ── Rooms & queues ─────────────────────────────────────────────────── */
+    const allRooms = useMemo(
+        () => [...(displayBoard?.rooms || [])].sort((a, b) =>
+            String(a.room_number || '').localeCompare(String(b.room_number || ''), undefined, { numeric: true })
+        ),
+        [displayBoard?.rooms]
+    );
+
+    const displayedRooms = useMemo(() => {
+        if (selectedRooms.length > 0) {
+            return allRooms.filter((room) => {
+                const code = stripRoomLabel(room.room_number);
+                return selectedRooms.includes(code) || selectedRooms.includes(String(room.room_number));
+            });
+        }
+        return allRooms;
+    }, [allRooms, selectedRooms]);
+
+    const liveWaitingList = useMemo(() => {
+        const all = [];
+        const seen = new Set();
+        displayedRooms.forEach((room) => {
+            (room.machines || []).forEach((machine) => {
+                [machine.up_next, ...(machine.queue?.next || [])].forEach((caseItem) => {
+                    if (!caseItem) return;
+                    const id = getCallIdentity(caseItem);
+                    if (!id || seen.has(id)) return;
+                    seen.add(id);
+                    all.push({ caseItem, room });
+                });
+            });
+        });
+        return all;
+    }, [displayedRooms]);
+
+    const waitingList = isDemoMode ? DEMO_WAITING_LIST : liveWaitingList;
+    const waitingTotal = isDemoMode
+        ? 12
+        : (selectedRooms.length ? waitingList.length : (summary.waiting ?? waitingList.length));
+
+    /* ── Suite rotation ─────────────────────────────────────────────────── */
+    const suiteCount = displayedRooms.length;
+    const currentSuiteIndex = suiteCount > 0 ? Math.min(suiteIndex, suiteCount - 1) : 0;
+    const visibleRoomStart = Math.min(
+        Math.floor(currentSuiteIndex / ROOMS_PER_VIEW) * ROOMS_PER_VIEW,
+        Math.max(0, suiteCount - ROOMS_PER_VIEW)
+    );
+    const visibleRooms = displayedRooms.slice(visibleRoomStart, visibleRoomStart + ROOMS_PER_VIEW);
+
+    useEffect(() => {
+        if (suiteCount <= 1 || activeCall || isRotationPaused) return undefined;
+        const timer = setInterval(() => {
+            // Never burn rotations while the TV is on another tab.
+            if (!document.hidden) setSuiteIndex((c) => (Math.min(c, suiteCount - 1) + 1) % suiteCount);
+        }, rotationSpeed);
+        return () => clearInterval(timer);
+    }, [suiteCount, activeCall, isRotationPaused, rotationSpeed]);
+
+    useEffect(() => {
+        if (!activeCall) return;
+        const idx = displayedRooms.findIndex((room) => roomMatchesCall(room, activeCall));
+        if (idx >= 0) setSuiteIndex(idx);
+    }, [activeCall, displayedRooms]);
+
+    /* ── Announcement options shared by live & test calls ───────────────── */
+    const announcementOptions = useMemo(() => ({
+        announcementMode: callAnnouncementMode,
+        isArabic,
+        repeatCount: announcementRepeatCount,
+        repeatDelayMs: announcementRepeatDelay,
+        chimeBeforeRepeat: repeatChime,
+        speechRate: announcementRate,
+        speechVolume: announcementVolume,
+        speechPitch: announcementPitch,
+        preset: announcementPreset,
+        announcementLanguage,
+        tokenPronunciation,
+        announcementStyle,
+        customTemplate,
+        pronunciationDictionary: parsePronunciationDictionary(pronunciationDictionary),
+        arabicVoiceURI,
+        englishVoiceURI,
+        autoBestVoice: true,
+    }), [
+        announcementLanguage, announcementPitch, announcementPreset, announcementRate,
+        announcementRepeatCount, announcementRepeatDelay, announcementStyle, announcementVolume,
+        arabicVoiceURI, callAnnouncementMode, customTemplate, englishVoiceURI, isArabic,
+        pronunciationDictionary, repeatChime, tokenPronunciation,
+    ]);
+
+    const handleTestCall = useCallback((tokenNumber, patientName, roomName, gender) => {
+        announcePatientCall({
+            ...announcementOptions,
+            tokenNumber,
+            patientName,
+            roomName,
+            gender,
+            withChime: true,
+        });
+    }, [announcementOptions]);
+
+    const handleTestChime = useCallback(() => playHospitalChime(), []);
+
+    /* ── Call queue processing ──────────────────────────────────────────── */
+    const processNextCall = useCallback(() => {
+        if (callQueueRef.current.length === 0) {
+            isProcessingQueueRef.current = false;
+            return;
+        }
+
+        clearTimeout(activeCallTimeoutRef.current);
+        activeCallTimeoutRef.current = null;
+        isProcessingQueueRef.current = true;
+        const { item, room, forceNameCall } = callQueueRef.current.shift();
+
+        const orderNumber = item?.order_number ?? item?.queue_number ?? '';
+        const tokenNumber = item?.queue_number ?? getSpokenToken(orderNumber) ?? '';
+        const rawName = item?.patient_name || '';
+        const modeRequestsName = callAnnouncementMode === 'name_only' || callAnnouncementMode === 'token_and_name';
+        const shouldCallWithName = forceNameCall && modeRequestsName && showPatientNames && Boolean(rawName);
+        const effectiveMode = shouldCallWithName ? callAnnouncementMode : 'token_only';
+        const roomCode = room?.room_number != null ? stripRoomLabel(room.room_number) : '';
+        const roomName = String(room?.room_name || (roomCode ? `${isArabic ? 'جناح' : 'Suite'} ${roomCode}` : '')).trim();
+
+        const newCall = {
+            id: `${Date.now()}-${tokenNumber}`,
+            tokenNumber,
+            sourceOrderNumber: orderNumber,
+            patientName: showPatientNames ? rawName : '',
+            gender: showPatientNames ? (item?.gender || item?.patient_gender || null) : null,
+            calledWithName: shouldCallWithName,
+            announcementMode: effectiveMode,
+            roomName,
+            roomCode,
+            time: new Date(),
+        };
+
+        setActiveCall(newCall);
+        setRecentCalls((prev) => [newCall, ...prev.filter((c) => c.tokenNumber !== tokenNumber)].slice(0, EARLIER_CALLS_SHOWN + 1));
+
+        const targetIdx = displayedRooms.findIndex((r) => roomMatchesCall(r, { roomName, room_number: roomCode }));
+        if (targetIdx >= 0) setSuiteIndex(targetIdx);
+
+        // The banner needs the call visible for a minimum window and until
+        // speech finishes — whichever takes longer — before moving on.
+        let isMinTimeElapsed = false;
+        let isSpeechFinished = !voiceEnabled;
+
+        const tryFinish = () => {
+            if (!isMountedRef.current) return;
+            if (!isMinTimeElapsed || !isSpeechFinished) return;
+            if (callQueueRef.current.length > 0) {
+                processNextCall();
+                return;
+            }
+            isProcessingQueueRef.current = false;
+            clearTimeout(activeCallTimeoutRef.current);
+            activeCallTimeoutRef.current = setTimeout(() => {
+                if (isMountedRef.current) setActiveCall(null);
+            }, Math.max(5000, CALL_BANNER_DURATION_MS - 8000));
+        };
+
+        clearTimeout(callMinTimeoutRef.current);
+        callMinTimeoutRef.current = setTimeout(() => {
+            isMinTimeElapsed = true;
+            tryFinish();
+        }, CALL_MIN_VISIBLE_MS);
+
+        if (voiceEnabled) {
+            announcePatientCall({
+                ...announcementOptions,
+                tokenNumber,
+                patientName: shouldCallWithName ? rawName : '',
+                roomName,
+                announcementMode: effectiveMode,
+                gender: item?.gender || item?.patient_gender,
+                withChime: soundEnabled,
+                onAllFinished: () => { isSpeechFinished = true; tryFinish(); },
+            });
+        } else {
+            isSpeechFinished = true;
+            if (soundEnabled) playHospitalChime();
+            tryFinish();
+        }
+    }, [announcementOptions, callAnnouncementMode, displayedRooms, isArabic, showPatientNames, soundEnabled, voiceEnabled]);
+
+    const triggerPatientCall = useCallback((item, room, forceNameCall = true) => {
+        if (isStale) return;
+        callQueueRef.current.push({ item, room, forceNameCall });
+        if (!isProcessingQueueRef.current) processNextCall();
+    }, [isStale, processNextCall]);
+
+    const handleBroadcastCall = useCallback((data, { allowOlder = false } = {}) => {
+        if (!data || isStale || isDemoMode) return;
+
+        const identity = getBroadcastIdentity(data);
+        if (!identity || handledBroadcastIdsRef.current.has(identity)) return;
+
+        // Ignore broadcasts older than the replay window unless the push
+        // channel vouches for freshness — avoids calling stale rows from the
+        // poll payload right after page load.
+        const timestamp = Number(data.timestamp) || Date.parse(data.calledAt || data.called_at || '');
+        if (!allowOlder && Number.isFinite(timestamp) && Date.now() - timestamp > BROADCAST_REPLAY_WINDOW_MS) {
+            handledBroadcastIdsRef.current.add(identity);
+            return;
+        }
+
+        handledBroadcastIdsRef.current.add(identity);
+        if (handledBroadcastIdsRef.current.size > HANDLED_CALLS_MAX) {
+            handledBroadcastIdsRef.current = new Set([...handledBroadcastIdsRef.current].slice(-HANDLED_CALLS_KEEP));
+        }
+
+        const token = data.queueNumber != null
+            ? String(data.queueNumber)
+            : (getSpokenToken(data.orderNumber) || data.orderNumber || '');
+        const matchedRoom = allRooms.find((room) => roomMatchesCall(room, { roomName: data.roomName }));
+        const room = matchedRoom || { room_name: data.roomName || '', room_number: stripRoomLabel(data.roomName) };
+
+        triggerPatientCall(
+            {
+                order_number: data.orderNumber,
+                queue_number: token,
+                patient_name: showPatientNames ? (data.patientName || '') : '',
+                gender: data.gender || data.patientGender || data.patient_gender,
+            },
+            room,
+            data.callByName !== false
+        );
+    }, [allRooms, isDemoMode, isStale, showPatientNames, triggerPatientCall]);
+
+    /* Polling fallback — replay board-delivered calls in chronological order */
+    useEffect(() => {
+        [...(displayBoard?.broadcastCalls || [])]
+            .sort((a, b) => (Number(a.timestamp) || Date.parse(a.calledAt || 0)) - (Number(b.timestamp) || Date.parse(b.calledAt || 0)))
+            .forEach((call) => handleBroadcastCall(call));
+    }, [displayBoard?.broadcastCalls, handleBroadcastCall]);
+
+    /* SSE push channel */
+    useEffect(() => {
+        const handler = (event) => handleBroadcastCall(event.detail, { allowOlder: true });
+        window.addEventListener('SSE_DISPLAY_CALL', handler);
+        return () => window.removeEventListener('SSE_DISPLAY_CALL', handler);
+    }, [handleBroadcastCall]);
+
+    /* ── Derived render values ──────────────────────────────────────────── */
+    const liveCall = activeCall && !isStale
+        ? (showPatientNames ? activeCall : { ...activeCall, patientName: '' })
+        : null;
+    const currentCallBannerData = liveCall || recentCalls[0] || null;
+    const currentFocusSuite = displayedRooms[currentSuiteIndex] || null;
+    const timeData = formatTime(now, isArabic);
+    const dateText = formatDate(now, isArabic);
+
+    const pickDemoRoom = (number, fallbackIdx) =>
+        allRooms.find((r) => String(r.room_number) === number) || allRooms[fallbackIdx] || {};
+
+    /* ── Loading ────────────────────────────────────────────────────────── */
+    if (isLoading) {
+        return (
+            <div className="vb-root vb-loading" data-theme={theme} data-motion={reduceMotion ? 'reduced' : 'full'} dir={isArabic ? 'rtl' : 'ltr'}>
+                <div className="vb-loading__mark">
+                    <img src={centerLogo} alt="" onError={handleLogoError} />
+                    <span className="vb-loading__orbit" aria-hidden="true" />
+                </div>
+                <h2>{t('جاري تهيئة شاشة صالة الانتظار', 'Starting the waiting room display')}</h2>
+                <p>{t('يرجى الانتظار لحظات', 'Connecting to the live queue')}</p>
+                <div className="vb-loading__bar" aria-hidden="true"><span /></div>
+            </div>
+        );
+    }
+
+    /* ── Render ─────────────────────────────────────────────────────────── */
+    return (
+        <MotionConfig reducedMotion={reduceMotion ? 'always' : 'never'}>
+            <div
+                className="vb-root"
+                data-theme={theme}
+                data-motion={reduceMotion ? 'reduced' : 'full'}
+                dir={isArabic ? 'rtl' : 'ltr'}
+                style={{ '--vb-dir': isArabic ? -1 : 1 }}
+            >
+                {audioBlocked && !muteAll && (
+                    <button
+                        type="button"
+                        className="vb-unlock"
+                        onClick={async () => { await unlockAudio(); setAudioBlocked(false); }}
+                    >
+                        <Volume2 size={16} aria-hidden="true" />
+                        <span>{t('🔊 انقر هنا أو اضغط أي زر لتفعيل النداء الصوتي للشاشة', '🔊 Click anywhere to enable voice announcements')}</span>
+                    </button>
+                )}
+
+                <header className="vb-header" onPointerMove={revealHeaderControls} onPointerDown={revealHeaderControls}>
+                    <button type="button" className="vb-header-access" onFocus={() => { headerKeyboardFocusRef.current = true; revealHeaderControls(); }} onClick={() => setShowControlDrawer(true)} aria-keyshortcuts="Shift+D">
+                        {t('إعدادات الشاشة', 'Display settings')}
+                    </button>
+                    <div className="vb-header__brand">
+                        <div className="vb-header__logo-card">
+                            <img src={centerLogo} alt={centerName} className="vb-header__logo" onError={handleLogoError} />
+                        </div>
+                        <div className="vb-header__divider" aria-hidden="true" />
+                        <div className="vb-header__names">
+                            <div className="vb-header__title-row">
+                                <h1 className="vb-header__title">{centerName}</h1>
+                            </div>
+                            <div className="vb-header__subtitle-row">
+                                <MapPin size="0.82em" aria-hidden="true" />
+                                <span>{centerSubtitle}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="vb-header__center">
+                        <div className="vb-capsule">
+                            <div className="vb-capsule__item vb-capsule__item--metrics">
+                                <div className="vb-capsule__metric">
+                                    <Users size="0.95em" aria-hidden="true" />
+                                    <span className="vb-capsule__metric-label">{t('في الفحص', 'In Exam')}:</span>
+                                    <strong className="vb-capsule__metric-value vb-capsule__metric-value--blue">{summary.inExam ?? 0}</strong>
+                                </div>
+                            </div>
+
+                            <div className="vb-capsule__divider" aria-hidden="true" />
+
+                            <div className={`vb-capsule__item vb-capsule__live${isStale ? ' vb-capsule__live--offline' : ''}`}>
+                                <span>{isStale ? t('غير متصل', 'Offline') : isDemoMode ? t('عرض تجريبي', 'Demo') : t('مباشر', 'Live')}</span>
+                                <span className="vb-live-dot" aria-hidden="true">
+                                    <span className="vb-live-dot__ping" />
+                                    <span className="vb-live-dot__core" />
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="vb-header-tools" ref={headerToolsRef} hidden={!headerControlsVisible} onFocusCapture={revealHeaderControls} onBlurCapture={revealHeaderControls} role="group" aria-label={t('أدوات التحكم بالشاشة', 'Display controls')}>
+                        <button
+                            type="button"
+                            className="vb-control-pill"
+                            onClick={() => setShowControlDrawer(true)}
+                            title={t('لوحة تحكم الشاشة (Shift+D)', 'Display Controls (Shift+D)')}
+                            aria-keyshortcuts="Shift+D"
+                        >
+                            <SlidersHorizontal size="1.05em" aria-hidden="true" />
+                            <span>{t('لوحة التحكم', 'Control Panel')}</span>
+                        </button>
+
+                        <div className="vb-dock">
+                            <button
+                                type="button"
+                                className={`vb-dock__btn${muteAll ? ' vb-dock__btn--muted' : ''}`}
+                                onClick={toggleSound}
+                                title={muteAll ? t('إلغاء كتم الصوت', 'Unmute') : t('كتم الصوت', 'Mute')}
+                                aria-label={muteAll ? t('إلغاء كتم الصوت', 'Unmute') : t('كتم الصوت', 'Mute')}
+                            >
+                                {muteAll ? <VolumeX size="1.05em" /> : <Volume2 size="1.05em" />}
+                            </button>
+
+                            <button
+                                type="button"
+                                className="vb-dock__btn vb-dock__btn--lang"
+                                onClick={() => handleSetLanguage(isArabic ? 'en' : 'ar')}
+                                aria-label={isArabic ? 'Switch to English' : 'التبديل إلى العربية'}
+                            >
+                                <Languages size="1.02em" aria-hidden="true" />
+                                <span className="vb-dock__btn-label">{isArabic ? 'EN' : 'ع'}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                className="vb-dock__btn"
+                                onClick={() => handleSetTheme(theme === 'dark' ? 'light' : 'dark')}
+                                aria-label={theme === 'dark' ? t('الوضع الفاتح', 'Light mode') : t('الوضع الداكن', 'Dark mode')}
+                            >
+                                {theme === 'dark' ? <Sun size="1.05em" /> : <Moon size="1.05em" />}
+                            </button>
+
+                            <button
+                                type="button"
+                                className="vb-dock__btn"
+                                onClick={toggleFullscreen}
+                                aria-label={isFullscreen ? t('إنهاء ملء الشاشة', 'Exit fullscreen') : t('ملء الشاشة', 'Fullscreen')}
+                            >
+                                {isFullscreen ? <Minimize size="1.05em" /> : <Maximize size="1.05em" />}
+                            </button>
+                            <button type="button" className={`vb-dock__btn ${reduceMotion ? 'vb-dock__btn--active' : ''}`} onClick={() => setMotionMode(mode => mode === 'full' ? 'reduced' : 'full')} aria-pressed={reduceMotion} disabled={Boolean(systemReducedMotion)} aria-label={t('تقليل الحركة', 'Reduce motion')} title={t('تقليل الحركة', 'Reduce motion')}>
+                                <Sparkles size="1.05em" aria-hidden="true" />
+                            </button>
+                        </div>
+
+                    </div>
+                    <div className="vb-header__left">
+                        <div className="vb-header__clock">
+                            <div className="vb-header__time" dir="ltr">
+                                <span className="vb-header__time-numbers">{timeData.time}</span>
+                                <span className="vb-header__time-period">{timeData.period}</span>
+                            </div>
+                            <div className="vb-header__date">
+                                <span>{dateText}</span>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <AnimatePresence>
+                    {liveCall && (
+                        <FloatingCallOverlay
+                            key={liveCall.id}
+                            call={liveCall}
+                            isArabic={isArabic}
+                            formatName={formatPatientName}
+                            onDismiss={() => setActiveCall(null)}
+                        />
+                    )}
+                </AnimatePresence>
+
+                {isStale && (
+                    <div className="vb-offline" role="status">
+                        <WifiOff size="1.1em" aria-hidden="true" />
+                        <span>{t('انقطع الاتصال بالخادم — قد لا تكون البيانات المعروضة محدّثة', 'Connection lost — displayed data may be out of date')}</span>
+                    </div>
+                )}
+
+                {showSummaryStats && (
+                    <section className="vb-summary">
+                        <span>{t('الانتظار', 'Waiting')} <strong>{summary.waiting ?? 0}</strong></span>
+                        <span>{t('قيد الفحص', 'In exam')} <strong>{summary.inExam ?? 0}</strong></span>
+                        <span>{t('مكتمل اليوم', 'Completed today')} <strong>{summary.completedToday ?? 0}</strong></span>
+                        <span>{t('متوسط الانتظار', 'Average wait')} <strong>{summary.averageWaitingMinutes ?? 0} {t('د', 'min')}</strong></span>
+                    </section>
+                )}
+
+                <main className="vb-main">
+                    <aside className="vb-sidebar" aria-label={t('قائمة الانتظار والإعلانات', 'Waiting list and notices')}>
+                        <WaitingListCard
+                            items={waitingList}
+                            total={waitingTotal}
+                            isArabic={isArabic}
+                            liveCall={liveCall}
+                            showPatientNames={showPatientNames}
+                            formatName={formatPatientName}
+                        />
+                        <GuidanceCard announcements={displayBoard?.announcements} isArabic={isArabic} />
+                        <PortalCard isArabic={isArabic} />
+                    </aside>
+
+                    <div className="vb-stage">
+                        <LastCallBanner
+                            call={currentCallBannerData}
+                            isArabic={isArabic}
+                            isLiveCall={Boolean(liveCall)}
+                        />
+
+                        <div
+                            className="vb-suite-tabs"
+                            role="tablist"
+                            aria-label={t('أجنحة الفحص', 'Suites')}
+                            style={{ '--vb-suite-count': Math.max(1, visibleRooms.length) }}
+                        >
+                            {visibleRooms.map((room, visibleIndex) => {
+                                const idx = visibleRoomStart + visibleIndex;
+                                const mod = getSuiteModality(room, t);
+                                const ModIcon = mod.icon;
+                                const isActive = idx === currentSuiteIndex;
+                                const code = stripRoomLabel(room.room_number) || `0${idx + 1}`;
+                                const machine = room.machines?.[0] || {};
+                                const isBusy = Boolean(machine.current);
+
+                                return (
+                                    <button
+                                        key={room.room_id || room.room_number || idx}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={isActive}
+                                        onClick={() => {
+                                            setSuiteIndex(idx);
+                                            setIsRotationPaused(true);
+                                            clearTimeout(resumeTimeoutRef.current);
+                                            resumeTimeoutRef.current = setTimeout(() => setIsRotationPaused(false), ROTATION_RESUME_MS);
+                                        }}
+                                        className={`vb-suite-tab vb-suite-tab--${mod.type}${isActive ? ' vb-suite-tab--active' : ''}`}
+                                    >
+                                        {isActive && !isRotationPaused && !reduceMotion && (
+                                            <div className="vb-suite-tab__progress" aria-hidden="true">
+                                                <motion.div
+                                                    key={`progress-${idx}-${rotationSpeed}`}
+                                                    className="vb-suite-tab__progress-bar"
+                                                    initial={{ scaleX: 0 }}
+                                                    animate={{ scaleX: 1 }}
+                                                    transition={{ duration: rotationSpeed / 1000, ease: 'linear' }}
+                                                    style={{ originX: isArabic ? 1 : 0 }}
+                                                />
+                                            </div>
+                                        )}
+
+                                        <div className="vb-suite-tab__icon-wrap">
+                                            <ModIcon size="1.35em" />
+                                        </div>
+                                        <div className="vb-suite-tab__info">
+                                            <span className="vb-suite-tab__name">{t('جناح', 'Suite')} {code}</span>
+                                            <span className="vb-suite-tab__mod">{mod.tag}</span>
+                                        </div>
+                                        <div className="vb-suite-tab__status">
+                                            <span>{isBusy ? t('قيد الفحص', 'In Exam') : t('متاح', 'Available')}</span>
+                                            <span className={`vb-suite-tab__status-dot${isBusy ? ' vb-suite-tab__status-dot--busy' : ''}`} aria-hidden="true" />
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <SuiteFocusCard
+                            key={currentFocusSuite?.room_id || currentFocusSuite?.room_number || currentSuiteIndex}
+                            suite={currentFocusSuite}
+                            isArabic={isArabic}
+                            formatName={formatPatientName}
+                            isCalling={Boolean(liveCall) && roomMatchesCall(currentFocusSuite, liveCall)}
+                            showPatientNames={showPatientNames}
+                        />
+                    </div>
+                </main>
+
+                {displayBoard?.config?.showTicker !== false && (
+                    <TickerFooter
+                        displayBoard={displayBoard}
+                        isArabic={isArabic}
+                        isStale={isStale}
+                        isDemoMode={isDemoMode}
+                        onExitDemo={() => toggleDemoMode(false)}
+                    />
+                )}
+
+                {isDemoMode && (
+                    <aside className="vb-demo-bar" aria-label={t('شريط المعاينة الآمنة', 'Demo toolbar')}>
+                        <div className="vb-demo-bar__badge">
+                            <Radio size="1em" aria-hidden="true" />
+                            <span>{t('معاينة تجريبية آمنة', 'Safe Preview')}</span>
+                        </div>
+
+                        <div className="vb-demo-bar__divider" aria-hidden="true" />
+
+                        <div className="vb-demo-bar__actions">
+                            <button
+                                type="button"
+                                className="vb-demo-bar__btn vb-demo-bar__btn--male"
+                                onClick={() => triggerPatientCall(
+                                    { order_number: '105', queue_number: '105', patient_name: t('محمد أحمد', 'Mohamed Ahmed'), gender: 'male' },
+                                    pickDemoRoom('03', 0),
+                                    true
+                                )}
+                            >
+                                <Megaphone size="1em" aria-hidden="true" />
+                                <span>{t('نداء: السيد', 'Call: Mr.')}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                className="vb-demo-bar__btn vb-demo-bar__btn--female"
+                                onClick={() => triggerPatientCall(
+                                    { order_number: '108', queue_number: '108', patient_name: t('سارة محمود', 'Sarah Mahmoud'), gender: 'female' },
+                                    pickDemoRoom('02', 1),
+                                    true
+                                )}
+                            >
+                                <Megaphone size="1em" aria-hidden="true" />
+                                <span>{t('نداء: السيدة', 'Call: Ms.')}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                className="vb-demo-bar__btn"
+                                onClick={() => triggerPatientCall(
+                                    { order_number: '110', queue_number: '110' },
+                                    pickDemoRoom('04', 2),
+                                    false
+                                )}
+                            >
+                                <Hash size="1em" aria-hidden="true" />
+                                <span>{t('الدور فقط', 'Token only')}</span>
+                            </button>
+                        </div>
+
+                        <div className="vb-demo-bar__divider" aria-hidden="true" />
+
+                        <div className="vb-demo-bar__actions">
+                            <button
+                                type="button"
+                                className="vb-demo-bar__btn vb-demo-bar__btn--link"
+                                onClick={() => window.open('/display/control', '_blank', 'noopener,noreferrer')}
+                            >
+                                <Settings2 size="1em" aria-hidden="true" />
+                                <span>{t('الإعدادات', 'Settings')}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                className="vb-demo-bar__btn vb-demo-bar__btn--exit"
+                                onClick={() => toggleDemoMode(false)}
+                            >
+                                <X size="1em" aria-hidden="true" />
+                                <span>{t('إنهاء المعاينة', 'Exit Preview')}</span>
+                            </button>
+                        </div>
+                    </aside>
+                )}
+
+                <ControlDrawer
+                    open={showControlDrawer}
+                    onClose={() => setShowControlDrawer(false)}
+                    isArabic={isArabic}
+                    theme={theme}
+                    displayLanguage={displayLanguage}
+                    onSetLanguage={handleSetLanguage}
+                    onSetTheme={handleSetTheme}
+                    muteAll={muteAll}
+                    onToggleSound={toggleSound}
+                    quietMode={quietMode}
+                    onToggleQuiet={toggleQuietMode}
+                    isFullscreen={isFullscreen}
+                    onToggleFullscreen={toggleFullscreen}
+                    isRotationPaused={isRotationPaused}
+                    onTogglePause={() => setIsRotationPaused((p) => !p)}
+                    showSummaryStats={showSummaryStats}
+                    onToggleStats={() => setShowSummaryStats((p) => !p)}
+                    rotationSpeed={rotationSpeed}
+                    onSetSpeed={handleSetRotationSpeed}
+                    allRooms={allRooms}
+                    selectedRooms={selectedRooms}
+                    onToggleRoom={handleToggleRoom}
+                    onClearRooms={handleClearRoomFilter}
+                    isDemoMode={isDemoMode}
+                    onToggleDemoMode={toggleDemoMode}
+                    callAnnouncementMode={callAnnouncementMode}
+                    onSetCallAnnouncementMode={handleSetCallMode}
+                    announcementPreset={announcementPreset}
+                    onApplyPreset={handleApplyPreset}
+                    announcementRate={announcementRate}
+                    onSetRate={handleSetAnnouncementRate}
+                    announcementRepeatCount={announcementRepeatCount}
+                    onSetRepeats={handleSetAnnouncementRepeats}
+                    announcementRepeatDelay={announcementRepeatDelay}
+                    onSetDelay={handleSetAnnouncementDelay}
+                    announcementVolume={announcementVolume}
+                    onSetVolume={handleSetAnnouncementVolume}
+                    repeatChime={repeatChime}
+                    onToggleRepeatChime={toggleRepeatChime}
+                    announcementLanguage={announcementLanguage}
+                    onSetLanguageMode={setAnnouncementLanguage}
+                    tokenPronunciation={tokenPronunciation}
+                    onSetDigits={setTokenPronunciation}
+                    announcementStyle={announcementStyle}
+                    onSetStyle={setAnnouncementStyle}
+                    customTemplate={customTemplate}
+                    onSetTemplate={setCustomTemplate}
+                    pronunciationDictionary={pronunciationDictionary}
+                    onSetDictionary={setPronunciationDictionary}
+                    availableVoices={availableVoices}
+                    arabicVoiceURI={arabicVoiceURI}
+                    englishVoiceURI={englishVoiceURI}
+                    onSetArabicVoice={setArabicVoiceURI}
+                    onSetEnglishVoice={setEnglishVoiceURI}
+                    onTestCall={handleTestCall}
+                    onTestChime={handleTestChime}
+                />
+            </div>
+        </MotionConfig>
     );
 };
 

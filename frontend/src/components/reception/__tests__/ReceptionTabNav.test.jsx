@@ -49,4 +49,33 @@ describe('ReceptionTabNav', () => {
 
         expect(screen.getByRole('tab', { name: /Schedule 8/ })).toBeInTheDocument();
     });
+
+    it('moves selection with arrow keys and keeps only the active tab in the tab order', () => {
+        const onTabChange = vi.fn();
+        const tabs = [
+            { id: 'schedule', label: 'Schedule' },
+            { id: 'patients', label: 'Patients' },
+            { id: 'cashier', label: 'Cashier' },
+        ];
+
+        render(
+            <ReceptionTabNav
+                activeTab="schedule"
+                cashierPending={0}
+                onTabChange={onTabChange}
+                tabs={tabs}
+                t={t}
+            />
+        );
+
+        const schedule = screen.getByRole('tab', { name: 'Schedule' });
+        const patients = screen.getByRole('tab', { name: 'Patients' });
+        expect(schedule).toHaveAttribute('tabindex', '0');
+        expect(patients).toHaveAttribute('tabindex', '-1');
+
+        schedule.focus();
+        fireEvent.keyDown(schedule, { key: 'ArrowRight' });
+        expect(patients).toHaveFocus();
+        expect(onTabChange).toHaveBeenCalledWith('patients');
+    });
 });

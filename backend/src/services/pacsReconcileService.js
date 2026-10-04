@@ -186,16 +186,41 @@ const writeAudit = async (client, {
  * feed populates). StudyInstanceUID is a secondary match for studies created
  * outside the worklist. Returns the examinations row or null.
  */
-const findMatchingExam = async (client, { accessionNumber, studyInstanceUid, patientId }) => {
+const validateReconcileTarget = ({ quarantinePatientId, examMrn, rawPatientName = null, targetPatientName = null }) => {
+    const incomingMrn = clean(quarantinePatientId);
+    const targetMrn = clean(examMrn);
+
+    if (!incomingMrn || !targetMrn) {
+        return { allowed: true, reason: null };
+    }
+
+    if (incomingMrn !== targetMrn) {
+        return {
+            allowed: false,
+            reason: 'PATIENT_ID_MISMATCH',
+            details: {
+                incomingMrn,
+                targetMrn,
+                incomingPatientName: clean(rawPatientName),
+                targetPatientName: clean(targetPatientName)
+            }
+        };
+    }
+
+    return { allowed: true, reason: null, details: { incomingMrn, targetMrn } };
+};
+
+const findMatchingExam = async (client, { accessionNumber, studyInstanceUid, patientId, modality }) => {
     if (accessionNumber) {
         const byAccession = await client.query(
             `SELECT e.exam_id, e.patient_id, e.study_instance_uid, e.status, p.mrn
              FROM examinations e
              JOIN patients p ON p.patient_id = e.patient_id
              WHERE e.order_number = $1
-             LIMIT 1`,
+             LIMIT 2 FOR UPDATE OF e`,
             [accessionNumber]
         );
+        if (byAccession.rows.length > 1) return { ambiguous: true };
         if (byAccession.rows.length) return { ...byAccession.rows[0], match_type: 'accession' };
 
         // Normalized Accession matching (ignoring hyphens, spaces, symbols)
@@ -206,9 +231,10 @@ const findMatchingExam = async (client, { accessionNumber, studyInstanceUid, pat
                  FROM examinations e
                  JOIN patients p ON p.patient_id = e.patient_id
                  WHERE UPPER(REGEXP_REPLACE(e.order_number, '[^a-zA-Z0-9]', '', 'g')) = $1
-                 LIMIT 1`,
+                 LIMIT 2 FOR UPDATE OF e`,
                 [normalized]
             );
+            if (byNormalized.rows.length > 1) return { ambiguous: true };
             if (byNormalized.rows.length) return { ...byNormalized.rows[0], match_type: 'accession_normalized' };
         }
     }
@@ -219,26 +245,32 @@ const findMatchingExam = async (client, { accessionNumber, studyInstanceUid, pat
              FROM examinations e
              JOIN patients p ON p.patient_id = e.patient_id
              WHERE e.study_instance_uid = $1
-             LIMIT 1`,
+             LIMIT 2 FOR UPDATE OF e`,
             [studyInstanceUid]
         );
+        if (byStudy.rows.length > 1) return { ambiguous: true };
         if (byStudy.rows.length) return { ...byStudy.rows[0], match_type: 'study' };
     }
 
     // Patient MRN + Active Scheduled Exam fallback
     const targetMrn = clean(patientId);
-    if (targetMrn) {
+    if (targetMrn && !accessionNumber && modality) {
         const byMrn = await client.query(
             `SELECT e.exam_id, e.patient_id, e.study_instance_uid, e.status, p.mrn
              FROM examinations e
              JOIN patients p ON p.patient_id = e.patient_id
+             JOIN modalities m ON m.modality_id = e.modality_id
              WHERE p.mrn = $1
                AND e.status::text IN ('Scheduled', 'Checked-in', 'Scanning')
                AND e.study_instance_uid IS NULL
+               AND COALESCE(e.arrived_at, e.created_at) >= NOW() - INTERVAL '48 hours'
+               AND CASE UPPER(m.type) WHEN 'MRI' THEN 'MR' WHEN 'X-RAY' THEN 'DX' WHEN 'XRAY' THEN 'DX'
+                   WHEN 'ULTRASOUND' THEN 'US' ELSE UPPER(m.type) END = UPPER($2)
              ORDER BY COALESCE(e.arrived_at, e.created_at) DESC
-             LIMIT 1`,
-            [targetMrn]
+             LIMIT 2 FOR UPDATE OF e`,
+            [targetMrn, modality]
         );
+        if (byMrn.rows.length > 1) return { ambiguous: true };
         if (byMrn.rows.length) return { ...byMrn.rows[0], match_type: 'patient_mrn' };
     }
 
@@ -248,7 +280,7 @@ const findMatchingExam = async (client, { accessionNumber, studyInstanceUid, pat
 const fetchOrthancJson = async (path) => {
     const baseUrl = await getOrthancUrl();
     const auth = await getOrthancAuthHeader();
-    const res = await fetch(`${baseUrl}${path}`, { headers: { Authorization: auth } });
+    const res = await fetch(`${baseUrl}${path}`, { headers: { Authorization: auth }, signal: AbortSignal.timeout(15000) });
     if (!res.ok) {
         throw new Error(`Orthanc ${path} -> ${res.status}`);
     }
@@ -269,6 +301,9 @@ const hydrateQuarantineImagingFromOrthanc = async (client, q) => {
 
             for (const instanceId of instanceIds) {
                 const tags = await fetchOrthancJson(`/instances/${encodeURIComponent(instanceId)}/tags?simplify`);
+                if (tags.StudyInstanceUID !== q.study_instance_uid || !tags.PatientID || (q.raw_patient_id && tags.PatientID !== q.raw_patient_id)) {
+                    throw new Error('Archive contains an instance with a conflicting patient or study identity');
+                }
                 await upsertImaging(client, {
                     OrthancInstanceId: instanceId,
                     OrthancStudyId: q.orthanc_study_id,
@@ -296,7 +331,7 @@ const hydrateQuarantineImagingFromOrthanc = async (client, q) => {
             orthanc_study_id: q.orthanc_study_id,
             error: error.message
         });
-        return 0;
+        throw error;
     }
 };
 
@@ -310,6 +345,11 @@ const upsertImaging = async (client, payload, studyInstanceUid) => {
     const sopUid = clean(payload.SOPInstanceUID);
 
     if (seriesUid) {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`series:${seriesUid}`]);
+        const { rows: parents } = await client.query('SELECT study_instance_uid FROM pacs_series WHERE series_instance_uid = $1', [seriesUid]);
+        if (parents[0] && parents[0].study_instance_uid !== studyInstanceUid) {
+            throw new Error('DICOM series UID already belongs to another study');
+        }
         await client.query(
             `INSERT INTO pacs_series (series_instance_uid, study_instance_uid, series_number, modality, series_description, body_part_examined)
              VALUES ($1, $2, $3, $4, $5, $6)
@@ -329,18 +369,25 @@ const upsertImaging = async (client, payload, studyInstanceUid) => {
     }
 
     if (sopUid && seriesUid) {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`instance:${sopUid}`]);
+        const { rows: parents } = await client.query('SELECT series_instance_uid FROM pacs_instances WHERE sop_instance_uid = $1', [sopUid]);
+        if (parents[0] && parents[0].series_instance_uid !== seriesUid) {
+            throw new Error('DICOM instance UID already belongs to another series');
+        }
         await client.query(
-            `INSERT INTO pacs_instances (sop_instance_uid, series_instance_uid, instance_number, orthanc_id, sop_class_uid)
-             VALUES ($1, $2, $3, $4, $5)
+            `INSERT INTO pacs_instances (sop_instance_uid, series_instance_uid, instance_number, orthanc_id, sop_class_uid, file_size_bytes)
+             VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT (sop_instance_uid) DO UPDATE
              SET orthanc_id = COALESCE(EXCLUDED.orthanc_id, pacs_instances.orthanc_id),
-                 instance_number = COALESCE(EXCLUDED.instance_number, pacs_instances.instance_number)`,
+                 instance_number = COALESCE(EXCLUDED.instance_number, pacs_instances.instance_number),
+                 file_size_bytes = COALESCE(EXCLUDED.file_size_bytes, pacs_instances.file_size_bytes)`,
             [
                 sopUid,
                 seriesUid,
                 toInt(payload.InstanceNumber),
                 clean(payload.OrthancInstanceId),
-                clean(payload.SOPClassUID)
+                clean(payload.SOPClassUID),
+                Number.isSafeInteger(payload.FileSize) && payload.FileSize >= 0 ? payload.FileSize : null
             ]
         );
     }
@@ -400,7 +447,15 @@ const reconcileInstance = async (pool, payload, { remoteIp = null } = {}) => {
             return { status: 'ignored', reason: QUARANTINE_REASONS.NO_ACCESSION };
         }
 
-        const exam = await findMatchingExam(client, { accessionNumber, studyInstanceUid, patientId });
+        const exam = await findMatchingExam(client, { accessionNumber, studyInstanceUid, patientId, modality: clean(payload.Modality) });
+
+        if (exam?.ambiguous || !patientId) {
+            const reason = exam?.ambiguous ? 'AMBIGUOUS_EXAM_MATCH' : 'PATIENT_ID_MISSING';
+            await quarantineStudy(client, payload, reason);
+            await writeAudit(client, { eventType: 'STUDY_QUARANTINED', accessionNumber, studyInstanceUid, remoteIp, detail: { reason } });
+            await client.query('COMMIT');
+            return { status: 'quarantined', reason };
+        }
 
         if (!exam) {
             const reason = accessionNumber
@@ -479,6 +534,12 @@ const reconcileInstance = async (pool, payload, { remoteIp = null } = {}) => {
         }
 
         await upsertImaging(client, payload, effectiveStudyUid);
+        if (payload.EventType === 'StableStudy' && payload.OrthancStudyId) {
+            await hydrateQuarantineImagingFromOrthanc(client, {
+                orthanc_study_id: payload.OrthancStudyId, study_instance_uid: effectiveStudyUid,
+                raw_patient_id: patientId, raw_accession_number: accessionNumber, modality: payload.Modality
+            });
+        }
 
         // Recompute image_count from the source of truth so it stays correct
         // under replays and out-of-order delivery.
@@ -490,6 +551,7 @@ const reconcileInstance = async (pool, payload, { remoteIp = null } = {}) => {
             [effectiveStudyUid]
         );
         const imageCount = countRows[0] ? countRows[0].n : 0;
+        if (!imageCount) throw new Error('A study cannot be marked available without indexed instances');
 
         // Advance the RIS workflow. First image flips the exam into 'Scanning'
         // (the real exam_status enum value) and marks images available. We never
@@ -499,7 +561,7 @@ const reconcileInstance = async (pool, payload, { remoteIp = null } = {}) => {
              SET study_instance_uid = COALESCE(study_instance_uid, $2),
                  orthanc_study_id = COALESCE($3, orthanc_study_id),
                  images_available = TRUE,
-                 image_count = GREATEST(COALESCE(image_count, 0), $4),
+                 image_count = $4,
                  first_image_received_at = COALESCE(first_image_received_at, CURRENT_TIMESTAMP),
                  status = CASE WHEN status IN ('Scheduled', 'Checked-in') THEN 'Scanning'::exam_status ELSE status END
              WHERE exam_id = $1`,
@@ -575,7 +637,11 @@ const reconcileQuarantine = async (pool, { quarantineId, examId, actorUserId = n
         }
 
         const { rows: eRows } = await client.query(
-            `SELECT exam_id, study_instance_uid, status FROM examinations WHERE exam_id = $1 FOR UPDATE`,
+            `SELECT e.exam_id, e.study_instance_uid, e.status, p.mrn, p.patient_id
+             FROM examinations e
+             JOIN patients p ON p.patient_id = e.patient_id
+             WHERE e.exam_id = $1
+             FOR UPDATE`,
             [examId]
         );
         if (!eRows.length) {
@@ -585,6 +651,22 @@ const reconcileQuarantine = async (pool, { quarantineId, examId, actorUserId = n
             throw err;
         }
         const exam = eRows[0];
+
+        const targetCheck = validateReconcileTarget({
+            quarantinePatientId: q.raw_patient_id,
+            examMrn: exam.mrn,
+            rawPatientName: q.raw_patient_name,
+            targetPatientName: null
+        });
+
+        if (!targetCheck.allowed) {
+            await client.query('ROLLBACK');
+            const err = new Error(`Patient ID mismatch between PACS study and target exam (${targetCheck.reason})`);
+            err.statusCode = 409;
+            err.reconcileReason = targetCheck.reason;
+            err.details = targetCheck.details;
+            throw err;
+        }
 
         // If the exam already has a *different* study bound, refuse rather than
         // silently orphan its existing images.
@@ -604,6 +686,7 @@ const reconcileQuarantine = async (pool, { quarantineId, examId, actorUserId = n
         );
 
         const hydratedCount = await hydrateQuarantineImagingFromOrthanc(client, q);
+        if (!hydratedCount) throw new Error('The quarantined study has no retrievable DICOM instances');
 
         // Re-parent any series that came in under this study UID to the exam.
         await client.query(
@@ -695,6 +778,7 @@ module.exports = {
     reconcileQuarantine,
     discardQuarantine,
     writeAudit,
+    validateReconcileTarget,
     // exported for unit tests
     findMatchingExam,
     QUARANTINE_REASONS

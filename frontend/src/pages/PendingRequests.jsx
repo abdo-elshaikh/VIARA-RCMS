@@ -80,6 +80,28 @@ const getRequestSourceStatus = (source, raw = {}) => {
 
 const getSourceStatus = (item) => getRequestSourceStatus(item.source, item.raw || {});
 
+const getLocalizedSourceStatus = (status, t) => {
+    if (!status) return t('fallback.notSpecified');
+
+    const normalized = String(status).trim();
+    const keyMap = {
+        Pending: 'pending',
+        'Pending Approval': 'pendingApproval',
+        'Requires Review': 'requiresReview',
+        'In Review': 'inReview',
+        Approved: 'approved',
+        Rejected: 'rejected',
+        Cancelled: 'cancelled',
+        Draft: 'draft',
+        Resolved: 'resolved',
+        Completed: 'completed',
+    };
+
+    const key = keyMap[normalized] || normalized.replace(/\s+/g, '');
+    const translated = t(`status.${key}`, { defaultValue: normalized });
+    return translated || normalized;
+};
+
 const isPendingApprovalSourceRequest = (source, request) => (
     SOURCE_PENDING_APPROVAL_STATUSES[source]?.has(getRequestSourceStatus(source, request)) || false
 );
@@ -92,6 +114,7 @@ const markPendingApproval = (item, sourceLabels, t) => {
     const approvalStatusLabel = t(`status.${INBOX_APPROVAL_STATUS}`, { defaultValue: 'Pending approval' });
     const sourceLabel = sourceLabels[item.source] || item.source;
     const sourceStatus = getSourceStatus(item);
+    const sourceStatusLabel = getLocalizedSourceStatus(sourceStatus, t);
 
     return {
         ...item,
@@ -99,10 +122,11 @@ const markPendingApproval = (item, sourceLabels, t) => {
         approvalStatusLabel,
         sourceLabel,
         sourceStatus,
+        sourceStatusLabel,
         facts: [
             [t('facts.approvalStatus', { defaultValue: 'Approval status' }), approvalStatusLabel],
             [t('facts.requestSource', { defaultValue: 'Request source' }), sourceLabel],
-            [t('facts.sourceStatus', { defaultValue: 'Source status' }), sourceStatus || t('fallback.notSpecified')],
+            [t('facts.sourceStatus', { defaultValue: 'Source status' }), sourceStatusLabel],
             ...(item.facts || []),
         ],
     };
@@ -355,17 +379,17 @@ const PendingRequests = () => {
         privacy: t('sources.privacy'),
         refund: t('sources.refund'),
         claim: t('sources.claim'),
-        deduction: t('sources.deduction', { defaultValue: 'Payroll deduction' }),
-        rule: t('sources.rule', { defaultValue: 'Payroll rule' }),
+        deduction: t('sources.deduction'),
+        rule: t('sources.rule'),
         penalty: t('sources.penalty'),
         payroll: t('sources.payroll'),
         variance: t('sources.variance'),
-        partialPayment: t('sources.partialPayment', { defaultValue: 'Partial payment exceptions' }),
+        partialPayment: t('sources.partialPayment'),
         portalAppointment: t('sources.portalAppointment'),
         profileUpdate: t('sources.profileUpdate'),
         authorization: t('sources.authorization'),
-        attendancePermission: t('sources.attendancePermission', { defaultValue: 'Departure & Attendance' }),
-        shiftRequest: t('sources.shiftRequest', { defaultValue: 'Shift Swaps & Modifications' }),
+        attendancePermission: t('sources.attendancePermission'),
+        shiftRequest: t('sources.shiftRequest'),
     }), [t]);
     const availableSources = useMemo(() => [
         canReviewLeave && 'leave',
@@ -395,7 +419,8 @@ const PendingRequests = () => {
 
         if (canReviewLeave) {
             (leaveQuery.data || [])
-                .filter((request) => isPendingApprovalSourceRequest('leave', request))
+                .filter((request) => isPendingApprovalSourceRequest('leave', request)
+                    && (user?.role === 'Developer' || String(request.user_id) !== String(user?.user_id)))
                 .forEach((request) => {
                     const days = differenceInDays(request.start_date, request.end_date);
                     normalized.push({
@@ -553,12 +578,16 @@ const PendingRequests = () => {
                 .forEach((request) => {
                     const amount = Number(request.amount || 0);
                     const percentage = Number(request.percentage || 0);
+                    const formattedAmount = amount ? formatMoney(amount, request.currency_code || 'EGP', locale) : `${percentage}%`;
                     normalized.push({
                         key: `deduction:${request.deduction_id}`,
                         id: request.deduction_id,
                         source: 'deduction',
                         title: request.employee_name || t('fallback.staffMember'),
-                        subtitle: request.name || t('fallback.deduction', { defaultValue: 'Deduction' }),
+                        subtitle: request.name || t('item.deductionSubtitle', {
+                            type: request.deduction_type || t('fallback.deduction'),
+                            amount: formattedAmount,
+                        }),
                         requester: request.created_by_name || t('fallback.unknown'),
                         submittedAt: request.created_at,
                         risk: amount >= 5000 || percentage >= 25 ? 'high' : 'routine',
@@ -567,7 +596,7 @@ const PendingRequests = () => {
                         link: '/payroll',
                         approveLabel: t('actions.approve'),
                         facts: [
-                            [t('facts.amount'), amount ? formatMoney(amount, request.currency_code || 'EGP', locale) : `${percentage}%`],
+                            [t('facts.amount'), formattedAmount],
                             [t('facts.source'), request.deduction_type || t('fallback.unknown')],
                         ],
                         raw: request,
@@ -853,20 +882,22 @@ const PendingRequests = () => {
         if (canReviewShiftRequests) {
             (shiftRequestsQuery.data || [])
                 .filter((request) => isPendingApprovalSourceRequest('shiftRequest', request)
-                    && (String(request.user_id) !== String(user?.user_id)))
+                    && (user?.role === 'Developer' || String(request.user_id) !== String(user?.user_id)))
                 .forEach((request) => {
                     const isSwap = request.request_type === 'Swap';
+                    const colleagueName = request.target_user_name || t('fallback.peerStaff');
+                    const subtitle = isSwap
+                        ? t('item.shiftSwapSubtitle', { colleague: colleagueName })
+                        : t('item.shiftModificationSubtitle', { date: formatLocalizedDate(request.proposed_start_time, locale) });
                     const typeLabel = isSwap
-                        ? (locale === 'ar-EG' ? 'طلب تبديل وردية' : 'Shift Swap Request')
-                        : (locale === 'ar-EG' ? 'طلب تعديل وردية' : 'Shift Modification Request');
+                        ? t('fallback.shiftSwap')
+                        : t('fallback.shiftModification');
                     normalized.push({
                         key: `shiftRequest:${request.request_id}`,
                         id: request.request_id,
                         source: 'shiftRequest',
                         title: request.requester_name || t('fallback.staffMember'),
-                        subtitle: isSwap
-                            ? `${typeLabel} · مع ${request.target_user_name || 'زميل'}`
-                            : `${typeLabel} · ${formatLocalizedDate(request.proposed_start_time, locale)}`,
+                        subtitle,
                         requester: request.requester_name || t('fallback.unknown'),
                         submittedAt: request.created_at || request.updated_at,
                         risk: getAgeHours(request.created_at) >= 48 ? 'high' : 'routine',
@@ -875,11 +906,11 @@ const PendingRequests = () => {
                         link: '/hr',
                         approveLabel: t('actions.approve'),
                         facts: [
-                            [t('facts.requestType', { defaultValue: 'نوع الطلب' }), typeLabel],
-                            [t('facts.currentShift', { defaultValue: 'الوردية الأصلية' }), request.current_start_time ? formatLocalizedDate(request.current_start_time, locale) : '—'],
-                            ...(isSwap ? [[t('facts.targetColleague', { defaultValue: 'الزميل المراد التبديل معه' }), request.target_user_name || '—']] : []),
-                            ...(!isSwap && request.proposed_start_time ? [[t('facts.proposedTime', { defaultValue: 'الموعد المقترح' }), `${new Date(request.proposed_start_time).toLocaleTimeString()} - ${new Date(request.proposed_end_time).toLocaleTimeString()}`]] : []),
-                            [t('facts.reason', { defaultValue: 'السبب' }), request.reason || '—'],
+                            [t('facts.requestType'), typeLabel],
+                            [t('facts.currentShift'), request.current_start_time ? formatLocalizedDate(request.current_start_time, locale) : '—'],
+                            ...(isSwap ? [[t('facts.targetColleague'), colleagueName]] : []),
+                            ...(!isSwap && request.proposed_start_time ? [[t('facts.proposedTime'), `${new Date(request.proposed_start_time).toLocaleTimeString()} - ${new Date(request.proposed_end_time).toLocaleTimeString()}`]] : []),
+                            [t('facts.reason'), request.reason || '—'],
                         ],
                         raw: request,
                     });
@@ -999,6 +1030,7 @@ const PendingRequests = () => {
                 await updateLeaveStatus({
                     id: item.id,
                     status: approved ? 'Approved' : 'Rejected',
+                    notes: notes || undefined,
                 }).unwrap();
             } else if (item.source === 'refund') {
                 await reviewRefund({
@@ -1121,7 +1153,7 @@ const PendingRequests = () => {
     };
 
     const decisionNeedsNotes = Boolean(decision && (
-        (decision.action === 'reject' && decision.item.source !== 'leave')
+        decision.action === 'reject'
         || (decision.action === 'approve' && decision.item.source === 'refund')
         || (decision.action === 'approve' && decision.item.source === 'variance')
         || (decision.item.source === 'partialPayment')
@@ -1160,13 +1192,14 @@ const PendingRequests = () => {
 
     return (
         <main className="app-page">
-            <div className="mx-auto max-w-screen-2xl space-y-5 pb-10">
+            <div className="approval-inbox-page mx-auto max-w-screen-2xl space-y-5 pb-10">
                 <PageHeader
                     icon={Inbox}
+                    compact
                     eyebrow={t('header.eyebrow')}
                     title={t('header.title')}
                     description={t('header.description')}
-                    className="overflow-hidden rounded-3xl border-slate-200/80 bg-gradient-to-br from-white via-slate-50/70 to-cyan-50/50 shadow-xl shadow-slate-200/35 dark:border-white/10 dark:from-slate-950 dark:via-slate-900 dark:to-cyan-950/20 dark:shadow-none"
+                    className="approval-inbox-header overflow-hidden rounded-3xl border-slate-200/80 bg-gradient-to-br from-white via-slate-50/70 to-cyan-50/50 shadow-xl shadow-slate-200/35 dark:border-white/10 dark:from-slate-950 dark:via-slate-900 dark:to-cyan-950/20 dark:shadow-none"
                     meta={
                         <div className="flex flex-wrap gap-2">
                             <HeaderPill icon={Clock3} label={t('header.liveQueue')} />
@@ -1194,13 +1227,6 @@ const PendingRequests = () => {
                     }
                 />
 
-                <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label={t('summary.label')}>
-                    <SummaryCard icon={Inbox} label={t('summary.pending')} value={items.length} tone="cyan" />
-                    <SummaryCard icon={ShieldAlert} label={t('summary.priority')} value={highRiskCount} tone="rose" />
-                    <SummaryCard icon={Clock3} label={t('summary.oldest')} value={formatAge(oldestHours, t)} tone="amber" />
-                    <SummaryCard icon={WalletCards} label={t('summary.sources')} value={Object.values(counts).filter(Boolean).length} tone="indigo" />
-                </section>
-
                 {failedSources > 0 && (
                     <div role="alert" className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
                         <AlertCircle size={18} className="mt-0.5 shrink-0" />
@@ -1208,7 +1234,7 @@ const PendingRequests = () => {
                     </div>
                 )}
 
-                <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xl shadow-slate-200/30 dark:border-white/10 dark:bg-[#07111f] dark:shadow-none">
+                <section className="approval-inbox-workspace overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xl shadow-slate-200/30 dark:border-white/10 dark:bg-[#07111f] dark:shadow-none">
                     <div className="border-b border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.025]">
                         <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
                             <label className="relative min-w-0 flex-1">
@@ -1387,25 +1413,6 @@ const HeaderPill = ({ icon: Icon, label }) => (
         <Icon size={13} />
         {label}
     </span>
-);
-
-const summaryTones = {
-    cyan: 'bg-cyan-50 text-cyan-700 ring-cyan-100 dark:bg-cyan-500/10 dark:text-cyan-300 dark:ring-cyan-500/20',
-    rose: 'bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20',
-    amber: 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20',
-    indigo: 'bg-indigo-50 text-indigo-700 ring-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/20',
-};
-
-const SummaryCard = ({ icon: Icon, label, value, tone }) => (
-    <article className="flex min-w-0 items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm dark:border-white/10 dark:bg-[#07111f] sm:p-4">
-        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${summaryTones[tone]}`}>
-            <Icon size={18} />
-        </span>
-        <div className="min-w-0">
-            <p className="truncate text-[10px] font-black uppercase tracking-[.12em] text-slate-400">{label}</p>
-            <p className="mt-1 truncate font-mono text-xl font-black text-slate-950 dark:text-white">{value}</p>
-        </div>
-    </article>
 );
 
 const SelectFilter = ({ icon: Icon, label, value, onChange, options }) => (

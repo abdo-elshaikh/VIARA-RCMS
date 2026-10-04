@@ -48,7 +48,7 @@ const acknowledgeCriticalResultSchema = z.object({
 
 // Get worklist query schema
 const getWorklistQuerySchema = z.object({
-    status: z.enum(['Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Finalized']).optional(),
+    status: z.enum(['Scheduled', 'Checked-in', 'Scanning', 'Completed', 'Reporting', 'Finalized']).optional(),
     modalityType: z.string().optional(),
     priority: z.enum(['Routine', 'Urgent', 'Emergency']).optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -86,11 +86,23 @@ const markAiReportDraftAppliedSchema = z.object({
     mode: z.enum(['fill_empty', 'replace']).optional()
 });
 
+const completeAcquisitionSchema = z.object({
+    resultMode: z.enum(['ReportAndImages', 'ImagesOnly']),
+    notes: z.string().trim().max(1000).optional()
+});
+
+const requestReportSchema = z.object({
+    source: z.enum(['Reception', 'Patient', 'Doctor', 'Automatic']).default('Reception'),
+    reason: z.string().trim().max(1000).optional()
+});
+
 module.exports = {
     updateExamReportSchema,
     getWorklistQuerySchema,
     improveReportSchema,
     acknowledgeCriticalResultSchema,
     generatePreliminaryReportSchema,
-    markAiReportDraftAppliedSchema
+    markAiReportDraftAppliedSchema,
+    completeAcquisitionSchema,
+    requestReportSchema
 };

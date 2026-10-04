@@ -11,15 +11,15 @@ export const clinicalApi = api.injectEndpoints({
         }),
         createExamType: builder.mutation({
             query: (data) => ({ url: '/exam-types', method: 'POST', body: data }),
-            invalidatesTags: ['ExamTypes', 'ScheduleAvailability'],
+            invalidatesTags: ['ExamTypes', 'Rooms', 'ScheduleAvailability'],
         }),
         updateExamType: builder.mutation({
             query: ({ id, ...data }) => ({ url: `/exam-types/${id}`, method: 'PUT', body: data }),
-            invalidatesTags: ['ExamTypes', 'ScheduleAvailability'],
+            invalidatesTags: ['ExamTypes', 'Rooms', 'ScheduleAvailability'],
         }),
         deleteExamType: builder.mutation({
             query: (id) => ({ url: `/exam-types/${id}`, method: 'DELETE' }),
-            invalidatesTags: ['ExamTypes', 'ScheduleAvailability'],
+            invalidatesTags: ['ExamTypes', 'Rooms', 'ScheduleAvailability'],
         }),
         getWorklist: builder.query({
             query: (params) => ({
@@ -48,11 +48,35 @@ export const clinicalApi = api.injectEndpoints({
         }),
         updateReport: builder.mutation({
             query: (data) => ({
-                url: '/exams/report',
+                url: `/exams/${data.examId}/report`,
                 method: 'PUT',
                 body: data,
             }),
             invalidatesTags: ['Appointments', 'Dashboard', 'OrderTimeline', 'Queue'],
+        }),
+        completeAcquisition: builder.mutation({
+            query: ({ examId, ...body }) => ({
+                url: `/exams/${examId}/complete-acquisition`,
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['Appointments', 'Dashboard', 'OrderTimeline', 'Queue', 'CaseReports'],
+        }),
+        requestDeferredReport: builder.mutation({
+            query: ({ examId, ...body }) => ({
+                url: `/exams/${examId}/report/request`,
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['Appointments', 'Dashboard', 'OrderTimeline', 'Queue', 'CaseReports'],
+        }),
+        deferReportForImages: builder.mutation({
+            query: ({ examId, ...body }) => ({
+                url: `/exams/${examId}/report/defer`,
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['Appointments', 'Dashboard', 'OrderTimeline', 'Queue', 'CaseReports'],
         }),
         improveReportFormat: builder.mutation({
             query: (data) => ({
@@ -147,11 +171,32 @@ export const clinicalApi = api.injectEndpoints({
             invalidatesTags: ['Queue', 'Appointments', 'Dashboard', 'OrderTimeline'],
         }),
         claimQueueTask: builder.mutation({
-            query: (examId) => ({ url: `/queue/${examId}/claim`, method: 'POST' }),
+            query: (arg) => {
+                const examId = typeof arg === 'object' && arg !== null ? arg.examId : arg;
+                return { url: `/queue/${examId}/claim`, method: 'POST' };
+            },
             invalidatesTags: ['Queue'],
         }),
         releaseQueueTaskAssignment: builder.mutation({
-            query: (examId) => ({ url: `/queue/${examId}/release`, method: 'POST' }),
+            query: (arg) => {
+                const examId = typeof arg === 'object' && arg !== null ? arg.examId : arg;
+                const body = typeof arg === 'object' && arg !== null && arg.reason !== undefined
+                    ? { reason: arg.reason }
+                    : (typeof arg === 'object' && arg !== null && arg.body ? arg.body : undefined);
+                return {
+                    url: `/queue/${examId}/release`,
+                    method: 'POST',
+                    body,
+                };
+            },
+            invalidatesTags: ['Queue'],
+        }),
+        assignQueueTask: builder.mutation({
+            query: ({ examId, ...body }) => ({
+                url: `/queue/${examId}/assign`,
+                method: 'POST',
+                body,
+            }),
             invalidatesTags: ['Queue'],
         }),
         acknowledgeCriticalResult: builder.mutation({

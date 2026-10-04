@@ -29,8 +29,8 @@ const errorHandler = (err, req, res, next) => {
         if (isUuidPath) {
             error = new AppError('Record not found', 404);
         } else {
-            const detail = err.detail || err.message || 'The request contains an invalid value';
-            error = new ValidationError(detail.includes('The request contains') ? detail : `Invalid value: ${detail}`);
+            // PostgreSQL detail may contain the entire failing clinical row.
+            error = new ValidationError('The request contains an invalid value');
         }
     }
     // JWT Token mappings

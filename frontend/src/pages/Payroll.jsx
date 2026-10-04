@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import {
+    AlertCircle,
     AlertTriangle,
     BadgeDollarSign,
     Banknote,
@@ -18,17 +19,22 @@ import {
     ChevronDown,
     ChevronUp,
     ClipboardCheck,
+    Clock,
     Coins,
+    CreditCard,
     Download,
     Eye,
     FileCheck,
     FileSpreadsheet,
     FileText,
+    Filter,
     HelpCircle,
+    Layers,
     LayoutDashboard,
     Lock,
     LockKeyhole,
     MinusCircle,
+    Percent,
     Plus,
     Printer,
     Receipt,
@@ -40,6 +46,7 @@ import {
     ShieldCheck,
     SlidersHorizontal,
     Sparkles,
+    TrendingDown,
     TrendingUp,
     UserCheck,
     Users,
@@ -49,6 +56,7 @@ import {
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
 import PageHeader from '../components/ui/PageHeader';
+import SalarySimulatorModal from '../components/hr/SalarySimulatorModal';
 import { printWhenReady } from '../utils/printDocument';
 import {
     useCalculatePayrollRunMutation,
@@ -69,6 +77,7 @@ import {
     useGetCenterSettingsQuery,
     useUpdatePayrollDeductionStatusMutation,
     useUpdatePayrollPenaltyStatusMutation,
+    useResolvePayrollPenaltyDisputeMutation,
     useUpdatePayrollRuleStatusMutation,
     useUpdatePayrollRunStatusMutation,
     useUpdatePayrollCompensationMutation,
@@ -476,6 +485,20 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
     const net = Number(item.net_pay || gross - deductions - penalties);
     const lineItems = Array.isArray(item.line_items) ? item.line_items : [];
 
+    // Safe extraction of attendance snapshot
+    const attendance = typeof item.attendance_snapshot === 'object' && item.attendance_snapshot !== null
+        ? item.attendance_snapshot
+        : {};
+    const calculation = typeof item.calculation_snapshot === 'object' && item.calculation_snapshot !== null
+        ? item.calculation_snapshot
+        : {};
+
+    const hoursWorked = Number(attendance.hours_worked ?? calculation.hoursWorked ?? 0);
+    const daysWorked = Number(attendance.days_worked ?? calculation.payableDays ?? 0);
+    const lateMinutes = Number(attendance.late_minutes ?? calculation.lateMinutes ?? 0);
+    const absenceDays = Number(attendance.absent_days ?? calculation.absenceDays ?? 0);
+    const overtimeHours = Number(calculation.overtimeHours ?? 0);
+
     return createPortal(
         <div className="payslip-print-overlay fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-md animate-in fade-in duration-200 sm:p-4" dir={isArabic ? 'rtl' : 'ltr'}>
             <div className="payslip-print-root flex max-h-[96vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900 animate-in zoom-in-95 duration-200 sm:max-h-[92vh] sm:rounded-3xl">
@@ -505,6 +528,7 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
 
                 {/* Content */}
                 <div className="payslip-scroll flex-1 space-y-4 overflow-y-auto p-4 text-xs sm:p-6">
+                    {/* Facility Identification Header */}
                     <div className="flex items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50 to-white p-3.5 dark:border-teal-500/20 dark:from-teal-500/10 dark:to-slate-950">
                         <div className="flex min-w-0 items-center gap-3">
                             {identity?.logoUrl ? (
@@ -548,23 +572,74 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
                         </div>
                     </div>
 
+                    {/* Attendance & Shift Execution Strip */}
+                    {(hoursWorked > 0 || daysWorked > 0 || lateMinutes > 0 || absenceDays > 0) && (
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                    {isArabic ? 'ملخص الحضور وساعات العمل المسجلة' : 'Attendance & Work Hours Record'}
+                                </span>
+                                <span className="text-[10px] font-bold text-teal-700 dark:text-teal-300">
+                                    {isArabic ? 'موثق عبر البصمة' : 'Biometric Verified'}
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                                <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                    <div className="text-[10px] font-semibold text-slate-400">{isArabic ? 'أيام العمل' : 'Days Worked'}</div>
+                                    <div className="font-mono text-xs font-black text-slate-800 dark:text-slate-200 mt-0.5">{daysWorked}</div>
+                                </div>
+                                <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                    <div className="text-[10px] font-semibold text-slate-400">{isArabic ? 'ساعات العمل' : 'Hours Worked'}</div>
+                                    <div className="font-mono text-xs font-black text-slate-800 dark:text-slate-200 mt-0.5">{hoursWorked.toFixed(1)} h</div>
+                                </div>
+                                <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                    <div className="text-[10px] font-semibold text-slate-400">{isArabic ? 'دقائق التأخير' : 'Late Minutes'}</div>
+                                    <div className={`font-mono text-xs font-black mt-0.5 ${lateMinutes > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-200'}`}>
+                                        {lateMinutes} m
+                                    </div>
+                                </div>
+                                <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                    <div className="text-[10px] font-semibold text-slate-400">{isArabic ? 'أيام الغياب' : 'Absence Days'}</div>
+                                    <div className={`font-mono text-xs font-black mt-0.5 ${absenceDays > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>
+                                        {absenceDays}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Financial Ledger Breakdown */}
                     <div className="space-y-3">
                         <h3 className="text-[11px] font-black uppercase tracking-wider text-slate-400">
                             {t('earningsAdjustmentsLedger')}
                         </h3>
 
-                        <div className="rounded-2xl border border-slate-100 divide-y divide-slate-100 dark:border-slate-800 dark:divide-slate-800">
+                        <div className="rounded-2xl border border-slate-100 divide-y divide-slate-100 dark:border-slate-800 dark:divide-slate-800 overflow-hidden">
                             {lineItems.map((line) => {
                                 const subtracts = ['Deduction', 'Penalty'].includes(line.item_type);
+                                const isEmployer = line.item_type === 'EmployerContribution';
                                 return (
-                                    <div key={line.line_item_id} className="flex items-center justify-between gap-4 p-3.5">
+                                    <div key={line.line_item_id} className="flex items-center justify-between gap-4 p-3.5 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                                         <div className="min-w-0">
-                                            <p className="truncate font-bold text-slate-700 dark:text-slate-300">{line.description}</p>
-                                            <p className="text-[10px] font-semibold text-slate-400">{line.item_type}</p>
+                                            <div className="flex items-center gap-1.5">
+                                                <p className="truncate font-bold text-slate-800 dark:text-slate-200">{line.description}</p>
+                                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${
+                                                    line.item_type === 'Earning'
+                                                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                                                        : line.item_type === 'Deduction'
+                                                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300'
+                                                            : line.item_type === 'Penalty'
+                                                                ? 'border-rose-500/30 bg-rose-500/10 text-rose-800 dark:text-rose-300'
+                                                                : 'border-indigo-500/30 bg-indigo-500/10 text-indigo-800 dark:text-indigo-300'
+                                                }`}>
+                                                    {isArabic
+                                                        ? (line.item_type === 'Earning' ? 'استحقاق' : line.item_type === 'Deduction' ? 'استقطاع' : line.item_type === 'Penalty' ? 'جزاء' : 'مساهمة عمل')
+                                                        : line.item_type}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <span className={`shrink-0 font-mono font-black whitespace-nowrap ${subtracts ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>
-                                            {subtracts ? '- ' : ''}{money(line.amount, currency)}
+                                        <span className={`shrink-0 font-mono font-black whitespace-nowrap ${subtracts ? 'text-rose-600 dark:text-rose-400' : isEmployer ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-700 dark:text-emerald-300'}`}>
+                                            {subtracts ? '- ' : '+ '}{money(line.amount, currency)}
                                         </span>
                                     </div>
                                 );
@@ -574,22 +649,24 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
                                     {t('noItemizedLinesAreAvailable')}
                                 </div>
                             )}
-                            <div className="flex items-center justify-between p-3.5">
+                            <div className="flex items-center justify-between p-3.5 bg-slate-50/50 dark:bg-slate-900/40">
                                 <span className="font-bold text-slate-700 dark:text-slate-300">{t('grossEarningsAllowances')}</span>
                                 <span className="font-mono font-black whitespace-nowrap text-slate-900 dark:text-white">{money(gross, currency)}</span>
                             </div>
-                            <div className="flex items-center justify-between p-3.5">
+                            <div className="flex items-center justify-between p-3.5 bg-slate-50/50 dark:bg-slate-900/40">
                                 <span className="font-bold text-slate-700 dark:text-slate-300">{t('deductionsContributions')}</span>
                                 <span className="font-mono font-black whitespace-nowrap text-amber-600 dark:text-amber-400">- {money(deductions, currency)}</span>
                             </div>
-                            <div className="flex items-center justify-between p-3.5">
+                            <div className="flex items-center justify-between p-3.5 bg-slate-50/50 dark:bg-slate-900/40">
                                 <span className="font-bold text-slate-700 dark:text-slate-300">{t('penaltiesViolations')}</span>
                                 <span className="font-mono font-black whitespace-nowrap text-rose-600 dark:text-rose-400">- {money(penalties, currency)}</span>
                             </div>
-                            <div className="flex items-center justify-between p-3.5">
-                                <span className="font-bold text-slate-700 dark:text-slate-300">{t('employerContributionsNotDeductedFromNet')}</span>
-                                <span className="font-mono font-black whitespace-nowrap text-indigo-600 dark:text-indigo-400">{money(employerContributions, currency)}</span>
-                            </div>
+                            {employerContributions > 0 && (
+                                <div className="flex items-center justify-between p-3.5 bg-slate-50/50 dark:bg-slate-900/40">
+                                    <span className="font-bold text-slate-700 dark:text-slate-300">{t('employerContributionsNotDeductedFromNet')}</span>
+                                    <span className="font-mono font-black whitespace-nowrap text-indigo-600 dark:text-indigo-400">{money(employerContributions, currency)}</span>
+                                </div>
+                            )}
                         </div>
 
                         {/* Net Disbursed Card */}
@@ -603,6 +680,11 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
                                     <Coins size={20} />
                                 </span>
                             </div>
+                        </div>
+
+                        {/* Official Certification Seal */}
+                        <div className="pt-2 text-center text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                            <p>{isArabic ? 'وثيقة كشف راتب رسمية معتمدة إلكترونياً من النظام المالي والإداري لـ VIARA' : 'Official Electronic Payslip Certified by VIARA Healthcare Financial & HR Engine'}</p>
                         </div>
                     </div>
                 </div>
@@ -632,7 +714,11 @@ const PayslipModal = ({ item, period, currency, identity, onClose, isArabic }) =
 };
 
 const adjustmentActions = (kind, status) => {
-    if (kind === 'penalty') return status === 'Pending Approval' ? ['Approved', 'Rejected'] : [];
+    if (kind === 'penalty') {
+        if (status === 'Pending Approval') return ['Approved', 'Rejected'];
+        if (status === 'Approved') return ['Cancelled'];
+        return [];
+    }
     if (status === 'Draft') return ['Approved', 'Cancelled'];
     if (status === 'Approved') return ['Paused', 'Cancelled'];
     if (status === 'Paused') return ['Approved', 'Cancelled'];
@@ -645,6 +731,456 @@ const actionLabel = (status, t) => ({
     Paused: t('pause'),
     Cancelled: t('cancel'),
 }[status] || status);
+
+/* ── Create Deduction / Loan Modal ────────────────────────────── */
+const CreateDeductionModal = ({
+    isOpen,
+    onClose,
+    form,
+    setForm,
+    onSubmit,
+    isLoading,
+    staff,
+    currency,
+    isArabic,
+    t
+}) => {
+    if (!isOpen) return null;
+    const isLoanOrAdvance = ['Installment', 'Advance', 'Loan'].includes(form.deductionType);
+    const isPercentage = form.deductionType === 'Percentage';
+
+    return createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm animate-in fade-in" dir={isArabic ? 'rtl' : 'ltr'}>
+            <form
+                onSubmit={onSubmit}
+                className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in zoom-in-95 duration-200"
+            >
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-2.5">
+                        <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                            <MinusCircle size={20} />
+                        </span>
+                        <div>
+                            <h3 className="text-base font-black text-slate-900 dark:text-white">{t('addDeductionOrLoan')}</h3>
+                            <p className="text-xs font-semibold text-slate-400">{t('addDeductionHelp')}</p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+
+                <div className="mt-4 space-y-3.5 max-h-[70vh] overflow-y-auto pe-1">
+                    {/* Employee & Type */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.employee')} *</span>
+                            <select
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                value={form.userId}
+                                onChange={(e) => setForm({ ...form, userId: e.target.value })}
+                                required
+                            >
+                                <option value="">{t('placeholders.employee')}</option>
+                                {staff.map((emp) => (
+                                    <option key={emp.user_id} value={emp.user_id}>{emp.full_name} ({emp.role})</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.salaryType', { defaultValue: 'نوع البند' })}</span>
+                            <select
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                value={form.deductionType}
+                                onChange={(e) => {
+                                    const deductionType = e.target.value;
+                                    const isInstallment = ['Installment', 'Advance', 'Loan'].includes(deductionType);
+                                    const recurrenceType = isInstallment
+                                        ? 'Installment'
+                                        : form.recurrenceType === 'Installment' ? 'OneTime' : form.recurrenceType;
+                                    setForm({
+                                        ...form,
+                                        deductionType,
+                                        recurrenceType,
+                                        maxOccurrences: recurrenceType === 'Recurring' ? form.maxOccurrences : '',
+                                        amount: deductionType === 'Percentage'
+                                            ? '0'
+                                            : form.deductionType === 'Percentage' ? '' : form.amount,
+                                        percentage: deductionType === 'Percentage' ? form.percentage : '',
+                                        name: form.name || (deductionType === 'Loan' ? (isArabic ? 'قرض موظف' : 'Employee Loan') : deductionType === 'Advance' ? (isArabic ? 'سلفة نقدية' : 'Cash Advance') : form.name)
+                                    });
+                                }}
+                            >
+                                <option value="Fixed">{t('deductionTypes.Fixed')}</option>
+                                <option value="Percentage">{t('deductionTypes.Percentage')}</option>
+                                <option value="Installment">{t('deductionTypes.Installment')}</option>
+                                <option value="Advance">{t('deductionTypes.Advance')}</option>
+                                <option value="Loan">{t('deductionTypes.Loan')}</option>
+                            </select>
+                        </label>
+                    </div>
+
+                    {/* Name */}
+                    <label className="block">
+                        <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.name')} *</span>
+                        <input
+                            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                            value={form.name}
+                            onChange={(e) => setForm({ ...form, name: e.target.value })}
+                            placeholder={isArabic ? 'مثال: سلفة شهرية، قسط قرض، اشتراك نقابة...' : 'e.g., Emergency Advance, Loan installment...'}
+                            required
+                        />
+                    </label>
+
+                    {/* Amount / Percentage Inputs */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {isPercentage ? (
+                            <label className="block">
+                                <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.percentage')} (%) *</span>
+                                <input
+                                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                    type="number"
+                                    min="0.01"
+                                    max="100"
+                                    step="0.01"
+                                    value={form.percentage}
+                                    onChange={(e) => setForm({ ...form, percentage: e.target.value })}
+                                    required
+                                />
+                            </label>
+                        ) : (
+                            <label className="block">
+                                <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">
+                                    {isLoanOrAdvance ? (isArabic ? 'مبلغ القسط الشهري *' : 'Monthly Installment *') : `${t('fields.amount')} *`} ({currency})
+                                </span>
+                                <input
+                                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    value={form.amount}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        setForm(prev => ({
+                                            ...prev,
+                                            amount: val,
+                                            totalAmount: isLoanOrAdvance && !prev.totalAmount ? val : prev.totalAmount,
+                                            remainingAmount: isLoanOrAdvance && !prev.remainingAmount ? val : prev.remainingAmount
+                                        }));
+                                    }}
+                                    required
+                                />
+                            </label>
+                        )}
+
+                        {isLoanOrAdvance ? (
+                            <label className="block">
+                                <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('totalPrincipal')} ({currency})</span>
+                                <input
+                                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    value={form.totalAmount}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        setForm(prev => ({
+                                            ...prev,
+                                            totalAmount: val,
+                                            remainingAmount: prev.remainingAmount === '' || prev.remainingAmount === prev.totalAmount ? val : prev.remainingAmount
+                                        }));
+                                    }}
+                                />
+                            </label>
+                        ) : (
+                            <label className="block">
+                                <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.notes', { defaultValue: 'ملاحظات' })}</span>
+                                <input
+                                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                    value={form.notes}
+                                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                                    placeholder={t('notesPlaceholderDeduction')}
+                                />
+                            </label>
+                        )}
+                    </div>
+
+                    {isLoanOrAdvance && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <label className="block">
+                                <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('remainingBalance')} ({currency})</span>
+                                <input
+                                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={form.remainingAmount}
+                                    onChange={(e) => setForm({ ...form, remainingAmount: e.target.value })}
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.notes', { defaultValue: 'ملاحظات' })}</span>
+                                <input
+                                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                    value={form.notes}
+                                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                                    placeholder={t('notesPlaceholderDeduction')}
+                                />
+                            </label>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.recurrenceType')}</span>
+                            {isLoanOrAdvance ? (
+                                <input
+                                    className="h-10 w-full rounded-xl border border-slate-200 bg-slate-100 px-3 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400"
+                                    value={t('recurrenceTypes.Installment')}
+                                    readOnly
+                                />
+                            ) : (
+                                <select
+                                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                    value={form.recurrenceType}
+                                    onChange={(e) => setForm({ ...form, recurrenceType: e.target.value, maxOccurrences: e.target.value === 'Recurring' ? form.maxOccurrences : '' })}
+                                >
+                                    <option value="OneTime">{t('recurrenceTypes.OneTime')}</option>
+                                    <option value="Recurring">{t('recurrenceTypes.Recurring')}</option>
+                                </select>
+                            )}
+                        </label>
+                        {form.recurrenceType === 'Recurring' && !isLoanOrAdvance ? (
+                            <label className="block">
+                                <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.maxOccurrences')} ({t('optional')})</span>
+                                <input
+                                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                    type="number"
+                                    min="1"
+                                    max="120"
+                                    step="1"
+                                    value={form.maxOccurrences}
+                                    onChange={(e) => setForm({ ...form, maxOccurrences: e.target.value })}
+                                />
+                            </label>
+                        ) : null}
+                    </div>
+
+                    {/* Dates */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.startDate')} *</span>
+                            <input
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                type="date"
+                                value={form.startDate}
+                                onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+                                required
+                            />
+                        </label>
+                        <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.endDate')} ({isArabic ? 'اختياري' : 'Optional'})</span>
+                            <input
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                type="date"
+                                value={form.endDate}
+                                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                            />
+                        </label>
+                    </div>
+                </div>
+
+                <div className="mt-6 flex items-center justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 transition"
+                    >
+                        {t('cancel')}
+                    </button>
+                    <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-5 py-2 text-xs font-black text-white shadow-md shadow-teal-600/20 hover:brightness-110 disabled:opacity-50 transition"
+                    >
+                        {isLoading ? t('saving') : t('saveDeduction')}
+                    </button>
+                </div>
+            </form>
+        </div>,
+        document.body
+    );
+};
+
+/* ── Create Disciplinary Penalty Modal ─────────────────────────── */
+const CreatePenaltyModal = ({
+    isOpen,
+    onClose,
+    form,
+    setForm,
+    onSubmit,
+    isLoading,
+    staff,
+    periods,
+    currency,
+    isArabic,
+    t
+}) => {
+    if (!isOpen) return null;
+
+    return createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm animate-in fade-in" dir={isArabic ? 'rtl' : 'ltr'}>
+            <form
+                onSubmit={onSubmit}
+                className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 animate-in zoom-in-95 duration-200"
+            >
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-2.5">
+                        <span className="grid h-10 w-10 place-items-center rounded-xl bg-rose-500/10 text-rose-700 dark:text-rose-300">
+                            <AlertTriangle size={20} />
+                        </span>
+                        <div>
+                            <h3 className="text-base font-black text-slate-900 dark:text-white">{t('recordDisciplinaryPenalty')}</h3>
+                            <p className="text-xs font-semibold text-slate-400">{t('recordPenaltyHelp')}</p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+
+                <div className="mt-4 space-y-3.5 max-h-[70vh] overflow-y-auto pe-1">
+                    {/* Employee & Penalty Type */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.employee')} *</span>
+                            <select
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                value={form.userId}
+                                onChange={(e) => setForm({ ...form, userId: e.target.value })}
+                                required
+                            >
+                                <option value="">{t('placeholders.employee')}</option>
+                                {staff.map((emp) => (
+                                    <option key={emp.user_id} value={emp.user_id}>{emp.full_name} ({emp.role})</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.penaltyType')} *</span>
+                            <select
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                value={form.penaltyType}
+                                onChange={(e) => setForm({ ...form, penaltyType: e.target.value })}
+                            >
+                                <option value="Policy">{t('penaltyTypes.Policy')}</option>
+                                <option value="Late">{t('penaltyTypes.Late')}</option>
+                                <option value="Absence">{t('penaltyTypes.Absence')}</option>
+                                <option value="Disciplinary">{t('penaltyTypes.Disciplinary')}</option>
+                                <option value="Damage">{t('penaltyTypes.Damage')}</option>
+                                <option value="Other">{t('penaltyTypes.Other')}</option>
+                            </select>
+                        </label>
+                    </div>
+
+                    {/* Amount & Incident Date */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.amount')} ({currency}) *</span>
+                            <input
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                value={form.amount}
+                                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                                required
+                            />
+                        </label>
+                        <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('incidentDate')} *</span>
+                            <input
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                type="date"
+                                value={form.incidentDate || ''}
+                                onChange={(e) => setForm({ ...form, incidentDate: e.target.value })}
+                                required
+                            />
+                        </label>
+                    </div>
+
+                    {/* Source & Target Period */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.source', { defaultValue: 'المصدر' })}</span>
+                            <select
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                value={form.source}
+                                onChange={(e) => setForm({ ...form, source: e.target.value })}
+                            >
+                                <option value="Manual">{t('penaltySources.Manual')}</option>
+                                <option value="Attendance">{t('penaltySources.Attendance')}</option>
+                                <option value="Policy">{t('penaltySources.Policy')}</option>
+                                <option value="Import">{t('penaltySources.Import')}</option>
+                            </select>
+                        </label>
+                        <label className="block">
+                            <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('optionalTargetPeriod')}</span>
+                            <select
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                value={form.payrollPeriodId || ''}
+                                onChange={(e) => setForm({ ...form, payrollPeriodId: e.target.value || undefined })}
+                            >
+                                <option value="">{isArabic ? 'تلقائي على أقرب دورة رواتب' : 'Auto-apply to next cycle'}</option>
+                                {periods.filter(p => ['Draft', 'Calculated'].includes(p.status)).map((p) => (
+                                    <option key={p.period_id} value={p.period_id}>{p.name} ({t(`payrollStatuses.${p.status}`, { defaultValue: p.status })})</option>
+                                ))}
+                            </select>
+                        </label>
+                    </div>
+
+                    {/* Reason */}
+                    <label className="block">
+                        <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">{t('fields.reason')} *</span>
+                        <textarea
+                            className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 resize-none h-24"
+                            value={form.reason}
+                            onChange={(e) => setForm({ ...form, reason: e.target.value })}
+                            placeholder={t('reasonPlaceholder')}
+                            required
+                        />
+                    </label>
+                </div>
+
+                <div className="mt-6 flex items-center justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 transition"
+                    >
+                        {t('cancel')}
+                    </button>
+                    <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 px-5 py-2 text-xs font-black text-white shadow-md shadow-rose-600/20 hover:brightness-110 disabled:opacity-50 transition"
+                    >
+                        {isLoading ? t('saving') : t('savePenalty')}
+                    </button>
+                </div>
+            </form>
+        </div>,
+        document.body
+    );
+};
 
 /* ── Main Payroll Suite ──────────────────────────────────────── */
 const Payroll = () => {
@@ -665,6 +1201,8 @@ const Payroll = () => {
     };
     const [selectedPeriodId, setSelectedPeriodId] = useState(null);
     const [showCreatePeriodModal, setShowCreatePeriodModal] = useState(false);
+    const [showCreateDeductionModal, setShowCreateDeductionModal] = useState(false);
+    const [showCreatePenaltyModal, setShowCreatePenaltyModal] = useState(false);
     const [showSopGuide, setShowSopGuide] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState('BankTransfer');
     const [paymentReference, setPaymentReference] = useState('');
@@ -673,10 +1211,14 @@ const Payroll = () => {
     const [runSearch, setRunSearch] = useState('');
     const [compSearch, setCompSearch] = useState('');
     const [adjustmentFilter, setAdjustmentFilter] = useState('all');
+    const [adjustmentCategory, setAdjustmentCategory] = useState('all');
+    const [adjustmentSearch, setAdjustmentSearch] = useState('');
     const [selectedPayslipItem, setSelectedPayslipItem] = useState(null);
     const [selectedContractProfile, setSelectedContractProfile] = useState(null);
     const [compensationEndDates, setCompensationEndDates] = useState({});
     const [setupDecision, setSetupDecision] = useState(null);
+    const [showSalarySimulator, setShowSalarySimulator] = useState(false);
+    const [showExportMenu, setShowExportMenu] = useState(false);
 
     const [periodForm, setPeriodForm] = useState({
         name: '',
@@ -704,6 +1246,8 @@ const Payroll = () => {
         percentage: '',
         totalAmount: '',
         remainingAmount: '',
+        recurrenceType: 'OneTime',
+        maxOccurrences: '',
         startDate: initialToday,
         endDate: '',
         status: 'Draft',
@@ -716,6 +1260,8 @@ const Payroll = () => {
         reason: '',
         source: 'Manual',
         status: 'Pending Approval',
+        incidentDate: initialToday,
+        payrollPeriodId: '',
     });
     const [ruleForm, setRuleForm] = useState({
         ruleType: 'Allowance',
@@ -795,14 +1341,86 @@ const Payroll = () => {
 
     // Filtered Adjustments
     const filteredDeductions = useMemo(() => {
-        if (adjustmentFilter === 'all') return deductions;
-        return deductions.filter(d => d.status?.toLowerCase() === adjustmentFilter.toLowerCase());
-    }, [deductions, adjustmentFilter]);
+        if (adjustmentCategory === 'penalties') return [];
+        let list = deductions;
+        if (adjustmentCategory === 'loans') {
+            list = list.filter(d => ['Installment', 'Advance', 'Loan'].includes(d.deduction_type));
+        } else if (adjustmentCategory === 'deductions') {
+            list = list.filter(d => !['Installment', 'Advance', 'Loan'].includes(d.deduction_type));
+        }
+        if (adjustmentFilter !== 'all') {
+            const expectedStatus = adjustmentFilter === 'Pending Approval' ? 'Draft' : adjustmentFilter;
+            list = list.filter(d => d.status?.toLowerCase() === expectedStatus.toLowerCase());
+        }
+        if (adjustmentSearch.trim()) {
+            const q = adjustmentSearch.toLowerCase();
+            list = list.filter(d =>
+                (d.name || '').toLowerCase().includes(q) ||
+                (d.employee_name || '').toLowerCase().includes(q) ||
+                (d.deduction_type || '').toLowerCase().includes(q) ||
+                (d.notes || '').toLowerCase().includes(q)
+            );
+        }
+        return list;
+    }, [deductions, adjustmentCategory, adjustmentFilter, adjustmentSearch]);
 
     const filteredPenalties = useMemo(() => {
-        if (adjustmentFilter === 'all') return penalties;
-        return penalties.filter(p => p.status?.toLowerCase() === adjustmentFilter.toLowerCase());
-    }, [penalties, adjustmentFilter]);
+        if (adjustmentCategory === 'loans' || adjustmentCategory === 'deductions') return [];
+        let list = penalties;
+        if (adjustmentFilter !== 'all') {
+            list = list.filter(p => p.status?.toLowerCase() === adjustmentFilter.toLowerCase());
+        }
+        if (adjustmentSearch.trim()) {
+            const q = adjustmentSearch.toLowerCase();
+            list = list.filter(p =>
+                (p.penalty_type || '').toLowerCase().includes(q) ||
+                (p.employee_name || '').toLowerCase().includes(q) ||
+                (p.reason || '').toLowerCase().includes(q) ||
+                (p.source || '').toLowerCase().includes(q)
+            );
+        }
+        return list;
+    }, [penalties, adjustmentCategory, adjustmentFilter, adjustmentSearch]);
+
+    // KPI Summary Metrics for Adjustments
+    const adjustmentStats = useMemo(() => {
+        const activeLoans = deductions.filter(d =>
+            ['Installment', 'Advance', 'Loan'].includes(d.deduction_type) &&
+            ['Approved', 'Draft'].includes(d.status)
+        );
+        const totalLoanBalance = activeLoans.reduce((sum, d) => sum + Number(d.remaining_amount ?? d.total_amount ?? d.amount ?? 0), 0);
+        const activeRecurringCount = deductions.filter(d =>
+            d.recurrence_type === 'Recurring' &&
+            d.status === 'Approved'
+        ).length;
+        const pendingPenalties = penalties.filter(p => p.status === 'Pending Approval').length;
+        const approvedPenaltiesTotal = penalties.filter(p => p.status === 'Approved').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+        return {
+            totalLoanBalance,
+            activeRecurringCount,
+            pendingPenalties,
+            approvedPenaltiesTotal,
+            totalAdjustmentsCount: deductions.length + penalties.length
+        };
+    }, [deductions, penalties]);
+
+    // Pre-Flight Calculation Readiness Audit
+    const preflightAudit = useMemo(() => {
+        const staffWithoutComp = staff.filter(emp => !compensation.some(cp => String(cp.user_id) === String(emp.user_id) && (!cp.effective_to || new Date(cp.effective_to) >= new Date())));
+        const pendingPenalties = penalties.filter(p => p.status === 'Pending Approval');
+        const disputedPenalties = penalties.filter(p => p.acknowledgement_status === 'Disputed');
+        const draftDeductions = deductions.filter(d => d.status === 'Draft');
+        const isReady = staffWithoutComp.length === 0 && pendingPenalties.length === 0 && disputedPenalties.length === 0 && draftDeductions.length === 0;
+
+        return {
+            staffWithoutComp,
+            pendingPenalties,
+            disputedPenalties,
+            draftDeductions,
+            isReady
+        };
+    }, [staff, compensation, penalties, deductions]);
 
     // Mutations
     const [createPeriod, { isLoading: creatingPeriod }] = useCreatePayrollPeriodMutation();
@@ -816,6 +1434,7 @@ const Payroll = () => {
     const [createRule, { isLoading: savingRule }] = useCreatePayrollRuleMutation();
     const [updateDeductionStatus, { isLoading: updatingDeductionStatus }] = useUpdatePayrollDeductionStatusMutation();
     const [updatePenaltyStatus, { isLoading: updatingPenaltyStatus }] = useUpdatePayrollPenaltyStatusMutation();
+    const [resolvePayrollPenaltyDispute, { isLoading: resolvingPenaltyDispute }] = useResolvePayrollPenaltyDisputeMutation();
     const [updateRuleStatus, { isLoading: updatingRuleStatus }] = useUpdatePayrollRuleStatusMutation();
 
     const centerCurrency = /^[A-Z]{3}$/.test(String(centerSettings.currency || '').toUpperCase())
@@ -937,7 +1556,10 @@ const Payroll = () => {
             toast.error(t('noPayrollDataToExport'));
             return;
         }
-        const headers = ['Employee Name', 'Role', 'Gross Earnings', 'Deductions', 'Penalties', 'Employer Contributions', 'Net Pay', 'Currency', 'Period', 'Payment Date', 'Payment Method', 'Payment Reference', 'Run Status'];
+        const headers = [
+            'employeeName', 'role', 'grossEarnings', 'deductions', 'penalties', 'employerContributions',
+            'netPay', 'currency', 'period', 'paymentDate', 'paymentMethod', 'paymentReference', 'runStatus'
+        ].map((key) => csvCell(t(`exportColumns.${key}`)));
         const lines = exportItems.map(it => [
             csvCell(it.employee_name),
             csvCell(it.role),
@@ -951,14 +1573,58 @@ const Payroll = () => {
             csvCell(paymentDate),
             csvCell(paymentMethod),
             csvCell(paymentReference || '-'),
-            csvCell(runStatus)
+            csvCell(t(`payrollStatuses.${runStatus}`, { defaultValue: runStatus }))
         ].join(','));
-        const blob = new Blob([[headers.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob(['\uFEFF' + [headers.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const branchFilePart = String(branchCode || branchName || 'branch').replace(/[^\p{L}\p{N}-]+/gu, '-');
         Object.assign(document.createElement('a'), { href: url, download: `payroll-bank-register-${branchFilePart}-${selectedPeriod?.name || 'run'}-${new Date().toISOString().slice(0, 10)}.csv` }).click();
         URL.revokeObjectURL(url);
         toast.success(t('payrollBankRegisterExported'));
+    };
+
+    const exportWpsFile = () => {
+        if (!permissions.export) {
+            toast.error(missingPermissionText);
+            return;
+        }
+        const exportItems = run?.items || [];
+        if (!exportItems.length) {
+            toast.error(t('noPayrollDataToExport'));
+            return;
+        }
+        const wpsHeaders = [
+            'Employee ID', 'Employee Name', 'Role', 'Fixed Pay', 'Variable / Allowances',
+            'Deductions', 'Penalties', 'Net Pay', 'Currency', 'Payment Method', 'Period Name', 'Disbursement Date'
+        ].map(h => csvCell(h));
+
+        const lines = exportItems.map(it => {
+            const gross = Number(it.gross_earnings || 0);
+            const ded = Number(it.total_deductions || 0);
+            const pen = Number(it.total_penalties || 0);
+            const net = Number(it.net_pay || 0);
+            return [
+                csvCell(it.user_id ? String(it.user_id).slice(0, 8).toUpperCase() : 'EMP'),
+                csvCell(it.employee_name),
+                csvCell(it.role),
+                gross,
+                0,
+                ded,
+                pen,
+                net,
+                csvCell(currency),
+                csvCell(paymentMethod),
+                csvCell(selectedPeriod?.name),
+                csvCell(paymentDate)
+            ].join(',');
+        });
+
+        const blob = new Blob(['\uFEFF' + [wpsHeaders.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const branchFilePart = String(branchCode || branchName || 'branch').replace(/[^\p{L}\p{N}-]+/gu, '-');
+        Object.assign(document.createElement('a'), { href: url, download: `WPS-SIF-Disbursement-${branchFilePart}-${selectedPeriod?.name || 'run'}-${new Date().toISOString().slice(0, 10)}.csv` }).click();
+        URL.revokeObjectURL(url);
+        toast.success(t('exportWpsSuccess'));
     };
 
     const onCreateCompensation = async (e) => {
@@ -986,8 +1652,22 @@ const Payroll = () => {
                 percentage: Number(deductionForm.percentage || 0),
                 totalAmount: deductionForm.totalAmount === '' ? undefined : Number(deductionForm.totalAmount),
                 remainingAmount: deductionForm.remainingAmount === '' ? undefined : Number(deductionForm.remainingAmount),
+                maxOccurrences: deductionForm.maxOccurrences === '' ? undefined : Number(deductionForm.maxOccurrences),
+                branchId: configuredBranchId,
+                currencyCode: currency,
             }).unwrap();
-            setDeductionForm(prev => ({ ...prev, name: '', amount: '', percentage: '', totalAmount: '', remainingAmount: '', notes: '' }));
+            setDeductionForm(prev => ({
+                ...prev,
+                name: '',
+                amount: '',
+                percentage: '',
+                totalAmount: '',
+                remainingAmount: '',
+                maxOccurrences: '',
+                recurrenceType: ['Installment', 'Advance', 'Loan'].includes(prev.deductionType) ? 'Installment' : 'OneTime',
+                notes: ''
+            }));
+            setShowCreateDeductionModal(false);
             toast.success(t('toast.deductionSaved'));
         } catch (error) {
             toast.error(getErrorMessage(error, t('toast.saveFailed')));
@@ -997,8 +1677,16 @@ const Payroll = () => {
     const onCreatePenalty = async (e) => {
         e.preventDefault();
         try {
-            await createPenalty({ ...penaltyForm, amount: Number(penaltyForm.amount || 0) }).unwrap();
+            await createPenalty({
+                ...penaltyForm,
+                amount: Number(penaltyForm.amount || 0),
+                branchId: configuredBranchId,
+                currencyCode: currency,
+                incidentDate: penaltyForm.incidentDate || todayInput(),
+                payrollPeriodId: penaltyForm.payrollPeriodId || undefined,
+            }).unwrap();
             setPenaltyForm(prev => ({ ...prev, amount: '', reason: '' }));
+            setShowCreatePenaltyModal(false);
             toast.success(t('toast.penaltySaved'));
         } catch (error) {
             toast.error(getErrorMessage(error, t('toast.saveFailed')));
@@ -1016,18 +1704,24 @@ const Payroll = () => {
         }
     };
 
-    const executeSetupDecision = async () => {
+    const executeSetupDecision = async (reason = '') => {
         if (!setupDecision) return;
         const { kind, id, status } = setupDecision;
-        const mutation = kind === 'deduction'
-            ? updateDeductionStatus
-            : kind === 'penalty' ? updatePenaltyStatus : updateRuleStatus;
         try {
-            await mutation({
-                id,
-                status,
-                notes: t('actionCompletedFromPayrollWorkspace')
-            }).unwrap();
+            if (kind === 'penaltyDispute') {
+                await resolvePayrollPenaltyDispute({ id, status, resolution: reason }).unwrap();
+            } else {
+                const mutation = kind === 'deduction'
+                    ? updateDeductionStatus
+                    : kind === 'penalty' ? updatePenaltyStatus : updateRuleStatus;
+                await mutation({
+                    id,
+                    status,
+                    notes: reason || (kind === 'penalty' && status === 'Cancelled'
+                        ? undefined
+                        : t('actionCompletedFromPayrollWorkspace'))
+                }).unwrap();
+            }
             toast.success(t('statusUpdated'));
             setSetupDecision(null);
         } catch (error) {
@@ -1051,7 +1745,9 @@ const Payroll = () => {
     };
 
     const workflowNeedsNotes = ['Approved', 'Cancelled'].includes(workflowDecision?.status);
-    const updatingSetupStatus = updatingDeductionStatus || updatingPenaltyStatus || updatingRuleStatus;
+    const setupDecisionNeedsReason = setupDecision?.kind === 'penaltyDispute'
+        || (setupDecision?.kind === 'penalty' && setupDecision.status === 'Cancelled');
+    const updatingSetupStatus = updatingDeductionStatus || updatingPenaltyStatus || updatingRuleStatus || resolvingPenaltyDispute;
 
     // Tabs Definition
     const navTabs = [
@@ -1101,20 +1797,20 @@ const Payroll = () => {
                 description={t('header.description')}
                 meta={
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-3 py-1 text-xs font-black text-indigo-700 dark:text-indigo-300">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-3 py-1 text-xs font-black text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
                             <Building2 size={13} />
                             <span>{branchName}</span>
                             {branchCode ? <span className="font-mono opacity-70">({branchCode})</span> : null}
                         </span>
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-bold text-teal-700 dark:text-teal-300">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-bold text-teal-700 dark:text-teal-300 whitespace-nowrap">
                             <Zap size={13} className="text-teal-600 dark:text-teal-400" />
                             <span>{selectedPeriod?.name || (t('noPeriodSelected'))}</span>
                         </span>
-                        <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 whitespace-nowrap">
                             {currency} · {t('header.controlled')}
                         </span>
-                        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-black ${statusTone[runStatus] || statusTone.Draft}`}>
-                            {runStatus}
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-black whitespace-nowrap ${statusTone[runStatus] || statusTone.Draft}`}>
+                            {t(`payrollStatuses.${runStatus}`, { defaultValue: runStatus })}
                         </span>
                     </div>
                 }
@@ -1158,7 +1854,7 @@ const Payroll = () => {
                         <button
                             type="button"
                             onClick={() => setShowSopGuide(!showSopGuide)}
-                            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/90 px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/90 px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 whitespace-nowrap"
                         >
                             <BookOpen size={14} className="text-teal-600" />
                             <span>{t('operatingSop')}</span>
@@ -1169,28 +1865,72 @@ const Payroll = () => {
                             onClick={() => setShowCreatePeriodModal(true)}
                             disabled={!permissions.createPeriod}
                             title={disabledReason(permissions.createPeriod)}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-xs font-bold text-white shadow-md shadow-teal-600/20 transition hover:brightness-110 disabled:opacity-40"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-xs font-bold text-white shadow-md shadow-teal-600/20 transition hover:brightness-110 disabled:opacity-40 whitespace-nowrap"
                         >
                             <Plus size={15} />
                             <span>{t('actions.createPeriod')}</span>
                         </button>
                         <button
                             type="button"
-                            onClick={exportBankFile}
-                            disabled={!permissions.export}
-                            title={disabledReason(permissions.export)}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                            onClick={() => setShowSalarySimulator(true)}
+                            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3.5 text-xs font-bold text-teal-800 transition hover:bg-teal-500/20 dark:text-teal-300 whitespace-nowrap"
                         >
-                            <Download size={14} />
-                            <span>{t('exportBankFile')}</span>
+                            <Calculator size={14} className="text-teal-600 dark:text-teal-400" />
+                            <span>{t('salarySimulator')}</span>
                         </button>
+
+                        {/* Unified Export Menu */}
+                        <div className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setShowExportMenu(!showExportMenu)}
+                                disabled={!permissions.export}
+                                title={disabledReason(permissions.export)}
+                                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 whitespace-nowrap"
+                            >
+                                <Download size={14} className="text-teal-600 dark:text-teal-400" />
+                                <span>{isArabic ? 'تصدير مسير الرواتب' : 'Export Payroll'}</span>
+                                <ChevronDown size={13} className={`transition-transform duration-200 ${showExportMenu ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {showExportMenu && (
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
+                                    <div className="absolute end-0 top-full mt-1.5 z-50 min-w-[240px] rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-800 dark:bg-slate-900 animate-in fade-in zoom-in-95">
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowExportMenu(false); exportBankFile(); }}
+                                            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-start text-xs font-bold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
+                                        >
+                                            <FileSpreadsheet size={15} className="text-teal-600 shrink-0" />
+                                            <div>
+                                                <div className="font-black">{t('exportBankFile')}</div>
+                                                <div className="text-[10px] font-normal text-slate-400">{isArabic ? 'سجل الرواتب التفصيلي (Excel / CSV)' : 'Detailed Payroll Register'}</div>
+                                            </div>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowExportMenu(false); exportWpsFile(); }}
+                                            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-start text-xs font-bold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
+                                        >
+                                            <Building2 size={15} className="text-emerald-600 shrink-0" />
+                                            <div>
+                                                <div className="font-black">{t('exportWps')}</div>
+                                                <div className="text-[10px] font-normal text-slate-400">{isArabic ? 'مسير حماية الأجور والتحويل المباشر' : 'Wage Protection System (WPS / SIF)'}</div>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
                         <button
                             type="button"
                             onClick={refreshAll}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                            title={t('refresh')}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-xs transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                         >
                             <RefreshCw size={14} className={periodsLoading ? 'animate-spin' : ''} />
-                            {t('refresh')}
                         </button>
                     </div>
                 }
@@ -1435,7 +2175,7 @@ const Payroll = () => {
                                             <div className="flex items-center gap-1.5">
                                                 <span className="text-xs font-black text-slate-900 dark:text-white">{period.name}</span>
                                                 <span className={`rounded-full border px-1.5 py-0.2 text-[9px] font-black ${statusTone[period.status] || statusTone.Draft}`}>
-                                                    {period.status}
+                                                    {t(`payrollStatuses.${period.status}`, { defaultValue: period.status })}
                                                 </span>
                                             </div>
                                             <div className="mt-1 flex items-center gap-2 text-[10px] font-semibold text-slate-400">
@@ -1504,7 +2244,7 @@ const Payroll = () => {
                                                 <p className="font-mono text-xs font-black whitespace-nowrap text-teal-700 dark:text-teal-400">{money(item.net_pay, currency)}</p>
                                                 <span className="inline-flex items-center gap-1 text-[9.5px] font-black text-slate-400 group-hover:text-teal-600">
                                                     <Eye size={10} />
-                                                    <span>{t('payslip')}</span>
+                                                    <span>{t('payslip.title', { defaultValue: 'قسيمة الراتب' })}</span>
                                                 </span>
                                             </div>
                                         </div>
@@ -1542,7 +2282,7 @@ const Payroll = () => {
                                         <p className="text-xs font-semibold text-slate-400">{selectedPeriod?.name || t('workflow.noPeriod')}</p>
                                     </div>
                                     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-black ${statusTone[runStatus] || statusTone.Draft}`}>
-                                        {runStatus}
+                                        {t(`payrollStatuses.${runStatus}`, { defaultValue: runStatus })}
                                     </span>
                                 </div>
 
@@ -1569,6 +2309,90 @@ const Payroll = () => {
                                             );
                                         })}
                                     </div>
+                                </div>
+
+                                {/* Pre-Flight Calculation Readiness Widget */}
+                                <div className={`rounded-2xl border p-3.5 transition-colors ${
+                                    preflightAudit.isReady
+                                        ? 'border-emerald-500/30 bg-emerald-500/10 dark:border-emerald-500/20'
+                                        : 'border-amber-500/30 bg-amber-500/10 dark:border-amber-500/20'
+                                }`}>
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            {preflightAudit.isReady ? (
+                                                <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />
+                                            ) : (
+                                                <AlertTriangle size={15} className="text-amber-600 dark:text-amber-400" />
+                                            )}
+                                            <span className="text-xs font-black text-slate-900 dark:text-white">
+                                                {t('preflightCheck.title')}
+                                            </span>
+                                        </div>
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                                            preflightAudit.isReady
+                                                ? 'bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-500/30'
+                                                : 'bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/30'
+                                        }`}>
+                                            {preflightAudit.isReady ? (isArabic ? 'جاهز للاحتساب' : 'Ready') : (isArabic ? 'تنبيهات تدقيق' : 'Audit Notices')}
+                                        </span>
+                                    </div>
+
+                                    {preflightAudit.isReady ? (
+                                        <p className="mt-1.5 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                                            {t('preflightCheck.allReady')}
+                                        </p>
+                                    ) : (
+                                        <div className="mt-2.5 space-y-1.5 text-[10.5px] font-bold">
+                                            {preflightAudit.staffWithoutComp.length > 0 && (
+                                                <div className="flex items-center justify-between gap-2 text-amber-800 dark:text-amber-300">
+                                                    <span className="truncate">• {t('preflightCheck.missingComp', { count: preflightAudit.staffWithoutComp.length })}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setActiveTab('compensation')}
+                                                        className="shrink-0 text-[10px] font-black text-teal-700 dark:text-teal-400 hover:underline"
+                                                    >
+                                                        {isArabic ? 'إعداد' : 'Setup'}
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {preflightAudit.pendingPenalties.length > 0 && (
+                                                <div className="flex items-center justify-between gap-2 text-amber-800 dark:text-amber-300">
+                                                    <span className="truncate">• {t('preflightCheck.pendingPenalties', { count: preflightAudit.pendingPenalties.length })}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setActiveTab('adjustments'); setAdjustmentCategory('penalties'); }}
+                                                        className="shrink-0 text-[10px] font-black text-teal-700 dark:text-teal-400 hover:underline"
+                                                    >
+                                                        {isArabic ? 'مراجعة' : 'Review'}
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {preflightAudit.disputedPenalties.length > 0 && (
+                                                <div className="flex items-center justify-between gap-2 text-indigo-800 dark:text-indigo-300">
+                                                    <span className="truncate">• {t('preflightCheck.disputedPenalties', { count: preflightAudit.disputedPenalties.length })}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setActiveTab('adjustments'); setAdjustmentCategory('penalties'); }}
+                                                        className="shrink-0 text-[10px] font-black text-indigo-700 dark:text-indigo-400 hover:underline"
+                                                    >
+                                                        {isArabic ? 'النزاعات' : 'Disputes'}
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {preflightAudit.draftDeductions.length > 0 && (
+                                                <div className="flex items-center justify-between gap-2 text-amber-800 dark:text-amber-300">
+                                                    <span className="truncate">• {t('preflightCheck.draftDeductions', { count: preflightAudit.draftDeductions.length })}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setActiveTab('adjustments'); setAdjustmentCategory('loans'); }}
+                                                        className="shrink-0 text-[10px] font-black text-teal-700 dark:text-teal-400 hover:underline"
+                                                    >
+                                                        {isArabic ? 'اعتماد' : 'Approve'}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Action Buttons Grid */}
@@ -1818,129 +2642,444 @@ const Payroll = () => {
                 </div>
             )}
 
-            {/* TAB 3: DEDUCTIONS & PENALTIES */}
+            {/* TAB 3: DEDUCTIONS, LOANS & PENALTIES */}
             {activeTab === 'adjustments' && (
                 <div className="space-y-4">
-                    {/* Status Filter Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2.5 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
-                        <div className="flex flex-wrap gap-1">
-                            {[
-                                { key: 'all', label: t('allAdjustments') },
-                                { key: 'Pending Approval', label: t('pendingApproval') },
-                                { key: 'Approved', label: t('approved') },
-                                { key: 'Paused', label: t('paused') },
-                            ].map(filter => (
-                                <button
-                                    key={filter.key}
-                                    type="button"
-                                    onClick={() => setAdjustmentFilter(filter.key)}
-                                    className={`rounded-xl px-3 py-1 text-xs font-bold transition-all ${adjustmentFilter === filter.key
-                                            ? 'bg-teal-700 text-white shadow-xs font-black'
-                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                                        }`}
-                                >
-                                    {filter.label}
-                                </button>
-                            ))}
+                    {/* 1. KPI Summary Cards Strip */}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-4 backdrop-blur-xl dark:border-teal-500/10 dark:bg-teal-500/5">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-black uppercase tracking-wider text-teal-800 dark:text-teal-300">
+                                    {t('activeLoanBalances')}
+                                </span>
+                                <span className="grid h-8 w-8 place-items-center rounded-xl bg-teal-600 text-white shadow-2xs">
+                                    <Coins size={16} />
+                                </span>
+                            </div>
+                            <p className="mt-2 font-mono text-xl font-black text-teal-950 dark:text-teal-100">
+                                {money(adjustmentStats.totalLoanBalance, currency)}
+                            </p>
+                            <p className="mt-0.5 text-[10.5px] font-bold text-teal-700/80 dark:text-teal-300/80">
+                                {t('loansAndAdvances')}
+                            </p>
+                        </div>
+
+                        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 backdrop-blur-xl dark:border-amber-500/10 dark:bg-amber-500/5">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                                    {t('activeDeductionsCount')}
+                                </span>
+                                <span className="grid h-8 w-8 place-items-center rounded-xl bg-amber-600 text-white shadow-2xs">
+                                    <MinusCircle size={16} />
+                                </span>
+                            </div>
+                            <p className="mt-2 font-mono text-xl font-black text-amber-950 dark:text-amber-100">
+                                {adjustmentStats.activeRecurringCount}
+                            </p>
+                            <p className="mt-0.5 text-[10.5px] font-bold text-amber-700/80 dark:text-amber-300/80">
+                                {t('recurringDeductions')}
+                            </p>
+                        </div>
+
+                        <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4 backdrop-blur-xl dark:border-rose-500/10 dark:bg-rose-500/5">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-black uppercase tracking-wider text-rose-800 dark:text-rose-300">
+                                    {t('pendingPenaltiesCount')}
+                                </span>
+                                <span className="grid h-8 w-8 place-items-center rounded-xl bg-rose-600 text-white shadow-2xs">
+                                    <AlertTriangle size={16} />
+                                </span>
+                            </div>
+                            <p className="mt-2 font-mono text-xl font-black text-rose-950 dark:text-rose-100">
+                                {adjustmentStats.pendingPenalties}
+                            </p>
+                            <p className="mt-0.5 text-[10.5px] font-bold text-rose-700/80 dark:text-rose-300/80">
+                                {t('pendingApproval')}
+                            </p>
+                        </div>
+
+                        <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-4 backdrop-blur-xl dark:border-indigo-500/10 dark:bg-indigo-500/5">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-black uppercase tracking-wider text-indigo-800 dark:text-indigo-300">
+                                    {t('approvedPenaltiesCount')}
+                                </span>
+                                <span className="grid h-8 w-8 place-items-center rounded-xl bg-indigo-600 text-white shadow-2xs">
+                                    <ShieldCheck size={16} />
+                                </span>
+                            </div>
+                            <p className="mt-2 font-mono text-xl font-black text-indigo-950 dark:text-indigo-100">
+                                {money(adjustmentStats.approvedPenaltiesTotal, currency)}
+                            </p>
+                            <p className="mt-0.5 text-[10.5px] font-bold text-indigo-700/80 dark:text-indigo-300/80">
+                                {t('disciplinaryPenalties')}
+                            </p>
                         </div>
                     </div>
 
-                    <div className="grid gap-4 lg:grid-cols-2">
-                        {/* Deductions List */}
-                        <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                                    {t('setup.deductions')} ({filteredDeductions.length})
-                                </h3>
+                    {/* 2. Unified Toolbar (Search, Category Filters, Status Filters & Action Buttons) */}
+                    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 lg:flex-row lg:items-center lg:justify-between">
+                        {/* Search & Category Pills */}
+                        <div className="flex flex-1 flex-wrap items-center gap-2">
+                            <div className="relative min-w-[220px] max-w-xs flex-1">
+                                <Search size={14} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    value={adjustmentSearch}
+                                    onChange={(e) => setAdjustmentSearch(e.target.value)}
+                                    placeholder={t('searchAdjustments')}
+                                    className="h-9 w-full rounded-xl border border-slate-200 bg-white ps-9 pe-3 text-xs font-bold text-slate-800 outline-none focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                />
                             </div>
-                            <div className="mt-3 max-h-[480px] space-y-2.5 overflow-y-auto pe-1">
-                                {filteredDeductions.map((row) => (
-                                    <div key={row.deduction_id} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div className="min-w-0">
-                                                <p className="truncate text-xs font-black text-slate-900 dark:text-white">{row.name}</p>
-                                                <p className="text-[10px] font-semibold text-slate-400">{row.employee_name} · {row.deduction_type}</p>
-                                            </div>
-                                            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-black text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                                                {row.status}
-                                            </span>
-                                        </div>
-                                        <div className="mt-2 flex items-center justify-between text-xs font-black">
-                                            <span className="font-mono">{row.deduction_type === 'Percentage' ? `${Number(row.percentage || 0)}%` : money(row.amount, currency)}</span>
-                                            {row.remaining_amount != null && ['Installment', 'Advance', 'Loan'].includes(row.deduction_type) && (
-                                                <span className="text-amber-700 dark:text-amber-400 font-mono text-[11px]">
-                                                    {t('rem')} {money(row.remaining_amount, currency)}
-                                                </span>
-                                            )}
-                                        </div>
-                                        {!!adjustmentActions('deduction', row.status).length && (
-                                            <div className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2 dark:border-slate-800">
-                                                {adjustmentActions('deduction', row.status).map((status) => (
-                                                    <button
-                                                        key={status}
-                                                        type="button"
-                                                        disabled={!permissions.approve || updatingSetupStatus}
-                                                        onClick={() => setSetupDecision({ kind: 'deduction', id: row.deduction_id, status, name: row.name })}
-                                                        className={`rounded-lg px-2.5 py-1 text-[10px] font-black text-white ${status === 'Approved' ? 'bg-emerald-600' : status === 'Paused' ? 'bg-amber-600' : 'bg-rose-600'}`}
-                                                    >
-                                                        {actionLabel(status, t)}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
+
+                            <div className="flex flex-wrap items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                                {[
+                                    { key: 'all', label: t('allCategories') },
+                                    { key: 'loans', label: t('loansAndAdvances') },
+                                    { key: 'deductions', label: t('setup.deductions') },
+                                    { key: 'penalties', label: t('disciplinaryPenalties') },
+                                ].map((cat) => (
+                                    <button
+                                        key={cat.key}
+                                        type="button"
+                                        onClick={() => setAdjustmentCategory(cat.key)}
+                                        className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${adjustmentCategory === cat.key
+                                            ? 'bg-white text-teal-800 shadow-2xs font-black dark:bg-slate-900 dark:text-teal-300'
+                                            : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                                            }`}
+                                    >
+                                        {cat.label}
+                                    </button>
                                 ))}
-                                {!filteredDeductions.length && (
-                                    <p className="py-6 text-center text-xs font-bold text-slate-400">{t('inputs.emptyDeductions')}</p>
-                                )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1 border-s border-slate-200 ps-2 dark:border-slate-800">
+                                {[
+                                    { key: 'all', label: t('allAdjustments') },
+                                    { key: 'Pending Approval', label: t('pendingApproval') },
+                                    { key: 'Approved', label: t('approved') },
+                                    { key: 'Paused', label: t('paused') },
+                                ].map((filter) => (
+                                    <button
+                                        key={filter.key}
+                                        type="button"
+                                        onClick={() => setAdjustmentFilter(filter.key)}
+                                        className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${adjustmentFilter === filter.key
+                                            ? 'bg-teal-700 text-white shadow-2xs font-black'
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                                            }`}
+                                    >
+                                        {filter.label}
+                                    </button>
+                                ))}
                             </div>
                         </div>
 
-                        {/* Penalties List */}
-                        <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
-                            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                                    {t('setup.penalties')} ({filteredPenalties.length})
-                                </h3>
-                            </div>
-                            <div className="mt-3 max-h-[480px] space-y-2.5 overflow-y-auto pe-1">
-                                {filteredPenalties.map((row) => (
-                                    <div key={row.penalty_id} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div className="min-w-0">
-                                                <p className="truncate text-xs font-black text-slate-900 dark:text-white">{row.penalty_type}</p>
-                                                <p className="text-[10px] font-semibold text-slate-400">{row.employee_name} · {row.source}</p>
-                                            </div>
-                                            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-black text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                                                {row.status}
-                                            </span>
-                                        </div>
-                                        <div className="mt-2 flex items-center justify-between text-xs font-black">
-                                            <span className="font-mono text-rose-600">{money(row.amount, currency)}</span>
-                                            <span className="text-[10px] font-medium text-slate-400 truncate max-w-[150px]">{row.reason}</span>
-                                        </div>
-                                        {!!adjustmentActions('penalty', row.status).length && (
-                                            <div className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2 dark:border-slate-800">
-                                                {adjustmentActions('penalty', row.status).map((status) => (
-                                                    <button
-                                                        key={status}
-                                                        type="button"
-                                                        disabled={!permissions.approve || updatingSetupStatus}
-                                                        onClick={() => setSetupDecision({ kind: 'penalty', id: row.penalty_id, status, name: row.penalty_type })}
-                                                        className={`rounded-lg px-2.5 py-1 text-[10px] font-black text-white ${status === 'Approved' ? 'bg-emerald-600' : 'bg-rose-600'}`}
-                                                    >
-                                                        {actionLabel(status, t)}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                                {!filteredPenalties.length && (
-                                    <p className="py-6 text-center text-xs font-bold text-slate-400">{t('inputs.emptyPenalties')}</p>
-                                )}
-                            </div>
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setDeductionForm({
+                                        userId: '',
+                                        name: '',
+                                        deductionType: 'Advance',
+                                        amount: '',
+                                        percentage: '',
+                                        totalAmount: '',
+                                        remainingAmount: '',
+                                        recurrenceType: 'Installment',
+                                        maxOccurrences: '',
+                                        startDate: initialToday,
+                                        endDate: '',
+                                        status: 'Draft',
+                                        notes: '',
+                                    });
+                                    setShowCreateDeductionModal(true);
+                                }}
+                                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-3.5 text-xs font-bold text-white shadow-xs hover:brightness-110 transition"
+                            >
+                                <Plus size={14} />
+                                <span>{t('addDeductionOrLoan')}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPenaltyForm({
+                                        userId: '',
+                                        penaltyType: 'Policy',
+                                        amount: '',
+                                        reason: '',
+                                        source: 'Manual',
+                                        status: 'Pending Approval',
+                                        incidentDate: initialToday,
+                                        payrollPeriodId: '',
+                                    });
+                                    setShowCreatePenaltyModal(true);
+                                }}
+                                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 px-3.5 text-xs font-bold text-white shadow-xs hover:brightness-110 transition"
+                            >
+                                <Plus size={14} />
+                                <span>{t('recordDisciplinaryPenalty')}</span>
+                            </button>
                         </div>
+                    </div>
+
+                    {/* 3. Deductions, Loans & Penalties Lists Grid */}
+                    <div className="grid gap-4 lg:grid-cols-2">
+                        {/* Left: Deductions & Loans */}
+                        {adjustmentCategory !== 'penalties' && (
+                            <div className={`rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 ${adjustmentCategory === 'loans' || adjustmentCategory === 'deductions' ? 'lg:col-span-2' : ''}`}>
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-2">
+                                        <Coins size={16} className="text-teal-600" />
+                                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                                            {t('setup.deductions')} & {t('loansAndAdvances')} ({filteredDeductions.length})
+                                        </h3>
+                                    </div>
+                                </div>
+                                <div className="mt-3 max-h-[580px] space-y-3 overflow-y-auto pe-1">
+                                    {filteredDeductions.map((row) => {
+                                        const isLoan = ['Installment', 'Advance', 'Loan'].includes(row.deduction_type);
+                                        const createdByCurrentUser = String(row.created_by) === String(user?.user_id) && user?.role !== 'Developer';
+                                        const totalAmt = Number(row.total_amount || row.amount || 0);
+                                        const remAmt = Number(row.remaining_amount ?? totalAmt);
+                                        const paidAmt = Math.max(0, totalAmt - remAmt);
+                                        const progressPercent = totalAmt > 0 ? Math.min(100, Math.round((paidAmt / totalAmt) * 100)) : 0;
+
+                                        return (
+                                            <div
+                                                key={row.deduction_id}
+                                                className="rounded-2xl border border-slate-200/90 bg-slate-50/70 p-3.5 transition-all hover:border-teal-500/40 hover:bg-white dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/80 shadow-2xs"
+                                            >
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="truncate text-xs font-black text-slate-900 dark:text-white">{row.name}</p>
+                                                            <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.2 text-[9px] font-black border ${row.deduction_type === 'Advance'
+                                                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                                                                : row.deduction_type === 'Loan'
+                                                                    ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-800 dark:text-indigo-300'
+                                                                    : row.deduction_type === 'Installment'
+                                                                        ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-800 dark:text-cyan-300'
+                                                                        : row.deduction_type === 'Percentage'
+                                                                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300'
+                                                                            : 'border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                                                }`}>
+                                                                {t(`deductionTypes.${row.deduction_type}`, { defaultValue: row.deduction_type })}
+                                                            </span>
+                                                        </div>
+                                                        <p className="mt-0.5 text-[10.5px] font-semibold text-slate-500 dark:text-slate-400">
+                                                            {row.employee_name} · {row.start_date?.slice(0, 10)} {row.end_date ? `→ ${row.end_date.slice(0, 10)}` : ''}
+                                                        </p>
+                                                    </div>
+                                                    <span className={`rounded-full border px-2 py-0.5 text-[9.5px] font-black ${statusTone[row.status] || statusTone.Draft}`}>
+                                                        {t(`deductionStatuses.${row.status}`, { defaultValue: row.status })}
+                                                    </span>
+                                                </div>
+
+                                                {/* Financials Strip */}
+                                                <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-3 rounded-xl bg-white p-2.5 border border-slate-100 dark:bg-slate-900/90 dark:border-slate-800">
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-slate-400">{t('summary.deductions')}</span>
+                                                        <p className="font-mono text-xs font-black text-slate-900 dark:text-white">
+                                                            {row.deduction_type === 'Percentage' ? `${Number(row.percentage || 0)}%` : money(row.amount, currency)}
+                                                        </p>
+                                                    </div>
+                                                    {isLoan && (
+                                                        <>
+                                                            <div>
+                                                                <span className="text-[10px] font-bold text-slate-400">{t('totalPrincipal')}</span>
+                                                                <p className="font-mono text-xs font-black text-slate-700 dark:text-slate-300">
+                                                                    {money(totalAmt, currency)}
+                                                                </p>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-[10px] font-bold text-slate-400">{t('remainingBalance')}</span>
+                                                                <p className="font-mono text-xs font-black text-amber-600 dark:text-amber-400">
+                                                                    {money(remAmt, currency)}
+                                                                </p>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+
+                                                {/* Loan Repayment Progress Bar */}
+                                                {isLoan && totalAmt > 0 && (
+                                                    <div className="mt-2 space-y-1">
+                                                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                                                            <span>{t('loanProgress')}: {progressPercent}% ({t('repaid')} {money(paidAmt, currency)})</span>
+                                                            <span className="font-mono">{money(remAmt, currency)} {t('rem')}</span>
+                                                        </div>
+                                                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                                                            <div
+                                                                className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-all duration-300"
+                                                                style={{ width: `${progressPercent}%` }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {row.notes && (
+                                                    <p className="mt-2 text-[10.5px] italic text-slate-500 dark:text-slate-400">
+                                                        "{row.notes}"
+                                                    </p>
+                                                )}
+
+                                                {/* Action Buttons */}
+                                                {!!adjustmentActions('deduction', row.status).length && (
+                                                    <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2 dark:border-slate-800">
+                                                        {adjustmentActions('deduction', row.status).map((status) => (
+                                                            <button
+                                                                key={status}
+                                                                type="button"
+                                                                disabled={!permissions.approve
+                                                                    || updatingSetupStatus
+                                                                    || (status === 'Approved' && createdByCurrentUser)
+                                                                    || (Boolean(row.payroll_period_id) && status !== 'Approved')}
+                                                                title={status === 'Approved' && createdByCurrentUser
+                                                                    ? t('deductionReview.selfApprovalBlocked')
+                                                                    : Boolean(row.payroll_period_id) && status !== 'Approved'
+                                                                        ? t('deductionReview.runReservationBlocked')
+                                                                        : disabledReason(permissions.approve)}
+                                                                onClick={() => setSetupDecision({ kind: 'deduction', id: row.deduction_id, status, name: row.name })}
+                                                                className={`rounded-lg px-2.5 py-1 text-[10px] font-black text-white transition ${status === 'Approved'
+                                                                    ? 'bg-emerald-600 hover:bg-emerald-500'
+                                                                    : status === 'Paused'
+                                                                        ? 'bg-amber-600 hover:bg-amber-500'
+                                                                        : 'bg-rose-600 hover:bg-rose-500'
+                                                                    }`}
+                                                            >
+                                                                {actionLabel(status, t)}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                    {!filteredDeductions.length && (
+                                        <div className="p-8 text-center text-xs font-bold text-slate-400">
+                                            {t('inputs.emptyDeductions')}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Right: Disciplinary Penalties */}
+                        {adjustmentCategory !== 'loans' && adjustmentCategory !== 'deductions' && (
+                            <div className={`rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 ${adjustmentCategory === 'penalties' ? 'lg:col-span-2' : ''}`}>
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-2">
+                                        <AlertTriangle size={16} className="text-rose-600" />
+                                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                                            {t('setup.penalties')} ({filteredPenalties.length})
+                                        </h3>
+                                    </div>
+                                </div>
+                                <div className="mt-3 max-h-[580px] space-y-3 overflow-y-auto pe-1">
+                                    {filteredPenalties.map((row) => {
+                                        const canReviewPenalty = user?.role === 'Developer' || String(row.created_by) !== String(user?.user_id);
+                                        return (
+                                        <div
+                                            key={row.penalty_id}
+                                            className="rounded-2xl border border-slate-200/90 bg-slate-50/70 p-3.5 transition-all hover:border-rose-500/40 hover:bg-white dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/80 shadow-2xs"
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.2 text-[9px] font-black text-rose-800 dark:text-rose-300">
+                                                            {t(`penaltyTypes.${row.penalty_type}`, { defaultValue: row.penalty_type })}
+                                                        </span>
+                                                        <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.2 text-[9px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                                                            {t(`penaltySources.${row.source}`, { defaultValue: row.source })}
+                                                        </span>
+                                                    </div>
+                                                    <p className="mt-1 text-xs font-black text-slate-900 dark:text-white">
+                                                        {row.employee_name}
+                                                    </p>
+                                                    <p className="text-[10px] font-semibold text-slate-400">
+                                                        {t('incidentDate')}: {row.incident_date?.slice(0, 10) || row.created_at?.slice(0, 10)}
+                                                    </p>
+                                                </div>
+                                                <div className="text-end">
+                                                    <p className="font-mono text-xs font-black text-rose-600 dark:text-rose-400">
+                                                        {money(row.amount, currency)}
+                                                    </p>
+                                                    <span className={`mt-0.5 inline-flex rounded-full border px-2 py-0.5 text-[9.5px] font-black ${statusTone[row.status] || statusTone.Draft}`}>
+                                                        {t(`penaltyStatuses.${row.status}`, { defaultValue: row.status })}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Reason Box */}
+                                            <div className="mt-2.5 rounded-xl border border-rose-100 bg-rose-50/50 p-2.5 text-[11px] leading-relaxed text-slate-700 dark:border-rose-900/30 dark:bg-rose-950/20 dark:text-slate-300">
+                                                <p className="font-bold text-rose-950 dark:text-rose-200">{t('fields.reason')}:</p>
+                                                <p className="mt-0.5">{row.reason}</p>
+                                            </div>
+
+                                            {row.acknowledgement_status ? (
+                                                <div className="mt-2.5 rounded-xl border border-slate-200 bg-white p-2.5 text-[11px] dark:border-slate-800 dark:bg-slate-900">
+                                                    <p className="font-bold text-slate-700 dark:text-slate-200">{t(`acknowledgementStatuses.${row.acknowledgement_status}`, { defaultValue: row.acknowledgement_status })}</p>
+                                                    {row.acknowledgement_status === 'Disputed' && row.dispute_reason ? (
+                                                        <p className="mt-1 text-slate-600 dark:text-slate-400">{row.dispute_reason}</p>
+                                                    ) : null}
+                                                    {row.acknowledgement_status === 'Resolved' && row.dispute_resolution ? (
+                                                        <p className="mt-1 text-slate-600 dark:text-slate-400">{row.dispute_resolution}</p>
+                                                    ) : null}
+                                                </div>
+                                            ) : null}
+
+                                            {row.acknowledgement_status === 'Disputed' ? (
+                                                <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2 dark:border-slate-800">
+                                                    <button
+                                                        type="button"
+                                                        disabled={!permissions.approve || resolvingPenaltyDispute}
+                                                        onClick={() => setSetupDecision({ kind: 'penaltyDispute', id: row.penalty_id, status: 'Approved', name: row.penalty_type })}
+                                                        className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[10px] font-black text-white transition hover:bg-emerald-500 disabled:opacity-50"
+                                                    >
+                                                        {t('disputeReview.uphold')}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={!permissions.approve || resolvingPenaltyDispute}
+                                                        onClick={() => setSetupDecision({ kind: 'penaltyDispute', id: row.penalty_id, status: 'Rejected', name: row.penalty_type })}
+                                                        className="rounded-lg bg-rose-600 px-2.5 py-1 text-[10px] font-black text-white transition hover:bg-rose-500 disabled:opacity-50"
+                                                    >
+                                                        {t('disputeReview.reject')}
+                                                    </button>
+                                                </div>
+                                            ) : null}
+
+                                            {/* Action Buttons */}
+                                            {canReviewPenalty && !!adjustmentActions('penalty', row.status).length && (
+                                                <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2 dark:border-slate-800">
+                                                    {adjustmentActions('penalty', row.status).map((status) => (
+                                                        <button
+                                                            key={status}
+                                                            type="button"
+                                                            disabled={!permissions.approve || updatingSetupStatus}
+                                                            onClick={() => setSetupDecision({ kind: 'penalty', id: row.penalty_id, status, name: row.penalty_type })}
+                                                            className={`rounded-lg px-2.5 py-1 text-[10px] font-black text-white transition ${status === 'Approved'
+                                                                ? 'bg-emerald-600 hover:bg-emerald-500'
+                                                                : 'bg-rose-600 hover:bg-rose-500'
+                                                                }`}
+                                                        >
+                                                            {actionLabel(status, t)}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        );
+                                    })}
+                                    {!filteredPenalties.length && (
+                                        <div className="p-8 text-center text-xs font-bold text-slate-400">
+                                            {t('inputs.emptyPenalties')}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -2034,15 +3173,34 @@ const Payroll = () => {
                 )
             )}
 
-            {setupDecision && (
+            {setupDecision && (setupDecisionNeedsReason ? (
+                <TextPromptDialog
+                    isOpen
+                    title={setupDecision.kind === 'penaltyDispute' ? t('disputeReview.title') : t('penaltyReview.cancelTitle')}
+                    message={setupDecision.kind === 'penaltyDispute'
+                        ? t('disputeReview.message', { status: t(`disputeReview.outcomes.${setupDecision.status}`), name: setupDecision.name })
+                        : t('penaltyReview.cancelMessage', { name: setupDecision.name })}
+                    label={t('penaltyReview.reason')}
+                    placeholder={setupDecision.kind === 'penaltyDispute' ? t('disputeReview.resolutionPlaceholder') : t('penaltyReview.cancelPlaceholder')}
+                    validationMessage={t('penaltyReview.reasonRequired')}
+                    confirmLabel={setupDecision.kind === 'penaltyDispute'
+                        ? t(`disputeReview.actions.${setupDecision.status}`)
+                        : t('penaltyReview.cancelAction')}
+                    cancelLabel={t('cancel')}
+                    onConfirm={executeSetupDecision}
+                    onClose={() => setSetupDecision(null)}
+                    isLoading={updatingSetupStatus}
+                    validate={(value) => value.length < 3 ? t('penaltyReview.reasonRequired') : ''}
+                />
+            ) : (
                 <ConfirmDialog
-                    isOpen={Boolean(setupDecision)}
+                    isOpen
                     title={setupDecision.name}
                     message={t('payrollSetup.changeStatusConfirm', { status: setupDecision.status })}
                     onConfirm={executeSetupDecision}
                     onClose={() => setSetupDecision(null)}
                 />
-            )}
+            ))}
 
             {selectedPayslipItem && (
                 <PayslipModal
@@ -2064,6 +3222,42 @@ const Payroll = () => {
                     isArabic={isArabic}
                 />
             )}
+
+            <CreateDeductionModal
+                isOpen={showCreateDeductionModal}
+                onClose={() => setShowCreateDeductionModal(false)}
+                form={deductionForm}
+                setForm={setDeductionForm}
+                onSubmit={onCreateDeduction}
+                isLoading={savingDeduction}
+                staff={staff}
+                currency={currency}
+                isArabic={isArabic}
+                t={t}
+            />
+
+            <CreatePenaltyModal
+                isOpen={showCreatePenaltyModal}
+                onClose={() => setShowCreatePenaltyModal(false)}
+                form={penaltyForm}
+                setForm={setPenaltyForm}
+                onSubmit={onCreatePenalty}
+                isLoading={savingPenalty}
+                staff={staff}
+                periods={periods}
+                currency={currency}
+                isArabic={isArabic}
+                t={t}
+            />
+
+            <SalarySimulatorModal
+                isOpen={showSalarySimulator}
+                onClose={() => setShowSalarySimulator(false)}
+                staff={staff}
+                compensationProfiles={compensation}
+                rules={rules}
+                currency={currency}
+            />
         </main>
     );
 };

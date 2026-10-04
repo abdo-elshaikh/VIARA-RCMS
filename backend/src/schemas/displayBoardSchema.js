@@ -1,10 +1,12 @@
 const { z } = require('zod');
 
 const patientDisplayModeSchema = z.enum(['name_and_order', 'name', 'order_only']);
+const callAnnouncementModeSchema = z.enum(['token_only', 'name_only', 'token_and_name']);
 const announcementToneSchema = z.enum(['info', 'success', 'warning', 'urgent']);
 
 const displayConfigSchema = z.object({
     patientDisplayMode: patientDisplayModeSchema.optional(),
+    callAnnouncementMode: callAnnouncementModeSchema.optional(),
     showTicker: z.boolean().optional(),
     boardTitle: z.string().trim().max(150).optional().nullable()
 }).refine((data) => Object.keys(data).length > 0, {
@@ -33,6 +35,7 @@ const announcementIdSchema = z.string().uuid('Invalid announcement ID format');
 
 module.exports = {
     patientDisplayModeSchema,
+    callAnnouncementModeSchema,
     announcementToneSchema,
     displayConfigSchema,
     createAnnouncementSchema,

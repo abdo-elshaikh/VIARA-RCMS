@@ -196,7 +196,7 @@ const csvEscape = (value) => {
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 
-const DiscountReports = () => {
+const DiscountReports = ({ dateRange: externalDateRange, onDateRangeChange }) => {
     const { i18n } = useTranslation('workspace');
     const language = i18n.language;
     const isArabic = language?.startsWith('ar');
@@ -206,19 +206,28 @@ const DiscountReports = () => {
     const flagLabel = useCallback((flag) => FLAG_COPY[flag]?.[isArabic ? 'ar' : 'en'] || flag, [isArabic]);
 
     const [filters, setFilters] = useState({
-        startDate: monthStart(),
-        endDate: today(),
+        startDate: externalDateRange?.startDate || monthStart(),
+        endDate: externalDateRange?.endDate || today(),
         groupBy: 'day',
         review: 'flagged',
         search: '',
         minDiscount: ''
     });
 
+    const effectiveStartDate = externalDateRange?.startDate || filters.startDate;
+    const effectiveEndDate = externalDateRange?.endDate || filters.endDate;
+
+    const handleDateChange = (field, value) => {
+        const nextRange = { startDate: effectiveStartDate, endDate: effectiveEndDate, [field]: value };
+        setFilters((current) => ({ ...current, [field]: value }));
+        onDateRangeChange?.(nextRange, 'custom');
+    };
+
     const queryParams = useMemo(() => ({
-        startDate: filters.startDate,
-        endDate: filters.endDate,
+        startDate: effectiveStartDate,
+        endDate: effectiveEndDate,
         groupBy: filters.groupBy
-    }), [filters.endDate, filters.groupBy, filters.startDate]);
+    }), [effectiveStartDate, effectiveEndDate, filters.groupBy]);
 
     const reportQuery = useGetDiscountReportQuery(queryParams);
     const report = reportQuery.data || {};
@@ -375,8 +384,8 @@ const DiscountReports = () => {
                 </div>
 
                 <div className="grid gap-3 border-b border-slate-100 p-4 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-6">
-                    <DateInput label={text.startDate} value={filters.startDate} max={filters.endDate} onChange={(value) => setField('startDate', value)} />
-                    <DateInput label={text.endDate} value={filters.endDate} min={filters.startDate} onChange={(value) => setField('endDate', value)} />
+                    <DateInput label={text.startDate} value={effectiveStartDate} max={effectiveEndDate} onChange={(value) => handleDateChange('startDate', value)} />
+                    <DateInput label={text.endDate} value={effectiveEndDate} min={effectiveStartDate} onChange={(value) => handleDateChange('endDate', value)} />
                     <SelectInput label={text.groupBy} value={filters.groupBy} onChange={(value) => setField('groupBy', value)} options={[
                         { value: 'day', label: text.day },
                         { value: 'week', label: text.week },

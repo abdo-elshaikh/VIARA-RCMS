@@ -1,5 +1,6 @@
 {
   "privacyCenter": {
+    "eyebrow": "Patient data rights & governance",
     "title": "Privacy Center",
     "description": "Review and execute patient data-subject requests with an auditable approval step.",
     "loading": "Loading privacy requests...",
@@ -97,6 +98,10 @@
     "qrAlt": "Two-factor authentication setup QR code"
   },
   "backups": {
+    "eyebrow": "Disaster recovery & persistence",
+    "totalSnapshots": "Total snapshots",
+    "verifiedEncrypted": "Verified & encrypted",
+    "storageVolume": "Storage volume",
     "title": "Database backups",
     "description": "Create, verify, download, and restore protected database snapshots.",
     "generate": "Create manual backup",
@@ -116,6 +121,8 @@
     "loading": "Loading backups...",
     "emptyTitle": "No backups found",
     "emptyDescription": "Create a manual backup to produce the first snapshot.",
+    "loadError": "Backups could not be loaded.",
+    "retry": "Retry",
     "latest": "Latest",
     "postgres": "Verified PostgreSQL dump",
     "encryptedPostgres": "Encrypted PostgreSQL dump",
@@ -127,6 +134,7 @@
     "download": "Download",
     "restore": "Restore",
     "restored": "Restored {{count}} rows from backup.",
+    "partialRestore": "Restore completed partially. Unsupported tables were skipped: {{tables}}.",
     "restoreError": "The backup could not be restored.",
     "restoreTitle": "Restore database snapshot",
     "restoreMessage": "Restore {{filename}}? The server will create a safety backup first, then overwrite matching development data.",

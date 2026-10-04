@@ -28,11 +28,11 @@ const sourceText = readJavaScriptFiles(sourceRoot).join('\n');
 
 const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const extractTriggeredEvents = () => new Set(
-    [...sourceText.matchAll(/\btriggerEvent(?:ForRole)?\s*\(\s*db\s*,\s*['"]([^'"]+)['"]/g)]
+    [...sourceText.matchAll(/\btriggerEvent(?:ForRole)?\s*\(\s*\w+\s*,\s*['"]([^'"]+)['"]/g)]
         .map(match => match[1])
 );
 const extractLiteralRoleTriggers = () => [
-    ...sourceText.matchAll(/\btriggerEventForRole\s*\(\s*db\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]/g)
+    ...sourceText.matchAll(/\btriggerEventForRole\s*\(\s*\w+\s*,\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]/g)
 ].map(match => [match[1], match[2]]);
 
 describe('notification event/template/policy contract', () => {
@@ -63,9 +63,13 @@ describe('notification event/template/policy contract', () => {
     test('focused role triggers have explicit audience policies', () => {
         const policyPairs = [...requiredRolePolicies, ...extractLiteralRoleTriggers()];
         for (const [event, role] of policyPairs) {
-            expect(migrationSql).toMatch(new RegExp(
+            const legacyPolicy = new RegExp(
                 `\\('${escapeRegex(event)}'\\s*,\\s*NULL\\s*,\\s*'${escapeRegex(role)}'`
-            ));
+            );
+            const valuesPolicy = new RegExp(
+                `\\('${escapeRegex(event)}'\\s*,\\s*'${escapeRegex(role)}'\\s*,`
+            );
+            expect(legacyPolicy.test(migrationSql) || valuesPolicy.test(migrationSql)).toBe(true);
         }
     });
 
@@ -103,5 +107,42 @@ describe('notification event/template/policy contract', () => {
         expect(invoiceController).toContain("triggerEventForRole(db, 'PaymentReceived', 'Cashier'");
         expect(invoiceController).toContain("triggerEventForRole(db, 'PaymentReceived', 'Accountant'");
         expect(invoiceController).toContain("triggerEventForRole(db, 'PaymentReceived', 'Admin'");
+    });
+
+    test('attendance notifications have contracts and are awaited before commit', () => {
+        const hrController = fs.readFileSync(
+            path.join(sourceRoot, 'controllers', 'hrController.js'),
+            'utf8'
+        );
+        for (const event of [
+            'AttendanceUnscheduled',
+            'AttendanceEmergencyDeparture',
+            'AttendancePermissionResolved'
+        ]) {
+            expect(migrationSql).toMatch(new RegExp(`\\('${escapeRegex(event)}'\\s*,`));
+            expect(migrationSql).toMatch(new RegExp(`\\('${escapeRegex(event)}', 'InApp', '(?:ar|en)'`));
+        }
+        expect(hrController).toContain("await triggerEventForRole(client, 'AttendanceUnscheduled', 'HR'");
+        expect(hrController).toContain("await triggerEventForRole(client, 'AttendanceUnscheduled', 'Admin'");
+        expect(hrController).toContain("await triggerEventForRole(client, 'AttendanceEmergencyDeparture'");
+        expect(hrController).toContain("await triggerEvent(client, 'AttendancePermissionResolved'");
+        expect(hrController).toContain('effective_date: current.effective_date');
+    });
+
+    test('shift request handoffs notify reviewers and the requesting employee', () => {
+        const hrController = fs.readFileSync(
+            path.join(sourceRoot, 'controllers', 'hrController.js'),
+            'utf8'
+        );
+        expect(hrController).toContain("triggerEventForRole(db, 'SHIFT_REQUEST_SUBMITTED', 'HR'");
+        expect(hrController).toContain("triggerEventForRole(db, 'SHIFT_REQUEST_SUBMITTED', 'Admin'");
+        expect(hrController).toContain("triggerEvent(db, 'SHIFT_REQUEST_DECIDED'");
+        expect(catalogEvents).toEqual(expect.arrayContaining(['SHIFT_REQUEST_SUBMITTED', 'SHIFT_REQUEST_DECIDED']));
+        expect(requiredRolePolicies).toEqual(expect.arrayContaining([
+            ['SHIFT_REQUEST_SUBMITTED', 'HR'],
+            ['SHIFT_REQUEST_SUBMITTED', 'Admin'],
+            ['SHIFT_REQUEST_DECIDED', 'Receptionist'],
+            ['SHIFT_REQUEST_DECIDED', 'Technician'],
+        ]));
     });
 });

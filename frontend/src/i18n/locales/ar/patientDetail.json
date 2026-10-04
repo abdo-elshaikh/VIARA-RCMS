@@ -145,6 +145,37 @@
     "none": "لا يوجد"
   },
   "documents": {
+    "loadError": "تعذر تحميل المستند.",
+    "fileTooLarge": "حجم الملف يتجاوز الحد المسموح وهو 10 ميجابايت.",
+    "selectFile": "يرجى اختيار ملف لرفعه.",
+    "uploaded": "تم رفع المستند بنجاح.",
+    "uploadError": "تعذر رفع المستند.",
+    "previewError": "تعذر تحميل معاينة المستند.",
+    "downloadError": "تعذر تنزيل المستند.",
+    "uploadTitle": "رفع مستند",
+    "type": "نوع المستند",
+    "file": "الملف",
+    "selected": "تم اختيار: {{name}} ({{size}})",
+    "notes": "ملاحظات (اختياري)",
+    "notesPlaceholder": "أضف تفاصيل عن هذا المستند...",
+    "uploading": "جارٍ الرفع...",
+    "upload": "رفع",
+    "title": "مستندات المريض",
+    "loading": "جارٍ تحميل المستندات...",
+    "empty": "لم يتم رفع مستندات بعد.",
+    "types": {
+      "Consent Form": "نموذج موافقة",
+      "Patient ID": "هوية المريض",
+      "Passport": "جواز السفر",
+      "Insurance Card": "بطاقة التأمين",
+      "Insurance Approval": "موافقة التأمين",
+      "Prescription": "وصفة طبية",
+      "Previous Report": "تقرير سابق",
+      "Lab Result": "نتيجة مختبر",
+      "Invoice": "فاتورة",
+      "Signed Form": "نموذج موقّع",
+      "Other": "أخرى"
+    },
     "deleteTitle": "حذف مستند المريض",
     "deleteMessage": "هل تريد حذف {{name}}؟ لن يعود الملف متاحًا في سجل المريض.",
     "delete": "حذف المستند",
@@ -233,6 +264,7 @@
       "pendingReports": "التقارير المعلقة",
       "deliveredReports": "التقارير المسلّمة"
     },
+    "openCase": "فتح تفاصيل الزيارة",
     "followUp": "متابعة",
     "followUpContext": "سياق المتابعة",
     "priorStudy": "الفحص السابق",
@@ -317,5 +349,14 @@
   "portal": "بوابة المريض",
   "currency": {
     "egp": "ج.م"
+  },
+  "billing": {
+    "selectAll": "تحديد الكل",
+    "deselectAll": "إلغاء تحديد الكل",
+    "selectedVisitsCount": "تم تحديد {{count}} زيارة",
+    "printSelectedVisits": "طباعة فاتورة بالزيارات المحددة",
+    "printVisitInvoice": "طباعة فاتورة الزيارة",
+    "invoice": "فاتورة",
+    "selectVisitsFirst": "يرجى تحديد زيارة واحدة على الأقل لطباعة الفاتورة"
   }
 }

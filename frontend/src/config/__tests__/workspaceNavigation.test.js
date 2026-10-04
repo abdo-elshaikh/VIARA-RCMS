@@ -55,8 +55,10 @@ describe('workspace navigation policy', () => {
         expect(resolveWorkspaceNavigation('/reception', '', { role: 'Nurse', permissions: [] }).redirect).toBe('/unauthorized');
     });
 
-    it('supports old clinical settings links and payroll deep links', () => {
-        expect(resolveWorkspaceNavigation('/settings', '?tab=clinicalOperations', { role: 'Developer' }).redirect).toBe('/settings?tab=clinical');
+    it('moves legacy clinical settings links to equipment rooms and preserves payroll deep links', () => {
+        expect(resolveWorkspaceNavigation('/settings', '?tab=clinicalOperations', { role: 'Developer' }).redirect).toBe('/equipment?tab=rooms');
+        expect(resolveWorkspaceNavigation('/settings', '?tab=clinical', { role: 'Admin', permissions: ['VIEW_EQUIPMENT'] }).redirect).toBe('/equipment?tab=rooms');
+        expect(resolveWorkspaceNavigation('/settings', '?tab=clinical', { role: 'Accountant' }).redirect).toBe('/unauthorized');
         expect(resolveWorkspaceNavigation('/payroll', '?tab=rules', { role: 'HR', permissions: ['VIEW_PAYROLL'] }).active.key).toBe('payrollRules');
         expect(resolveWorkspaceNavigation('/patients/123', '', { role: 'Developer' })).toBeNull();
     });

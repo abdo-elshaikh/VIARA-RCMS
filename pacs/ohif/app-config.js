@@ -3,10 +3,10 @@
  *
  * Mounted into the ohif/app container at /usr/share/nginx/html/app-config.js
  * (see docker-compose `ohif` service). The single DICOMweb data source uses
- * relative roots so every QIDO/WADO request is same-origin to the OHIF
- * container (http://localhost:3005). The viewer receives a short-lived,
- * study-scoped session in an HTTP-only cookie before the iframe is opened.
- * Orthanc and viewer credentials are never exposed to browser JavaScript.
+ * relative roots so every QIDO/WADO request stays same-origin through the
+ * OHIF reverse proxy. The viewer receives a short-lived,
+ * study-scoped bearer session before the iframe is opened.
+ * Orthanc credentials remain on the backend; scoped tokens live only in the viewer tab.
  */
 if (typeof window !== 'undefined') {
   if (typeof window.__filename === 'undefined') {
@@ -31,29 +31,65 @@ try {
   localStorage.setItem('shownTours', JSON.stringify(['basicViewerTour']));
 }
 
-// dicomweb-client reports canceled XHRs as a generic `request failed` error
-// with status 0. Series changes and request-pool cleanup can cause those
-// cancellations during normal use. Prevent the production error overlay for
-// that one expected case while preserving real HTTP and offline failures.
-window.addEventListener('unhandledrejection', function (event) {
-  const reason = event.reason;
-  const isCanceledDicomRequest =
-    navigator.onLine &&
-    reason &&
-    reason.message === 'request failed' &&
-    Number(reason.status) === 0 &&
-    reason.request instanceof XMLHttpRequest;
-
-  if (isCanceledDicomRequest) {
-    event.preventDefault();
-    // OHIF also listens globally and otherwise presents an error notification
-    // for normal request-pool cancellations while switching display sets.
-    event.stopImmediatePropagation();
+// Credentials travel in the URL fragment (never in HTTP requests or referrers).
+const viewerFragment = new URLSearchParams(window.location.hash.slice(1));
+const viewerToken = viewerFragment.get('viaraToken');
+if (viewerToken) {
+  sessionStorage.setItem('VIARA_viewer_token', viewerToken);
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+const parentOrigin = viewerFragment.get('parentOrigin');
+const notifyParent = (state, message = '') => {
+  if (window.parent !== window && parentOrigin) {
+    window.parent.postMessage({ type: 'viara:viewer-status', state, message }, parentOrigin);
   }
+};
+let imageRendered = false;
+document.addEventListener('CORNERSTONE_IMAGE_RENDERED', () => {
+  imageRendered = true;
+  window.__viaraImageRendered = true;
+  notifyParent('ready');
+}, true);
+window.addEventListener('unhandledrejection' , (event) => {
+  if (event.reason?.name === 'AbortError') { event.preventDefault(); return; }
+  notifyParent('error', 'The viewer could not load imaging data.');
+});
+window.addEventListener('load', async () => {
+  try {
+    const uid = new URLSearchParams(location.search).get('StudyInstanceUIDs')?.split(',')[0];
+    if (!uid) throw new Error('No imaging study selected');
+    const token = sessionStorage.getItem('VIARA_viewer_token');
+    const response = await fetch('/api/pacs/dicom-web/studies/' + encodeURIComponent(uid) + '/metadata', {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+      signal: AbortSignal.timeout(30000), cache: 'no-store'
+    });
+    if (!response.ok) throw new Error('Imaging request failed (' + response.status + ')');
+    const data = await response.json();
+    if (!Array.isArray(data) || !data.length) throw new Error('No images are available in this study');
+    window.setTimeout(() => { if (!imageRendered) notifyParent('error', 'Imaging metadata loaded but no image could be rendered.'); }, 45000);
+  } catch (error) { notifyParent('error', error.message); }
 });
 
-window.config = {
-  routerBasename: '/',
+// A detached viewer renews only its existing scope, bounded by the parent login expiry.
+if (window.parent === window) {
+  window.setInterval(async () => {
+    try {
+      const token = sessionStorage.getItem('VIARA_viewer_token');
+      const csrf = document.cookie.split('; ').find(value => value.startsWith('csrf_token='))?.slice(11);
+      const response = await fetch('/api/pacs/viewer-renew', { method: 'POST', headers: { Authorization: 'Bearer ' + token, ...(csrf ? { 'x-csrf-token': decodeURIComponent(csrf) } : {}) }, signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw new Error('Viewer session renewal failed');
+      sessionStorage.setItem('VIARA_viewer_token', (await response.json()).viewerToken);
+    } catch { sessionStorage.removeItem('VIARA_viewer_token'); }
+  }, 8 * 60 * 1000);
+}
+window.addEventListener('message', event => {
+  if (event.origin !== parentOrigin || event.source !== window.parent || event.data?.type !== 'viara:viewer-token') return;
+  if (typeof event.data.token === 'string') sessionStorage.setItem('VIARA_viewer_token', event.data.token);
+});
+
+window.config = ({ servicesManager, extensionManager }) => {
+  return {
+  routerBasename: window.location.pathname.startsWith('/pacs-viewer/') ? '/pacs-viewer/' : '/',
   showStudyList: false,
   investigationalUseDialog: { option: 'never' },
   whiteLabeling: {
@@ -76,6 +112,7 @@ window.config = {
   },
   extensions: [],
   modes: [],
+  useSharedArrayBuffer: 'FALSE',
   maxNumberOfWebWorkers: 3,
   showLoadingIndicator: true,
   showCPUFallbackMessage: true,
@@ -98,6 +135,23 @@ window.config = {
       namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
       sourceName: 'dicomweb',
       configuration: {
+        onConfiguration: dicomWebConfig => {
+  servicesManager.services.userAuthenticationService.setServiceImplementation({
+    getAuthorizationHeader: () => {
+      const token = sessionStorage.getItem('VIARA_viewer_token');
+      return token ? { Authorization: 'Bearer ' + token } : {};
+    },
+    handleUnauthenticated: () => notifyParent('error', 'Your imaging session expired. Reopen the viewer.'),
+  });
+          if (!document.getElementById('viara-measurement-bridge')) {
+            const script = document.createElement('script');
+            script.id = 'viara-measurement-bridge'; script.src = (location.pathname.startsWith('/pacs-viewer/') ? '/pacs-viewer/' : '/') + 'viara-measurements.js';
+            script.onload = () => window.VIARA_initMeasurementDrafts({ servicesManager, extensionManager });
+            script.onerror = () => notifyParent('error', 'Measurement drafts are unavailable. Reload the viewer.');
+            document.head.appendChild(script);
+          }
+          return dicomWebConfig;
+        },
         friendlyName: 'VIARA PACS',
         name: 'VIARA',
         qidoRoot: '/api/pacs/dicom-web',
@@ -113,25 +167,9 @@ window.config = {
         dicomUploadEnabled: false,
         omitQuotationForMultipartRequest: true,
       },
-      onConfiguration: (dicomWebConfig, options) => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token');
-        if (token) {
-          sessionStorage.setItem('VIARA_viewer_token', token);
-          dicomWebConfig.headers = dicomWebConfig.headers || {};
-          dicomWebConfig.headers.Authorization = `Bearer ${token}`;
-        } else {
-          // VIARA uses a same-site, HTTP-only PACS cookie. Never reuse a token
-          // left by an older query-string session after the cookie is renewed.
-          sessionStorage.removeItem('VIARA_viewer_token');
-          if (dicomWebConfig.headers) {
-            delete dicomWebConfig.headers.Authorization;
-          }
-        }
 
-        return dicomWebConfig;
-      }
     },
   ],
   defaultDataSourceName: 'dicomweb',
+};
 };

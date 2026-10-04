@@ -47,8 +47,8 @@ export default defineConfig({
                 onlyExplicitManualChunks: true,
                 manualChunks(id) {
                     const normalizedId = id.replaceAll('\\', '/');
-                    if (normalizedId.includes('/src/i18n/locales/ar/')) return 'translations-ar';
-                    if (normalizedId.includes('/src/i18n/locales/en/')) return 'translations-en';
+                    const locale = normalizedId.match(/\/src\/i18n\/locales\/(ar|en)\/([^/]+)\.json$/);
+                    if (locale) return `translations-${locale[1]}-${locale[2]}`;
                     if (!id.includes('node_modules')) return undefined;
                     if (id.includes('recharts') || id.includes('d3-')) return 'charts';
                     if (id.includes('framer-motion')) return 'motion';
@@ -64,7 +64,7 @@ export default defineConfig({
                 },
             },
         },
-        sourcemap: true,
+        sourcemap: false,
         reportCompressedSize: true,
         commonjsOptions: {
             include: [/node_modules/],

@@ -29,9 +29,14 @@ const {
     updateDowntime,
     getUtilizationReport
 } = require('../controllers/machineController');
+const checkFeature = require('../middleware/checkFeature');
+
+const EQUIPMENT_PATHS = ['/equipment', '/machines'];
 
 module.exports = function equipmentRoutes(pool) {
     const router = express.Router();
+
+    router.use(EQUIPMENT_PATHS, checkFeature('equipment'));
 
     // Machine / Modality Routes
     router.get('/machines', authenticateToken, authorizeRole(['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse']), getMachines(pool));
