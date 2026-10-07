@@ -282,6 +282,72 @@ services:
       retries: 3
       start_period: 10s
 
+  # ── Prometheus Metrics Collector ─────────────────────────────────────────
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v2.53.0}
+    container_name: ${COMPOSE_PROJECT_NAME:-viara}-prometheus
+    restart: unless-stopped
+    # Write $METRICS_TOKEN to a file so prometheus.yml can reference it via
+    # authorization.credentials_file without embedding the secret in the config.
+    entrypoint: >
+      sh -c "
+        mkdir -p /run/secrets &&
+        printf '%s' \"$$METRICS_TOKEN\" > /run/secrets/metrics_token &&
+        chmod 600 /run/secrets/metrics_token &&
+        exec /bin/prometheus
+          --config.file=/etc/prometheus/prometheus.yml
+          --storage.tsdb.path=/prometheus
+          --storage.tsdb.retention.time=30d
+          --web.enable-lifecycle
+      "
+    networks: [monitoring, app]
+    mem_limit: 512m
+    cpus: 0.5
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN:?Set METRICS_TOKEN in .env}
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:9090/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ── Grafana Dashboard ─────────────────────────────────────────────────────
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:11.1.0}
+    container_name: ${COMPOSE_PROJECT_NAME:-viara}-grafana
+    restart: unless-stopped
+    networks: [monitoring]
+    mem_limit: 512m
+    cpus: 0.5
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_SECURITY_SECRET_KEY: ${GF_SECURITY_SECRET_KEY:?Set GF_SECURITY_SECRET_KEY in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3010}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3010}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
 volumes:
   redis_data:
   postgres_data:
@@ -291,6 +357,8 @@ volumes:
   pacs_cold_archive:
   orthanc_storage:
   clamav_signatures:
+  prometheus_data:
+  grafana_data:
 
 networks:
   app:
@@ -300,3 +368,5 @@ networks:
   data:
     internal: true
   scanner-egress:
+  monitoring:
+    internal: true
