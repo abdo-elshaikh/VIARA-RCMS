@@ -946,7 +946,7 @@ const IntegrationSettings = ({ embedded = false }) => {
                                         type="date"
                                         value={exportStartDate}
                                         onChange={e => setExportStartDate(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 outline-none"
+                                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400"
                                     />
                                 </div>
                                 <div>
@@ -957,7 +957,7 @@ const IntegrationSettings = ({ embedded = false }) => {
                                         type="date"
                                         value={exportEndDate}
                                         onChange={e => setExportEndDate(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 outline-none"
+                                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400"
                                     />
                                 </div>
                             </div>

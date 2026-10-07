@@ -162,7 +162,7 @@ export const AttendancePermissionsDrawer = ({ isOpen, onClose, canManage = true 
                         <select
                             value={typeFilter}
                             onChange={(e) => setTypeFilter(e.target.value)}
-                            className="h-8 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold outline-none dark:border-slate-800 dark:bg-slate-900"
+                            className="h-8 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 dark:border-slate-800 dark:bg-slate-900"
                         >
                             <option value="All">{isArabic ? 'جميع أنواع الأذونات' : 'All Types'}</option>
                             <option value="EarlyDeparture">{isArabic ? 'انصراف مبكر' : 'Early Departure'}</option>

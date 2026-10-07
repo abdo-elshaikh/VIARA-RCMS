@@ -65,8 +65,9 @@ const SearchInput = ({
                     <Loader className="w-5 h-5 text-[var(--VIARA-accent)] animate-spin" />
                 ) : searchTerm ? (
                     <button
+                        type="button"
                         onClick={handleClear}
-                        className="p-1 hover:bg-[var(--VIARA-surface-hover)] rounded-full transition-colors text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)]"
+                        className="p-1 hover:bg-[var(--VIARA-surface-hover)] rounded-full transition-colors text-[var(--VIARA-muted)] hover:text-[var(--VIARA-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--VIARA-accent)]"
                         aria-label={clearLabel || t('topbar.search.clear')}
                     >
                         <X className="w-4 h-4" />

@@ -2483,7 +2483,7 @@ const PreviewStack = ({
                     <select
                         value={selectedPreviewBranchId}
                         onChange={(e) => setSelectedPreviewBranchId(e.target.value)}
-                        className="h-7 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-800 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                        className="h-7 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                     >
                         <option value="master">{t('branches.previews.masterOrg', { defaultValue: 'Organization Master (Default)' })}</option>
                         {form.branches.map((b) => (

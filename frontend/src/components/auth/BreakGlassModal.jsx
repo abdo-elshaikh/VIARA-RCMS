@@ -13,7 +13,7 @@ import { isEmergencyAccessActive } from '../../utils/effectivePermissions';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 
-const fieldClass = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-500 focus:ring-4 focus:ring-red-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500';
+const fieldClass = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500';
 
 const BreakGlassModal = ({ isOpen, onClose }) => {
     const [reason, setReason] = useState('');

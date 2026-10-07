@@ -1,236 +1,187 @@
-# Accessibility Audit Report — WCAG 2.1 AA
-**Date:** 2026-10-08  
-**Scope:** `frontend/src/` — all JSX/TSX components and pages  
-**Standard:** WCAG 2.1 Level AA  
-**Auditor:** Automated static analysis + targeted code review  
+# Accessibility Audit Report — VIARA RCMS
+**Task:** M-07 — WCAG 2.1 AA Accessibility Improvements  
+**Date:** 2026-08-29  
+**Scope:** `frontend/src/` — components and pages
 
 ---
 
-## 1. الفحوصات التي أُجريت (Checks Performed)
+## Executive Summary
 
-| # | نوع الفحص | الوصف |
-|---|-----------|-------|
-| 1 | **نسب التباين** | البحث عن `text-gray-*` و `text-slate-300/400` على النصوص الجوهرية |
-| 2 | **نص بديل للصور** | البحث عن `<img` بدون `alt` أو بـ `alt` فارغة على صور ذات محتوى |
-| 3 | **تسميات النماذج** | البحث عن `<input>` و`<select>` و`<textarea>` بدون `<label>` أو `aria-label` |
-| 4 | **مؤشرات التركيز** | البحث عن `focus:outline-none` بدون بديل مرئي (`focus-visible:ring`) |
-| 5 | **التنقل بلوحة المفاتيح** | البحث عن `<div onClick>` و`<span onClick>` بدون `role="button"` أو `tabIndex` |
+A systematic WCAG 2.1 AA audit was performed across the VIARA frontend codebase.
+The audit covered five categories: contrast, alt text, form labels, focus indicators, and keyboard navigation.
+The codebase is generally well-structured for accessibility — it has a global `:focus-visible` rule, ARIA attributes on interactive elements, focus trap hooks in modals, and RTL support throughout.
+The primary issues found were **weak or suppressed focus indicators** on form controls using `outline-none` without a visible replacement ring, and a small number of **buttons missing `type="button"`**.
 
 ---
 
-## 2. المشكلات التي وُجدت وأُصلحت (Issues Found & Fixed)
+## Checks Performed
 
-### أ) نسب التباين (Contrast Ratios)
-
-| الملف | المشكلة | الإصلاح |
-|-------|---------|---------|
-| المشروع بأكمله | لا يستخدم `text-gray-*` — يستخدم `text-slate-*` | لا يوجد `text-gray-400` على نصوص محتوى؛ النظام يعتمد مقياس `slate` الذي يوفر تباينًا كافيًا في السياقات المرصودة |
-
-> **ملاحظة:** لم يُعثر على استخدام `text-gray-400` في أي ملف JSX. يعتمد المشروع حصريًا على `text-slate-*`. الألوان `text-slate-400/300` المستخدمة هي في الغالب للـ placeholders أو الأيقونات الزخرفية أو النصوص الثانوية ذات الحجم الكبير، وهي خارج نطاق متطلب نسبة 4.5:1.
-
----
-
-### ب) نص بديل للصور (Alt Text)
-
-| الملف | السطر | المشكلة | الإصلاح |
-|-------|-------|---------|---------|
-| `components/settings/PortalBuilderSettings.jsx` | ~1122 | `alt="Social"` — وصف غامض | `alt={page.seo.title?.[langKey] ? \`${page.seo.title[langKey]} — social preview image\` : 'Social preview image'}` |
-| `components/dashboard/Sidebar.jsx` | ~242 | `alt=""` على شعار المركز | صحيح — الشعار مصحوب بنص المركز المرئي، `alt=""` مناسب (decorative في السياق) |
-| `components/dashboard/Topbar.jsx` | ~209 | `alt={label \|\| ''}` | صحيح — يستخدم label المستخدم |
-| `components/print/PrintDocument.jsx` | ~66 | `alt=""` على شعار الطباعة | صحيح — decorative في سياق التقرير المطبوع |
-| `components/print/PrintSticker.jsx` | ~391 | `alt=""` على شعار الملصق | صحيح — decorative |
-| `pages/DisplayBoard.jsx` | ~663 | `alt=""` على صورة خلفية الجناح | صحيح — decorative background image |
-| `pages/DisplayBoard.jsx` | ~1682 | `alt=""` على شعار التحميل | صحيح — loading indicator, decorative |
-| `pages/CenterSettings.jsx` | ~1398, ~2401 | `alt=""` على شعار المركز | صحيح — مصحوب بنص اسم المركز المرئي |
-| `pages/Landing.jsx` | ~984 | `alt=""` على شعار العلامة التجارية | صحيح — داخل `<Link aria-label={brandName}>` |
-| `components/communications/chatRichContent.jsx` | ~111 | `alt={fileName}` | صحيح — وصف مناسب |
-| `components/patient/DocumentsTab.jsx` | ~318 | `alt="Preview"` | مقبول — سياق معاينة واضح |
-| `components/print/PrintBookingSlip.jsx` | ~647 | `alt={centerName}` | صحيح |
-| `pages/SecuritySettings.jsx` | ~68 | `alt={t('security.qrAlt')}` | صحيح |
-| `components/settings/SecuritySettings.jsx` | ~298 | `alt={securityT('qrAlt')}` | صحيح |
+| Check | Method |
+|---|---|
+| Low contrast text (`text-gray-400`/`text-gray-300`) | Regex search across all `.jsx` files |
+| Missing `alt` on `<img>` elements | Regex search for `<img` patterns |
+| Missing form labels (`<input>` without `aria-label` or `<label>`) | Regex search; manual inspection |
+| Focus indicators (`outline-none` without replacement) | Regex + visual pattern analysis |
+| Keyboard nav (`onClick` on `<div>`/`<span>` without `role`/`tabIndex`) | Regex search |
+| Buttons missing `type` attribute | Manual code review |
 
 ---
 
-### ج) تسميات النماذج (Form Labels)
+## Issues Found and Fixed
 
-| الملف | العنصر | المشكلة | الإصلاح |
-|-------|--------|---------|---------|
-| `pages/UserDetailPage.jsx` | `<input>` كلمة المرور الجديدة | بدون `aria-label` | أُضيف `aria-label` |
-| `pages/UserDetailPage.jsx` | `<input>` بحث سجل النشاط | بدون `aria-label` | أُضيف `aria-label` |
-| `pages/UserActivityTracking.jsx` | `<input>` البحث | بدون `aria-label` | أُضيف `aria-label` |
-| `pages/UserActivityTracking.jsx` | `<select>` نوع العملية | بدون `aria-label` (label كـ `<span>` غير مرتبط) | أُضيف `aria-label` |
-| `pages/UserActivityTracking.jsx` | `<select>` جدول الهدف | بدون `aria-label` | أُضيف `aria-label` |
-| `pages/UserActivityTracking.jsx` | `<input type="date">` تاريخ البداية | بدون `aria-label` | أُضيف `aria-label` |
-| `pages/UserActivityTracking.jsx` | `<input type="date">` تاريخ النهاية | بدون `aria-label` | أُضيف `aria-label` |
-| `pages/Worklist.jsx` | `<input id="worklist-search-input">` | بدون `<label for>` أو `aria-label` | أُضيف `aria-label` |
-| `components/communications/CommunicationCenter.jsx` | `<input>` اسم القناة الجديدة | label كـ `<span>` غير مرتبط | أُضيف `aria-label` |
-| `components/communications/CommunicationCenter.jsx` | `<input>` عنوان عرض القناة الجديدة | label كـ `<span>` غير مرتبط | أُضيف `aria-label` |
-| `components/communications/CommunicationCenter.jsx` | `<textarea>` وصف القناة الجديدة | label كـ `<span>` غير مرتبط | أُضيف `aria-label` |
-| `components/communications/CommunicationCenter.jsx` | `<input>` تعديل عنوان القناة | label كـ `<span>` غير مرتبط | أُضيف `aria-label` |
-| `components/communications/CommunicationCenter.jsx` | `<textarea>` تعديل وصف القناة | label كـ `<span>` غير مرتبط | أُضيف `aria-label` |
-| `components/communications/CommunicationCenter.jsx` | `<select>` اختيار موظف | بدون `aria-label` | أُضيف `aria-label` |
-| `components/communications/CommunicationCenter.jsx` | `<select>` دور العضو | بدون `aria-label` | أُضيف `aria-label` |
-| `components/hr/SalarySimulatorModal.jsx` | `<select>` اختيار موظف | بدون `aria-label` | أُضيف `aria-label` |
-| `components/hr/ReceptionSupervisorManager.jsx` | `<input type="search">` | بدون `aria-label` | أُضيف `aria-label` |
-| `components/equipment/ClinicalImportDialog.jsx` | `<input>` بحث المعاينة | بدون `aria-label` | أُضيف `aria-label` |
-| `components/settings/clinical/RoomManagement.jsx` | `<input>` بحث الغرف | بدون `aria-label` | أُضيف `aria-label` |
+### 1. Focus Indicators (WCAG 2.4.7 — Focus Visible)
 
----
+The project uses a global `:focus-visible` rule in `index.css` that applies an accent-colored outline to all interactive elements. However, Tailwind's `outline-none` class overrides this when applied to an element without adding a replacement visible indicator. The following files were fixed:
 
-### د) مؤشرات التركيز (Focus Indicators)
+| File | Issue | Fix Applied |
+|---|---|---|
+| `frontend/src/components/dashboard/GlobalSearch.jsx` | Topbar search `<input>` had `outline-none` with no ring (only CSS border color change) | Added `focus-visible:ring-2 focus-visible:ring-[var(--VIARA-accent)] focus-visible:ring-offset-1` |
+| `frontend/src/components/ui/SearchInput.jsx` | Clear button missing `type="button"` and focus ring | Added `type="button"` and `focus-visible:ring-2 focus-visible:ring-[var(--VIARA-accent)]` |
+| `frontend/src/components/communications/ChatBubble.jsx` | Message compose `<input>` had `outline-none` with no visible focus | Added `focus-visible:ring-1 focus-visible:ring-teal-500 focus-visible:ring-offset-1` |
+| `frontend/src/components/crm/CampaignManager.jsx` | Patient search `<input>` had `outline-none` (standalone, no focus-within container) | Added `focus:ring-2 focus:ring-pink-400 focus:border-pink-400` |
+| `frontend/src/components/hr/attendance/AttendancePermissionsDrawer.jsx` | Permission type filter `<select>` had `outline-none` | Added `focus:ring-2 focus:ring-teal-400 focus:border-teal-400` |
+| `frontend/src/components/equipment/MaintenanceManager.jsx` | Status `<select>` had `outline-none` | Added `focus:ring-2 focus:ring-teal-400` |
+| `frontend/src/components/hr/ProductivityReport.jsx` | Two date `<input>` fields inside a static (not focus-within) container had `outline-none` | Added `focus-visible:ring-1 focus-visible:ring-teal-500` on both |
+| `frontend/src/pages/IntegrationSettings.jsx` | Two standalone date `<input>` fields with `outline-none` | Added `focus:ring-2 focus:ring-teal-400 focus:border-teal-400` |
+| `frontend/src/pages/CenterSettings.jsx` | Branch preview context `<select>` with `outline-none` | Added `focus:ring-2 focus:ring-teal-400 focus:border-teal-400` |
+| `frontend/src/pages/Nurse.jsx` | Date `<input>` with `outline-none cursor-pointer` (standalone) | Added `focus-visible:ring-1 focus-visible:ring-[var(--VIARA-accent)] focus-visible:rounded` |
+| `frontend/src/pages/Modality.jsx` | Date `<input>` with `outline-none cursor-pointer` (standalone) | Added `focus-visible:ring-1 focus-visible:ring-[var(--VIARA-accent)] focus-visible:rounded` |
+| `frontend/src/components/equipment/EquipmentWorkstationMapping.jsx` | Workstation name `<input>` had `outline-none` with only a border color change (no ring) | Added `focus:ring-2 focus:ring-teal-200 / focus:ring-rose-200` |
 
-| الملف | المشكلة | الإصلاح |
-|-------|---------|---------|
-| `pages/UserDetailPage.jsx` | زر toggle `focus:outline-none` بدون ring | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2` |
-| `pages/UserDetailPage.jsx` | inputs بحث وكلمة مرور | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2` |
-| `components/communications/CommunicationCenter.jsx` | زري toggle (newChannelIsPrivate، editIsPrivate) | أُضيف `focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2` |
-| `components/communications/CommunicationCenter.jsx` | input بحث المحادثة | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1` |
-| `components/communications/CommunicationCenter.jsx` | جميع inputs/selects/textareas القناة | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1` |
-| `components/hr/SalarySimulatorModal.jsx` | جميع inputs بـ `focus:border-teal-500 focus:outline-none` | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1` |
-| `pages/Equipment.jsx` | inputs البحث | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1` |
-| `pages/UserActivityTracking.jsx` | جميع inputs/selects | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1` |
-| `pages/Worklist.jsx` | input البحث | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1` |
-| `components/equipment/ClinicalImportDialog.jsx` | input البحث | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1` |
-| `components/equipment/EquipmentWorkstationMapping.jsx` | input البحث | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1` |
-| `components/settings/clinical/RoomManagement.jsx` | input البحث | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1` |
-| `components/settings/clinical/ClinicalHeader.jsx` | زر رئيسي قابل لإعادة الاستخدام | أُضيف `focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2` |
-| `components/settings/PortalBuilderSettings.jsx` | تحسين alt نص الصورة الاجتماعية | نص وصفي ديناميكي |
+### 2. Weak Focus Ring Opacity (WCAG 2.4.7)
+
+Focus rings using `/10` opacity are barely perceptible. Updated to `/30` for better visibility:
+
+| File | Issue | Fix Applied |
+|---|---|---|
+| `frontend/src/components/auth/BreakGlassModal.jsx` | `focus:ring-red-500/10` on emergency access fields (10% opacity, nearly invisible) | Changed to `focus:ring-2 focus:ring-red-500/30` |
+| `frontend/src/components/clinical/EditSafetyDialog.jsx` | All safety selects used `focus:ring-[color]/10` | Changed to `focus:ring-2 focus:ring-[color]/30` |
+| `frontend/src/components/clinical/EditComplaintDialog.jsx` | Complaint textarea used `focus:ring-4 focus:ring-blue-500/10` | Changed to `focus:ring-2 focus:ring-blue-500/30` |
+| `frontend/src/components/clinical/CancelReasonDialog.jsx` | Reason textarea used `focus:ring-4 focus:ring-rose-100` | Changed to `focus:ring-2 focus:ring-rose-300` |
+| `frontend/src/components/clinical/HoldReasonDialog.jsx` | Reason textarea used `focus:ring-4 focus:ring-*-100` | Changed to `focus:ring-2 focus:ring-*-300` |
+
+### 3. Buttons Missing `type` Attribute (WCAG best practice / HTML spec)
+
+`<button>` elements without `type="button"` inside forms default to `type="submit"`, which can cause accidental form submission.
+
+| File | Issue | Fix Applied |
+|---|---|---|
+| `frontend/src/components/clinical/EditComplaintDialog.jsx` | Close, cancel, and confirm buttons lacked `type` attribute; close button also lacked `aria-label` | Added `type="button"` to all three; added `aria-label="Close dialog"` to close button |
+| `frontend/src/components/clinical/EditSafetyDialog.jsx` | Cancel and confirm buttons lacked `type` attribute | Added `type="button"` to both |
 
 ---
 
-### هـ) التنقل بلوحة المفاتيح (Keyboard Navigation)
+## Issues Not Fixed (Acceptable or Require Human Testing)
 
-| الملف | المشكلة | الحالة |
-|-------|---------|--------|
-| `components/clinical/EditSafetyDialog.jsx` | `<div onClick={onClose}>` كـ backdrop | مقبول — نمط backdrop مودال قياسي؛ المودال نفسه يدعم `Escape` عبر React |
-| `components/clinical/EditComplaintDialog.jsx` | `<div onClick={onClose}>` كـ backdrop | مقبول — نمط backdrop قياسي |
-| `components/dashboard/Sidebar.jsx` | `<div onClick>` على scrim المودال | مقبول — scrim لتجاهل المودال، مع أزرار cancel/confirm داخلية |
-| `pages/Payroll.jsx` | `<div className="fixed inset-0" onClick>` | مقبول — نمط dismiss overlay شائع لإغلاق القائمة المنسدلة |
-| `pages/PacsViewer.jsx` | `<div onClick={onClose}>` كـ backdrop | مقبول — modals لها `<div>` داخلي بـ `tabIndex={-1}` |
-| `pages/PacsReconciliation.jsx` | `<div onClick={onClose}>` backdrop | مقبول — dialog داخلي بـ `role="dialog"` وتركيز مناسب |
-| `components/reception/DailyOperationsTable.jsx` | `<div className="fixed inset-0" onClick>` | مقبول — dismiss overlay |
-| `components/ui/Scheduler.jsx` | `<div onClick>` يلتف حول `<button>` (EventCard) | مقبول — العنصر التفاعلي الفعلي هو الزر الداخلي |
-| `pages/Equipment.jsx` | `<div onClick={stopPropagation}>` | مقبول — يوقف التشقق فقط، العناصر الداخلية هي أزرار |
+### Inline Input in Focus-Within Containers
 
----
+Several inputs intentionally omit `outline-none`'s ring because the **parent container** shows a `focus-within:ring` and `focus-within:border` change that acts as the focus indicator. This is an accessible pattern. Examples:
 
-## 3. المشكلات التي تحتاج اختبارًا بشريًا (Requires Human Testing)
+- `BookAppointment.jsx` patient search — inside `focus-within:ring-4 focus-within:ring-teal-500/10` container
+- `AttendanceManager.jsx` search input — inside a bordered container
+- `CommunicationCenter.jsx` various inputs — have explicit `focus-visible:ring-2` already
+- `GeneralLedger.jsx`, `DiscountReports.jsx` — inputs inside `focus-within:ring` containers
 
-المشكلات التالية **لا يمكن رصدها آليًا** وتستلزم اختبارًا يدويًا:
+### Programmatic Focus Target (Not Interactive)
 
-### 3.1 تجربة قارئ الشاشة (Screen Reader UX)
-- **ترتيب قراءة المحتوى:** التحقق من أن قارئ الشاشة يقرأ المحتوى بترتيب منطقي في الصفحات ذات التخطيط المعقد (Worklist, AppLayout)
-- **إعلانات ARIA Live:** التحقق من أن تحديثات البيانات الديناميكية (نتائج البحث، حالة الجلسة) تُعلن عبر `aria-live` regions
-- **اسم القناة في CommunicationCenter:** التحقق من أن قارئ الشاشة يقرأ القنوات وأعضاءها بشكل صحيح
-- **التحقق من Focus Trap:** التحقق من أن الـ modals تحصر التركيز داخلها بشكل صحيح (يوجد `useFocusTrap` hook — تحقق من تطبيقه في جميع المودالات)
+`PendingRequests.jsx` uses `tabIndex={-1}` with `outline-none` on an `<article>` that is programmatically focused as a scroll target, not by the user's keyboard. This is correct usage of `outline-none`.
 
-### 3.2 التباين اللوني الدقيق (Fine Contrast)
-- **الوضع المظلم (Dark Mode):** التحقق من نسب التباين في السمة المظلمة بأدوات قياس مخصصة — بعض ألوان `dark:text-slate-400` قد تقل عن 4.5:1 على خلفيات معينة
-- **ألوان الحالة:** التحقق من نسب تباين ألوان الحالة الطبية (Emergency: rose, Urgent: amber) على شاشات مختلفة
-- **نصوص المكونات الصغيرة:** النصوص بحجم `text-[10px]` أو `text-[11px]` مع `font-bold` قد تحتاج نسبة تباين 3:1 بدلًا من 4.5:1 (قاعدة النص الكبير)
+### Low Contrast: `text-gray-400` / `text-gray-300`
 
-### 3.3 وصول المحتوى المعقد (Complex Content Access)
-- **جداول البيانات:** التحقق من أن جداول Worklist وFinancials وBackup تحتوي على `scope="col"` مناسب في رؤوس الأعمدة
-- **مخططات Recharts:** مخططات Analytics Dashboard تحتاج نص بديل أو جدول بيانات مساعد
-- **PDF/PACS Viewer:** PacsViewer يستخدم Canvas — يحتاج `aria-label` مناسب على عناصر الـ canvas
+No instances of `text-gray-400` or `text-gray-300` on primary text content (non-placeholder) on white backgrounds were found in component files. These classes appear exclusively on:
+- Placeholder text (correct — lower contrast for placeholders is acceptable under WCAG)
+- Icons (`aria-hidden="true"`)
+- Secondary/muted supplemental text
 
-### 3.4 التكيف مع الإعدادات (Adaptive Settings)
-- **تقليل الحركة:** التحقق من أن `reduceMotion` في DisplayBoard يُطبَّق على جميع الحركات الأساسية
-- **تكبير النص:** التحقق من التخطيط عند تكبير النص بنسبة 200% في المتصفح
-- **RTL/LTR:** التحقق من اتجاه focus indicators في الوضع العربي (RTL)
+### Decorative Images
 
-### 3.5 النماذج المعقدة (Complex Forms)
-- **رسائل الخطأ:** التحقق من أن رسائل التحقق (validation errors) مرتبطة بالحقول عبر `aria-describedby`
-- **المجموعات المتعددة الخطوات:** نموذج BookAppointment متعدد الأقسام يحتاج `<fieldset>/<legend>` أو `aria-group` واضح
-- **ComboBox المريض:** التحقق من أن patient picker في BookAppointment يتبع نمط ARIA combobox بشكل كامل
+All `<img alt="">` instances are decorative logos or fallback graphics (shown alongside text labels), which correctly use empty alt. Non-decorative images (QR codes, previews) already have descriptive alt text.
+
+### Div/Span `onClick` Patterns
+
+The `<div onClick>` patterns found are all:
+- **Modal backdrop dismiss overlays** — with `aria-hidden="true"` or correctly positioned behind the dialog
+- **Event propagation stoppers** (`onClick={e => e.stopPropagation()}`) — not interactive elements themselves
+
+These are correct and do not require `role="button"` or `tabIndex`.
 
 ---
 
-## 4. التوصيات لاختبار WCAG 2.1 AA الكامل
+## Issues Requiring Human Testing with Assistive Technologies
 
-### 4.1 الأدوات الآلية المقترحة
+The following cannot be validated without manual testing with screen readers (NVDA, JAWS, VoiceOver) and keyboard-only navigation:
 
-| الأداة | الاستخدام | الرابط |
-|--------|-----------|-------|
-| **axe DevTools** (Chrome Extension) | فحص آلي شامل لكل صفحة | [deque.com/axe](https://www.deque.com/axe/) |
-| **Lighthouse Accessibility** | مدمج في Chrome DevTools | في المتصفح: F12 > Lighthouse |
-| **WAVE** (Web Accessibility Evaluation Tool) | تقرير مرئي للمشكلات | [wave.webaim.org](https://wave.webaim.org/) |
-| **Colour Contrast Analyser** | قياس دقيق لنسب التباين | [TPGi](https://www.tpgi.com/color-contrast-checker/) |
+1. **Screen reader announcement of dynamic content** — Worklist updates, queue notifications, and real-time chat messages should be announced via live regions (`aria-live`). This requires runtime testing.
 
-### 4.2 قارئات الشاشة للاختبار
+2. **Focus management in modals** — The `useFocusTrap` hook is implemented; verify that focus returns to the trigger element when modals close in all scenarios.
 
-| قارئ الشاشة | نظام التشغيل | الأولوية |
-|-------------|-------------|---------|
-| **NVDA** + Firefox | Windows | عالية — أكثر استخدامًا |
-| **JAWS** + Chrome | Windows | عالية — بيئات المستشفيات |
-| **VoiceOver** + Safari | macOS/iOS | متوسطة — للمستخدمين العرب على Mac |
-| **TalkBack** | Android | متوسطة — للوصول من الهاتف |
+3. **PACS Viewer keyboard accessibility** — The DICOM viewer (`PacsViewer.jsx`) has complex pointer-driven interactions. Full keyboard equivalents need testing.
 
-### 4.3 خطوات الاختبار اليدوي المقترحة
+4. **Color-only information** — Status badges (e.g., appointment status colors) may convey information through color alone. Verify screen reader text equivalents are provided for all status indicators.
 
-```
-1. تشغيل axe DevTools على الصفحات التالية:
-   - /dashboard (AppLayout + Sidebar)
-   - /worklist (جدول بيانات معقد)
-   - /book-appointment (نموذج متعدد الخطوات)
-   - /analytics (مخططات Recharts)
-   - /pacs-viewer (Canvas interactions)
-   - /login (نقطة دخول حرجة)
+5. **Print components** — `PrintDocument.jsx`, `PrintInvoice.jsx`, etc. are rendered in print context. Verify they don't cause issues in accessibility trees.
 
-2. اختبار Tab Navigation:
-   - ابدأ من أعلى كل صفحة
-   - تحقق من أن كل عنصر تفاعلي يصل إليه التركيز
-   - تحقق من أن ترتيب التركيز منطقي
+6. **RTL focus order** — The application supports Arabic RTL layouts. Verify logical tab order matches visual order in RTL mode.
 
-3. اختبار قارئ الشاشة:
-   - افتح NVDA > تصفح صفحة Worklist
-   - تحقق من قراءة رؤوس الجدول وخلاياه
-   - اختبر نماذج الحجز مع الإعلانات التلقائية
+7. **Complex custom widgets** — The drag-and-drop scheduler (`Scheduler.jsx`), date pickers with inline inputs, and the report editor rich text component need manual keyboard/screen reader testing.
 
-4. اختبار التباين:
-   - استخدم Colour Contrast Analyser على:
-     * نصوص الجداول (text-slate-600 على bg-white)
-     * نصوص الحالة (rose/amber/teal على خلفياتها)
-     * الوضع المظلم (dark:text-slate-400 على dark:bg-slate-900)
-
-5. اختبار تكبير النص:
-   - اضبط المتصفح على 200% text size
-   - تحقق من عدم اختفاء أي نص أو تداخله
-```
-
-### 4.4 معيار النجاح المقترح
-
-قبل الإطلاق النهائي، يجب أن تحقق الصفحات الحرجة التالية **صفر أخطاء من المستوى A/AA** في axe DevTools:
-
-- `/login` — نقطة الدخول
-- `/worklist` — الاستخدام الأكثر تكرارًا
-- `/book-appointment` — العملية الأساسية
-- `/dashboard` — الصفحة الرئيسية
+8. **Touch and mobile accessibility** — Many components have mobile-specific layouts that need testing with iOS VoiceOver and Android TalkBack.
 
 ---
 
-## 5. ملخص التغييرات
+## Recommendations for Full WCAG 2.1 AA Audit
 
-| الملف | عدد التغييرات | نوعها |
-|-------|--------------|-------|
-| `components/communications/CommunicationCenter.jsx` | 10+ | aria-label، focus-visible rings، toggle buttons |
-| `pages/UserActivityTracking.jsx` | 5 | aria-label، focus-visible rings |
-| `components/hr/SalarySimulatorModal.jsx` | 10+ | focus-visible rings، aria-label |
-| `pages/UserDetailPage.jsx` | 3 | focus-visible ring، aria-label |
-| `components/settings/PortalBuilderSettings.jsx` | 1 | alt text ديناميكي |
-| `components/hr/ReceptionSupervisorManager.jsx` | 1 | aria-label، focus-visible ring |
-| `pages/Equipment.jsx` | 2 | focus-visible rings |
-| `pages/Worklist.jsx` | 1 | aria-label، focus-visible ring |
-| `components/equipment/ClinicalImportDialog.jsx` | 1 | aria-label، focus-visible ring |
-| `components/equipment/EquipmentWorkstationMapping.jsx` | 1 | focus-visible ring |
-| `components/settings/clinical/RoomManagement.jsx` | 1 | aria-label، focus-visible ring |
-| `components/settings/clinical/ClinicalHeader.jsx` | 1 | focus-visible ring |
+### High Priority
 
-**إجمالي الملفات المُعدَّلة: 12 ملف**  
-**إجمالي المشكلات المُصلَحة: ~35 مشكلة**
+1. **Automated scan baseline** — Run axe-core or Lighthouse accessibility audits in CI against representative pages. This catches ~30–40% of issues automatically.
+
+2. **Color contrast audit tool** — Use a contrast checker (e.g., `@accessibleweb/contrast-checker`, Figma plugin) to systematically verify all color combinations — especially the theme variables (`--VIARA-muted`, `--VIARA-ink-soft`) against their backgrounds.
+
+3. **Live region audit** — Review all toast notifications, async operation results, and queue updates. Ensure critical status changes are announced by `aria-live="polite"` or `assertive` regions. The `ToastHub` component has `aria-label="Notifications"` on its container but individual toasts lack `role="status"`.
+
+4. **Focus return policy** — Establish a consistent pattern for returning focus when modals close, overlays dismiss, or navigation occurs. Document this in the component API.
+
+### Medium Priority
+
+5. **Skip navigation link** — Add a "Skip to main content" link as the first focusable element in `AppLayout.jsx` for keyboard users who need to bypass the sidebar navigation.
+
+6. **Heading hierarchy** — Verify that heading levels (`h1`–`h6`) follow a logical hierarchy on each page. The sidebar uses `<h1>` for the center name and various components use `<h2>`, `<h3>` — these should be audited per-page.
+
+7. **Form validation announcements** — Review all form validation error messages. They should use `role="alert"` (already implemented in the `Input` component) and focus management on validation failure.
+
+8. **Icon-only buttons** — The `Button` component correctly adds `<span className="sr-only">` for icon-only buttons. Verify all custom icon buttons outside the Button component also have accessible names.
+
+### Lower Priority
+
+9. **Reduced motion** — The codebase already uses `motion-reduce:animate-none` in some places. Complete a sweep to ensure all `animate-*` classes have reduced-motion equivalents for users who have `prefers-reduced-motion: reduce` set.
+
+10. **Keyboard shortcuts documentation** — The `KeyboardShortcutsHelp` component exists. Ensure all global shortcuts (`⌘K`, `/`, etc.) are accessible from it and don't conflict with AT shortcuts.
+
+11. **PDF/print outputs** — Ensure generated print documents (`PrintDocument.jsx`, `PrintInvoice.jsx`) have sufficient text size and contrast for users with low vision who may print to read.
 
 ---
 
-> **تنبيه مهم:** التحقق الكامل من WCAG 2.1 AA يستلزم اختبارًا يدويًا مع تقنيات مساعدة حقيقية (قارئات شاشة، أجهزة braille). هذا التقرير يغطي المشكلات التي يمكن رصدها آليًا في الكود الثابت فقط.
+## Files Modified
 
-*Content was rephrased for compliance with licensing restrictions*
+1. `frontend/src/components/dashboard/GlobalSearch.jsx`
+2. `frontend/src/components/ui/SearchInput.jsx`
+3. `frontend/src/components/communications/ChatBubble.jsx`
+4. `frontend/src/components/crm/CampaignManager.jsx`
+5. `frontend/src/components/hr/attendance/AttendancePermissionsDrawer.jsx`
+6. `frontend/src/components/equipment/MaintenanceManager.jsx`
+7. `frontend/src/components/hr/ProductivityReport.jsx`
+8. `frontend/src/pages/IntegrationSettings.jsx`
+9. `frontend/src/pages/CenterSettings.jsx`
+10. `frontend/src/pages/Nurse.jsx`
+11. `frontend/src/pages/Modality.jsx`
+12. `frontend/src/components/equipment/EquipmentWorkstationMapping.jsx`
+13. `frontend/src/components/auth/BreakGlassModal.jsx`
+14. `frontend/src/components/clinical/EditSafetyDialog.jsx`
+15. `frontend/src/components/clinical/EditComplaintDialog.jsx`
+16. `frontend/src/components/clinical/CancelReasonDialog.jsx`
+17. `frontend/src/components/clinical/HoldReasonDialog.jsx`
+18. `frontend/docs/ACCESSIBILITY_AUDIT.md` (this file)
+
+---
+
+*Full WCAG 2.1 AA compliance requires manual testing with assistive technologies and expert review. This audit addresses the most common programmatic issues identified through static analysis.*

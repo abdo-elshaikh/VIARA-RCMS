@@ -136,7 +136,7 @@ const GlobalSearch = () => {
                         onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
                         onKeyDown={handleKeyDown}
                         placeholder={t('common.search_placeholder')}
-                        className="topbar-search-input h-9 w-full rounded-2xl border ps-9 pe-20 text-[13px] shadow-none outline-none transition-all"
+                        className="topbar-search-input h-9 w-full rounded-2xl border ps-9 pe-20 text-[13px] shadow-none outline-none focus-visible:ring-2 focus-visible:ring-[var(--VIARA-accent)] focus-visible:ring-offset-1 transition-all"
                     />
                     {query ? (
                         <button

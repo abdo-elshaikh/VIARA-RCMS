@@ -229,7 +229,7 @@ const ProductivityReport = () => {
                             <input
                                 type="date"
                                 aria-label={copy('startDate')}
-                                className="border-0 bg-transparent p-0 text-xs font-bold text-slate-700 outline-none dark:text-slate-200"
+                                className="border-0 bg-transparent p-0 text-xs font-bold text-slate-700 outline-none focus-visible:ring-1 focus-visible:ring-teal-500 dark:text-slate-200"
                                 value={dateRange.startDate}
                                 onChange={event => setDate('startDate', event.target.value)}
                             />
@@ -237,7 +237,7 @@ const ProductivityReport = () => {
                             <input
                                 type="date"
                                 aria-label={copy('endDate')}
-                                className="border-0 bg-transparent p-0 text-xs font-bold text-slate-700 outline-none dark:text-slate-200"
+                                className="border-0 bg-transparent p-0 text-xs font-bold text-slate-700 outline-none focus-visible:ring-1 focus-visible:ring-teal-500 dark:text-slate-200"
                                 value={dateRange.endDate}
                                 onChange={event => setDate('endDate', event.target.value)}
                             />

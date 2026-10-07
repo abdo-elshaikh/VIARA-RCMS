@@ -40,7 +40,7 @@ const CancelReasonDialog = ({ isOpen, patientName, isSaving, onClose, onConfirm 
                         onChange={(event) => setReason(event.target.value)} 
                         rows={4} 
                         maxLength={500} 
-                        className={`w-full resize-y rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-4 dark:bg-slate-900 dark:text-slate-100 ${attempted && !reason.trim() ? 'border-rose-400 focus:ring-rose-100 dark:focus:ring-rose-900/30' : 'border-slate-200 focus:border-rose-600 focus:ring-rose-100 dark:border-slate-700 dark:focus:border-rose-500 dark:focus:ring-rose-900/30'}`} 
+                        className={`w-full resize-y rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-2 dark:bg-slate-900 dark:text-slate-100 ${attempted && !reason.trim() ? 'border-rose-400 focus:ring-rose-300 dark:focus:ring-rose-800/60' : 'border-slate-200 focus:border-rose-600 focus:ring-rose-300 dark:border-slate-700 dark:focus:border-rose-500 dark:focus:ring-rose-800/60'}`} 
                         placeholder={t('common.cancelPlaceholder', { defaultValue: 'e.g. Patient refused, Machine breakdown...' })} 
                         aria-invalid={attempted && !reason.trim()} 
                     />

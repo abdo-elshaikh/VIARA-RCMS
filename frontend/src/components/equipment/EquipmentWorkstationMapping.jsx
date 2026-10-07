@@ -960,8 +960,8 @@ const EquipmentWorkstationMapping = () => {
                                 placeholder={labels.name}
                                 className={`w-full rounded-xl border px-3.5 py-2.5 text-xs font-semibold outline-none transition ${
                                     nameError
-                                        ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:border-rose-500 dark:border-rose-800 dark:bg-rose-950/20 dark:text-rose-200'
-                                        : 'border-slate-200 bg-white text-slate-900 focus:border-teal-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white'
+                                        ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 dark:border-rose-800 dark:bg-rose-950/20 dark:text-rose-200'
+                                        : 'border-slate-200 bg-white text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-200 dark:border-slate-700 dark:bg-slate-950 dark:text-white'
                                 }`}
                                 autoFocus
                             />

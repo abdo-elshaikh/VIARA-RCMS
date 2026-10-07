@@ -492,7 +492,7 @@ const Nurse = () => {
                                                 setDateMode('custom');
                                             }
                                         }}
-                                        className="bg-transparent text-xs font-semibold text-[var(--VIARA-ink)] outline-none cursor-pointer"
+                                        className="bg-transparent text-xs font-semibold text-[var(--VIARA-ink)] outline-none cursor-pointer focus-visible:ring-1 focus-visible:ring-[var(--VIARA-accent)] focus-visible:rounded"
                                     />
                                 </div>
 

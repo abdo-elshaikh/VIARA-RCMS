@@ -268,7 +268,7 @@ const CampaignManager = () => {
                                                                     value={patientSearch}
                                                                     onChange={(e) => setPatientSearch(e.target.value)}
                                                                     placeholder={isArabic ? 'بحث بالاسم أو MRN...' : 'Search name or MRN...'}
-                                                                    className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                                                    className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs outline-none focus:ring-2 focus:ring-pink-400 focus:border-pink-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                                                                 />
                                                                 <button
                                                                     type="button"

@@ -881,7 +881,7 @@ export default function ChatBubble() {
                                             onChange={(e) => setMessageText(e.target.value)}
                                             dir="auto"
                                             placeholder={t('chat.composePlaceholder', 'Type a message...')}
-                                            className="min-w-0 flex-1 bg-transparent px-2 py-1 text-xs font-semibold text-slate-900 outline-none placeholder:text-slate-400 dark:text-slate-100 dark:placeholder:text-slate-500"
+                                            className="min-w-0 flex-1 bg-transparent px-2 py-1 text-xs font-semibold text-slate-900 outline-none focus-visible:ring-1 focus-visible:ring-teal-500 focus-visible:ring-offset-1 placeholder:text-slate-400 dark:text-slate-100 dark:placeholder:text-slate-500"
                                         />
                                         <button
                                             type="submit"

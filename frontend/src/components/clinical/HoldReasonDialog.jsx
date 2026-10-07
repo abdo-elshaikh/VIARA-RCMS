@@ -31,7 +31,7 @@ const HoldReasonDialog = ({ isOpen, patientName, isSaving, onClose, onConfirm })
                 </div>
                 <label className="block">
                     <span className="mb-2 block text-sm font-bold text-slate-700">{t('common.holdReason')}</span>
-                    <textarea autoFocus value={reason} onChange={(event) => setReason(event.target.value)} rows={4} maxLength={500} className={`w-full resize-y rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-4 ${attempted && !reason.trim() ? 'border-red-400 focus:ring-red-100' : 'border-slate-200 focus:border-cyan-600 focus:ring-cyan-100'}`} placeholder={t('common.holdPlaceholder')} aria-invalid={attempted && !reason.trim()} />
+                    <textarea autoFocus value={reason} onChange={(event) => setReason(event.target.value)} rows={4} maxLength={500} className={`w-full resize-y rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-2 ${attempted && !reason.trim() ? 'border-red-400 focus:ring-red-300' : 'border-slate-200 focus:border-cyan-600 focus:ring-cyan-300'}`} placeholder={t('common.holdPlaceholder')} aria-invalid={attempted && !reason.trim()} />
                     {attempted && !reason.trim() && <span className="mt-1.5 block text-xs font-semibold text-red-600">{t('common.holdRequired')}</span>}
                 </label>
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

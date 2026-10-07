@@ -390,7 +390,7 @@ const StatusSelect = ({ record, copy, onStatus, updating, canManage }) => {
             disabled={updating}
             value={record.status}
             onChange={event => onStatus(record, event.target.value)}
-            className={`min-h-9 rounded-lg border px-2 text-xs font-bold outline-none disabled:opacity-50 ${
+            className={`min-h-9 rounded-lg border px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-teal-400 disabled:opacity-50 ${
                 record.status === 'Completed'
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'
                     : record.status === 'In Progress'

@@ -23,12 +23,12 @@ const EditSafetyDialog = ({ isOpen, patientName, initialSafety, isSaving, onClos
     const safetyOptions = ['Unknown', 'Cleared', 'At Risk', 'Not Applicable'];
 
     const getSelectClass = (val) => {
-        const base = "h-11 w-full rounded-2xl border-2 px-4 text-sm font-bold outline-none transition-all focus:ring-4";
+        const base = "h-11 w-full rounded-2xl border-2 px-4 text-sm font-bold outline-none transition-all focus:ring-2";
         const tones = {
-            Cleared: "border-emerald-200 text-emerald-800 focus:border-emerald-500 focus:ring-emerald-500/10 bg-emerald-50/10",
-            'At Risk': "border-rose-200 text-rose-800 focus:border-rose-500 focus:ring-rose-500/10 bg-rose-50/10",
-            Unknown: "border-amber-200 text-amber-800 focus:border-amber-500 focus:ring-amber-500/10 bg-amber-50/10",
-            'Not Applicable': "border-slate-200 text-slate-500 focus:border-slate-400 focus:ring-slate-400/10 bg-slate-50/10"
+            Cleared: "border-emerald-200 text-emerald-800 focus:border-emerald-500 focus:ring-emerald-500/30 bg-emerald-50/10",
+            'At Risk': "border-rose-200 text-rose-800 focus:border-rose-500 focus:ring-rose-500/30 bg-rose-50/10",
+            Unknown: "border-amber-200 text-amber-800 focus:border-amber-500 focus:ring-amber-500/30 bg-amber-50/10",
+            'Not Applicable': "border-slate-200 text-slate-500 focus:border-slate-400 focus:ring-slate-400/30 bg-slate-50/10"
         };
         return `${base} ${tones[val] || tones.Unknown}`;
     };
@@ -103,6 +103,7 @@ const EditSafetyDialog = ({ isOpen, patientName, initialSafety, isSaving, onClos
                 
                 <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50/80 px-8 py-5">
                     <button
+                        type="button"
                         onClick={onClose}
                         disabled={isSaving}
                         className="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 transition-colors"
@@ -110,6 +111,7 @@ const EditSafetyDialog = ({ isOpen, patientName, initialSafety, isSaving, onClos
                         {t('common.cancel')}
                     </button>
                     <button
+                        type="button"
                         onClick={() => onConfirm({ pregnancy, implant, renal })}
                         disabled={isSaving}
                         className="rounded-xl bg-gradient-to-r from-teal-600 to-emerald-500 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-teal-500/30 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
