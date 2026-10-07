@@ -377,7 +377,7 @@ export default function UserActivityTracking() {
     const activeFilterCount = (selectedUser ? 1 : 0) + Object.values(filters).filter(Boolean).length;
 
     return (
-        <main className="mx-auto max-w-[1600px] space-y-6 pb-20 p-4 sm:p-6 lg:p-8">
+        <main className="mx-auto max-w-[1600px] space-y-6 pb-20">
             {/* Page Header */}
             <PageHeader
                 icon={Activity}
@@ -404,8 +404,8 @@ export default function UserActivityTracking() {
                                     : (t('liveTrackingPaused')));
                             }}
                             className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition ${autoRefresh
-                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
-                                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+                                ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
                                 }`}
                         >
                             <Radio size={14} className={autoRefresh ? 'text-emerald-600 animate-pulse' : 'text-slate-400'} />
@@ -603,8 +603,8 @@ export default function UserActivityTracking() {
                         type="button"
                         onClick={() => setSelectedUser(null)}
                         className={`flex shrink-0 items-center gap-2 rounded-2xl border px-3.5 py-2 text-xs font-bold transition ${!selectedUser
-                                ? 'border-teal-500 bg-teal-50 text-teal-800 shadow-2xs dark:border-teal-400 dark:bg-teal-950/50 dark:text-teal-200'
-                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+                            ? 'border-teal-500 bg-teal-50 text-teal-800 shadow-2xs dark:border-teal-400 dark:bg-teal-950/50 dark:text-teal-200'
+                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
                             }`}
                     >
                         <Layers size={14} />
@@ -626,8 +626,8 @@ export default function UserActivityTracking() {
                                     setPage(1);
                                 }}
                                 className={`flex shrink-0 items-center gap-2.5 rounded-2xl border px-3 py-1.5 text-xs font-bold transition ${isSelected
-                                        ? 'border-teal-500 bg-teal-50 text-teal-900 ring-2 ring-teal-500/20 dark:border-teal-400 dark:bg-teal-950/60 dark:text-teal-100'
-                                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+                                    ? 'border-teal-500 bg-teal-50 text-teal-900 ring-2 ring-teal-500/20 dark:border-teal-400 dark:bg-teal-950/60 dark:text-teal-100'
+                                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
                                     }`}
                             >
                                 <div className={`flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br ${roleTheme.bg} font-black text-[11px] ${roleTheme.text}`}>
@@ -660,8 +660,8 @@ export default function UserActivityTracking() {
                     type="button"
                     onClick={() => handleApplyScenario('all')}
                     className={`rounded-xl border px-3 py-1 text-xs font-bold transition ${activeScenario === 'all'
-                            ? 'border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900'
-                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+                        ? 'border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
                         }`}
                 >
                     {t('allEvents')}
@@ -671,8 +671,8 @@ export default function UserActivityTracking() {
                     type="button"
                     onClick={() => handleApplyScenario('create')}
                     className={`inline-flex items-center gap-1 rounded-xl border px-3 py-1 text-xs font-bold transition ${activeScenario === 'create'
-                            ? 'border-emerald-600 bg-emerald-600 text-white'
-                            : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
+                        ? 'border-emerald-600 bg-emerald-600 text-white'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
                         }`}
                 >
                     <PlusCircle size={13} />
@@ -683,8 +683,8 @@ export default function UserActivityTracking() {
                     type="button"
                     onClick={() => handleApplyScenario('update')}
                     className={`inline-flex items-center gap-1 rounded-xl border px-3 py-1 text-xs font-bold transition ${activeScenario === 'update'
-                            ? 'border-blue-600 bg-blue-600 text-white'
-                            : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300'
+                        ? 'border-blue-600 bg-blue-600 text-white'
+                        : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300'
                         }`}
                 >
                     <Edit3 size={13} />
@@ -695,8 +695,8 @@ export default function UserActivityTracking() {
                     type="button"
                     onClick={() => handleApplyScenario('delete')}
                     className={`inline-flex items-center gap-1 rounded-xl border px-3 py-1 text-xs font-bold transition ${activeScenario === 'delete'
-                            ? 'border-rose-600 bg-rose-600 text-white'
-                            : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300'
+                        ? 'border-rose-600 bg-rose-600 text-white'
+                        : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300'
                         }`}
                 >
                     <Trash2 size={13} />
@@ -707,8 +707,8 @@ export default function UserActivityTracking() {
                     type="button"
                     onClick={() => handleApplyScenario('query')}
                     className={`inline-flex items-center gap-1 rounded-xl border px-3 py-1 text-xs font-bold transition ${activeScenario === 'query'
-                            ? 'border-purple-600 bg-purple-600 text-white'
-                            : 'border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-300'
+                        ? 'border-purple-600 bg-purple-600 text-white'
+                        : 'border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-300'
                         }`}
                 >
                     <SearchCheck size={13} />
@@ -814,13 +814,13 @@ export default function UserActivityTracking() {
                     <div>
                         <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
                             {t('startDate')}
+                        </span>
                         <input
                             type="date"
                             value={filters.startDate}
                             onChange={(e) => updateFilter('startDate', e.target.value)}
                             aria-label={t('startDate')}
                             className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
-                        />  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
                         />
                     </div>
 
@@ -847,8 +847,8 @@ export default function UserActivityTracking() {
                         type="button"
                         onClick={() => setViewMode('stream')}
                         className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-bold transition ${viewMode === 'stream'
-                                ? 'bg-teal-600 text-white shadow-2xs'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                            ? 'bg-teal-600 text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
                             }`}
                     >
                         <List size={14} />
@@ -859,8 +859,8 @@ export default function UserActivityTracking() {
                         type="button"
                         onClick={() => setViewMode('table')}
                         className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-bold transition ${viewMode === 'table'
-                                ? 'bg-teal-600 text-white shadow-2xs'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                            ? 'bg-teal-600 text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
                             }`}
                     >
                         <TableIcon size={14} />
@@ -871,8 +871,8 @@ export default function UserActivityTracking() {
                         type="button"
                         onClick={() => setViewMode('leaderboard')}
                         className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-bold transition ${viewMode === 'leaderboard'
-                                ? 'bg-teal-600 text-white shadow-2xs'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                            ? 'bg-teal-600 text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
                             }`}
                     >
                         <Trophy size={14} />
@@ -1124,10 +1124,10 @@ export default function UserActivityTracking() {
 
                                                         {log.outcome && (
                                                             <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${isFailure
-                                                                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
-                                                                    : isDenied
-                                                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                                                                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                                                                : isDenied
+                                                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                                                                 }`}>
                                                                 {log.outcome}
                                                             </span>
