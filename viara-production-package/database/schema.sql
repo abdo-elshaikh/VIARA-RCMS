@@ -1228,5 +1228,18 @@ CREATE TABLE api_tokens (
 CREATE INDEX idx_api_tokens_user_id ON api_tokens(user_id);
 CREATE INDEX idx_api_tokens_prefix ON api_tokens(prefix);
 
+CREATE TABLE password_reset_tokens (
+    token_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    token_hash VARCHAR(255),
+    revoked BOOLEAN DEFAULT FALSE,
+    expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '1 hour'),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_password_reset_tokens_expires ON password_reset_tokens(expires_at);
+CREATE INDEX idx_password_reset_tokens_user ON password_reset_tokens(user_id);
+
 -- 17. Reporting & Performance Indices
 CREATE INDEX idx_invoices_generated_at ON invoices(generated_at);
+
