@@ -247,7 +247,7 @@ VIARA is architected from the ground up to exceed international healthcare regul
 
 ## 🗄️ Database Architecture & Migration Engine
 
-The PostgreSQL database contains **119 modular transactional migrations** managed by the zero-downtime runner [`database/migrate.js`](file:///d:/VIARA/database/migrate.js).
+The PostgreSQL database contains **194 modular transactional migrations** managed by the zero-downtime runner [`database/migrate.js`](file:///d:/VIARA/database/migrate.js).
 
 ### Database Architectural Highlights:
 1. **Advisory Locking:** Executes under `pg_advisory_lock(847291)` to prevent race conditions during rolling container deployments.
@@ -354,7 +354,7 @@ d:\VIARA/
 │   │   ├── utils/                   # Crypto, Errors, Pagination, Password Helpers
 │   │   └── server.js                # API Entry Point & Graceful Connection Draining
 │   ├── scripts/                     # Backend Utilities (createDeveloper, decryptBackup)
-│   ├── tests/                       # 45 Jest Test Suites (305 Unit & Integration Tests)
+│   ├── tests/                       # 280+ Jest Test Suites (1,976+ Unit & Integration Tests)
 │   ├── Dockerfile
 │   └── package.json
 │
@@ -390,7 +390,7 @@ d:\VIARA/
 ├── pacs-worklists/                  # Shared Volume for DICOM MWL Files (.wl) (.gitkeep)
 │
 ├── database/                        # Database Schemas & Migrations
-│   ├── migrations/                  # 119 Transactional SQL Migrations
+│   ├── migrations/                  # 194 Transactional SQL Migrations
 │   ├── migrate.js                   # Advisory-Locked Schema Migration Engine
 │   ├── schema.sql                   # Master Table Structure Reference
 │   └── seed.js                      # Rich Multi-Entity Database Seeder
